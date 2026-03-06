@@ -93,7 +93,7 @@ export const getInvitationByToken = async (
   };
 };
 
-// ✅ userId and userEmail REMOVED from signature — server reads them from JWT
+// Uses DB function accept_invitation (no Edge Function required)
 export const acceptInvitation = async (
   invitationId: string,
   organizationId: string,
@@ -106,26 +106,26 @@ export const acceptInvitation = async (
 
   if (!session) throw new Error("Not authenticated");
 
-  const { data, error } = await supabase.functions.invoke("accept-invitation", {
-    body: {
-      invitationId,
-      organizationId,
-      displayName,
-      photoURL,
-      // ✅ No userId or userEmail — edge function gets them from verified JWT
-    },
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
+  const { data, error } = await supabase.rpc("accept_invitation", {
+    p_invitation_id: invitationId,
+    p_organization_id: organizationId,
+    p_display_name: displayName ?? "",
+    p_photo_url: photoURL ?? "",
   });
 
   if (error) {
-    logger.error("acceptInvitation edge function failed:", error);
+    logger.error("acceptInvitation failed:", error);
     throw new Error(error.message || "Failed to accept invitation");
   }
 
-  if (data?.error) {
-    throw new Error(data.error);
+  const result = data as { ok?: boolean; error?: string } | null;
+  const isFailure = result == null || result.ok === false;
+  if (isFailure) {
+    const message =
+      typeof result?.error === "string" && result.error.trim() !== ""
+        ? result.error
+        : "RPC returned failure";
+    throw new Error(message);
   }
 
   logger.log("✅ Invitation accepted, org linked:", organizationId);

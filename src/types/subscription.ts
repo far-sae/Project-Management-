@@ -196,6 +196,73 @@ export const DEFAULT_PRICING: CountryPricing = {
   },
 };
 
+// ── USD Pricing (USA) ─────────────────────────────────────────────────
+// Create Products & Prices in Stripe (USD), then replace the price_xxx IDs below.
+export const USA_PRICING: CountryPricing = {
+  countryCode: "US",
+  countryName: "United States",
+  currencyCode: "USD",
+  currencySymbol: "$",
+  tiers: {
+    starter: {
+      monthly: 0,
+      monthlyPromo: null,
+      promoMonths: 0,
+      yearly: null,
+      stripePriceIdMonthly: "",
+      stripePriceIdMonthlyPromo: null,
+      stripePriceIdYearly: null,
+      maxUsers: 1,
+      extraUserPriceId: null,
+      extraUserPrice: null,
+      features: TIER_FEATURES.starter,
+      limits: TIER_LIMITS.starter,
+    },
+    basic: {
+      monthly: 9.99,
+      monthlyPromo: 5.99,
+      promoMonths: 3,
+      yearly: 95.88,
+      stripePriceIdMonthly: "price_US_BASIC_MONTHLY", // Replace with your Stripe Price ID (USD)
+      stripePriceIdMonthlyPromo: "price_US_BASIC_PROMO", // Replace with your Stripe Price ID (USD)
+      stripePriceIdYearly: "price_US_BASIC_YEARLY", // Replace with your Stripe Price ID (USD)
+      maxUsers: 3,
+      extraUserPriceId: null,
+      extraUserPrice: null,
+      features: TIER_FEATURES.basic,
+      limits: TIER_LIMITS.basic,
+    },
+    advanced: {
+      monthly: 59.99,
+      monthlyPromo: 49.99,
+      promoMonths: 1,
+      yearly: 575.88,
+      stripePriceIdMonthly: "price_US_ADVANCED_MONTHLY", // Replace with your Stripe Price ID (USD)
+      stripePriceIdMonthlyPromo: "price_US_ADVANCED_PROMO",
+      stripePriceIdYearly: "price_US_ADVANCED_YEARLY",
+      maxUsers: 10,
+      extraUserPriceId: "price_US_ADVANCED_EXTRA_USER", // Replace if you sell extra seats
+      extraUserPrice: 5.99,
+      features: TIER_FEATURES.advanced,
+      limits: TIER_LIMITS.advanced,
+    },
+    premium: {
+      monthly: 0,
+      monthlyPromo: null,
+      promoMonths: 0,
+      yearly: null,
+      stripePriceIdMonthly: "",
+      stripePriceIdMonthlyPromo: null,
+      stripePriceIdYearly: null,
+      maxUsers: null,
+      extraUserPriceId: null,
+      extraUserPrice: null,
+      features: TIER_FEATURES.premium,
+      limits: TIER_LIMITS.premium,
+    },
+  },
+};
+
 // ── INR Pricing (India) ───────────────────────────────────────────────
 export const INDIA_PRICING: CountryPricing = {
   countryCode: "IN",
