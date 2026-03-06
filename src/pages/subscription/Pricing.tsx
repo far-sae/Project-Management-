@@ -1,0 +1,144 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import { useSubscription } from '@/context/SubscriptionContext';
+import { PricingTiers } from '@/components/subscription/PricingTiers';
+import { CheckoutForm } from '@/components/subscription/CheckoutForm';
+import { SubscriptionTier, BillingCycle } from '@/types';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft, Shield, Zap, Clock, HeartHandshake } from 'lucide-react';
+
+export const Pricing: React.FC = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { trialInfo } = useSubscription();
+  const [selectedPlan, setSelectedPlan] = useState<{
+    tier: SubscriptionTier;
+    billingCycle: BillingCycle;
+  } | null>(null);
+
+  const handleSelectPlan = (tier: SubscriptionTier, billingCycle: BillingCycle) => {
+    setSelectedPlan({ tier, billingCycle });
+  };
+
+  const handleCheckoutSuccess = () => {
+    setSelectedPlan(null);
+    navigate('/dashboard');
+  };
+
+  const benefits = [
+    {
+      icon: Zap,
+      title: 'Boost Productivity',
+      description: 'Organize tasks efficiently with our intuitive Kanban board',
+    },
+    {
+      icon: Shield,
+      title: 'Secure & Reliable',
+      description: 'Your data is encrypted and backed up automatically',
+    },
+    {
+      icon: Clock,
+      title: 'Save Time',
+      description: 'Streamline workflows and reduce time spent on management',
+    },
+    {
+      icon: HeartHandshake,
+      title: 'Collaborate Better',
+      description: 'Work together seamlessly with your team in real-time',
+    },
+  ];
+
+  if (selectedPlan) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 py-12 px-4">
+        <div className="max-w-md mx-auto">
+          <Button
+            variant="ghost"
+            onClick={() => setSelectedPlan(null)}
+            className="mb-6"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to plans
+          </Button>
+
+          <CheckoutForm
+            tier={selectedPlan.tier}
+            billingCycle={selectedPlan.billingCycle}
+            onSuccess={handleCheckoutSuccess}
+            onCancel={() => setSelectedPlan(null)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
+      <div className="max-w-7xl mx-auto px-4 py-12">
+        <div className="flex items-center justify-between mb-8">
+          <Button
+            variant="ghost"
+            onClick={() => navigate(user ? '/dashboard' : '/')}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            {user ? 'Back to Dashboard' : 'Back'}
+          </Button>
+
+          {trialInfo?.isInTrial && (
+            <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-full text-sm font-medium">
+              {trialInfo.daysRemaining} days left in trial
+            </div>
+          )}
+        </div>
+
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            Choose Your Plan
+          </h1>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            Start with a 28-day free trial. No credit card required. After trial, all features are blocked until you subscribe. Payment via Stripe; you’ll get an email confirmation when you buy and when your plan renews (monthly or yearly).
+            Cancel anytime.
+          </p>
+        </div>
+
+        <PricingTiers onSelectPlan={handleSelectPlan} />
+
+        <div className="mt-16">
+          <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">
+            Why Choose ProjectFlow?
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {benefits.map((benefit, index) => {
+              const Icon = benefit.icon;
+              return (
+                <div
+                  key={index}
+                  className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
+                    <Icon className="w-6 h-6 text-orange-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">{benefit.title}</h3>
+                  <p className="text-sm text-gray-600">{benefit.description}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-16 bg-white rounded-2xl p-8 text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            Questions? We're here to help.
+          </h2>
+          <p className="text-gray-600 mb-6">
+            Contact our support team for any questions about our plans or features.
+          </p>
+          <Button variant="outline">Contact Support</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Pricing;
