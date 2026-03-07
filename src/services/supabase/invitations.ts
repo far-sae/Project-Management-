@@ -78,7 +78,7 @@ function mapInvitationRow(data: Record<string, unknown>): ProjectInvitation {
     inviterEmail: String(get("inviterEmail", "inviter_email") ?? ""),
     inviteeEmail: String(get("inviteeEmail", "email") ?? ""),
     role: (get("role") ?? "member") as "admin" | "member" | "viewer",
-    status: String(get("status") ?? "pending"),
+    status: (String(get("status") ?? "pending") as "pending" | "accepted" | "declined" | "expired"),
     token: data.token != null ? String(data.token) : "",
     createdAt: getDate("createdAt", "created_at") ?? new Date(),
     expiresAt: getDate("expiresAt", "expires_at") ?? new Date(),
