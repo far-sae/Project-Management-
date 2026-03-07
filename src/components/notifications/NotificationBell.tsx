@@ -20,7 +20,12 @@ type Prefs = {
   email?: boolean;
   push?: boolean;
   taskAssigned?: boolean;
+  taskUpdated?: boolean;
   taskCompleted?: boolean;
+  taskReminder?: boolean;
+  commentMention?: boolean;
+  commentAdded?: boolean;
+  projectInvite?: boolean;
   projectUpdates?: boolean;
 };
 
@@ -31,19 +36,39 @@ function getNotificationPrefs(): Prefs {
       const parsed = JSON.parse(stored) as Prefs;
       return {
         taskAssigned: parsed.taskAssigned !== false,
+        taskUpdated: parsed.taskUpdated !== false,
         taskCompleted: parsed.taskCompleted !== false,
+        taskReminder: parsed.taskReminder !== false,
+        commentMention: parsed.commentMention !== false,
+        commentAdded: parsed.commentAdded !== false,
+        projectInvite: parsed.projectInvite !== false,
         projectUpdates: parsed.projectUpdates !== false,
       };
     }
   } catch {
     // ignore
   }
-  return { taskAssigned: true, taskCompleted: true, projectUpdates: true };
+  return {
+    taskAssigned: true,
+    taskUpdated: true,
+    taskCompleted: true,
+    taskReminder: true,
+    commentMention: true,
+    commentAdded: true,
+    projectInvite: true,
+    projectUpdates: true,
+  };
 }
 
+/** Show all in-project notification types by default (task assigned/updated/completed, reminders, comments, invites). */
 function shouldShowNotification(n: AppNotification, prefs: Prefs): boolean {
   if (n.type === "task_assigned") return prefs.taskAssigned !== false;
+  if (n.type === "task_updated") return prefs.taskUpdated !== false;
   if (n.type === "task_completed") return prefs.taskCompleted !== false;
+  if (n.type === "task_reminder") return prefs.taskReminder !== false;
+  if (n.type === "comment_mention") return prefs.commentMention !== false;
+  if (n.type === "comment_added") return prefs.commentAdded !== false;
+  if (n.type === "project_invite") return prefs.projectInvite !== false;
   return prefs.projectUpdates !== false;
 }
 

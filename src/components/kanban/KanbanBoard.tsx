@@ -12,6 +12,8 @@ import {
 } from '@dnd-kit/core';
 import { Task, KanbanColumn, DEFAULT_COLUMNS, CreateTaskInput, Project } from '@/types';
 import { useTasks } from '@/hooks/useTasks';
+import { useAuth } from '@/context/AuthContext';
+import { createNotificationsForTaskUpdate } from '@/services/supabase/database';
 import { KanbanColumnComponent } from './KanbanColumn';
 import { TaskCard } from './TaskCard';
 import { TaskModal } from './TaskModal';
@@ -49,10 +51,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   filterStatus = 'all',
   searchQuery = '',
 }) => {
+  const { user } = useAuth();
   const { tasks, loading, addTask, editTask, removeTask } = useTasks(
     projectId,
     project?.organizationId || null,
   );
+  const projName = projectName || project?.name || 'Project';
   const [columns, setColumns] = useState<KanbanColumn[]>(initialColumns || DEFAULT_COLUMNS);
 
   const filteredTasks = React.useMemo(() => {
@@ -128,10 +132,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         const task = tasks.find((t) => t.taskId === taskId);
         if (task && task.status !== newStatus) {
           await editTask(taskId, { status: newStatus });
+          if (user) {
+            createNotificationsForTaskUpdate({
+              taskId,
+              projectId,
+              projectName: projName,
+              taskTitle: task.title,
+              previousAssignees: task.assignees || [],
+              newAssignees: task.assignees || [],
+              previousStatus: task.status,
+              newStatus,
+              actorUserId: user.userId,
+              actorDisplayName: user.displayName || 'User',
+            }).catch(() => {});
+          }
         }
       }
     },
-    [tasks, editTask, columns]
+    [tasks, editTask, columns, user, projectId, projName]
   );
 
   const handleTaskClick = useCallback((task: Task) => {
@@ -165,6 +183,21 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         }
         const ok = await editTask(selectedTask.taskId, updatePayload as Partial<Task>);
         if (!ok) throw new Error('Failed to update task');
+        if (user) {
+          const newAssignees = (updatePayload.assignees ?? selectedTask.assignees) ?? [];
+          createNotificationsForTaskUpdate({
+            taskId: selectedTask.taskId,
+            projectId,
+            projectName: projName,
+            taskTitle: (updatePayload.title ?? selectedTask.title) ?? '',
+            previousAssignees: selectedTask.assignees ?? [],
+            newAssignees: Array.isArray(newAssignees) ? newAssignees : [],
+            previousStatus: selectedTask.status,
+            newStatus: updatePayload.status ?? selectedTask.status,
+            actorUserId: user.userId,
+            actorDisplayName: user.displayName || 'User',
+          }).catch(() => {});
+        }
       } else {
         const base = cleanInput as unknown as CreateTaskInput;
         const parentPayload: CreateTaskInput = {
@@ -185,7 +218,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         await addTask(parentPayload);
       }
     },
-    [selectedTask, addTask, editTask, projectId]
+    [selectedTask, addTask, editTask, projectId, user, projName]
   );
 
   const handleDeleteTask = useCallback(

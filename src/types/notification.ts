@@ -4,7 +4,9 @@ export type NotificationType =
   | 'task_completed'
   | 'comment_mention'
   | 'project_invite'
-  | 'subscription_renewed';
+  | 'subscription_renewed'
+  | 'task_reminder' // due date reminder (automation)
+  | 'comment_added'; // new comment on a task you're assigned to
 
 export interface AppNotification {
   notificationId: string;

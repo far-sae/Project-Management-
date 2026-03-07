@@ -1123,6 +1123,139 @@ export const markNotificationRead = async (
     .eq("user_id", userId);
 };
 
+/** Notify assignees when a task is assigned, completed, or updated (workflow notifications). */
+export const createNotificationsForTaskUpdate = async (params: {
+  taskId: string;
+  projectId: string;
+  projectName: string;
+  taskTitle: string;
+  previousAssignees: { userId: string }[];
+  newAssignees: { userId: string; displayName?: string }[];
+  previousStatus?: string;
+  newStatus?: string;
+  actorUserId: string;
+  actorDisplayName: string;
+}): Promise<void> => {
+  const {
+    taskId,
+    projectId,
+    projectName,
+    taskTitle,
+    previousAssignees,
+    newAssignees,
+    previousStatus,
+    newStatus,
+    actorUserId,
+    actorDisplayName,
+  } = params;
+
+  const previousIds = new Set(previousAssignees.map((a) => a.userId));
+  const newIds = new Set(newAssignees.map((a) => a.userId));
+
+  // Don't notify the actor for their own action
+  const notifyUserIds = (ids: string[]) =>
+    ids.filter((id) => id !== actorUserId);
+
+  try {
+    // New assignees: task_assigned
+    for (const a of newAssignees) {
+      if (!previousIds.has(a.userId) && a.userId !== actorUserId) {
+        await createNotification({
+          userId: a.userId,
+          type: "task_assigned",
+          title: "Task assigned to you",
+          body: `${actorDisplayName} assigned you to "${taskTitle}" in ${projectName}`,
+          taskId,
+          projectId,
+          actorUserId,
+          actorDisplayName,
+        }).catch((e) => logger.warn("createNotification task_assigned:", e));
+      }
+    }
+
+    // Status → done: task_completed (notify all current assignees)
+    if (newStatus === "done" && previousStatus !== "done") {
+      for (const a of newAssignees) {
+        if (a.userId !== actorUserId) {
+          await createNotification({
+            userId: a.userId,
+            type: "task_completed",
+            title: "Task completed",
+            body: `"${taskTitle}" was marked done in ${projectName}`,
+            taskId,
+            projectId,
+            actorUserId,
+            actorDisplayName,
+          }).catch((e) => logger.warn("createNotification task_completed:", e));
+        }
+      }
+    }
+
+    // Any other update: task_updated (notify assignees who didn't trigger it)
+    const hadChange =
+      newStatus !== previousStatus ||
+      [...newIds].some((id) => !previousIds.has(id)) ||
+      [...previousIds].some((id) => !newIds.has(id));
+    if (hadChange && newStatus !== "done") {
+      for (const a of newAssignees) {
+        if (a.userId !== actorUserId && previousIds.has(a.userId)) {
+          await createNotification({
+            userId: a.userId,
+            type: "task_updated",
+            title: "Task updated",
+            body: `${actorDisplayName} updated "${taskTitle}" in ${projectName}`,
+            taskId,
+            projectId,
+            actorUserId,
+            actorDisplayName,
+          }).catch((e) => logger.warn("createNotification task_updated:", e));
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn("createNotificationsForTaskUpdate error:", e);
+  }
+};
+
+/** Create due-date reminder notifications for assignees (automation). Call when loading tasks/dashboard. Skips if we already sent a reminder for that task to that user in the last 24h. */
+export const createDueReminderNotifications = async (params: {
+  tasks: { taskId: string; projectId: string; title: string; dueDate: string | null; assignees: { userId: string }[]; status: string }[];
+  projectNames: Record<string, string>;
+  hoursAhead?: number;
+}): Promise<void> => {
+  const { tasks, projectNames, hoursAhead = 24 } = params;
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + hoursAhead * 60 * 60 * 1000);
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+  for (const task of tasks) {
+    if (task.status === "done" || !task.dueDate) continue;
+    const due = new Date(task.dueDate);
+    if (due <= now || due > cutoff) continue;
+    const projectName = projectNames[task.projectId] || "Project";
+    for (const a of task.assignees || []) {
+      const { data: existing } = await supabase
+        .from("notifications")
+        .select("notification_id")
+        .eq("user_id", a.userId)
+        .eq("task_id", task.taskId)
+        .eq("type", "task_reminder")
+        .gte("created_at", since)
+        .limit(1)
+        .maybeSingle();
+      if (existing) continue;
+      await createNotification({
+        userId: a.userId,
+        type: "task_reminder",
+        title: "Due soon",
+        body: `"${task.title}" is due in ${projectName} within ${hoursAhead}h`,
+        taskId: task.taskId,
+        projectId: task.projectId,
+      }).catch(() => {});
+    }
+  }
+};
+
 export const fetchUserNotifications = async (
   userId: string,
   limit: number = 30,
@@ -1175,7 +1308,10 @@ export const subscribeToUserNotifications = (
               type: n.type,
               title: n.title,
               body: n.message,
-              link: n.link,
+              taskId: n.task_id,
+              projectId: n.project_id,
+              actorUserId: n.actor_user_id,
+              actorDisplayName: n.actor_display_name,
               read: n.read,
               createdAt: new Date(n.created_at),
             })),
@@ -1371,6 +1507,27 @@ export const addCommentWithGlobalSync = async (
       displayName,
       photoURL,
     }).catch(() => {});
+
+    // Notify assignees about new comment (except comment author)
+    const { data: taskRow } = await supabase
+      .from("tasks")
+      .select("assignees")
+      .eq("task_id", taskId)
+      .maybeSingle();
+    const assignees = (taskRow?.assignees as { userId: string }[]) || [];
+    for (const a of assignees) {
+      if (a.userId === userId) continue;
+      await createNotification({
+        userId: a.userId,
+        type: "comment_added",
+        title: "New comment",
+        body: `${displayName} commented on "${taskTitle}" in ${projectName}`,
+        taskId,
+        projectId,
+        actorUserId: userId,
+        actorDisplayName: displayName,
+      }).catch(() => {});
+    }
 
     return {
       commentId,

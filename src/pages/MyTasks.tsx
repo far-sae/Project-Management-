@@ -30,7 +30,7 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
 import { Task, TaskComment, TaskSubtask, UpdateTaskInput } from '@/types';
 import { TaskModal } from '@/components/kanban/TaskModal';
-import { updateTask, addCommentWithGlobalSync, subscribeToComments } from '@/services/supabase/database';
+import { updateTask, addCommentWithGlobalSync, subscribeToComments, createDueReminderNotifications } from '@/services/supabase/database';
 import { uploadCommentAttachment } from '@/services/supabase/storage';
 import { cn } from '@/lib/utils';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
@@ -95,6 +95,25 @@ export const MyTasks: React.FC = () => {
     const unsub = subscribeToComments(selectedTask.taskId, orgId, setTaskComments);
     return () => unsub();
   }, [selectedTask?.taskId, orgId]);
+
+  // Automate: due-date reminders for tasks due within 24h (once per task/user per 24h)
+  useEffect(() => {
+    if (!tasksAssignedToMe.length || !projects.length) return;
+    const projectNames: Record<string, string> = {};
+    projects.forEach((p) => { projectNames[p.projectId] = p.name; });
+    createDueReminderNotifications({
+      tasks: tasksAssignedToMe.map((t) => ({
+        taskId: t.taskId,
+        projectId: t.projectId,
+        title: t.title,
+        dueDate: t.dueDate ?? null,
+        assignees: t.assignees ?? [],
+        status: t.status,
+      })),
+      projectNames,
+      hoursAhead: 24,
+    }).catch(() => {});
+  }, [tasksAssignedToMe, projects]);
 
   // Toggle task status
   const handleToggleStatus = useCallback(async (task: Task, e: React.MouseEvent) => {
