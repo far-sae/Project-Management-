@@ -84,12 +84,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col">
       <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-2">
         <Link to="/dashboard" className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl flex items-center justify-center shrink-0">
-            <FolderKanban className="w-5 h-5 text-white" />
-          </div>
+          <img src="/logo.png" alt="TaskCalander" className="w-10 h-10 rounded-full object-contain shrink-0" />
           <div className="min-w-0">
-            <h1 className="font-bold text-gray-900">ProjectFlow</h1>
-            <p className="text-xs text-gray-500">Project Management</p>
+            <h1 className="font-bold text-gray-900">TaskCalander</h1>
+            <p className="text-xs text-gray-500">Task & project management</p>
           </div>
         </Link>
         <NotificationBell />

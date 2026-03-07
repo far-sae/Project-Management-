@@ -90,12 +90,10 @@ export function Dashboard() {
         <div className="container py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <img src="/logo.png" alt="TaskCalander" className="w-10 h-10 rounded-full object-contain" />
               <div>
-                <h1 className="text-2xl font-bold">FormFlow</h1>
-                <p className="text-sm text-muted-foreground">Beautiful surveys made simple</p>
+                <h1 className="text-2xl font-bold">TaskCalander</h1>
+                <p className="text-sm text-muted-foreground">Tasks and surveys made simple</p>
               </div>
             </div>
             <Button onClick={() => setShowCreateDialog(true)} size="lg">
