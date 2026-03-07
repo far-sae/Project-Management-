@@ -61,36 +61,71 @@ export const createInvitation = async (
   };
 };
 
+function mapInvitationRow(data: Record<string, unknown>): ProjectInvitation {
+  const get = (camel: string, snake?: string) =>
+    (data[camel] ?? (snake ? data[snake] : undefined)) as string | undefined;
+  const getDate = (camel: string, snake?: string) => {
+    const v = data[camel] ?? (snake ? data[snake] : undefined);
+    return v != null ? new Date(v as string) : null;
+  };
+  return {
+    invitationId: String(get("invitationId", "invitation_id") ?? ""),
+    projectId: String(get("projectId", "project_id") ?? ""),
+    organizationId: String(get("organizationId", "organization_id") ?? ""),
+    projectName: String(get("projectName", "project_name") ?? ""),
+    inviterUserId: String(get("inviterUserId", "invited_by") ?? ""),
+    inviterName: String(get("inviterName", "inviter_name") ?? ""),
+    inviterEmail: String(get("inviterEmail", "inviter_email") ?? ""),
+    inviteeEmail: String(get("inviteeEmail", "email") ?? ""),
+    role: (get("role") ?? "member") as "admin" | "member" | "viewer",
+    status: String(get("status") ?? "pending"),
+    token: data.token != null ? String(data.token) : "",
+    createdAt: getDate("createdAt", "created_at") ?? new Date(),
+    expiresAt: getDate("expiresAt", "expires_at") ?? new Date(),
+    acceptedAt: getDate("acceptedAt", "accepted_at"),
+  };
+}
+
+/**
+ * Load invitation by token (used on accept-invite page).
+ * Tries RPC first (works for unauthenticated users). Falls back to direct
+ * table query when user is logged in (e.g. RPC not deployed yet).
+ */
 export const getInvitationByToken = async (
   token: string,
 ): Promise<ProjectInvitation | null> => {
-  const { data, error } = await supabase
-    .from("invitations")
-    .select("*")
-    .eq("token", token)
-    .maybeSingle();
+  const trimmed = (token || "").trim();
+  if (!trimmed) return null;
 
-  if (error || !data) {
-    console.error("Invitation not found:", error);
-    return null;
+  const { data: rpcData, error: rpcError } = await supabase.rpc("get_invitation_by_token", {
+    p_token: trimmed,
+  });
+
+  if (!rpcError && rpcData && typeof rpcData === "object") {
+    const raw = rpcData as Record<string, unknown>;
+    if (raw.invitationId != null || raw.invitation_id != null) {
+      return mapInvitationRow(raw);
+    }
   }
 
-  return {
-    invitationId: data.invitation_id,
-    projectId: data.project_id,
-    organizationId: data.organization_id,
-    projectName: data.project_name || "",
-    inviterUserId: data.invited_by,
-    inviterName: data.inviter_name || "",
-    inviterEmail: data.inviter_email || "",
-    inviteeEmail: data.email,
-    role: data.role,
-    status: data.status,
-    token: data.token,
-    createdAt: new Date(data.created_at),
-    expiresAt: new Date(data.expires_at),
-    acceptedAt: data.accepted_at ? new Date(data.accepted_at) : null,
-  };
+  if (rpcError) {
+    logger.warn("get_invitation_by_token RPC failed (run supabase-invite-and-storage-fix.sql):", rpcError.message);
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    const { data: row, error } = await supabase
+      .from("invitations")
+      .select("*")
+      .eq("token", trimmed)
+      .maybeSingle();
+
+    if (!error && row) {
+      return mapInvitationRow(row as Record<string, unknown>);
+    }
+  }
+
+  return null;
 };
 
 // Uses DB function accept_invitation (no Edge Function required)
