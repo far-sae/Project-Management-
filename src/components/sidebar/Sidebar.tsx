@@ -8,7 +8,6 @@ import {
   FileText,
   MessageSquare,
   BarChart3,
-  FolderKanban,
   Settings,
   LogOut,
   CreditCard,

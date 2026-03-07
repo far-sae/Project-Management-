@@ -10,7 +10,6 @@ import {
   Edit,
   Share2,
   Search,
-  Sparkles,
 } from 'lucide-react';
 import { useSurvey } from '@/store/survey-context';
 import { Button } from '@/components/ui/button';
