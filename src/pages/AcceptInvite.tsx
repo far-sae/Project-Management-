@@ -62,12 +62,18 @@ export const AcceptInvite: React.FC = () => {
     user.email.toLowerCase().trim() !==
     invitation.inviteeEmail.toLowerCase().trim();
 
+  // ─── Redirect to dashboard when invite is invalid (e.g. first-time login with no invite)
+  const redirectToDashboard = useCallback(() => {
+    localStorage.removeItem("pendingInviteToken");
+    navigate("/dashboard", { replace: true });
+  }, [navigate]);
+
   // ─── Load invitation ───────────────────────────────────────────────────────
   useEffect(() => {
     const loadInvitation = async () => {
       if (!token) {
-        setError("Invalid invitation link");
         setLoading(false);
+        redirectToDashboard();
         return;
       }
 
@@ -81,26 +87,33 @@ export const AcceptInvite: React.FC = () => {
       try {
         const inv = await getInvitationByToken(decodedToken);
         if (!inv) {
-          setError("Invitation not found or has been used");
-        } else if (inv.status !== "pending") {
-          setError(`This invitation has already been ${inv.status}`);
-        } else if (new Date(inv.expiresAt) < new Date()) {
-          setError("This invitation has expired");
-        } else {
-          setInvitation(inv);
+          setLoading(false);
+          redirectToDashboard();
+          return;
         }
+        if (inv.status !== "pending") {
+          setLoading(false);
+          redirectToDashboard();
+          return;
+        }
+        if (new Date(inv.expiresAt) < new Date()) {
+          setLoading(false);
+          redirectToDashboard();
+          return;
+        }
+        setInvitation(inv);
       } catch (err) {
         console.error("Failed to load invitation:", err);
-        setError(
-          "Failed to load invitation. Please check the link and try again.",
-        );
+        setLoading(false);
+        redirectToDashboard();
+        return;
       } finally {
         setLoading(false);
       }
     };
 
     loadInvitation();
-  }, [token]);
+  }, [token, redirectToDashboard]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 

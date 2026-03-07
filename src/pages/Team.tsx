@@ -265,7 +265,8 @@ export const Team: React.FC = () => {
   const pendingInvitations = invitations.filter(
     (inv) => inv.status === "pending"
   );
-  const isProjectOwner = currentProject?.ownerId === user?.userId;
+  // Use effectiveOwnerId (from DB + project list) so project owner can always invite
+  const isProjectOwner = !!user?.userId && effectiveOwnerId === user.userId;
 
   const handleRemoveMember = async (member: ProjectMember) => {
     if (!selectedProject) return;
@@ -439,7 +440,11 @@ export const Team: React.FC = () => {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Team</h1>
-            <p className="text-gray-500">Manage your team members and their roles</p>
+            <p className="text-gray-500">
+              {isProjectOwner && selectedProject
+                ? "As project owner, you can invite team members by email and manage roles."
+                : "Manage your team members and their roles"}
+            </p>
           </div>
           <div className="flex items-center gap-4">
             <Select value={selectedProject} onValueChange={setSelectedProject}>
@@ -458,7 +463,7 @@ export const Team: React.FC = () => {
               onClick={() => setShowInviteModal(true)}
               className="bg-gradient-to-r from-orange-500 to-red-500"
               disabled={!selectedProject || !isProjectOwner}
-              title={!isProjectOwner ? 'Only the project owner can invite members' : ''}
+              title={!isProjectOwner ? "Select a project you own to invite members" : "Invite team members by email"}
             >
               <UserPlus className="w-4 h-4 mr-2" />
               Invite Member
