@@ -217,7 +217,11 @@ export const MyTasks: React.FC = () => {
 
       for (const file of commentAttachmentFiles) {
         try {
-          const uploaded = await uploadCommentAttachment(file, selectedTask.taskId, orgId);
+          const uploaded = await uploadCommentAttachment(file, selectedTask.taskId, orgId, {
+            projectId: selectedTask.projectId,
+            userId: user.userId,
+            userName: user.displayName || user.email || 'User',
+          });
           attachments.push(uploaded);
         } catch (err) {
           toast.error(`Upload failed: ${file.name}`);

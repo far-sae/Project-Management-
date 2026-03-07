@@ -144,18 +144,19 @@ export const getFileTypeCategory = (fileType: string): string => {
   return "other";
 };
 
-// Get project files from database
+// Get project files from database (includes both project-level and task/comment files when scope is 'project')
 export const getProjectFiles = async (
   projectId: string,
   organizationId: string,
   scope: string,
 ) => {
+  const scopesToFetch = scope === "project" ? ["project", "task"] : [scope];
   const { data, error } = await supabase
     .from("files")
     .select("*")
     .eq("project_id", projectId)
     .eq("organization_id", organizationId)
-    .eq("scope", scope)
+    .in("scope", scopesToFetch)
     .order("uploaded_at", { ascending: false });
 
   if (error) {
@@ -301,12 +302,11 @@ export const uploadFileWithProgress = async (
   };
 };
 
-// Delete file from storage and database
+// Delete file from storage and database (handles both project-files and attachments buckets)
 export const deleteFileComplete = async (
   fileId: string,
   organizationId: string,
 ): Promise<void> => {
-  // Get file record
   const { data: file, error: fetchError } = await supabase
     .from("files")
     .select("storage_path")
@@ -319,10 +319,13 @@ export const deleteFileComplete = async (
     throw fetchError;
   }
 
-  // Delete from storage
+  const isAttachment = file.storage_path && String(file.storage_path).startsWith("attachments/");
+  const bucket = isAttachment ? "attachments" : "project-files";
+  const path = isAttachment ? String(file.storage_path).replace(/^attachments\//, "") : file.storage_path;
+
   const { error: storageError } = await supabase.storage
-    .from("project-files")
-    .remove([file.storage_path]);
+    .from(bucket)
+    .remove([path]);
 
   if (storageError) {
     logger.error("Failed to delete from storage:", storageError);
@@ -341,11 +344,16 @@ export const deleteFileComplete = async (
   }
 };
 
-// Add this new function at the bottom of storage.ts
+// Upload comment attachment and optionally register in files table so it appears on Files page
 export const uploadCommentAttachment = async (
   file: File,
   taskId: string,
   organizationId: string,
+  options?: {
+    projectId?: string;
+    userId?: string;
+    userName?: string;
+  },
 ): Promise<{
   fileId: string;
   fileName: string;
@@ -367,9 +375,31 @@ export const uploadCommentAttachment = async (
   }
 
   const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
+  const fileId = crypto.randomUUID();
+
+  if (options?.projectId) {
+    const fileRecord = {
+      file_id: fileId,
+      project_id: options.projectId,
+      task_id: taskId,
+      organization_id: organizationId,
+      file_name: file.name,
+      file_url: urlData.publicUrl,
+      storage_path: `attachments/${path}`,
+      file_type: file.type,
+      file_size: file.size,
+      scope: "task",
+      uploaded_by: options.userId || null,
+      uploaded_by_name: options.userName || "User",
+      uploaded_at: new Date().toISOString(),
+    };
+    await supabase.from("files").insert(fileRecord).then(({ error: insertErr }) => {
+      if (insertErr) logger.warn("Failed to register comment file for Files page:", insertErr);
+    });
+  }
 
   return {
-    fileId: crypto.randomUUID(),
+    fileId,
     fileName: file.name,
     fileUrl: urlData.publicUrl,
     fileType: file.type,

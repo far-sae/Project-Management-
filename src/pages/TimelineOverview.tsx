@@ -43,10 +43,21 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // useProjects already returns only projects current user can access
-  const visibleProjects = projects.filter(p => p.startDate && p.endDate);
+  const DEFAULT_PROJECT_DAYS = 90;
 
-  // Calculate timeline range from all visible project dates
+  // Show all projects: use start/end when set, otherwise fallback to createdAt and +90 days
+  const visibleProjects = useMemo(() => {
+    return projects.map((p) => {
+      const created = p.createdAt ? new Date(p.createdAt) : new Date();
+      const start = p.startDate ? new Date(p.startDate) : created;
+      const end = p.endDate
+        ? new Date(p.endDate)
+        : new Date(start.getTime() + DEFAULT_PROJECT_DAYS * 24 * 60 * 60 * 1000);
+      return { ...p, effectiveStart: start, effectiveEnd: end };
+    });
+  }, [projects]);
+
+  // Calculate timeline range from all visible project dates (using effective start/end)
   const { startDate, totalDays, todayOffset, monthHeaders, dayNumbers } = useMemo(() => {
     if (visibleProjects.length === 0) {
       // Default: show 3 months around today
@@ -61,8 +72,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
       return buildCalendar(start, end, days, offset, today, timeGranularity);
     }
 
-    // Expand range to fit all projects with padding
-    const allDates = visibleProjects.flatMap(p => [new Date(p.startDate), new Date(p.endDate)]);
+    const allDates = visibleProjects.flatMap((p) => [p.effectiveStart, p.effectiveEnd]);
     const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
     const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
 
@@ -96,10 +106,9 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-400 gap-3">
         <Users className="w-12 h-12 text-gray-300" />
-        <p className="text-lg font-medium text-gray-500">No project timelines yet</p>
+        <p className="text-lg font-medium text-gray-500">No projects yet</p>
         <p className="text-sm text-gray-400 text-center max-w-md">
-          Set a <span className="font-semibold text-orange-500">Start Date</span> and <span className="font-semibold text-orange-500">End Date</span> on your projects
-          to see them here. Only projects assigned to you are visible.
+          Create or join a project to see it on the timeline. You can set optional start/end dates on projects for more accurate ranges.
         </p>
       </div>
     );
@@ -162,8 +171,8 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
           (m: any) => (m.userId || m.user_id) !== project.ownerId,
         );
 
-        const projStart = new Date(project.startDate);
-        const projEnd = new Date(project.endDate);
+        const projStart = project.effectiveStart;
+        const projEnd = project.effectiveEnd;
 
         const leftPx = Math.max(
           0,
@@ -198,7 +207,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                 </span>
                 <div className="flex items-center gap-1 mt-0.5">
                   <span className="text-xs text-gray-400">
-                    {new Date(project.startDate).toLocaleDateString()} → {new Date(project.endDate).toLocaleDateString()}
+                    {project.effectiveStart.toLocaleDateString()} → {project.effectiveEnd.toLocaleDateString()}
                   </span>
                 </div>
               </div>
@@ -247,7 +256,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   opacity: 0.9,
                 }}
                 onClick={() => navigate(`/project/${project.projectId}`)}
-                title={`${project.name} · ${new Date(project.startDate).toLocaleDateString()} → ${new Date(project.endDate).toLocaleDateString()}`}
+                title={`${project.name} · ${project.effectiveStart.toLocaleDateString()} → ${project.effectiveEnd.toLocaleDateString()}`}
               >
                 {/* Progress fill */}
                 {isActive && (

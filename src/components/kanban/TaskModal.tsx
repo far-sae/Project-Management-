@@ -308,7 +308,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             continue;
           }
 
-          const uploaded = await uploadCommentAttachment(file, task.taskId, orgId);
+          const uploaded = await uploadCommentAttachment(file, task.taskId, orgId, {
+            projectId,
+            userId: user.userId,
+            userName: user.displayName || 'Unknown',
+          });
           attachments.push(uploaded);
         } catch (err) {
           toast.error(`Upload failed: ${file.name}`);
