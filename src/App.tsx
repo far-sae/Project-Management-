@@ -20,6 +20,7 @@ import { Settings } from '@/pages/Settings';
 import { AcceptInvite } from '@/pages/AcceptInvite';
 import { Pricing } from '@/pages/subscription/Pricing';
 import { AdminDashboard } from '@/pages/admin/AdminDashboard';
+import LandingPage from '@/pages/landing/LandingPage';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
@@ -50,6 +51,7 @@ export default function App() {
           { path: '/signup', element: <Signup /> },
           { path: '/pricing', element: <Pricing /> },
           { path: '/accept-invite/:token', element: <AcceptInvite /> },
+          { path: '/', element: <LandingPage /> },
           {
             path: '/dashboard',
             element: (
@@ -146,7 +148,6 @@ export default function App() {
               </ProtectedRoute>
             ),
           },
-          { path: '/', element: <RootRedirect /> },
           { path: '*', element: <RootRedirect /> },
         ],
       },
