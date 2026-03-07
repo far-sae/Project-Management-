@@ -1152,10 +1152,6 @@ export const createNotificationsForTaskUpdate = async (params: {
   const previousIds = new Set(previousAssignees.map((a) => a.userId));
   const newIds = new Set(newAssignees.map((a) => a.userId));
 
-  // Don't notify the actor for their own action
-  const notifyUserIds = (ids: string[]) =>
-    ids.filter((id) => id !== actorUserId);
-
   try {
     // New assignees: task_assigned
     for (const a of newAssignees) {
