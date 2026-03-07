@@ -129,7 +129,7 @@ export const SignupForm: React.FC = () => {
           <div className="flex items-center justify-center mb-4">
             <img src="/logo.png" alt="TaskCalander" className="w-14 h-14 rounded-full object-contain" />
           </div>
-          <p className="text-center text-sm text-gray-500 mb-1">TaskCalander</p>
+          <p className="text-center text-base font-bold text-gray-900 mb-1">TaskCalander</p>
           <CardTitle className="text-2xl font-bold text-center">Create an account</CardTitle>
           <CardDescription className="text-center">
             Start your free 28-day trial today

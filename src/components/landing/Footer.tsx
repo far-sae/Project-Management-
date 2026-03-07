@@ -1,12 +1,12 @@
 const Footer = () => {
   return (
     <footer className="border-t border-border py-12 bg-secondary/20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           <div>
             <div className="flex items-center gap-2 mb-4">
               <img src="/logo.png" alt="TaskCalander" className="w-8 h-8 rounded-lg object-cover" />
-              <span className="font-bold text-lg text-foreground">TaskCalander</span>
+              <span className="font-bold text-lg text-gray-900">TaskCalander</span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
               The modern project management platform for teams that move fast.
@@ -38,7 +38,7 @@ const Footer = () => {
           </div>
         </div>
 
-        <div className="border-t border-border pt-8 text-center text-sm text-muted-foreground">
+        <div className="border-t border-border pt-8 text-center text-sm text-gray-700">
           © {new Date().getFullYear()} TaskCalander. All rights reserved.
         </div>
       </div>
