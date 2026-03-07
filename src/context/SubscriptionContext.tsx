@@ -31,8 +31,13 @@ export type AppFeature =
   | "api_access"
   | "custom_integrations";
 
+// ── Subscription flow ────────────────────────────────────────────────
+// 1. First login: no subscription row → we create one with 28-day trial (Advanced access).
+// 2. After 28 days: if not subscribed, we auto-downgrade to Starter (DB + UI).
+// 3. Starter: only Starter limits/features (see FEATURE_TIERS — starter not in paid features).
+// 4. When user subscribes (Stripe): webhook/checkout sets status=active, plan=basic|advanced|premium; we read that and grant that plan's features.
 // ── Trial = full Advanced access for 28 days ──────────────────────────
-// ── Starter = free forever, no paid features ─────────────────────────
+// ── Starter = free forever, limited features only ────────────────────
 const FEATURE_TIERS: Record<AppFeature, Array<SubscriptionTier | "trial" | "starter">> = {
   unlimited_projects: ["trial", "basic", "advanced", "premium"],
   unlimited_tasks: ["trial", "basic", "advanced", "premium"],
@@ -79,7 +84,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
     if (!uid) return;
 
     try {
-      const { data, error } = await supabase
+      const { data: fetched, error } = await supabase
         .from("subscriptions")
         .select("*")
         .eq("user_id", uid)
@@ -90,16 +95,47 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
         return;
       }
 
-      // ── No row exists yet ───────────────────────────────────────────
-      if (!data) {
-        console.warn("⚠️ No subscription row found for user:", uid);
-        setSubscription(null);
-        return;
+      let row = fetched;
+
+      // ── No row exists: first-time login → start 28-day trial ─────────
+      if (!row) {
+        const now = new Date();
+        const trialEnd = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000);
+        const { error: insertError } = await supabase
+          .from("subscriptions")
+          .insert({
+            user_id: uid,
+            status: "trial",
+            plan: "advanced",
+            billing_cycle: null,
+            trial_starts_at: now.toISOString(),
+            trial_ends_at: trialEnd.toISOString(),
+            cancel_at_period_end: false,
+          });
+
+        if (insertError) {
+          console.warn("⚠️ Could not create trial row (RLS?):", insertError.message);
+          setSubscription(null);
+          return;
+        }
+        const { data: newRow } = await supabase
+          .from("subscriptions")
+          .select("*")
+          .eq("user_id", uid)
+          .maybeSingle();
+        row = newRow ?? null;
+        if (!row) {
+          setSubscription(null);
+          return;
+        }
       }
 
-      // ── Frontend safety net: fix expired trial immediately ──────────
-      if (data.status === "trial" && data.trial_ends_at) {
-        const trialEnd = new Date(data.trial_ends_at);
+      let effectiveStatus = row.status;
+      let effectivePlan = row.plan;
+
+      // ── Frontend safety net: after 28 days, auto-downgrade trial → starter ─
+      if (row.status === "trial" && row.trial_ends_at) {
+        const trialEnd = new Date(row.trial_ends_at);
         if (trialEnd < new Date()) {
           console.log("⏰ Trial expired — downgrading to starter in DB...");
           const { error: updateError } = await supabase
@@ -115,29 +151,28 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
             console.error("❌ Failed to downgrade to starter:", updateError);
           } else {
             console.log("✅ Downgraded to starter successfully");
-            // Override data before setting state
-            data.status = "starter";
-            data.plan = "starter";
+            effectiveStatus = "starter";
+            effectivePlan = "starter";
           }
         }
       }
 
-      // ── Set subscription state ──────────────────────────────────────
+      // ── Set subscription state (trial / starter / active from paid plan) ─
       setSubscription({
-        status: data.status || "trial",
-        tier: data.plan || null,
-        billingCycle: data.billing_cycle || null,
-        stripeCustomerId: data.stripe_customer_id || null,
-        stripeSubscriptionId: data.stripe_subscription_id || null,
-        currentPeriodStart: data.current_period_start
-          ? new Date(data.current_period_start) : null,
-        currentPeriodEnd: data.current_period_end
-          ? new Date(data.current_period_end) : null,
-        trialStartDate: data.trial_starts_at
-          ? new Date(data.trial_starts_at) : null,
-        trialEndDate: data.trial_ends_at
-          ? new Date(data.trial_ends_at) : null,
-        cancelAtPeriodEnd: data.cancel_at_period_end || false,
+        status: effectiveStatus || "trial",
+        tier: effectivePlan || null,
+        billingCycle: row.billing_cycle || null,
+        stripeCustomerId: row.stripe_customer_id || null,
+        stripeSubscriptionId: row.stripe_subscription_id || null,
+        currentPeriodStart: row.current_period_start
+          ? new Date(row.current_period_start) : null,
+        currentPeriodEnd: row.current_period_end
+          ? new Date(row.current_period_end) : null,
+        trialStartDate: row.trial_starts_at
+          ? new Date(row.trial_starts_at) : null,
+        trialEndDate: row.trial_ends_at
+          ? new Date(row.trial_ends_at) : null,
+        cancelAtPeriodEnd: row.cancel_at_period_end || false,
       });
 
     } catch (err) {
