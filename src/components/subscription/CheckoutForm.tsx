@@ -123,7 +123,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
     try {
       const origin = window.location.origin;
 
-      // ✅ Get current session token
+      // Refresh session so the Edge Function gets a valid JWT (avoids 401)
+      await supabase.auth.refreshSession();
       const { data: { session } } = await supabase.auth.getSession();
       const authToken = session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY;
 

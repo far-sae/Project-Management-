@@ -1671,7 +1671,12 @@ export const subscribeToActivity = (
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
       .limit(limit)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          logger.warn("Activity fetch failed (table may be missing or RLS):", error.message);
+          callback([]);
+          return;
+        }
         if (data)
           callback(
             data.map((d) => ({
@@ -1725,7 +1730,12 @@ export const subscribeToTaskActivity = (
     .eq("task_id", taskId)
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
-    .then(({ data }) => {
+    .then(({ data, error }) => {
+      if (error) {
+        logger.warn("Task activity fetch failed:", error.message);
+        callback([]);
+        return;
+      }
       if (data) {
         callback(
           data.map((d) => ({
@@ -1765,7 +1775,8 @@ export const subscribeToTaskActivity = (
           .eq("task_id", taskId)
           .eq("organization_id", organizationId)
           .order("created_at", { ascending: false })
-          .then(({ data }) => {
+          .then(({ data, error }) => {
+            if (error) return;
             if (data) {
               callback(
                 data.map((d) => ({
