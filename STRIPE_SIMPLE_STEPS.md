@@ -345,12 +345,16 @@ If you get stuck, say which step number you are on and what you see on the scree
 ## Troubleshooting
 
 **"create-checkout-session" returns 401**
-- The app now refreshes your session before calling the function. Make sure you are **logged in** when you click Get Started.
-- If it still returns 401, deploy the function with JWT verification disabled:
+- The project now has `supabase/config.toml` with `verify_jwt = false` for the checkout and webhook functions. **Redeploy both functions** so the change takes effect:
+  ```powershell
+  cd path\to\freelance1-main\freelance1-main
+  supabase functions deploy create-checkout-session
+  supabase functions deploy stripe-webhook
+  ```
+- Make sure you are **logged in** when you click Get Started. If you still get 401 after redeploying, use the flag:
   ```powershell
   supabase functions deploy create-checkout-session --no-verify-jwt
   ```
-  Then try checkout again.
 
 **Activity request returns 400**
 - The `activity` table may not exist in your Supabase project yet. The app will show "No activity" instead of failing. To enable activity logging, create an `activity` table in Supabase with columns matching the app (e.g. `activity_id`, `task_id`, `project_id`, `organization_id`, `type`, `user_id`, `created_at`, etc.) and enable RLS as needed.
