@@ -28,7 +28,7 @@ const TIER_CONFIG = {
 const OWNER_EMAIL = 'smtkur31@gmail.com';
 
 export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loading }) => {
-  const { pricing, subscription } = useSubscription();
+  const { pricing, subscription, refreshSubscription } = useSubscription();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
@@ -56,6 +56,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
         }, { onConflict: 'user_id' });
 
       if (error) throw error;
+      await refreshSubscription();
       toast.success('You are now on the free Starter plan!');
       navigate('/dashboard');
     } catch (err) {

@@ -8,7 +8,11 @@ create policy "Users can read own subscription"
   on public.subscriptions for select
   using (auth.uid() = user_id::uuid);
 
--- Optional: allow users to update their own row (e.g. if you add client-side cancel_at_period_end later)
+drop policy if exists "Users can insert own subscription" on public.subscriptions;
+create policy "Users can insert own subscription"
+  on public.subscriptions for insert
+  with check (auth.uid() = user_id::uuid);
+
 drop policy if exists "Users can update own subscription" on public.subscriptions;
 create policy "Users can update own subscription"
   on public.subscriptions for update

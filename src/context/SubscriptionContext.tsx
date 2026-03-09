@@ -261,10 +261,11 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
           : subscription === null ? "trial"
             : null;
 
+  // Gate by plan only: app owner gets all features; org owner on Starter gets only Starter features.
   const hasFeature = useCallback(
     (feature: AppFeature) =>
-      hasFullAccess || (!!currentTier && FEATURE_TIERS[feature].includes(currentTier as any)),
-    [currentTier, hasFullAccess],
+      isAppOwnerUser || (!!currentTier && FEATURE_TIERS[feature].includes(currentTier as any)),
+    [currentTier, isAppOwnerUser],
   );
 
   // ── Trial info ────────────────────────────────────────────────────────
