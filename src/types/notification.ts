@@ -2,6 +2,7 @@ export type NotificationType =
   | 'task_assigned'
   | 'task_updated'
   | 'task_completed'
+  | 'task_updated'
   | 'comment_mention'
   | 'project_invite'
   | 'subscription_renewed'

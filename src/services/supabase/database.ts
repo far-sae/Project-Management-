@@ -1295,7 +1295,12 @@ export const subscribeToUserNotifications = (
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(limit)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          logger.warn("Notifications fetch failed (table may be missing):", error.message);
+          callback([]);
+          return;
+        }
         if (data)
           callback(
             data.map((n) => ({
@@ -1312,6 +1317,8 @@ export const subscribeToUserNotifications = (
               createdAt: new Date(n.created_at),
             })),
           );
+        else
+          callback([]);
       });
 
   fetchNotifications();

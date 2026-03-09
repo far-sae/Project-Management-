@@ -1,24 +1,38 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AppNotification } from "@/types/notification";
 import {
-  fetchUserNotifications,
+  subscribeToUserNotifications,
   markNotificationRead as markRead,
 } from "@/services/supabase/database";
 
 export const useNotifications = (userId: string | null, limit = 30) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
-  const fetchedRef = useRef(false);
 
-  const fetchNotifications = useCallback(async () => {
+  // Subscribe to notifications so the bell updates in real time when new ones are created
+  useEffect(() => {
     if (!userId) {
       setNotifications([]);
       setLoading(false);
       return;
     }
 
+    setLoading(true);
+    const unsub = subscribeToUserNotifications(userId, (data) => {
+      setNotifications(data);
+      setLoading(false);
+    }, limit);
+
+    return () => {
+      unsub();
+    };
+  }, [userId, limit]);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
     try {
-      setLoading(true);
+      const { fetchUserNotifications } = await import("@/services/supabase/database");
       const data = await fetchUserNotifications(userId, limit);
       setNotifications(data);
     } catch (error) {
@@ -27,25 +41,6 @@ export const useNotifications = (userId: string | null, limit = 30) => {
       setLoading(false);
     }
   }, [userId, limit]);
-
-  // Fetch once on mount or when userId changes
-  useEffect(() => {
-    if (!userId) {
-      setNotifications([]);
-      setLoading(false);
-      return;
-    }
-
-    if (!fetchedRef.current) {
-      fetchedRef.current = true;
-      fetchNotifications();
-    }
-
-    // Reset ref when userId changes
-    return () => {
-      fetchedRef.current = false;
-    };
-  }, [userId, fetchNotifications]);
 
   const markAsRead = async (notificationId: string) => {
     if (!userId) return;

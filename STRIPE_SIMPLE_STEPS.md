@@ -348,9 +348,11 @@ If you get stuck, say which step number you are on and what you see on the scree
 - The project now has `supabase/config.toml` with `verify_jwt = false` for the checkout and webhook functions. **Redeploy both functions** so the change takes effect:
   ```powershell
   cd path\to\freelance1-main\freelance1-main
-  supabase functions deploy create-checkout-session
-  supabase functions deploy stripe-webhook
-  ```
+supabase functions deploy create-checkout-session
+supabase functions deploy stripe-webhook
+supabase functions deploy cancel-subscription-now
+```
+(The last one lets users cancel their subscription **immediately** from Settings, not only at period end.)
 - Make sure you are **logged in** when you click Get Started. If you still get 401 after redeploying, use the flag:
   ```powershell
   supabase functions deploy create-checkout-session --no-verify-jwt

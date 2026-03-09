@@ -11,7 +11,7 @@ import { ArrowLeft, Shield, Zap, Clock, HeartHandshake } from 'lucide-react';
 export const Pricing: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { trialInfo } = useSubscription();
+  const { trialInfo, subscription } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<{
     tier: SubscriptionTier;
     billingCycle: BillingCycle;
@@ -100,6 +100,11 @@ export const Pricing: React.FC = () => {
             Start with a 28-day free trial. No credit card required. After trial, all features are blocked until you subscribe. Payment via Stripe; you’ll get an email confirmation when you buy and when your plan renews (monthly or yearly).
             Cancel anytime.
           </p>
+          {(subscription?.tier === 'starter' || subscription?.status === 'expired') && subscription?.tier !== undefined && (
+            <p className="text-sm text-orange-600 mt-2 font-medium">
+              On Starter or cancelled? You can upgrade or re-subscribe to Basic or Advanced below anytime.
+            </p>
+          )}
         </div>
 
         <PricingTiers onSelectPlan={handleSelectPlan} />

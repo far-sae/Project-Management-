@@ -23,6 +23,7 @@ import {
   changePassword,
   setUserCancelAtPeriodEnd,
 } from "@/services/supabase/auth";
+import { supabase } from "@/services/supabase/config";
 import { uploadAvatar } from "@/services/supabase/storage";
 import {
   User,
@@ -48,6 +49,7 @@ export const Settings: React.FC = () => {
   } = useSubscription();
 
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelNowLoading, setCancelNowLoading] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [email] = useState(user?.email || "");
   const [profileLoading, setProfileLoading] = useState(false);
@@ -221,6 +223,36 @@ export const Settings: React.FC = () => {
       console.error("Error updating subscription:", error);
     } finally {
       setCancelLoading(false);
+    }
+  };
+
+  // ── Cancel subscription immediately (right away) ───────────
+  const handleCancelNow = async () => {
+    if (!user?.userId) return;
+    if (!window.confirm("End your subscription now? You’ll lose access to paid features immediately. You can re-subscribe anytime from Pricing.")) return;
+
+    setCancelNowLoading(true);
+    const toastId = toast.loading("Cancelling subscription...");
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error("Please sign in again", { id: toastId });
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("cancel-subscription-now", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      await refreshSubscription();
+      toast.success("Subscription cancelled. You’re now on Starter.", { id: toastId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel", { id: toastId });
+    } finally {
+      setCancelNowLoading(false);
     }
   };
 
@@ -452,19 +484,42 @@ export const Settings: React.FC = () => {
                 </div>
 
                 {subscription?.status === "active" && (
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <p className="font-medium">Cancel at period end</p>
-                      <p className="text-sm text-gray-500">
-                        Turn off auto-renew. Access continues until period ends.
-                      </p>
+                  <>
+                    <div className="flex items-center justify-between p-4 border rounded-lg">
+                      <div>
+                        <p className="font-medium">Cancel at period end</p>
+                        <p className="text-sm text-gray-500">
+                          Turn off auto-renew. Access continues until period ends.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={!!subscription?.cancelAtPeriodEnd}
+                        disabled={cancelLoading}
+                        onCheckedChange={handleCancelAtPeriodEnd}
+                      />
                     </div>
-                    <Switch
-                      checked={!!subscription?.cancelAtPeriodEnd}
-                      disabled={cancelLoading}
-                      onCheckedChange={handleCancelAtPeriodEnd}
-                    />
-                  </div>
+                    <div className="flex items-center justify-between p-4 border rounded-lg border-orange-200 bg-orange-50/50">
+                      <div>
+                        <p className="font-medium">Cancel immediately</p>
+                        <p className="text-sm text-gray-500">
+                          End your subscription now. You lose paid access right away. You can re-subscribe anytime from Pricing.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-orange-300 text-orange-700 hover:bg-orange-100"
+                        disabled={cancelNowLoading}
+                        onClick={handleCancelNow}
+                      >
+                        {cancelNowLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          "Cancel now"
+                        )}
+                      </Button>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
