@@ -352,7 +352,7 @@ supabase functions deploy create-checkout-session
 supabase functions deploy stripe-webhook
 supabase functions deploy cancel-subscription-now
 ```
-(The last one lets users cancel their subscription **immediately** from Settings, not only at period end.)
+(The last one lets users cancel their subscription **immediately** from Settings, not only at period end. It uses the same `STRIPE_SECRET_KEY` in Supabase secrets. The app refreshes your session before calling it to avoid "Edge function error".)
 - Make sure you are **logged in** when you click Get Started. If you still get 401 after redeploying, use the flag:
   ```powershell
   supabase functions deploy create-checkout-session --no-verify-jwt

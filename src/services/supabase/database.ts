@@ -893,6 +893,7 @@ export const deleteTask = async (
   organizationId?: string,
 ): Promise<void> => {
   await supabase.from("comments").delete().eq("task_id", taskId);
+  await supabase.from("global_comments").delete().eq("task_id", taskId);
 
   let query = supabase.from("tasks").delete().eq("task_id", taskId);
   if (organizationId && !organizationId.startsWith("local-")) {

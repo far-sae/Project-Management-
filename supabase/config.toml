@@ -1,8 +1,12 @@
-# Edge Functions: allow invocation without strict JWT verification (fixes 401 on checkout)
+# Edge Functions: allow invocation without strict JWT verification (fixes 401 on checkout/cancel)
 # See: https://supabase.com/docs/guides/functions/function-configuration
 
 [functions.create-checkout-session]
 verify_jwt = false
 
 [functions.stripe-webhook]
+verify_jwt = false
+
+# Cancel-now validates JWT inside the function; disable gateway JWT so we return clear 401 body
+[functions.cancel-subscription-now]
 verify_jwt = false

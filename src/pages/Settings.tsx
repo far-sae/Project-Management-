@@ -235,7 +235,11 @@ export const Settings: React.FC = () => {
     const toastId = toast.loading("Cancelling subscription...");
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        toast.error("Please sign in again", { id: toastId });
+        return;
+      }
       const token = session?.access_token;
       if (!token) {
         toast.error("Please sign in again", { id: toastId });
@@ -245,7 +249,10 @@ export const Settings: React.FC = () => {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        const msg = error.message || "Edge function error";
+        throw new Error(msg.includes("401") || msg.includes("Unauthorized") ? "Session expired. Please sign in again." : msg);
+      }
       if (data?.error) throw new Error(data.error);
       await refreshSubscription();
       toast.success("Subscription cancelled. You’re now on Starter.", { id: toastId });
