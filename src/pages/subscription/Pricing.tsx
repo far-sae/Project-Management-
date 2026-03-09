@@ -6,12 +6,13 @@ import { PricingTiers } from '@/components/subscription/PricingTiers';
 import { CheckoutForm } from '@/components/subscription/CheckoutForm';
 import { SubscriptionTier, BillingCycle } from '@/types';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Shield, Zap, Clock, HeartHandshake } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowLeft, Shield, Zap, Clock, HeartHandshake, Lock, Check } from 'lucide-react';
 
 export const Pricing: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { trialInfo, subscription } = useSubscription();
+  const { trialInfo, subscription, pricing } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<{
     tier: SubscriptionTier;
     billingCycle: BillingCycle;
@@ -108,6 +109,51 @@ export const Pricing: React.FC = () => {
         </div>
 
         <PricingTiers onSelectPlan={handleSelectPlan} />
+
+        {/* What's included by plan — service summary & locks (Basic vs Advanced) */}
+        <div className="mt-16">
+          <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">
+            What's included by plan
+          </h2>
+          <p className="text-center text-gray-500 text-sm mb-8">
+            Basic and Advanced plans are locked to the services below. Upgrade to unlock more.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(['starter', 'basic', 'advanced', 'premium'] as const).map((tier) => {
+              const tierPricing = pricing.tiers[tier];
+              const name = tier === 'starter' ? 'Starter' : tier === 'basic' ? 'Basic' : tier === 'advanced' ? 'Advanced' : 'Premium';
+              return (
+                <Card key={tier} className="bg-white">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">{name}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <ul className="space-y-1.5 text-sm text-gray-600">
+                      {tierPricing.features.map((f, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                    {tier === 'basic' && (
+                      <p className="mt-3 text-xs text-amber-600 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        Team, Timeline & Contracts require Advanced or higher
+                      </p>
+                    )}
+                    {tier === 'advanced' && (
+                      <p className="mt-3 text-xs text-green-600 flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        Includes all Basic services + collaboration & analytics
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="mt-16">
           <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">

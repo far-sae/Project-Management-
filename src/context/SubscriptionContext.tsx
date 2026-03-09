@@ -40,6 +40,7 @@ export type AppFeature =
 // 4. When user subscribes (Stripe): webhook/checkout sets status=active, plan=basic|advanced|premium; we read that and grant that plan's features.
 // ── Trial = full Advanced access for 28 days ──────────────────────────
 // ── Starter = free forever, limited features only ────────────────────
+// ── Lock: Basic = projects/tasks/workspaces/members/storage/AI/reports only; Advanced+ = + Team, Timeline, Contracts, Analytics; Premium = + API & custom integrations ──
 const FEATURE_TIERS: Record<AppFeature, Array<SubscriptionTier | "trial" | "starter">> = {
   unlimited_projects: ["trial", "basic", "advanced", "premium"],
   unlimited_tasks: ["trial", "basic", "advanced", "premium"],
