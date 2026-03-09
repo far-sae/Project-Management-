@@ -47,7 +47,7 @@ const FEATURE_TIERS: Record<AppFeature, Array<SubscriptionTier | "trial" | "star
   file_attachments: ["trial", "basic", "advanced", "premium"],
   ai_assistant: ["trial", "basic", "advanced", "premium"],
   reports: ["trial", "basic", "advanced", "premium"],
-  team_collaboration: ["trial", "advanced", "premium"],
+  team_collaboration: ["trial", "basic", "advanced", "premium"],
   advanced_analytics: ["trial", "advanced", "premium"],
   timeline_overview: ["trial", "advanced", "premium"],
   contracts: ["trial", "advanced", "premium"],

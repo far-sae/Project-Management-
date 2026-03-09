@@ -40,7 +40,7 @@ export const isOrganizationOwner = async (
 const getUserLimits = async (userId: string) => {
   const { data, error } = await supabase
     .from("subscriptions")
-    .select("status, plan, trial_ends_at")
+    .select("status, plan, trial_ends_at, extra_seats")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -64,9 +64,13 @@ const getUserLimits = async (userId: string) => {
 
   if (status === "active" && plan) {
     const tier = plan as keyof typeof INDIA_PRICING.tiers;
-    return (
-      INDIA_PRICING.tiers[tier]?.limits ?? INDIA_PRICING.tiers.starter.limits
-    );
+    const base = INDIA_PRICING.tiers[tier]?.limits ?? INDIA_PRICING.tiers.starter.limits;
+    // Advanced: allow 10 + paid extra seats
+    if (tier === "advanced" && base.teamMembers !== null && typeof (data as { extra_seats?: number }).extra_seats === "number") {
+      const extra = Math.max(0, (data as { extra_seats: number }).extra_seats);
+      return { ...base, teamMembers: 10 + extra };
+    }
+    return base;
   }
 
   // Starter, expired, or cancelled = Starter limits only

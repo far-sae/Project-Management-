@@ -10,3 +10,6 @@ verify_jwt = false
 # Cancel-now validates JWT inside the function; disable gateway JWT so we return clear 401 body
 [functions.cancel-subscription-now]
 verify_jwt = false
+
+[functions.create-checkout-extra-seat]
+verify_jwt = false

@@ -55,13 +55,34 @@ serve(async (req) => {
         const session = event.data.object as Stripe.Checkout.Session;
         const subId = session.subscription as string;
         const userId = session.client_reference_id || (session.metadata?.userId as string);
-        const tier = (session.metadata?.tier as string) || "basic";
-        const billingCycle = (session.metadata?.billingCycle as string) || "monthly";
+        const isExtraSeat = session.metadata?.extraSeat === "true";
 
-        if (!userId || !subId) {
-          console.error("checkout.session.completed missing userId or subscription id");
+        if (!userId) {
+          console.error("checkout.session.completed missing userId");
           return new Response("OK", { status: 200 });
         }
+
+        if (isExtraSeat) {
+          const { data: row } = await supabase
+            .from("subscriptions")
+            .select("extra_seats")
+            .eq("user_id", userId)
+            .maybeSingle();
+          const next = (row?.extra_seats ?? 0) + 1;
+          await supabase
+            .from("subscriptions")
+            .update({ extra_seats: next, updated_at: new Date().toISOString() })
+            .eq("user_id", userId);
+          break;
+        }
+
+        if (!subId) {
+          console.error("checkout.session.completed missing subscription id");
+          return new Response("OK", { status: 200 });
+        }
+
+        const tier = (session.metadata?.tier as string) || "basic";
+        const billingCycle = (session.metadata?.billingCycle as string) || "monthly";
 
         const stripe = new Stripe(stripeSecret, { apiVersion: "2023-10-16" });
         const subscription = await stripe.subscriptions.retrieve(subId);

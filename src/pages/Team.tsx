@@ -31,11 +31,13 @@ import { checkTeamMemberLimit, supabase } from '@/services/supabase';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
+const OWNER_EMAIL = 'smtkur31@gmail.com';
+
 export const Team: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const { projects } = useProjects();
-  const { hasFeature, currentTier: _currentTier } = useSubscription();
+  const { hasFeature, currentTier, pricing } = useSubscription();
   const navigate = useNavigate();
 
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -63,10 +65,12 @@ export const Team: React.FC = () => {
 
   const [cancelInviteId, setCancelInviteId] = useState<string | null>(null);
 
-  const [_limitModal, setLimitModal] = useState<{ open: boolean; message: string; }>({
+  const [limitModal, setLimitModal] = useState<{ open: boolean; message: string; max: number | null }>({
     open: false,
     message: '',
+    max: null,
   });
+  const [addSeatLoading, setAddSeatLoading] = useState(false);
 
   // ✅ Check feature access
   const canUseTeam = hasFeature('team_collaboration');
@@ -331,7 +335,7 @@ export const Team: React.FC = () => {
     // ✅ Check team member limit BEFORE sending invite
     const limitCheck = await checkTeamMemberLimit(user.userId, allMembers.length, organization?.organizationId);
     if (!limitCheck.allowed) {
-      setLimitModal({ open: true, message: limitCheck.message });
+      setLimitModal({ open: true, message: limitCheck.message, max: limitCheck.max ?? null });
       return;
     }
 
@@ -419,13 +423,13 @@ export const Team: React.FC = () => {
               Invite team members, assign roles, and collaborate on projects together.
             </p>
             <p className="text-sm text-orange-600 font-medium mb-6">
-              Available on Advanced plan and above
+              Available on Basic plan and above (3 members on Basic, 10 on Advanced)
             </p>
             <Button
               className="bg-gradient-to-r from-orange-500 to-red-500"
               onClick={() => navigate('/pricing')}
             >
-              Upgrade to Advanced
+              Upgrade to Basic or Advanced
             </Button>
           </div>
         </main>
@@ -711,6 +715,78 @@ export const Team: React.FC = () => {
               >
                 Yes, Cancel
               </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={limitModal.open}
+          onOpenChange={(open) => setLimitModal((p) => ({ ...p, open }))}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Team member limit reached</AlertDialogTitle>
+              <AlertDialogDescription>
+                {limitModal.message}
+                {currentTier === 'basic' && limitModal.max === 3 && (
+                  <span className="block mt-2 text-sm">Upgrade to Advanced for up to 10 team members.</span>
+                )}
+                {currentTier === 'advanced' && limitModal.max === 10 && (
+                  <span className="block mt-2 text-sm">
+                    Add more seats for {pricing.currencySymbol}{pricing.tiers.advanced.extraUserPrice}/member per month.
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setLimitModal({ open: false, message: '', max: null })}>
+                Close
+              </AlertDialogCancel>
+              {currentTier === 'basic' && limitModal.max === 3 && (
+                <AlertDialogAction onClick={() => { setLimitModal({ open: false, message: '', max: null }); navigate('/pricing'); }}>
+                  Upgrade to Advanced
+                </AlertDialogAction>
+              )}
+              {currentTier === 'advanced' && limitModal.max === 10 && (
+                <AlertDialogAction
+                  disabled={addSeatLoading}
+                  onClick={async () => {
+                    setLimitModal({ open: false, message: '', max: null });
+                    const priceId = pricing.tiers.advanced.extraUserPriceId;
+                    if (!priceId || !user?.userId) {
+                      window.location.href = `mailto:${OWNER_EMAIL}?subject=Add extra team seat (Advanced)&body=Hi, I'd like to add an extra team seat to my Advanced plan.`;
+                      return;
+                    }
+                    setAddSeatLoading(true);
+                    const toastId = toast.loading('Redirecting to checkout...');
+                    try {
+                      await supabase.auth.refreshSession();
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const token = session?.access_token;
+                      const origin = window.location.origin;
+                      const { data, error } = await supabase.functions.invoke('create-checkout-extra-seat', {
+                        body: {
+                          extraUserPriceId: priceId,
+                          userId: user.userId,
+                          successUrl: `${origin}/team?extra_seat=success`,
+                          cancelUrl: `${origin}/team`,
+                        },
+                        headers: token ? { Authorization: `Bearer ${token}` } : {},
+                      });
+                      if (error || !data?.url) throw new Error(error?.message || 'Checkout failed');
+                      toast.dismiss(toastId);
+                      window.location.href = data.url;
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : 'Failed to start checkout', { id: toastId });
+                      window.location.href = `mailto:${OWNER_EMAIL}?subject=Add extra team seat (Advanced)&body=Hi, I'd like to add an extra team seat to my Advanced plan.`;
+                    } finally {
+                      setAddSeatLoading(false);
+                    }
+                  }}
+                >
+                  {addSeatLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : `Add seat — ${pricing.currencySymbol}${pricing.tiers.advanced.extraUserPrice}/mo`}
+                </AlertDialogAction>
+              )}
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
