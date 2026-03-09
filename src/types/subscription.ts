@@ -328,3 +328,70 @@ export const INDIA_PRICING: CountryPricing = {
     },
   },
 };
+
+// ── EUR Pricing (Eurozone / European countries) ───────────────────────────
+// Create Products & Prices in Stripe (EUR), then replace the price_xxx IDs below.
+export const EUR_PRICING: CountryPricing = {
+  countryCode: "EU",
+  countryName: "Europe",
+  currencyCode: "EUR",
+  currencySymbol: "€",
+  tiers: {
+    starter: {
+      monthly: 0,
+      monthlyPromo: null,
+      promoMonths: 0,
+      yearly: null,
+      stripePriceIdMonthly: "",
+      stripePriceIdMonthlyPromo: null,
+      stripePriceIdYearly: null,
+      maxUsers: 1,
+      extraUserPriceId: null,
+      extraUserPrice: null,
+      features: TIER_FEATURES.starter,
+      limits: TIER_LIMITS.starter,
+    },
+    basic: {
+      monthly: 7.99,
+      monthlyPromo: 4.99,
+      promoMonths: 3,
+      yearly: 79.9,
+      stripePriceIdMonthly: "price_EU_BASIC_MONTHLY", // Replace with your Stripe Price ID (EUR)
+      stripePriceIdMonthlyPromo: "price_EU_BASIC_PROMO",
+      stripePriceIdYearly: "price_EU_BASIC_YEARLY",
+      maxUsers: 3,
+      extraUserPriceId: null,
+      extraUserPrice: null,
+      features: TIER_FEATURES.basic,
+      limits: TIER_LIMITS.basic,
+    },
+    advanced: {
+      monthly: 49.99,
+      monthlyPromo: 44.99,
+      promoMonths: 1,
+      yearly: 479.9,
+      stripePriceIdMonthly: "price_EU_ADVANCED_MONTHLY", // Replace with your Stripe Price ID (EUR)
+      stripePriceIdMonthlyPromo: "price_EU_ADVANCED_PROMO",
+      stripePriceIdYearly: "price_EU_ADVANCED_YEARLY",
+      maxUsers: 10,
+      extraUserPriceId: "price_EU_ADVANCED_EXTRA_USER",
+      extraUserPrice: 2.99,
+      features: TIER_FEATURES.advanced,
+      limits: TIER_LIMITS.advanced,
+    },
+    premium: {
+      monthly: 0,
+      monthlyPromo: null,
+      promoMonths: 0,
+      yearly: null,
+      stripePriceIdMonthly: "",
+      stripePriceIdMonthlyPromo: null,
+      stripePriceIdYearly: null,
+      maxUsers: null,
+      extraUserPriceId: null,
+      extraUserPrice: null,
+      features: TIER_FEATURES.premium,
+      limits: TIER_LIMITS.premium,
+    },
+  },
+};
