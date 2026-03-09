@@ -60,4 +60,6 @@ build/
 # Lock files (optional - uncomment if you want to ignore them)
 # bun.lockb
 
-/supabase
+# Supabase (keep config and functions in repo; ignore local/temp)
+/supabase/.temp
+/supabase/.branches
