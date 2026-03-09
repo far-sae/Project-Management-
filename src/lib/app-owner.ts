@@ -4,8 +4,16 @@
  * always have full access (no subscription or limit checks).
  */
 
-const env = typeof import.meta !== "undefined" && import.meta.env;
-const raw = (env?.VITE_APP_OWNER_USER_IDS as string) ?? "";
+function getRawAppOwnerIds(): string {
+  try {
+    const e = import.meta.env as unknown as { VITE_APP_OWNER_USER_IDS?: string };
+    return typeof e?.VITE_APP_OWNER_USER_IDS === "string" ? e.VITE_APP_OWNER_USER_IDS : "";
+  } catch {
+    return "";
+  }
+}
+
+const raw = getRawAppOwnerIds();
 
 function getAppOwnerUserIds(): string[] {
   if (!raw || typeof raw !== "string") return [];
