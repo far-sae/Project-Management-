@@ -295,6 +295,11 @@ export const Team: React.FC = () => {
         },
       });
 
+      // Optimistically update local state so the removed member disappears immediately.
+      setProjectMembers((prev) =>
+        prev.filter((m) => m.userId !== member.userId),
+      );
+
       loadTeamData();
     } catch {
       setInfoDialog({
