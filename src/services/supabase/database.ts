@@ -69,7 +69,10 @@ const getUserLimits = async (userId: string) => {
     );
   }
 
-  if (status === "starter") return INDIA_PRICING.tiers.starter.limits;
+  // Starter, expired, or cancelled = Starter limits only
+  if (status === "starter" || status === "expired" || status === "cancelled") {
+    return INDIA_PRICING.tiers.starter.limits;
+  }
 
   return INDIA_PRICING.tiers.starter.limits;
 };

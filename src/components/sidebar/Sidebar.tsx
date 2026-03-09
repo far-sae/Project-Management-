@@ -46,17 +46,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const quickMenuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
     { icon: CheckSquare, label: 'My Tasks', href: '/tasks' },
-    { icon: Users, label: 'Team', href: '/team' },
   ];
 
-  //Each item has an optional feature gate
+  // Each item has an optional feature gate — Basic gets reports/files; Advanced+ gets Team, Timeline, Contracts
   const bottomMenuItems = [
+    { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
     { icon: Calendar, label: 'Calendar', href: '/calendar', feature: null },
-    { icon: GanttChartSquare, label: 'Timeline Overview', href: '/timeline', feature: 'timeline_overview' },
-    { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' },
-    { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' },
+    { icon: GanttChartSquare, label: 'Timeline Overview', href: '/timeline', feature: 'timeline_overview' as const },
+    { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
+    { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },
     { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null },
-    { icon: BarChart3, label: 'Reports', href: '/reports', feature: 'reports' },
+    { icon: BarChart3, label: 'Reports', href: '/reports', feature: 'reports' as const },
   ] as const;
 
   const taskCounts = useMemo(() => {

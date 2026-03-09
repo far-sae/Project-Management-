@@ -253,10 +253,11 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
   }, [fetchPricingByLocation]);
 
   // ── Derived values ────────────────────────────────────────────────────
+  // Expired/cancelled = treat as Starter so paid features are locked; only Starter limits apply.
   const currentTier: SubscriptionTier | "trial" | "starter" | null =
     subscription?.status === "active" ? (subscription.tier as SubscriptionTier)
       : subscription?.status === "trial" ? "trial"
-        : subscription?.status === "starter" ? "starter"
+        : subscription?.status === "starter" || subscription?.status === "expired" || subscription?.status === "cancelled" ? "starter"
           : subscription === null ? "trial"
             : null;
 
@@ -278,14 +279,16 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
       : null;
 
   // ── canAccessFeatures logic ───────────────────────────────────────────
-  // App owner or org owner: full access. Otherwise block when cancelled/expired.
+  // Allow using the app; actual features are gated by hasFeature(currentTier). Expired/cancelled = Starter only.
   const canAccessFeatures =
     hasFullAccess
-    || loading                                  // still fetching  → allow (avoid flash)
-    || subscription === null                 // no row yet      → allow (new signup)
-    || subscription.status === "trial"       // in trial        → allow
-    || subscription.status === "active"      // paid plan       → allow
-    || subscription.status === "starter";    // free starter    → allow (FeatureGate handles limits)
+    || loading
+    || subscription === null
+    || subscription.status === "trial"
+    || subscription.status === "active"
+    || subscription.status === "starter"
+    || subscription.status === "expired"
+    || subscription.status === "cancelled";
 
   const value: SubscriptionContextType = {
     subscription,
