@@ -152,7 +152,6 @@ serve(async (req) => {
         .from("invitations")
         .update({ status: "cancelled" })
         .eq("project_id", projectId)
-        .eq("status", "accepted")
         .eq("email", normalizedEmail);
     }
   }

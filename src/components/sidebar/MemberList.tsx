@@ -25,6 +25,33 @@ export const MemberList: React.FC<MemberListProps> = ({
   onInviteClick,
   selectedMemberId,
 }) => {
+  // Deduplicate by userId/email and prefer highest role so old/stale entries
+  // (or duplicates in the serialized project.members array) don't show up
+  // multiple times in the sidebar.
+  const ROLE_ORDER: Record<string, number> = {
+    owner: 3,
+    admin: 2,
+    member: 1,
+    viewer: 0,
+  };
+
+  const dedupedMap = new Map<string, ProjectMember>();
+  for (const m of members) {
+    const key = m.userId || m.email;
+    if (!key) continue;
+    const existing = dedupedMap.get(key);
+    if (!existing) {
+      dedupedMap.set(key, m);
+    } else {
+      const currentRank = ROLE_ORDER[m.role] ?? 0;
+      const existingRank = ROLE_ORDER[existing.role] ?? 0;
+      if (currentRank > existingRank) {
+        dedupedMap.set(key, m);
+      }
+    }
+  }
+  const displayMembers = Array.from(dedupedMap.values());
+
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -45,7 +72,7 @@ export const MemberList: React.FC<MemberListProps> = ({
       </div>
 
       <div className="space-y-2">
-        {members.map((member) => {
+        {displayMembers.map((member) => {
           const roleBadge = ROLE_BADGES[member.role] || ROLE_BADGES.member;
           const isSelected = selectedMemberId === member.userId;
 
