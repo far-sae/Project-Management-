@@ -71,7 +71,7 @@ serve(async (req) => {
     });
   }
 
-  const { projectId, memberUserId } = body;
+  const { projectId, memberUserId, memberEmail } = body;
   if (!projectId || !memberUserId) {
     return new Response(
       JSON.stringify({ error: "Missing projectId or memberUserId" }),
@@ -141,6 +141,20 @@ serve(async (req) => {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  // Also mark any accepted invitations for this member as cancelled so the Team UI
+  // stops treating them as an active member (frontend reads from invitations.status).
+  if (memberEmail) {
+    const normalizedEmail = memberEmail.toLowerCase().trim();
+    if (normalizedEmail) {
+      await supabase
+        .from("invitations")
+        .update({ status: "cancelled" })
+        .eq("project_id", projectId)
+        .eq("status", "accepted")
+        .eq("email", normalizedEmail);
+    }
   }
 
   return new Response(JSON.stringify({ ok: true }), {
