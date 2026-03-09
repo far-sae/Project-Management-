@@ -13,3 +13,6 @@ verify_jwt = false
 
 [functions.create-checkout-extra-seat]
 verify_jwt = false
+
+[functions.remove-member]
+verify_jwt = false
