@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { PricingTiers } from '@/components/subscription/PricingTiers';
@@ -7,16 +7,61 @@ import { CheckoutForm } from '@/components/subscription/CheckoutForm';
 import { SubscriptionTier, BillingCycle } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Shield, Zap, Clock, HeartHandshake, Lock, Check } from 'lucide-react';
+import { ArrowLeft, Shield, Zap, Clock, HeartHandshake, Lock, Check, Loader2 } from 'lucide-react';
+import { supabase } from '@/services/supabase/config';
+import { toast } from 'sonner';
 
 export const Pricing: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const { trialInfo, subscription, pricing } = useSubscription();
+  const { trialInfo, subscription, pricing, refreshSubscription } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<{
     tier: SubscriptionTier;
     billingCycle: BillingCycle;
   } | null>(null);
+  const [verifyingAfterCheckout, setVerifyingAfterCheckout] = useState(false);
+
+  // When user returns from Stripe (success URL), they land here with ?subscription=success&session_id=...
+  // CheckoutForm is not mounted (selectedPlan is null), so we must verify and apply subscription here.
+  useEffect(() => {
+    const success = searchParams.get('subscription');
+    const sessionId = searchParams.get('session_id');
+    if (success !== 'success' || !sessionId || !user?.userId || verifyingAfterCheckout) return;
+
+    let cancelled = false;
+    const verify = async () => {
+      setVerifyingAfterCheckout(true);
+      const toastId = toast.loading('Applying your subscription...');
+      try {
+        for (let i = 0; i < 8; i++) {
+          if (cancelled) return;
+          await new Promise((r) => setTimeout(r, 1500));
+          await refreshSubscription();
+          const { data } = await supabase
+            .from('subscriptions')
+            .select('status, plan')
+            .eq('user_id', user.userId)
+            .maybeSingle();
+          if (data?.status === 'active') {
+            toast.success(`You're now on ${data.plan === 'basic' ? 'Basic' : data.plan === 'advanced' ? 'Advanced' : data.plan || 'your'} plan.`, { id: toastId });
+            setSearchParams({}, { replace: true });
+            navigate('/dashboard', { replace: true });
+            return;
+          }
+        }
+        toast.success('Subscription confirmed. Refreshing...', { id: toastId });
+        setSearchParams({}, { replace: true });
+        navigate('/dashboard', { replace: true });
+      } catch {
+        toast.error('Could not verify subscription. Try refreshing the page.', { id: toastId });
+      } finally {
+        if (!cancelled) setVerifyingAfterCheckout(false);
+      }
+    };
+    verify();
+    return () => { cancelled = true; };
+  }, [searchParams, user?.userId, refreshSubscription, navigate, setSearchParams]);
 
   const handleSelectPlan = (tier: SubscriptionTier, billingCycle: BillingCycle) => {
     setSelectedPlan({ tier, billingCycle });
@@ -49,6 +94,23 @@ export const Pricing: React.FC = () => {
       description: 'Work together seamlessly with your team in real-time',
     },
   ];
+
+  // After Stripe redirect: show verifying state so subscription is applied before dashboard
+  if (verifyingAfterCheckout) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center">
+        <Card className="max-w-md mx-auto">
+          <CardContent className="pt-6">
+            <div className="text-center py-8">
+              <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Applying your subscription</h3>
+              <p className="text-sm text-gray-500">You’ll be redirected to the dashboard in a moment.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (selectedPlan) {
     return (
