@@ -286,8 +286,8 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
       </div>
 
       <p className="text-center text-sm text-gray-500 mt-8">
-        🎁 28-day free trial included for all new users. No credit card required.
-        After trial, continue free on Starter or upgrade anytime.
+        🎁 <strong>28-day free trial</strong> for all new users. No credit card required.
+        After 28 days, you'll automatically move to the free Starter plan if you don't subscribe. Upgrade to Basic or Advanced anytime.
       </p>
     </div>
   );

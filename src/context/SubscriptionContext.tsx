@@ -104,10 +104,10 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
 
       let row = fetched;
 
-      // ── No row exists: first-time login → start 28-day trial ─────────
+      // ── No row exists: first-time login → start 28-day free trial (Advanced access) ─────────
       if (!row) {
         const now = new Date();
-        const trialEnd = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000);
+        const trialEnd = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000); // 28 days from now
         const { error: insertError } = await supabase
           .from("subscriptions")
           .insert({
@@ -140,11 +140,11 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
       let effectiveStatus = row.status;
       let effectivePlan = row.plan;
 
-      // ── Frontend safety net: after 28 days, auto-downgrade trial → starter ─
+      // ── After 28 days: if not subscribed, auto-downgrade to Starter ─
       if (row.status === "trial" && row.trial_ends_at) {
         const trialEnd = new Date(row.trial_ends_at);
         if (trialEnd < new Date()) {
-          console.log("⏰ Trial expired — downgrading to starter in DB...");
+          console.log("⏰ 28-day trial ended — auto-moving to Starter in DB...");
           const { error: updateError } = await supabase
             .from("subscriptions")
             .update({

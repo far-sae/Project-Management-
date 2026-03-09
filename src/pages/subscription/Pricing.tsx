@@ -160,7 +160,7 @@ export const Pricing: React.FC = () => {
             Choose Your Plan
           </h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Start with a 28-day free trial. No credit card required. After trial, all features are blocked until you subscribe. Payment via Stripe; you’ll get an email confirmation when you buy and when your plan renews (monthly or yearly).
+            Start with a 28-day free trial (no credit card required). After 28 days, if you don't subscribe, you'll automatically move to the free Starter plan. Subscribe anytime to Basic or Advanced. Payment via Stripe; you’ll get an email confirmation when you buy and when your plan renews (monthly or yearly).
             Cancel anytime.
           </p>
           {(subscription?.tier === 'starter' || subscription?.status === 'expired') && subscription?.tier !== undefined && (
