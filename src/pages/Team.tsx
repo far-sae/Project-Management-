@@ -329,7 +329,7 @@ export const Team: React.FC = () => {
     if (!projectOrgId) return;
 
     // ✅ Check team member limit BEFORE sending invite
-    const limitCheck = await checkTeamMemberLimit(user.userId, allMembers.length);
+    const limitCheck = await checkTeamMemberLimit(user.userId, allMembers.length, organization?.organizationId);
     if (!limitCheck.allowed) {
       setLimitModal({ open: true, message: limitCheck.message });
       return;

@@ -49,7 +49,7 @@ const FeaturesSection = () => {
             Everything your team needs
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            From planning to delivery, TaskCalander gives your team the tools to move fast and stay organized.
+            From planning to delivery, TaskCalendar gives your team the tools to move fast and stay organized.
           </p>
         </motion.div>
 

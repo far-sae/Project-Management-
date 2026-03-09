@@ -83,9 +83,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col">
       <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-2">
         <Link to="/dashboard" className="flex items-center gap-3 min-w-0">
-          <img src="/logo.png" alt="TaskCalander" className="w-10 h-10 rounded-full object-contain shrink-0" />
+          <img src="/logo.png" alt="TaskCalendar" className="w-10 h-10 rounded-full object-contain shrink-0" />
           <div className="min-w-0">
-            <h1 className="font-bold text-gray-900">TaskCalander</h1>
+            <h1 className="font-bold text-gray-900">TaskCalendar</h1>
             <p className="text-xs text-gray-500">Task & project management</p>
           </div>
         </Link>

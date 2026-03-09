@@ -17,7 +17,7 @@ const CTASection = () => {
             Ready to transform how your team works?
           </h2>
           <p className="text-lg text-white/90 max-w-xl mx-auto mb-8">
-            Join thousands of teams already using TaskCalander to ship faster, stay organized, and collaborate better.
+            Join thousands of teams already using TaskCalendar to ship faster, stay organized, and collaborate better.
           </p>
           <Button
             size="lg"

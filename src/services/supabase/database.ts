@@ -14,11 +14,27 @@ import {
 import { ActivityEvent, CreateActivityInput } from "@/types/activity";
 import { AppNotification, CreateNotificationInput } from "@/types/notification";
 import { logger } from "@/lib/logger";
+import { isAppOwner } from "@/lib/app-owner";
 import { INDIA_PRICING } from "@/types/subscription";
 
 // ============================================
 // LIMIT HELPERS
 // ============================================
+
+/** App owner (builders) or organization owner has full access: no subscription or limit checks. */
+export const isOrganizationOwner = async (
+  userId: string,
+  organizationId: string,
+): Promise<boolean> => {
+  if (isAppOwner(userId)) return true;
+  if (!organizationId || organizationId.startsWith("local-")) return false;
+  const { data } = await supabase
+    .from("organizations")
+    .select("owner_id")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  return data?.owner_id === userId;
+};
 
 // Get limits for a user based on their subscription
 const getUserLimits = async (userId: string) => {
@@ -68,6 +84,8 @@ export const checkProjectLimit = async (
   max: number | null;
   message: string;
 }> => {
+  if (await isOrganizationOwner(userId, organizationId))
+    return { allowed: true, current: 0, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
   if (limits.projects === null)
@@ -101,6 +119,8 @@ export const checkWorkspaceLimit = async (
   max: number | null;
   message: string;
 }> => {
+  if (await isOrganizationOwner(userId, organizationId))
+    return { allowed: true, current: 0, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
   if (limits.workspaces === null)
@@ -138,6 +158,13 @@ export const checkTaskLimit = async (
   max: number | null;
   message: string;
 }> => {
+  const { data: proj } = await supabase
+    .from("projects")
+    .select("organization_id")
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (proj?.organization_id && (await isOrganizationOwner(userId, proj.organization_id)))
+    return { allowed: true, current: 0, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
   if (limits.tasksPerProject === null)
@@ -165,7 +192,10 @@ export const checkTaskLimit = async (
 export const checkTeamMemberLimit = async (
   userId: string,
   currentMemberCount: number,
+  organizationId?: string,
 ): Promise<{ allowed: boolean; max: number | null; message: string }> => {
+  if (organizationId && (await isOrganizationOwner(userId, organizationId)))
+    return { allowed: true, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
   if (limits.teamMembers === null)

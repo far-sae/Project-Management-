@@ -18,7 +18,7 @@ const TestimonialsSection = () => {
             Built for teams who ship
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            TaskCalander is designed to help teams of all sizes organize their work,
+            TaskCalendar is designed to help teams of all sizes organize their work,
             collaborate effectively, and deliver projects on time. Sign up and experience it yourself.
           </p>
         </motion.div>

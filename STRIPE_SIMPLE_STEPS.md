@@ -48,7 +48,7 @@ You have **Basic** and **Advanced** plans. You will create one “product” for
 - Click the button **+ Add product**.
 
 **Fill in:**
-- **Name:** type: `TaskCalander Basic`
+- **Name:** type: `TaskCalendar Basic`
 - **Description (optional):** e.g. `For students and individuals`
 
 **Add the first price (normal monthly):**
@@ -86,7 +86,7 @@ You should now have **3 Price IDs** written down for Basic.
 - Click **+ Add product** again.
 
 **Fill in the product:**
-- **Name:** `TaskCalander Advanced`
+- **Name:** `TaskCalendar Advanced`
 - **Description (optional):** e.g. `For growing teams up to 10`
 
 **Pricing model:** For each price you add, use **Standard** (simple flat price). If Stripe only shows **Tiered** and **Volume**, choose **Tiered** and set **one tier**: First unit **1**, Last unit **∞**, **Flat fee** = the price (e.g. 50), **Per unit** = 0.
@@ -160,7 +160,7 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxxxxx
 
 **7a – Secret key in Supabase**
 - Go to **https://supabase.com** and log in.
-- Open **your project** (the one you use for TaskCalander).
+- Open **your project** (the one you use for TaskCalendar).
 - Click **Project Settings** (gear icon, bottom left).
 - Click **Edge Functions** in the left menu.
 - Find **Secrets** (or **Function secrets**).

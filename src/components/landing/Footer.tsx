@@ -5,8 +5,8 @@ const Footer = () => {
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <img src="/logo.png" alt="TaskCalander" className="w-8 h-8 rounded-lg object-cover" />
-              <span className="font-bold text-lg text-gray-900">TaskCalander</span>
+              <img src="/logo.png" alt="TaskCalendar" className="w-8 h-8 rounded-lg object-cover" />
+              <span className="font-bold text-lg text-gray-900">TaskCalendar</span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
               The modern project management platform for teams that move fast.
@@ -39,7 +39,7 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-border pt-8 text-center text-sm text-gray-700">
-          © {new Date().getFullYear()} TaskCalander. All rights reserved.
+          © {new Date().getFullYear()} TaskCalendar. All rights reserved.
         </div>
       </div>
     </footer>

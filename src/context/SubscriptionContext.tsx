@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { supabase } from "@/services/supabase/config";
 import { useAuth } from "./AuthContext";
+import { useOrganization } from "./OrganizationContext";
 import {
   UserSubscription,
   CountryPricing,
@@ -17,6 +18,7 @@ import {
 } from "@/types";
 import { detectUserCountry, GeoLocation } from "@/services/geolocation";
 import { getPricingForCountry } from "@/services/geolocation/pricing-data";
+import { isAppOwner } from "@/lib/app-owner";
 
 export type AppFeature =
   | "unlimited_projects"
@@ -70,6 +72,10 @@ const SubscriptionContext = createContext<SubscriptionContextType | undefined>(u
 
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({ children }) => {
   const { user } = useAuth();
+  const { organization } = useOrganization();
+  const isOrgOwner = Boolean(user?.userId && organization?.ownerId === user.userId);
+  const isAppOwnerUser = isAppOwner(user?.userId ?? null);
+  const hasFullAccess = isOrgOwner || isAppOwnerUser;
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [pricing, setPricing] = useState<CountryPricing>(DEFAULT_PRICING);
   const [userLocation, setUserLocation] = useState<GeoLocation | null>(null);
@@ -255,8 +261,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
 
   const hasFeature = useCallback(
     (feature: AppFeature) =>
-      !!currentTier && FEATURE_TIERS[feature].includes(currentTier as any),
-    [currentTier],
+      hasFullAccess || (!!currentTier && FEATURE_TIERS[feature].includes(currentTier as any)),
+    [currentTier, hasFullAccess],
   );
 
   // ── Trial info ────────────────────────────────────────────────────────
@@ -271,9 +277,10 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
       : null;
 
   // ── canAccessFeatures logic ───────────────────────────────────────────
-  // Block ONLY when: loaded + has a row + status is cancelled/expired
+  // App owner or org owner: full access. Otherwise block when cancelled/expired.
   const canAccessFeatures =
-    loading                                  // still fetching  → allow (avoid flash)
+    hasFullAccess
+    || loading                                  // still fetching  → allow (avoid flash)
     || subscription === null                 // no row yet      → allow (new signup)
     || subscription.status === "trial"       // in trial        → allow
     || subscription.status === "active"      // paid plan       → allow

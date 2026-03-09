@@ -1,20 +1,20 @@
-# TaskCalander
+# TaskCalendar
 
 **The all-in-one project management platform that helps your team plan, track, and ship.**
 
-TaskCalander is a modern web app for teams to manage projects, tasks, and collaboration in one place. It includes Kanban boards, calendars, timelines, file storage, comments, and reports—with optional subscriptions and a 28-day free trial.
+TaskCalendar is a modern web app for teams to manage projects, tasks, and collaboration in one place. It includes Kanban boards, calendars, timelines, file storage, comments, and reports—with optional subscriptions and a 28-day free trial.
 
 ---
 
 ## Short description (e.g. for GitHub repo or social)
 
-> **TaskCalander** — Plan, track, and ship with your team. Kanban boards, calendar, timeline, files, comments, and reports in one project management platform. Free trial included.
+> **TaskCalendar** — Plan, track, and ship with your team. Kanban boards, calendar, timeline, files, comments, and reports in one project management platform. Free trial included.
 
 ---
 
 ## Product / service description (for landing pages or docs)
 
-**TaskCalander** is a project and task management service built for teams that want to move fast and stay organized.
+**TaskCalendar** is a project and task management service built for teams that want to move fast and stay organized.
 
 - **Projects & Kanban** — Create projects, drag-and-drop columns, and manage tasks from idea to done.
 - **My Tasks** — See all tasks assigned to you across projects, add comments, and attach files.
@@ -50,4 +50,4 @@ The app supports **organizations**, **subscription plans** (with Stripe), and a 
 
 ---
 
-*TaskCalander — The modern project management platform for teams that move fast.*
+*TaskCalendar — The modern project management platform for teams that move fast.*

@@ -16,8 +16,8 @@ const Navbar = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2 shrink-0">
-            <img src="/logo.png" alt="TaskCalander" className="w-8 h-8 rounded-lg object-cover" />
-            <span className="font-bold text-xl text-gray-900">TaskCalander</span>
+            <img src="/logo.png" alt="TaskCalendar" className="w-8 h-8 rounded-lg object-cover" />
+            <span className="font-bold text-xl text-gray-900">TaskCalendar</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-8">

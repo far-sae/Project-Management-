@@ -89,9 +89,9 @@ export function Dashboard() {
         <div className="container py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="TaskCalander" className="w-10 h-10 rounded-full object-contain" />
+              <img src="/logo.png" alt="TaskCalendar" className="w-10 h-10 rounded-full object-contain" />
               <div>
-                <h1 className="text-2xl font-bold">TaskCalander</h1>
+                <h1 className="text-2xl font-bold">TaskCalendar</h1>
                 <p className="text-sm text-muted-foreground">Tasks and surveys made simple</p>
               </div>
             </div>

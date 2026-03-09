@@ -1,4 +1,4 @@
-# Stripe setup for your TaskCalander plans (step-by-step)
+# Stripe setup for your TaskCalendar plans (step-by-step)
 
 This guide matches **your** subscription plans (Starter, Basic, Advanced, Premium) in **GBP (£)** and walks you through setting them up in Stripe.
 
@@ -32,10 +32,10 @@ Starter = no Stripe. Premium = “Talk to Us” (no checkout). You only create *
 
 You will create **2 products**: Basic and Advanced. Each product will have **several prices** (monthly, monthly promo, yearly; Advanced also has “per member beyond 10”).
 
-### 2.1 Product: TaskCalander Basic
+### 2.1 Product: TaskCalendar Basic
 
 1. In Stripe Dashboard go to **Product catalog → Add product**.
-2. **Name:** `TaskCalander Basic`
+2. **Name:** `TaskCalendar Basic`
 3. **Description:** e.g. *For students & individuals*
 4. **Pricing – add 3 prices** (use **Recurring** and **British pound (£)**):
 
@@ -47,10 +47,10 @@ You will create **2 products**: Basic and Advanced. Each product will have **sev
 
 5. For each price, after you save, copy the **Price ID** (e.g. `price_1ABC...`). You’ll need all three later.
 
-### 2.2 Product: TaskCalander Advanced
+### 2.2 Product: TaskCalendar Advanced
 
 1. **Product catalog → Add product**.
-2. **Name:** `TaskCalander Advanced`
+2. **Name:** `TaskCalendar Advanced`
 3. **Description:** e.g. *For growing teams up to 10*
 4. **Pricing – add 4 prices** (all **Recurring**, **GBP**):
 
@@ -228,8 +228,8 @@ Your webhook runs with the service role and can insert/update any row.
 ## Quick checklist
 
 - [ ] Stripe account created; Test mode used for development.
-- [ ] Product “TaskCalander Basic” with 3 prices (£7.99, £5, £63.9) and IDs copied.
-- [ ] Product “TaskCalander Advanced” with 4 prices (£50, £45, £480, £2.99) and IDs copied.
+- [ ] Product “TaskCalendar Basic” with 3 prices (£7.99, £5, £63.9) and IDs copied.
+- [ ] Product “TaskCalendar Advanced” with 4 prices (£50, £45, £480, £2.99) and IDs copied.
 - [ ] `VITE_STRIPE_PUBLISHABLE_KEY` in `.env`.
 - [ ] `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set in Supabase Edge Function secrets.
 - [ ] Edge Functions `create-checkout-session` and `stripe-webhook` deployed.

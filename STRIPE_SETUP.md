@@ -1,6 +1,6 @@
-# Stripe setup for TaskCalander (step-by-step)
+# Stripe setup for TaskCalendar (step-by-step)
 
-This guide walks you through enabling Stripe subscriptions in your TaskCalander project.
+This guide walks you through enabling Stripe subscriptions in your TaskCalendar project.
 
 ---
 
@@ -28,7 +28,7 @@ Your app has three paid tiers: **Basic**, **Advanced**, and **Premium**. Create 
 ### For each tier (Basic, Advanced, Premium)
 
 1. Go to **Product catalog → Add product**.
-2. **Name**: e.g. `TaskCalander Basic`, `TaskCalander Advanced`, `TaskCalander Premium`.
+2. **Name**: e.g. `TaskCalendar Basic`, `TaskCalendar Advanced`, `TaskCalendar Premium`.
 3. **Description**: optional.
 4. **Pricing**:
    - Add a **recurring** price (monthly): e.g. $9.99/month for Basic.
