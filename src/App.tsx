@@ -21,9 +21,14 @@ import { AcceptInvite } from '@/pages/AcceptInvite';
 import { Pricing } from '@/pages/subscription/Pricing';
 import { AdminDashboard } from '@/pages/admin/AdminDashboard';
 import LandingPage from '@/pages/landing/LandingPage';
+import AboutPage from '@/pages/legal/AboutPage';
+import ContractsInfoPage from '@/pages/legal/ContractsInfoPage';
+import PrivacyPolicyPage from '@/pages/legal/PrivacyPolicyPage';
+import TermsPage from '@/pages/legal/TermsPage';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
+import CookieBanner from '@/components/landing/CookieBanner';
 
 
 const RootRedirect: React.FC = () => {
@@ -50,6 +55,10 @@ export default function App() {
           { path: '/login', element: <Login /> },
           { path: '/signup', element: <Signup /> },
           { path: '/pricing', element: <Pricing /> },
+          { path: '/about', element: <AboutPage /> },
+          { path: '/contracts-info', element: <ContractsInfoPage /> },
+          { path: '/privacy', element: <PrivacyPolicyPage /> },
+          { path: '/terms', element: <TermsPage /> },
           { path: '/accept-invite/:token', element: <AcceptInvite /> },
           { path: '/', element: <LandingPage /> },
           {
@@ -165,6 +174,7 @@ export default function App() {
         <SubscriptionProvider>
           <RouterProvider router={router} future={{ v7_startTransition: true }} />
           <Toaster position='bottom-right' />
+          <CookieBanner />
         </SubscriptionProvider>
       </OrganizationProvider>
     </AuthProvider>
