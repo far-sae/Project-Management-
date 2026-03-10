@@ -582,7 +582,11 @@ export const Reports: React.FC = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="flex flex-wrap gap-3">
-                        {organization.members
+                        {Array.from(
+                          new Map(
+                            organization.members.map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => [m.userId, m])
+                          ).values()
+                        )
                           // Hide stale members that have no workload, but always keep the owner visible
                           .filter((m: { userId: string; }) => {
                             const workload = tasksByUser.find((w) => w.userId === m.userId);
@@ -657,7 +661,11 @@ export const Reports: React.FC = () => {
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          {organization.members.map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
+                          {Array.from(
+                            new Map(
+                              organization.members.map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => [m.userId, m])
+                            ).values()
+                          ).map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
                             const workload = tasksByUser.find((w) => w.userId === m.userId);
                             const count = workload?.count ?? 0;
                             const isOwner = m.userId === organization.ownerId;

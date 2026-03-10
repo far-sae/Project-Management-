@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MessageSquare, Clock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useUserComments } from '@/hooks/useComments';
+import { useProjects } from '@/hooks/useProjects';
 import { formatDistanceToNow } from 'date-fns';
 import AttachmentPreview from '@/components/ui/AttachmentPreview';
 import { toast } from 'sonner';
@@ -24,7 +25,14 @@ export const Comments: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { comments, loading, error } = useUserComments(user?.userId || null);
+  const { projects } = useProjects();
   const [selectedComment, setSelectedComment] = useState<typeof comments[0] | null>(null);
+
+  const validProjectIds = useMemo(() => new Set(projects.map((p) => p.projectId)), [projects]);
+  const filteredComments = useMemo(
+    () => (comments || []).filter((c) => c.projectId && validProjectIds.has(c.projectId)),
+    [comments, validProjectIds]
+  );
 
   const handleNavigateToTask = (projectId: string, taskId: string) => {
     navigate(`/project/${projectId}?taskId=${taskId}`);
@@ -70,9 +78,9 @@ export const Comments: React.FC = () => {
           <CardHeader>
             <CardTitle>
               Recent Comments
-              {comments.length > 0 && (
+              {filteredComments.length > 0 && (
                 <span className="ml-2 text-sm font-normal text-gray-500">
-                  ({comments.length} total)
+                  ({filteredComments.length} total)
                 </span>
               )}
             </CardTitle>
@@ -90,7 +98,7 @@ export const Comments: React.FC = () => {
                 <Loader2 className="w-12 h-12 mx-auto mb-4 text-gray-300 animate-spin" />
                 <p className="text-lg font-medium">Loading comments...</p>
               </div>
-            ) : comments.length === 0 ? (
+            ) : filteredComments.length === 0 ? (
               <div className="text-center py-16 text-gray-500">
                 <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                 <p className="text-lg font-medium">No comments yet</p>
@@ -98,7 +106,7 @@ export const Comments: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {comments.map((comment) => (
+                {filteredComments.map((comment) => (
                   <div
                     key={comment.commentId}
                     className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer group"
