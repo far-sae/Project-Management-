@@ -670,7 +670,13 @@ export const Reports: React.FC = () => {
                             new Map(
                               organization.members.map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => [m.userId, m])
                             ).values()
-                          ).map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
+                          )
+                            .filter((m: { userId: string }) => {
+                              const workload = tasksByUser.find((w) => w.userId === m.userId);
+                              const count = workload?.count ?? 0;
+                              return count > 0 || m.userId === organization.ownerId;
+                            })
+                            .map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
                             const workload = tasksByUser.find((w) => w.userId === m.userId);
                             const count = workload?.count ?? 0;
                             const isOwner = m.userId === organization.ownerId;
