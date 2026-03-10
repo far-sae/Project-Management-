@@ -16,3 +16,7 @@ verify_jwt = false
 
 [functions.remove-member]
 verify_jwt = false
+
+# AI proxy - invoked from browser; JWT not reliably passed in some deployments
+[functions.ai-chat]
+verify_jwt = false
