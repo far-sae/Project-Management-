@@ -9,7 +9,7 @@ import {
 import {
   BarChart3, TrendingUp, CheckCircle, Clock, Loader2, ArrowRight,
   Users, Briefcase, Timer, LayoutDashboard, FolderKanban, Lock,
-  DollarSign, FileText, RefreshCw, AlertTriangle, AlertCircle,
+  DollarSign, FileText, RefreshCw, AlertTriangle, AlertCircle, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -30,6 +30,7 @@ import { useUserComments } from '@/hooks/useComments';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
+import { removeOrganizationMember } from '@/services/supabase/organizations';
 import { DEFAULT_COLUMNS } from '@/types';
 import { getOrganizationContracts, Contract } from '@/services/supabase/contracts';
 import { format } from 'date-fns';
@@ -51,7 +52,7 @@ export const Reports: React.FC = () => {
   const { projects } = useProjects();
   const { tasks, loading } = useAllTasks();
   const { comments } = useUserComments(user?.userId ?? null);
-  const { organization, refreshOrganization } = useOrganization();
+  const { organization, refreshOrganization, isAdmin } = useOrganization();
   const { hasFeature } = useSubscription();
 
   const { workspaces, DEFAULT_WORKSPACE_ID: RAW_DEFAULT_WS_ID } = useWorkspaces();
@@ -66,6 +67,10 @@ export const Reports: React.FC = () => {
   const [businessLoading, setBusinessLoading] = useState(false);
   const [businessError, setBusinessError] = useState<string | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('ALL'); // 'ALL' or specific currency
+
+  // Remove member dialog state
+  const [memberToRemove, setMemberToRemove] = useState<{ userId: string; displayName: string } | null>(null);
+  const [removeMemberLoading, setRemoveMemberLoading] = useState(false);
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -669,29 +674,43 @@ export const Reports: React.FC = () => {
                             const workload = tasksByUser.find((w) => w.userId === m.userId);
                             const count = workload?.count ?? 0;
                             const isOwner = m.userId === organization.ownerId;
+                            const displayName = m.displayName || m.email || 'Unknown';
                             return (
                               <div
                                 key={m.userId}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => navigate('/team')}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/team'); } }}
-                                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors group"
                               >
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-medium text-sm">
+                                <div
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => navigate('/team')}
+                                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/team'); } }}
+                                  className="flex flex-1 items-center gap-3 cursor-pointer min-w-0"
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-medium text-sm shrink-0">
                                     {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
                                   </div>
-                                  <div>
-                                    <span className="font-medium">{m.displayName || m.email || 'Unknown'}</span>
+                                  <div className="min-w-0">
+                                    <span className="font-medium">{displayName}</span>
                                     {isOwner && <span className="ml-2 text-xs text-orange-600 font-medium">Owner</span>}
                                     <p className="text-xs text-gray-500">{m.role || 'member'}</p>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-medium">{count}</span>
                                   <span className="text-xs text-gray-500">tasks</span>
-                                  <ArrowRight className="w-4 h-4 text-gray-400" aria-hidden />
+                                  {isAdmin && !isOwner ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setMemberToRemove({ userId: m.userId, displayName }); }}
+                                      className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                      aria-label={`Remove ${displayName} from organization`}
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  ) : (
+                                    <ArrowRight className="w-4 h-4 text-gray-400" aria-hidden />
+                                  )}
                                 </div>
                               </div>
                             );
@@ -950,6 +969,50 @@ export const Reports: React.FC = () => {
               className="bg-red-500 hover:bg-red-600"
             >
               Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Remove Member Dialog */}
+      <AlertDialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove team member</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove <strong>{memberToRemove?.displayName}</strong> from the organization? They will lose access to all projects.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeMemberLoading} onClick={() => setMemberToRemove(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removeMemberLoading}
+              onClick={async () => {
+                if (!memberToRemove || !organization?.organizationId) return;
+                setRemoveMemberLoading(true);
+                try {
+                  await removeOrganizationMember(organization.organizationId, memberToRemove.userId);
+                  await refreshOrganization();
+                  toast.success(`${memberToRemove.displayName} has been removed from the organization`);
+                  setMemberToRemove(null);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Failed to remove member');
+                } finally {
+                  setRemoveMemberLoading(false);
+                }
+              }}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {removeMemberLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                'Remove'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
