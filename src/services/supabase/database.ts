@@ -571,6 +571,32 @@ export const deleteProject = async (
   projectId: string,
   organizationId: string,
 ): Promise<void> => {
+  // Delete related comments for this project's tasks and global comments feed
+  const { data: taskRows, error: taskFetchError } = await supabase
+    .from("tasks")
+    .select("task_id")
+    .eq("project_id", projectId)
+    .eq("organization_id", organizationId);
+
+  if (taskFetchError) {
+    logger.error("Failed to load project tasks before delete:", taskFetchError);
+    throw taskFetchError;
+  }
+
+  const taskIds = (taskRows || []).map((t: { task_id: string }) => t.task_id);
+  if (taskIds.length > 0) {
+    await supabase.from("comments").delete().in("task_id", taskIds);
+    await supabase.from("global_comments").delete().in("task_id", taskIds);
+  }
+
+  // Also remove any remaining global comments keyed only by project_id
+  await supabase
+    .from("global_comments")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("organization_id", organizationId);
+
+  // Finally delete tasks and the project itself
   await supabase
     .from("tasks")
     .delete()

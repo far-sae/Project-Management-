@@ -590,7 +590,14 @@ export const Reports: React.FC = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="flex flex-wrap gap-3">
-                        {organization.members.map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
+                        {organization.members
+                          // Hide stale members that have no workload, but always keep the owner visible
+                          .filter((m: { userId: string; }) => {
+                            const workload = tasksByUser.find((w) => w.userId === m.userId);
+                            const count = workload?.count ?? 0;
+                            return count > 0 || m.userId === organization.ownerId;
+                          })
+                          .map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
                           const workload = tasksByUser.find((w) => w.userId === m.userId);
                           return (
                             <div key={m.userId} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100">
