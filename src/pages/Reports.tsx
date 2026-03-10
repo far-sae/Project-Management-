@@ -156,14 +156,6 @@ export const Reports: React.FC = () => {
   const completedTasks = filteredTasks.filter((t) => t.status === 'done').length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  // Status counts
-  const statusCounts: Record<string, number> = useMemo(() => {
-    const counts: Record<string, number> = {};
-    DEFAULT_COLUMNS.forEach((col) => { counts[col.id] = 0; });
-    filteredTasks.forEach((t) => { if (counts[t.status] !== undefined) counts[t.status]++; });
-    return counts;
-  }, [filteredTasks]);
-
   const statusLabels: Record<string, string> = {
     undefined: 'Undefined', todo: 'To-do', inprogress: 'In Progress',
     done: 'Done', needreview: 'Need Review',
@@ -654,29 +646,50 @@ export const Reports: React.FC = () => {
 
                   <Card className="border-0 shadow-md bg-white">
                     <CardHeader>
-                      <CardTitle>Task distribution</CardTitle>
-                      <p className="text-sm text-gray-500">Tasks by status</p>
+                      <CardTitle>Team members</CardTitle>
+                      <p className="text-sm text-gray-500">Organization members</p>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {DEFAULT_COLUMNS.map((col) => {
-                          const count = statusCounts[col.id] ?? 0;
-                          const pct = totalTasks > 0 ? Math.round((count / totalTasks) * 100) : 0;
-                          return (
-                            <div key={col.id} onClick={() => navigate('/dashboard')} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-                              <div className="flex items-center gap-3">
-                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: col.color }} />
-                                <span>{statusLabels[col.id] || col.title}</span>
+                      {!organization?.members || organization.members.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                          <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                          <p>No team members yet</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {organization.members.map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
+                            const workload = tasksByUser.find((w) => w.userId === m.userId);
+                            const count = workload?.count ?? 0;
+                            const isOwner = m.userId === organization.ownerId;
+                            return (
+                              <div
+                                key={m.userId}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => navigate('/team')}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/team'); } }}
+                                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-medium text-sm">
+                                    {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">{m.displayName || m.email || 'Unknown'}</span>
+                                    {isOwner && <span className="ml-2 text-xs text-orange-600 font-medium">Owner</span>}
+                                    <p className="text-xs text-gray-500">{m.role || 'member'}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{count}</span>
+                                  <span className="text-xs text-gray-500">tasks</span>
+                                  <ArrowRight className="w-4 h-4 text-gray-400" aria-hidden />
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{count}</span>
-                                <span className="text-xs text-gray-500">({pct}%)</span>
-                                <ArrowRight className="w-4 h-4 text-gray-400" />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
