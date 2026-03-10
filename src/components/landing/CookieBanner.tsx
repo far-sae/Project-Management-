@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 
 const STORAGE_KEY = "taskcalendar_cookie_consent";
@@ -45,13 +44,13 @@ const CookieBanner: React.FC = () => {
           <p>
             TaskCalendar uses essential cookies to keep you signed in and to improve the product.
             For details, see our{" "}
-            <Link to="/privacy" className="underline text-primary">
+            <a href="/privacy" className="underline text-primary">
               Privacy Policy
-            </Link>{" "}
+            </a>{" "}
             and{" "}
-            <Link to="/terms" className="underline text-primary">
+            <a href="/terms" className="underline text-primary">
               Terms &amp; Conditions
-            </Link>
+            </a>
             .
           </p>
         </div>
