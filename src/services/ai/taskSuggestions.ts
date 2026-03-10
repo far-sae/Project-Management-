@@ -26,7 +26,7 @@ async function makeAIRequest<T>(
   if (!isAIEnabled()) {
     throw {
       code: 'NO_API_KEY',
-      message: 'AI features are not configured. Please add your OpenAI API key.',
+      message: 'AI is not configured. Deploy the ai-chat Edge Function and set OPENAI_API_KEY in Supabase.',
     } as AIError;
   }
 
@@ -51,7 +51,7 @@ async function makeAIRequest<T>(
       },
     });
 
-    if (error) throw new Error(error.message || 'AI request failed');
+    if (error) throw new Error((error as { message?: string }).message || 'AI request failed');
     if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'AI request failed');
     const content = data?.content;
     if (!content) {

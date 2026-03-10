@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Loader2, Sparkles, Plus, CheckCircle2 } from 'lucide-react';
-import { decomposeTask, AIError, Subtask } from '@/services/ai';
+import { decomposeTask, isAIEnabled, AIError, Subtask } from '@/services/ai';
 import { CreateTaskInput, TaskPriority } from '@/types';
 
 interface SubtaskDecompositionModalProps {
@@ -39,6 +39,7 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
   const [reasoning, setReasoning] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selectedSubtasks, setSelectedSubtasks] = useState<Set<number>>(new Set());
+  const aiEnabled = isAIEnabled();
 
   const handleDecompose = async () => {
     setLoading(true);
@@ -126,6 +127,12 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
                 </p>
               </div>
 
+              {!aiEnabled && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                  <p className="text-xs text-amber-800">AI is not configured. Deploy the ai-chat Edge Function and set OPENAI_API_KEY in Supabase.</p>
+                </div>
+              )}
+
               {error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-md">
                   <p className="text-xs text-red-700">{error}</p>
@@ -134,7 +141,7 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
 
               <Button
                 onClick={handleDecompose}
-                disabled={loading}
+                disabled={loading || !aiEnabled}
                 className="w-full bg-gradient-to-r from-orange-500 to-red-500"
               >
                 {loading ? (

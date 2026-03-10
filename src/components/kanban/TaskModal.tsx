@@ -134,6 +134,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setPriority('medium'); setDueDate(''); setAssignees([]);
       setUrgent(false); setTags([]); setSubtasks([]);
     }
+    setAiError(null);
   }, [task, initialStatus]);
 
   useEffect(() => {
@@ -258,6 +259,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
     try {
       const result = await expandDescription(user.userId, { title, projectContext: projectName });
+      setAiError(null);
       setDescription(result.description);
     } catch (error) {
       setAiError((error as AIError).message);
@@ -272,6 +274,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
     try {
       const result = await refineDescription(user.userId, { title, description, projectContext: projectName });
+      setAiError(null);
       setDescription(result.description);
     } catch (error) {
       setAiError((error as AIError).message);
@@ -286,6 +289,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
     try {
       const result = await suggestPriorityAndDueDate(user.userId, { title, description });
+      setAiError(null);
       setAiSuggestion(result);
       setShowAISuggestion(true);
     } catch (error) {
@@ -632,10 +636,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded">
               <FileText className="w-4 h-4" />{description ? 'Edit description' : 'Add description'}
             </button>
-            <button type="button" onClick={() => setShowDecomposition(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded">
-              <ListTree className="w-4 h-4" />Add subtasks
-            </button>
+            {aiEnabled && (
+              <button type="button" onClick={() => setShowDecomposition(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded">
+                <ListTree className="w-4 h-4" />Add subtasks (AI)
+              </button>
+            )}
             <button type="button" disabled
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 rounded cursor-not-allowed">
               <Link2 className="w-4 h-4" />Add dependencies
