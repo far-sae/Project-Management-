@@ -7,6 +7,7 @@ import {
   deleteTask,
   subscribeToTasks,
 } from "@/services/supabase/database";
+import { logger } from "@/lib/logger";
 import { Task, CreateTaskInput, UpdateTaskInput, TaskStatus } from "@/types";
 
 export const useTasks = (
@@ -49,6 +50,25 @@ export const useTasks = (
     return () => unsubscribe();
   }, [projectId, effectiveOrgId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible" || !projectId || !effectiveOrgId) return;
+      getProjectTasks(projectId, effectiveOrgId)
+        .then((fresh) => {
+          if (!cancelled) setTasks(fresh);
+        })
+        .catch((err) => {
+          logger.error("useTasks visibility refetch failed:", err);
+        });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [projectId, effectiveOrgId]);
+
   const addTask = useCallback(
     async (input: CreateTaskInput): Promise<Task | null> => {
       if (!user) return null;
@@ -58,6 +78,10 @@ export const useTasks = (
         if (!input) throw new Error("Input is required");
 
         const newTask = await createTask(user.userId, input, effectiveOrgId);
+        if (newTask && projectId) {
+          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          setTasks(fresh);
+        }
         return newTask;
       } catch (err) {
         const message =
@@ -72,7 +96,7 @@ export const useTasks = (
         return null;
       }
     },
-    [user, effectiveOrgId],
+    [user, effectiveOrgId, projectId],
   );
 
   const editTask = useCallback(
@@ -82,6 +106,10 @@ export const useTasks = (
         if (!user) throw new Error("User not authenticated");
         if (!input) throw new Error("Input is required");
         await updateTask(taskId, input, effectiveOrgId);
+        if (projectId) {
+          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          setTasks(fresh);
+        }
         return true;
       } catch (err) {
         const message =
@@ -90,7 +118,7 @@ export const useTasks = (
         return false;
       }
     },
-    [user, effectiveOrgId],
+    [user, effectiveOrgId, projectId],
   );
 
   const removeTask = useCallback(
@@ -98,6 +126,10 @@ export const useTasks = (
       setError(null);
       try {
         await deleteTask(taskId, user ? effectiveOrgId : "");
+        if (projectId) {
+          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          setTasks(fresh);
+        }
         return true;
       } catch (err) {
         const message =
@@ -106,7 +138,7 @@ export const useTasks = (
         return false;
       }
     },
-    [user, effectiveOrgId],
+    [user, effectiveOrgId, projectId],
   );
 
   const moveTask = useCallback(
@@ -115,6 +147,10 @@ export const useTasks = (
       try {
         if (!user) throw new Error("User not authenticated");
         await updateTask(taskId, { status: newStatus }, effectiveOrgId);
+        if (projectId) {
+          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          setTasks(fresh);
+        }
         return true;
       } catch (err) {
         const message =
@@ -123,7 +159,7 @@ export const useTasks = (
         return false;
       }
     },
-    [user, effectiveOrgId],
+    [user, effectiveOrgId, projectId],
   );
 
   const refreshTasks = useCallback(async () => {

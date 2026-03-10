@@ -48,10 +48,7 @@ export const useProjects = () => {
       return;
     }
 
-    if (subscriptionRef.current) {
-      console.log("⏭️ Already subscribed, skipping");
-      return;
-    }
+    if (subscriptionRef.current) return;
 
     setLoading(true);
     const unsubscribe = subscribeToProjects(
@@ -89,23 +86,18 @@ export const useProjects = () => {
       setError(null);
 
       try {
-        console.log("🔐 Validating session before creating project...");
         const isValid = await ensureValidSession();
 
         if (!isValid) {
-          console.error("❌ Session validation failed");
           setError("Session expired. Please sign in again.");
           return null;
         }
-
-        console.log("✅ Session validated, proceeding with project creation");
 
         if (!input) throw new Error("Input is required");
 
         // Fetch default workspace if not provided
         let workspaceId = input.workspaceId;
         if (!workspaceId) {
-          console.log("📡 Fetching default workspace for org:", effectiveOrgId);
 
           const { data: workspace, error: wsError } = await supabase
             .from("workspaces")
@@ -121,10 +113,8 @@ export const useProjects = () => {
           }
 
           workspaceId = workspace.workspace_id;
-          console.log("✅ Found default workspace:", workspaceId);
         }
 
-        console.log("🚀 Creating project with valid session...");
         const newProject = await createProject(
           user.userId,
           user.email,
@@ -134,12 +124,14 @@ export const useProjects = () => {
           effectiveOrgId,
         );
 
-        console.log("✅ Project created successfully:", newProject?.projectId);
+        if (newProject) {
+          const fresh = await getUserProjects(user.userId, effectiveOrgId, user.email);
+          setProjects(fresh);
+        }
         return newProject;
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to create project";
-        console.error("❌ Project creation error:", message);
 
         // ✅ Check if it's a limit error — show modal instead of inline error
         if (message.includes("limit") || message.includes("reached")) {
@@ -161,6 +153,8 @@ export const useProjects = () => {
         if (!user) throw new Error("User not authenticated");
         if (!input) throw new Error("Input is required");
         await updateProject(projectId, input, effectiveOrgId);
+        const fresh = await getUserProjects(user.userId, effectiveOrgId, user.email);
+        setProjects(fresh);
         return true;
       } catch (err) {
         const message =
@@ -180,6 +174,10 @@ export const useProjects = () => {
           projectId,
           (user?.organizationId || user?.userId || "").replace("local-", ""),
         );
+        if (user && effectiveOrgId) {
+          const fresh = await getUserProjects(user.userId, effectiveOrgId, user.email);
+          setProjects(fresh);
+        }
         return true;
       } catch (err) {
         const message =
@@ -188,7 +186,7 @@ export const useProjects = () => {
         return false;
       }
     },
-    [user],
+    [user, effectiveOrgId],
   );
 
   const refreshProjects = useCallback(async () => {
@@ -210,6 +208,14 @@ export const useProjects = () => {
       setLoading(false);
     }
   }, [user, effectiveOrgId]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && user && effectiveOrgId) refreshProjects();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshProjects, user, effectiveOrgId]);
 
   return {
     projects,

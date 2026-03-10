@@ -16,6 +16,7 @@ import {
 
 // ✅ Static import — fixes dynamic/static conflict warning
 import { checkWorkspaceLimit } from "@/services/supabase/database";
+import { logger } from "@/lib/logger";
 
 export const useWorkspaces = () => {
   const { user } = useAuth();
@@ -80,10 +81,15 @@ export const useWorkspaces = () => {
         throw new Error(limitCheck.message);
       }
 
-      return await createWorkspace({
+      const ws = await createWorkspace({
         ...input,
         organizationId: orgId,
       });
+      if (ws) {
+        const list = await getOrganizationWorkspaces(orgId);
+        setWorkspaces(list);
+      }
+      return ws;
     },
     [orgId, user],
   );
@@ -92,6 +98,8 @@ export const useWorkspaces = () => {
     async (workspaceId: string, input: UpdateWorkspaceInput): Promise<void> => {
       if (!orgId) return;
       await updateWorkspace(workspaceId, input);
+      const list = await getOrganizationWorkspaces(orgId);
+      setWorkspaces(list);
     },
     [orgId],
   );
@@ -100,6 +108,8 @@ export const useWorkspaces = () => {
     async (workspaceId: string): Promise<void> => {
       if (!orgId) return;
       await deleteWorkspace(workspaceId);
+      const list = await getOrganizationWorkspaces(orgId);
+      setWorkspaces(list);
     },
     [orgId],
   );
@@ -107,10 +117,23 @@ export const useWorkspaces = () => {
   const refresh = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
-    const list = await getOrganizationWorkspaces(orgId);
-    setWorkspaces(list);
-    setLoading(false);
+    try {
+      const list = await getOrganizationWorkspaces(orgId);
+      setWorkspaces(list);
+    } catch (err) {
+      logger.error("useWorkspaces refresh failed:", err);
+    } finally {
+      setLoading(false);
+    }
   }, [orgId]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && orgId) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refresh, orgId]);
 
   return {
     workspaces,
