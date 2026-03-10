@@ -51,7 +51,7 @@ export const Reports: React.FC = () => {
   const { projects } = useProjects();
   const { tasks, loading } = useAllTasks();
   const { comments } = useUserComments(user?.userId ?? null);
-  const { organization } = useOrganization();
+  const { organization, refreshOrganization } = useOrganization();
   const { hasFeature } = useSubscription();
 
   const { workspaces, DEFAULT_WORKSPACE_ID: RAW_DEFAULT_WS_ID } = useWorkspaces();
@@ -76,6 +76,17 @@ export const Reports: React.FC = () => {
   }>({ open: false, title: '', description: '', onConfirm: () => { } });
 
   const orgId = organization?.organizationId || user?.organizationId || (user ? `local-${user.userId}` : '');
+
+  // Refresh organization (members, etc.) on mount and when tab becomes visible so report shows current users
+  useEffect(() => {
+    refreshOrganization();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshOrganization();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshOrganization is stable enough; we want one subscription
+  }, []);
 
   // Fetch business data when tab changes
   useEffect(() => {

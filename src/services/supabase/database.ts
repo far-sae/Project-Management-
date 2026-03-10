@@ -1073,6 +1073,52 @@ export const getTaskComments = async (
   })) as TaskComment[];
 };
 
+/** Delete a comment from both comments and global_comments so Recent Comments stays in sync; decrements task comments_count. */
+export const deleteComment = async (commentId: string): Promise<void> => {
+  const { data: commentRow } = await supabase
+    .from("comments")
+    .select("task_id")
+    .eq("comment_id", commentId)
+    .maybeSingle();
+
+  const taskId = commentRow?.task_id ?? null;
+
+  const { error: errComments } = await supabase
+    .from("comments")
+    .delete()
+    .eq("comment_id", commentId);
+
+  if (errComments) {
+    logger.error("deleteComment: comments delete failed", errComments);
+    throw errComments;
+  }
+
+  const { error: errGlobal } = await supabase
+    .from("global_comments")
+    .delete()
+    .eq("comment_id", commentId);
+
+  if (errGlobal) {
+    logger.error("deleteComment: global_comments delete failed", errGlobal);
+    throw errGlobal;
+  }
+
+  if (taskId) {
+    const { data: taskData } = await supabase
+      .from("tasks")
+      .select("comments_count")
+      .eq("task_id", taskId)
+      .single();
+
+    if (taskData && (taskData.comments_count ?? 0) > 0) {
+      await supabase
+        .from("tasks")
+        .update({ comments_count: Math.max(0, (taskData.comments_count || 0) - 1) })
+        .eq("task_id", taskId);
+    }
+  }
+};
+
 export const subscribeToComments = (
   taskId: string,
   organizationId: string,

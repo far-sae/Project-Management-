@@ -234,6 +234,15 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     }
   }, [user?.userId, authLoading]);
 
+  // Refetch when tab becomes visible so data stays in sync across browsers/tabs
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && user) fetchOrganization();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [user?.userId]);
+
   // ============================================
   // Provider value
   // ============================================

@@ -97,6 +97,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [commentLoading, setCommentLoading] = useState(false);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const MAX_FILE_SIZE = 2 * 1024 * 1024; // 1MB
 
@@ -149,6 +150,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setShowDescription(false);
     }
   }, [open]);
+
+  // Auto-expand description textarea as user types
+  useEffect(() => {
+    const el = descriptionTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(el.scrollHeight, 4.5 * 16)}px`;
+  }, [description, showDescription]);
 
   useEffect(() => {
     const loadAssignableMembers = async () => {
@@ -641,7 +650,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* Description */}
           {(showDescription || description) && (
             <div className="space-y-2">
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add a description..." rows={3} className="resize-none" />
+              <Textarea
+                ref={descriptionTextareaRef}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Add a description..."
+                rows={3}
+                className="resize-none min-h-[4.5rem] overflow-hidden"
+              />
               {aiEnabled && title.trim().length >= 5 && (
                 <div className="flex items-center gap-2 flex-wrap">
                   {!description && (
