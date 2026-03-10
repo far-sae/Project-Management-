@@ -502,9 +502,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-4 pt-4">
-          {(saveError || aiError) && (
+          {saveError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-700">{saveError || aiError}</p>
+              <p className="text-sm text-red-700">{saveError}</p>
             </div>
           )}
 
@@ -653,19 +653,22 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 rows={3}
                 className="resize-none min-h-[4.5rem] overflow-hidden"
               />
-              {aiEnabled && title.trim().length >= 5 && (
+              {aiEnabled && (
                 <div className="flex items-center gap-2 flex-wrap">
-                  {!description && (
-                    <Button type="button" variant="ghost" size="sm" onClick={handleExpandDescription} disabled={aiLoading.description} className="text-xs text-purple-600">
+                  {!description && title.trim().length >= 3 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={handleExpandDescription} disabled={aiLoading.description} className="text-xs text-purple-600 hover:text-purple-700">
                       {aiLoading.description ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Wand2 className="w-3 h-3 mr-1" />}
                       Suggest description
                     </Button>
                   )}
-                  {description && (
-                    <Button type="button" variant="ghost" size="sm" onClick={handleRefineDescription} disabled={aiLoading.description} className="text-xs text-purple-600">
+                  {description && title.trim().length >= 3 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={handleRefineDescription} disabled={aiLoading.description} className="text-xs text-purple-600 hover:text-purple-700">
                       {aiLoading.description ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Wand2 className="w-3 h-3 mr-1" />}
                       Improve / expand
                     </Button>
+                  )}
+                  {aiError && (
+                    <span className="text-xs text-red-500">{aiError}</span>
                   )}
                 </div>
               )}
