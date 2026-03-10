@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { LayoutList, MessageSquare, BarChart3, Calendar, Users, Zap } from "lucide-react";
+import { LayoutList, MessageSquare, BarChart3, Calendar, Users } from "lucide-react";
 
 const features = [
   {
@@ -26,11 +26,6 @@ const features = [
     icon: Users,
     title: "Collaborate in Real-Time",
     description: "Invite your team, assign roles, and work together with live cursors, mentions, and instant notifications.",
-  },
-  {
-    icon: Zap,
-    title: "Automate Workflows",
-    description: "Set up rules to automate repetitive tasks — move cards, assign owners, and send reminders automatically.",
   },
 ];
 

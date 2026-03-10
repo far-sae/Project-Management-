@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/context/AuthContext';
 import { useTasks } from '@/hooks/useTasks';
-import { getProject } from '@/services/supabase/database';
+import { getProject, updateProject } from '@/services/supabase/database';
 import { Project, Task, TaskStatus } from '@/types';
+import { DEFAULT_COLUMNS } from '@/types/task';
+import type { KanbanColumn } from '@/types';
 
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { KanbanBoard } from '@/components/kanban/KanbanBoard';
@@ -173,6 +175,27 @@ export const ProjectView: React.FC = () => {
     project?.organizationId || null,
   );
 
+  const boardColumns = useMemo(
+    () =>
+      project?.columns && project.columns.length > 0
+        ? project.columns
+        : DEFAULT_COLUMNS,
+    [project?.columns]
+  );
+
+  const handleColumnsChange = useCallback(
+    async (next: KanbanColumn[]) => {
+      if (!project) return;
+      try {
+        await updateProject(project.projectId, { columns: next }, project.organizationId);
+        setProject((prev) => (prev ? { ...prev, columns: next } : null));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to update columns');
+      }
+    },
+    [project]
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -274,6 +297,7 @@ export const ProjectView: React.FC = () => {
         tasks={tasks}
         selectedStatus={selectedStatus}
         onStatusChange={setSelectedStatus}
+        columns={boardColumns}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -398,6 +422,8 @@ export const ProjectView: React.FC = () => {
                 projectId={project.projectId}
                 project={project}
                 projectName={project.name}
+                columns={boardColumns}
+                onColumnsChange={handleColumnsChange}
                 filterStatus={selectedStatus}
                 searchQuery={searchQuery}
               />

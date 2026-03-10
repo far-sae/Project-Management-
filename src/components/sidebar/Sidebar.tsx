@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Project, Task, TaskStatus } from '@/types';
+import type { KanbanColumn } from '@/types';
 import { QuickMenu } from './QuickMenu';
 import { StatusFilters } from './StatusFilters';
 import { MemberList } from './MemberList';
@@ -31,6 +32,8 @@ interface SidebarProps {
   tasks?: Task[];
   selectedStatus?: TaskStatus | 'all';
   onStatusChange?: (status: TaskStatus | 'all') => void;
+  /** Board columns: when provided, sidebar shows same names and list as board (renames + new columns sync) */
+  columns?: KanbanColumn[];
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -38,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   tasks = [],
   selectedStatus = 'all',
   onStatusChange,
+  columns,
 }) => {
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
@@ -60,19 +64,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ] as const;
 
   const taskCounts = useMemo(() => {
-    const counts: Record<TaskStatus | 'all', number> = {
-      all: tasks.length,
-      undefined: 0,
-      todo: 0,
-      inprogress: 0,
-      done: 0,
-      needreview: 0,
-    };
-    tasks.forEach((task) => {
-      if (counts[task.status] !== undefined) counts[task.status]++;
-    });
+    const counts: Record<string, number> = { all: tasks.length };
+    if (columns && columns.length > 0) {
+      columns.forEach((c) => { counts[c.id] = 0; });
+      tasks.forEach((t) => {
+        if (counts[t.status] !== undefined) counts[t.status]++;
+      });
+    } else {
+      const defaults = { undefined: 0, todo: 0, inprogress: 0, done: 0, needreview: 0 };
+      Object.assign(counts, defaults);
+      tasks.forEach((t) => {
+        if (counts[t.status] !== undefined) counts[t.status]++;
+      });
+    }
     return counts;
-  }, [tasks]);
+  }, [tasks, columns]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -116,6 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             selectedStatus={selectedStatus}
             onStatusChange={onStatusChange}
             taskCounts={taskCounts}
+            columns={columns}
           />
         )}
 

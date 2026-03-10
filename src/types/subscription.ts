@@ -122,11 +122,6 @@ const TIER_FEATURES = {
     "Unlimited team members",
     "Unlimited storage",
     "Everything in Advanced",
-    "Dedicated account manager",
-    "Custom integrations & API",
-    "SLA & uptime guarantee",
-    "Custom onboarding",
-    "Advanced security & compliance",
   ],
 };
 
