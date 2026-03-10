@@ -33,9 +33,10 @@ const plans = [
     icon: Zap,
     name: "Basic",
     subtitle: "For students & individuals",
-    price: { monthly: "£5", yearly: "£3.50" },
+    price: { monthly: "£5", yearly: "£63.90" },
     period: "/month",
-    originalPrice: { monthly: "£7.99", yearly: "£5" },
+    // Monthly: £7.99 base with first 3 months at £5; Yearly: £63.90 (12 months with discount)
+    originalPrice: { monthly: "£7.99", yearly: "£95.88" },
     badge: null,
     offer: "🎉 First 3 months offer",
     extraNote: null,
@@ -60,9 +61,10 @@ const plans = [
     icon: Users,
     name: "Advanced",
     subtitle: "For growing teams up to 10",
-    price: { monthly: "£45", yearly: "£37.50" },
+    price: { monthly: "£45", yearly: "£480" },
     period: "/month",
-    originalPrice: { monthly: "£50", yearly: "£45" },
+    // Monthly: £50 base with first month at £45; Yearly: £480 (12 months)
+    originalPrice: { monthly: "£50", yearly: "£600" },
     badge: "Most Popular",
     offer: "🎉 First month offer",
     extraNote: "+£2.99/member beyond 10",
@@ -103,9 +105,9 @@ const plans = [
     ],
     cta: "Talk to Us",
     ctaVariant: "secondary" as const,
-    ctaLink: "mailto:smtkur31@gmail.com",
+    ctaLink: "mailto:info@securovix.com",
     highlighted: false,
-    bottomNote: "Email us at smtkur31@gmail.com",
+    bottomNote: "Email us at info@securovix.com",
     ctaIcon: Mail,
   },
 ];
@@ -188,7 +190,9 @@ const PricingSection = () => {
                     {yearly ? plan.price.yearly : plan.price.monthly}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground">{plan.period}</p>
+                <p className="text-sm text-muted-foreground">
+                  {yearly ? "/year" : plan.period}
+                </p>
                 {plan.offer && (
                   <span className="inline-block mt-2 text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                     {plan.offer}
