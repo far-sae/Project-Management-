@@ -426,8 +426,6 @@ export const getProject = async (
   userId?: string,
   userEmail?: string,
 ): Promise<Project | null> => {
-  console.log("🔍 getProject called with:", { projectId, organizationId });
-
   let query = supabase
     .from("projects")
     .select("*")
@@ -451,10 +449,7 @@ export const getProject = async (
     error = retry.error;
   }
 
-  console.log("📡 Supabase response in getProject:", { data, error });
-
   if (error) {
-    console.error("❌ Supabase error in getProject:", error);
     return null;
   }
 

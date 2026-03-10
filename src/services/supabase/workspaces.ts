@@ -80,19 +80,11 @@ export const getWorkspace = async (
 export const getOrganizationWorkspaces = async (
   organizationId: string,
 ): Promise<Workspace[]> => {
-  console.log("📡 getOrganizationWorkspaces called:", { organizationId }); // ← ADD THIS
-
   const { data, error } = await supabase
     .from("workspaces")
     .select("*")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: true });
-
-  console.log(
-    "✅ getOrganizationWorkspaces result:",
-    data?.length || 0,
-    "workspaces",
-  ); // ← ADD THIS
 
   if (error) {
     logger.error("Failed to get workspaces:", error);
@@ -151,7 +143,6 @@ export const subscribeToWorkspaces = (
 
   // Generate unique channel name
   const channelName = `workspaces-${organizationId}-${Math.random().toString(36).substr(2, 9)}`;
-  console.log("🔌 Creating workspaces channel:", channelName);
 
   // Subscribe to changes
   const channel = supabase
@@ -164,32 +155,22 @@ export const subscribeToWorkspaces = (
         table: "workspaces",
       },
       (payload: any) => {
-        console.log("📡 Workspace change detected:", payload);
-
         // For DELETE, we can't check org_id reliably, so just refresh
         if (payload.eventType === "DELETE") {
-          console.log("✅ DELETE event - refreshing workspaces...");
           getOrganizationWorkspaces(organizationId).then(callback);
           return;
         }
 
         // For INSERT/UPDATE, check org_id
         const orgId = payload.new?.organization_id;
-
         if (orgId === organizationId) {
-          console.log("✅ Change matches our org, refreshing workspaces...");
           getOrganizationWorkspaces(organizationId).then(callback);
-        } else {
-          console.log("⏭️ Change is for different org, ignoring");
         }
       },
     )
-    .subscribe((status, err) => {
-      console.log("🔌 Workspaces subscription status:", status, err || "");
-    });
+    .subscribe();
 
   return () => {
-    console.log("❌ Unsubscribing workspaces channel:", channelName);
     channel.unsubscribe();
   };
 };

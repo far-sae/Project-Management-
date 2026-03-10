@@ -1,4 +1,5 @@
-import { openai, isAIEnabled, AI_CONFIG } from './openai';
+import { supabase } from '@/services/supabase/config';
+import { isAIEnabled, AI_CONFIG } from './openai';
 import { PROMPTS } from './prompts';
 import { rateLimiter } from './rateLimiter';
 import {
@@ -40,14 +41,19 @@ async function makeAIRequest<T>(
   }
 
   try {
-    const response = await openai!.chat.completions.create({
-      model: AI_CONFIG.model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: AI_CONFIG.temperature,
-      max_tokens: AI_CONFIG.maxTokens,
+    // Use Supabase Edge Function to proxy OpenAI (avoids CORS in production)
+    const { data, error } = await supabase.functions.invoke('ai-chat', {
+      body: {
+        prompt,
+        model: AI_CONFIG.model,
+        temperature: AI_CONFIG.temperature,
+        max_tokens: AI_CONFIG.maxTokens,
+      },
     });
 
-    const content = response.choices[0]?.message?.content;
+    if (error) throw new Error(error.message || 'AI request failed');
+    if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : 'AI request failed');
+    const content = data?.content;
     if (!content) {
       throw new Error('No response from AI');
     }

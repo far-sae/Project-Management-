@@ -459,11 +459,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return projectAssignableMembers;
   };
 
-  useEffect(() => {
-    console.log("PROJECT OBJECT:", project);
-    console.log("ORG MEMBERS:", organization?.members);
-  }, [project, organization]);
-
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-hidden flex flex-col" aria-describedby={undefined}>

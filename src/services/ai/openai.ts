@@ -1,26 +1,10 @@
-import OpenAI from 'openai';
+// AI requests are proxied via Supabase Edge Function (ai-chat) to avoid CORS.
+// Set OPENAI_API_KEY on the Supabase project for the edge function.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
 
-// Initialize OpenAI client
-const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-
-const isValidApiKey = apiKey && 
-  apiKey !== 'sk-your-openai-api-key-here' && 
-  apiKey.startsWith('sk-');
-
-if (!isValidApiKey) {
-  console.warn('[AI] OpenAI API key not configured. AI features will be disabled.');
-}
-
-export const openai = isValidApiKey
-  ? new OpenAI({
-      apiKey,
-      dangerouslyAllowBrowser: true, // Note: For production, use a backend proxy
-    })
-  : null;
-
-/** AI works in every workspace when API key is set (no per-workspace gate). */
+/** AI enabled when Supabase is configured (edge function will handle the key). */
 export const isAIEnabled = (): boolean => {
-  return openai !== null;
+  return Boolean(supabaseUrl && supabaseUrl !== 'https://placeholder.supabase.co');
 };
 
 // Default model configuration
