@@ -71,12 +71,21 @@ serve(async (req) => {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (err) {
+  } catch (err: unknown) {
+    const stripeErr = err as { type?: string; code?: string; message?: string };
+    const message = stripeErr?.message ?? (err instanceof Error ? err.message : "Checkout failed");
     console.error("create-checkout-session error:", err);
-    const message = err instanceof Error ? err.message : "Checkout failed";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Return 500 with detailed error so client/network tab can show it (e.g. invalid price id, wrong Stripe key)
+    return new Response(
+      JSON.stringify({
+        error: message,
+        details:
+          stripeErr?.code ? `Stripe ${stripeErr.type || "error"}: ${stripeErr.code}` : undefined,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });

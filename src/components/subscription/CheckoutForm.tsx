@@ -148,6 +148,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
       );
 
       if (fnError) throw new Error(fnError.message);
+      if (data?.error && !data?.url) throw new Error(data.error);
       if (!data?.url) throw new Error('No checkout URL returned');
 
       toast.dismiss(toastId);

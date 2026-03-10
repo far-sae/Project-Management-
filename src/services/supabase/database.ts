@@ -1704,11 +1704,20 @@ export const logActivity = async (
   } as ActivityEvent;
 };
 
+/** Skip activity for "local-xxx" org IDs (not real UUIDs); avoids 400 when activity.organization_id is UUID */
+function isRealOrganizationId(organizationId: string): boolean {
+  return Boolean(organizationId && !organizationId.startsWith("local-"));
+}
+
 export const subscribeToActivity = (
   organizationId: string,
   callback: (events: ActivityEvent[]) => void,
   limit: number = 50,
 ) => {
+  if (!isRealOrganizationId(organizationId)) {
+    callback([]);
+    return () => {};
+  }
   const fetch = () =>
     supabase
       .from("activity")
@@ -1769,6 +1778,10 @@ export const subscribeToTaskActivity = (
   organizationId: string,
   callback: (events: ActivityEvent[]) => void,
 ) => {
+  if (!isRealOrganizationId(organizationId)) {
+    callback([]);
+    return () => {};
+  }
   supabase
     .from("activity")
     .select("*")
