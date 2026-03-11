@@ -21,6 +21,6 @@ verify_jwt = false
 [functions.ai-chat]
 verify_jwt = false
 
-# Admin-only; validates JWT and user_profiles.role or ADMIN_USER_IDS secret
+# Admin-only; validates JWT inside function (verify_jwt=false so OPTIONS preflight passes CORS)
 [functions.public-stats]
-verify_jwt = true
+verify_jwt = false

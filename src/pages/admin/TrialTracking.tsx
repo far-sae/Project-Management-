@@ -55,9 +55,9 @@ export const TrialTracking: React.FC = () => {
         // Replaces the removed Firebase/Firestore dependency
         const { data: subs, error: subError } = await supabase
           .from('subscriptions')
-          .select('user_id, trial_end_date')
+          .select('user_id, trial_ends_at')
           .eq('status', 'trial')
-          .order('trial_end_date', { ascending: true });
+          .order('trial_ends_at', { ascending: true });
 
         if (subError) throw subError;
 
@@ -68,14 +68,14 @@ export const TrialTracking: React.FC = () => {
         if (userIds.length > 0) {
           const { data: profiles, error: profileError } = await supabase
             .from('user_profiles')
-            .select('user_id, display_name, email, photo_url')
-            .in('user_id', userIds);
+            .select('id, display_name, email, photo_url')
+            .in('id', userIds);
 
           if (profileError) throw profileError;
 
           trialUsers = (subs || []).map(sub => {
-            const profile = profiles?.find(p => p.user_id === sub.user_id);
-            const endDate = resolveTrialEndDate(sub.trial_end_date);
+            const profile = profiles?.find(p => p.id === sub.user_id);
+            const endDate = resolveTrialEndDate(sub.trial_ends_at);
             return {
               userId: sub.user_id,
               displayName: profile?.display_name || 'Unknown',

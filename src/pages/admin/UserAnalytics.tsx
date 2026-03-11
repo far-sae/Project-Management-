@@ -32,7 +32,7 @@ export const UserAnalytics: React.FC = () => {
       try {
         // Fetch users from Supabase instead of Firebase
         const { data: supabaseUsers, error } = await supabase
-          .from('profiles')
+          .from('user_profiles')
           .select('*')
           .limit(10)
           .order('created_at', { ascending: false });
@@ -40,10 +40,10 @@ export const UserAnalytics: React.FC = () => {
         if (error) throw error;
 
         const users = (supabaseUsers || []).map((user) => ({
-          userId: user.id || user.user_id,
-          displayName: user.display_name || user.full_name,
-          email: user.email,
-          photoURL: user.avatar_url || user.photo_url,
+          userId: user.id,
+          displayName: user.display_name || user.full_name || 'User',
+          email: user.email || '',
+          photoURL: user.photo_url || user.avatar_url,
           country: user.country || 'US',
           subscription: user.subscription || { status: 'trial' },
         })) as unknown as User[];
