@@ -20,3 +20,7 @@ verify_jwt = false
 # AI proxy - invoked from browser; JWT not reliably passed in some deployments
 [functions.ai-chat]
 verify_jwt = false
+
+# Admin-only; validates JWT and user_profiles.role or ADMIN_USER_IDS secret
+[functions.public-stats]
+verify_jwt = true

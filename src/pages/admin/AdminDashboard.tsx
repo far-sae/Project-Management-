@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Users, DollarSign, Clock, TrendingUp, Activity, CreditCard, Loader2 } from 'lucide-react';
+import { Users, DollarSign, Clock, TrendingUp, Activity, CreditCard, Loader2, BarChart3 } from 'lucide-react';
 import { UserAnalytics } from './UserAnalytics';
 import { RevenueMetrics } from './RevenueMetrics';
 import { TrialTracking } from './TrialTracking';
+import PublicAdminStats from '@/components/landing/PublicAdminStats';
 import { toast } from 'sonner';
 
 interface AdminStats {
@@ -165,11 +166,15 @@ export const AdminDashboard: React.FC = () => {
             <TabsTrigger value="trials" className="data-[state=active]:bg-orange-50">
               <Activity className="w-4 h-4 mr-2" />Trial Tracking
             </TabsTrigger>
+            <TabsTrigger value="stats" className="data-[state=active]:bg-orange-50">
+              <BarChart3 className="w-4 h-4 mr-2" />Service Stats
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users"><UserAnalytics /></TabsContent>
           <TabsContent value="revenue"><RevenueMetrics /></TabsContent>
           <TabsContent value="trials"><TrialTracking /></TabsContent>
+          <TabsContent value="stats"><PublicAdminStats /></TabsContent>
         </Tabs>
       </div>
     </div>

@@ -16,6 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { isAppOwner } from '@/lib/app-owner';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Project, Task, TaskStatus } from '@/types';
 import type { KanbanColumn } from '@/types';
@@ -164,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <div className="p-4 border-t border-gray-200">
-        {user?.role === 'admin' && (
+        {(user?.role === 'admin' || isAppOwner(user?.userId)) && (
           <Link
             to="/admin"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-purple-600 hover:bg-purple-50 transition-colors mb-2"

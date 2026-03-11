@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { isAppOwner } from '@/lib/app-owner';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Loader2 } from 'lucide-react';
 
@@ -37,7 +38,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   // ── Admin required ─────────────────────────────────
-  if (requireAdmin && user.role !== 'admin') {
+  const canAccessAdmin = user.role === 'admin' || isAppOwner(user.userId);
+  if (requireAdmin && !canAccessAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 
