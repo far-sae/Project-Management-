@@ -849,7 +849,7 @@ export const getProjectTasks = async (
       if (!t.isLocked) return true;
       if (t.createdBy === userId) return true;
       if (projectOwnerId === userId) return true;
-      if ((t.assignees || []).some((a) => a.userId === userId)) return true;
+      if ((t.assignees || []).some((a) => (a.userId || (a as { user_id?: string }).user_id) === userId)) return true;
       return false;
     });
   }

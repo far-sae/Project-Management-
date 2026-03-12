@@ -106,6 +106,14 @@ export const useTasks = (
       try {
         if (!user) throw new Error("User not authenticated");
         if (!input) throw new Error("Input is required");
+        // Optimistic update so sidebar/task counts refresh immediately
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.taskId === taskId
+              ? { ...t, ...input, updatedAt: new Date() }
+              : t
+          )
+        );
         await updateTask(taskId, input, effectiveOrgId);
         if (projectId) {
           const fresh = await getProjectTasks(projectId, effectiveOrgId, user?.userId);
@@ -116,6 +124,14 @@ export const useTasks = (
         const message =
           err instanceof Error ? err.message : "Failed to update task";
         setError(message);
+        // Revert optimistic update on error
+        if (projectId) {
+          getProjectTasks(projectId, effectiveOrgId, user?.userId)
+            .then(setTasks)
+            .catch((revertErr) => {
+              logger.error("useTasks: revert fetch failed after edit error:", revertErr);
+            });
+        }
         return false;
       }
     },

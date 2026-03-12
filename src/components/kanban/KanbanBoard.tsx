@@ -263,6 +263,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
     setSelectedTask(null);
+    setNewTaskStatus('undefined');
   }, []);
 
   // Column management functions
@@ -385,6 +386,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       </DndContext>
 
       <TaskModal
+        key={selectedTask?.taskId ?? `new-${newTaskStatus}`}
         open={isModalOpen}
         onClose={handleCloseModal}
         task={selectedTask}

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useTasks } from '@/hooks/useTasks';
 import { getProject, updateProject } from '@/services/supabase/database';
+import { supabase } from '@/services/supabase';
 import { Project, Task, TaskStatus } from '@/types';
 import { DEFAULT_COLUMNS } from '@/types/task';
 import type { KanbanColumn } from '@/types';
@@ -277,6 +278,34 @@ export const ProjectView: React.FC = () => {
     return () => {
       cancelled = true;
       document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [projectId, user?.userId, user?.organizationId, user?.email]);
+
+  // Refetch project when it's updated (e.g. member removed from Team page)
+  useEffect(() => {
+    if (!projectId || !user) return;
+    let cancelled = false;
+    const effectiveOrgId = (user.organizationId || user.userId || '').replace('local-', '');
+    const channel = supabase
+      .channel(`project-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'projects', filter: `project_id=eq.${projectId}` },
+        async () => {
+          try {
+            const projectData = await getProject(projectId, effectiveOrgId, user.userId, user.email);
+            if (!cancelled && projectData) setProject(projectData);
+          } catch (err) {
+            if (!cancelled) {
+              console.error('ProjectView: project refetch failed:', err);
+            }
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
     };
   }, [projectId, user?.userId, user?.organizationId, user?.email]);
 
