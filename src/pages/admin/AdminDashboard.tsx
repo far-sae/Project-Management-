@@ -53,22 +53,32 @@ export const AdminDashboard: React.FC = () => {
         });
 
         subscriptions?.forEach((sub) => {
-          if (sub.status === 'active' && sub.plan === 'trial') activeTrials++;
-          else if (sub.status === 'active') activeSubscriptions++;
+          if (sub.status === 'trial' || (sub.status === 'active' && sub.plan === 'trial')) activeTrials++;
+          else if (sub.status === 'active' || sub.status === 'starter') activeSubscriptions++;
         });
 
         const trialConversionRate = activeTrials + activeSubscriptions > 0
           ? Math.round((activeSubscriptions / (activeTrials + activeSubscriptions)) * 100)
           : 0;
 
-        // Revenue from Stripe in production; simplified here
-        const totalRevenue = activeSubscriptions * 19.99 * 12;
-        const revenueGrowth = 12.5;
-        const churnRate = 3.2;
+        const cancelledOrExpired = subscriptions?.filter(
+          s => s.status === 'cancelled' || s.status === 'expired'
+        ).length ?? 0;
+        const totalSubs = (activeTrials + activeSubscriptions + cancelledOrExpired) || 1;
+        const churnRate = Math.round((cancelledOrExpired / totalSubs) * 1000) / 10;
+
+        const totalRevenue = activeSubscriptions * 7.99 * 12;
+        const revenueGrowth = 0;
 
         setStats({
-          totalUsers, newUsersThisMonth, activeTrials, activeSubscriptions,
-          totalRevenue, revenueGrowth, trialConversionRate, churnRate,
+          totalUsers,
+          newUsersThisMonth,
+          activeTrials,
+          activeSubscriptions,
+          totalRevenue,
+          revenueGrowth,
+          trialConversionRate,
+          churnRate,
         });
       } catch (error) {
         toast.error(

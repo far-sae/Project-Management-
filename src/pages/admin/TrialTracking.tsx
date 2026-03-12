@@ -23,7 +23,7 @@ interface TrialUser {
 interface TrialData {
   trialUsers: TrialUser[];
   funnelData: { name: string; value: number; fill: string; }[];
-  conversionByDay: { day: number; conversions: number; trials: number; }[];
+  conversionByDay: { day: string; count: number; }[];
 }
 
 // ── Trial end date helper ─────────────────────────────────
@@ -86,24 +86,30 @@ export const TrialTracking: React.FC = () => {
           });
         }
 
-        // Demo funnel data (replace with Stripe in production)
+        // Real funnel: Active Trials, Trials Ending Soon (≤7 days), Converted (active paid)
+        const { count: activePaidCount } = await supabase
+          .from('subscriptions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'active')
+          .neq('plan', 'trial');
+        const trialsEndingSoon = trialUsers.filter(u => u.daysRemaining <= 7).length;
         const funnelData = [
-          { name: 'Started Trial', value: 1000, fill: '#3b82f6' },
-          { name: 'Active in Trial', value: 750, fill: '#22c55e' },
-          { name: 'Reached Day 14', value: 500, fill: '#f97316' },
-          { name: 'Converted', value: 350, fill: '#a855f7' },
-        ];
+          { name: 'Active in Trial', value: trialUsers.length, fill: '#3b82f6' },
+          { name: 'Ending in 7 days', value: trialsEndingSoon, fill: '#f97316' },
+          { name: 'Converted (paid)', value: activePaidCount ?? 0, fill: '#22c55e' },
+        ].filter(d => d.value > 0);
 
-        // Demo conversion by day (replace with Stripe in production)
-        const conversionByDay = [
-          { day: 1, conversions: 5, trials: 100 },
-          { day: 4, conversions: 8, trials: 95 },
-          { day: 7, conversions: 12, trials: 87 },
-          { day: 10, conversions: 15, trials: 75 },
-          { day: 14, conversions: 18, trials: 60 },
-          { day: 21, conversions: 22, trials: 42 },
-          { day: 28, conversions: 35, trials: 20 },
+        // Real: trials by days-remaining bucket (0-7, 8-14, 15-21, 22-28)
+        const buckets = [
+          { range: '0-7 days', min: 0, max: 7 },
+          { range: '8-14 days', min: 8, max: 14 },
+          { range: '15-21 days', min: 15, max: 21 },
+          { range: '22-28 days', min: 22, max: 28 },
         ];
+        const conversionByDay = buckets.map(b => ({
+          day: b.range,
+          count: trialUsers.filter(u => u.daysRemaining >= b.min && u.daysRemaining <= b.max).length,
+        }));
 
         setData({ trialUsers, funnelData, conversionByDay });
       } catch (error) {
@@ -129,8 +135,10 @@ export const TrialTracking: React.FC = () => {
   const urgentTrials = data?.trialUsers.filter(u => u.daysRemaining <= 2) || [];
   const activeTrials = data?.trialUsers.filter(u => u.daysRemaining > 2) || [];
 
-  const conversionRate = data?.funnelData
-    ? Math.round((data.funnelData[3].value / data.funnelData[0].value) * 100)
+  const conversionRate = data?.funnelData && data.funnelData.length >= 2
+    ? (data.funnelData[0].value > 0
+        ? Math.round((data.funnelData[data.funnelData.length - 1].value / data.funnelData[0].value) * 100)
+        : 0)
     : 0;
 
   const getStatusIcon = (daysRemaining: number) => {
@@ -146,39 +154,49 @@ export const TrialTracking: React.FC = () => {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <span>Trial Conversion Funnel</span>
-            <Badge variant="outline">{conversionRate}% conversion</Badge>
+            {conversionRate > 0 && (
+              <Badge variant="outline">{conversionRate}% conversion</Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <FunnelChart>
-              <Tooltip formatter={(value) => value.toLocaleString()} />
-              <Funnel data={data?.funnelData} dataKey="value" nameKey="name" isAnimationActive>
-                {data?.funnelData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
-                ))}
-                <LabelList position="center" fill="#fff" stroke="none" dataKey="name" />
-              </Funnel>
-            </FunnelChart>
-          </ResponsiveContainer>
+          {data?.funnelData && data.funnelData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <FunnelChart>
+                <Tooltip formatter={(value) => value.toLocaleString()} />
+                <Funnel data={data.funnelData} dataKey="value" nameKey="name" isAnimationActive>
+                  {data.funnelData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                  <LabelList position="center" fill="#fff" stroke="none" dataKey="name" />
+                </Funnel>
+              </FunnelChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-center text-gray-500 py-12">No trial data yet</p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Conversion by day */}
+      {/* Trials by days remaining */}
       <Card>
         <CardHeader>
-          <CardTitle>Conversion by Trial Day</CardTitle>
+          <CardTitle>Trials by Days Remaining</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={data?.conversionByDay}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="day" tickFormatter={(v) => `Day ${v}`} />
-              <YAxis />
-              <Tooltip labelFormatter={(v) => `Day ${v}`} />
-              <Bar dataKey="conversions" fill="#22c55e" name="Conversions" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {data?.conversionByDay && data.conversionByDay.some(d => d.count > 0) ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={data.conversionByDay}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="count" fill="#3b82f6" name="Trials" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-center text-gray-500 py-12">No trial data yet</p>
+          )}
         </CardContent>
       </Card>
 

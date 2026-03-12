@@ -39,24 +39,49 @@ export const UserAnalytics: React.FC = () => {
 
         if (error) throw error;
 
+        // Fetch subscriptions for status badges
+        const { data: subs } = await supabase
+          .from('subscriptions')
+          .select('user_id, status');
+        const subByUser = new Map((subs || []).map(s => [s.user_id, s]));
+
         const users = (supabaseUsers || []).map((user) => ({
           userId: user.id,
           displayName: user.display_name || user.full_name || 'User',
           email: user.email || '',
           photoURL: user.photo_url || user.avatar_url,
           country: user.country || 'US',
-          subscription: user.subscription || { status: 'trial' },
+          subscription: subByUser.get(user.id) ? { status: subByUser.get(user.id)!.status } : { status: 'trial' },
         })) as unknown as User[];
 
-        // Generate demo chart data for the last 7 days
-        const chartData = [];
+        // Real chart data: new users and active (updated_at) per day for last 7 days
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        const { data: allRecent } = await supabase
+          .from('user_profiles')
+          .select('created_at, updated_at')
+          .or(`created_at.gte.${sevenDaysAgo.toISOString()},updated_at.gte.${sevenDaysAgo.toISOString()}`);
+
+        const chartData: { date: string; users: number; active: number }[] = [];
         for (let i = 6; i >= 0; i--) {
-          const date = new Date();
-          date.setDate(date.getDate() - i);
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          d.setHours(0, 0, 0, 0);
+          const next = new Date(d);
+          next.setDate(next.getDate() + 1);
+          const dayStart = d.toISOString();
+          const dayEnd = next.toISOString();
+          const newUsers = (allRecent || []).filter(
+            u => new Date(u.created_at) >= d && new Date(u.created_at) < next
+          ).length;
+          const active = (allRecent || []).filter(
+            u => u.updated_at && new Date(u.updated_at) >= d && new Date(u.updated_at) < next
+          ).length;
           chartData.push({
-            date: date.toLocaleDateString('en-US', { weekday: 'short' }),
-            users: Math.floor(Math.random() * 50) + 20,
-            active: Math.floor(Math.random() * 30) + 10,
+            date: d.toLocaleDateString('en-US', { weekday: 'short' }),
+            users: newUsers,
+            active,
           });
         }
 
