@@ -70,8 +70,6 @@ export const UserAnalytics: React.FC = () => {
           d.setHours(0, 0, 0, 0);
           const next = new Date(d);
           next.setDate(next.getDate() + 1);
-          const dayStart = d.toISOString();
-          const dayEnd = next.toISOString();
           const newUsers = (allRecent || []).filter(
             u => new Date(u.created_at) >= d && new Date(u.created_at) < next
           ).length;
