@@ -16,9 +16,27 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Calendar, Trash2, Loader2, Sparkles, Wand2, MessageSquare,
   ListTree, Paperclip, UserPlus, X, GripVertical, Check,
   Circle, FileText, Link2, Activity, Clock, CheckCircle2, Lock,
+  MoreHorizontal, Copy, Bell, Mail,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -32,6 +50,7 @@ import { useTaskActivity } from '@/hooks/useActivity';
 import { ActivityEvent } from '@/types/activity';
 import { uploadCommentAttachment } from '@/services/supabase/storage';
 import { SubtaskDecompositionModal } from './SubtaskDecompositionModal';
+import { NotifyModal } from './NotifyModal';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { cn, truncateFileName } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -113,6 +132,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const [showDecomposition, setShowDecomposition] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [projectAssignableMembers, setProjectAssignableMembers] = useState<Array<{
     userId: string;
     displayName: string;
@@ -139,6 +160,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
     setAiError(null);
   }, [task, initialStatus]);
+
+  // Filter out assignees who are no longer in the project (removed members)
+  useEffect(() => {
+    if (!task || projectAssignableMembers.length === 0) return;
+    const validIds = new Set(projectAssignableMembers.map((m) => m.userId));
+    const currentAssignees = task.assignees || [];
+    const filtered = currentAssignees.filter((a) => validIds.has(a.userId));
+    if (filtered.length !== currentAssignees.length) {
+      setAssignees(filtered);
+    }
+  }, [task?.taskId, projectAssignableMembers]);
 
   useEffect(() => {
     if (!open || !task?.taskId || !orgId) { setTaskComments([]); return; }
@@ -171,13 +203,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       }
 
       try {
+        // Fetch project with members - project.members is the source of truth (excludes removed members)
         const { data: projectRow } = await supabase
           .from('projects')
-          .select('owner_id')
+          .select('owner_id, members')
           .eq('project_id', projectId)
           .maybeSingle();
 
         const ownerId = projectRow?.owner_id || project?.ownerId || null;
+        const membersFromProject = (projectRow?.members || []) as Array<{ userId?: string; user_id?: string; email?: string; displayName?: string; display_name?: string; photoURL?: string; photo_url?: string }>;
 
         const { data: acceptedInvites } = await supabase
           .from('invitations')
@@ -198,6 +232,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           photoURL: string;
         }>();
 
+        // Add owner
         if (ownerId) {
           const { data: ownerProfile } = await supabase
             .from('user_profiles')
@@ -213,6 +248,28 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           });
         }
 
+        // Add members from project.members (current project state - excludes removed)
+        const memberIds = [...new Set(membersFromProject.map((m) => m.userId || m.user_id).filter(Boolean))] as string[];
+        if (memberIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('id, email, display_name, photo_url')
+            .in('id', memberIds);
+          const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+          for (const m of membersFromProject) {
+            const uid = m.userId || m.user_id;
+            if (!uid) continue;
+            const profile = profileMap.get(uid);
+            memberMap.set(uid, {
+              userId: uid,
+              displayName: profile?.display_name || m.displayName || m.display_name || m.email || 'Member',
+              email: profile?.email || m.email || '',
+              photoURL: profile?.photo_url || m.photoURL || m.photo_url || '',
+            });
+          }
+        }
+
+        // Add accepted invitations not already in project.members (e.g. newly accepted)
         if (acceptedEmails.length > 0) {
           const { data: profiles } = await supabase
             .from('user_profiles')
@@ -220,6 +277,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             .in('email', acceptedEmails);
 
           for (const p of profiles || []) {
+            if (memberMap.has(p.id)) continue;
             memberMap.set(p.id, {
               userId: p.id,
               displayName: p.display_name || p.email || 'Member',
@@ -511,6 +569,67 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="flex items-center gap-1 text-sm text-gray-500">
                   <UserPlus className="w-4 h-4" /><span>{assignees.length}</span>
                 </div>
+              )}
+              {isEditing && task && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-gray-500 hover:text-orange-600"
+                  onClick={() => setShowNotifyModal(true)}
+                  title="Notify team members"
+                >
+                  <Bell className="w-4 h-4" />
+                </Button>
+              )}
+              {isEditing && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-gray-700">
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onClick={() => { /* Move - would need column picker */ toast.info('Move task - use drag & drop or change status'); }}>
+                      Move task...
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { /* Copy task */ toast.info('Copy task - coming soon'); }}>
+                      Copy task...
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        try {
+                          const url = `${window.location.origin}/project/${projectId}?taskId=${task?.taskId}`;
+                          await navigator.clipboard.writeText(url);
+                          toast.success('Task URL copied');
+                        } catch {
+                          toast.error('Unable to copy task URL');
+                        }
+                      }}
+                    >
+                      Copy task URL
+                    </DropdownMenuItem>
+                    {aiEnabled && (
+                      <DropdownMenuItem onClick={() => { handleGetSmartSuggestions(); setShowAISuggestion(true); }}>
+                        <Sparkles className="w-4 h-4 mr-2 text-amber-500" />
+                        AI Tools
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={() => toast.info('Reply by email - coming soon')}>
+                      <Mail className="w-4 h-4 mr-2" />
+                      Reply by email
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {onDelete && (
+                      <DropdownMenuItem
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="text-red-600 focus:text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           </div>
@@ -988,6 +1107,45 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             }}
           />
         )}
+
+        {showNotifyModal && task && user && (
+          <NotifyModal
+            open={showNotifyModal}
+            onClose={() => setShowNotifyModal(false)}
+            taskId={task.taskId}
+            taskTitle={title || task.title}
+            projectId={projectId}
+            projectName={projectName || ''}
+            members={getProjectMembers()}
+            actorUserId={user.userId}
+            actorDisplayName={user.displayName || user.email || 'User'}
+          />
+        )}
+
+        <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete task?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this task? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-500 hover:bg-red-600"
+                onClick={async () => {
+                  setShowDeleteConfirm(false);
+                  await handleDelete();
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
