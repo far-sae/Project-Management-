@@ -437,7 +437,7 @@ export const ProjectView: React.FC = () => {
 
         <div className={`flex-1 p-4 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
           {viewMode === 'kanban' ? (
-            <div className="h-full overflow-x-auto overflow-y-hidden pb-2">
+            <div className="h-full overflow-x-auto overflow-y-auto pb-2">
               <KanbanBoard
                 projectId={project.projectId}
                 project={project}

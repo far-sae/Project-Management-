@@ -48,6 +48,8 @@ export interface Task {
   parentTaskId?: string | null;
   /** Show as urgent beside assignees */
   urgent?: boolean;
+  /** When true, only creator, assignees, and project owner can see this task */
+  isLocked?: boolean;
   position: number;
   attachments: TaskAttachment[];
   commentsCount: number;
@@ -111,6 +113,7 @@ export interface CreateTaskInput {
   subtasks?: TaskSubtask[];
   parentTaskId?: string | null;
   urgent?: boolean;
+  isLocked?: boolean;
   /** For activity log (task_created) */
   projectName?: string;
   createdByDisplayName?: string;
@@ -129,6 +132,7 @@ export interface UpdateTaskInput {
   subtasks?: TaskSubtask[];
   parentTaskId?: string | null;
   urgent?: boolean;
+  isLocked?: boolean;
   position?: number;
   /** For activity log (subtask_created / subtask_done) */
   activityBy?: { userId: string; displayName: string; photoURL?: string };

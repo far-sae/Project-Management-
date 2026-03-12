@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Task } from '@/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Calendar, MessageSquare, Paperclip } from 'lucide-react';
+import { Calendar, MessageSquare, Paperclip, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TaskCardProps {
@@ -70,6 +70,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, isDragging })
           {task.urgent && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
               Urgent
+            </span>
+          )}
+          {task.isLocked && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800" title="Locked - only visible to creator, assignees, and project owner">
+              <Lock className="w-3 h-3" /> Locked
             </span>
           )}
           {task.dueDate && (

@@ -50,6 +50,7 @@ export const AcceptInvite: React.FC = () => {
   const [signupName, setSignupName] = useState("");
   const [signingUp, setSigningUp] = useState(false);
   const [showDeclineDialog, setShowDeclineDialog] = useState(false);
+  const [awaitingEmailConfirm, setAwaitingEmailConfirm] = useState(false);
 
   useEffect(() => {
     if (token) localStorage.setItem("pendingInviteToken", token);
@@ -167,6 +168,7 @@ export const AcceptInvite: React.FC = () => {
     }
 
     setSigningUp(true);
+    setError(null);
     try {
       const { data, error } = await supabase.auth.signUp({
         email: signupEmail,
@@ -177,14 +179,22 @@ export const AcceptInvite: React.FC = () => {
       if (data.user) {
         localStorage.setItem("pendingInviteToken", token || "");
         if (data.session && token) {
-          navigate(`/accept-invite/${token}`);
+          toast.success("Account created! Accepting invitation...");
+          setShowSignupForm(false);
+          setSigningUp(false);
+          // Stay on page — AuthContext will update, auto-accept useEffect will run
+          return;
         } else {
-          toast.success("Account created. Sign in and we will continue this invite.");
-          navigate(`/login?redirect=/accept-invite/${token}`);
+          setAwaitingEmailConfirm(true);
+          setShowSignupForm(false);
+          toast.info("Check your email to confirm your account, then sign in to accept.");
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Signup failed");
+      const msg = err instanceof Error ? err.message : "Signup failed";
+      const is429 = typeof msg === "string" && (msg.includes("429") || msg.includes("rate") || msg.includes("limit"));
+      setError(is429 ? "Too many attempts. Please wait a few minutes and try again." : msg);
+      toast.error(is429 ? "Too many attempts. Please wait a few minutes." : msg);
     } finally {
       setSigningUp(false);
     }
@@ -419,8 +429,26 @@ export const AcceptInvite: React.FC = () => {
                 </Alert>
               )}
 
-              {/* Not logged in */}
-              {!user ? (
+              {/* Awaiting email confirmation */}
+              {awaitingEmailConfirm ? (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Mail className="h-5 w-5 text-blue-600" />
+                  <AlertTitle>Confirm your email</AlertTitle>
+                  <AlertDescription>
+                    We sent a confirmation link to <strong>{signupEmail}</strong>.
+                    Click the link in that email, then sign in below to accept this invitation.
+                  </AlertDescription>
+                  <Button
+                    className="mt-3"
+                    onClick={() => {
+                      setAwaitingEmailConfirm(false);
+                      navigate(`/login?redirect=/accept-invite/${token}`);
+                    }}
+                  >
+                    Sign in
+                  </Button>
+                </Alert>
+              ) : !user ? (
                 <>
                   {showSignupForm ? (
                     <div className="space-y-3">

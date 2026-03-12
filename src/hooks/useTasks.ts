@@ -45,16 +45,17 @@ export const useTasks = (
         setTasks(updatedTasks);
         setLoading(false);
       },
+      user?.userId,
     );
 
     return () => unsubscribe();
-  }, [projectId, effectiveOrgId]);
+  }, [projectId, effectiveOrgId, user?.userId]);
 
   useEffect(() => {
     let cancelled = false;
     const onVisibility = () => {
       if (document.visibilityState !== "visible" || !projectId || !effectiveOrgId) return;
-      getProjectTasks(projectId, effectiveOrgId)
+      getProjectTasks(projectId, effectiveOrgId, user?.userId)
         .then((fresh) => {
           if (!cancelled) setTasks(fresh);
         })
@@ -67,7 +68,7 @@ export const useTasks = (
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [projectId, effectiveOrgId]);
+  }, [projectId, effectiveOrgId, user?.userId]);
 
   const addTask = useCallback(
     async (input: CreateTaskInput): Promise<Task | null> => {
@@ -79,7 +80,7 @@ export const useTasks = (
 
         const newTask = await createTask(user.userId, input, effectiveOrgId);
         if (newTask && projectId) {
-          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          const fresh = await getProjectTasks(projectId, effectiveOrgId, user.userId);
           setTasks(fresh);
         }
         return newTask;
@@ -107,7 +108,7 @@ export const useTasks = (
         if (!input) throw new Error("Input is required");
         await updateTask(taskId, input, effectiveOrgId);
         if (projectId) {
-          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          const fresh = await getProjectTasks(projectId, effectiveOrgId, user?.userId);
           setTasks(fresh);
         }
         return true;
@@ -127,7 +128,7 @@ export const useTasks = (
       try {
         await deleteTask(taskId, user ? effectiveOrgId : "");
         if (projectId) {
-          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          const fresh = await getProjectTasks(projectId, effectiveOrgId, user?.userId);
           setTasks(fresh);
         }
         return true;
@@ -148,7 +149,7 @@ export const useTasks = (
         if (!user) throw new Error("User not authenticated");
         await updateTask(taskId, { status: newStatus }, effectiveOrgId);
         if (projectId) {
-          const fresh = await getProjectTasks(projectId, effectiveOrgId);
+          const fresh = await getProjectTasks(projectId, effectiveOrgId, user?.userId);
           setTasks(fresh);
         }
         return true;
@@ -167,7 +168,7 @@ export const useTasks = (
     setLoading(true);
     setError(null);
     try {
-      const fetchedTasks = await getProjectTasks(projectId, effectiveOrgId);
+      const fetchedTasks = await getProjectTasks(projectId, effectiveOrgId, user?.userId);
       setTasks(fetchedTasks);
     } catch (err) {
       const message =

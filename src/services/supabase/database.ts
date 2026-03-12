@@ -705,6 +705,7 @@ export const createTask = async (
     subtasks: input.subtasks || [],
     parent_task_id: input.parentTaskId || null,
     urgent: input.urgent || false,
+    is_locked: input.isLocked || false,
     position,
     attachments: input.attachments || [],
     comments_count: 0,
@@ -740,6 +741,7 @@ export const createTask = async (
     subtasks: data.subtasks || [],
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
+    isLocked: data.is_locked || false,
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -778,6 +780,7 @@ export const getTask = async (
     subtasks: data.subtasks || [],
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
+    isLocked: data.is_locked || false,
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -791,6 +794,7 @@ export const getTask = async (
 export const getProjectTasks = async (
   projectId: string,
   organizationId?: string,
+  userId?: string,
 ): Promise<Task[]> => {
   let query = supabase
     .from("tasks")
@@ -809,7 +813,7 @@ export const getProjectTasks = async (
     return [];
   }
 
-  return (data || []).map((task) => ({
+  let tasks = (data || []).map((task) => ({
     taskId: task.task_id,
     projectId: task.project_id,
     organizationId: task.organization_id,
@@ -824,6 +828,7 @@ export const getProjectTasks = async (
     subtasks: task.subtasks || [],
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
+    isLocked: task.is_locked || false,
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -832,6 +837,24 @@ export const getProjectTasks = async (
     updatedAt: new Date(task.updated_at),
     completedAt: task.completed_at ? new Date(task.completed_at) : null,
   })) as Task[];
+
+  if (userId && tasks.some((t) => t.isLocked)) {
+    const { data: projectRow } = await supabase
+      .from("projects")
+      .select("owner_id")
+      .eq("project_id", projectId)
+      .maybeSingle();
+    const projectOwnerId = projectRow?.owner_id || null;
+    tasks = tasks.filter((t) => {
+      if (!t.isLocked) return true;
+      if (t.createdBy === userId) return true;
+      if (projectOwnerId === userId) return true;
+      if ((t.assignees || []).some((a) => a.userId === userId)) return true;
+      return false;
+    });
+  }
+
+  return tasks;
 };
 
 export const getOrganizationTasks = async (
@@ -863,6 +886,7 @@ export const getOrganizationTasks = async (
     subtasks: task.subtasks || [],
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
+    isLocked: task.is_locked || false,
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -899,6 +923,7 @@ export const updateTask = async (
   if (input.tags !== undefined) updateData.tags = input.tags;
   if (input.subtasks !== undefined) updateData.subtasks = input.subtasks;
   if (input.urgent !== undefined) updateData.urgent = input.urgent;
+  if (input.isLocked !== undefined) updateData.is_locked = input.isLocked;
   if (input.position !== undefined) updateData.position = input.position;
   if (input.attachments !== undefined)
     updateData.attachments = input.attachments;
@@ -940,8 +965,9 @@ export const subscribeToTasks = (
   projectId: string,
   organizationId: string | undefined,
   callback: (tasks: Task[]) => void,
+  userId?: string,
 ) => {
-  getProjectTasks(projectId, organizationId).then(callback);
+  getProjectTasks(projectId, organizationId, userId).then(callback);
 
   const channel = supabase
     .channel(`tasks-${projectId}-${Math.random().toString(36).slice(2, 11)}`)
@@ -954,7 +980,7 @@ export const subscribeToTasks = (
         filter: `project_id=eq.${projectId}`,
       },
       () => {
-        getProjectTasks(projectId, organizationId).then(callback);
+        getProjectTasks(projectId, organizationId, userId).then(callback);
       },
     )
     .subscribe();
@@ -998,6 +1024,7 @@ export const getTasksAssignedToUser = async (
     tags: task.tags || [],
     subtasks: task.subtasks || [],
     urgent: task.urgent,
+    isLocked: task.is_locked || false,
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,

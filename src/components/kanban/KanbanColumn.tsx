@@ -77,7 +77,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
       <div
         ref={setNodeRef}
         className={cn(
-          'flex-1 p-3 overflow-y-auto min-h-[200px]',
+          'flex-1 p-3 overflow-y-auto min-h-[200px] max-h-[calc(100vh-280px)]',
           isOver && 'bg-orange-50'
         )}
       >

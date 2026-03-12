@@ -13,7 +13,7 @@ import {
 import { Task, KanbanColumn, DEFAULT_COLUMNS, CreateTaskInput, Project } from '@/types';
 import { useTasks } from '@/hooks/useTasks';
 import { useAuth } from '@/context/AuthContext';
-import { createNotificationsForTaskUpdate } from '@/services/supabase/database';
+import { createNotificationsForTaskUpdate, addCommentWithGlobalSync } from '@/services/supabase/database';
 import { KanbanColumnComponent } from './KanbanColumn';
 import { TaskCard } from './TaskCard';
 import { TaskModal } from './TaskModal';
@@ -199,7 +199,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           }).catch(() => {});
         }
       } else {
-        const base = cleanInput as unknown as CreateTaskInput;
+        const base = cleanInput as unknown as CreateTaskInput & { _initialComment?: string };
+        const initialComment = base._initialComment;
         const parentPayload: CreateTaskInput = {
           projectId: base.projectId || projectId,
           title: base.title || '',
@@ -211,14 +212,36 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           tags: base.tags,
           subtasks: payloadSubtasks && payloadSubtasks.length > 0 ? payloadSubtasks : undefined,
           urgent: base.urgent,
+          isLocked: base.isLocked,
           projectName: base.projectName,
           createdByDisplayName: base.createdByDisplayName,
           createdByPhotoURL: base.createdByPhotoURL,
         };
-        await addTask(parentPayload);
+        const newTask = await addTask(parentPayload);
+        if (newTask && initialComment?.trim() && user) {
+          const orgId = project?.organizationId || user.organizationId || `local-${user.userId}`;
+          const visibleToUserIds = Array.from(
+            new Set([
+              user.userId,
+              ...(parentPayload.assignees || []).map((a) => a.userId),
+            ]),
+          );
+          addCommentWithGlobalSync(
+            newTask.taskId,
+            projectId,
+            projName,
+            newTask.title,
+            user.userId,
+            user.displayName || 'User',
+            user.photoURL || '',
+            initialComment.trim(),
+            visibleToUserIds,
+            orgId,
+          ).catch(() => {});
+        }
       }
     },
-    [selectedTask, addTask, editTask, projectId, user, projName]
+    [selectedTask, addTask, editTask, projectId, user, projName, project]
   );
 
   const handleDeleteTask = useCallback(

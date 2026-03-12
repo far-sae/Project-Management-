@@ -18,7 +18,7 @@ import {
 import {
   Calendar, Trash2, Loader2, Sparkles, Wand2, MessageSquare,
   ListTree, Paperclip, UserPlus, X, GripVertical, Check,
-  Circle, FileText, Link2, Activity, Clock, CheckCircle2,
+  Circle, FileText, Link2, Activity, Clock, CheckCircle2, Lock,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -73,6 +73,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [dueDate, setDueDate] = useState('');
   const [assignees, setAssignees] = useState<TaskAssignee[]>([]);
   const [urgent, setUrgent] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [initialComment, setInitialComment] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -127,12 +129,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
       setAssignees(task.assignees || []);
       setUrgent(!!task.urgent);
+      setIsLocked(!!task.isLocked);
       setTags(task.tags || []);
       setSubtasks(task.subtasks?.length ? task.subtasks : []);
     } else {
       setTitle(''); setDescription(''); setStatus(initialStatus);
       setPriority('medium'); setDueDate(''); setAssignees([]);
-      setUrgent(false); setTags([]); setSubtasks([]);
+      setUrgent(false); setIsLocked(false); setInitialComment(''); setTags([]); setSubtasks([]);
     }
     setAiError(null);
   }, [task, initialStatus]);
@@ -393,6 +396,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         tags: tags.length > 0 ? tags : undefined,
         subtasks: subtasks.length > 0 ? subtasks : undefined,
         urgent,
+        isLocked,
       };
 
       if (isEditing) {
@@ -409,7 +413,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         await onSave(updatePayload);
         toast.success('Task updated');
       } else {
-        await onSave({ projectId, ...basePayload, projectName, createdByDisplayName: user?.displayName, createdByPhotoURL: user?.photoURL });
+        await onSave({
+          projectId,
+          ...basePayload,
+          projectName,
+          createdByDisplayName: user?.displayName,
+          createdByPhotoURL: user?.photoURL,
+          _initialComment: initialComment.trim() || undefined,
+        } as CreateTaskInput & { _initialComment?: string });
         toast.success('Task created');
       }
       onClose();
@@ -547,12 +558,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           )}
 
-          {/* Urgent + Assignee */}
+          {/* Urgent + Lock + Assignee */}
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)}
                 className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
               <span className="text-sm font-medium text-gray-700">Urgent</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none" title="Only creator, assignees, and project owner can see this task">
+              <input type="checkbox" checked={isLocked} onChange={(e) => setIsLocked(e.target.checked)}
+                className="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+              <Lock className="w-4 h-4 text-amber-600" />
+              <span className="text-sm font-medium text-gray-700">Lock (sensitive)</span>
             </label>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -647,6 +664,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <Link2 className="w-4 h-4" />Add dependencies
             </button>
           </div>
+
+          {/* Initial comment (create only) */}
+          {!isEditing && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-gray-500" />
+                Add a comment (optional)
+              </Label>
+              <Textarea
+                value={initialComment}
+                onChange={(e) => setInitialComment(e.target.value)}
+                placeholder="Write a comment to add when creating this task..."
+                rows={2}
+                className="resize-none"
+              />
+            </div>
+          )}
 
           {/* Description */}
           {(showDescription || description) && (
