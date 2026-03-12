@@ -286,21 +286,22 @@ export const ProjectView: React.FC = () => {
     if (!projectId || !user) return;
     let cancelled = false;
     const effectiveOrgId = (user.organizationId || user.userId || '').replace('local-', '');
+    const refetch = async () => {
+      try {
+        const projectData = await getProject(projectId, effectiveOrgId, user.userId, user.email);
+        if (!cancelled && projectData) setProject(projectData);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('ProjectView: project refetch failed:', err);
+        }
+      }
+    };
     const channel = supabase
       .channel(`project-${projectId}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'projects', filter: `project_id=eq.${projectId}` },
-        async () => {
-          try {
-            const projectData = await getProject(projectId, effectiveOrgId, user.userId, user.email);
-            if (!cancelled && projectData) setProject(projectData);
-          } catch (err) {
-            if (!cancelled) {
-              console.error('ProjectView: project refetch failed:', err);
-            }
-          }
-        }
+        refetch
       )
       .subscribe();
     return () => {

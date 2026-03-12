@@ -36,7 +36,7 @@ const OWNER_EMAIL = 'smtkur31@gmail.com';
 export const Team: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
-  const { projects } = useProjects();
+  const { projects, refreshProjects } = useProjects();
   const { hasFeature, currentTier, pricing } = useSubscription();
   const navigate = useNavigate();
 
@@ -299,6 +299,8 @@ export const Team: React.FC = () => {
       setProjectMembers((prev) =>
         prev.filter((m) => m.userId !== member.userId),
       );
+
+      refreshProjects();
 
       loadTeamData();
     } catch {
