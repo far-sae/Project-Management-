@@ -36,7 +36,7 @@ import {
   Calendar, Trash2, Loader2, Sparkles, Wand2, MessageSquare,
   ListTree, Paperclip, UserPlus, X, GripVertical, Check,
   Circle, FileText, Link2, Activity, Clock, CheckCircle2, Lock,
-  MoreHorizontal, Copy, Bell, Mail,
+  MoreHorizontal, Bell, Mail,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
