@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
 import { createInvitation } from '@/services/supabase/invitations';
-import { sendInvitationEmail, isEmailServiceConfigured, openInvitationMailto } from '@/services/email/emailService';
+import { sendInvitationEmail, openInvitationMailto } from '@/services/email/emailService';
 import { toast } from 'sonner';
 
 export const OrganizationMembers: React.FC = () => {
@@ -48,16 +48,13 @@ export const OrganizationMembers: React.FC = () => {
       );
 
       const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/accept-invite/${invitation.token}`;
-      let emailSent = false;
-      if (isEmailServiceConfigured()) {
-        emailSent = await sendInvitationEmail({
-          toEmail: inviteEmail.trim(),
-          inviterName,
-          projectName: organization.name,
-          inviteLink,
-          role: inviteRole,
-        });
-      }
+      const emailSent = await sendInvitationEmail({
+        toEmail: inviteEmail.trim(),
+        inviterName,
+        projectName: organization.name,
+        inviteLink,
+        role: inviteRole,
+      });
 
       if (emailSent) {
         toast.success('Success', {
