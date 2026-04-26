@@ -118,9 +118,10 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       }
 
       // Organization creation is centralized in AuthContext to avoid duplicate inserts.
-      console.warn('No organization found in OrganizationContext; waiting for AuthContext sync');
+      // This is expected during initial login - don't show error, just set loading
+      console.log('Organization not found yet; AuthContext may still be creating it');
       setOrganization(null);
-      setError('Organization is still initializing. Please refresh in a moment.');
+      setError(null); // Don't show error - this is a temporary state during login
 
     } catch (err) {
       console.error('❌ Failed to fetch organization:', err);
@@ -224,15 +225,28 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
 
   // Initial fetch
   useEffect(() => {
-    if (!authLoading) {
-      if (user) {
+    if (!authLoading && user) {
+      // Wait for the real organization ID to be set (not "local-" format)
+      // AuthContext creates the org asynchronously after initial login
+      const orgId = user.organizationId;
+      const hasValidOrgId = orgId && !orgId.startsWith('local-');
+
+      if (hasValidOrgId) {
         fetchOrganization();
       } else {
-        setOrganization(null);
-        setLoading(false);
+        // Wait a bit for AuthContext to create the organization
+        // This handles the race condition where authLoading becomes false
+        // before the org is fully set up
+        const timeout = setTimeout(() => {
+          fetchOrganization();
+        }, 2000);
+        return () => clearTimeout(timeout);
       }
+    } else if (!user) {
+      setOrganization(null);
+      setLoading(false);
     }
-  }, [user?.userId, authLoading]);
+  }, [user?.userId, user?.organizationId, authLoading]);
 
   // Refetch when tab becomes visible so data stays in sync across browsers/tabs
   useEffect(() => {
