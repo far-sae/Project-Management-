@@ -10,8 +10,7 @@ import {
   useSensors,
   closestCenter,
 } from '@dnd-kit/core';
-import { Task, KanbanColumn, DEFAULT_COLUMNS, CreateTaskInput, Project } from '@/types';
-import { useTasks } from '@/hooks/useTasks';
+import { Task, KanbanColumn, DEFAULT_COLUMNS, CreateTaskInput, Project, UpdateTaskInput } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { createNotificationsForTaskUpdate, addCommentWithGlobalSync } from '@/services/supabase/database';
 import { KanbanColumnComponent } from './KanbanColumn';
@@ -33,6 +32,11 @@ interface KanbanBoardProps {
   filterStatus?: string;
   /** Filter: search in title/description */
   searchQuery?: string;
+  tasks: Task[];
+  loading?: boolean;
+  addTask: (input: CreateTaskInput) => Promise<Task | null>;
+  editTask: (taskId: string, input: UpdateTaskInput) => Promise<boolean>;
+  removeTask: (taskId: string) => Promise<boolean>;
 }
 
 const COLUMN_COLORS = [
@@ -50,12 +54,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onColumnsChange,
   filterStatus = 'all',
   searchQuery = '',
+  tasks,
+  loading = false,
+  addTask,
+  editTask,
+  removeTask,
 }) => {
   const { user } = useAuth();
-  const { tasks, loading, addTask, editTask, removeTask } = useTasks(
-    projectId,
-    project?.organizationId || null,
-  );
   const projName = projectName || project?.name || 'Project';
   const [columns, setColumns] = useState<KanbanColumn[]>(initialColumns || DEFAULT_COLUMNS);
 
@@ -170,7 +175,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       delete cleanInput.subtasks;
 
       if (selectedTask) {
-        const updatePayload = { ...cleanInput } as Partial<Task> & {
+        const updatePayload = { ...cleanInput } as UpdateTaskInput & {
           activityBy?: { userId: string; displayName: string; photoURL?: string };
           assigneeChangedBy?: { userId: string; displayName: string };
         };
@@ -181,7 +186,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         if ((cleanInput as { assigneeChangedBy?: unknown }).assigneeChangedBy != null) {
           updatePayload.assigneeChangedBy = (cleanInput as { assigneeChangedBy: { userId: string; displayName: string } }).assigneeChangedBy;
         }
-        const ok = await editTask(selectedTask.taskId, updatePayload as Partial<Task>);
+        const ok = await editTask(selectedTask.taskId, updatePayload);
         if (!ok) throw new Error('Failed to update task');
         if (user) {
           const newAssignees = (updatePayload.assignees ?? selectedTask.assignees) ?? [];
@@ -218,6 +223,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           createdByPhotoURL: base.createdByPhotoURL,
         };
         const newTask = await addTask(parentPayload);
+        if (!newTask) {
+          throw new Error('Failed to create task. Please try again.');
+        }
         if (newTask && initialComment?.trim() && user) {
           const orgId = project?.organizationId || user.organizationId || `local-${user.userId}`;
           const visibleToUserIds = Array.from(
@@ -254,7 +262,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const handleCreateSubtasks = useCallback(
     async (subtasks: CreateTaskInput[]) => {
       for (const subtask of subtasks) {
-        await addTask({ ...subtask, parentTaskId: selectedTask?.taskId ?? subtask.parentTaskId });
+        const newSubtask = await addTask({ ...subtask, parentTaskId: selectedTask?.taskId ?? subtask.parentTaskId });
+        if (!newSubtask) throw new Error('Failed to create subtask. Please try again.');
       }
     },
     [addTask, selectedTask]

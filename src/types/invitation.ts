@@ -8,7 +8,7 @@ export interface ProjectInvitation {
   inviterEmail: string;
   inviteeEmail: string;
   role: 'admin' | 'member' | 'viewer';
-  status: 'pending' | 'accepted' | 'declined' | 'expired';
+  status: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled';
   token: string;
   createdAt: Date;
   expiresAt: Date;

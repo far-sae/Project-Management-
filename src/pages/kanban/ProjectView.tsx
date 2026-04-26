@@ -171,7 +171,15 @@ export const ProjectView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline'>('kanban');
   const [showTrialBanner, setShowTrialBanner] = useState(true);
-  const { tasks, limitModal, closeLimitModal } = useTasks(
+  const {
+    tasks,
+    loading: tasksLoading,
+    addTask,
+    editTask,
+    removeTask,
+    limitModal,
+    closeLimitModal,
+  } = useTasks(
     projectId || null,
     project?.organizationId || null,
   );
@@ -476,6 +484,11 @@ export const ProjectView: React.FC = () => {
                 onColumnsChange={handleColumnsChange}
                 filterStatus={selectedStatus}
                 searchQuery={searchQuery}
+                tasks={tasks}
+                loading={tasksLoading}
+                addTask={addTask}
+                editTask={editTask}
+                removeTask={removeTask}
               />
             </div>
           ) : viewMode === 'timeline' ? (

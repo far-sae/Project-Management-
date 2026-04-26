@@ -424,7 +424,7 @@ export const getProject = async (
   projectId: string,
   organizationId: string,
   userId?: string,
-  userEmail?: string,
+  _userEmail?: string,
 ): Promise<Project | null> => {
   let query = supabase
     .from("projects")
@@ -461,19 +461,7 @@ export const getProject = async (
       data.members.some((m: { userId?: string; user_id?: string }) =>
         (m?.userId || m?.user_id) === userId
       );
-    let hasAcceptedInvite = false;
-    if (!isOwner && !isMember && userEmail) {
-      const { data: invite } = await supabase
-        .from("invitations")
-        .select("invitation_id")
-        .eq("project_id", projectId)
-        .eq("email", userEmail.toLowerCase().trim())
-        .eq("status", "accepted")
-        .limit(1)
-        .maybeSingle();
-      hasAcceptedInvite = !!invite;
-    }
-    if (!isOwner && !isMember && !hasAcceptedInvite) return null;
+    if (!isOwner && !isMember) return null;
   }
 
   return convertToProject(data);
@@ -482,7 +470,7 @@ export const getProject = async (
 export const getUserProjects = async (
   userId: string,
   _organizationId: string,
-  userEmail?: string,
+  _userEmail?: string,
 ): Promise<Project[]> => {
   const { data: ownerProjects, error: ownerError } = await supabase
     .from("projects")
@@ -491,39 +479,26 @@ export const getUserProjects = async (
 
   if (ownerError) console.error("Failed to fetch owner projects:", ownerError);
 
-  const acceptedInviteProjectIds: string[] = [];
-  if (userEmail) {
-    const { data: invites } = await supabase
-      .from("invitations")
-      .select("project_id")
-      .eq("email", userEmail.toLowerCase().trim())
-      .eq("status", "accepted");
+  const { data: memberProjects, error: memberError } = await supabase
+    .from("projects")
+    .select("*")
+    .contains("members", [{ userId }]);
 
-    acceptedInviteProjectIds.push(
-      ...(invites || [])
-        .map((i: { project_id?: string }) => i.project_id)
-        .filter((id): id is string => !!id),
-    );
-  }
+  if (memberError) console.error("Failed to fetch member projects:", memberError);
 
-  let invitedProjects: any[] = [];
-  if (acceptedInviteProjectIds.length > 0) {
-    const { data: invitedData, error: invitedError } = await supabase
-      .from("projects")
-      .select("*")
-      .in("project_id", acceptedInviteProjectIds)
-      .order("created_at", { ascending: false });
+  const { data: legacyMemberProjects, error: legacyMemberError } = await supabase
+    .from("projects")
+    .select("*")
+    .contains("members", [{ user_id: userId }]);
 
-    if (invitedError) {
-      console.error("Failed to fetch invited projects:", invitedError);
-    } else {
-      invitedProjects = invitedData || [];
-    }
+  if (legacyMemberError) {
+    console.error("Failed to fetch legacy member projects:", legacyMemberError);
   }
 
   const mergedMap = new Map<string, any>();
   for (const p of ownerProjects || []) mergedMap.set(p.project_id, p);
-  for (const p of invitedProjects) mergedMap.set(p.project_id, p);
+  for (const p of memberProjects || []) mergedMap.set(p.project_id, p);
+  for (const p of legacyMemberProjects || []) mergedMap.set(p.project_id, p);
 
   return Array.from(mergedMap.values())
     .sort(

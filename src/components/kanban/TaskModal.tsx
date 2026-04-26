@@ -161,17 +161,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
   }, [task, initialStatus]);
 
-  // Filter out assignees who are no longer in the project (removed members)
-  useEffect(() => {
-    if (!task || projectAssignableMembers.length === 0) return;
-    const validIds = new Set(projectAssignableMembers.map((m) => m.userId));
-    const currentAssignees = task.assignees || [];
-    const filtered = currentAssignees.filter((a) => validIds.has(a.userId));
-    if (filtered.length !== currentAssignees.length) {
-      setAssignees(filtered);
-    }
-  }, [task?.taskId, projectAssignableMembers]);
-
   useEffect(() => {
     if (!open || !task?.taskId || !orgId) { setTaskComments([]); return; }
     const unsub = subscribeToComments(task.taskId, orgId, setTaskComments);
@@ -213,18 +202,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         const ownerId = projectRow?.owner_id || project?.ownerId || null;
         const membersFromProject = (projectRow?.members || []) as Array<{ userId?: string; user_id?: string; email?: string; displayName?: string; display_name?: string; photoURL?: string; photo_url?: string }>;
 
-        const { data: acceptedInvites } = await supabase
-          .from('invitations')
-          .select('email')
-          .eq('project_id', projectId)
-          .eq('status', 'accepted');
-
-        const acceptedEmails = Array.from(new Set(
-          (acceptedInvites || [])
-            .map((i: any) => (i.email || '').toLowerCase().trim())
-            .filter((email: string) => !!email),
-        ));
-
         const memberMap = new Map<string, {
           userId: string;
           displayName: string;
@@ -265,24 +242,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               displayName: profile?.display_name || m.displayName || m.display_name || m.email || 'Member',
               email: profile?.email || m.email || '',
               photoURL: profile?.photo_url || m.photoURL || m.photo_url || '',
-            });
-          }
-        }
-
-        // Add accepted invitations not already in project.members (e.g. newly accepted)
-        if (acceptedEmails.length > 0) {
-          const { data: profiles } = await supabase
-            .from('user_profiles')
-            .select('id, email, display_name, photo_url')
-            .in('email', acceptedEmails);
-
-          for (const p of profiles || []) {
-            if (memberMap.has(p.id)) continue;
-            memberMap.set(p.id, {
-              userId: p.id,
-              displayName: p.display_name || p.email || 'Member',
-              email: p.email || '',
-              photoURL: p.photo_url || '',
             });
           }
         }

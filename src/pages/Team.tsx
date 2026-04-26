@@ -124,14 +124,14 @@ export const Team: React.FC = () => {
     if (!selectedProject) return;
     setLoading(true);
     try {
-      type ProjectTeamRow = { owner_id?: string; };
+      type ProjectTeamRow = { owner_id?: string; members?: Array<any>; };
       let projectRow: ProjectTeamRow | null = null;
 
       // Prefer org-scoped read, but fallback to project_id-only to avoid stale org mismatches.
       if (projectOrgId) {
         const { data } = await supabase
           .from('projects')
-          .select('owner_id')
+          .select('owner_id, members')
           .eq('project_id', selectedProject)
           .eq('organization_id', projectOrgId)
           .maybeSingle();
@@ -141,13 +141,14 @@ export const Team: React.FC = () => {
       if (!projectRow) {
         const { data } = await supabase
           .from('projects')
-          .select('owner_id')
+          .select('owner_id, members')
           .eq('project_id', selectedProject)
           .maybeSingle();
         projectRow = (data as ProjectTeamRow | null);
       }
 
       const ownerId = projectRow?.owner_id || selectedProjectData?.ownerId || null;
+      const membersFromProject = (projectRow?.members || selectedProjectData?.members || []) as Array<any>;
       setProjectOwnerId(ownerId);
 
       if (projectOrgId) {
@@ -157,26 +158,22 @@ export const Team: React.FC = () => {
         setInvitations([]);
       }
 
-      const { data: acceptedInvites } = await supabase
-        .from('invitations')
-        .select('email, role, accepted_at, status')
-        .eq('project_id', selectedProject)
-        .eq('status', 'accepted');
-
-      const acceptedEmails = (acceptedInvites || [])
-        .map((inv: any) => (inv.email || '').toLowerCase().trim())
-        .filter((email: string) => !!email);
+      const memberIds = Array.from(new Set(
+        membersFromProject
+          .map((m) => m?.userId || m?.user_id)
+          .filter((id): id is string => !!id),
+      ));
 
       let profileMap = new Map<string, any>();
-      if (acceptedEmails.length > 0) {
+      if (memberIds.length > 0) {
         const { data: profiles } = await supabase
           .from('user_profiles')
           .select('id, email, display_name, photo_url')
-          .in('email', acceptedEmails);
+          .in('id', memberIds);
 
         profileMap = new Map(
           (profiles || []).map((p: any) => [
-            (p.email || '').toLowerCase().trim(),
+            p.id,
             p,
           ]),
         );
@@ -198,19 +195,17 @@ export const Team: React.FC = () => {
         });
       }
 
-      for (const inv of acceptedInvites || []) {
-        const email = (inv.email || '').toLowerCase().trim();
-        if (!email) continue;
-        const profile = profileMap.get(email);
-        const memberId = profile?.id || email;
-        if (ownerId && memberId === ownerId) continue;
+      for (const member of membersFromProject) {
+        const memberId = member?.userId || member?.user_id;
+        if (!memberId || (ownerId && memberId === ownerId)) continue;
+        const profile = profileMap.get(memberId);
         assembledMembers.push({
           userId: memberId,
-          email: profile?.email || inv.email || '',
-          displayName: profile?.display_name || inv.email || 'Member',
-          photoURL: profile?.photo_url || '',
-          role: (inv.role || 'member') as ProjectMember['role'],
-          addedAt: inv.accepted_at ? new Date(inv.accepted_at) : new Date(),
+          email: profile?.email || member.email || '',
+          displayName: profile?.display_name || member.displayName || member.display_name || member.email || 'Member',
+          photoURL: profile?.photo_url || member.photoURL || member.photo_url || '',
+          role: (member.role || 'member') as ProjectMember['role'],
+          addedAt: member.addedAt || member.added_at ? new Date(member.addedAt || member.added_at) : new Date(),
         });
       }
 
@@ -272,7 +267,7 @@ export const Team: React.FC = () => {
   // Use effectiveOwnerId (from DB + project list) so project owner can always invite
   const isProjectOwner = !!user?.userId && effectiveOwnerId === user.userId;
 
-  const handleRemoveMember = async (member: ProjectMember) => {
+  const handleRemoveMember = async (member: ProjectMember, unassignTasks: boolean) => {
     if (!selectedProject) return;
     if (!isProjectOwner) {
       toast.error('Only the project owner can remove members.');
@@ -284,16 +279,18 @@ export const Team: React.FC = () => {
         data: { session },
       } = await supabase.auth.getSession();
 
-      await supabase.functions.invoke("remove-member", {
+      const { error } = await supabase.functions.invoke("remove-member", {
         body: {
           projectId: selectedProject,
           memberUserId: member.userId,
           memberEmail: member.email,
+          unassignTasks,
         },
         headers: {
           Authorization: `Bearer ${session?.access_token}`,
         },
       });
+      if (error) throw error;
 
       // Optimistically update local state so the removed member disappears immediately.
       setProjectMembers((prev) =>
@@ -303,7 +300,8 @@ export const Team: React.FC = () => {
       refreshProjects();
 
       loadTeamData();
-    } catch {
+    } catch (error) {
+      console.error('Error removing member:', error);
       setInfoDialog({
         open: true,
         title: "Failed to Remove Member",
@@ -806,8 +804,7 @@ export const Team: React.FC = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Team Member?</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to remove this member from the project?
-                This action cannot be undone.
+                This removes project access immediately. Choose whether existing tasks should keep this member as historical assignee context or be unassigned now.
               </AlertDialogDescription>
             </AlertDialogHeader>
 
@@ -816,17 +813,30 @@ export const Team: React.FC = () => {
                 Cancel
               </AlertDialogCancel>
 
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (removeMemberId) {
+                    const member = allMembers.find((m) => m.userId === removeMemberId);
+                    if (member) await handleRemoveMember(member, false);
+                    setRemoveMemberId(null);
+                  }
+                }}
+              >
+                Keep Task History
+              </Button>
+
               <AlertDialogAction
                 className="bg-red-500 hover:bg-red-600"
                 onClick={async () => {
                   if (removeMemberId) {
                     const member = allMembers.find((m) => m.userId === removeMemberId);
-                    if (member) await handleRemoveMember(member);
+                    if (member) await handleRemoveMember(member, true);
                     setRemoveMemberId(null);
                   }
                 }}
               >
-                Remove
+                Remove and Unassign
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

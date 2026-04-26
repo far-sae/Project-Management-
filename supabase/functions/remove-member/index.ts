@@ -61,7 +61,12 @@ serve(async (req) => {
 
   const requesterId = user.id;
 
-  let body: { projectId: string; memberUserId: string; memberEmail?: string };
+  let body: {
+    projectId: string;
+    memberUserId: string;
+    memberEmail?: string;
+    unassignTasks?: boolean;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -71,7 +76,7 @@ serve(async (req) => {
     });
   }
 
-  const { projectId, memberUserId, memberEmail } = body;
+  const { projectId, memberUserId, memberEmail, unassignTasks = false } = body;
   if (!projectId || !memberUserId) {
     return new Response(
       JSON.stringify({ error: "Missing projectId or memberUserId" }),
@@ -129,10 +134,22 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+  if (memberUserId === project.owner_id) {
+    return new Response(JSON.stringify({ error: "The project owner cannot be removed" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
-  const { error: updateError } = await supabase.rpc("remove_project_member", {
+  const memberFromProject = members.find(
+    (m) => (m.userId || m.user_id) === memberUserId,
+  );
+  const normalizedEmail = (memberEmail || memberFromProject?.email || "").toLowerCase().trim();
+  const { data: removalSummary, error: updateError } = await supabase.rpc("remove_project_member", {
     p_project_id: projectId,
     p_member_user_id: memberUserId,
+    p_member_email: normalizedEmail,
+    p_unassign_tasks: unassignTasks,
   });
 
   if (updateError) {
@@ -143,20 +160,7 @@ serve(async (req) => {
     });
   }
 
-  // Also mark any accepted invitations for this member as cancelled so the Team UI
-  // stops treating them as an active member (frontend reads from invitations.status).
-  if (memberEmail) {
-    const normalizedEmail = memberEmail.toLowerCase().trim();
-    if (normalizedEmail) {
-      await supabase
-        .from("invitations")
-        .update({ status: "cancelled" })
-        .eq("project_id", projectId)
-        .eq("email", normalizedEmail);
-    }
-  }
-
-  return new Response(JSON.stringify({ ok: true }), {
+  return new Response(JSON.stringify({ ok: true, summary: removalSummary }), {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
