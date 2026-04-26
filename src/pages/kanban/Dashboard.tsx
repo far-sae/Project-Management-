@@ -9,6 +9,10 @@ import { useProjects } from '@/hooks/useProjects';
 import { useAllTasks } from '@/hooks/useAllTasks';
 import { useActivity } from '@/hooks/useActivity';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import {
+  ALL_WORKSPACES_ID,
+  useSelectedWorkspace,
+} from '@/hooks/useSelectedWorkspace';
 import { ActivityEvent } from '@/types/activity';
 import { Project } from '@/types';
 
@@ -73,6 +77,11 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/services/supabase';
 import { useSubscription } from '@/context/SubscriptionContext';
 import LimitReachedModal from '@/components/ui/LimitReachedModal';
+import { fetchProjectTemplates } from '@/services/supabase/templates';
+import type { ProjectTemplate } from '@/types/projectTemplate';
+import { createTask } from '@/services/supabase/database';
+import { LayoutTemplate } from 'lucide-react';
+import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist';
 
 const PROJECT_COLORS = [
   '#f97316', '#ef4444', '#22c55e', '#3b82f6',
@@ -129,6 +138,10 @@ export const Dashboard: React.FC = () => {
 
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createTab, setCreateTab] = useState<'blank' | 'template'>('blank');
+  const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<ProjectTemplate | null>(null);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false);
   const [showTrialBanner, setShowTrialBanner] = useState(true);
   const [newProjectName, setNewProjectName] = useState('');
@@ -161,22 +174,10 @@ export const Dashboard: React.FC = () => {
 
   const [showWorkspacesModal, setShowWorkspacesModal] = useState(false);
 
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(() => {
-    return localStorage.getItem('selectedWorkspaceId') || DEFAULT_WORKSPACE_ID;
-  });
-
-  useEffect(() => {
-    if (!selectedWorkspaceId || selectedWorkspaceId === "__default__") {
-      setSelectedWorkspaceId(DEFAULT_WORKSPACE_ID);
-    }
-  }, [DEFAULT_WORKSPACE_ID]);
-
-  const ALL_WORKSPACES_ID = '__ALL_WORKSPACES__';
-
-  const handleWorkspaceChange = (id: string) => {
-    setSelectedWorkspaceId(id);
-    localStorage.setItem('selectedWorkspaceId', id);
-  };
+  const {
+    selectedId: selectedWorkspaceId,
+    select: handleWorkspaceChange,
+  } = useSelectedWorkspace();
 
 
   // Detect Stripe success redirect and poll for updated subscription
@@ -202,6 +203,34 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     if (showCreateModal && projectsError) setCreateError(projectsError);
   }, [showCreateModal, projectsError]);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    let cancelled = false;
+    setTemplatesLoading(true);
+    fetchProjectTemplates({
+      ownerId: user?.userId ?? null,
+      organizationId: orgId || null,
+    })
+      .then((rows) => {
+        if (!cancelled) setTemplates(rows);
+      })
+      .catch((err) => {
+        console.warn('Failed to load templates', err);
+      })
+      .finally(() => {
+        if (!cancelled) setTemplatesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showCreateModal, user?.userId, orgId]);
+
+  useEffect(() => {
+    if (createTab === 'template' && selectedTemplate && !newProjectName.trim()) {
+      setNewProjectName(selectedTemplate.name);
+    }
+  }, [createTab, selectedTemplate, newProjectName]);
 
 
   // ── Handlers ──────────────────────────────────────────────
@@ -235,21 +264,47 @@ export const Dashboard: React.FC = () => {
         }
       }
 
+      const useTemplate = createTab === 'template' && selectedTemplate;
+
       const project = await addProject({
         name: newProjectName,
-        description: newProjectDescription,
+        description: newProjectDescription || (useTemplate ? selectedTemplate!.description ?? '' : ''),
         coverColor: selectedColor,
         workspaceId: actualWorkspaceId,
         startDate: newProjectStartDate || null,
         endDate: newProjectEndDate || null,
+        columns: useTemplate ? selectedTemplate!.columns : undefined,
       });
 
       if (project) {
+        if (useTemplate && selectedTemplate!.tasks.length > 0 && user) {
+          try {
+            for (const seed of selectedTemplate!.tasks) {
+              await createTask(
+                user.userId,
+                {
+                  projectId: project.projectId,
+                  title: seed.title,
+                  description: seed.description ?? '',
+                  status: seed.status ?? selectedTemplate!.columns[0]?.id ?? 'undefined',
+                  priority: seed.priority ?? 'medium',
+                  tags: seed.tags ?? [],
+                },
+                orgId,
+              );
+            }
+          } catch (seedErr) {
+            console.warn('Template seed task creation failed', seedErr);
+          }
+        }
+
         setShowCreateModal(false);
         setNewProjectName('');
         setNewProjectDescription('');
         setNewProjectStartDate('');
         setNewProjectEndDate('');
+        setSelectedTemplate(null);
+        setCreateTab('blank');
         setCreateError(null);
         toast.success('Project created', { id: toastId });
         navigate(`/project/${project.projectId}`);
@@ -503,7 +558,7 @@ export const Dashboard: React.FC = () => {
   }, [workspaces]);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
 
       <main className="flex-1 overflow-y-auto">
@@ -592,6 +647,10 @@ export const Dashboard: React.FC = () => {
                 New Project
               </Button>
             </div>
+          </div>
+
+          <div className="mb-6">
+            <OnboardingChecklist />
           </div>
 
           <Tabs defaultValue="overview" className="space-y-6">
@@ -1028,12 +1087,73 @@ export const Dashboard: React.FC = () => {
 
       {/* Create Project Dialog */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent aria-describedby={undefined} className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create New Project</DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleCreateProject} className="space-y-4">
+          <Tabs value={createTab} onValueChange={(v) => setCreateTab(v as 'blank' | 'template')}>
+            <TabsList className="grid grid-cols-2 w-full">
+              <TabsTrigger value="blank">Blank project</TabsTrigger>
+              <TabsTrigger value="template">From template</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="template" className="pt-3">
+              {templatesLoading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Loading templates...
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-8">
+                  No templates available yet.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+                  {templates.map((tpl) => {
+                    const isSelected = selectedTemplate?.id === tpl.id;
+                    return (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        onClick={() => setSelectedTemplate(tpl)}
+                        className={cn(
+                          'text-left rounded-lg border p-3 transition-colors hover:border-primary/40 hover:bg-primary/5',
+                          isSelected ? 'border-primary bg-primary/10' : 'border-border bg-card',
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="rounded-md bg-primary/10 text-primary p-1.5">
+                            <LayoutTemplate className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-foreground truncate">{tpl.name}</p>
+                              {tpl.isBuiltin && (
+                                <span className="text-[10px] uppercase tracking-wide bg-muted text-muted-foreground rounded px-1.5 py-0.5">
+                                  Built-in
+                                </span>
+                              )}
+                            </div>
+                            {tpl.description && (
+                              <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                                {tpl.description}
+                              </p>
+                            )}
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                              {tpl.columns.length} columns · {tpl.tasks.length} starter tasks
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          <form onSubmit={handleCreateProject} className="space-y-4 mt-3">
             {createError && (
               <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{createError}</p>
             )}
@@ -1126,6 +1246,8 @@ export const Dashboard: React.FC = () => {
                   setShowCreateModal(false);
                   setNewProjectStartDate('');
                   setNewProjectEndDate('');
+                  setSelectedTemplate(null);
+                  setCreateTab('blank');
                 }}
                 disabled={creating}
               >
@@ -1134,7 +1256,11 @@ export const Dashboard: React.FC = () => {
               <Button
                 type="submit"
                 className="bg-gradient-to-r from-orange-500 to-red-500"
-                disabled={creating || !newProjectName.trim()}
+                disabled={
+                  creating ||
+                  !newProjectName.trim() ||
+                  (createTab === 'template' && !selectedTemplate)
+                }
               >
                 {creating ? (
                   <>

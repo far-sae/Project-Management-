@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { Sidebar } from "@/components/sidebar/Sidebar";
@@ -33,13 +33,19 @@ import {
   Save,
   Camera,
   Loader2,
+  Palette,
+  Activity,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { CapacitySettings } from "@/components/settings/CapacitySettings";
 
 const NOTIFICATIONS_KEY = "user_notification_prefs";
 
 export const Settings: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'profile';
   const { user, refreshUser } = useAuth();
   const {
     subscription,
@@ -92,12 +98,12 @@ export const Settings: React.FC = () => {
   // Show loading state
   if (subscriptionLoading && !subscription) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-background">
         <Sidebar />
         <main className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-4" />
-            <p className="text-gray-500">Loading settings...</p>
+            <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading settings...</p>
           </div>
         </main>
       </div>
@@ -264,19 +270,31 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-500">Manage your account and preferences</p>
+          <h1 className="text-3xl font-bold text-foreground">Settings</h1>
+          <p className="text-muted-foreground">Manage your account and preferences</p>
         </div>
 
-        <Tabs defaultValue="profile" className="space-y-6">
+        <Tabs
+          defaultValue={initialTab}
+          onValueChange={(v) => {
+            const next = new URLSearchParams(searchParams);
+            next.set('tab', v);
+            setSearchParams(next, { replace: true });
+          }}
+          className="space-y-6"
+        >
           <TabsList>
             <TabsTrigger value="profile" className="gap-2">
               <User className="w-4 h-4" />
               Profile
+            </TabsTrigger>
+            <TabsTrigger value="appearance" className="gap-2">
+              <Palette className="w-4 h-4" />
+              Appearance
             </TabsTrigger>
             <TabsTrigger value="notifications" className="gap-2">
               <Bell className="w-4 h-4" />
@@ -290,7 +308,21 @@ export const Settings: React.FC = () => {
               <Shield className="w-4 h-4" />
               Security
             </TabsTrigger>
+            <TabsTrigger value="capacity" className="gap-2">
+              <Activity className="w-4 h-4" />
+              Capacity
+            </TabsTrigger>
           </TabsList>
+
+          {/* APPEARANCE TAB */}
+          <TabsContent value="appearance">
+            <AppearanceSettings />
+          </TabsContent>
+
+          {/* CAPACITY TAB */}
+          <TabsContent value="capacity">
+            <CapacitySettings />
+          </TabsContent>
 
           {/* PROFILE TAB */}
           <TabsContent value="profile">

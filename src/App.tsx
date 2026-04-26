@@ -1,7 +1,10 @@
+import React from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
+import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { OrganizationProvider } from '@/context/OrganizationContext';
 import { SubscriptionProvider } from '@/context/SubscriptionContext';
+import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
 import { Login } from '@/pages/auth/Login';
@@ -17,6 +20,8 @@ import { Contracts } from '@/pages/Contracts';
 import { Reports } from '@/pages/Reports';
 import { TimelineOverview } from '@/pages/TimelineOverview';
 import { Settings } from '@/pages/Settings';
+import { Inbox } from '@/pages/Inbox';
+import { Workload } from '@/pages/Workload';
 import { AcceptInvite } from '@/pages/AcceptInvite';
 import { Pricing } from '@/pages/subscription/Pricing';
 import { AdminDashboard } from '@/pages/admin/AdminDashboard';
@@ -29,6 +34,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
 import CookieBanner from '@/components/landing/CookieBanner';
+import { CommandPalette } from '@/components/command/CommandPalette';
 
 
 const RootRedirect: React.FC = () => {
@@ -37,7 +43,7 @@ const RootRedirect: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2Icon className="h-8 w-8 animate-spin text-orange-500" />
+        <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -45,11 +51,22 @@ const RootRedirect: React.FC = () => {
   return <Navigate to={user ? '/dashboard' : '/login'} replace />;
 };
 
+const RouterShell: React.FC = () => {
+  const { user } = useAuth();
+  return (
+    <>
+      <Outlet />
+      {/* Command palette is global but only useful while authenticated */}
+      {user && <CommandPalette />}
+    </>
+  );
+};
+
 export default function App() {
   const router = createBrowserRouter(
     [
       {
-        element: <Outlet />,
+        element: <RouterShell />,
         errorElement: <ErrorBoundary />,
         children: [
           { path: '/login', element: <Login /> },
@@ -82,6 +99,22 @@ export default function App() {
             element: (
               <ProtectedRoute requireSubscription>
                 <MyTasks />
+              </ProtectedRoute>
+            ),
+          },
+          {
+            path: '/inbox',
+            element: (
+              <ProtectedRoute requireSubscription>
+                <Inbox />
+              </ProtectedRoute>
+            ),
+          },
+          {
+            path: '/workload',
+            element: (
+              <ProtectedRoute requireSubscription>
+                <Workload />
               </ProtectedRoute>
             ),
           },
@@ -169,14 +202,27 @@ export default function App() {
   );
 
   return (
-    <AuthProvider>
-      <OrganizationProvider>
-        <SubscriptionProvider>
-          <RouterProvider router={router} future={{ v7_startTransition: true }} />
-          <Toaster position='bottom-right' />
-          <CookieBanner />
-        </SubscriptionProvider>
-      </OrganizationProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <MotionGate>
+        <AuthProvider>
+          <OrganizationProvider>
+            <SubscriptionProvider>
+              <RouterProvider router={router} future={{ v7_startTransition: true }} />
+              <Toaster position='bottom-right' />
+              <CookieBanner />
+            </SubscriptionProvider>
+          </OrganizationProvider>
+        </AuthProvider>
+      </MotionGate>
+    </ThemeProvider>
   );
 }
+
+const MotionGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { reducedMotion } = useTheme();
+  return (
+    <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
+      {children}
+    </MotionConfig>
+  );
+};

@@ -357,7 +357,7 @@ export const TimelineOverview: React.FC = () => {
   // ── Show loading state while subscription is loading ──
   if (subscriptionLoading || !isReady) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-background">
         <Sidebar />
         <main className="flex-1 overflow-hidden flex flex-col items-center justify-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mb-4" />
@@ -370,7 +370,7 @@ export const TimelineOverview: React.FC = () => {
   // ── Feature gate ──────────────────────────────────────────
   if (!hasFeature('timeline_overview')) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-background">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
@@ -398,7 +398,7 @@ export const TimelineOverview: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <main className="flex-1 overflow-hidden flex flex-col">
 

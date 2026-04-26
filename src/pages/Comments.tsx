@@ -54,7 +54,7 @@ export const Comments: React.FC = () => {
 
   if (!user) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-background">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Comments</h1>
@@ -66,7 +66,7 @@ export const Comments: React.FC = () => {
 
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="mb-8">

@@ -3,95 +3,301 @@
 @tailwind utilities;
 
 @layer base {
+  /* ────────────────────────────────────────────────────────────
+     Base tokens — Light theme (orange brand by default)
+     ──────────────────────────────────────────────────────────── */
   :root {
     --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --foreground: 222 22% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 222 22% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
+    --popover-foreground: 222 22% 12%;
 
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
+    /* Primary = brand accent (default orange). Per-workspace accents
+       override these via [data-accent="…"] selectors below. */
+    --primary: 24 95% 53%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 24 95% 95%;
+    --primary-soft-foreground: 22 80% 30%;
 
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 22% 18%;
 
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
 
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
+    --accent: 24 95% 95%;
+    --accent-foreground: 22 80% 30%;
 
-    --success: 142 76% 36%;
+    --success: 142 70% 38%;
     --success-foreground: 0 0% 100%;
+    --success-soft: 142 70% 95%;
+    --success-soft-foreground: 142 70% 22%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning-foreground: 26 60% 12%;
+    --warning-soft: 38 92% 95%;
+    --warning-soft-foreground: 26 70% 28%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 72% 95%;
+    --destructive-soft-foreground: 0 72% 38%;
 
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 100%;
+    --info-soft: 217 91% 95%;
+    --info-soft-foreground: 217 80% 32%;
 
-    --radius: 0.5rem;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 24 95% 53%;
 
-    --hero-gradient: linear-gradient(135deg, hsl(24 95% 53%) 0%, hsl(35 95% 55%) 50%, hsl(20 90% 48%) 100%);
+    --radius: 0.625rem;
 
-    --chart-1: 12 76% 61%;
+    --hero-gradient: linear-gradient(
+      135deg,
+      hsl(24 95% 53%) 0%,
+      hsl(35 95% 55%) 50%,
+      hsl(20 90% 48%) 100%
+    );
 
+    --chart-1: 24 95% 53%;
     --chart-2: 173 58% 39%;
-
-    --chart-3: 197 37% 24%;
-
+    --chart-3: 217 91% 60%;
     --chart-4: 43 74% 66%;
+    --chart-5: 262 83% 62%;
 
-    --chart-5: 27 87% 67%;
+    /* Density tokens (overridden by .dense root class) */
+    --density-row: 2.5rem;
+    --density-pad-x: 0.875rem;
+    --density-pad-y: 0.5rem;
+    --density-card-pad: 1rem;
+    --density-gap: 0.75rem;
+
+    /* Surfaces: subtle elevation for stacked panels */
+    --surface-1: 0 0% 100%;
+    --surface-2: 220 14% 98%;
+    --surface-3: 220 14% 96%;
+
+    color-scheme: light;
   }
 
+  /* ────────────────────────────────────────────────────────────
+     Dark theme overrides
+     ──────────────────────────────────────────────────────────── */
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
+    --background: 222 24% 7%;
+    --foreground: 210 20% 96%;
 
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
+    --card: 222 22% 10%;
+    --card-foreground: 210 20% 96%;
 
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 222 22% 10%;
+    --popover-foreground: 210 20% 96%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
+    --primary: 24 95% 58%;
+    --primary-foreground: 222 30% 8%;
+    --primary-soft: 24 70% 18%;
+    --primary-soft-foreground: 24 95% 80%;
 
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 210 20% 96%;
 
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
+    --muted: 222 18% 16%;
+    --muted-foreground: 220 9% 64%;
 
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 24 70% 18%;
+    --accent-foreground: 24 95% 80%;
 
-    --success: 142 76% 42%;
+    --success: 142 65% 45%;
     --success-foreground: 0 0% 100%;
+    --success-soft: 142 60% 16%;
+    --success-soft-foreground: 142 70% 75%;
 
-    --warning: 38 92% 55%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 38 92% 58%;
+    --warning-foreground: 26 60% 12%;
+    --warning-soft: 38 60% 18%;
+    --warning-soft-foreground: 38 90% 78%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 0 75% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 60% 18%;
+    --destructive-soft-foreground: 0 80% 78%;
 
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --info: 217 91% 65%;
+    --info-foreground: 0 0% 100%;
+    --info-soft: 217 60% 18%;
+    --info-soft-foreground: 217 80% 78%;
+
+    --border: 222 18% 18%;
+    --input: 222 18% 18%;
+    --ring: 24 95% 58%;
+
+    --hero-gradient: linear-gradient(
+      135deg,
+      hsl(24 95% 58%) 0%,
+      hsl(35 95% 55%) 50%,
+      hsl(20 90% 50%) 100%
+    );
+
+    --chart-1: 24 95% 58%;
+    --chart-2: 173 58% 49%;
+    --chart-3: 217 91% 65%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 262 83% 70%;
+
+    --surface-1: 222 22% 10%;
+    --surface-2: 222 22% 12%;
+    --surface-3: 222 22% 14%;
+
+    color-scheme: dark;
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     Per-workspace accent overrides
+     Each accent only changes brand-tinted tokens; structural tokens
+     (background, foreground, border) stay neutral for readability.
+     ──────────────────────────────────────────────────────────── */
+  :root[data-accent="blue"] {
+    --primary: 217 91% 60%;
+    --primary-soft: 217 91% 95%;
+    --primary-soft-foreground: 217 80% 30%;
+    --accent: 217 91% 95%;
+    --accent-foreground: 217 80% 30%;
+    --ring: 217 91% 60%;
+    --chart-1: 217 91% 60%;
+    --hero-gradient: linear-gradient(
+      135deg,
+      hsl(217 91% 60%) 0%,
+      hsl(199 89% 55%) 50%,
+      hsl(231 80% 60%) 100%
+    );
+  }
+  .dark[data-accent="blue"] {
+    --primary: 217 91% 65%;
+    --primary-soft: 217 60% 18%;
+    --primary-soft-foreground: 217 90% 80%;
+    --accent: 217 60% 18%;
+    --accent-foreground: 217 90% 80%;
+    --ring: 217 91% 65%;
+    --chart-1: 217 91% 65%;
+  }
+
+  :root[data-accent="violet"] {
+    --primary: 262 83% 62%;
+    --primary-soft: 262 80% 95%;
+    --primary-soft-foreground: 262 70% 30%;
+    --accent: 262 80% 95%;
+    --accent-foreground: 262 70% 30%;
+    --ring: 262 83% 62%;
+    --chart-1: 262 83% 62%;
+    --hero-gradient: linear-gradient(
+      135deg,
+      hsl(262 83% 62%) 0%,
+      hsl(290 76% 60%) 50%,
+      hsl(231 80% 60%) 100%
+    );
+  }
+  .dark[data-accent="violet"] {
+    --primary: 262 83% 70%;
+    --primary-soft: 262 50% 22%;
+    --primary-soft-foreground: 262 90% 85%;
+    --accent: 262 50% 22%;
+    --accent-foreground: 262 90% 85%;
+    --ring: 262 83% 70%;
+    --chart-1: 262 83% 70%;
+  }
+
+  :root[data-accent="green"] {
+    --primary: 152 70% 42%;
+    --primary-soft: 152 65% 92%;
+    --primary-soft-foreground: 152 60% 22%;
+    --accent: 152 65% 92%;
+    --accent-foreground: 152 60% 22%;
+    --ring: 152 70% 42%;
+    --chart-1: 152 70% 42%;
+    --hero-gradient: linear-gradient(
+      135deg,
+      hsl(152 70% 42%) 0%,
+      hsl(173 58% 45%) 50%,
+      hsl(120 65% 45%) 100%
+    );
+  }
+  .dark[data-accent="green"] {
+    --primary: 152 65% 50%;
+    --primary-soft: 152 50% 16%;
+    --primary-soft-foreground: 152 80% 80%;
+    --accent: 152 50% 16%;
+    --accent-foreground: 152 80% 80%;
+    --ring: 152 65% 50%;
+    --chart-1: 152 65% 50%;
+  }
+
+  :root[data-accent="pink"] {
+    --primary: 330 81% 60%;
+    --primary-soft: 330 80% 95%;
+    --primary-soft-foreground: 330 70% 30%;
+    --accent: 330 80% 95%;
+    --accent-foreground: 330 70% 30%;
+    --ring: 330 81% 60%;
+    --chart-1: 330 81% 60%;
+    --hero-gradient: linear-gradient(
+      135deg,
+      hsl(330 81% 60%) 0%,
+      hsl(350 80% 60%) 50%,
+      hsl(300 76% 55%) 100%
+    );
+  }
+  .dark[data-accent="pink"] {
+    --primary: 330 81% 65%;
+    --primary-soft: 330 50% 22%;
+    --primary-soft-foreground: 330 90% 85%;
+    --accent: 330 50% 22%;
+    --accent-foreground: 330 90% 85%;
+    --ring: 330 81% 65%;
+    --chart-1: 330 81% 65%;
+  }
+
+  :root[data-accent="slate"] {
+    --primary: 220 14% 28%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 220 14% 94%;
+    --primary-soft-foreground: 220 14% 22%;
+    --accent: 220 14% 94%;
+    --accent-foreground: 220 14% 22%;
+    --ring: 220 14% 28%;
+    --chart-1: 220 14% 35%;
+    --hero-gradient: linear-gradient(
+      135deg,
+      hsl(220 14% 28%) 0%,
+      hsl(220 14% 38%) 50%,
+      hsl(220 14% 22%) 100%
+    );
+  }
+  .dark[data-accent="slate"] {
+    --primary: 220 14% 75%;
+    --primary-foreground: 222 30% 10%;
+    --primary-soft: 220 14% 22%;
+    --primary-soft-foreground: 220 14% 85%;
+    --accent: 220 14% 22%;
+    --accent-foreground: 220 14% 85%;
+    --ring: 220 14% 75%;
+    --chart-1: 220 14% 75%;
+  }
+
+  /* ────────────────────────────────────────────────────────────
+     Density: compact mode tightens vertical rhythm
+     ──────────────────────────────────────────────────────────── */
+  .dense {
+    --density-row: 2rem;
+    --density-pad-x: 0.625rem;
+    --density-pad-y: 0.25rem;
+    --density-card-pad: 0.75rem;
+    --density-gap: 0.5rem;
   }
 }
 
@@ -109,6 +315,36 @@
 
   html {
     scroll-behavior: smooth;
+  }
+
+  /* Visible focus rings on all interactive elements */
+  :where(button, a, [role="button"], [role="link"], [tabindex]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: calc(var(--radius) - 2px);
+  }
+
+  /* Selection */
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+    color: hsl(var(--foreground));
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
   }
 }
 
@@ -162,11 +398,32 @@
   }
 
   .sidebar-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200 cursor-pointer;
   }
 
   .sidebar-item-active {
-    @apply text-foreground bg-primary/10;
+    @apply text-primary bg-primary/10;
+  }
+
+  /* Surfaces */
+  .surface-1 {
+    background-color: hsl(var(--surface-1));
+  }
+  .surface-2 {
+    background-color: hsl(var(--surface-2));
+  }
+  .surface-3 {
+    background-color: hsl(var(--surface-3));
+  }
+
+  /* Density-aware row */
+  .row-dense {
+    min-height: var(--density-row);
+    padding-block: var(--density-pad-y);
+    padding-inline: var(--density-pad-x);
+  }
+  .card-dense {
+    padding: var(--density-card-pad);
   }
 }
 
@@ -218,4 +475,28 @@
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
+}
+
+/* ────────────────────────────────────────────────────────────
+   Reduced motion: respected via document.documentElement
+   class set by ThemeProvider when user opts in or system prefers.
+   ──────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.motion-reduced *,
+.motion-reduced *::before,
+.motion-reduced *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

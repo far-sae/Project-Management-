@@ -7,3 +7,6 @@ export * from './file';
 export * from './invitation';
 export * from './activity';
 export * from './notification';
+export * from './savedView';
+export * from './projectTemplate';
+export * from './capacity';

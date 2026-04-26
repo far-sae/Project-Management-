@@ -305,7 +305,7 @@ export const Reports: React.FC = () => {
   // Feature gate
   if (!hasFeature('reports')) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-background">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
@@ -336,7 +336,7 @@ export const Reports: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         {/* Header */}
@@ -389,6 +389,12 @@ export const Reports: React.FC = () => {
                 }`}
             >
               Business Reports
+            </button>
+            <button
+              onClick={() => navigate('/workload')}
+              className="px-4 py-2 font-medium text-sm border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700"
+            >
+              Workload →
             </button>
           </div>
         </div>

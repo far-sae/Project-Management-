@@ -6,3 +6,6 @@ export * from "./organizations";
 export * from "./contracts";
 export * from "./storage";
 export * from "./invitations";
+export * from "./savedViews";
+export * from "./templates";
+export * from "./capacity";

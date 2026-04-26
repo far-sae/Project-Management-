@@ -45,6 +45,7 @@ export interface CreateProjectInput {
   workspaceId?: string;
   startDate?: string | null;
   endDate?: string | null;
+  columns?: KanbanColumn[];
 }
 
 export interface UpdateProjectInput {

@@ -324,7 +324,7 @@ export const createProject = async (
     //     addedAt: now,
     //   },
     // ],
-    columns: [],
+    columns: input.columns ?? [],
     created_at: now,
     updated_at: now,
   };
@@ -936,6 +936,47 @@ export const deleteTask = async (
   }
 };
 
+/**
+ * Apply the same UpdateTaskInput patch to many tasks in parallel.
+ * Used by the kanban bulk-action bar (Set status, Set priority, etc.).
+ */
+export const bulkUpdateTasks = async (
+  taskIds: string[],
+  patch: UpdateTaskInput,
+  organizationId: string,
+): Promise<void> => {
+  await Promise.all(
+    taskIds.map((id) => updateTask(id, patch, organizationId)),
+  );
+};
+
+/**
+ * Persist a new ordering of tasks within their column. Each entry
+ * is `{ taskId, position }`; `status` is included to keep the row
+ * anchored to its column even if a parallel move just happened.
+ */
+export const bulkReorderTasks = async (
+  ordering: { taskId: string; position: number; status?: string }[],
+  organizationId: string,
+): Promise<void> => {
+  await Promise.all(
+    ordering.map(({ taskId, position, status }) =>
+      updateTask(
+        taskId,
+        status ? { position, status } : { position },
+        organizationId,
+      ),
+    ),
+  );
+};
+
+export const bulkDeleteTasks = async (
+  taskIds: string[],
+  organizationId?: string,
+): Promise<void> => {
+  await Promise.all(taskIds.map((id) => deleteTask(id, organizationId)));
+};
+
 export const subscribeToTasks = (
   projectId: string,
   organizationId: string | undefined,
@@ -1226,6 +1267,29 @@ export const markNotificationRead = async (
   await supabase
     .from("notifications")
     .update({ read: true })
+    .eq("notification_id", notificationId)
+    .eq("user_id", userId);
+};
+
+/** Mark every unread notification for the user as read. */
+export const markAllNotificationsRead = async (
+  userId: string,
+): Promise<void> => {
+  await supabase
+    .from("notifications")
+    .update({ read: true })
+    .eq("user_id", userId)
+    .eq("read", false);
+};
+
+/** Permanently delete a single notification for the user (used by Inbox). */
+export const deleteNotification = async (
+  userId: string,
+  notificationId: string,
+): Promise<void> => {
+  await supabase
+    .from("notifications")
+    .delete()
     .eq("notification_id", notificationId)
     .eq("user_id", userId);
 };

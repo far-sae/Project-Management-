@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare } from 'lucide-react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/context/AuthContext';
@@ -12,8 +12,16 @@ import { DEFAULT_COLUMNS } from '@/types/task';
 import type { KanbanColumn } from '@/types';
 
 import { Sidebar } from '@/components/sidebar/Sidebar';
-import { KanbanBoard } from '@/components/kanban/KanbanBoard';
+import { KanbanBoard, TaskSortOption } from '@/components/kanban/KanbanBoard';
 import { TrialBanner } from '@/components/subscription/TrialBanner';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { ProjectRightRail } from '@/components/project/ProjectRightRail';
+import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
+import { usePresence } from '@/hooks/usePresence';
+import { CsvImportDialog } from '@/components/import/CsvImportDialog';
+import { SavedViewsMenu } from '@/components/views/SavedViewsMenu';
+import { tasksToCsv, downloadCsv } from '@/services/csv/tasksCsv';
+import type { SavedView } from '@/types/savedView';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -83,10 +91,10 @@ const TimelineView: React.FC<TimelineViewProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+    <div className="bg-card rounded-lg border border-border overflow-x-auto">
       <div className="min-w-[600px]">
-        <div className="flex border-b border-gray-200">
-          <div className="w-64 shrink-0 p-3 font-medium text-gray-700 border-r border-gray-200">
+        <div className="flex border-b border-border">
+          <div className="w-64 shrink-0 p-3 font-medium text-foreground border-r border-border">
             Task
           </div>
           <div className="flex-1 relative" style={{ minWidth: totalDays * DAYS_WIDTH }}>
@@ -96,7 +104,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
               return (
                 <div
                   key={i}
-                  className="absolute top-0 bottom-0 border-r border-gray-100 text-xs text-gray-500 px-1 py-2"
+                  className="absolute top-0 bottom-0 border-r border-border/60 text-xs text-muted-foreground px-1 py-2"
                   style={{ left: i * 7 * DAYS_WIDTH, width: 7 * DAYS_WIDTH }}
                 >
                   {MONTHS[d.getMonth()]} {d.getFullYear()}
@@ -106,7 +114,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
 
             {todayOffset >= 0 && todayOffset < totalDays && (
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-orange-500 z-10"
+                className="absolute top-0 bottom-0 w-0.5 bg-primary z-10"
                 style={{ left: todayOffset * DAYS_WIDTH }}
               />
             )}
@@ -114,7 +122,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
         </div>
 
         {filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-500">
+          <div className="text-center py-16 text-muted-foreground">
             <p>No tasks with due dates. Add due dates to tasks to see them on the timeline.</p>
           </div>
         ) : (
@@ -125,12 +133,12 @@ const TimelineView: React.FC<TimelineViewProps> = ({
             return (
               <div
                 key={task.taskId}
-                className="flex items-center border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
+                className="flex items-center border-b border-border/60 hover:bg-secondary/50 cursor-pointer"
                 onClick={() => navigate(`/project/${task.projectId}`)}
               >
-                <div className="w-64 shrink-0 p-3 border-r border-gray-200">
-                  <p className="font-medium truncate">{task.title}</p>
-                  <p className="text-xs text-gray-500 capitalize">{task.status}</p>
+                <div className="w-64 shrink-0 p-3 border-r border-border">
+                  <p className="font-medium truncate text-foreground">{task.title}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{task.status}</p>
                 </div>
                 <div className="flex-1 relative h-12" style={{ minWidth: totalDays * DAYS_WIDTH }}>
                   <div
@@ -163,14 +171,61 @@ export const ProjectView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string; }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkTaskId = searchParams.get('taskId');
+  const handleOpenedTask = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('taskId');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const { peers, broadcastTyping, typingPeers } = usePresence({
+    channelKey: projectId ?? null,
+    currentTaskId: activeTaskId,
+  });
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline'>('kanban');
+  const [sortOption, setSortOption] = useState<TaskSortOption>(() => {
+    try {
+      return (window.localStorage.getItem('project_sort_v1') as TaskSortOption) || 'manual';
+    } catch {
+      return 'manual';
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('project_sort_v1', sortOption);
+    } catch {
+      /* ignore */
+    }
+  }, [sortOption]);
   const [showTrialBanner, setShowTrialBanner] = useState(true);
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [rightRailOpen, setRightRailOpen] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('project_right_rail_open') !== '0';
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'project_right_rail_open',
+        rightRailOpen ? '1' : '0',
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [rightRailOpen]);
   const {
     tasks,
     loading: tasksLoading,
@@ -204,6 +259,23 @@ export const ProjectView: React.FC = () => {
     },
     [project]
   );
+
+  const handleExportCsv = useCallback(() => {
+    if (!project) return;
+    const csv = tasksToCsv(tasks);
+    const safeName = project.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    downloadCsv(`${safeName || 'tasks'}.csv`, csv);
+    toast.success(`Exported ${tasks.length} task${tasks.length === 1 ? '' : 's'}`);
+  }, [project, tasks]);
+
+  const applySavedView = useCallback((view: SavedView) => {
+    setSearchQuery(view.filters.searchQuery ?? '');
+    setSelectedStatus(
+      (view.filters.status as TaskStatus | 'all') ?? 'all',
+    );
+    if (view.sort.by) setSortOption(view.sort.by);
+    toast.success(`Applied "${view.name}"`);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -320,10 +392,10 @@ export const ProjectView: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto" />
-          <p className="mt-4 text-gray-600">Loading project...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="mt-4 text-muted-foreground">Loading project...</p>
         </div>
       </div>
     );
@@ -331,10 +403,10 @@ export const ProjectView: React.FC = () => {
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <p className="text-red-600 font-medium">{error}</p>
-          <p className="text-gray-500 mt-2">Redirecting to dashboard...</p>
+          <p className="text-destructive font-medium">{error}</p>
+          <p className="text-muted-foreground mt-2">Redirecting to dashboard...</p>
         </div>
       </div>
     );
@@ -342,14 +414,14 @@ export const ProjectView: React.FC = () => {
 
   if (!project) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <p className="text-gray-500">Project not found</p>
+      <div className="flex h-screen items-center justify-center bg-background">
+        <p className="text-muted-foreground">Project not found</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       <Sidebar
         project={project}
         tasks={tasks}
@@ -363,8 +435,8 @@ export const ProjectView: React.FC = () => {
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}
 
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
+        <AppHeader
+          left={
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
@@ -372,45 +444,56 @@ export const ProjectView: React.FC = () => {
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbPage>{project.name}</BreadcrumbPage>
+                  <BreadcrumbPage className="truncate max-w-[14rem]">
+                    {project.name}
+                  </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
             </Breadcrumb>
+          }
+          right={
+            peers.length > 0 ? (
+              <PresenceAvatars peers={peers} className="mr-1" />
+            ) : null
+          }
+        />
 
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => navigate('/settings')}>
-                <Settings className="w-4 h-4 mr-2" />
-                Settings
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        <div className="bg-card border-b border-border px-4 lg:px-6 py-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => navigate('/dashboard')}
+                aria-label="Back to projects"
+                className="shrink-0"
               >
                 <ArrowLeft className="w-5 h-5" />
               </Button>
-
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
+              <div
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ background: project.coverColor || 'hsl(var(--primary))' }}
+              />
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold text-foreground truncate">
+                  {project.name}
+                </h1>
                 {project.description && (
-                  <p className="text-sm text-gray-500">{project.description}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {project.description}
+                  </p>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search tasks..."
+                  placeholder="Search tasks…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-64"
+                  className="pl-9 w-56 md:w-64 h-9"
                 />
               </div>
 
@@ -425,22 +508,80 @@ export const ProjectView: React.FC = () => {
                   <DropdownMenuItem onClick={() => setSelectedStatus('all')}>
                     All Tasks
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSelectedStatus('todo')}>
-                    To-do
+                  {boardColumns.map((col) => (
+                    <DropdownMenuItem
+                      key={col.id}
+                      onClick={() => setSelectedStatus(col.id)}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full mr-2"
+                        style={{ background: col.color }}
+                      />
+                      {col.title}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <ArrowUpDown className="w-4 h-4 mr-2" />
+                    Sort
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {(
+                    [
+                      { id: 'manual', label: 'Manual order' },
+                      { id: 'priority', label: 'Priority' },
+                      { id: 'due', label: 'Due date' },
+                      { id: 'recent', label: 'Recently updated' },
+                    ] as { id: TaskSortOption; label: string }[]
+                  ).map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.id}
+                      onClick={() => setSortOption(opt.id)}
+                      className="justify-between"
+                    >
+                      {opt.label}
+                      {sortOption === opt.id && <Check className="w-4 h-4" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <SavedViewsMenu
+                ownerId={user?.userId ?? null}
+                organizationId={project?.organizationId ?? null}
+                projectId={project?.projectId ?? null}
+                currentFilters={{
+                  status: selectedStatus,
+                  searchQuery,
+                }}
+                currentSort={{ by: sortOption }}
+                onApply={applySavedView}
+              />
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" title="Import / Export">
+                    <Download className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowCsvImport(true)}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Import CSV…
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSelectedStatus('inprogress')}>
-                    In Progress
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSelectedStatus('done')}>
-                    Done
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSelectedStatus('needreview')}>
-                    Need Review
+                  <DropdownMenuItem onClick={handleExportCsv}>
+                    <Download className="w-4 h-4 mr-2" />
+                    Export tasks to CSV
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div className="flex border rounded-lg overflow-hidden">
+              <div className="flex border border-border rounded-lg overflow-hidden">
                 <Button
                   variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
                   size="sm"
@@ -469,99 +610,122 @@ export const ProjectView: React.FC = () => {
                   <GanttChartSquare className="w-4 h-4" />
                 </Button>
               </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/settings')}
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
             </div>
           </div>
-        </header>
+        </div>
 
-        <div className={`flex-1 p-4 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
-          {viewMode === 'kanban' ? (
-            <div className="h-full overflow-x-auto overflow-y-auto pb-2">
-              <KanbanBoard
-                projectId={project.projectId}
-                project={project}
-                projectName={project.name}
-                columns={boardColumns}
-                onColumnsChange={handleColumnsChange}
-                filterStatus={selectedStatus}
-                searchQuery={searchQuery}
+        <div className="flex-1 flex overflow-hidden relative">
+          <div className={`flex-1 p-4 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
+            {viewMode === 'kanban' ? (
+              <div className="h-full overflow-x-auto overflow-y-auto pb-2">
+                <KanbanBoard
+                  projectId={project.projectId}
+                  project={project}
+                  projectName={project.name}
+                  columns={boardColumns}
+                  onColumnsChange={handleColumnsChange}
+                  filterStatus={selectedStatus}
+                  searchQuery={searchQuery}
+                  sort={sortOption}
+                  openTaskId={deepLinkTaskId}
+                  onOpenedTask={handleOpenedTask}
+                  tasks={tasks}
+                  loading={tasksLoading}
+                  addTask={addTask}
+                  editTask={editTask}
+                  removeTask={removeTask}
+                  presencePeers={peers}
+                  onActiveTaskChange={setActiveTaskId}
+                  broadcastTyping={broadcastTyping}
+                  typingPeers={typingPeers}
+                />
+              </div>
+            ) : viewMode === 'timeline' ? (
+              <TimelineView
                 tasks={tasks}
-                loading={tasksLoading}
-                addTask={addTask}
-                editTask={editTask}
-                removeTask={removeTask}
+                searchQuery={searchQuery}
+                selectedStatus={selectedStatus}
+                navigate={navigate}
               />
-            </div>
-          ) : viewMode === 'timeline' ? (
-            <TimelineView
-              tasks={tasks}
-              searchQuery={searchQuery}
-              selectedStatus={selectedStatus}
-              navigate={navigate}
-            />
-          ) : (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-sm font-medium text-gray-700">Title</th>
-                    <th className="px-4 py-3 text-sm font-medium text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-sm font-medium text-gray-700">Priority</th>
-                    <th className="px-4 py-3 text-sm font-medium text-gray-700">Due Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {tasks
-                    .filter((t) => selectedStatus === 'all' || t.status === selectedStatus)
-                    .filter((t) =>
-                      searchQuery.trim()
-                        ? t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()))
-                        : true
-                    )
-                    .map((task) => (
-                      <tr key={task.taskId} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-gray-900">{task.title}</span>
-                          {task.description && (
-                            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
-                              {task.description}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                            {task.status === 'undefined' ? 'To-do' : task.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="capitalize text-sm text-gray-700">{task.priority}</span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {task.dueDate
-                            ? new Date(task.dueDate).toLocaleDateString()
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+            ) : (
+              <div className="bg-card rounded-lg border border-border overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-secondary border-b border-border">
+                    <tr>
+                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Title</th>
+                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Status</th>
+                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Priority</th>
+                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {tasks
+                      .filter((t) => selectedStatus === 'all' || t.status === selectedStatus)
+                      .filter((t) =>
+                        searchQuery.trim()
+                          ? t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()))
+                          : true
+                      )
+                      .map((task) => (
+                        <tr key={task.taskId} className="hover:bg-secondary/50">
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-foreground">{task.title}</span>
+                            {task.description && (
+                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                                {task.description}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground">
+                              {task.status === 'undefined' ? 'To-do' : task.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="capitalize text-sm text-foreground">{task.priority}</span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">
+                            {task.dueDate
+                              ? new Date(task.dueDate).toLocaleDateString()
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
 
-              {tasks
-                .filter((t) => selectedStatus === 'all' || t.status === selectedStatus)
-                .filter((t) =>
-                  searchQuery.trim()
-                    ? t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()))
-                    : true
-                ).length === 0 && (
-                  <div className="text-center text-gray-500 py-12">
-                    {tasks.length === 0
-                      ? 'No tasks yet. Create one from the Kanban view.'
-                      : 'No tasks match your filters.'}
-                  </div>
-                )}
-            </div>
-          )}
+                {tasks
+                  .filter((t) => selectedStatus === 'all' || t.status === selectedStatus)
+                  .filter((t) =>
+                    searchQuery.trim()
+                      ? t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase()))
+                      : true
+                  ).length === 0 && (
+                    <div className="text-center text-muted-foreground py-12">
+                      {tasks.length === 0
+                        ? 'No tasks yet. Create one from the Kanban view.'
+                        : 'No tasks match your filters.'}
+                    </div>
+                  )}
+              </div>
+            )}
+          </div>
+
+          <ProjectRightRail
+            project={project}
+            open={rightRailOpen}
+            onOpenChange={setRightRailOpen}
+          />
         </div>
       </main>
 
@@ -570,6 +734,15 @@ export const ProjectView: React.FC = () => {
         onClose={closeLimitModal}
         title="Task Limit Reached"
         message={limitModal.message}
+      />
+
+      <CsvImportDialog
+        open={showCsvImport}
+        onOpenChange={setShowCsvImport}
+        projectId={project.projectId}
+        projectName={project.name}
+        columns={boardColumns}
+        addTask={addTask}
       />
     </div>
   );
