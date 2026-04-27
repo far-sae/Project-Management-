@@ -14,7 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
 import { createInvitation } from '@/services/supabase/invitations';
-import { sendInvitationEmail, openInvitationMailto } from '@/services/email/emailService';
+import {
+  getInvitationEmailFailureHint,
+  openInvitationMailto,
+  sendInvitationEmail,
+} from '@/services/email/emailService';
 import { toast } from 'sonner';
 
 export const OrganizationMembers: React.FC = () => {
@@ -68,14 +72,13 @@ export const OrganizationMembers: React.FC = () => {
           inviteLink,
           role: inviteRole,
         });
-        const hint412 =
-          emailResult.status === 412
-            ? ' EmailJS 412: reconnect your mail service in the EmailJS dashboard (Email Services → Reconnect).'
-            : emailResult.text
-              ? ` ${emailResult.text}`
-              : '';
+        const emailHint = getInvitationEmailFailureHint(emailResult);
+        const serverBit =
+          emailResult.status !== 412 && emailResult.text
+            ? ` ${emailResult.text}`
+            : '';
         toast('Email client opened', {
-          description: `We couldn’t send via EmailJS.${hint412} A draft was opened for ${inviteEmail}.`,
+          description: `We couldn’t send via EmailJS.${emailHint ? ` ${emailHint}` : ''}${serverBit} A draft was opened for ${inviteEmail}.`,
         });
       }
 

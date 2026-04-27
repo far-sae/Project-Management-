@@ -155,7 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             to="/dashboard"
             className="flex min-w-0 items-center gap-2 leading-none"
           >
-            <TaskCalendarLogo heightClass="h-8 max-h-8" className="max-w-[7.5rem]" />
+            <TaskCalendarLogo sizeClass="h-8 w-8" />
             <h1 className="truncate font-semibold text-foreground">TaskCalendar</h1>
           </Link>
           <NotificationBell />

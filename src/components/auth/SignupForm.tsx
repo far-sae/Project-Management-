@@ -123,13 +123,9 @@ export const SignupForm: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md border border-border bg-card">
         <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-4">
-            <img src="/logo.png" alt="TaskCalendar" className="w-14 h-14 rounded-full object-contain" />
-          </div>
-          <p className="text-center text-base font-bold text-gray-900 mb-1">TaskCalendar</p>
           <CardTitle className="text-2xl font-bold text-center">Create an account</CardTitle>
           <CardDescription className="text-center">
             Start your free 28-day trial today
@@ -137,11 +133,11 @@ export const SignupForm: React.FC = () => {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+          <div className="rounded-lg border border-border bg-primary/10 p-3">
             <ul className="space-y-1">
               {trialFeatures.map((feature, index) => (
-                <li key={index} className="flex items-center text-sm text-green-700">
-                  <Check className="h-4 w-4 mr-2 text-green-600 shrink-0" />
+                <li key={index} className="flex items-center text-sm text-muted-foreground">
+                  <Check className="mr-2 h-4 w-4 shrink-0 text-primary" />
                   {feature}
                 </li>
               ))}
@@ -152,7 +148,7 @@ export const SignupForm: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="displayName">Full Name</Label>
               <div className="relative">
-                <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="displayName"
                   type="text"
@@ -170,7 +166,7 @@ export const SignupForm: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="email"
                   type="email"
@@ -188,7 +184,7 @@ export const SignupForm: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
@@ -203,7 +199,7 @@ export const SignupForm: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground focus:outline-none"
                   disabled={loading}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
@@ -219,7 +215,7 @@ export const SignupForm: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
@@ -235,7 +231,7 @@ export const SignupForm: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground focus:outline-none"
                   disabled={loading}
                   aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                 >
@@ -283,9 +279,9 @@ export const SignupForm: React.FC = () => {
         </CardContent>
 
         <CardFooter className="flex flex-col space-y-2">
-          <div className="text-sm text-center text-gray-600">
+          <div className="text-sm text-center text-muted-foreground">
             Already have an account?{' '}
-            <Link to={loginLink} className="text-orange-600 hover:underline font-medium">
+            <Link to={loginLink} className="font-medium text-primary hover:underline">
               Sign in
             </Link>
           </div>

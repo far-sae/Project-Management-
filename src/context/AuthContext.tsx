@@ -152,7 +152,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
     let isMounted = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!isMounted) return;
 
         if (event === 'TOKEN_REFRESHED') {
@@ -211,60 +211,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
           });
           setLoading(false);
 
-          // ✅ Single sequential async block — no race condition
-          (async () => {
-            try {
-              // Step 1: create/update profile
-              if (event === 'SIGNED_IN') {
-                await createUserProfile(
-                  session.user.id,
-                  session.user.email || '',
+          // Defer all Supabase work so this handler returns before any async I/O. Running
+          // await supabase... inside onAuthStateChange can hold the auth Web Lock too long
+          // and triggers @supabase/gotrue-js "orphaned lock" recovery (Strict Mode / multi-tab).
+          const userId = session.user.id;
+          const userEmail = session.user.email || '';
+          const provider = normalizeProvider(session.user.app_metadata?.provider);
+
+          window.setTimeout(() => {
+            if (!isMounted) return;
+            void (async () => {
+              try {
+                if (event === 'SIGNED_IN') {
+                  await createUserProfile(
+                    userId,
+                    userEmail,
+                    displayName,
+                    photoURL,
+                    provider,
+                  );
+                }
+
+                const orgId = await ensureOrganizationExists(
+                  userId,
                   displayName,
+                  userEmail,
                   photoURL,
-                  normalizeProvider(session.user.app_metadata?.provider),
                 );
-                console.log('✅ Profile created/updated');
+
+                if (!isMounted) return;
+
+                if (orgId) {
+                  setUser(prev => prev ? { ...prev, organizationId: orgId } : null);
+                }
+
+                const { data: profile } = await supabase
+                  .from('user_profiles')
+                  .select('organization_id, role, display_name, photo_url')
+                  .eq('id', userId)
+                  .maybeSingle();
+
+                if (!isMounted) return;
+
+                if (profile) {
+                  setUser(prev => prev ? {
+                    ...prev,
+                    organizationId: profile.organization_id || orgId || prev.organizationId,
+                    role: profile.role || 'user',
+                    displayName: profile.display_name || prev.displayName,
+                    photoURL: profile.photo_url || prev.photoURL,
+                  } : null);
+                }
+              } catch (err) {
+                console.error('❌ Auth setup failed:', err);
               }
-
-              // Step 2: ensure org exists (always, not just on SIGNED_IN)
-              // This handles existing users who were missing an org
-              const orgId = await ensureOrganizationExists(
-                session.user.id,
-                displayName,
-                session.user.email || '',
-                photoURL,
-              );
-
-              if (!isMounted) return;
-
-              if (orgId) {
-                setUser(prev => prev ? { ...prev, organizationId: orgId } : null);
-                // console.log('✅ Org ensured:', orgId);
-              }
-
-              // Step 3: load full profile data to get role + display name
-              const { data: profile } = await supabase
-                .from('user_profiles')
-                .select('organization_id, role, display_name, photo_url')
-                .eq('id', session.user.id)
-                .maybeSingle();
-
-              if (!isMounted) return;
-
-              if (profile) {
-                setUser(prev => prev ? {
-                  ...prev,
-                  organizationId: profile.organization_id || orgId || prev.organizationId,
-                  role: profile.role || 'user',
-                  displayName: profile.display_name || prev.displayName,
-                  photoURL: profile.photo_url || prev.photoURL,
-                } : null);
-              }
-
-            } catch (err) {
-              console.error('❌ Auth setup failed:', err);
-            }
-          })();
+            })();
+          }, 0);
 
         } else {
           setUser(null);

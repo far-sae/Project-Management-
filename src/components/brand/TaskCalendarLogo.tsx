@@ -2,27 +2,35 @@ import { cn } from '@/lib/utils';
 
 type TaskCalendarLogoProps = {
   className?: string;
-  /** Pixel height; width follows aspect ratio (no letterboxing bars). */
-  heightClass?: string;
+  /**
+   * Square frame size — include both `h-*` and `w-*` (e.g. `h-8 w-8`).
+   * Inner image uses `object-cover` and scale so built-in padding in `logo.png` is cropped.
+   */
+  sizeClass?: string;
 };
 
 /**
- * App mark — uses `/logo.png` from `public/`. `block` avoids inline image gap “white lines”.
+ * App mark — uses `/logo.png` from `public/`. Clipped square frame + zoom reduces visible
+ * letterboxing from the source asset.
  */
 export function TaskCalendarLogo({
   className,
-  heightClass = 'h-8',
+  sizeClass = 'h-8 w-8',
 }: TaskCalendarLogoProps) {
   return (
-    <img
-      src="/logo.png"
-      alt="TaskCalendar"
-      decoding="async"
+    <span
       className={cn(
-        'block w-auto max-w-[10rem] shrink-0 object-contain object-left',
-        heightClass,
+        'relative inline-block shrink-0 overflow-hidden rounded-md',
+        sizeClass,
         className,
       )}
-    />
+    >
+      <img
+        src="/logo.png"
+        alt="TaskCalendar"
+        decoding="async"
+        className="absolute left-1/2 top-1/2 h-[125%] w-[125%] max-w-none -translate-x-1/2 -translate-y-1/2 object-cover object-center select-none"
+      />
+    </span>
   );
 }

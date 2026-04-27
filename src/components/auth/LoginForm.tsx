@@ -82,13 +82,9 @@ export const LoginForm: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md border border-border bg-card">
         <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-4">
-            <img src="/logo.png" alt="TaskCalendar" className="w-14 h-14 rounded-full object-contain" />
-          </div>
-          <p className="text-center text-base font-bold text-gray-900 mb-1">TaskCalendar</p>
           <CardTitle className="text-2xl font-bold text-center">Welcome back</CardTitle>
           <CardDescription className="text-center">
             Sign in to your account to continue
@@ -100,7 +96,7 @@ export const LoginForm: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="email"
                   type="email"
@@ -117,7 +113,7 @@ export const LoginForm: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="password"
                   type="password"
@@ -149,7 +145,7 @@ export const LoginForm: React.FC = () => {
               <span className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-gray-500">Or continue with</span>
+              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
             </div>
           </div>
 
@@ -166,9 +162,9 @@ export const LoginForm: React.FC = () => {
         </CardContent>
 
         <CardFooter className="flex flex-col space-y-2">
-          <div className="text-sm text-center text-gray-600">
+          <div className="text-sm text-center text-muted-foreground">
             Don't have an account?{' '}
-            <Link to={signupLink} className="text-orange-600 hover:underline font-medium">
+            <Link to={signupLink} className="text-primary font-medium hover:underline">
               Sign up
             </Link>
           </div>

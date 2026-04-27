@@ -15,6 +15,11 @@ import { ActivityEvent, CreateActivityInput } from "@/types/activity";
 import { AppNotification, CreateNotificationInput } from "@/types/notification";
 import { logger } from "@/lib/logger";
 import { sendTaskAssignedEmail } from "@/services/email/taskAssignedEmail";
+import {
+  getUserNotificationPreferences,
+  isInAppNotificationAllowed,
+  isEmailForTaskEventAllowed,
+} from "@/lib/notificationPreferences";
 import { isAppOwner } from "@/lib/app-owner";
 import { INDIA_PRICING } from "@/types/subscription";
 
@@ -1307,7 +1312,12 @@ export const subscribeToComments = (
 
 export const createNotification = async (
   input: CreateNotificationInput,
-): Promise<AppNotification> => {
+): Promise<AppNotification | null> => {
+  const prefs = await getUserNotificationPreferences(input.userId);
+  if (!isInAppNotificationAllowed(prefs, input.type)) {
+    return null;
+  }
+
   const now = new Date().toISOString();
   const notificationId = crypto.randomUUID();
 
@@ -1450,18 +1460,21 @@ export const createNotificationsForTaskUpdate = async (params: {
 
         const email = getAssigneeEmail?.(a.userId)?.trim();
         if (email && email.includes("@")) {
-          const taskUrl =
-            typeof window !== "undefined"
-              ? `${window.location.origin}/project/${projectId}?taskId=${taskId}`
-              : "";
-          void sendTaskAssignedEmail({
-            toEmail: email,
-            assigneeDisplayName: a.displayName,
-            taskTitle,
-            projectName,
-            actorDisplayName,
-            taskUrl,
-          });
+          const aprefs = await getUserNotificationPreferences(a.userId);
+          if (isEmailForTaskEventAllowed(aprefs, "task_assigned")) {
+            const taskUrl =
+              typeof window !== "undefined"
+                ? `${window.location.origin}/project/${projectId}?taskId=${taskId}`
+                : "";
+            void sendTaskAssignedEmail({
+              toEmail: email,
+              assigneeDisplayName: a.displayName,
+              taskTitle,
+              projectName,
+              actorDisplayName,
+              taskUrl,
+            });
+          }
         }
       }
     }

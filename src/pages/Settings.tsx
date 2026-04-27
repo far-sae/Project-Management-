@@ -40,6 +40,12 @@ import {
 import { toast } from "sonner";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { CapacitySettings } from "@/components/settings/CapacitySettings";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  type UserNotificationPreferences,
+  normalizeNotificationPreferences,
+  invalidateNotificationPreferencesCache,
+} from "@/lib/notificationPreferences";
 
 const NOTIFICATIONS_KEY = "user_notification_prefs";
 
@@ -69,32 +75,65 @@ export const Settings: React.FC = () => {
 
   const subscriptionFetchedRef = useRef(false);
 
-  const [notifications, setNotifications] = useState({
-    email: true,
-    push: true,
-    taskAssigned: true,
-    taskCompleted: true,
-    projectUpdates: true,
-    projectChatMessage: true,
+  const [notifications, setNotifications] = useState<UserNotificationPreferences>({
+    ...DEFAULT_NOTIFICATION_PREFERENCES,
   });
 
   useEffect(() => {
     setDisplayName(user?.displayName || "");
   }, [user?.displayName]);
 
+  /** Load from Supabase (so other users’ actions respect your settings); fall back to localStorage migration. */
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(NOTIFICATIONS_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as Record<string, boolean>;
-        setNotifications((prev) => ({
-          ...prev,
-          ...parsed,
-          projectChatMessage: parsed.projectChatMessage !== false,
-        }));
+    if (!user?.userId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select("notification_preferences")
+        .eq("id", user.userId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        console.warn("Failed to load notification preferences:", error.message);
+        try {
+          const stored = localStorage.getItem(NOTIFICATIONS_KEY);
+          if (stored) {
+            setNotifications(
+              normalizeNotificationPreferences(JSON.parse(stored) as unknown),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+        return;
       }
-    } catch {}
-  }, []);
+      if (data?.notification_preferences != null) {
+        setNotifications(
+          normalizeNotificationPreferences(data.notification_preferences),
+        );
+        return;
+      }
+      try {
+        const stored = localStorage.getItem(NOTIFICATIONS_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as unknown;
+          const norm = normalizeNotificationPreferences(parsed);
+          setNotifications(norm);
+          await supabase
+            .from("user_profiles")
+            .update({ notification_preferences: norm as Record<string, boolean> })
+            .eq("id", user.userId);
+          invalidateNotificationPreferencesCache(user.userId);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.userId]);
 
   useEffect(() => {
     if (!subscriptionFetchedRef.current && user?.userId) {
@@ -163,12 +202,32 @@ export const Settings: React.FC = () => {
   };
 
   // ── Notifications ─────────────────────────────────────────
-  const handleNotificationChange = (key: string, checked: boolean) => {
-    const next = { ...notifications, [key]: checked };
+  const handleNotificationChange = async (key: string, checked: boolean) => {
+    const next: UserNotificationPreferences = {
+      ...notifications,
+      [key]: checked,
+    };
     setNotifications(next);
     try {
       localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(next));
-    } catch {}
+    } catch {
+      /* ignore */
+    }
+    if (!user?.userId) {
+      toast.success("Notification preferences saved on this device");
+      return;
+    }
+    const { error } = await supabase
+      .from("user_profiles")
+      .update({ notification_preferences: next as unknown as Record<string, boolean> })
+      .eq("id", user.userId);
+    if (error) {
+      toast.error(
+        "Could not sync preferences to your account. " + error.message,
+      );
+      return;
+    }
+    invalidateNotificationPreferencesCache(user.userId);
     toast.success("Notification preferences saved");
   };
 
@@ -468,7 +527,8 @@ export const Settings: React.FC = () => {
                   </React.Fragment>
                 ))}
                 <p className="text-sm text-muted-foreground">
-                  Your preferences are saved automatically.
+                  Saved to your account so in-app and email notifications follow these choices. Email
+                  still requires your project&apos;s mail service (e.g. EmailJS) to be connected.
                 </p>
               </CardContent>
             </Card>

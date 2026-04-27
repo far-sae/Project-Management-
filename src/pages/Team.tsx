@@ -26,7 +26,7 @@ import {
 } from '@/services/supabase/invitations';
 import { ProjectInvitation } from '@/types/invitation';
 import { ProjectMember } from '@/types/project';
-import { sendInvitationEmail } from '@/services/email/emailService';
+import { getInvitationEmailFailureHint, sendInvitationEmail } from '@/services/email/emailService';
 import { checkTeamMemberLimit, supabase } from '@/services/supabase';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
@@ -406,7 +406,7 @@ export const Team: React.FC = () => {
         const linkBlock = `Share this link manually:\n\n${inviteLink}`;
         const oAuthHint =
           emailResult.status === 412
-            ? '\n\nThis error is usually fixed in the EmailJS dashboard: open https://dashboard.emailjs.com → Email Services → your connected mail service (e.g. Gmail) → Reconnect, and allow “Send email on your behalf”.'
+            ? `\n\n${getInvitationEmailFailureHint(emailResult)}`
             : "";
         const serverHint =
           emailResult.text && emailResult.text.length > 0

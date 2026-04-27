@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import type { GoTrueClientOptions } from "@supabase/auth-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? "";
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
@@ -15,10 +16,14 @@ if (!hasSupabaseEnv) {
 const url = hasSupabaseEnv ? supabaseUrl : "https://placeholder.supabase.co";
 const key = hasSupabaseEnv ? supabaseAnonKey : "placeholder-anon-key";
 
+const authOptions: GoTrueClientOptions = {
+  persistSession: true,
+  autoRefreshToken: true,
+  detectSessionInUrl: true,
+  /** Above default 5s — more headroom before auth-js recovers a stuck lock (multi-tab / Strict Mode). */
+  lockAcquireTimeout: 15_000,
+};
+
 export const supabase: SupabaseClient = createClient(url, key, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
+  auth: authOptions,
 });

@@ -55,7 +55,7 @@ const HeroSection = () => {
                 <div className="w-3 h-3 rounded-full bg-destructive/60" />
                 <div className="w-3 h-3 rounded-full bg-primary/60" />
                 <div className="w-3 h-3 rounded-full bg-orange-500/60" />
-                <span className="ml-3 text-xs font-semibold text-gray-800">TaskCalendar — Sprint Board</span>
+                <span className="ml-3 text-xs font-semibold text-foreground/90">TaskCalendar — Sprint Board</span>
               </div>
 
               <div className="grid grid-cols-3 gap-3">

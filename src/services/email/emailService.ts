@@ -116,6 +116,21 @@ export const sendInvitationEmail = async (
   }
 };
 
+/** Shorter line for toasts; full fix is always reconnecting the mail service in the EmailJS dashboard. */
+export const getInvitationEmailFailureHint = (
+  result: InvitationEmailResult,
+): string => {
+  if (result.ok) return "";
+  if (result.status === 412) {
+    return (
+      "EmailJS: reconnect your mail service (e.g. Gmail) in the EmailJS dashboard " +
+      "(Email Services → Edit → Reconnect; invalid OAuth grants show as 412 " +
+      "\"Gmail_API: Invalid grant\")."
+    );
+  }
+  return result.text?.trim() ? result.text : "";
+};
+
 export const isEmailServiceConfigured = (): boolean => {
   return Boolean(
     EMAILJS_SERVICE_ID &&

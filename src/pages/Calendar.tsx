@@ -234,7 +234,7 @@ export const Calendar: React.FC = () => {
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3 leading-none">
-            <TaskCalendarLogo heightClass="h-9 max-h-9 sm:h-10 sm:max-h-10" className="max-w-[9rem]" />
+            <TaskCalendarLogo sizeClass="h-9 w-9 sm:h-10 sm:w-10" />
             <div className="min-w-0 pt-0.5">
               <h1 className="text-3xl font-bold text-foreground">TaskCalendar</h1>
               <p className="mt-1 text-muted-foreground">View tasks by due date</p>
