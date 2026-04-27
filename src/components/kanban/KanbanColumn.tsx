@@ -28,6 +28,8 @@ interface KanbanColumnProps {
   peersByTask?: Map<string, PresencePeer[]>;
   /** Per-task: disable drag when true (locked + no permission). */
   isTaskDragDisabled?: (task: Task) => boolean;
+  /** First task selected in "swap two tasks" mode (for highlight). */
+  swapPickId?: string | null;
 }
 
 export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
@@ -45,6 +47,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
   onTaskSelectChange,
   peersByTask,
   isTaskDragDisabled,
+  swapPickId = null,
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -128,6 +131,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
                 onSelectChange={onTaskSelectChange}
                 peersOnTask={peersByTask?.get(task.taskId)}
                 dragDisabled={isTaskDragDisabled?.(task) ?? false}
+                swapHighlight={Boolean(swapPickId && swapPickId === task.taskId)}
               />
             ))}
           </SortableContext>

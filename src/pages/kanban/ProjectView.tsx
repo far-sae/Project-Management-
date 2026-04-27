@@ -674,8 +674,8 @@ export const ProjectView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden relative">
-          <div className={`flex-1 p-4 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
+        <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
+          <div className={`flex-1 min-w-0 p-4 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
             {viewMode === 'kanban' ? (
               <div className="h-full overflow-x-auto overflow-y-auto pb-2">
                 <KanbanBoard
@@ -699,6 +699,10 @@ export const ProjectView: React.FC = () => {
                   broadcastTyping={broadcastTyping}
                   typingPeers={typingPeers}
                   onTasksRefresh={refreshTasks}
+                  onRequestManualSort={() => {
+                    setSortOption('manual');
+                    toast('Switched to manual order so drag-and-drop stays put.');
+                  }}
                 />
               </div>
             ) : viewMode === 'timeline' ? (
@@ -775,13 +779,13 @@ export const ProjectView: React.FC = () => {
               </div>
             )}
           </div>
-
-          <ProjectRightRail
-            project={project}
-            open={rightRailOpen}
-            onOpenChange={setRightRailOpen}
-          />
         </div>
+
+        <ProjectRightRail
+          project={project}
+          open={rightRailOpen}
+          onOpenChange={setRightRailOpen}
+        />
       </main>
 
       <LimitReachedModal

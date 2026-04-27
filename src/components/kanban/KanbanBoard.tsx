@@ -35,6 +35,7 @@ import { BulkActionBar } from './BulkActionBar';
 import type { PresencePeer } from '@/hooks/usePresence';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { openCommandPalette } from '@/components/layout/AppHeader';
 import {
   Dialog,
   DialogContent,
@@ -43,7 +44,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Plus } from 'lucide-react';
+import { Plus, ArrowLeftRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { isTaskLockUnlockedInSession } from '@/lib/taskLockPin';
 
@@ -79,6 +80,8 @@ interface KanbanBoardProps {
   typingPeers?: (taskId: string) => PresencePeer[];
   /** Refresh task list from the server (e.g. after bulk actions). */
   onTasksRefresh?: () => void | Promise<void>;
+  /** When the user drags while a non-manual sort is active, parent can switch to manual. */
+  onRequestManualSort?: () => void;
 }
 
 const COLUMN_COLORS = [
@@ -120,6 +123,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   broadcastTyping,
   typingPeers,
   onTasksRefresh,
+  onRequestManualSort,
 }) => {
   const { user } = useAuth();
   const projName = projectName || project?.name || 'Project';
@@ -135,10 +139,17 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     return isAdmin;
   }, [user, project?.ownerId, isAdmin]);
 
-  const isTaskDragDisabled = useCallback(
-    (t: Task) => Boolean(t.isLocked && !canOverrideTaskLock),
+  const canMoveTask = useCallback(
+    (t: Task) => {
+      if (!t.isLocked) return true;
+      if (canOverrideTaskLock) return true;
+      if (t.lockPinHash && isTaskLockUnlockedInSession(t.taskId)) return true;
+      return false;
+    },
     [canOverrideTaskLock],
   );
+
+  const isTaskDragDisabled = useCallback((t: Task) => !canMoveTask(t), [canMoveTask]);
 
   const getAssigneeEmail = useCallback(
     (userId: string) => organization?.members.find((m) => m.userId === userId)?.email,
@@ -182,15 +193,88 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setLastSelectedId(null);
   }, []);
 
+  const [taskSwapMode, setTaskSwapMode] = useState(false);
+  const [swapPickId, setSwapPickId] = useState<string | null>(null);
+
   // Clear selection on Escape
   useEffect(() => {
-    if (!selectionMode) return;
+    if (!selectionMode && !taskSwapMode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') clearSelection();
+      if (e.key === 'Escape') {
+        clearSelection();
+        setTaskSwapMode(false);
+        setSwapPickId(null);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectionMode, clearSelection]);
+  }, [selectionMode, taskSwapMode, clearSelection]);
+
+  const handleSwapPair = useCallback(
+    async (idA: string, idB: string) => {
+      const a = tasks.find((t) => t.taskId === idA);
+      const b = tasks.find((t) => t.taskId === idB);
+
+      const finish = () => {
+        setSwapPickId(null);
+        setTaskSwapMode(false);
+      };
+
+      if (!a || !b) {
+        finish();
+        return;
+      }
+      if (!canMoveTask(a) || !canMoveTask(b)) {
+        toast.error(
+          'One of these tasks is locked. Unlock with PIN, or ask the project owner or an admin.',
+        );
+        finish();
+        return;
+      }
+
+      const origA = { status: a.status, position: a.position ?? 0 };
+      const origB = { status: b.status, position: b.position ?? 0 };
+
+      const firstOk = await editTask(idA, {
+        status: origB.status,
+        position: origB.position,
+      });
+      if (!firstOk) {
+        toast.error('Could not move the first task. Swap cancelled.');
+        finish();
+        await onTasksRefresh?.();
+        return;
+      }
+
+      const secondOk = await editTask(idB, {
+        status: origA.status,
+        position: origA.position,
+      });
+      if (!secondOk) {
+        const rolledBack = await editTask(idA, {
+          status: origA.status,
+          position: origA.position,
+        });
+        if (!rolledBack) {
+          toast.error(
+            'Swap failed partway through and the first task could not be restored. Refresh the page or try again.',
+          );
+        } else {
+          toast.error(
+            'Could not complete the swap; the first task was restored to its original place.',
+          );
+        }
+        finish();
+        await onTasksRefresh?.();
+        return;
+      }
+
+      toast.success('Swapped task places');
+      finish();
+      await onTasksRefresh?.();
+    },
+    [tasks, editTask, canMoveTask, onTasksRefresh],
+  );
 
   // ── Column-edit modal state ────────────────────────────────
   const [showAddColumnModal, setShowAddColumnModal] = useState(false);
@@ -319,11 +403,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       const movedTask = tasks.find((t) => t.taskId === taskId);
       if (!movedTask) return;
 
-      if (movedTask.isLocked && !canOverrideTaskLock) {
+      if (!canMoveTask(movedTask)) {
         toast.error(
-          'This task is locked. Only the project owner or an admin can move it.',
+          'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
         );
         return;
+      }
+
+      if (sort !== 'manual') {
+        onRequestManualSort?.();
       }
 
       const isColumn = columns.some((col) => col.id === overId);
@@ -373,13 +461,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           }
         }
 
-        if (sort === 'manual' && orgId) {
+        if (orgId) {
           // Renumber to sparse 10/20/30… positions
           const ordering = reordered.map((t, idx) => ({
             taskId: t.taskId,
             position: (idx + 1) * 10,
           }));
-          // Skip the moved task's status field if already updated above to avoid double-write.
           await bulkReorderTasks(ordering, orgId);
         }
       } catch (err) {
@@ -398,7 +485,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       sort,
       orgId,
       tasksByStatus,
-      canOverrideTaskLock,
+      canMoveTask,
+      onRequestManualSort,
       getAssigneeEmail,
     ],
   );
@@ -438,6 +526,28 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   // ── Card click ────────────────────────────────────────────
   const handleTaskClick = useCallback(
     (task: Task, event?: React.MouseEvent) => {
+      if (taskSwapMode) {
+        event?.preventDefault();
+        event?.stopPropagation();
+        if (!canMoveTask(task)) {
+          toast.error(
+            'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
+          );
+          return;
+        }
+        if (!swapPickId) {
+          setSwapPickId(task.taskId);
+          toast.message('Choose the second task to swap places with.');
+          return;
+        }
+        if (swapPickId === task.taskId) {
+          setSwapPickId(null);
+          toast.message('Selection cleared. Pick a task again.');
+          return;
+        }
+        void handleSwapPair(swapPickId, task.taskId);
+        return;
+      }
       // In selection mode a click toggles selection instead of opening modal
       if (selectionMode) {
         if (event) handleTaskSelect(task.taskId, event);
@@ -451,7 +561,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       setSelectedTask(task);
       setIsModalOpen(true);
     },
-    [selectionMode, handleTaskSelect],
+    [
+      taskSwapMode,
+      swapPickId,
+      canMoveTask,
+      handleSwapPair,
+      selectionMode,
+      handleTaskSelect,
+    ],
   );
 
   const handleAddTask = useCallback((status: string) => {
@@ -474,6 +591,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         });
         if (!newTask) {
           toast.error('Could not create task. Please try again.');
+        } else {
+          queueMicrotask(() => openCommandPalette());
         }
       } catch (err) {
         toast.error(
@@ -565,6 +684,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         if (!newTask) {
           throw new Error('Failed to create task. Please try again.');
         }
+        queueMicrotask(() => openCommandPalette());
         if (newTask && initialComment?.trim() && user) {
           const orgIdLocal =
             project?.organizationId || user.organizationId || `local-${user.userId}`;
@@ -774,6 +894,26 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
+        {taskSwapMode && (
+          <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-foreground">
+            <span>
+              {swapPickId
+                ? 'Click another task to swap columns and order.'
+                : 'Click one task, then another, to swap their places.'}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => {
+                setTaskSwapMode(false);
+                setSwapPickId(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
         <div className="flex gap-4 pb-4 px-4 min-w-max">
           {columns
             .slice()
@@ -794,11 +934,29 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 selectionMode={selectionMode}
                 onTaskSelectChange={handleTaskSelect}
                 peersByTask={peersByTask}
-                isTaskDragDisabled={isTaskDragDisabled}
+                isTaskDragDisabled={(t) => isTaskDragDisabled(t) || taskSwapMode}
+                swapPickId={taskSwapMode ? swapPickId : null}
               />
             ))}
 
-          <div className="flex-shrink-0 w-72">
+          <div className="flex-shrink-0 w-72 flex flex-col gap-2">
+            <Button
+              type="button"
+              variant={taskSwapMode ? 'secondary' : 'outline'}
+              className="w-full h-12 border-dashed border-2 text-muted-foreground hover:text-foreground hover:border-foreground/30"
+              onClick={() => {
+                if (taskSwapMode) {
+                  setTaskSwapMode(false);
+                  setSwapPickId(null);
+                } else {
+                  clearSelection();
+                  setTaskSwapMode(true);
+                }
+              }}
+            >
+              <ArrowLeftRight className="w-4 h-4 mr-2" />
+              {taskSwapMode ? 'Cancel swap' : 'Swap two tasks'}
+            </Button>
             <Button
               variant="outline"
               className="w-full h-12 border-dashed border-2 text-muted-foreground hover:text-foreground hover:border-foreground/30"
@@ -810,7 +968,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           </div>
         </div>
 
-        <DragOverlay>
+        <DragOverlay className="z-[600]">
           {activeTask ? <TaskCard task={activeTask} isDragging /> : null}
         </DragOverlay>
       </DndContext>

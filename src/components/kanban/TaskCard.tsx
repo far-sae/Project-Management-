@@ -27,6 +27,8 @@ interface TaskCardProps {
   peersOnTask?: PresencePeer[];
   /** When true, card cannot be dragged (e.g. locked task for non-privileged user). */
   dragDisabled?: boolean;
+  /** First pick in swap-two-tasks mode. */
+  swapHighlight?: boolean;
 }
 
 const PRIORITY_TONES: Record<
@@ -76,6 +78,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   onSelectChange,
   peersOnTask,
   dragDisabled = false,
+  swapHighlight = false,
 }) => {
   if (!task) return null;
 
@@ -141,6 +144,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         'transition-all hover:border-foreground/20 hover:shadow-md',
         selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
         selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
+        swapHighlight && 'ring-2 ring-amber-500 ring-offset-1 ring-offset-background',
         isCurrentlyDragging && 'opacity-60 shadow-lg',
         // Compact density
         '[.dense_&]:p-2 [.dense_&]:mb-1.5',

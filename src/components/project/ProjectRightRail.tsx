@@ -238,7 +238,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       </div>
       <div className="space-y-1">
         {dedupedMembers.length === 0 && (
-          <p className="text-xs text-muted-foreground py-2">No members yet</p>
+          <p className="text-sm text-muted-foreground py-2">No members yet</p>
         )}
         {dedupedMembers.map((m) => {
           const role = ROLE_BADGES[m.role] || ROLE_BADGES.member;
@@ -247,7 +247,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               key={m.userId || m.email}
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-secondary"
             >
-              <Avatar className="w-7 h-7">
+              <Avatar className="w-9 h-9">
                 <AvatarImage src={m.photoURL} alt={m.displayName} />
                 <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
                   {m.displayName.charAt(0).toUpperCase()}
@@ -275,26 +275,26 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   );
 
   const activitySection = (
-    <section className="p-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+    <section className="p-4">
+      <h3 className="text-sm font-semibold text-muted-foreground mb-3">
         Activity
       </h3>
-      <div className="space-y-3">
+      <div className="space-y-4">
         {projectEvents.length === 0 && (
-          <p className="text-xs text-muted-foreground py-2">No recent activity</p>
+          <p className="text-sm text-muted-foreground py-2">No recent activity</p>
         )}
         {projectEvents.map((e) => {
           const Icon = ACTIVITY_ICONS[e.type] || ActivityIcon;
           return (
             <div key={e.activityId} className="flex gap-2">
-              <Avatar className="w-6 h-6 shrink-0">
+              <Avatar className="w-8 h-8 shrink-0">
                 <AvatarImage src={e.photoURL} alt={e.displayName} />
                 <AvatarFallback className="bg-secondary text-foreground text-[10px]">
                   {(e.displayName || '?').charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-xs leading-relaxed">
+                <p className="text-sm leading-relaxed">
                   <span className="font-medium text-foreground">{e.displayName}</span>{' '}
                   <span className="text-muted-foreground">
                     {summarizeActivity(e.type, e.payload as any)}
@@ -323,43 +323,47 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       <button
         type="button"
         onClick={() => onOpenChange(true)}
-        aria-label="Open project rail"
-        className="absolute right-3 top-3 z-20 rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary shadow-sm"
+        aria-label="Open project chat, team, and feed"
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground shadow-lg hover:bg-secondary/90"
       >
-        <PanelRightOpen className="w-4 h-4" />
+        <PanelRightOpen className="w-5 h-5 text-muted-foreground" />
+        <span className="hidden sm:inline">Chat & team</span>
       </button>
     );
   }
 
   return (
-    <aside className="w-72 shrink-0 border-l border-border bg-card flex flex-col h-full min-h-0 overflow-hidden">
-      <div className="flex items-center justify-between p-3 border-b border-border shrink-0">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Project
-        </p>
+    <aside
+      className={cn(
+        'fixed bottom-5 right-5 z-40 flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl',
+        'w-[min(28rem,calc(100vw-1.5rem))] h-[min(36rem,calc(100vh-6rem))]',
+      )}
+    >
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 bg-card/95 backdrop-blur-sm">
+        <p className="text-sm font-semibold text-foreground">Project</p>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground"
+          className="h-9 w-9 text-muted-foreground shrink-0"
           onClick={() => onOpenChange(false)}
-          aria-label="Hide project rail"
+          aria-label="Hide project panel"
         >
-          <PanelRightClose className="w-4 h-4" />
+          <PanelRightClose className="w-5 h-5" />
         </Button>
       </div>
 
       <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0">
-        <TabsList className="shrink-0 mx-2 mt-2 h-9 grid grid-cols-3 gap-0.5 p-1 rounded-lg">
-          <TabsTrigger value="chat" className="text-[11px] px-1.5 gap-1">
-            <MessageSquare className="w-3.5 h-3.5" />
+        <TabsList className="shrink-0 mx-3 mt-3 h-11 grid grid-cols-3 gap-1 p-1 rounded-lg">
+          <TabsTrigger value="chat" className="text-sm px-2 gap-1.5">
+            <MessageSquare className="w-4 h-4" />
             Chat
           </TabsTrigger>
-          <TabsTrigger value="members" className="text-[11px] px-1.5 gap-1">
-            <Users className="w-3.5 h-3.5" />
+          <TabsTrigger value="members" className="text-sm px-2 gap-1.5">
+            <Users className="w-4 h-4" />
             Team
           </TabsTrigger>
-          <TabsTrigger value="activity" className="text-[11px] px-1.5 gap-1">
-            <ActivityIcon className="w-3.5 h-3.5" />
+          <TabsTrigger value="activity" className="text-sm px-2 gap-1.5">
+            <ActivityIcon className="w-4 h-4" />
             Feed
           </TabsTrigger>
         </TabsList>
@@ -368,36 +372,36 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           value="chat"
           className="flex-1 flex flex-col min-h-0 mt-2 px-0 data-[state=inactive]:hidden overflow-hidden"
         >
-          <div className="flex-1 min-h-0 overflow-y-auto px-3 space-y-3 pb-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-3 pb-2">
             {chatLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             ) : chatMessages.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-8 px-2">
+              <p className="text-sm text-muted-foreground text-center py-8 px-2">
                 Start a conversation about this project. Use @name to notify teammates.
               </p>
             ) : (
               chatMessages.map((msg) => (
-                <div key={msg.messageId} className="flex gap-2">
-                  <Avatar className="w-7 h-7 shrink-0">
+                <div key={msg.messageId} className="flex gap-3">
+                  <Avatar className="w-9 h-9 shrink-0">
                     <AvatarImage src={msg.photoURL} alt={msg.displayName} />
-                    <AvatarFallback className="text-[10px] bg-primary-soft text-primary-soft-foreground">
+                    <AvatarFallback className="text-xs bg-primary-soft text-primary-soft-foreground">
                       {(msg.displayName || '?').charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="text-xs font-medium text-foreground">
+                      <span className="text-sm font-medium text-foreground">
                         {msg.displayName}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {formatDistanceToNow(new Date(msg.createdAt), {
                           addSuffix: true,
                         })}
                       </span>
                     </div>
-                    <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap break-words">
+                    <p className="text-sm text-foreground mt-1 whitespace-pre-wrap break-words leading-relaxed">
                       {msg.body}
                     </p>
                   </div>
@@ -406,13 +410,13 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             )}
             <div ref={chatEndRef} />
           </div>
-          <div className="shrink-0 border-t border-border p-2 space-y-2 bg-card">
+          <div className="shrink-0 border-t border-border p-3 space-y-2 bg-card">
             <Textarea
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               placeholder="Message the project… (@name to notify)"
-              rows={2}
-              className="min-h-[3rem] text-xs resize-none"
+              rows={3}
+              className="min-h-[4.5rem] text-sm resize-none"
               disabled={!user || chatSending}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -423,7 +427,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             />
             <Button
               type="button"
-              size="sm"
+              size="default"
               className="w-full"
               disabled={!user || !chatInput.trim() || chatSending}
               onClick={() => void handleSendChat()}
@@ -432,7 +436,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>
-                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                  <Send className="w-4 h-4 mr-2" />
                   Send
                 </>
               )}
