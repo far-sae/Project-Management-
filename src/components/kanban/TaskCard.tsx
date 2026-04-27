@@ -25,6 +25,8 @@ interface TaskCardProps {
   onSelectChange?: (taskId: string, event: React.MouseEvent) => void;
   /** Realtime peers currently focused on this task (excluding self). */
   peersOnTask?: PresencePeer[];
+  /** When true, card cannot be dragged (e.g. locked task for non-privileged user). */
+  dragDisabled?: boolean;
 }
 
 const PRIORITY_TONES: Record<
@@ -39,7 +41,8 @@ const PRIORITY_TONES: Record<
   medium: {
     dot: 'bg-warning',
     label: 'Medium',
-    chip: 'bg-warning-soft text-warning-soft-foreground',
+    chip:
+      'bg-warning-soft text-warning-soft-foreground border border-warning/35',
   },
   low: {
     dot: 'bg-success',
@@ -72,6 +75,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   selected = false,
   onSelectChange,
   peersOnTask,
+  dragDisabled = false,
 }) => {
   if (!task) return null;
 
@@ -91,7 +95,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   } = useSortable({
     id: task.taskId,
     data: { task },
-    disabled: selectable,
+    disabled: selectable || dragDisabled,
   });
 
   const style = {
@@ -200,7 +204,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       </div>
 
       {task.description && (
-        <p className="text-xs text-muted-foreground mb-2 line-clamp-2 [.dense_&]:hidden">
+        <p className="text-xs text-muted-foreground/90 mb-2 line-clamp-2 [.dense_&]:hidden">
           {task.description}
         </p>
       )}

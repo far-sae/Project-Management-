@@ -26,6 +26,8 @@ interface KanbanColumnProps {
   onTaskSelectChange?: (taskId: string, event: React.MouseEvent) => void;
   /** Map of taskId -> peers currently focused on that task. */
   peersByTask?: Map<string, PresencePeer[]>;
+  /** Per-task: disable drag when true (locked + no permission). */
+  isTaskDragDisabled?: (task: Task) => boolean;
 }
 
 export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
@@ -42,6 +44,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
   selectionMode = false,
   onTaskSelectChange,
   peersByTask,
+  isTaskDragDisabled,
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -124,6 +127,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
                 selected={selectedIds?.has(task.taskId)}
                 onSelectChange={onTaskSelectChange}
                 peersOnTask={peersByTask?.get(task.taskId)}
+                dragDisabled={isTaskDragDisabled?.(task) ?? false}
               />
             ))}
           </SortableContext>

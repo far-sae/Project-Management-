@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 
 import { useAuth } from '@/context/AuthContext';
 import { useTasks } from '@/hooks/useTasks';
@@ -18,6 +19,10 @@ import { AppHeader } from '@/components/layout/AppHeader';
 import { ProjectRightRail } from '@/components/project/ProjectRightRail';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
 import { usePresence } from '@/hooks/usePresence';
+import {
+  ALL_WORKSPACES_ID,
+  useSelectedWorkspace,
+} from '@/hooks/useSelectedWorkspace';
 import { CsvImportDialog } from '@/components/import/CsvImportDialog';
 import { SavedViewsMenu } from '@/components/views/SavedViewsMenu';
 import { tasksToCsv, downloadCsv } from '@/services/csv/tasksCsv';
@@ -171,8 +176,10 @@ export const ProjectView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string; }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { selectedId: selectedWorkspaceId, isAll } = useSelectedWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkTaskId = searchParams.get('taskId');
+  const dueDayParam = searchParams.get('dueDay');
   const handleOpenedTask = useCallback(() => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -226,18 +233,51 @@ export const ProjectView: React.FC = () => {
       /* ignore */
     }
   }, [rightRailOpen]);
+
+  // If user switches sidebar workspace to one that does not contain this project,
+  // the board would look "unchanged" while the filter updates — redirect to dashboard.
+  useEffect(() => {
+    if (!project?.workspaceId || isAll || selectedWorkspaceId === ALL_WORKSPACES_ID) {
+      return;
+    }
+    if (project.workspaceId !== selectedWorkspaceId) {
+      toast.info('Switched workspace — this project belongs elsewhere. Opening the dashboard.');
+      navigate('/dashboard');
+    }
+  }, [project?.workspaceId, selectedWorkspaceId, isAll, navigate, project]);
+
   const {
     tasks,
     loading: tasksLoading,
     addTask,
     editTask,
     removeTask,
+    refreshTasks,
     limitModal,
     closeLimitModal,
   } = useTasks(
     projectId || null,
     project?.organizationId || null,
   );
+
+  const boardTasks = useMemo(() => {
+    if (!dueDayParam) return tasks;
+    return tasks.filter((t) => {
+      if (!t.dueDate) return false;
+      return format(new Date(t.dueDate), 'yyyy-MM-dd') === dueDayParam;
+    });
+  }, [tasks, dueDayParam]);
+
+  const clearDueDayFilter = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('dueDay');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   const boardColumns = useMemo(
     () =>
@@ -458,6 +498,18 @@ export const ProjectView: React.FC = () => {
           }
         />
 
+        {dueDayParam && (
+          <div className="flex items-center justify-between gap-3 px-4 lg:px-6 py-2 border-b border-border bg-secondary/40 text-sm">
+            <p className="text-muted-foreground">
+              Showing tasks due{' '}
+              <span className="font-medium text-foreground">{dueDayParam}</span>
+            </p>
+            <Button variant="outline" size="sm" onClick={clearDueDayFilter}>
+              Clear filter
+            </Button>
+          </div>
+        )}
+
         <div className="bg-card border-b border-border px-4 lg:px-6 py-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
@@ -646,11 +698,12 @@ export const ProjectView: React.FC = () => {
                   onActiveTaskChange={setActiveTaskId}
                   broadcastTyping={broadcastTyping}
                   typingPeers={typingPeers}
+                  onTasksRefresh={refreshTasks}
                 />
               </div>
             ) : viewMode === 'timeline' ? (
               <TimelineView
-                tasks={tasks}
+                tasks={boardTasks}
                 searchQuery={searchQuery}
                 selectedStatus={selectedStatus}
                 navigate={navigate}
@@ -667,7 +720,7 @@ export const ProjectView: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {tasks
+                    {boardTasks
                       .filter((t) => selectedStatus === 'all' || t.status === selectedStatus)
                       .filter((t) =>
                         searchQuery.trim()
@@ -703,7 +756,7 @@ export const ProjectView: React.FC = () => {
                   </tbody>
                 </table>
 
-                {tasks
+                {boardTasks
                   .filter((t) => selectedStatus === 'all' || t.status === selectedStatus)
                   .filter((t) =>
                     searchQuery.trim()
@@ -712,8 +765,10 @@ export const ProjectView: React.FC = () => {
                       : true
                   ).length === 0 && (
                     <div className="text-center text-muted-foreground py-12">
-                      {tasks.length === 0
-                        ? 'No tasks yet. Create one from the Kanban view.'
+                      {boardTasks.length === 0
+                        ? dueDayParam && tasks.length > 0
+                          ? 'No tasks due on this date in this project.'
+                          : 'No tasks yet. Create one from the Kanban view.'
                         : 'No tasks match your filters.'}
                     </div>
                   )}

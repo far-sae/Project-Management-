@@ -10,6 +10,7 @@ interface DayPickerPopoverProps {
   onChange: (date: Date | null) => void;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }
 
 const formatRelative = (d: Date): string => {
@@ -39,6 +40,7 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
   onChange,
   placeholder = 'No due date',
   className,
+  disabled = false,
 }) => {
   const [open, setOpen] = useState(false);
   const isOverdue =
@@ -74,7 +76,7 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
           <span className="truncate">
             {value ? formatRelative(new Date(value)) : placeholder}
           </span>
-          {value && (
+          {value && !disabled && (
             <span
               role="button"
               tabIndex={0}
@@ -146,7 +148,7 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
             onChange(d ?? null);
             setOpen(false);
           }}
-          initialFocus
+          autoFocus
         />
       </PopoverContent>
     </Popover>

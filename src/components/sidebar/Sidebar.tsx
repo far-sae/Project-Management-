@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -17,6 +17,8 @@ import {
   Inbox,
   Star,
   Activity,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -90,6 +92,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return a.name.localeCompare(b.name);
     });
   }, [visibleProjects, pinnedIds]);
+
+  /** Current project first when viewing a board, then the rest (for quick switching). */
+  const projectsForNav = useMemo(() => {
+    if (!project) return sortedProjects;
+    const others = sortedProjects.filter((p) => p.projectId !== project.projectId);
+    const self = sortedProjects.find((p) => p.projectId === project.projectId) ?? project;
+    return [self, ...others];
+  }, [sortedProjects, project]);
+
+  const [footerExpanded, setFooterExpanded] = useState(false);
 
   const bottomMenuItems = [
     { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
@@ -171,78 +183,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
           />
         )}
 
-        {/* Projects list */}
-        {!project && (
-          <div>
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Projects
-              </h3>
-              <span className="text-xs text-muted-foreground/70">
-                {sortedProjects.length}
-              </span>
-            </div>
-            <nav className="space-y-0.5">
-              {sortedProjects.length === 0 && (
-                <p className="text-xs text-muted-foreground px-3 py-2">
-                  No projects yet
-                </p>
-              )}
-              {sortedProjects.slice(0, 30).map((p) => {
-                const active = location.pathname === `/project/${p.projectId}`;
-                const pinned = isPinned(p.projectId);
-                return (
-                  <div
-                    key={p.projectId}
-                    className={cn(
-                      'group flex items-center gap-2 rounded-lg pr-1 transition-colors',
-                      active
-                        ? 'bg-primary-soft text-primary-soft-foreground'
-                        : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-                    )}
-                  >
-                    <Link
-                      to={`/project/${p.projectId}`}
-                      className="flex-1 flex items-center gap-2 min-w-0 px-2 py-1.5"
-                    >
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ background: p.coverColor || 'hsl(var(--primary))' }}
-                      />
-                      <span className="text-sm font-medium truncate">{p.name}</span>
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        togglePin(p.projectId);
-                      }}
-                      className={cn(
-                        'p-1 rounded-md opacity-0 group-hover:opacity-100 transition',
-                        pinned && 'opacity-100 text-warning',
-                        'hover:text-warning',
-                      )}
-                      aria-label={pinned ? 'Unpin project' : 'Pin project'}
-                      title={pinned ? 'Unpin' : 'Pin'}
-                    >
-                      <Star
-                        className={cn('w-3.5 h-3.5', pinned && 'fill-current')}
-                      />
-                    </button>
-                  </div>
-                );
-              })}
-              {sortedProjects.length > 30 && (
-                <Link
-                  to="/dashboard"
-                  className="block text-xs text-muted-foreground hover:text-foreground px-3 py-1.5"
-                >
-                  + {sortedProjects.length - 30} more on Dashboard
-                </Link>
-              )}
-            </nav>
+        {/* Projects list — also on project board for quick switching */}
+        <div>
+          <div className="flex items-center justify-between mb-2 px-1">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {project ? 'Switch project' : 'Projects'}
+            </h3>
+            <span className="text-xs text-muted-foreground/70">
+              {projectsForNav.length}
+            </span>
           </div>
-        )}
+          <nav className={cn('space-y-0.5', project && 'max-h-44 overflow-y-auto pr-0.5')}>
+            {projectsForNav.length === 0 && (
+              <p className="text-xs text-muted-foreground px-3 py-2">
+                No projects yet
+              </p>
+            )}
+            {projectsForNav.slice(0, 30).map((p) => {
+              const active = location.pathname === `/project/${p.projectId}`;
+              const pinned = isPinned(p.projectId);
+              return (
+                <div
+                  key={p.projectId}
+                  className={cn(
+                    'group flex items-center gap-2 rounded-lg pr-1 transition-colors',
+                    active
+                      ? 'bg-primary-soft text-primary-soft-foreground'
+                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                  )}
+                >
+                  <Link
+                    to={`/project/${p.projectId}`}
+                    className="flex-1 flex items-center gap-2 min-w-0 px-2 py-1.5"
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: p.coverColor || 'hsl(var(--primary))' }}
+                    />
+                    <span className="text-sm font-medium truncate">{p.name}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      togglePin(p.projectId);
+                    }}
+                    className={cn(
+                      'p-1 rounded-md opacity-0 group-hover:opacity-100 transition',
+                      pinned && 'opacity-100 text-warning',
+                      'hover:text-warning',
+                    )}
+                    aria-label={pinned ? 'Unpin project' : 'Pin project'}
+                    title={pinned ? 'Unpin' : 'Pin'}
+                  >
+                    <Star
+                      className={cn('w-3.5 h-3.5', pinned && 'fill-current')}
+                    />
+                  </button>
+                </div>
+              );
+            })}
+            {projectsForNav.length > 30 && (
+              <Link
+                to="/dashboard"
+                className="block text-xs text-muted-foreground hover:text-foreground px-3 py-1.5"
+              >
+                + {projectsForNav.length - 30} more on Dashboard
+              </Link>
+            )}
+          </nav>
+        </div>
 
         <Separator />
 
@@ -285,58 +295,92 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      {/* Bottom: theme + settings + profile */}
-      <div className="p-3 border-t border-border space-y-2">
-        <ThemeQuickToggle />
-
-        {isAdmin && (
-          <Link
-            to="/admin"
-            className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium text-violet-600 dark:text-violet-300 hover:bg-violet-500/10 transition-colors"
+      {/* Bottom: collapsible account / admin / settings */}
+      <div className="p-3 border-t border-border shrink-0">
+        {!footerExpanded ? (
+          <button
+            type="button"
+            onClick={() => setFooterExpanded(true)}
+            className="w-full flex items-center gap-2 rounded-lg border border-border px-2 py-2 text-left hover:bg-secondary transition-colors"
+            aria-expanded={false}
           >
-            <Shield className="w-4 h-4" />
-            <span>Admin Panel</span>
-          </Link>
-        )}
+            <Avatar className="w-8 h-8 shrink-0">
+              <AvatarImage src={user?.photoURL} alt={user?.displayName} />
+              <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
+                {user?.displayName?.charAt(0).toUpperCase() || 'U'}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-foreground truncate">Account</p>
+              <p className="text-[10px] text-muted-foreground truncate">
+                Theme, settings, sign out
+              </p>
+            </div>
+            <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" aria-hidden />
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setFooterExpanded(false)}
+              className="w-full flex items-center justify-between rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
+              aria-expanded
+            >
+              <span className="font-medium">Account &amp; workspace</span>
+              <ChevronDown className="w-4 h-4" aria-hidden />
+            </button>
+            <ThemeQuickToggle />
 
-        <Link
-          to="/settings"
-          className={cn(
-            'flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
-            location.pathname === '/settings'
-              ? 'bg-primary-soft text-primary-soft-foreground'
-              : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-          )}
-        >
-          <Settings className="w-4 h-4" />
-          <span>Settings</span>
-        </Link>
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium text-violet-600 dark:text-violet-300 hover:bg-violet-500/10 transition-colors"
+              >
+                <Shield className="w-4 h-4" />
+                <span>Admin Panel</span>
+              </Link>
+            )}
 
-        <Separator />
+            <Link
+              to="/settings"
+              className={cn(
+                'flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                location.pathname === '/settings'
+                  ? 'bg-primary-soft text-primary-soft-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+              )}
+            >
+              <Settings className="w-4 h-4" />
+              <span>Settings</span>
+            </Link>
 
-        <div className="flex items-center gap-2">
-          <Avatar className="w-8 h-8">
-            <AvatarImage src={user?.photoURL} alt={user?.displayName} />
-            <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
-              {user?.displayName?.charAt(0).toUpperCase() || 'U'}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">
-              {user?.displayName}
-            </p>
-            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+            <Separator />
+
+            <div className="flex items-center gap-2">
+              <Avatar className="w-8 h-8">
+                <AvatarImage src={user?.photoURL} alt={user?.displayName} />
+                <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
+                  {user?.displayName?.charAt(0).toUpperCase() || 'U'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">
+                  {user?.displayName}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-destructive shrink-0"
+                onClick={handleSignOut}
+                aria-label="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-muted-foreground hover:text-destructive shrink-0"
-            onClick={handleSignOut}
-            aria-label="Sign out"
-          >
-            <LogOut className="w-4 h-4" />
-          </Button>
-        </div>
+        )}
       </div>
     </aside>
   );

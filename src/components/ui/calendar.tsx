@@ -1,5 +1,5 @@
 import { DayPicker, DayPickerProps } from 'react-day-picker';
-import 'react-day-picker/dist/style.css';
+import 'react-day-picker/style.css';
 
 import { cn } from '@/lib/utils';
 

@@ -20,6 +20,7 @@ import {
   TaskPriority,
 } from '@/types';
 import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import {
   createNotificationsForTaskUpdate,
   addCommentWithGlobalSync,
@@ -75,6 +76,8 @@ interface KanbanBoardProps {
   broadcastTyping?: (taskId: string) => void;
   /** Returns peers currently typing on `taskId`. */
   typingPeers?: (taskId: string) => PresencePeer[];
+  /** Refresh task list from the server (e.g. after bulk actions). */
+  onTasksRefresh?: () => void | Promise<void>;
 }
 
 const COLUMN_COLORS = [
@@ -115,11 +118,31 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onActiveTaskChange,
   broadcastTyping,
   typingPeers,
+  onTasksRefresh,
 }) => {
   const { user } = useAuth();
   const projName = projectName || project?.name || 'Project';
   const orgId =
     project?.organizationId || user?.organizationId || (user ? `local-${user.userId}` : '');
+
+  const { organization, isAdmin } = useOrganization();
+
+  /** Project owner or org admin may edit/move locked tasks. */
+  const canOverrideTaskLock = useMemo(() => {
+    if (!user) return false;
+    if (project?.ownerId === user.userId) return true;
+    return isAdmin;
+  }, [user, project?.ownerId, isAdmin]);
+
+  const isTaskDragDisabled = useCallback(
+    (t: Task) => Boolean(t.isLocked && !canOverrideTaskLock),
+    [canOverrideTaskLock],
+  );
+
+  const getAssigneeEmail = useCallback(
+    (userId: string) => organization?.members.find((m) => m.userId === userId)?.email,
+    [organization?.members],
+  );
 
   const [columns, setColumns] = useState<KanbanColumn[]>(
     initialColumns || DEFAULT_COLUMNS,
@@ -295,6 +318,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       const movedTask = tasks.find((t) => t.taskId === taskId);
       if (!movedTask) return;
 
+      if (movedTask.isLocked && !canOverrideTaskLock) {
+        toast.error(
+          'This task is locked. Only the project owner or an admin can move it.',
+        );
+        return;
+      }
+
       const isColumn = columns.some((col) => col.id === overId);
       const overTask = !isColumn ? tasks.find((t) => t.taskId === overId) : null;
 
@@ -337,6 +367,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               newStatus: targetStatus,
               actorUserId: user.userId,
               actorDisplayName: user.displayName || 'User',
+              getAssigneeEmail,
             }).catch(() => {});
           }
         }
@@ -366,6 +397,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       sort,
       orgId,
       tasksByStatus,
+      canOverrideTaskLock,
+      getAssigneeEmail,
     ],
   );
 
@@ -460,6 +493,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       delete cleanInput.subtasks;
 
       if (selectedTask) {
+        if (selectedTask.isLocked && !canOverrideTaskLock) {
+          throw new Error(
+            'This task is locked. Only the project owner or an admin can edit it.',
+          );
+        }
         const updatePayload = { ...cleanInput } as UpdateTaskInput & {
           activityBy?: { userId: string; displayName: string; photoURL?: string };
           assigneeChangedBy?: { userId: string; displayName: string };
@@ -491,6 +529,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             newStatus: updatePayload.status ?? selectedTask.status,
             actorUserId: user.userId,
             actorDisplayName: user.displayName || 'User',
+            getAssigneeEmail,
           }).catch(() => {});
         }
       } else {
@@ -543,18 +582,37 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         }
       }
     },
-    [selectedTask, addTask, editTask, projectId, user, projName, project],
+    [
+      selectedTask,
+      addTask,
+      editTask,
+      projectId,
+      user,
+      projName,
+      project,
+      canOverrideTaskLock,
+      getAssigneeEmail,
+    ],
   );
 
   const handleDeleteTask = useCallback(
     async (taskId: string) => {
+      const t = tasks.find((x) => x.taskId === taskId);
+      if (t?.isLocked && !canOverrideTaskLock) {
+        toast.error('This task is locked. Only the project owner or an admin can delete it.');
+        return;
+      }
       await removeTask(taskId);
     },
-    [removeTask],
+    [removeTask, tasks, canOverrideTaskLock],
   );
 
   const handleCreateSubtasks = useCallback(
     async (subtasks: CreateTaskInput[]) => {
+      if (selectedTask?.isLocked && !canOverrideTaskLock) {
+        toast.error('This task is locked.');
+        return;
+      }
       for (const subtask of subtasks) {
         const newSubtask = await addTask({
           ...subtask,
@@ -564,7 +622,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           throw new Error('Failed to create subtask. Please try again.');
       }
     },
-    [addTask, selectedTask],
+    [addTask, selectedTask, canOverrideTaskLock],
   );
 
   const handleCloseModal = useCallback(() => {
@@ -579,26 +637,48 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const runBulk = useCallback(
     async (patch: UpdateTaskInput, successMessage: string) => {
       if (!orgId || ids.length === 0) return;
+      const blocked = ids.filter((id) => {
+        const t = tasks.find((x) => x.taskId === id);
+        return t?.isLocked && !canOverrideTaskLock;
+      });
+      if (blocked.length > 0) {
+        toast.error(
+          'Some selected tasks are locked. Deselect them or ask a project owner or admin.',
+        );
+        return;
+      }
       try {
         await bulkUpdateTasks(ids, patch, orgId);
         toast.success(successMessage);
+        await onTasksRefresh?.();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Bulk update failed');
       }
     },
-    [orgId, ids],
+    [orgId, ids, onTasksRefresh, tasks, canOverrideTaskLock],
   );
 
   const handleBulkDelete = useCallback(async () => {
     if (!orgId || ids.length === 0) return;
+    const blocked = ids.filter((id) => {
+      const t = tasks.find((x) => x.taskId === id);
+      return t?.isLocked && !canOverrideTaskLock;
+    });
+    if (blocked.length > 0) {
+      toast.error(
+        'Some selected tasks are locked. Deselect them or ask a project owner or admin.',
+      );
+      return;
+    }
     try {
       await bulkDeleteTasks(ids, orgId);
       toast.success(`Deleted ${ids.length} task${ids.length > 1 ? 's' : ''}`);
       clearSelection();
+      await onTasksRefresh?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Bulk delete failed');
     }
-  }, [orgId, ids, clearSelection]);
+  }, [orgId, ids, clearSelection, onTasksRefresh, tasks, canOverrideTaskLock]);
 
   // ── Column CRUD handlers (unchanged) ──────────────────────
   const handleAddColumn = useCallback(() => {
@@ -707,6 +787,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 selectionMode={selectionMode}
                 onTaskSelectChange={handleTaskSelect}
                 peersByTask={peersByTask}
+                isTaskDragDisabled={isTaskDragDisabled}
               />
             ))}
 

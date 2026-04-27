@@ -21,6 +21,7 @@ interface AssigneePickerProps {
   value: TaskAssignee[];
   members: AssignableMember[];
   onChange: (assignees: TaskAssignee[]) => void;
+  disabled?: boolean;
 }
 
 /** Searchable popover for picking task assignees from project members. */
@@ -28,6 +29,7 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
   value,
   members,
   onChange,
+  disabled = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -45,6 +47,7 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
   const isSelected = (userId: string) => value.some((a) => a.userId === userId);
 
   const toggle = (m: AssignableMember) => {
+    if (disabled) return;
     if (isSelected(m.userId)) {
       onChange(value.filter((a) => a.userId !== m.userId));
     } else {
@@ -82,7 +85,8 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
               onClick={() =>
                 onChange(value.filter((x) => x.userId !== a.userId))
               }
-              className="text-muted-foreground hover:text-destructive"
+              disabled={disabled}
+              className="text-muted-foreground hover:text-destructive disabled:opacity-40"
               aria-label={`Remove ${a.displayName}`}
             >
               <X className="w-3 h-3" />
@@ -90,13 +94,14 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
           </span>
         ))}
 
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover open={disabled ? false : open} onOpenChange={disabled ? () => {} : setOpen}>
           <PopoverTrigger asChild>
             <Button
               type="button"
               variant="outline"
               size="sm"
               className="h-7 px-2 text-xs border-dashed"
+              disabled={disabled}
             >
               <UserPlus className="w-3.5 h-3.5 mr-1" />
               Assign

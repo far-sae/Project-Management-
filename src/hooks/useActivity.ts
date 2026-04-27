@@ -33,6 +33,8 @@ export const useActivity = (organizationId: string | null, limit = 50) => {
 export const useTaskActivity = (
   taskId: string | null,
   organizationId: string | null,
+  /** Increment after a local action (e.g. new comment) to refetch without waiting on realtime. */
+  refetchNonce: number = 0,
 ) => {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +51,7 @@ export const useTaskActivity = (
       setLoading(false);
     });
     return () => unsub();
-  }, [taskId, organizationId]);
+  }, [taskId, organizationId, refetchNonce]);
 
   return { events, loading };
 };

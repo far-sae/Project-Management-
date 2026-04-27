@@ -569,18 +569,18 @@ export const Dashboard: React.FC = () => {
         <div className="p-8 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">
                 Welcome back, {user?.displayName?.split(' ')[0]}!
               </h1>
-              <p className="text-gray-500">Your command center – tasks, activity, and projects</p>
+              <p className="text-muted-foreground">Your command center – tasks, activity, and projects</p>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
               {/* Workspace selector */}
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-700">Workspace</span>
+                <span className="text-sm font-medium text-foreground">Workspace</span>
                 <Select value={selectedWorkspaceId} onValueChange={handleWorkspaceChange}>
-                  <SelectTrigger className="w-[200px] bg-white">
+                  <SelectTrigger className="w-[200px]">
                     <SelectValue placeholder="Select workspace" />
                   </SelectTrigger>
 
@@ -665,46 +665,46 @@ export const Dashboard: React.FC = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">Tasks for Today</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Tasks for Today</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-orange-600">
                       {todayTasksInWorkspace.length}
                     </div>
-                    <p className="text-xs text-gray-500">Due today in this workspace</p>
+                    <p className="text-xs text-muted-foreground">Due today in this workspace</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">My Tasks</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">My Tasks</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
                       {tasksAssignedToMeInWorkspace.length}
                     </div>
-                    <p className="text-xs text-gray-500">Assigned to you</p>
+                    <p className="text-xs text-muted-foreground">Assigned to you</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">Upcoming</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Upcoming</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-blue-600">
                       {upcomingTasksInWorkspace.length}
                     </div>
-                    <p className="text-xs text-gray-500">Next deadlines</p>
+                    <p className="text-xs text-muted-foreground">Next deadlines</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">Overdue</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Overdue</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-red-600">
                       {overdueTasksInWorkspace.length}
                     </div>
-                    <p className="text-xs text-gray-500">Needs attention</p>
+                    <p className="text-xs text-muted-foreground">Needs attention</p>
                   </CardContent>
                 </Card>
               </div>
@@ -726,8 +726,8 @@ export const Dashboard: React.FC = () => {
                       <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                     </div>
                   ) : todayTasksInWorkspace.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <Clock className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Clock className="w-12 h-12 mx-auto mb-2 text-muted-foreground/60" />
                       <p className="font-medium">No tasks due today</p>
                       <p className="text-sm mb-4">You’re all caught up in this workspace.</p>
                       {/* <Button size="sm" variant="outline" onClick={() => setShowCreateModal(true)}>
@@ -741,19 +741,19 @@ export const Dashboard: React.FC = () => {
                         <div
                           key={task.taskId}
                           onClick={() => navigate(`/project/${task.projectId}`)}
-                          className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer group"
+                          className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/60 cursor-pointer group"
                         >
                           <div>
                             <p className="font-medium">{task.title}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               {getProjectName(task.projectId)}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 capitalize">
+                            <span className="text-xs px-2 py-0.5 rounded bg-muted capitalize">
                               {task.status}
                             </span>
-                            <ArrowRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100" />
+                            <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
                           </div>
                         </div>
                       ))}
@@ -777,8 +777,8 @@ export const Dashboard: React.FC = () => {
                       <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                     </div>
                   ) : upcomingTasksInWorkspace.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <CheckSquare className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    <div className="text-center py-8 text-muted-foreground">
+                      <CheckSquare className="w-12 h-12 mx-auto mb-2 text-muted-foreground/60" />
                       <p>No upcoming tasks in this workspace</p>
                     </div>
                   ) : (
@@ -787,16 +787,16 @@ export const Dashboard: React.FC = () => {
                         <div
                           key={task.taskId}
                           onClick={() => navigate(`/project/${task.projectId}`)}
-                          className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer group"
+                          className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/60 cursor-pointer group"
                         >
                           <div>
                             <p className="font-medium">{task.title}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               {getProjectName(task.projectId)} •{' '}
                               {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : ''}
                             </p>
                           </div>
-                          <ArrowRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100" />
+                          <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
                         </div>
                       ))}
                     </div>
@@ -821,9 +821,9 @@ export const Dashboard: React.FC = () => {
                   ) : filteredProjects.length === 0 ? (
                     <Card className="border-dashed">
                       <CardContent className="flex flex-col items-center justify-center py-16">
-                        <FolderKanban className="w-16 h-16 text-gray-300 mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-                        <p className="text-gray-500 mb-4">
+                        <FolderKanban className="w-16 h-16 text-muted-foreground/60 mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-2">No projects yet</h3>
+                        <p className="text-muted-foreground mb-4">
                           Create your first project to get started
                         </p>
                         <Button
@@ -893,12 +893,12 @@ export const Dashboard: React.FC = () => {
                             </DropdownMenu>
                           </CardHeader>
                           <CardContent onClick={() => navigate(`/project/${project.projectId}`)}>
-                            <div className="flex items-center justify-between text-sm text-gray-500">
+                            <div className="flex items-center justify-between text-sm text-muted-foreground">
                               <span>{project.stats.totalTasks} tasks</span>
                               <span>{project.stats.completedTasks} completed</span>
                             </div>
                             <div className="mt-2">
-                              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
                                   style={{
@@ -914,12 +914,12 @@ export const Dashboard: React.FC = () => {
                       ))}
 
                       <Card
-                        className="border-dashed cursor-pointer hover:border-orange-300 hover:bg-orange-50 transition-colors"
+                        className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
                         onClick={() => setShowCreateModal(true)}
                       >
                         <CardContent className="flex flex-col items-center justify-center h-full min-h-[180px]">
-                          <Plus className="w-8 h-8 text-gray-400 mb-2" />
-                          <p className="text-gray-500">Add new project</p>
+                          <Plus className="w-8 h-8 text-muted-foreground mb-2" />
+                          <p className="text-muted-foreground">Add new project</p>
                         </CardContent>
                       </Card>
                     </div>
@@ -955,11 +955,11 @@ export const Dashboard: React.FC = () => {
                             </CardDescription>
                           </CardHeader>
                           <CardContent>
-                            <div className="flex items-center justify-between text-sm text-gray-500 mb-2">
+                            <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
                               <span>{project.stats.totalTasks} tasks</span>
                               <span>{project.stats.completedTasks} completed</span>
                             </div>
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-blue-500 rounded-full"
                                 style={{
@@ -969,7 +969,7 @@ export const Dashboard: React.FC = () => {
                                 }}
                               />
                             </div>
-                            <p className="text-xs text-gray-400 mt-2">
+                            <p className="text-xs text-muted-foreground mt-2">
                               Owned by project owner
                             </p>
                           </CardContent>
@@ -998,17 +998,17 @@ export const Dashboard: React.FC = () => {
                     <div className="flex justify-center py-12">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Array.from({ length: 6 }).map((_, i) => (
-                          <div key={i} className="animate-pulse bg-white p-6 rounded-xl shadow">
-                            <div className="h-3 bg-gray-200 rounded mb-4 w-1/2" />
-                            <div className="h-2 bg-gray-200 rounded mb-2 w-full" />
-                            <div className="h-2 bg-gray-200 rounded w-3/4" />
+                          <div key={i} className="animate-pulse bg-card p-6 rounded-xl shadow border border-border">
+                            <div className="h-3 bg-muted rounded mb-4 w-1/2" />
+                            <div className="h-2 bg-muted rounded mb-2 w-full" />
+                            <div className="h-2 bg-muted rounded w-3/4" />
                           </div>
                         ))}
                       </div>
                     </div>
                   ) : activityInWorkspace.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
-                      <Activity className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Activity className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
                       <p className="text-lg font-medium">No activity yet</p>
                       <p className="text-sm">
                         Creating tasks, adding subtasks and commenting will show here
@@ -1020,7 +1020,7 @@ export const Dashboard: React.FC = () => {
                         <div
                           key={ev.activityId}
                           onClick={() => navigate(`/project/${ev.projectId}`)}
-                          className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer group"
+                          className="p-4 bg-secondary/40 rounded-lg hover:bg-muted transition-colors cursor-pointer group"
                         >
                           <div className="flex items-start gap-3">
                             {ev.photoURL ? (
@@ -1030,14 +1030,14 @@ export const Dashboard: React.FC = () => {
                                 className="w-10 h-10 rounded-full object-cover"
                               />
                             ) : (
-                              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 font-medium">
+                              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary font-medium">
                                 {ev.displayName?.charAt(0)?.toUpperCase() ?? '?'}
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap gap-2 mb-1">
-                                <span className="font-medium text-gray-900">{ev.displayName}</span>
-                                <span className="text-gray-500">
+                                <span className="font-medium text-foreground">{ev.displayName}</span>
+                                <span className="text-muted-foreground">
                                   {ev.type === 'task_created' && ' created task '}
                                   {ev.type === 'subtask_created' && ' added subtask '}
                                   {ev.type === 'subtask_done' && ' completed subtask '}
@@ -1049,17 +1049,17 @@ export const Dashboard: React.FC = () => {
                                 </span>
                                 {(ev.type === 'subtask_created' || ev.type === 'subtask_done') &&
                                   ev.payload?.subtaskTitle && (
-                                    <span className="text-sm text-gray-600 truncate">
+                                    <span className="text-sm text-muted-foreground truncate">
                                       "{ev.payload.subtaskTitle}"
                                     </span>
                                   )}
                               </div>
                               {ev.projectName && (
-                                <div className="text-xs text-gray-500 mb-1">
+                                <div className="text-xs text-muted-foreground mb-1">
                                   in {ev.projectName}
                                 </div>
                               )}
-                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 {ev.type === 'task_created' && (
                                   <CheckCircle2 className="w-3 h-3 text-green-600" />
                                 )}
@@ -1067,7 +1067,7 @@ export const Dashboard: React.FC = () => {
                                   <ListTree className="w-3 h-3 text-blue-600" />
                                 )}
                                 {ev.type === 'comment_added' && (
-                                  <MessageSquare className="w-3 h-3 text-gray-500" />
+                                  <MessageSquare className="w-3 h-3 text-muted-foreground" />
                                 )}
                                 {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
                                 <ArrowRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100" />
@@ -1163,7 +1163,7 @@ export const Dashboard: React.FC = () => {
                 value={selectedProjectWorkspaceId}
                 onValueChange={setSelectedProjectWorkspaceId}
               >
-                <SelectTrigger className="w-[200px] bg-white shadow-sm">
+                <SelectTrigger className="w-[200px] shadow-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1208,7 +1208,7 @@ export const Dashboard: React.FC = () => {
                     onClick={() => setSelectedColor(color)}
                     className={cn(
                       'w-8 h-8 rounded-full transition-transform',
-                      selectedColor === color && 'ring-2 ring-offset-2 ring-gray-400 scale-110'
+                      selectedColor === color && 'ring-2 ring-offset-2 ring-border scale-110'
                     )}
                     style={{ backgroundColor: color }}
                   />

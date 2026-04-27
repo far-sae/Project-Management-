@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface InlineAddCardProps {
   onSubmit: (title: string) => Promise<void> | void;
@@ -46,6 +47,8 @@ export const InlineAddCard: React.FC<InlineAddCardProps> = ({
       setValue('');
       // keep editor open so users can chain-add tasks
       requestAnimationFrame(() => textareaRef.current?.focus());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add task');
     } finally {
       setSubmitting(false);
     }

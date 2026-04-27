@@ -14,6 +14,7 @@ import {
 import { ActivityEvent, CreateActivityInput } from "@/types/activity";
 import { AppNotification, CreateNotificationInput } from "@/types/notification";
 import { logger } from "@/lib/logger";
+import { sendTaskAssignedEmail } from "@/services/email/taskAssignedEmail";
 import { isAppOwner } from "@/lib/app-owner";
 import { INDIA_PRICING } from "@/types/subscription";
 
@@ -977,13 +978,44 @@ export const bulkDeleteTasks = async (
   await Promise.all(taskIds.map((id) => deleteTask(id, organizationId)));
 };
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export const subscribeToTasks = (
   projectId: string,
   organizationId: string | undefined,
   callback: (tasks: Task[]) => void,
   userId?: string,
 ) => {
-  getProjectTasks(projectId, organizationId, userId).then(callback);
+  let cancelled = false;
+
+  const pushTasks = (tasks: Task[]) => {
+    if (!cancelled) callback(tasks);
+  };
+
+  const fetchAndPush = async (): Promise<void> => {
+    try {
+      const tasks = await getProjectTasks(projectId, organizationId, userId);
+      pushTasks(tasks);
+    } catch (err) {
+      logger.warn("subscribeToTasks: initial fetch failed, retrying:", err);
+      try {
+        await sleep(1200);
+        const tasks = await getProjectTasks(projectId, organizationId, userId);
+        pushTasks(tasks);
+      } catch (err2) {
+        logger.error("subscribeToTasks: fetch failed after retry:", err2);
+        try {
+          await sleep(2500);
+          const tasks = await getProjectTasks(projectId, organizationId, userId);
+          pushTasks(tasks);
+        } catch (err3) {
+          logger.error("subscribeToTasks: all fetch attempts failed:", err3);
+        }
+      }
+    }
+  };
+
+  void fetchAndPush();
 
   const channel = supabase
     .channel(`tasks-${projectId}-${Math.random().toString(36).slice(2, 11)}`)
@@ -996,12 +1028,23 @@ export const subscribeToTasks = (
         filter: `project_id=eq.${projectId}`,
       },
       () => {
-        getProjectTasks(projectId, organizationId, userId).then(callback);
+        getProjectTasks(projectId, organizationId, userId)
+          .then(pushTasks)
+          .catch((err) => {
+            logger.warn("subscribeToTasks: refetch after change failed:", err);
+            void fetchAndPush();
+          });
       },
     )
-    .subscribe();
+    .subscribe((status, err) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        logger.warn("subscribeToTasks: realtime channel status:", status, err);
+        void fetchAndPush();
+      }
+    });
 
   return () => {
+    cancelled = true;
     channel.unsubscribe();
   };
 };
@@ -1275,11 +1318,16 @@ export const markNotificationRead = async (
 export const markAllNotificationsRead = async (
   userId: string,
 ): Promise<void> => {
-  await supabase
+  const { error } = await supabase
     .from("notifications")
     .update({ read: true })
     .eq("user_id", userId)
     .eq("read", false);
+  if (error) {
+    throw new Error(
+      `markAllNotificationsRead failed for userId=${userId}: ${error.message}`,
+    );
+  }
 };
 
 /** Permanently delete a single notification for the user (used by Inbox). */
@@ -1287,11 +1335,16 @@ export const deleteNotification = async (
   userId: string,
   notificationId: string,
 ): Promise<void> => {
-  await supabase
+  const { error } = await supabase
     .from("notifications")
     .delete()
     .eq("notification_id", notificationId)
     .eq("user_id", userId);
+  if (error) {
+    throw new Error(
+      `deleteNotification failed for notificationId=${notificationId}, userId=${userId}: ${error.message}`,
+    );
+  }
 };
 
 /** Notify assignees when a task is assigned, completed, or updated (workflow notifications). */
@@ -1306,6 +1359,8 @@ export const createNotificationsForTaskUpdate = async (params: {
   newStatus?: string;
   actorUserId: string;
   actorDisplayName: string;
+  /** When set (e.g. org members), sends optional EmailJS assignee email if env is configured. */
+  getAssigneeEmail?: (userId: string) => string | undefined;
 }): Promise<void> => {
   const {
     taskId,
@@ -1318,6 +1373,7 @@ export const createNotificationsForTaskUpdate = async (params: {
     newStatus,
     actorUserId,
     actorDisplayName,
+    getAssigneeEmail,
   } = params;
 
   const previousIds = new Set(previousAssignees.map((a) => a.userId));
@@ -1337,6 +1393,22 @@ export const createNotificationsForTaskUpdate = async (params: {
           actorUserId,
           actorDisplayName,
         }).catch((e) => logger.warn("createNotification task_assigned:", e));
+
+        const email = getAssigneeEmail?.(a.userId)?.trim();
+        if (email && email.includes("@")) {
+          const taskUrl =
+            typeof window !== "undefined"
+              ? `${window.location.origin}/project/${projectId}?taskId=${taskId}`
+              : "";
+          void sendTaskAssignedEmail({
+            toEmail: email,
+            assigneeDisplayName: a.displayName,
+            taskTitle,
+            projectName,
+            actorDisplayName,
+            taskUrl,
+          });
+        }
       }
     }
 
@@ -1454,10 +1526,214 @@ export const fetchUserNotifications = async (
   }));
 };
 
+/** Resolve @mentions in comment/chat text to member user IDs (best-effort). */
+export const findMentionedUserIdsFromText = (
+  text: string,
+  members: { userId: string; displayName: string; email: string }[],
+  excludeUserId: string,
+): string[] => {
+  const lower = text.toLowerCase();
+  const mentioned = new Set<string>();
+  for (const m of members) {
+    if (!m.userId || m.userId === excludeUserId) continue;
+    const name = (m.displayName || "").trim();
+    const emailLocal = (m.email || "").split("@")[0]?.toLowerCase() || "";
+    const candidates = new Set<string>();
+    if (name) {
+      candidates.add(name.toLowerCase());
+      const first = name.split(/\s+/)[0]?.toLowerCase();
+      if (first) candidates.add(first);
+      candidates.add(name.replace(/\s+/g, "").toLowerCase());
+    }
+    if (emailLocal) candidates.add(emailLocal);
+    for (const c of candidates) {
+      if (c.length < 2) continue;
+      if (lower.includes(`@${c}`)) {
+        mentioned.add(m.userId);
+        break;
+      }
+    }
+  }
+  return [...mentioned];
+};
+
+/** Fire in-app notifications for @mentions in a task comment (non-blocking). */
+export const notifyTaskCommentMentions = async (params: {
+  text: string;
+  members: { userId: string; displayName: string; email: string }[];
+  actorUserId: string;
+  actorDisplayName: string;
+  taskId: string;
+  projectId: string;
+  projectName: string;
+  taskTitle: string;
+}): Promise<void> => {
+  const {
+    text,
+    members,
+    actorUserId,
+    actorDisplayName,
+    taskId,
+    projectId,
+    projectName,
+    taskTitle,
+  } = params;
+  const ids = findMentionedUserIdsFromText(text, members, actorUserId);
+  for (const userId of ids) {
+    await createNotification({
+      userId,
+      type: "comment_mention",
+      title: "You were mentioned",
+      body: `${actorDisplayName} mentioned you on "${taskTitle}" in ${projectName}`,
+      taskId,
+      projectId,
+      actorUserId,
+      actorDisplayName,
+    }).catch((e) => logger.warn("comment_mention notify:", e));
+  }
+};
+
+/** @mentions in project chat (no task link). */
+export const notifyProjectChatMentions = async (params: {
+  text: string;
+  members: { userId: string; displayName: string; email: string }[];
+  actorUserId: string;
+  actorDisplayName: string;
+  projectId: string;
+  projectName: string;
+}): Promise<void> => {
+  const { text, members, actorUserId, actorDisplayName, projectId, projectName } =
+    params;
+  const ids = findMentionedUserIdsFromText(text, members, actorUserId);
+  for (const userId of ids) {
+    await createNotification({
+      userId,
+      type: "comment_mention",
+      title: "You were mentioned",
+      body: `${actorDisplayName} mentioned you in ${projectName} chat`,
+      projectId,
+      actorUserId,
+      actorDisplayName,
+    }).catch((e) => logger.warn("project_chat mention:", e));
+  }
+};
+
+export interface ProjectChatMessage {
+  messageId: string;
+  projectId: string;
+  organizationId: string | null;
+  userId: string;
+  displayName: string;
+  photoURL: string;
+  body: string;
+  taskId: string | null;
+  createdAt: Date;
+}
+
+const mapProjectChatRow = (d: Record<string, unknown>): ProjectChatMessage => ({
+  messageId: d.message_id as string,
+  projectId: d.project_id as string,
+  organizationId: (d.organization_id as string) ?? null,
+  userId: d.user_id as string,
+  displayName: (d.display_name as string) || "",
+  photoURL: (d.user_photo as string) || "",
+  body: d.body as string,
+  taskId: (d.task_id as string) ?? null,
+  createdAt: new Date(d.created_at as string),
+});
+
+export const fetchProjectChatMessages = async (
+  projectId: string,
+  limit: number = 200,
+): Promise<ProjectChatMessage[]> => {
+  const { data, error } = await supabase
+    .from("project_chat_messages")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    logger.warn("fetchProjectChatMessages:", error.message);
+    return [];
+  }
+  const rows = (data || []).map(mapProjectChatRow);
+  return rows.reverse();
+};
+
+export const insertProjectChatMessage = async (params: {
+  projectId: string;
+  organizationId: string;
+  userId: string;
+  displayName: string;
+  photoURL?: string;
+  body: string;
+  taskId?: string | null;
+}): Promise<ProjectChatMessage> => {
+  const messageId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const row = {
+    message_id: messageId,
+    project_id: params.projectId,
+    organization_id: params.organizationId || null,
+    user_id: params.userId,
+    display_name: params.displayName,
+    user_photo: params.photoURL || null,
+    body: params.body.trim(),
+    task_id: params.taskId || null,
+    created_at: now,
+  };
+
+  const { data, error } = await supabase
+    .from("project_chat_messages")
+    .insert(row)
+    .select()
+    .single();
+
+  if (error) {
+    logger.error("insertProjectChatMessage:", error);
+    throw error;
+  }
+  return mapProjectChatRow(data as Record<string, unknown>);
+};
+
+export const subscribeToProjectChat = (
+  projectId: string,
+  callback: (messages: ProjectChatMessage[]) => void,
+  limit: number = 200,
+) => {
+  const load = () => {
+    fetchProjectChatMessages(projectId, limit).then(callback);
+  };
+
+  load();
+
+  const channel = supabase
+    .channel(
+      `project-chat-${projectId}-${Math.random().toString(36).slice(2, 9)}`,
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "project_chat_messages",
+        filter: `project_id=eq.${projectId}`,
+      },
+      load,
+    )
+    .subscribe();
+
+  return () => {
+    channel.unsubscribe();
+  };
+};
+
 export const subscribeToUserNotifications = (
   userId: string,
   callback: (notifications: AppNotification[]) => void,
   limit: number = 30,
+  onFetchError?: (message: string) => void,
 ) => {
   const fetchNotifications = () =>
     supabase
@@ -1469,6 +1745,7 @@ export const subscribeToUserNotifications = (
       .then(({ data, error }) => {
         if (error) {
           logger.warn("Notifications fetch failed (table may be missing):", error.message);
+          onFetchError?.(error.message);
           callback([]);
           return;
         }
@@ -1680,7 +1957,9 @@ export const addCommentWithGlobalSync = async (
       userId,
       displayName,
       photoURL,
-    }).catch(() => {});
+    }).catch((err) =>
+      logger.warn("logActivity(comment_added) failed — check org UUID and activity RLS:", err),
+    );
 
     // Notify assignees about new comment (except comment author)
     const { data: taskRow } = await supabase

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, Users, Calendar as CalendarIcon, Settings as SettingsIcon } from 'lucide-react';
 import {
   startOfWeek,
@@ -39,11 +39,14 @@ import {
 import type { Task } from '@/types';
 import type { OrganizationMember } from '@/types/organization';
 import { cn } from '@/lib/utils';
+import { logger } from '@/lib/logger';
+import { toast } from 'sonner';
 
 interface WorkloadCell {
   date: Date;
   count: number;
   isOverdue: boolean;
+  tasks: Task[];
 }
 
 interface MemberWorkload {
@@ -70,6 +73,7 @@ export const Workload: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const { tasks, loading: tasksLoading } = useAllTasks();
+  const navigate = useNavigate();
 
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -77,6 +81,7 @@ export const Workload: React.FC = () => {
   const [capacityMap, setCapacityMap] = useState<Map<string, number>>(new Map());
   const [hoursPerTask, setHoursPerTask] = useState<number>(HOURS_PER_TASK_DEFAULT);
   const [capacityLoading, setCapacityLoading] = useState(false);
+  const [capacityError, setCapacityError] = useState<string | null>(null);
 
   const members = useMemo<OrganizationMember[]>(
     () => organization?.members ?? [],
@@ -87,6 +92,7 @@ export const Workload: React.FC = () => {
     if (members.length === 0) return;
     let cancelled = false;
     setCapacityLoading(true);
+    setCapacityError(null);
     fetchUserCapacities(members.map((m) => m.userId))
       .then((map) => {
         if (cancelled) return;
@@ -98,8 +104,17 @@ export const Workload: React.FC = () => {
           );
         }
         setCapacityMap(next);
+        setCapacityError(null);
       })
-      .catch(() => undefined)
+      .catch((err: unknown) => {
+        logger.warn('Workload: fetchUserCapacities failed:', err);
+        const msg =
+          err instanceof Error ? err.message : 'Could not load capacity settings';
+        if (!cancelled) {
+          setCapacityError(msg);
+          toast.error(msg);
+        }
+      })
       .finally(() => {
         if (!cancelled) setCapacityLoading(false);
       });
@@ -138,6 +153,7 @@ export const Workload: React.FC = () => {
           date: day,
           count: dayTasks.length,
           isOverdue,
+          tasks: dayTasks,
         };
       });
       const weekTotal = cells.reduce((sum, c) => sum + c.count, 0);
@@ -236,6 +252,11 @@ export const Workload: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
+                {capacityError && (
+                  <p className="text-sm text-destructive mb-3" role="alert">
+                    {capacityError}
+                  </p>
+                )}
                 {tasksLoading || capacityLoading ? (
                   <div className="flex items-center justify-center py-12 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -248,9 +269,9 @@ export const Workload: React.FC = () => {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead>
+                      <thead className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border">
                         <tr className="text-left">
-                          <th className="px-2 py-2 font-medium text-muted-foreground">
+                          <th className="px-2 py-2 font-medium text-muted-foreground bg-background/95">
                             Member
                           </th>
                           {weekDays.map((d) => (
@@ -310,23 +331,47 @@ export const Workload: React.FC = () => {
                                   </div>
                                 </div>
                               </td>
-                              {row.cells.map((cell) => (
-                                <td
-                                  key={cell.date.toISOString()}
-                                  className="px-1.5 py-2 text-center"
-                                >
-                                  <div
-                                    className={cn(
-                                      'mx-auto h-9 w-full rounded-md flex items-center justify-center text-xs font-medium border border-transparent',
-                                      heatColor(cell.count, capacityPerDay),
-                                      cell.isOverdue && 'border-destructive/40',
-                                    )}
-                                    title={`${cell.count} task(s) due`}
+                              {row.cells.map((cell) => {
+                                const tip =
+                                  cell.tasks.length === 0
+                                    ? undefined
+                                    : cell.tasks
+                                        .slice(0, 8)
+                                        .map((t) => t.title)
+                                        .join(' · ') +
+                                      (cell.tasks.length > 8
+                                        ? ` (+${cell.tasks.length - 8} more)`
+                                        : '');
+                                return (
+                                  <td
+                                    key={cell.date.toISOString()}
+                                    className="px-1.5 py-2 text-center"
                                   >
-                                    {cell.count > 0 ? cell.count : ''}
-                                  </div>
-                                </td>
-                              ))}
+                                    <button
+                                      type="button"
+                                      disabled={cell.count === 0}
+                                      title={tip}
+                                      onClick={() => {
+                                        if (cell.tasks.length === 0) return;
+                                        const ymd = format(cell.date, 'yyyy-MM-dd');
+                                        navigate(
+                                          `/tasks?dueDay=${encodeURIComponent(ymd)}&assigneeId=${encodeURIComponent(row.member.userId)}`,
+                                        );
+                                      }}
+                                      className={cn(
+                                        'mx-auto h-9 w-full rounded-md flex items-center justify-center text-xs font-medium border border-transparent',
+                                        heatColor(cell.count, capacityPerDay),
+                                        cell.isOverdue && 'border-destructive/40',
+                                        cell.count > 0 &&
+                                          'cursor-pointer hover:ring-2 hover:ring-primary/30 transition-shadow',
+                                        cell.count === 0 && 'cursor-default',
+                                      )}
+                                    >
+                                      {cell.count > 0 ? cell.count : ''}
+                                    </button>
+                                  </td>
+                                );
+                              })}
                               <td className="px-2 py-2 text-right">
                                 <div
                                   className={cn(

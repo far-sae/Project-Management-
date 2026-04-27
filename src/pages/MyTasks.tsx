@@ -34,14 +34,25 @@ import { updateTask, addCommentWithGlobalSync, subscribeToComments, createDueRem
 import { uploadCommentAttachment } from '@/services/supabase/storage';
 import { cn } from '@/lib/utils';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+import { useSearchParams } from 'react-router-dom';
+
+function startOfDayFromYmd(ymd: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd.trim())) return null;
+  const [y, m, d] = ymd.trim().split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (Number.isNaN(dt.getTime())) return null;
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const { projects } = useProjects();
   const { tasksAssignedToMe, loading, tasks: allTasks, refresh } = useAllTasks();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [activeMainTab, setActiveMainTab] = useState<'mytasks' | 'updates'>('mytasks');
@@ -88,6 +99,49 @@ export const MyTasks: React.FC = () => {
     projects.find((p) => p.projectId === projectId),
     [projects]
   );
+
+  const workloadDueDay = searchParams.get('dueDay')?.trim() || null;
+  const workloadAssigneeId = searchParams.get('assigneeId')?.trim() || null;
+  const workloadDeepLink =
+    !!(workloadDueDay || workloadAssigneeId);
+
+  const getAssigneeLabel = useCallback(
+    (userId: string) => {
+      if (userId === user?.userId) return 'You';
+      const m = organization?.members?.find((x) => x.userId === userId);
+      return m?.displayName || m?.email || 'Teammate';
+    },
+    [user?.userId, organization?.members],
+  );
+
+  const tasksForList = useMemo(() => {
+    const targetDay = workloadDueDay ? startOfDayFromYmd(workloadDueDay) : null;
+
+    let base: Task[];
+    if (workloadAssigneeId && user?.userId && workloadAssigneeId !== user.userId) {
+      base = allTasks.filter((t) => t.assignees?.some((a) => a.userId === workloadAssigneeId));
+    } else {
+      base = tasksAssignedToMe;
+    }
+
+    if (!targetDay) return base;
+
+    return base.filter((t) => {
+      if (!t.dueDate) return false;
+      const d = new Date(t.dueDate);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime() === targetDay.getTime();
+    });
+  }, [workloadDueDay, workloadAssigneeId, allTasks, tasksAssignedToMe, user?.userId]);
+
+  const clearWorkloadQuery = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('dueDay');
+      next.delete('assigneeId');
+      return next;
+    });
+  }, [setSearchParams]);
 
   // Subscribe to comments for selected task
   useEffect(() => {
@@ -267,9 +321,9 @@ export const MyTasks: React.FC = () => {
 
   // Filter and group tasks
   const taskGroups = useMemo(() => {
-    let filteredTasks = tasksAssignedToMe;
-    if (filterStatus === 'active') filteredTasks = tasksAssignedToMe.filter(t => t.status !== 'done');
-    else if (filterStatus === 'completed') filteredTasks = tasksAssignedToMe.filter(t => t.status === 'done');
+    let filteredTasks = tasksForList;
+    if (filterStatus === 'active') filteredTasks = tasksForList.filter(t => t.status !== 'done');
+    else if (filterStatus === 'completed') filteredTasks = tasksForList.filter(t => t.status === 'done');
 
     const groups: { label: string; tasks: Task[]; }[] = [];
 
@@ -321,7 +375,7 @@ export const MyTasks: React.FC = () => {
     }
 
     return groups;
-  }, [tasksAssignedToMe, groupBy, filterStatus, getProjectName]);
+  }, [tasksForList, groupBy, filterStatus, getProjectName]);
 
   const getDueDateLabel = (task: Task) => {
     if (!task.dueDate) return '';
@@ -345,12 +399,38 @@ export const MyTasks: React.FC = () => {
       <main className="flex-1 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="border-b bg-white px-6 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <p className="text-sm text-gray-600">
               Hi, <span className="font-medium">{user?.email || 'User'}.</span>{' '}
-              You have {tasksAssignedToMe.length} task{tasksAssignedToMe.length !== 1 ? 's' : ''},{' '}
-              {taskGroups.find(g => g.label === 'Today')?.tasks.length || 0} due today.
+              {workloadDeepLink ? (
+                <>
+                  Showing {tasksForList.length} task{tasksForList.length !== 1 ? 's' : ''}
+                  {workloadAssigneeId ? (
+                    <> for <span className="font-medium">{getAssigneeLabel(workloadAssigneeId)}</span></>
+                  ) : null}
+                  {workloadDueDay && startOfDayFromYmd(workloadDueDay) ? (
+                    <> due{' '}
+                      <span className="font-medium">
+                        {format(startOfDayFromYmd(workloadDueDay)!, 'MMM d, yyyy')}
+                      </span>
+                    </>
+                  ) : workloadDueDay ? (
+                    <> (invalid date filter)</>
+                  ) : null}
+                  .
+                </>
+              ) : (
+                <>
+                  You have {tasksAssignedToMe.length} task{tasksAssignedToMe.length !== 1 ? 's' : ''},{' '}
+                  {taskGroups.find(g => g.label === 'Today')?.tasks.length || 0} due today.
+                </>
+              )}
             </p>
+            {workloadDeepLink && (
+              <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={clearWorkloadQuery}>
+                Clear filter
+              </Button>
+            )}
           </div>
         </div>
 
@@ -484,11 +564,23 @@ export const MyTasks: React.FC = () => {
                       })}
                     </div>
                   ))}
-                  {tasksAssignedToMe.length === 0 && (
+                  {tasksForList.length === 0 && (
                     <div className="text-center py-16 text-gray-500">
                       <CheckSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p className="font-medium">No tasks assigned to you</p>
-                      <p className="text-sm">Tasks assigned to you will appear here</p>
+                      {workloadDeepLink ? (
+                        <>
+                          <p className="font-medium">No tasks match this view</p>
+                          <p className="text-sm">Try another day or clear the workload filter.</p>
+                          <Button type="button" variant="link" className="mt-2" onClick={clearWorkloadQuery}>
+                            Clear filter
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium">No tasks assigned to you</p>
+                          <p className="text-sm">Tasks assigned to you will appear here</p>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

@@ -23,6 +23,15 @@ export const sendInvitationEmail = async (
   const inviteLink = params.inviteLink.trim();
   const role = params.role.trim();
 
+  if (
+    !EMAILJS_SERVICE_ID ||
+    !EMAILJS_TEMPLATE_ID ||
+    !EMAILJS_PUBLIC_KEY
+  ) {
+    logger.warn("EmailJS not configured; skipping invitation email");
+    return false;
+  }
+
   const templateParams = {
     to_email: cleanedEmail,
     to_name: recipientName,
@@ -65,7 +74,7 @@ export const sendInvitationEmail = async (
       EMAILJS_SERVICE_ID,
       EMAILJS_TEMPLATE_ID,
       templateParams,
-      EMAILJS_PUBLIC_KEY,
+      { publicKey: EMAILJS_PUBLIC_KEY },
     );
 
     logger.log("Invitation email sent to:", cleanedEmail);

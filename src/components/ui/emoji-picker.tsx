@@ -18,9 +18,15 @@ interface EmojiPickerButtonProps {
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  disabled?: boolean;
 }
 
-export function EmojiPickerButton({ value, onChange, className }: EmojiPickerButtonProps) {
+export function EmojiPickerButton({
+  value,
+  onChange,
+  className,
+  disabled = false,
+}: EmojiPickerButtonProps) {
   const [open, setOpen] = useState(false);
 
   const insertEmoji = (emoji: string) => {
@@ -28,12 +34,13 @@ export function EmojiPickerButton({ value, onChange, className }: EmojiPickerBut
   };
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={disabled ? false : open} onOpenChange={disabled ? () => {} : setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
           variant="ghost"
           size="icon"
+          disabled={disabled}
           className={cn('h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-200', className)}
         >
           <Smile className="w-4 h-4" />

@@ -88,6 +88,11 @@ export const SavedViewsMenu: React.FC<SavedViewsMenuProps> = ({
         projectId: projectId ?? null,
       });
       setViews(list);
+    } catch (err) {
+      console.error('SavedViewsMenu refresh failed:', err);
+      toast.error(
+        err instanceof Error ? err.message : 'Could not load saved views',
+      );
     } finally {
       setLoading(false);
     }

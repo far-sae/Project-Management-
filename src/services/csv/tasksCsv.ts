@@ -24,26 +24,40 @@ const formatDate = (d: Date | string | null | undefined): string => {
   return date.toISOString().slice(0, 10);
 };
 
+/** Neutralize CSV/formula injection when a cell starts with =, +, -, @, or tab. */
+export const escapeCsvFormula = (raw: string): string => {
+  if (!raw) return raw;
+  const s = String(raw);
+  if (/^[=+\-@\t]/.test(s)) {
+    return `'${s.replace(/'/g, "''")}`;
+  }
+  return s;
+};
+
 /** Convert tasks to a CSV string. */
 export const tasksToCsv = (tasks: Task[]): string => {
   const rows = tasks.map((t) => ({
-    Title: t.title ?? '',
-    Description: t.description ?? '',
+    Title: escapeCsvFormula(t.title ?? ''),
+    Description: escapeCsvFormula(t.description ?? ''),
     Status: t.status ?? '',
     Priority: t.priority ?? '',
     'Due Date': formatDate(t.dueDate ?? null),
-    Assignees: (t.assignees || [])
-      .map((a) => a.displayName || a.email || a.userId)
-      .filter(Boolean)
-      .join('; '),
-    Tags: (t.tags || []).join('; '),
-    Subtasks: (t.subtasks || [])
-      .map((s) => `${s.completed ? '[x]' : '[ ]'} ${s.title}`)
-      .join(' | '),
+    Assignees: escapeCsvFormula(
+      (t.assignees || [])
+        .map((a) => a.displayName || a.email || a.userId)
+        .filter(Boolean)
+        .join('; '),
+    ),
+    Tags: escapeCsvFormula((t.tags || []).join('; ')),
+    Subtasks: escapeCsvFormula(
+      (t.subtasks || [])
+        .map((s) => `${s.completed ? '[x]' : '[ ]'} ${s.title}`)
+        .join(' | '),
+    ),
     Urgent: t.urgent ? 'true' : 'false',
     Locked: t.isLocked ? 'true' : 'false',
-    'Created At': formatDate(t.createdAt as unknown as Date),
-    'Updated At': formatDate(t.updatedAt as unknown as Date),
+    'Created At': formatDate(t.createdAt),
+    'Updated At': formatDate(t.updatedAt),
   }));
   return Papa.unparse(rows, { columns: TASK_CSV_HEADERS as unknown as string[] });
 };

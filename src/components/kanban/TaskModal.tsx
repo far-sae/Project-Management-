@@ -46,7 +46,11 @@ import {
   isAIEnabled, expandDescription, refineDescription,
   suggestPriorityAndDueDate, AIError, SmartSuggestionResponse,
 } from '@/services/ai';
-import { addCommentWithGlobalSync, subscribeToComments } from '@/services/supabase/database';
+import {
+  addCommentWithGlobalSync,
+  notifyTaskCommentMentions,
+  subscribeToComments,
+} from '@/services/supabase/database';
 import { markOnboardingAi } from '@/components/onboarding/OnboardingChecklist';
 import { useTaskActivity } from '@/hooks/useActivity';
 import { ActivityEvent } from '@/types/activity';
@@ -97,7 +101,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   typingPeers,
 }) => {
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, isAdmin } = useOrganization();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -138,11 +142,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
   const isEditing = !!task;
+  /** Locked tasks: only project owner or workspace admin may edit (matches KanbanBoard). */
+  const canOverrideTaskLock = useMemo(() => {
+    if (!user) return false;
+    if (project?.ownerId === user.userId) return true;
+    return isAdmin;
+  }, [user, project?.ownerId, isAdmin]);
+
+  const readOnlyTask = Boolean(isEditing && task?.isLocked && !canOverrideTaskLock);
+
+  const [activityRefetchNonce, setActivityRefetchNonce] = useState(0);
+
   const aiEnabled = isAIEnabled();
   const orgId = organization?.organizationId || user?.organizationId || (user ? `local-${user.userId}` : '');
   const { events: taskActivityEvents, loading: taskActivityLoading } = useTaskActivity(
     open && task?.taskId ? task.taskId : null,
     orgId || null,
+    activityRefetchNonce,
   );
 
   const [showDecomposition, setShowDecomposition] = useState(false);
@@ -384,6 +400,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   // ── Comment handler ────────────────────────────────────────
   const handleAddComment = useCallback(async () => {
+    if (readOnlyTask) return;
     if ((!newComment.trim() && commentAttachmentFiles.length === 0) || !task || !user) return;
     setCommentLoading(true);
     const toastId = toast.loading('Posting comment...');
@@ -415,17 +432,36 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         ]),
       );
 
+      const commentBody = newComment.trim() || '';
       await addCommentWithGlobalSync(
         task.taskId, projectId, projectName || '', task.title,
         user.userId, user.displayName || 'Unknown', user.photoURL || '',
-        newComment.trim() || '', visibleToUserIds, orgId,
+        commentBody, visibleToUserIds, orgId,
         attachments.length > 0 ? attachments : undefined, timeSpent,
       );
+
+      if (commentBody) {
+        void notifyTaskCommentMentions({
+          text: commentBody,
+          members: projectAssignableMembers.map((m) => ({
+            userId: m.userId,
+            displayName: m.displayName,
+            email: m.email,
+          })),
+          actorUserId: user.userId,
+          actorDisplayName: user.displayName || 'Unknown',
+          taskId: task.taskId,
+          projectId,
+          projectName: projectName || '',
+          taskTitle: task.title,
+        });
+      }
 
       setNewComment('');
       setCommentAttachmentFiles([]);
       setCommentTimeSpentMinutes('');
       setShowTimeSpent(false);
+      setActivityRefetchNonce((n) => n + 1);
       toast.success('Comment posted', { id: toastId });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to add comment', { id: toastId });
@@ -456,6 +492,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   // ── Save / delete ──────────────────────────────────────────
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (readOnlyTask) {
+      toast.error('This task is locked. You can view it but not edit.');
+      return;
+    }
     if (!title.trim() || !user) return;
     setSaveError(null);
     setLoading(true);
@@ -561,6 +601,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             <button
               type="button"
               onClick={() => setStatus(status === 'done' ? 'todo' : 'done')}
+              disabled={readOnlyTask}
               className={cn(
                 'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors',
                 status === 'done'
@@ -660,20 +701,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <DropdownMenuSeparator />
                     {aiEnabled && (
                       <>
-                        <DropdownMenuItem onClick={handleGetSmartSuggestions}>
+                        <DropdownMenuItem
+                          onClick={handleGetSmartSuggestions}
+                          disabled={readOnlyTask}
+                        >
                           <Sparkles className="w-4 h-4 mr-2 text-primary" />
                           AI: priority &amp; due date
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={handleExpandDescription}
-                          disabled={!title.trim()}
+                          disabled={readOnlyTask || !title.trim()}
                         >
                           <Wand2 className="w-4 h-4 mr-2 text-primary" />
                           AI: write description
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => setShowDecomposition(true)}
-                          disabled={!title.trim()}
+                          disabled={readOnlyTask || !title.trim()}
                         >
                           <ListTree className="w-4 h-4 mr-2 text-primary" />
                           AI: break into subtasks
@@ -690,6 +734,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           onClick={() => setShowDeleteConfirm(true)}
+                          disabled={readOnlyTask}
                           className="text-destructive focus:text-destructive"
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
@@ -711,6 +756,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
         )}
 
+        {readOnlyTask && (
+          <div className="mx-5 mt-3 p-2.5 rounded-md text-sm flex items-center gap-2 bg-secondary border border-border text-foreground">
+            <Lock className="w-4 h-4 shrink-0 text-warning" />
+            This task is locked. Only the project owner or a workspace admin can make changes.
+          </div>
+        )}
+
         {/* ── Body: two-pane ────────────────────────────────── */}
         <form
           onSubmit={handleSubmit}
@@ -724,13 +776,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Task title…"
               autoFocus={!isEditing}
+              disabled={readOnlyTask}
               className="text-2xl font-semibold border-0 px-0 h-auto py-1 placeholder:text-muted-foreground focus-visible:ring-0 bg-transparent"
             />
 
             {/* Description */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-h-8">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground shrink-0 mb-0">
                   Description
                 </Label>
                 {aiEnabled && title.trim().length >= 3 && (
@@ -739,13 +792,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     variant="ghost"
                     size="sm"
                     onClick={description ? handleRefineDescription : handleExpandDescription}
-                    disabled={aiLoading.description}
-                    className="text-xs h-7 text-primary hover:text-primary"
+                    disabled={readOnlyTask || aiLoading.description}
+                    className="text-xs h-7 shrink-0 gap-1 text-primary hover:text-primary"
                   >
                     {aiLoading.description ? (
-                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      <Loader2 className="w-3 h-3 animate-spin" />
                     ) : (
-                      <Wand2 className="w-3 h-3 mr-1" />
+                      <Wand2 className="w-3 h-3" />
                     )}
                     {description ? 'Improve with AI' : 'Suggest with AI'}
                   </Button>
@@ -757,6 +810,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add a description, link, or note…"
                 rows={3}
+                disabled={readOnlyTask}
                 className="resize-none min-h-[6rem] text-sm leading-relaxed"
               />
               {aiError && (
@@ -766,11 +820,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
             {/* Subtasks */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-h-8">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground shrink-0 mb-0">
                   Subtasks
                   {subtaskProgress && (
-                    <span className="ml-2 normal-case text-foreground/80">
+                    <span className="ml-2 normal-case text-foreground/80 font-normal">
                       {subtaskProgress.done}/{subtaskProgress.total} ·{' '}
                       {subtaskProgress.pct}%
                     </span>
@@ -782,9 +836,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowDecomposition(true)}
-                    className="text-xs h-7 text-primary hover:text-primary"
+                    disabled={readOnlyTask}
+                    className="text-xs h-7 shrink-0 gap-1 text-primary hover:text-primary"
                   >
-                    <ListTree className="w-3 h-3 mr-1" />
+                    <ListTree className="w-3 h-3" />
                     Break with AI
                   </Button>
                 )}
@@ -806,6 +861,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <button
                       type="button"
                       onClick={() => toggleSubtask(subtask.id)}
+                      disabled={readOnlyTask}
                       className={cn(
                         'w-4 h-4 rounded-full border flex items-center justify-center shrink-0',
                         subtask.completed
@@ -828,7 +884,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <button
                       type="button"
                       onClick={() => removeSubtask(subtask.id)}
-                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
+                      disabled={readOnlyTask}
+                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 disabled:opacity-0"
                       aria-label="Remove subtask"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -842,6 +899,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     value={newSubtaskTitle}
                     onChange={(e) => setNewSubtaskTitle(e.target.value)}
                     placeholder="Add a subtask…"
+                    disabled={readOnlyTask}
                     className="flex-1 text-sm outline-none bg-transparent placeholder:text-muted-foreground"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -901,6 +959,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         }}
                         placeholder="Write a comment…"
                         rows={2}
+                        disabled={readOnlyTask}
                         className="border-0 resize-none focus-visible:ring-0 bg-transparent"
                       />
                       {task?.taskId && typingPeers && (() => {
@@ -932,11 +991,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       })()}
                       <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-secondary/30">
                         <div className="flex items-center gap-1">
-                          <EmojiPickerButton value={newComment} onChange={setNewComment} />
+                          <EmojiPickerButton
+                            value={newComment}
+                            onChange={setNewComment}
+                            disabled={readOnlyTask}
+                          />
                           <button
                             type="button"
                             onClick={() => commentFileInputRef.current?.click()}
-                            className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs"
+                            disabled={readOnlyTask}
+                            className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs disabled:opacity-50"
                           >
                             <Paperclip className="w-3.5 h-3.5" />
                             Attach
@@ -967,6 +1031,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setShowTimeSpent(!showTimeSpent)}
+                            disabled={readOnlyTask}
                             className={cn(
                               'p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs',
                               showTimeSpent && 'bg-secondary text-foreground',
@@ -981,6 +1046,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           size="sm"
                           onClick={handleAddComment}
                           disabled={
+                            readOnlyTask ||
                             (!newComment.trim() && commentAttachmentFiles.length === 0) ||
                             commentLoading
                           }
@@ -1159,7 +1225,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                 Status
               </Label>
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={setStatus} disabled={readOnlyTask}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -1184,7 +1250,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                 Priority
               </Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+              <Select
+                value={priority}
+                onValueChange={(v) => setPriority(v as TaskPriority)}
+                disabled={readOnlyTask}
+              >
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -1209,7 +1279,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                 Due date
               </Label>
-              <DayPickerPopover value={dueDate} onChange={setDueDate} />
+              <DayPickerPopover value={dueDate} onChange={setDueDate} disabled={readOnlyTask} />
             </div>
 
             {/* Assignees */}
@@ -1221,6 +1291,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 value={assignees}
                 members={projectAssignableMembers}
                 onChange={setAssignees}
+                disabled={readOnlyTask}
               />
             </div>
 
@@ -1250,6 +1321,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
                   placeholder="Add tag…"
+                  disabled={readOnlyTask}
                   className="w-24 h-7 text-xs flex-1 min-w-[80px]"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ',') {
@@ -1269,24 +1341,34 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 Flags
               </Label>
               <div className="space-y-1">
-                <label className="flex items-center gap-2 cursor-pointer select-none px-2 py-1.5 rounded hover:bg-secondary text-sm">
+                <label
+                  className={cn(
+                    'flex items-center gap-2 select-none px-2 py-1.5 rounded text-sm',
+                    readOnlyTask ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-secondary',
+                  )}
+                >
                   <input
                     type="checkbox"
                     checked={urgent}
                     onChange={(e) => setUrgent(e.target.checked)}
+                    disabled={readOnlyTask}
                     className="rounded border-border accent-destructive"
                   />
                   <AlertTriangle className="w-4 h-4 text-destructive" />
                   <span className="text-foreground">Urgent</span>
                 </label>
                 <label
-                  className="flex items-center gap-2 cursor-pointer select-none px-2 py-1.5 rounded hover:bg-secondary text-sm"
+                  className={cn(
+                    'flex items-center gap-2 select-none px-2 py-1.5 rounded text-sm',
+                    readOnlyTask ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-secondary',
+                  )}
                   title="Only creator, assignees, and project owner can see this task"
                 >
                   <input
                     type="checkbox"
                     checked={isLocked}
                     onChange={(e) => setIsLocked(e.target.checked)}
+                    disabled={readOnlyTask}
                     className="rounded border-border accent-warning"
                   />
                   <Lock className="w-4 h-4 text-warning" />
@@ -1307,7 +1389,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   size="sm"
                   className="w-full justify-start"
                   onClick={handleGetSmartSuggestions}
-                  disabled={!title.trim() || aiLoading.suggestions}
+                  disabled={readOnlyTask || !title.trim() || aiLoading.suggestions}
                 >
                   {aiLoading.suggestions ? (
                     <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
@@ -1325,6 +1407,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         size="sm"
                         className="h-6 text-[11px]"
                         onClick={handleApplySuggestions}
+                        disabled={readOnlyTask}
                       >
                         Apply
                       </Button>
@@ -1375,7 +1458,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             <Button
               type="button"
               onClick={() => handleSubmit()}
-              disabled={loading || !title.trim()}
+              disabled={loading || !title.trim() || readOnlyTask}
             >
               {loading ? (
                 <>

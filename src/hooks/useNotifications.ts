@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { AppNotification } from "@/types/notification";
 import {
   subscribeToUserNotifications,
@@ -8,6 +9,7 @@ import {
 export const useNotifications = (userId: string | null, limit = 30) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const fetchErrorToastShown = useRef(false);
 
   // Subscribe to notifications so the bell updates in real time when new ones are created
   useEffect(() => {
@@ -17,11 +19,24 @@ export const useNotifications = (userId: string | null, limit = 30) => {
       return;
     }
 
+    fetchErrorToastShown.current = false;
     setLoading(true);
-    const unsub = subscribeToUserNotifications(userId, (data) => {
-      setNotifications(data);
-      setLoading(false);
-    }, limit);
+    const unsub = subscribeToUserNotifications(
+      userId,
+      (data) => {
+        setNotifications(data);
+        setLoading(false);
+      },
+      limit,
+      (message) => {
+        if (!fetchErrorToastShown.current) {
+          fetchErrorToastShown.current = true;
+          toast.error(
+            `Could not load notifications. Check your connection or database policies. (${message})`,
+          );
+        }
+      },
+    );
 
     return () => {
       unsub();

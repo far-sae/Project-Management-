@@ -20,6 +20,10 @@ interface SavedViewRow {
   updated_at: string;
 }
 
+/** Reject values that would break or inject into PostgREST `.or()` filter strings. */
+const isSafeOrFilterId = (value: string | null | undefined): value is string =>
+  typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value);
+
 const fromRow = (row: SavedViewRow): SavedView => ({
   id: row.id,
   ownerId: row.owner_id,
@@ -46,11 +50,27 @@ export const fetchSavedViews = async (params: {
       ascending: false,
     });
 
-    // Postgres OR clause: own scope OR project-scope match OR org-scope match.
+    if (!isSafeOrFilterId(ownerId)) {
+      logger.warn('fetchSavedViews: invalid or unsafe ownerId, skipping');
+      return [];
+    }
+    // Postgres OR clause: own rows OR project match OR org-scope match.
     const orFilters: string[] = [`owner_id.eq.${ownerId}`];
-    if (projectId) orFilters.push(`project_id.eq.${projectId}`);
+    if (projectId) {
+      if (!isSafeOrFilterId(projectId)) {
+        logger.warn('fetchSavedViews: invalid or unsafe projectId, skipping project filter');
+      } else {
+        orFilters.push(`project_id.eq.${projectId}`);
+      }
+    }
     if (organizationId) {
-      orFilters.push(`and(scope.eq.org,organization_id.eq.${organizationId})`);
+      if (!isSafeOrFilterId(organizationId)) {
+        logger.warn('fetchSavedViews: invalid or unsafe organizationId, skipping org filter');
+      } else {
+        orFilters.push(
+          `and(scope.eq.org,organization_id.eq.${organizationId})`,
+        );
+      }
     }
     query = query.or(orFilters.join(','));
 

@@ -167,7 +167,7 @@ export const OnboardingChecklist: React.FC = () => {
             <Sparkles className="w-4 h-4 text-primary" />
             Get started
           </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-xs text-muted-foreground/90 mt-0.5">
             Finish these {total} steps to unlock the full product.
           </p>
         </div>
@@ -224,7 +224,7 @@ export const OnboardingChecklist: React.FC = () => {
                 >
                   {step.title}
                 </p>
-                <p className="text-xs text-muted-foreground truncate">
+                <p className="text-xs text-muted-foreground/90 truncate">
                   {step.description}
                 </p>
               </div>

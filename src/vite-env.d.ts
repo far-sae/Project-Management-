@@ -10,6 +10,10 @@ interface ImportMetaEnv {
   readonly VITE_STRIPE_PUBLISHABLE_KEY: string
   /** Comma-separated Supabase user IDs for app/product owners (builders); they get full access everywhere. */
   readonly VITE_APP_OWNER_USER_IDS?: string
+  /** Optional EmailJS keys for assignee notification emails (see taskAssignedEmail.ts). */
+  readonly VITE_EMAILJS_PUBLIC_KEY?: string
+  readonly VITE_EMAILJS_SERVICE_ID?: string
+  readonly VITE_EMAILJS_TASK_ASSIGNED_TEMPLATE_ID?: string
 }
 
 interface ImportMeta {
