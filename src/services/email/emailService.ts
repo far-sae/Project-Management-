@@ -79,8 +79,15 @@ export const sendInvitationEmail = async (
 
     logger.log("Invitation email sent to:", cleanedEmail);
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
+    const err = error as { status?: number; text?: string; message?: string };
     logger.error("Invitation email request failed:", error);
+    if (err?.status === 412) {
+      logger.warn(
+        "EmailJS returned 412 (Precondition Failed): check template parameter names match your EmailJS template, " +
+          "service is connected, and the account allows API sends.",
+      );
+    }
     return false;
   }
 };

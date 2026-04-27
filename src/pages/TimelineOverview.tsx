@@ -5,7 +5,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -464,6 +464,7 @@ export const TimelineOverview: React.FC = () => {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Timeline Settings</DialogTitle>
+            <DialogDescription>Customize how the project timeline is displayed.</DialogDescription>
           </DialogHeader>
           <div className="space-y-6 py-4">
             <div className="flex items-center justify-between">

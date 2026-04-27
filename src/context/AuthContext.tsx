@@ -113,7 +113,7 @@ const ensureOrganizationExists = async (
       .from('workspaces')
       .insert({
         workspace_id: crypto.randomUUID(),
-        name: 'Workspace',
+        name: 'General',
         organization_id: orgId,
         is_default: true,
         created_at: now,

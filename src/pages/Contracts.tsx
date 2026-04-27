@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -34,6 +34,10 @@ import { format } from 'date-fns';
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$', GBP: '£', EUR: '€', INR: '₹', AED: 'د.إ',
 };
+
+function contractHasAssignee(assignedTo: string) {
+  return assignedTo !== '' && assignedTo !== 'unassigned';
+}
 
 const ValueField = ({
   currency, value, onCurrencyChange, onValueChange, idPrefix,
@@ -110,8 +114,6 @@ export const Contracts: React.FC = () => {
 
   const orgId = organization?.organizationId ?? user?.organizationId ?? (user ? `local-${user.userId}` : '');
 
-  console.log("OrgId being used:", orgId);
-
   // Fetch all contracts
   useEffect(() => {
     if (!orgId) {
@@ -154,12 +156,12 @@ export const Contracts: React.FC = () => {
     setForm({
       title: '',
       client: '',
-      assignedTo: '',
+      assignedTo: 'unassigned',
       status: 'draft',
       currency: 'USD',
       value: '',
       startDate: '',
-      endDate: ''
+      endDate: '',
     });
     setEditingContractId(null);
   };
@@ -279,8 +281,13 @@ export const Contracts: React.FC = () => {
   const handleDelete = async (contractId: string) => {
     if (!window.confirm('Delete this contract? This cannot be undone.')) return;
     if (!orgId) return;
-    await deleteContract(contractId, orgId);
-    toast.success('Contract deleted');
+    try {
+      await deleteContract(contractId, orgId);
+      toast.success('Contract deleted');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete contract';
+      toast.error(msg);
+    }
   };
 
   const getStatusBadge = (status: string, respondedByName?: string) => {
@@ -563,11 +570,12 @@ export const Contracts: React.FC = () => {
                             <p className="text-sm text-gray-600">
                               <span className="font-medium">Created by:</span> {contract.createdByName || creator?.displayName || creator?.email || 'Unknown'}
                             </p>
-                            {contract.value && (
+                            {contract.value != null && (
                               <p className="text-sm text-gray-600 mt-1">
                                 <span className="font-medium">Value:</span>{' '}
                                 <span className="text-green-600 font-semibold">
-                                  {CURRENCY_SYMBOLS[contract.currency || 'USD']}{contract.value.toLocaleString()}
+                                  {CURRENCY_SYMBOLS[contract.currency || 'USD']}
+                                  {contract.value.toLocaleString()}
                                 </span>
                               </p>
                             )}
@@ -612,7 +620,10 @@ export const Contracts: React.FC = () => {
         {/* Create Modal */}
         <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
           <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader><DialogTitle>Create New Contract</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>Create New Contract</DialogTitle>
+              <DialogDescription>Fill in the details to create a new contract for your organization.</DialogDescription>
+            </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
               {createError && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-md">
@@ -702,7 +713,7 @@ export const Contracts: React.FC = () => {
                 <Select
                   value={form.status}
                   onValueChange={(v) => setForm((f) => ({ ...f, status: v as ContractStatus }))}
-                  disabled={!!form.assignedTo}
+                  disabled={contractHasAssignee(form.assignedTo)}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -714,9 +725,9 @@ export const Contracts: React.FC = () => {
                     <SelectItem value="expired">Expired</SelectItem>
                   </SelectContent>
                 </Select>
-                {form.assignedTo && (
+                {contractHasAssignee(form.assignedTo) && (
                   <p className="text-xs text-amber-600">
-                    Status will be set to "Pending" when assigned to a team member
+                    Status will be set to &quot;Pending&quot; when assigned to a team member
                   </p>
                 )}
               </div>
@@ -830,7 +841,7 @@ export const Contracts: React.FC = () => {
                 <Select
                   value={form.status}
                   onValueChange={(v) => setForm((f) => ({ ...f, status: v as ContractStatus }))}
-                  disabled={!!form.assignedTo}
+                  disabled={contractHasAssignee(form.assignedTo)}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -889,6 +900,11 @@ export const Contracts: React.FC = () => {
               <DialogTitle>
                 {responseType === 'accept' ? 'Accept Contract' : 'Reject Contract'}
               </DialogTitle>
+              <DialogDescription>
+                {responseType === 'accept'
+                  ? 'Confirm you accept the terms and value of this contract.'
+                  : 'You can add an optional reason when rejecting a contract.'}
+              </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
@@ -896,7 +912,7 @@ export const Contracts: React.FC = () => {
                 <div className="bg-gray-50 p-4 rounded-lg space-y-2">
                   <p className="font-medium text-gray-900">{selectedContract.title}</p>
                   <p className="text-sm text-gray-600">Client: {selectedContract.client}</p>
-                  {selectedContract.value && (
+                  {selectedContract.value != null && (
                     <p className="text-sm font-medium text-green-600">
                       Value: {CURRENCY_SYMBOLS[selectedContract.currency || 'USD']}
                       {selectedContract.value.toLocaleString()}

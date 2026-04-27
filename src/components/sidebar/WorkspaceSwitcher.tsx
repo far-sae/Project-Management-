@@ -21,6 +21,7 @@ import {
 } from '@/hooks/useSelectedWorkspace';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 
 interface WorkspaceSwitcherProps {
   className?: string;
@@ -39,7 +40,9 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
     ? 'All workspaces'
     : isUnassigned
       ? 'Unassigned projects'
-      : selected?.name || 'Select workspace';
+      : selected
+        ? getWorkspaceDisplayName(selected)
+        : 'Select workspace';
 
   return (
     <DropdownMenu>
@@ -100,7 +103,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
               onSelect={() => select(w.workspaceId)}
             >
               <Boxes className="w-4 h-4 mr-2" />
-              <span className="flex-1 truncate">{w.name}</span>
+              <span className="flex-1 truncate">{getWorkspaceDisplayName(w)}</span>
               {active && <Check className="w-4 h-4 ml-2 text-primary" />}
             </DropdownMenuItem>
           );

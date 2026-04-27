@@ -23,6 +23,7 @@ import {
   Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getWorkspaceDisplayName } from "@/lib/workspaceDisplay";
 import { useProjects } from "@/hooks/useProjects";
 import { useAllTasks } from "@/hooks/useAllTasks";
 import {
@@ -265,14 +266,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     {workspaces.slice(0, 8).map((w) => (
                       <Command.Item
                         key={w.workspaceId}
-                        value={`workspace ${w.name}`}
+                        value={`workspace ${getWorkspaceDisplayName(w)}`}
                         onSelect={() =>
                           handleRun(() => selectWorkspace(w.workspaceId))
                         }
                         className={itemCls}
                       >
                         <Boxes className="w-4 h-4 mr-2 text-muted-foreground" />
-                        {w.name}
+                        {getWorkspaceDisplayName(w)}
                       </Command.Item>
                     ))}
                   </Command.Group>

@@ -393,7 +393,7 @@ export const verifyProjectLockPin = async (
   });
   if (error) {
     logger.error("verify_project_lock_pin failed:", error);
-    return false;
+    throw new Error(error.message || "Could not verify PIN with the server.");
   }
   return data === true;
 };

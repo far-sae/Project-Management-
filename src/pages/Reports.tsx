@@ -34,6 +34,7 @@ import { removeOrganizationMember } from '@/services/supabase/organizations';
 import { DEFAULT_COLUMNS } from '@/types';
 import { getOrganizationContracts, Contract } from '@/services/supabase/contracts';
 import { format } from 'date-fns';
+import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 
 const ALL_WORKSPACES_ID = '__all__';
 
@@ -192,7 +193,13 @@ export const Reports: React.FC = () => {
   const workspaceStats = useMemo(() => {
     const withDefault = [...workspaces];
     if (!withDefault.some((w) => w.workspaceId === DEFAULT_WORKSPACE_ID)) {
-      withDefault.unshift({ workspaceId: DEFAULT_WORKSPACE_ID, name: 'Default', organizationId: '', createdAt: new Date(), updatedAt: new Date() });
+      withDefault.unshift({
+        workspaceId: DEFAULT_WORKSPACE_ID,
+        name: 'Unassigned projects',
+        organizationId: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
     }
     return withDefault.map((ws) => {
       const wsProjects = projects.filter(
@@ -202,8 +209,10 @@ export const Reports: React.FC = () => {
       const wsProjectIds = new Set(wsProjects.map((p) => p.projectId));
       const wsTasks = tasks.filter((t) => wsProjectIds.has(t.projectId));
       return {
-        workspaceId: ws.workspaceId, name: ws.name,
-        projectCount: wsProjects.length, taskCount: wsTasks.length,
+        workspaceId: ws.workspaceId,
+        name: getWorkspaceDisplayName(ws),
+        projectCount: wsProjects.length,
+        taskCount: wsTasks.length,
         completedCount: wsTasks.filter((t) => t.status === 'done').length,
       };
     });
@@ -361,7 +370,9 @@ export const Reports: React.FC = () => {
                 <SelectContent>
                   <SelectItem value={ALL_WORKSPACES_ID}>All workspaces</SelectItem>
                   {workspaceListForSelect.map((w) => (
-                    <SelectItem key={w.workspaceId} value={w.workspaceId}>{w.name}</SelectItem>
+                    <SelectItem key={w.workspaceId} value={w.workspaceId}>
+                      {getWorkspaceDisplayName(w)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

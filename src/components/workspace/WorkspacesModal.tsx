@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { FolderKanban, MoreHorizontal, Edit, Trash2, Plus } from 'lucide-react';
+import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 
 interface WorkspacesModalProps {
   open: boolean;
@@ -75,7 +76,7 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                     >
                       <CardTitle className="text-lg flex items-center gap-2">
                         <FolderKanban className="w-5 h-5 text-orange-500" />
-                        {workspace.name}
+                        {getWorkspaceDisplayName(workspace)}
                       </CardTitle>
                       <CardDescription className="mt-2">
                         {projectCount} {projectCount === 1 ? 'project' : 'projects'}

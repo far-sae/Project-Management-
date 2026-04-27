@@ -317,10 +317,43 @@ export const Team: React.FC = () => {
 
   const getRoleBadge = (role: string) => {
     switch (role) {
-      case 'owner': return <Badge className="bg-yellow-100 text-yellow-800"><Crown className="w-3 h-3 mr-1" />Owner</Badge>;
-      case 'admin': return <Badge className="bg-purple-100 text-purple-800"><Shield className="w-3 h-3 mr-1" />Admin</Badge>;
-      case 'viewer': return <Badge className="bg-gray-100 text-foreground"><User className="w-3 h-3 mr-1" />Viewer</Badge>;
-      default: return <Badge className="bg-blue-100 text-blue-800"><User className="w-3 h-3 mr-1" />Member</Badge>;
+      case 'owner':
+        return (
+          <Badge
+            variant="secondary"
+            className="border border-amber-500/30 bg-amber-500/15 text-amber-900 dark:text-amber-200"
+          >
+            <Crown className="w-3 h-3 mr-1" />
+            Owner
+          </Badge>
+        );
+      case 'admin':
+        return (
+          <Badge
+            variant="secondary"
+            className="border border-violet-500/30 bg-violet-500/15 text-violet-900 dark:text-violet-200"
+          >
+            <Shield className="w-3 h-3 mr-1" />
+            Admin
+          </Badge>
+        );
+      case 'viewer':
+        return (
+          <Badge variant="secondary" className="border border-border bg-muted text-foreground">
+            <User className="w-3 h-3 mr-1" />
+            Viewer
+          </Badge>
+        );
+      default:
+        return (
+          <Badge
+            variant="secondary"
+            className="border border-sky-500/30 bg-sky-500/15 text-sky-900 dark:text-sky-200"
+          >
+            <User className="w-3 h-3 mr-1" />
+            Member
+          </Badge>
+        );
     }
   };
 
@@ -424,14 +457,14 @@ export const Team: React.FC = () => {
             <p className="text-muted-foreground">Manage your team members and their roles</p>
           </div>
           <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center">
-            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
-              <Lock className="w-8 h-8 text-orange-500" />
+            <div className="w-16 h-16 bg-primary/15 rounded-full flex items-center justify-center mb-4">
+              <Lock className="w-8 h-8 text-primary" />
             </div>
             <h2 className="text-xl font-bold text-foreground mb-2">Team Collaboration</h2>
             <p className="text-muted-foreground mb-2 max-w-md">
               Invite team members, assign roles, and collaborate on projects together.
             </p>
-            <p className="text-sm text-orange-600 font-medium mb-6">
+            <p className="text-sm text-primary font-medium mb-6">
               Available on Basic plan and above (3 members on Basic, 10 on Advanced)
             </p>
             <Button
@@ -521,7 +554,7 @@ export const Team: React.FC = () => {
           <CardContent>
             {!selectedProject ? (
               <div className="text-center py-8 text-muted-foreground">
-                <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                 <p>Select a project to view team members</p>
               </div>
             ) : loading ? (
@@ -530,7 +563,7 @@ export const Team: React.FC = () => {
               </div>
             ) : allMembers.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                 <p>No team members yet</p>
               </div>
             ) : (
@@ -540,7 +573,7 @@ export const Team: React.FC = () => {
                     <div className="flex items-center gap-4">
                       <Avatar>
                         <AvatarImage src={member.photoURL} />
-                        <AvatarFallback className="bg-orange-100 text-orange-700">
+                        <AvatarFallback className="bg-primary/20 text-primary">
                           {member.displayName.charAt(0).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
@@ -587,11 +620,13 @@ export const Team: React.FC = () => {
               <CardContent>
                 <div className="space-y-4">
                   {pendingInvitations.map((invitation) => (
-                    <div key={invitation.invitationId}
-                      className="flex items-center justify-between p-4 bg-yellow-50/70 backdrop-blur-sm rounded-xl border border-yellow-200 shadow-sm hover:shadow-md transition"                    >
+                    <div
+                      key={invitation.invitationId}
+                      className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/45"
+                    >
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
-                          <Mail className="w-5 h-5 text-yellow-600" />
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/15 ring-1 ring-amber-500/25">
+                          <Mail className="h-5 w-5 text-amber-700 dark:text-amber-400" />
                         </div>
                         <div>
                           <p className="font-medium text-foreground">{invitation.inviteeEmail}</p>

@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import {
   isProjectLockUnlockedInSession,
   setProjectLockUnlockedInSession,
+  clearProjectLockUnlockedInSession,
 } from '@/lib/projectLockPin';
 import { cn } from '@/lib/utils';
 import {
@@ -268,18 +269,39 @@ export const ProjectView: React.FC = () => {
 
   const handleProjectUnlock = useCallback(async () => {
     if (!project?.hasLockPin || !projectId) return;
-    const ok = await verifyProjectLockPin(projectId, projectPin);
-    if (ok) {
-      setProjectLockUnlockedInSession(projectId, project.lockPinVersion ?? 0);
-      setProjectPin('');
-      setProjectPinError(false);
-      setProjectUnlockNonce((n) => n + 1);
-      toast.success('Project unlocked for this session');
-    } else {
+    try {
+      const ok = await verifyProjectLockPin(projectId, projectPin);
+      if (ok) {
+        setProjectLockUnlockedInSession(projectId, project.lockPinVersion ?? 0);
+        setProjectPin('');
+        setProjectPinError(false);
+        setProjectUnlockNonce((n) => n + 1);
+        toast.success('Project unlocked for this session');
+      } else {
+        setProjectPinError(true);
+        toast.error('Incorrect PIN');
+      }
+    } catch (err) {
       setProjectPinError(true);
-      toast.error('Incorrect PIN');
+      const detail = err instanceof Error ? err.message : '';
+      toast.error(
+        detail
+          ? `Could not verify your PIN. ${detail}`
+          : 'Could not verify your PIN. Check your connection and try again.',
+      );
     }
   }, [project, projectId, projectPin]);
+
+  /** Leaving the project view (or switching projects) ends the session unlock. Avoid depending on `project` identity so refetches do not clear the session. */
+  useEffect(() => {
+    if (!projectId || !project || project.projectId !== projectId) {
+      return;
+    }
+    const v = project.lockPinVersion ?? 0;
+    return () => {
+      clearProjectLockUnlockedInSession(projectId, v);
+    };
+  }, [projectId, project?.lockPinVersion]);
 
   const { peers, broadcastTyping, typingPeers } = usePresence({
     channelKey: project && !needsProjectLockGate ? projectId ?? null : null,

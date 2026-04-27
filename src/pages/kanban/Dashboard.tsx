@@ -31,6 +31,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
@@ -75,14 +76,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 import { useSubscription } from '@/context/SubscriptionContext';
 import LimitReachedModal from '@/components/ui/LimitReachedModal';
 import { fetchProjectTemplates } from '@/services/supabase/templates';
 import type { ProjectTemplate } from '@/types/projectTemplate';
-import { createTask } from '@/services/supabase/database';
-import { LayoutTemplate, Lock, LockOpen } from 'lucide-react';
+import { createTask, verifyProjectLockPin } from '@/services/supabase/database';
+import { LayoutTemplate, Lock, LockOpen, KeyRound } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import { hashLockPin, clearProjectLockUnlockedInSession } from '@/lib/projectLockPin';
+import {
+  hashLockPin,
+  clearProjectLockUnlockedInSession,
+  isProjectLockUnlockedInSession,
+  setProjectLockUnlockedInSession,
+} from '@/lib/projectLockPin';
 import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist';
 
 const PROJECT_COLORS = [
@@ -179,6 +186,12 @@ export const Dashboard: React.FC = () => {
   const [editProjectLocked, setEditProjectLocked] = useState(false);
   const [editLockPinNew, setEditLockPinNew] = useState('');
   const [editLockPinConfirm, setEditLockPinConfirm] = useState('');
+
+  const [lockDialogProject, setLockDialogProject] = useState<Project | null>(null);
+  const [lockDialogPin, setLockDialogPin] = useState('');
+  const [lockDialogError, setLockDialogError] = useState(false);
+  const [lockDialogSubmitting, setLockDialogSubmitting] = useState(false);
+  const [lockSessionNonce, setLockSessionNonce] = useState(0);
 
   const [showWorkspacesModal, setShowWorkspacesModal] = useState(false);
 
@@ -330,6 +343,51 @@ export const Dashboard: React.FC = () => {
     setEditLockPinNew('');
     setEditLockPinConfirm('');
   };
+
+  const closeProjectLockDialog = () => {
+    setLockDialogProject(null);
+    setLockDialogPin('');
+    setLockDialogError(false);
+  };
+
+  const handleRelockSessionOnCard = (p: Project, e: React.MouseEvent) => {
+    e.stopPropagation();
+    clearProjectLockUnlockedInSession(p.projectId, p.lockPinVersion ?? 0);
+    setLockSessionNonce((n) => n + 1);
+    toast.info('Session locked. Enter your PIN to open this project again.');
+  };
+
+  const handleSubmitProjectLockPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lockDialogProject) return;
+    setLockDialogSubmitting(true);
+    try {
+      const ok = await verifyProjectLockPin(lockDialogProject.projectId, lockDialogPin);
+      if (ok) {
+        setProjectLockUnlockedInSession(
+          lockDialogProject.projectId,
+          lockDialogProject.lockPinVersion ?? 0,
+        );
+        toast.success('Unlocked for this session. Leaving the project locks it again.');
+        closeProjectLockDialog();
+        setLockSessionNonce((n) => n + 1);
+      } else {
+        setLockDialogError(true);
+        toast.error('Incorrect PIN');
+      }
+    } catch (err) {
+      setLockDialogError(true);
+      const detail = err instanceof Error ? err.message : '';
+      toast.error(
+        detail
+          ? `Could not verify your PIN. ${detail}`
+          : 'Could not verify your PIN. Check your connection and try again.',
+      );
+    } finally {
+      setLockDialogSubmitting(false);
+    }
+  };
+
   const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProject || !editName.trim()) return;
@@ -375,6 +433,7 @@ export const Dashboard: React.FC = () => {
         setEditProjectLocked(false);
         setEditLockPinNew('');
         setEditLockPinConfirm('');
+        setLockSessionNonce((n) => n + 1);
         toast.success('Project updated', { id: toastId });
       } else {
         toast.error('Failed to update project', { id: toastId });
@@ -608,7 +667,7 @@ export const Dashboard: React.FC = () => {
                   <SelectContent>
                     {workspaceListForSelect.map((w) => (
                       <SelectItem key={w.workspaceId} value={w.workspaceId}>
-                        {w.name}
+                        {getWorkspaceDisplayName(w)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -859,7 +918,9 @@ export const Dashboard: React.FC = () => {
                     </Card>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredProjects.map((project) => (
+                      {filteredProjects.map((project) => {
+                        void lockSessionNonce;
+                        return (
                         <Card
                           key={project.projectId}
                           className="cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-200 group"
@@ -875,51 +936,89 @@ export const Dashboard: React.FC = () => {
                             >
                               <div className="flex items-center gap-2 flex-wrap">
                                 <CardTitle className="text-lg">{project.name}</CardTitle>
-                                {project.ownerId !== user?.userId && projectPinLocked(project) && (
-                                  <span
-                                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300"
-                                    title="This project is locked with a PIN"
-                                  >
-                                    <Lock className="h-3 w-3" strokeWidth={2.25} aria-hidden />
-                                    Locked
-                                  </span>
-                                )}
                               </div>
                               <CardDescription className="line-clamp-2">
                                 {project.description || 'No description'}
                               </CardDescription>
                             </div>
-                            <div className="flex items-start gap-0.5 shrink-0">
-                              {project.ownerId === user?.userId && (
+                            <div className="flex items-start gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              {projectPinLocked(project) && (
                                 <Button
                                   type="button"
                                   variant="ghost"
                                   size="sm"
                                   className={cn(
                                     'h-8 gap-1.5 rounded-full px-2.5 font-medium shadow-sm transition-colors',
-                                    projectPinLocked(project)
-                                      ? 'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'
-                                      : 'border border-emerald-500/25 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400',
+                                    isProjectLockUnlockedInSession(
+                                      project.projectId,
+                                      project.lockPinVersion ?? 0,
+                                    )
+                                      ? 'border border-sky-500/35 bg-sky-500/10 text-sky-800 hover:bg-sky-500/20 dark:text-sky-300'
+                                      : 'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
                                   )}
                                   title={
-                                    projectPinLocked(project)
-                                      ? 'Locked with PIN — click to change'
-                                      : 'Lock & PIN settings'
+                                    isProjectLockUnlockedInSession(
+                                      project.projectId,
+                                      project.lockPinVersion ?? 0,
+                                    )
+                                      ? 'Unlocked for this session — click to require PIN again'
+                                      : 'Enter your PIN to unlock for this session'
                                   }
-                                  aria-label="Open project settings for lock and PIN"
+                                  aria-label={
+                                    isProjectLockUnlockedInSession(
+                                      project.projectId,
+                                      project.lockPinVersion ?? 0,
+                                    )
+                                      ? 'Lock session, require PIN again'
+                                      : 'Enter PIN to unlock project for this session'
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (
+                                      isProjectLockUnlockedInSession(
+                                        project.projectId,
+                                        project.lockPinVersion ?? 0,
+                                      )
+                                    ) {
+                                      handleRelockSessionOnCard(project, e);
+                                    } else {
+                                      setLockDialogProject(project);
+                                      setLockDialogPin('');
+                                      setLockDialogError(false);
+                                    }
+                                  }}
+                                >
+                                  {isProjectLockUnlockedInSession(
+                                    project.projectId,
+                                    project.lockPinVersion ?? 0,
+                                  ) ? (
+                                    <>
+                                      <LockOpen className="h-3.5 w-3.5" strokeWidth={2.25} />
+                                      <span className="hidden sm:inline text-xs">Unlocked</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Lock className="h-3.5 w-3.5" strokeWidth={2.25} />
+                                      <span className="hidden sm:inline text-xs">Locked</span>
+                                    </>
+                                  )}
+                                </Button>
+                              )}
+                              {project.ownerId === user?.userId && !projectPinLocked(project) && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/5 px-2.5 font-medium text-emerald-700 shadow-sm transition-colors hover:bg-emerald-500/15 dark:text-emerald-400"
+                                  title="Set a PIN in project settings to lock the project"
+                                  aria-label="Open project settings to set lock and PIN"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     openEditProject(project);
                                   }}
                                 >
-                                  {projectPinLocked(project) ? (
-                                    <Lock className="h-3.5 w-3.5" strokeWidth={2.25} />
-                                  ) : (
-                                    <LockOpen className="h-3.5 w-3.5" strokeWidth={2.25} />
-                                  )}
-                                  <span className="hidden sm:inline text-xs">
-                                    {projectPinLocked(project) ? 'PIN on' : 'PIN off'}
-                                  </span>
+                                  <LockOpen className="h-3.5 w-3.5" strokeWidth={2.25} />
+                                  <span className="hidden sm:inline text-xs">Set PIN</span>
                                 </Button>
                               )}
                               <DropdownMenu>
@@ -988,7 +1087,8 @@ export const Dashboard: React.FC = () => {
                             </div>
                           </CardContent>
                         </Card>
-                      ))}
+                        );
+                      })}
 
                       <Card
                         className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
@@ -1247,7 +1347,7 @@ export const Dashboard: React.FC = () => {
                   <SelectItem value={UNASSIGNED_WORKSPACE_ID}>No workspace</SelectItem>
                   {workspaces.map((w) => (
                     <SelectItem key={w.workspaceId} value={w.workspaceId}>
-                      {w.name}
+                      {getWorkspaceDisplayName(w)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1439,6 +1539,60 @@ export const Dashboard: React.FC = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Project PIN (session unlock from dashboard) */}
+      <Dialog
+        open={!!lockDialogProject}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeProjectLockDialog();
+          }
+        }}
+      >
+        <DialogContent onClick={(e) => e.stopPropagation()}>
+          <form onSubmit={handleSubmitProjectLockPin}>
+            <DialogHeader>
+              <DialogTitle>Enter project PIN</DialogTitle>
+              <DialogDescription>
+                {lockDialogProject
+                  ? `Unlock "${lockDialogProject.name}" for this browser session. Leaving the project locks it again.`
+                  : 'Enter your project PIN to unlock this project for your current browser session.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="dashboard-project-lock-pin">PIN</Label>
+              <Input
+                id="dashboard-project-lock-pin"
+                type="password"
+                autoComplete="off"
+                value={lockDialogPin}
+                onChange={(e) => {
+                  setLockDialogPin(e.target.value);
+                  setLockDialogError(false);
+                }}
+                className={cn(lockDialogError && 'border-destructive')}
+                placeholder="••••"
+              />
+            </div>
+            <DialogFooter className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeProjectLockDialog}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="gap-2" disabled={lockDialogSubmitting}>
+                {lockDialogSubmitting && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                <KeyRound className="h-4 w-4" />
+                Unlock session
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Project Dialog */}
       <Dialog
         open={!!editingProject}
@@ -1447,6 +1601,7 @@ export const Dashboard: React.FC = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Project</DialogTitle>
+            <DialogDescription>Update the project name, description, dates, and lock or PIN options.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditProject} className="space-y-4">
             <div className="space-y-2">
