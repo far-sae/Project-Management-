@@ -77,6 +77,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
+import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import { useSubscription } from '@/context/SubscriptionContext';
 import LimitReachedModal from '@/components/ui/LimitReachedModal';
 import { fetchProjectTemplates } from '@/services/supabase/templates';
@@ -648,11 +649,19 @@ export const Dashboard: React.FC = () => {
         <div className="p-8 animate-fade-in">
           <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-primary/[0.07] via-card to-card p-6 sm:p-8 mb-8 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                Welcome back, {user?.displayName?.split(' ')[0]}!
-              </h1>
-              <p className="text-muted-foreground mt-1">Your command center – tasks, activity, and projects</p>
+            <div className="flex min-w-0 items-center gap-3 leading-none">
+              <TaskCalendarLogo
+                heightClass="h-9 max-h-9 sm:h-10 sm:max-h-10"
+                className="max-w-[9rem] shrink-0"
+              />
+              <div className="min-w-0 pt-0.5">
+                <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                  Welcome back, {user?.displayName?.split(' ')[0]}!
+                </h1>
+                <p className="mt-1 text-muted-foreground">
+                  Your command center – tasks, activity, and projects
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">

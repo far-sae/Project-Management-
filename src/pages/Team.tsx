@@ -390,23 +390,32 @@ export const Team: React.FC = () => {
       );
       setInvitations((prev) => [invitation, ...prev]);
       const inviteLink = `${window.location.origin}/accept-invite/${invitation.token}`;
-      const emailSent = await sendInvitationEmail({
+      const emailResult = await sendInvitationEmail({
         toEmail: inviteEmail.trim(), inviterName: user.displayName,
         projectName: currentProject.name, inviteLink, role: inviteRole,
       });
       setInviteEmail('');
       setShowInviteModal(false);
-      if (emailSent) {
+      if (emailResult.ok) {
         setInfoDialog({
           open: true,
           title: "Invitation Sent",
           message: `Email successfully delivered to ${inviteEmail.trim()}.`,
         });
       } else {
+        const linkBlock = `Share this link manually:\n\n${inviteLink}`;
+        const oAuthHint =
+          emailResult.status === 412
+            ? '\n\nThis error is usually fixed in the EmailJS dashboard: open https://dashboard.emailjs.com → Email Services → your connected mail service (e.g. Gmail) → Reconnect, and allow “Send email on your behalf”.'
+            : "";
+        const serverHint =
+          emailResult.text && emailResult.text.length > 0
+            ? `\n\nServer message: ${emailResult.text}`
+            : "";
         setInfoDialog({
           open: true,
           title: "Invitation Created",
-          message: `Email failed. Share this link manually:\n\n${inviteLink}`,
+          message: `We couldn’t send the email automatically.${oAuthHint}${serverHint}\n\n${linkBlock}`,
         });
       }
     } catch (error) {

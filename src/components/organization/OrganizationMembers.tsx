@@ -48,7 +48,7 @@ export const OrganizationMembers: React.FC = () => {
       );
 
       const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/accept-invite/${invitation.token}`;
-      const emailSent = await sendInvitationEmail({
+      const emailResult = await sendInvitationEmail({
         toEmail: inviteEmail.trim(),
         inviterName,
         projectName: organization.name,
@@ -56,7 +56,7 @@ export const OrganizationMembers: React.FC = () => {
         role: inviteRole,
       });
 
-      if (emailSent) {
+      if (emailResult.ok) {
         toast.success('Success', {
           description: `Invitation email sent to ${inviteEmail}.`,
         });
@@ -68,8 +68,14 @@ export const OrganizationMembers: React.FC = () => {
           inviteLink,
           role: inviteRole,
         });
+        const hint412 =
+          emailResult.status === 412
+            ? ' EmailJS 412: reconnect your mail service in the EmailJS dashboard (Email Services → Reconnect).'
+            : emailResult.text
+              ? ` ${emailResult.text}`
+              : '';
         toast('Email client opened', {
-          description: `Send the email to invite ${inviteEmail}.`,
+          description: `We couldn’t send via EmailJS.${hint412} A draft was opened for ${inviteEmail}.`,
         });
       }
 

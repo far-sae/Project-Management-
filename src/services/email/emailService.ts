@@ -13,9 +13,29 @@ type InvitationEmailParams = {
   role: string;
 };
 
+/** `ok: false` may include `status` (e.g. 412) and `text` from EmailJS (e.g. Gmail reconnect message). */
+export type InvitationEmailResult =
+  | { ok: true }
+  | { ok: false; status?: number; text?: string };
+
+function parseEmailJsSendError(error: unknown): { status?: number; text?: string } {
+  if (error && typeof error === "object") {
+    const o = error as { status?: unknown; text?: unknown };
+    const status = typeof o.status === "number" ? o.status : undefined;
+    const text = typeof o.text === "string" ? o.text : undefined;
+    if (status !== undefined || text !== undefined) {
+      return { status, text };
+    }
+  }
+  if (error instanceof Error) {
+    return { text: error.message };
+  }
+  return {};
+}
+
 export const sendInvitationEmail = async (
   params: InvitationEmailParams,
-): Promise<boolean> => {
+): Promise<InvitationEmailResult> => {
   const cleanedEmail = params.toEmail.trim();
   const recipientName = cleanedEmail.split("@")[0] || cleanedEmail;
   const inviterName = params.inviterName.trim();
@@ -29,12 +49,15 @@ export const sendInvitationEmail = async (
     !EMAILJS_PUBLIC_KEY
   ) {
     logger.warn("EmailJS not configured; skipping invitation email");
-    return false;
+    return { ok: false };
   }
 
   const templateParams = {
     to_email: cleanedEmail,
     to_name: recipientName,
+    /** Common in EmailJS default templates (maps to “To Email” in the template editor). */
+    user_email: cleanedEmail,
+    name: inviterName,
     email: cleanedEmail,
     invitee_email: cleanedEmail,
     inviter_name: inviterName,
@@ -78,17 +101,18 @@ export const sendInvitationEmail = async (
     );
 
     logger.log("Invitation email sent to:", cleanedEmail);
-    return true;
+    return { ok: true };
   } catch (error: unknown) {
-    const err = error as { status?: number; text?: string; message?: string };
-    logger.error("Invitation email request failed:", error);
-    if (err?.status === 412) {
+    const { status, text } = parseEmailJsSendError(error);
+    logger.error("Invitation email request failed:", error, status, text);
+    if (status === 412) {
       logger.warn(
-        "EmailJS returned 412 (Precondition Failed): check template parameter names match your EmailJS template, " +
-          "service is connected, and the account allows API sends.",
+        "EmailJS 412: often Gmail / OAuth — reconnect the email service in EmailJS (Services → " +
+          "Edit → Reconnect) and allow “Send email on your behalf”. Also verify template variable names. " +
+          (text ? `Server said: ${text}` : ""),
       );
     }
-    return false;
+    return { ok: false, status, text };
   }
 };
 

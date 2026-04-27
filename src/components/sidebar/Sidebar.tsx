@@ -42,6 +42,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import {
   isProjectLockUnlockedInSession,
   clearProjectLockUnlockedInSession,
@@ -150,13 +151,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Brand + workspace switcher */}
       <div className="p-3 border-b border-border space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
-            <img
-              src="/favicon.svg"
-              alt=""
-              className="w-8 h-8 rounded-lg object-contain shrink-0"
-            />
-            <h1 className="font-semibold text-foreground truncate">TaskCalendar</h1>
+          <Link
+            to="/dashboard"
+            className="flex min-w-0 items-center gap-2 leading-none"
+          >
+            <TaskCalendarLogo heightClass="h-8 max-h-8" className="max-w-[7.5rem]" />
+            <h1 className="truncate font-semibold text-foreground">TaskCalendar</h1>
           </Link>
           <NotificationBell />
         </div>

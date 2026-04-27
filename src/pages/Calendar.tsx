@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, AlertCirc
 import { toast } from 'sonner';
 
 import { Sidebar } from '@/components/sidebar/Sidebar';
+import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
@@ -232,15 +233,11 @@ export const Calendar: React.FC = () => {
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-start gap-3">
-            <img
-              src="/favicon.svg"
-              alt=""
-              className="w-10 h-10 rounded-xl object-contain shrink-0 mt-1"
-            />
-            <div>
+          <div className="flex items-center gap-3 leading-none">
+            <TaskCalendarLogo heightClass="h-9 max-h-9 sm:h-10 sm:max-h-10" className="max-w-[9rem]" />
+            <div className="min-w-0 pt-0.5">
               <h1 className="text-3xl font-bold text-foreground">TaskCalendar</h1>
-              <p className="text-muted-foreground">View tasks by due date</p>
+              <p className="mt-1 text-muted-foreground">View tasks by due date</p>
             </div>
           </div>
           <Button

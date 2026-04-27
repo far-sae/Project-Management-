@@ -246,13 +246,14 @@ export const sendInvitationEmail = async (
 ): Promise<boolean> => {
   try {
     const inviteLink = `${window.location.origin}/accept-invite/${token}`;
-    return await sendInvitationEmailViaEmailJs({
+    const result = await sendInvitationEmailViaEmailJs({
       toEmail,
       inviterName,
       projectName,
       inviteLink,
       role,
     });
+    return result.ok;
   } catch (err) {
     logger.error("sendInvitationEmail error:", err);
     return false;
