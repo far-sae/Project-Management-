@@ -80,7 +80,7 @@ import LimitReachedModal from '@/components/ui/LimitReachedModal';
 import { fetchProjectTemplates } from '@/services/supabase/templates';
 import type { ProjectTemplate } from '@/types/projectTemplate';
 import { createTask } from '@/services/supabase/database';
-import { LayoutTemplate, Lock } from 'lucide-react';
+import { LayoutTemplate, Lock, LockOpen } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { hashLockPin, clearProjectLockUnlockedInSession } from '@/lib/projectLockPin';
 import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist';
@@ -89,6 +89,10 @@ const PROJECT_COLORS = [
   '#f97316', '#ef4444', '#22c55e', '#3b82f6',
   '#a855f7', '#ec4899', '#14b8a6', '#f59e0b',
 ];
+
+function projectPinLocked(project: Project) {
+  return Boolean(project.isLocked && project.hasLockPin);
+}
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -869,11 +873,15 @@ export const Dashboard: React.FC = () => {
                               className="flex-1 min-w-0 group-hover:text-orange-600 transition-colors"
                               onClick={() => navigate(`/project/${project.projectId}`)}
                             >
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <CardTitle className="text-lg">{project.name}</CardTitle>
-                                {project.isLocked && project.hasLockPin && (
-                                  <span title="PIN lock enabled">
-                                    <Lock className="w-4 h-4 shrink-0 text-muted-foreground" aria-hidden />
+                                {project.ownerId !== user?.userId && projectPinLocked(project) && (
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300"
+                                    title="This project is locked with a PIN"
+                                  >
+                                    <Lock className="h-3 w-3" strokeWidth={2.25} aria-hidden />
+                                    Locked
                                   </span>
                                 )}
                               </div>
@@ -886,16 +894,32 @@ export const Dashboard: React.FC = () => {
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground"
-                                  title="Lock & PIN"
+                                  size="sm"
+                                  className={cn(
+                                    'h-8 gap-1.5 rounded-full px-2.5 font-medium shadow-sm transition-colors',
+                                    projectPinLocked(project)
+                                      ? 'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'
+                                      : 'border border-emerald-500/25 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400',
+                                  )}
+                                  title={
+                                    projectPinLocked(project)
+                                      ? 'Locked with PIN — click to change'
+                                      : 'Lock & PIN settings'
+                                  }
                                   aria-label="Open project settings for lock and PIN"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     openEditProject(project);
                                   }}
                                 >
-                                  <Lock className="w-4 h-4" />
+                                  {projectPinLocked(project) ? (
+                                    <Lock className="h-3.5 w-3.5" strokeWidth={2.25} />
+                                  ) : (
+                                    <LockOpen className="h-3.5 w-3.5" strokeWidth={2.25} />
+                                  )}
+                                  <span className="hidden sm:inline text-xs">
+                                    {projectPinLocked(project) ? 'PIN on' : 'PIN off'}
+                                  </span>
                                 </Button>
                               )}
                               <DropdownMenu>
@@ -942,9 +966,18 @@ export const Dashboard: React.FC = () => {
                               <span>{project.stats.completedTasks} completed</span>
                             </div>
                             <div className="mt-2">
-                              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-1.5 rounded-full overflow-hidden bg-muted-foreground/20 ring-1 ring-inset ring-border/60 dark:bg-white/10"
+                                role="progressbar"
+                                aria-valuenow={project.stats.totalTasks > 0
+                                  ? Math.round((project.stats.completedTasks / project.stats.totalTasks) * 100)
+                                  : 0}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label="Task completion"
+                              >
                                 <div
-                                  className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
+                                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-500 shadow-[0_0_8px_rgba(34,197,94,0.35)] transition-all duration-500 ease-out"
                                   style={{
                                     width: project.stats.totalTasks > 0
                                       ? `${(project.stats.completedTasks / project.stats.totalTasks) * 100}%`

@@ -170,10 +170,10 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
         <CardContent className="pt-6">
           <div className="text-center py-8">
             <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            <h3 className="text-lg font-semibold text-foreground mb-2">
               Verifying Your Subscription
             </h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               Please wait while we confirm your payment with Stripe...
             </p>
             <Button
@@ -194,7 +194,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
     return (
       <Card className="w-full max-w-md mx-auto">
         <CardContent className="pt-6 text-center py-8">
-          <p className="text-gray-600">Starter is a free plan — no payment required.</p>
+          <p className="text-muted-foreground">Starter is a free plan — no payment required.</p>
           <Button className="mt-4" onClick={() => navigate('/dashboard')}>
             Go to Dashboard
           </Button>
@@ -207,7 +207,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
     return (
       <Card className="w-full max-w-md mx-auto">
         <CardContent className="pt-6 text-center py-8">
-          <p className="text-gray-600 mb-4">Premium is a custom enterprise plan.</p>
+          <p className="text-muted-foreground mb-4">Premium is a custom enterprise plan.</p>
           <Button
             className="bg-gradient-to-r from-orange-500 to-red-500"
             onClick={() => window.location.href = 'mailto:support@yourdomain.com'}
@@ -246,26 +246,26 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
         )}
 
         {/* Price summary */}
-        <div className="bg-gray-50 rounded-lg p-4">
+        <div className="rounded-lg border border-border bg-muted/50 p-4">
           <div className="flex justify-between items-center mb-1">
-            <span className="font-medium">{tierNames[tier]} Plan</span>
+            <span className="font-medium text-foreground">{tierNames[tier]} Plan</span>
             <div className="flex items-center gap-2">
               {originalPrice && (
-                <span className="text-sm text-gray-400 line-through">
+                <span className="text-sm text-muted-foreground line-through">
                   {pricing.currencySymbol}{originalPrice}
                 </span>
               )}
-              <span className="text-lg font-bold">
+              <span className="text-lg font-bold text-foreground tabular-nums">
                 {pricing.currencySymbol}{displayPrice}
               </span>
             </div>
           </div>
           {showPromo && (
-            <p className="text-xs text-green-600 font-medium">
-              🎉 Promo: {tierPricing.promoMonths} month{tierPricing.promoMonths > 1 ? 's' : ''} offer
+            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              Promo: {tierPricing.promoMonths} month{tierPricing.promoMonths > 1 ? 's' : ''} offer
             </p>
           )}
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Billed {billingCycle === 'monthly' ? 'monthly' : 'annually'}
           </p>
         </div>
@@ -329,7 +329,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
           </Button>
         )}
 
-        <p className="text-xs text-center text-gray-400">
+        <p className="text-xs text-center text-muted-foreground">
           By subscribing, you agree to our Terms of Service. Cancel anytime.
         </p>
       </CardFooter>
