@@ -117,16 +117,16 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
   return (
     <div className="min-w-max">
       {/* Month header */}
-      <div className="sticky top-0 z-20 bg-white border-b">
+      <div className="sticky top-0 z-20 bg-card border-b border-border">
         <div className="flex">
-          <div className="w-96 shrink-0 border-r bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="w-96 shrink-0 border-r border-border bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             Project
           </div>
           <div className="flex relative" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
             {monthHeaders.map((m, i) => (
               <div
                 key={i}
-                className="text-xs font-semibold py-2 px-2 border-r text-gray-600"
+                className="text-xs font-semibold py-2 px-2 border-r border-border text-foreground/80"
                 style={{ width: m.days * columnWidth }}
               >
                 {m.month} {m.year}
@@ -137,15 +137,15 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
         {/* Day numbers */}
         <div className="flex">
-          <div className="w-96 shrink-0 border-r bg-gray-50" />
+          <div className="w-96 shrink-0 border-r border-border bg-muted/40" />
           <div className="flex relative" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
             {(showWeekends ? dayNumbers : filteredDayNumbers).map((d, i) => (
               <div
                 key={i}
                 id={d.isToday && highlightToday ? 'resource-today-marker' : undefined}
                 className={cn(
-                  'text-xs text-center py-1.5 border-r border-gray-100',
-                  d.isToday && highlightToday ? 'bg-amber-100 text-amber-800 font-bold' : 'text-gray-400'
+                  'text-xs text-center py-1.5 border-r border-border',
+                  d.isToday && highlightToday ? 'bg-amber-500/20 text-amber-700 dark:text-amber-200 font-bold' : 'text-muted-foreground'
                 )}
                 style={{ width: columnWidth }}
               >
@@ -191,22 +191,22 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
         const progressPct = Math.min(100, Math.round((elapsed / totalDuration) * 100));
 
         return (
-          <div key={project.projectId} className="flex border-b hover:bg-gray-50 group">
+          <div key={project.projectId} className="flex border-b border-border hover:bg-muted/30 group">
             {/* Left: project info */}
-            <div className="w-96 shrink-0 border-r flex items-center px-4 py-3 sticky left-0 z-10 bg-white group-hover:bg-gray-50">
+            <div className="w-96 shrink-0 border-r border-border flex items-center px-4 py-3 sticky left-0 z-10 bg-card group-hover:bg-muted/40">
               <div
                 className="w-3 h-3 rounded-full mr-3 shrink-0"
                 style={{ backgroundColor: project.coverColor || '#f97316' }}
               />
               <div className="flex-1 min-w-0">
                 <span
-                  className="font-medium text-sm text-gray-800 cursor-pointer hover:text-blue-600 truncate block"
+                  className="font-medium text-sm text-foreground cursor-pointer hover:text-primary truncate block"
                   onClick={() => navigate(`/project/${project.projectId}`)}
                 >
                   {project.name}
                 </span>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-muted-foreground">
                     {project.effectiveStart.toLocaleDateString()} → {project.effectiveEnd.toLocaleDateString()}
                   </span>
                 </div>
@@ -215,7 +215,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
               {/* Member avatars */}
               <div className="flex -space-x-1.5 ml-2">
                 {[owner, ...members].filter(Boolean).slice(0, 5).map((m: any) => (
-                  <Avatar key={m.userId} className="w-6 h-6 border-2 border-white shadow-sm">
+                  <Avatar key={m.userId} className="w-6 h-6 border-2 border-card shadow-sm">
                     <AvatarImage src={m.photoURL} />
                     <AvatarFallback
                       className="text-[10px] font-bold text-white"
@@ -226,7 +226,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   </Avatar>
                 ))}
                 {rawMembers.length > 5 && (
-                  <div className="w-6 h-6 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-[10px] text-gray-600 font-bold">
+                  <div className="w-6 h-6 rounded-full bg-muted border-2 border-card flex items-center justify-center text-[10px] text-muted-foreground font-bold">
                     +{rawMembers.length - 5}
                   </div>
                 )}
@@ -238,7 +238,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
               {/* Today highlight column */}
               {highlightToday && todayOffset >= 0 && todayOffset < totalDays && (
                 <div
-                  className="absolute top-0 bottom-0 bg-amber-100/40"
+                  className="absolute top-0 bottom-0 bg-amber-500/15"
                   style={{ left: todayOffset * columnWidth, width: columnWidth }}
                 />
               )}
@@ -403,10 +403,10 @@ export const TimelineOverview: React.FC = () => {
       <main className="flex-1 overflow-hidden flex flex-col">
 
         {/* ── Top header ── */}
-        <div className="border-b bg-white px-6 py-3 flex items-center justify-between">
+        <div className="border-b border-border bg-card px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold text-gray-900">Timeline Overview</h1>
-            <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => navigate('/reports')}>
+            <h1 className="text-xl font-semibold text-foreground">Timeline Overview</h1>
+            <Button variant="ghost" size="sm" className="text-primary hover:text-primary/90 hover:bg-primary/10" onClick={() => navigate('/reports')}>
               <FileBarChart className="w-4 h-4 mr-2" />
               Build Report
             </Button>

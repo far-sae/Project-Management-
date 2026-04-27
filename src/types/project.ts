@@ -36,6 +36,9 @@ export interface Project {
   columns?: KanbanColumn[];
   startDate?: Date | null;
   endDate?: Date | null;
+  /** When set with lockPinHash, the UI may require a PIN to open the project (owner / org admin can bypass). */
+  isLocked?: boolean;
+  lockPinHash?: string | null;
 }
 
 export interface CreateProjectInput {
@@ -58,4 +61,6 @@ export interface UpdateProjectInput {
   columns?: KanbanColumn[];
   startDate?: string | null;
   endDate?: string | null;
+  isLocked?: boolean;
+  lockPinHash?: string | null;
 }

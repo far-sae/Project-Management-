@@ -100,7 +100,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       const { data: memberOrgs, error: memberOrgError } = await supabase
         .from('organizations')
         .select('organization_id')
-        .contains('members', [{ userId: user.userId }])
+        .filter('members', 'cs', JSON.stringify([{ userId: user.userId }]))
         .order('created_at', { ascending: true })
         .limit(1);
 

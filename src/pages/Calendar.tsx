@@ -169,7 +169,7 @@ export const Calendar: React.FC = () => {
     const days: JSX.Element[] = [];
 
     for (let i = 0; i < startingDay; i++) {
-      days.push(<div key={`empty-${i}`} className="h-24 bg-gray-50" />);
+      days.push(<div key={`empty-${i}`} className="h-24 bg-muted/20 border border-border" />);
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -178,13 +178,13 @@ export const Calendar: React.FC = () => {
       days.push(
         <div
           key={day}
-          className={`h-24 border border-gray-100 p-2 hover:bg-gray-50 cursor-pointer overflow-y-auto ${isToday(day) ? 'bg-orange-50 border-orange-200' : ''
+          className={`h-24 border border-border p-2 hover:bg-muted/40 cursor-pointer overflow-y-auto ${isToday(day) ? 'bg-orange-500/10 border-orange-500/30' : 'bg-card'
             }`}
         >
           <span
             className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm ${isToday(day)
               ? 'bg-orange-500 text-white font-bold'
-              : 'text-gray-700'
+              : 'text-foreground'
               }`}
           >
             {day}
@@ -197,10 +197,10 @@ export const Calendar: React.FC = () => {
                   key={task.taskId}
                   className={`text-xs truncate px-1 py-0.5 rounded cursor-pointer flex items-center gap-1
                     ${task.status === 'done'
-                      ? 'bg-green-100 text-green-700 line-through hover:bg-green-200'
+                      ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 line-through hover:bg-emerald-500/30'
                       : task.urgent
-                        ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                        : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                        ? 'bg-destructive/20 text-destructive hover:bg-destructive/30'
+                        : 'bg-primary/20 text-primary hover:bg-primary/30'
                     }`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -214,7 +214,7 @@ export const Calendar: React.FC = () => {
               ))}
 
               {dayTasks.length > 2 && (
-                <div className="text-xs text-gray-500 px-1">
+                <div className="text-xs text-muted-foreground px-1">
                   +{dayTasks.length - 2} more
                 </div>
               )}
@@ -233,8 +233,8 @@ export const Calendar: React.FC = () => {
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Calendar</h1>
-            <p className="text-gray-500">View tasks and projects by due date</p>
+            <h1 className="text-3xl font-bold text-foreground">Calendar</h1>
+            <p className="text-muted-foreground">View tasks and projects by due date</p>
           </div>
           <Button
             variant="outline"
@@ -276,7 +276,7 @@ export const Calendar: React.FC = () => {
                 {DAYS.map((day) => (
                   <div
                     key={day}
-                    className="h-10 flex items-center justify-center font-medium text-gray-500 text-sm border-b"
+                    className="h-10 flex items-center justify-center font-medium text-muted-foreground text-sm border-b border-border"
                   >
                     {day}
                   </div>

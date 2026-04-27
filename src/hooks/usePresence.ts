@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/services/supabase';
 import { useAuth } from '@/context/AuthContext';
+import type { PresenceStatusPreference } from '@/hooks/usePresenceStatusPreference';
+
+/** Shown to others from realtime presence; drives avatar status dots. */
+export type PresenceAvailability = 'online' | 'offline' | 'dnd' | 'holiday';
 
 export interface PresencePeer {
   userId: string;
@@ -12,6 +16,11 @@ export interface PresencePeer {
   typingTaskId?: string | null;
   typingAt?: number;
   joinedAt: number;
+  /**
+   * How this peer appears: online, offline, do not disturb, or on holiday.
+   * Omitted/legacy clients behave as online when present in the channel.
+   */
+  availability?: PresenceAvailability;
 }
 
 interface UsePresenceOptions {
@@ -19,6 +28,8 @@ interface UsePresenceOptions {
   channelKey: string | null;
   /** When set, the user broadcasts they are looking at this task. */
   currentTaskId?: string | null;
+  /** Local preference for how you appear; auto uses tab visibility for online vs offline. */
+  presencePreference?: PresenceStatusPreference;
 }
 
 interface UsePresenceResult {
@@ -41,17 +52,65 @@ const TYPING_TTL_MS = 3000;
  * - Typing events are sent over a `broadcast` event, which avoids storing
  *   transient state in presence and keeps things lightweight.
  */
+function buildAvailability(
+  presencePreference: PresenceStatusPreference,
+  tabVisible: boolean,
+): PresenceAvailability | 'hidden' {
+  if (presencePreference === 'appear_offline') return 'hidden';
+  if (presencePreference === 'dnd') return 'dnd';
+  if (presencePreference === 'holiday') return 'holiday';
+  return tabVisible ? 'online' : 'offline';
+}
+
 export const usePresence = ({
   channelKey,
   currentTaskId,
+  presencePreference = 'auto',
 }: UsePresenceOptions): UsePresenceResult => {
   const { user } = useAuth();
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   const [selfKey, setSelfKey] = useState<string | null>(null);
+  const [tabVisible, setTabVisible] = useState(
+    () =>
+      typeof document === 'undefined' || document.visibilityState === 'visible',
+  );
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   // Mutable typing map keyed by `${userId}:${taskId}` -> last typing timestamp
   const typingMap = useRef(new Map<string, { peer: PresencePeer; at: number; taskId: string }>());
   const [, forceTick] = useState(0);
+
+  const trackOptsRef = useRef({
+    presencePreference: 'auto' as PresenceStatusPreference,
+    tabVisible: true,
+    currentTaskId: null as string | null | undefined,
+  });
+  trackOptsRef.current = {
+    presencePreference,
+    tabVisible,
+    currentTaskId,
+  };
+
+  const buildTrackMeta = useCallback((): PresencePeer | null => {
+    if (!user?.userId) return null;
+    const o = trackOptsRef.current;
+    const av = buildAvailability(o.presencePreference, o.tabVisible);
+    if (av === 'hidden') return null;
+    return {
+      userId: user.userId,
+      displayName: user.displayName || user.email || 'Someone',
+      photoURL: user.photoURL || undefined,
+      currentTaskId: o.currentTaskId ?? null,
+      joinedAt: Date.now(),
+      availability: av,
+    };
+  }, [user?.userId, user?.displayName, user?.email, user?.photoURL]);
+
+  useEffect(() => {
+    const onVis = () =>
+      setTabVisible(typeof document !== 'undefined' && document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
 
   useEffect(() => {
     if (!channelKey || !user?.userId) return;
@@ -60,14 +119,6 @@ export const usePresence = ({
       config: { presence: { key: user.userId } },
     });
     channelRef.current = channel;
-
-    const meta: PresencePeer = {
-      userId: user.userId,
-      displayName: user.displayName || user.email || 'Someone',
-      photoURL: user.photoURL || undefined,
-      currentTaskId: currentTaskId ?? null,
-      joinedAt: Date.now(),
-    };
 
     const collect = () => {
       const state = channel.presenceState() as Record<
@@ -85,6 +136,7 @@ export const usePresence = ({
           photoURL: last.photoURL,
           currentTaskId: last.currentTaskId ?? null,
           joinedAt: last.joinedAt ?? Date.now(),
+          availability: last.availability,
         });
       }
       setPeers(list);
@@ -120,7 +172,12 @@ export const usePresence = ({
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           setSelfKey(user.userId);
-          await channel.track(meta);
+          const m = buildTrackMeta();
+          if (m) {
+            await channel.track(m);
+          } else {
+            await channel.untrack();
+          }
         }
       });
 
@@ -136,22 +193,25 @@ export const usePresence = ({
       setSelfKey(null);
       typingMap.current.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channelKey, user?.userId]);
+  }, [channelKey, user?.userId, buildTrackMeta]);
 
-  // Re-track when currentTaskId changes without recreating the channel
+  // Re-track when task, profile, status preference, or tab visibility changes (same channel)
   useEffect(() => {
     const channel = channelRef.current;
     if (!channel || !user?.userId) return;
-    const meta: PresencePeer = {
-      userId: user.userId,
-      displayName: user.displayName || user.email || 'Someone',
-      photoURL: user.photoURL || undefined,
-      currentTaskId: currentTaskId ?? null,
-      joinedAt: Date.now(),
-    };
-    channel.track(meta).catch(() => {});
-  }, [currentTaskId, user?.userId, user?.displayName, user?.email, user?.photoURL]);
+    const m = buildTrackMeta();
+    if (m) {
+      channel.track(m).catch(() => {});
+    } else {
+      channel.untrack().catch(() => {});
+    }
+  }, [
+    buildTrackMeta,
+    user?.userId,
+    presencePreference,
+    tabVisible,
+    currentTaskId,
+  ]);
 
   // Periodically prune expired typing entries
   useEffect(() => {

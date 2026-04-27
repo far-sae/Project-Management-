@@ -97,7 +97,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     isDragging: isSortableDragging,
   } = useSortable({
     id: task.taskId,
-    data: { task },
+    data: { type: 'task' as const, task },
     disabled: selectable || dragDisabled,
   });
 

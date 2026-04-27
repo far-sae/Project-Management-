@@ -309,15 +309,15 @@ export const Reports: React.FC = () => {
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
-            <p className="text-gray-500">Productivity insights and analytics</p>
+            <h1 className="text-3xl font-bold text-foreground">Reports</h1>
+            <p className="text-muted-foreground">Productivity insights and analytics</p>
           </div>
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-gray-200 rounded-xl text-center">
+          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center">
             <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
               <Lock className="w-8 h-8 text-orange-500" />
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Reports & Analytics</h2>
-            <p className="text-gray-500 mb-2 max-w-md">
+            <h2 className="text-xl font-bold text-foreground mb-2">Reports & Analytics</h2>
+            <p className="text-muted-foreground mb-2 max-w-md">
               Get productivity insights — task overview, workload per user, time tracking, and workspace dashboards.
             </p>
             <p className="text-sm text-orange-600 font-medium mb-6">
@@ -342,8 +342,8 @@ export const Reports: React.FC = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
-            <p className="text-gray-500">
+            <h1 className="text-3xl font-bold text-foreground">Reports</h1>
+            <p className="text-muted-foreground">
               {activeTab === 'projects'
                 ? 'Productivity insights – task overview, workload, time tracking, and workspace dashboard'
                 : 'Business metrics – contracts, values, and client insights'}
@@ -353,9 +353,9 @@ export const Reports: React.FC = () => {
           {/* Workspace filter (only for projects tab) */}
           {activeTab === 'projects' && (
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700">Workspace</span>
+              <span className="text-sm font-medium text-foreground">Workspace</span>
               <Select value={reportWorkspaceId} onValueChange={setReportWorkspaceId}>
-                <SelectTrigger className="w-[220px] bg-white">
+                <SelectTrigger className="w-[220px] bg-background">
                   <SelectValue placeholder="All workspaces" />
                 </SelectTrigger>
                 <SelectContent>
@@ -376,7 +376,7 @@ export const Reports: React.FC = () => {
               onClick={() => setActiveTab('projects')}
               className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'projects'
                 ? 'border-orange-500 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
             >
               Project Analytics
@@ -385,14 +385,14 @@ export const Reports: React.FC = () => {
               onClick={() => setActiveTab('business')}
               className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'business'
                 ? 'border-orange-500 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
             >
               Business Reports
             </button>
             <button
               onClick={() => navigate('/workload')}
-              className="px-4 py-2 font-medium text-sm border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700"
+              className="px-4 py-2 font-medium text-sm border-b-2 transition-colors border-transparent text-muted-foreground hover:text-foreground"
             >
               Workload →
             </button>
@@ -410,96 +410,96 @@ export const Reports: React.FC = () => {
               <>
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-500">Total Projects</CardTitle>
+                      <CardTitle className="text-sm font-medium text-muted-foreground">Total Projects</CardTitle>
                       <BarChart3 className="w-4 h-4 text-blue-500" />
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">{totalProjects}</div>
-                      <p className="text-xs text-gray-500">{reportWorkspaceId === ALL_WORKSPACES_ID ? 'Active projects' : 'In selected workspace'}</p>
+                      <p className="text-xs text-muted-foreground">{reportWorkspaceId === ALL_WORKSPACES_ID ? 'Active projects' : 'In selected workspace'}</p>
                     </CardContent>
                   </Card>
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-500">Total Tasks</CardTitle>
+                      <CardTitle className="text-sm font-medium text-muted-foreground">Total Tasks</CardTitle>
                       <Clock className="w-4 h-4 text-orange-500" />
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">{totalTasks}</div>
-                      <p className="text-xs text-gray-500">{reportWorkspaceId === ALL_WORKSPACES_ID ? 'Across all projects' : 'In selected workspace'}</p>
+                      <p className="text-xs text-muted-foreground">{reportWorkspaceId === ALL_WORKSPACES_ID ? 'Across all projects' : 'In selected workspace'}</p>
                     </CardContent>
                   </Card>
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-500">Completed</CardTitle>
+                      <CardTitle className="text-sm font-medium text-muted-foreground">Completed</CardTitle>
                       <CheckCircle className="w-4 h-4 text-green-500" />
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">{completedTasks}</div>
-                      <p className="text-xs text-gray-500">Tasks completed</p>
+                      <p className="text-xs text-muted-foreground">Tasks completed</p>
                     </CardContent>
                   </Card>
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-500">Completion Rate</CardTitle>
+                      <CardTitle className="text-sm font-medium text-muted-foreground">Completion Rate</CardTitle>
                       <TrendingUp className="w-4 h-4 text-purple-500" />
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">{completionRate}%</div>
-                      <p className="text-xs text-gray-500">Overall progress</p>
+                      <p className="text-xs text-muted-foreground">Overall progress</p>
                     </CardContent>
                   </Card>
                 </div>
 
                 {/* Time Tracking Card */}
-                <Card className="mb-6 border-0 shadow-md bg-gradient-to-br from-slate-50 to-white">
+                <Card className="mb-6 border border-border shadow-md bg-card">
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
                       <Timer className="w-5 h-5 text-orange-500" />
                       <CardTitle>Time tracking</CardTitle>
                     </div>
-                    <p className="text-sm text-gray-500">Time logged in comments</p>
+                    <p className="text-sm text-muted-foreground">Time logged in comments</p>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center gap-4">
-                      <div className="text-3xl font-bold text-gray-900">
+                      <div className="text-3xl font-bold text-foreground">
                         {Math.floor(timeLoggedMinutes / 60)}h {timeLoggedMinutes % 60}m
                       </div>
-                      <p className="text-sm text-gray-500">total from your comments</p>
+                      <p className="text-sm text-muted-foreground">total from your comments</p>
                     </div>
                   </CardContent>
                 </Card>
 
                 {/* Task Overview and User Workload */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
                         <LayoutDashboard className="w-5 h-5 text-orange-500" />
                         <CardTitle>Task overview</CardTitle>
                       </div>
-                      <p className="text-sm text-gray-500">Recent activity</p>
+                      <p className="text-sm text-muted-foreground">Recent activity</p>
                     </CardHeader>
                     <CardContent>
                       {recentTasks.length === 0 ? (
-                        <p className="text-sm text-gray-500 py-4">No tasks yet</p>
+                        <p className="text-sm text-muted-foreground py-4">No tasks yet</p>
                       ) : (
                         <ul className="space-y-2">
                           {recentTasks.map((t) => (
                             <li
                               key={t.taskId}
                               onClick={() => navigate(`/project/${t.projectId}`)}
-                              className="flex items-center justify-between p-3 rounded-lg cursor-pointer hover:bg-gray-50 border border-transparent hover:border-gray-200"
+                              className="flex items-center justify-between p-3 rounded-lg cursor-pointer hover:bg-muted/50 border border-transparent hover:border-border"
                             >
                               <div className="min-w-0 flex-1">
-                                <p className="font-medium text-gray-900 truncate">{t.title}</p>
-                                <p className="text-xs text-gray-500">
+                                <p className="font-medium text-foreground truncate">{t.title}</p>
+                                <p className="text-xs text-muted-foreground">
                                   {t.assignees?.length ? t.assignees.map((a) => a.displayName).join(', ') : 'Unassigned'} · {statusLabels[t.status] || t.status}
                                 </p>
                               </div>
                               <div className="w-2 h-2 rounded-full shrink-0 ml-2" style={{ backgroundColor: DEFAULT_COLUMNS.find((c) => c.id === t.status)?.color || '#9E9E9E' }} />
-                              <ArrowRight className="w-4 h-4 text-gray-400 shrink-0 ml-2" />
+                              <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 ml-2" />
                             </li>
                           ))}
                         </ul>
@@ -507,36 +507,36 @@ export const Reports: React.FC = () => {
                     </CardContent>
                   </Card>
 
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
                         <Users className="w-5 h-5 text-blue-500" />
                         <CardTitle>Tasks by user</CardTitle>
                       </div>
-                      <p className="text-sm text-gray-500">Workload per assignee</p>
+                      <p className="text-sm text-muted-foreground">Workload per assignee</p>
                     </CardHeader>
                     <CardContent>
                       {tasksByUser.length === 0 ? (
-                        <p className="text-sm text-gray-500 py-4">No assigned tasks</p>
+                        <p className="text-sm text-muted-foreground py-4">No assigned tasks</p>
                       ) : (
                         <div className="space-y-3">
                           {tasksByUser.map(({ userId, displayName, count, done }) => {
                             const pct = totalTasks > 0 ? Math.round((count / totalTasks) * 100) : 0;
                             const donePct = count > 0 ? Math.round((done / count) * 100) : 0;
                             return (
-                              <div key={userId} className="flex items-center justify-between p-3 rounded-lg bg-gray-50/80 hover:bg-gray-100/80 transition-colors">
+                              <div key={userId} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
                                 <div className="flex items-center gap-3 min-w-0">
                                   <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-medium text-sm shrink-0">
                                     {displayName.charAt(0).toUpperCase()}
                                   </div>
                                   <div>
-                                    <p className="font-medium text-gray-900 truncate">{displayName}</p>
-                                    <p className="text-xs text-gray-500">{count} tasks · {donePct}% done</p>
+                                    <p className="font-medium text-foreground truncate">{displayName}</p>
+                                    <p className="text-xs text-muted-foreground">{count} tasks · {donePct}% done</p>
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className="font-semibold text-gray-900">{count}</span>
-                                  <span className="text-xs text-gray-500 ml-1">({pct}%)</span>
+                                  <span className="font-semibold text-foreground">{count}</span>
+                                  <span className="text-xs text-muted-foreground ml-1">({pct}%)</span>
                                 </div>
                               </div>
                             );
@@ -548,32 +548,32 @@ export const Reports: React.FC = () => {
                 </div>
 
                 {/* Workspace Dashboard */}
-                <Card className="mb-6 border-0 shadow-md bg-white">
+                <Card className="mb-6 border border-border shadow-md bg-card">
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
                       <Briefcase className="w-5 h-5 text-purple-500" />
                       <CardTitle>Workspace dashboard</CardTitle>
                     </div>
-                    <p className="text-sm text-gray-500">Projects and tasks per workspace</p>
+                    <p className="text-sm text-muted-foreground">Projects and tasks per workspace</p>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {workspaceStats.map((ws) => {
                         const rate = ws.taskCount > 0 ? Math.round((ws.completedCount / ws.taskCount) * 100) : 0;
                         return (
-                          <div key={ws.workspaceId} onClick={() => navigate('/dashboard')} className="p-4 rounded-xl border border-gray-200 hover:border-orange-200 hover:bg-orange-50/30 cursor-pointer transition-all">
+                          <div key={ws.workspaceId} onClick={() => navigate('/dashboard')} className="p-4 rounded-xl border border-border hover:border-orange-500/50 hover:bg-orange-500/10 cursor-pointer transition-all">
                             <div className="flex items-center gap-2 mb-2">
                               <FolderKanban className="w-4 h-4 text-purple-500" />
-                              <span className="font-medium text-gray-900">{ws.name}</span>
+                              <span className="font-medium text-foreground">{ws.name}</span>
                             </div>
                             <div className="flex gap-4 text-sm">
-                              <span className="text-gray-600">{ws.projectCount} projects</span>
-                              <span className="text-gray-600">{ws.taskCount} tasks</span>
+                              <span className="text-muted-foreground">{ws.projectCount} projects</span>
+                              <span className="text-muted-foreground">{ws.taskCount} tasks</span>
                             </div>
-                            <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
                               <div className="h-full bg-gradient-to-r from-purple-500 to-orange-500 rounded-full" style={{ width: `${rate}%` }} />
                             </div>
-                            <p className="text-xs text-gray-500 mt-1">{rate}% complete</p>
+                            <p className="text-xs text-muted-foreground mt-1">{rate}% complete</p>
                           </div>
                         );
                       })}
@@ -583,13 +583,13 @@ export const Reports: React.FC = () => {
 
                 {/* Organization Members */}
                 {organization?.members && organization.members.length > 0 && (
-                  <Card className="mb-6 border-0 shadow-md bg-white">
+                  <Card className="mb-6 border border-border shadow-md bg-card">
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
                         <Users className="w-5 h-5 text-green-500" />
                         <CardTitle>Users</CardTitle>
                       </div>
-                      <p className="text-sm text-gray-500">Organization members</p>
+                      <p className="text-sm text-muted-foreground">Organization members</p>
                     </CardHeader>
                     <CardContent>
                       <div className="flex flex-wrap gap-3">
@@ -607,13 +607,13 @@ export const Reports: React.FC = () => {
                           .map((m: { userId: string; displayName?: string; email?: string; role?: string; }) => {
                           const workload = tasksByUser.find((w) => w.userId === m.userId);
                           return (
-                            <div key={m.userId} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100">
+                            <div key={m.userId} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border">
                               <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-medium text-sm">
                                 {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
                               </div>
                               <div>
-                                <p className="font-medium text-gray-900 text-sm">{m.displayName || m.email || 'Unknown'}</p>
-                                <p className="text-xs text-gray-500">{workload?.count ?? 0} tasks · {m.role || 'member'}</p>
+                                <p className="font-medium text-foreground text-sm">{m.displayName || m.email || 'Unknown'}</p>
+                                <p className="text-xs text-muted-foreground">{workload?.count ?? 0} tasks · {m.role || 'member'}</p>
                               </div>
                             </div>
                           );
@@ -625,15 +625,15 @@ export const Reports: React.FC = () => {
 
                 {/* Project Progress and Task Distribution */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader>
                       <CardTitle>Project progress</CardTitle>
-                      <p className="text-sm text-gray-500">Completion by project</p>
+                      <p className="text-sm text-muted-foreground">Completion by project</p>
                     </CardHeader>
                     <CardContent>
                       {filteredProjects.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">
-                          <BarChart3 className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                        <div className="text-center py-12 text-muted-foreground">
+                          <BarChart3 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                           <p>{reportWorkspaceId === ALL_WORKSPACES_ID ? 'No projects to display' : 'No projects in this workspace'}</p>
                         </div>
                       ) : (
@@ -642,15 +642,15 @@ export const Reports: React.FC = () => {
                             const progress = project.stats.totalTasks > 0
                               ? Math.round((project.stats.completedTasks / project.stats.totalTasks) * 100) : 0;
                             return (
-                              <div key={project.projectId} onClick={() => navigate(`/project/${project.projectId}`)} className="cursor-pointer hover:bg-gray-50 rounded-lg p-2 -mx-2 transition-colors">
+                              <div key={project.projectId} onClick={() => navigate(`/project/${project.projectId}`)} className="cursor-pointer hover:bg-muted/50 rounded-lg p-2 -mx-2 transition-colors">
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="font-medium">{project.name}</span>
-                                  <span className="text-sm text-gray-500">{progress}%</span>
+                                  <span className="text-sm text-muted-foreground">{progress}%</span>
                                 </div>
-                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-2 bg-muted rounded-full overflow-hidden">
                                   <div className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
                                 </div>
-                                <p className="text-xs text-gray-500 mt-1">{project.stats.completedTasks} of {project.stats.totalTasks} tasks completed</p>
+                                <p className="text-xs text-muted-foreground mt-1">{project.stats.completedTasks} of {project.stats.totalTasks} tasks completed</p>
                               </div>
                             );
                           })}
@@ -659,15 +659,15 @@ export const Reports: React.FC = () => {
                     </CardContent>
                   </Card>
 
-                  <Card className="border-0 shadow-md bg-white">
+                  <Card className="border border-border shadow-md bg-card">
                     <CardHeader>
                       <CardTitle>Team members</CardTitle>
-                      <p className="text-sm text-gray-500">Organization members</p>
+                      <p className="text-sm text-muted-foreground">Organization members</p>
                     </CardHeader>
                     <CardContent>
                       {!organization?.members || organization.members.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">
-                          <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                        <div className="text-center py-12 text-muted-foreground">
+                          <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                           <p>No team members yet</p>
                         </div>
                       ) : (
@@ -690,7 +690,7 @@ export const Reports: React.FC = () => {
                             return (
                               <div
                                 key={m.userId}
-                                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                                className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors group"
                               >
                                 <div
                                   role="button"
@@ -705,23 +705,23 @@ export const Reports: React.FC = () => {
                                   <div className="min-w-0">
                                     <span className="font-medium">{displayName}</span>
                                     {isOwner && <span className="ml-2 text-xs text-orange-600 font-medium">Owner</span>}
-                                    <p className="text-xs text-gray-500">{m.role || 'member'}</p>
+                                    <p className="text-xs text-muted-foreground">{m.role || 'member'}</p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="font-medium">{count}</span>
-                                  <span className="text-xs text-gray-500">tasks</span>
+                                  <span className="text-xs text-muted-foreground">tasks</span>
                                   {isAdmin && !isOwner ? (
                                     <button
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); setMemberToRemove({ userId: m.userId, displayName }); }}
-                                      className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                      className="p-1.5 rounded-md text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors"
                                       aria-label={`Remove ${displayName} from organization`}
                                     >
                                       <X className="w-4 h-4" />
                                     </button>
                                   ) : (
-                                    <ArrowRight className="w-4 h-4 text-gray-400" aria-hidden />
+                                    <ArrowRight className="w-4 h-4 text-muted-foreground" aria-hidden />
                                   )}
                                 </div>
                               </div>
@@ -752,8 +752,8 @@ export const Reports: React.FC = () => {
                 <Loader2 className="w-12 h-12 animate-spin text-orange-500" />
               </div>
             ) : businessContracts.length === 0 ? (
-              <div className="text-center py-16 text-gray-500 border-2 border-dashed border-gray-200 rounded-xl">
-                <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+              <div className="text-center py-16 text-muted-foreground border-2 border-dashed border-border rounded-xl">
+                <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
                 <p className="text-lg font-medium">No contracts yet</p>
                 <p className="text-sm">Create contracts to see business metrics</p>
                 <Button
@@ -781,7 +781,7 @@ export const Reports: React.FC = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-muted-foreground">
                       Showing {businessMetrics.selectedCurrency === 'ALL' ? 'all currencies' : businessMetrics.selectedCurrency}
                     </p>
                   </div>
@@ -797,7 +797,7 @@ export const Reports: React.FC = () => {
                     <CardContent className="pt-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm text-gray-500">Total Contracts</p>
+                          <p className="text-sm text-muted-foreground">Total Contracts</p>
                           <p className="text-2xl font-bold">{businessMetrics.totalContracts}</p>
                         </div>
                         <FileText className="w-8 h-8 text-blue-500 opacity-75" />
@@ -808,7 +808,7 @@ export const Reports: React.FC = () => {
                     <CardContent className="pt-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm text-gray-500">Total Value</p>
+                          <p className="text-sm text-muted-foreground">Total Value</p>
                           <p className="text-2xl font-bold">
                             {businessMetrics.currentSymbol}{businessMetrics.totalValue.toLocaleString()}
                           </p>
@@ -821,7 +821,7 @@ export const Reports: React.FC = () => {
                     <CardContent className="pt-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm text-gray-500">Average Value</p>
+                          <p className="text-sm text-muted-foreground">Average Value</p>
                           <p className="text-2xl font-bold">
                             {businessMetrics.currentSymbol}{businessMetrics.avgValue.toLocaleString()}
                           </p>
@@ -834,7 +834,7 @@ export const Reports: React.FC = () => {
                     <CardContent className="pt-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm text-gray-500">Active Contracts</p>
+                          <p className="text-sm text-muted-foreground">Active Contracts</p>
                           <p className="text-2xl font-bold text-green-600">
                             {businessMetrics.byStatus.accepted}
                           </p>
@@ -882,7 +882,7 @@ export const Reports: React.FC = () => {
                             <span>{data.symbol} {currency}</span>
                             <div className="text-right">
                               <span className="font-medium block">{data.count} contracts</span>
-                              <span className="text-sm text-gray-500">
+                              <span className="text-sm text-muted-foreground">
                                 {data.symbol}{data.value.toLocaleString()}
                               </span>
                             </div>
@@ -902,10 +902,10 @@ export const Reports: React.FC = () => {
                     <CardContent>
                       <div className="space-y-3">
                         {businessMetrics.topClients.map((client) => (
-                          <div key={client.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div key={client.name} className="flex items-center justify-between p-3 bg-muted/40 rounded-lg">
                             <div>
                               <p className="font-medium">{client.name}</p>
-                              <p className="text-sm text-gray-500">{client.count} contracts</p>
+                              <p className="text-sm text-muted-foreground">{client.count} contracts</p>
                             </div>
                             <p className="font-bold text-orange-600">
                               {businessMetrics.currentSymbol}{client.value.toLocaleString()}
@@ -934,17 +934,17 @@ export const Reports: React.FC = () => {
                         {businessMetrics.expiringSoon.slice(0, 5).map((contract) => {
                           const currencySymbol = CURRENCY_SYMBOLS[contract.currency || 'USD']?.symbol || '$';
                           return (
-                            <div key={contract.contractId} className="flex items-center justify-between p-2 bg-white rounded border border-yellow-200">
+                            <div key={contract.contractId} className="flex items-center justify-between p-2 bg-card rounded border border-yellow-200/50">
                               <div>
                                 <p className="font-medium">{contract.title}</p>
-                                <p className="text-sm text-gray-500">{contract.client}</p>
+                                <p className="text-sm text-muted-foreground">{contract.client}</p>
                               </div>
                               <div className="text-right">
                                 <p className="text-sm font-medium text-yellow-700">
                                   {format(new Date(contract.endDate!), 'MMM d, yyyy')}
                                 </p>
                                 {contract.value && (
-                                  <p className="text-xs text-gray-500">
+                                  <p className="text-xs text-muted-foreground">
                                     {currencySymbol}{contract.value.toLocaleString()}
                                   </p>
                                 )}

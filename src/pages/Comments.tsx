@@ -129,7 +129,7 @@ export const Comments: React.FC = () => {
                           <span className="font-medium text-foreground">
                             {comment.displayName}
                           </span>
-                          <span className="text-gray-400">commented on</span>
+                          <span className="text-muted-foreground">commented on</span>
                           <span className="text-sm font-medium text-blue-600 truncate">
                             {comment.taskTitle}
                           </span>
@@ -138,7 +138,7 @@ export const Comments: React.FC = () => {
                           in <span className="font-medium">{comment.projectName}</span>
                         </div>
                         {comment.text?.trim() ? (
-                          <p className="text-gray-700 text-sm">{comment.text}</p>
+                          <p className="text-foreground text-sm">{comment.text}</p>
                         ) : null}
                         {comment.attachments && comment.attachments.length > 0 && (
                           <AttachmentPreview
@@ -154,12 +154,12 @@ export const Comments: React.FC = () => {
                             })}
                             {comment.isEdited && (
                               <>
-                                <span className="text-gray-400">•</span>
+                                <span className="text-muted-foreground/80">•</span>
                                 <span>edited</span>
                               </>
                             )}
                           </div>
-                          <ArrowRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
                       </div>
                     </div>
@@ -193,11 +193,11 @@ export const Comments: React.FC = () => {
                     )}
                     <span className="font-medium">{selectedComment.displayName}</span>
                   </div>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-muted-foreground">
                     Commented on <strong>{selectedComment.taskTitle}</strong> in <strong>{selectedComment.projectName}</strong>
                   </p>
                   {selectedComment.text?.trim() && (
-                    <div className="bg-gray-50 p-3 rounded text-sm text-foreground">
+                    <div className="bg-muted/50 p-3 rounded text-sm text-foreground border border-border/60">
                       {selectedComment.text}
                     </div>
                   )}
@@ -206,7 +206,7 @@ export const Comments: React.FC = () => {
                     {formatDistanceToNow(new Date(selectedComment.createdAt), { addSuffix: true })}
                     {selectedComment.isEdited && (
                       <>
-                        <span className="text-gray-400">•</span>
+                        <span className="text-muted-foreground/80">•</span>
                         <span>edited</span>
                       </>
                     )}

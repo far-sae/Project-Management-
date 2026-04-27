@@ -108,12 +108,12 @@ const ensureOrganizationExists = async (
       return null;
     }
 
-    // 4. Create default workspace
+    // 4. Create primary workspace (group for projects; not shown as a special "default" in the UI)
     const { error: wsError } = await supabase
       .from('workspaces')
       .insert({
         workspace_id: crypto.randomUUID(),
-        name: 'Default Workspace',
+        name: 'Workspace',
         organization_id: orgId,
         is_default: true,
         created_at: now,

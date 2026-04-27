@@ -93,11 +93,6 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
             >
               <Boxes className="w-4 h-4 mr-2" />
               <span className="flex-1 truncate">{w.name}</span>
-              {w.isDefault && (
-                <span className="ml-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-                  default
-                </span>
-              )}
               {active && <Check className="w-4 h-4 ml-2 text-primary" />}
             </DropdownMenuItem>
           );

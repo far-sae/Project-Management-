@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
-import type { PresencePeer } from '@/hooks/usePresence';
+import type { PresencePeer, PresenceAvailability } from '@/hooks/usePresence';
 
 interface PresenceAvatarsProps {
   peers: PresencePeer[];
@@ -35,6 +35,39 @@ const colorFor = (id: string): string => {
   return COLORS[h % COLORS.length];
 };
 
+const statusClasses = (a?: PresenceAvailability): string => {
+  if (!a) return 'bg-success';
+  switch (a) {
+    case 'online':
+      return 'bg-success';
+    case 'offline':
+      return 'bg-muted-foreground/70';
+    case 'dnd':
+      return 'bg-amber-500';
+    case 'holiday':
+      return 'bg-sky-500';
+    default:
+      return 'bg-success';
+  }
+};
+
+const statusLabel = (a: PresenceAvailability | undefined): string => {
+  if (!a) return 'Online';
+  const labels: Record<PresenceAvailability, string> = {
+    online: 'Online',
+    offline: 'Offline',
+    dnd: 'Do not disturb',
+    holiday: 'Holiday',
+  };
+  return labels[a];
+};
+
+const buildTitle = (peer: PresencePeer, showLabels: boolean) => {
+  if (!showLabels) return undefined;
+  const s = statusLabel(peer.availability);
+  return s ? `${peer.displayName} — ${s}` : peer.displayName;
+};
+
 export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({
   peers,
   max = 4,
@@ -52,7 +85,7 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({
         {visible.map((peer) => (
           <div
             key={peer.userId}
-            title={showLabels ? peer.displayName : undefined}
+            title={buildTitle(peer, showLabels)}
             className="relative"
             style={{ width: size, height: size }}
           >
@@ -77,7 +110,10 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({
               </div>
             )}
             <span
-              className="absolute -bottom-0.5 -right-0.5 block w-2 h-2 rounded-full bg-success ring-2 ring-card"
+              className={cn(
+                'absolute -bottom-0.5 -right-0.5 block w-2.5 h-2.5 rounded-full ring-2 ring-card',
+                statusClasses(peer.availability),
+              )}
               aria-hidden
             />
           </div>

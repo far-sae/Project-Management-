@@ -35,12 +35,12 @@ const LightboxModal: React.FC<{
     onClick={onClose}
   >
     <div
-      className="relative max-w-5xl w-full max-h-[90vh] bg-white rounded-lg overflow-hidden shadow-2xl"
+      className="relative max-w-5xl w-full max-h-[90vh] bg-card rounded-lg overflow-hidden shadow-2xl border border-border"
       onClick={(e) => e.stopPropagation()}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-        <span className="text-sm font-medium text-gray-700 truncate max-w-[70%]" title={attachment.fileName}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/40">
+        <span className="text-sm font-medium text-foreground truncate max-w-[70%]" title={attachment.fileName}>
           {truncateFileName(attachment.fileName, 40)}
         </span>
         <div className="flex items-center gap-2">
@@ -57,7 +57,7 @@ const LightboxModal: React.FC<{
           </a>
           <button
             onClick={onClose}
-            className="p-1.5 rounded hover:bg-gray-200 text-gray-600"
+            className="p-1.5 rounded hover:bg-muted text-muted-foreground"
           >
             <X className="w-4 h-4" />
           </button>
@@ -65,7 +65,7 @@ const LightboxModal: React.FC<{
       </div>
 
       {/* Content */}
-      <div className="overflow-auto max-h-[80vh] flex items-center justify-center bg-gray-100">
+      <div className="overflow-auto max-h-[80vh] flex items-center justify-center bg-muted/50">
         {category === 'image' ? (
           <img
             src={attachment.fileUrl}
@@ -109,7 +109,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             // ✅ Image — show thumbnail
             <div
               key={att.fileId}
-              className="relative group cursor-pointer rounded-md overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors"
+              className="relative group cursor-pointer rounded-md overflow-hidden border border-border hover:border-primary/50 transition-colors"
               style={{ width: 80, height: 80 }}
               onClick={(e) => handleClick(e, att, category)}
               title={att.fileName}
@@ -127,15 +127,15 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             // ✅ PDF — icon + filename, click opens iframe modal
             <div
               key={att.fileId}
-              className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md cursor-pointer transition-colors group max-w-[250px]"
+              className="flex items-center gap-2 px-3 py-2 bg-destructive/10 hover:bg-destructive/20 border border-destructive/30 rounded-md cursor-pointer transition-colors group max-w-[250px]"
               onClick={(e) => handleClick(e, att, category)}
               title={att.fileName}
             >
-              <FileText className="w-4 h-4 text-red-500 shrink-0" />
-              <span className="text-sm text-red-700 truncate max-w-[160px]">
+              <FileText className="w-4 h-4 text-destructive shrink-0" />
+              <span className="text-sm text-destructive truncate max-w-[160px]">
                 {truncateFileName(att.fileName, 20)}
               </span>
-              <ZoomIn className="w-3.5 h-3.5 text-red-400 opacity-0 group-hover:opacity-100 shrink-0" />
+              <ZoomIn className="w-3.5 h-3.5 text-destructive/80 opacity-0 group-hover:opacity-100 shrink-0" />
             </div>
           ) : (
             // ✅ Other files — plain download link with truncation
@@ -145,7 +145,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => stopPropagation && e.stopPropagation()}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-sm text-blue-600 hover:text-blue-800 border border-gray-200 max-w-[250px] group"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted/80 hover:bg-muted text-sm text-primary border border-border max-w-[250px] group"
               title={att.fileName}
             >
               <Paperclip className="w-3.5 h-3.5 shrink-0" />

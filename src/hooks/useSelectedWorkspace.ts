@@ -22,7 +22,7 @@ const readStored = (): string | null => {
 export const useSelectedWorkspace = () => {
   const { workspaces, loading, DEFAULT_WORKSPACE_ID } = useWorkspaces();
   const [id, setId] = useState<string>(
-    () => readStored() || DEFAULT_WORKSPACE_ID,
+    () => readStored() || ALL_WORKSPACES_ID,
   );
 
   useEffect(() => {
@@ -38,21 +38,20 @@ export const useSelectedWorkspace = () => {
     };
   }, []);
 
-  // If the stored workspace is no longer visible (deleted, switched org), fall
-  // back to the default workspace.
+  // If the stored workspace is no longer visible (deleted, switched org), show all workspaces.
   useEffect(() => {
     if (loading) return;
     if (id === ALL_WORKSPACES_ID) return;
     const exists = workspaces.some((w) => w.workspaceId === id);
-    if (!exists && DEFAULT_WORKSPACE_ID && DEFAULT_WORKSPACE_ID !== "__default__") {
-      setId(DEFAULT_WORKSPACE_ID);
+    if (!exists) {
+      setId(ALL_WORKSPACES_ID);
       try {
-        window.localStorage.setItem(STORAGE_KEY, DEFAULT_WORKSPACE_ID);
+        window.localStorage.setItem(STORAGE_KEY, ALL_WORKSPACES_ID);
       } catch {
         /* ignore */
       }
     }
-  }, [workspaces, loading, id, DEFAULT_WORKSPACE_ID]);
+  }, [workspaces, loading, id]);
 
   const select = useCallback((newId: string) => {
     setId(newId);
@@ -70,12 +69,7 @@ export const useSelectedWorkspace = () => {
 
   const selected: Workspace | null = useMemo(() => {
     if (id === ALL_WORKSPACES_ID) return null;
-    return (
-      workspaces.find((w) => w.workspaceId === id) ||
-      workspaces.find((w) => w.isDefault) ||
-      workspaces[0] ||
-      null
-    );
+    return workspaces.find((w) => w.workspaceId === id) || null;
   }, [workspaces, id]);
 
   return {

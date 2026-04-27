@@ -30,12 +30,16 @@ import {
   type ProjectChatMessage,
 } from '@/services/supabase/database';
 import { toast } from 'sonner';
+import type { PresencePeer } from '@/hooks/usePresence';
+import { PresenceStatusInline } from '@/components/presence/PresenceStatusInline';
 
 interface ProjectRightRailProps {
   project: Project;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onInviteClick?: () => void;
+  /** Realtime project presence by userId (from the same channel as the header). */
+  presenceByUserId?: Map<string, PresencePeer>;
 }
 
 const ROLE_BADGES: Record<string, { label: string; className: string }> = {
@@ -95,6 +99,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   open,
   onOpenChange,
   onInviteClick,
+  presenceByUserId,
 }) => {
   const { user } = useAuth();
   const { organization } = useOrganization();
@@ -254,9 +259,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {m.displayName}
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {m.displayName}
+                  </p>
+                  <PresenceStatusInline
+                    peer={m.userId ? presenceByUserId?.get(m.userId) : undefined}
+                  />
+                </div>
                 <p className="text-xs text-muted-foreground truncate">{m.email}</p>
               </div>
               <span
@@ -391,10 +401,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-foreground">
                         {msg.displayName}
                       </span>
+                      <PresenceStatusInline
+                        peer={presenceByUserId?.get(msg.userId)}
+                        className="gap-1"
+                      />
                       <span className="text-xs text-muted-foreground">
                         {formatDistanceToNow(new Date(msg.createdAt), {
                           addSuffix: true,

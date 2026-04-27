@@ -11,6 +11,11 @@ import {
   closestCenter,
 } from '@dnd-kit/core';
 import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
   Task,
   KanbanColumn,
   DEFAULT_COLUMNS,
@@ -28,7 +33,8 @@ import {
   bulkDeleteTasks,
   bulkReorderTasks,
 } from '@/services/supabase/database';
-import { KanbanColumnComponent } from './KanbanColumn';
+import { SortableBoardColumn } from './SortableBoardColumn';
+import { boardColumnSortId, parseBoardColumnSortId } from './boardColumnSortIds';
 import { TaskCard } from './TaskCard';
 import { TaskModal } from './TaskModal';
 import { BulkActionBar } from './BulkActionBar';
@@ -179,6 +185,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   // ── DnD + modal state ─────────────────────────────────────
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [activeColumn, setActiveColumn] = useState<KanbanColumn | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTaskStatus, setNewTaskStatus] = useState<string>('undefined');
@@ -381,11 +388,33 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     [tasksByStatus],
   );
 
+  const sortedColumns = useMemo(
+    () => [...columns].sort((a, b) => a.order - b.order),
+    [columns],
+  );
+  const columnSortIds = useMemo(
+    () => sortedColumns.map((c) => boardColumnSortId(c.id)),
+    [sortedColumns],
+  );
+
   // ── DnD handlers ───────────────────────────────────────────
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    const task = event.active.data.current?.task as Task;
-    if (task) setActiveTask(task);
-  }, []);
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      if (event.active.data.current?.type === 'column') {
+        const columnId = event.active.data.current.columnId as string;
+        const col = columns.find((c) => c.id === columnId);
+        setActiveColumn(col ?? null);
+        setActiveTask(null);
+        return;
+      }
+      const task = event.active.data.current?.task as Task | undefined;
+      if (task) {
+        setActiveTask(task);
+        setActiveColumn(null);
+      }
+    },
+    [columns],
+  );
 
   const handleDragOver = useCallback((_event: DragOverEvent) => {
     /* reserved for future cross-column reorder previews */
@@ -395,8 +424,35 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     async (event: DragEndEvent) => {
       const { active, over } = event;
       setActiveTask(null);
+      setActiveColumn(null);
 
       if (!over) return;
+
+      // Horizontal column reorder (grip in header; ids use board-col: prefix)
+      if (active.data.current?.type === 'column') {
+        const fromId = active.data.current.columnId as string;
+        const toParsed = parseBoardColumnSortId(over.id);
+        const toId =
+          toParsed ||
+          (typeof over.id === 'string' && columns.some((c) => c.id === over.id)
+            ? over.id
+            : null);
+        if (toId && fromId && fromId !== toId) {
+          const colIds = sortedColumns.map((c) => c.id);
+          const oldIndex = colIds.indexOf(fromId);
+          const newIndex = colIds.indexOf(toId);
+          if (oldIndex >= 0 && newIndex >= 0) {
+            const newOrderIds = arrayMove(colIds, oldIndex, newIndex);
+            const reordered: KanbanColumn[] = newOrderIds.map((cid, i) => {
+              const c = columns.find((x) => x.id === cid)!;
+              return { ...c, order: i };
+            });
+            setColumns(reordered);
+            onColumnsChange?.(reordered);
+          }
+        }
+        return;
+      }
 
       const taskId = active.id as string;
       const overId = over.id as string;
@@ -414,12 +470,21 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         onRequestManualSort?.();
       }
 
-      const isColumn = columns.some((col) => col.id === overId);
-      const overTask = !isColumn ? tasks.find((t) => t.taskId === overId) : null;
+      // Dropping on column header uses board-col:… sortable id; map to real column
+      const overColFromSort = parseBoardColumnSortId(overId);
+      const effectiveOverId =
+        overColFromSort && columns.some((c) => c.id === overColFromSort)
+          ? overColFromSort
+          : overId;
+
+      const isColumn = columns.some((col) => col.id === effectiveOverId);
+      const overTask = !isColumn
+        ? tasks.find((t) => t.taskId === effectiveOverId)
+        : null;
 
       // Determine target status
       const targetStatus = isColumn
-        ? overId
+        ? effectiveOverId
         : overTask?.status ?? movedTask.status;
       const statusChanged = targetStatus !== movedTask.status;
 
@@ -488,6 +553,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       canMoveTask,
       onRequestManualSort,
       getAssigneeEmail,
+      sortedColumns,
+      columns,
+      onColumnsChange,
     ],
   );
 
@@ -898,7 +966,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-foreground">
             <span>
               {swapPickId
-                ? 'Click another task to swap columns and order.'
+                ? 'Click another task to swap positions (status + order).'
                 : 'Click one task, then another, to swap their places.'}
             </span>
             <Button
@@ -915,11 +983,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           </div>
         )}
         <div className="flex gap-4 pb-4 px-4 min-w-max">
-          {columns
-            .slice()
-            .sort((a, b) => a.order - b.order)
-            .map((column) => (
-              <KanbanColumnComponent
+          <SortableContext
+            items={columnSortIds}
+            strategy={horizontalListSortingStrategy}
+          >
+            {sortedColumns.map((column) => (
+              <SortableBoardColumn
                 key={column.id}
                 id={column.id}
                 title={column.title}
@@ -938,6 +1007,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 swapPickId={taskSwapMode ? swapPickId : null}
               />
             ))}
+          </SortableContext>
 
           <div className="flex-shrink-0 w-72 flex flex-col gap-2">
             <Button
@@ -969,7 +1039,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         </div>
 
         <DragOverlay className="z-[600]">
-          {activeTask ? <TaskCard task={activeTask} isDragging /> : null}
+          {activeTask ? (
+            <TaskCard task={activeTask} isDragging />
+          ) : activeColumn ? (
+            <div className="w-72 min-w-72 flex flex-col bg-surface-2 rounded-xl border-2 border-primary/30 shadow-2xl p-3">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: activeColumn.color }}
+                />
+                <p className="font-semibold text-sm truncate">{activeColumn.title}</p>
+              </div>
+            </div>
+          ) : null}
         </DragOverlay>
       </DndContext>
 

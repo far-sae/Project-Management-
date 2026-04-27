@@ -221,6 +221,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       style={{ background: p.coverColor || 'hsl(var(--primary))' }}
                     />
                     <span className="text-sm font-medium truncate">{p.name}</span>
+                    {p.isLocked && p.lockPinHash && (
+                      <span title="Locked with PIN" className="inline-flex">
+                        <Lock className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-label="Project locked with PIN" />
+                      </span>
+                    )}
                   </Link>
                   <button
                     type="button"

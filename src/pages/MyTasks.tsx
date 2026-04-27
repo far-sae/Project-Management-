@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   CheckSquare, Clock, Loader2, ChevronDown, Check,
   Tag, Paperclip, Calendar, FileText, ListTree,
-  Link2, GripVertical, Circle, X, Users,
+  Link2, GripVertical, Circle, X, Users, KeyRound, Lock,
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -27,6 +27,11 @@ import {
 import { useAllTasks } from '@/hooks/useAllTasks';
 import { useProjects } from '@/hooks/useProjects';
 import { useOrganization } from '@/context/OrganizationContext';
+import {
+  hashLockPin,
+  isTaskLockUnlockedInSession,
+  setTaskLockUnlockedInSession,
+} from '@/lib/taskLockPin';
 import { useAuth } from '@/context/AuthContext';
 import { Task, TaskComment, TaskSubtask, UpdateTaskInput } from '@/types';
 import { TaskModal } from '@/components/kanban/TaskModal';
@@ -49,7 +54,7 @@ function startOfDayFromYmd(ymd: string): Date | null {
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, isAdmin } = useOrganization();
   const { projects } = useProjects();
   const { tasksAssignedToMe, loading, tasks: allTasks, refresh } = useAllTasks();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -71,6 +76,49 @@ export const MyTasks: React.FC = () => {
   const commentFileInputRef = useRef<HTMLInputElement>(null);
   const [groupBy, setGroupBy] = useState<'dueDate' | 'project' | 'status' | 'priority'>('dueDate');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed'>('all');
+
+  const [myTasksPin, setMyTasksPin] = useState('');
+  const [myTasksPinError, setMyTasksPinError] = useState(false);
+
+  const canOverrideTaskLock = useCallback(
+    (t: Task) => {
+      if (!user) return false;
+      const p = projects.find((x) => x.projectId === t.projectId);
+      if (p?.ownerId === user.userId) return true;
+      return isAdmin;
+    },
+    [user, projects, isAdmin],
+  );
+
+  const taskNeedsPinToView = useCallback(
+    (t: Task) =>
+      Boolean(
+        t.isLocked &&
+          t.lockPinHash &&
+          !canOverrideTaskLock(t) &&
+          !isTaskLockUnlockedInSession(t.taskId),
+      ),
+    [canOverrideTaskLock],
+  );
+
+  useEffect(() => {
+    setMyTasksPin('');
+    setMyTasksPinError(false);
+  }, [selectedTask?.taskId]);
+
+  const handleMyTasksUnlock = useCallback(async () => {
+    if (!selectedTask?.lockPinHash) return;
+    const h = await hashLockPin(myTasksPin, selectedTask.taskId);
+    if (h === selectedTask.lockPinHash) {
+      setTaskLockUnlockedInSession(selectedTask.taskId);
+      setMyTasksPin('');
+      setMyTasksPinError(false);
+      toast.success('Unlocked — you can view and edit this task');
+    } else {
+      setMyTasksPinError(true);
+      toast.error('Incorrect PIN');
+    }
+  }, [selectedTask, myTasksPin]);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -400,7 +448,7 @@ export const MyTasks: React.FC = () => {
         {/* Header */}
         <div className="border-b bg-card px-6 py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Hi, <span className="font-medium">{user?.email || 'User'}.</span>{' '}
               {workloadDeepLink ? (
                 <>
@@ -453,7 +501,7 @@ export const MyTasks: React.FC = () => {
                   <div className="flex items-center gap-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-gray-600">
+                        <Button variant="ghost" size="sm" className="text-muted-foreground">
                           Group By <ChevronDown className="w-4 h-4 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -467,7 +515,7 @@ export const MyTasks: React.FC = () => {
                     </DropdownMenu>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-gray-600">
+                        <Button variant="ghost" size="sm" className="text-muted-foreground">
                           Filter <ChevronDown className="w-4 h-4 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -493,12 +541,12 @@ export const MyTasks: React.FC = () => {
                 <div className="divide-y">
                   {taskGroups.map((group) => (
                     <div key={group.label}>
-                      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 sticky top-[88px] z-10">
+                      <div className="flex items-center justify-between px-4 py-3 bg-muted/40 sticky top-[88px] z-10 border-b border-border/60">
                         <div className="flex items-center gap-2">
-                          <ChevronDown className="w-4 h-4 text-gray-400" />
-                          <span className="font-medium text-gray-700">{group.label}</span>
+                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                          <span className="font-medium text-foreground">{group.label}</span>
                         </div>
-                        <span className="text-sm text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">{group.tasks.length}</span>
+                        <span className="text-sm text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{group.tasks.length}</span>
                       </div>
                       {group.tasks.map((task) => {
                         const isSelected = selectedTask?.taskId === task.taskId;
@@ -510,8 +558,8 @@ export const MyTasks: React.FC = () => {
                             key={task.taskId}
                             onClick={() => setSelectedTask(task)}
                             className={cn(
-                              'flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors',
-                              isSelected && 'bg-blue-50 border-l-4 border-l-blue-500'
+                              'flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors',
+                              isSelected && 'bg-primary/10 border-l-4 border-l-primary'
                             )}
                           >
                             <button
@@ -520,7 +568,7 @@ export const MyTasks: React.FC = () => {
                               disabled={updatingTaskId === task.taskId}
                               className={cn(
                                 'w-5 h-5 rounded border-2 flex items-center justify-center mt-0.5 shrink-0',
-                                isDone ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'
+                                isDone ? 'bg-green-500 border-green-500 text-white' : 'border-border'
                               )}
                             >
                               {updatingTaskId === task.taskId ? <Loader2 className="w-3 h-3 animate-spin" /> : isDone ? <Check className="w-3 h-3" /> : null}
@@ -528,22 +576,22 @@ export const MyTasks: React.FC = () => {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0 flex-1">
-                                  <p className={cn('font-medium text-gray-900 truncate', isDone && 'line-through text-gray-400')}>
+                                  <p className={cn('font-medium text-foreground truncate', isDone && 'line-through text-muted-foreground')}>
                                     {task.title}
                                   </p>
                                   {subtaskTotal > 0 && (
-                                    <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                                       <CheckSquare className="w-3 h-3" />
                                       <span>{subtaskCompleted}/{subtaskTotal}</span>
                                     </div>
                                   )}
-                                  <p className="text-xs text-gray-500 mt-1">
+                                  <p className="text-xs text-muted-foreground mt-1">
                                     {getWorkspaceName(task.projectId)} » {getProjectName(task.projectId)}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   {task.urgent && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Urgent</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-destructive/15 text-destructive">Urgent</span>
                                   )}
                                   {task.assignees?.[0] && (
                                     <Avatar className="w-7 h-7">
@@ -553,7 +601,7 @@ export const MyTasks: React.FC = () => {
                                       </AvatarFallback>
                                     </Avatar>
                                   )}
-                                  <span className={cn('text-sm', isOverdue ? 'text-red-500 font-medium' : 'text-gray-500')}>
+                                  <span className={cn('text-sm', isOverdue ? 'text-red-500 font-medium' : 'text-muted-foreground')}>
                                     {getDueDateLabel(task)}
                                   </span>
                                 </div>
@@ -565,8 +613,8 @@ export const MyTasks: React.FC = () => {
                     </div>
                   ))}
                   {tasksForList.length === 0 && (
-                    <div className="text-center py-16 text-gray-500">
-                      <CheckSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <div className="text-center py-16 text-muted-foreground">
+                      <CheckSquare className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                       {workloadDeepLink ? (
                         <>
                           <p className="font-medium">No tasks match this view</p>
@@ -589,7 +637,7 @@ export const MyTasks: React.FC = () => {
               <div className="p-4 space-y-4">
                 {allTasks.filter(t => t.assignees?.some(a => a.userId === user?.userId)).length > 0 ? (
                   <div className="space-y-4">
-                    <h3 className="font-medium text-gray-700">Recent Activity</h3>
+                    <h3 className="font-medium text-foreground">Recent Activity</h3>
                     {allTasks
                       .filter(t => t.assignees?.some(a => a.userId === user?.userId))
                       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
@@ -597,18 +645,18 @@ export const MyTasks: React.FC = () => {
                       .map(task => (
                         <div
                           key={task.taskId}
-                          className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100"
+                          className="flex items-start gap-3 p-3 bg-muted/40 rounded-lg cursor-pointer hover:bg-muted/60"
                           onClick={() => { setSelectedTask(task); setActiveMainTab('mytasks'); }}
                         >
                           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
                             <CheckSquare className="w-4 h-4 text-blue-600" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{task.title}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-sm font-medium text-foreground truncate">{task.title}</p>
+                            <p className="text-xs text-muted-foreground">
                               {task.status === 'done' ? 'Completed' : 'Updated'} · {formatDistanceToNow(new Date(task.updatedAt), { addSuffix: true })}
                             </p>
-                            <p className="text-xs text-gray-400 mt-1">
+                            <p className="text-xs text-muted-foreground/80 mt-1">
                               {getWorkspaceName(task.projectId)} » {getProjectName(task.projectId)}
                             </p>
                           </div>
@@ -616,8 +664,8 @@ export const MyTasks: React.FC = () => {
                       ))}
                   </div>
                 ) : (
-                  <div className="text-center py-16 text-gray-500">
-                    <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <div className="text-center py-16 text-muted-foreground">
+                    <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                     <p className="font-medium">No recent updates</p>
                     <p className="text-sm">Activity on your tasks will appear here</p>
                   </div>
@@ -627,8 +675,38 @@ export const MyTasks: React.FC = () => {
           </div>
 
           {/* Right Panel - Task Detail */}
-          <div className="w-1/2 overflow-y-auto bg-card">
+          <div className="w-1/2 overflow-y-auto bg-card border-l border-border">
             {selectedTask ? (
+              taskNeedsPinToView(selectedTask) ? (
+                <div className="p-8 flex flex-col items-center justify-center min-h-[320px] gap-4 text-center max-w-md mx-auto">
+                  <Lock className="w-12 h-12 text-muted-foreground" aria-hidden />
+                  <h2 className="text-lg font-semibold text-foreground">This task is locked</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Enter the PIN to view details, comments, and activity on this panel.
+                  </p>
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    placeholder="PIN"
+                    value={myTasksPin}
+                    onChange={(e) => {
+                      setMyTasksPin(e.target.value);
+                      setMyTasksPinError(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleMyTasksUnlock();
+                    }}
+                    className={cn(
+                      'max-w-xs bg-background border-border',
+                      myTasksPinError && 'border-destructive',
+                    )}
+                  />
+                  <Button type="button" onClick={() => void handleMyTasksUnlock()} className="gap-2">
+                    <KeyRound className="w-4 h-4" />
+                    Unlock
+                  </Button>
+                </div>
+              ) : (
               <div className="p-6 space-y-6">
                 <div className="flex items-start gap-3">
                   <button
@@ -637,19 +715,19 @@ export const MyTasks: React.FC = () => {
                     disabled={updatingTaskId === selectedTask.taskId}
                     className={cn(
                       'w-6 h-6 rounded border-2 flex items-center justify-center mt-0.5 shrink-0',
-                      selectedTask.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'
+                      selectedTask.status === 'done' ? 'bg-green-500 border-green-500 text-white' : 'border-border'
                     )}
                   >
                     {updatingTaskId === selectedTask.taskId ? <Loader2 className="w-4 h-4 animate-spin" /> : selectedTask.status === 'done' && <Check className="w-4 h-4" />}
                   </button>
                   <div className="flex-1 min-w-0">
-                    <h2 className="text-xl font-semibold text-gray-900">{selectedTask.title}</h2>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <h2 className="text-xl font-semibold text-foreground">{selectedTask.title}</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                       {getWorkspaceName(selectedTask.projectId)} » {getProjectName(selectedTask.projectId)}
                     </p>
                   </div>
                   {selectedTask.assignees && selectedTask.assignees.length > 0 && (
-                    <div className="flex items-center gap-1 text-sm text-gray-500">
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       <Users className="w-4 h-4" />
                       <span>{selectedTask.assignees.length}</span>
                     </div>
@@ -661,7 +739,7 @@ export const MyTasks: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowTagInput(!showTagInput)}
-                    className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <Tag className="w-4 h-4" />
                     Tag task
@@ -700,35 +778,35 @@ export const MyTasks: React.FC = () => {
                         {selectedTask.assignees[0].displayName?.charAt(0).toUpperCase() || '?'}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="text-sm text-gray-700">{selectedTask.assignees[0].displayName}</span>
+                    <span className="text-sm text-foreground">{selectedTask.assignees[0].displayName}</span>
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Calendar className="w-4 h-4" />
                   <span>{getDueDateLabel(selectedTask) || 'No due date'}</span>
                 </div>
 
                 <div className="flex items-center gap-3 border-y py-3">
-                  <button type="button" onClick={() => setTaskModalOpen(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900">
+                  <button type="button" onClick={() => setTaskModalOpen(true)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
                     <FileText className="w-4 h-4" />Edit description
                   </button>
-                  <button type="button" onClick={() => setTaskModalOpen(true)} className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900">
+                  <button type="button" onClick={() => setTaskModalOpen(true)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
                     <ListTree className="w-4 h-4" />Add subtasks
                   </button>
-                  <span className="flex items-center gap-1.5 text-sm text-gray-400 cursor-not-allowed">
+                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground/80 cursor-not-allowed">
                     <Link2 className="w-4 h-4" />Add dependencies
                   </span>
                 </div>
 
                 {selectedTask.description && (
                   <div>
-                    <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+                    <ul className="list-disc list-inside space-y-1 text-sm text-foreground">
                       {selectedTask.description.split('\n').filter(Boolean).map((line, i) => (
                         <li key={i}>{line.replace(/^[-•]\s*/, '')}</li>
                       ))}
                     </ul>
-                    <p className="text-xs text-gray-400 mt-2">
+                    <p className="text-xs text-muted-foreground/80 mt-2">
                       Added by {selectedTask.createdBy || 'Unknown'} · {selectedTask.createdAt ? formatDistanceToNow(new Date(selectedTask.createdAt), { addSuffix: true }) : ''}
                     </p>
                   </div>
@@ -736,48 +814,48 @@ export const MyTasks: React.FC = () => {
 
                 {/* Subtasks */}
                 <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Subtasks</h4>
+                  <h4 className="text-sm font-medium text-foreground mb-2">Subtasks</h4>
                   <div className="space-y-1">
                     {(selectedTask.subtasks && selectedTask.subtasks.length > 0) ? (
                       selectedTask.subtasks.map((subtask) => (
-                        <div key={subtask.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-gray-50 group">
-                          <GripVertical className="w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100" />
+                        <div key={subtask.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 group">
+                          <GripVertical className="w-4 h-4 text-muted-foreground/50 opacity-0 group-hover:opacity-100" />
                           <button
                             type="button"
                             onClick={() => handleToggleInlineSubtask(subtask.id)}
                             disabled={updatingTaskId === selectedTask.taskId}
-                            className={cn('w-5 h-5 rounded border-2 flex items-center justify-center shrink-0', subtask.completed ? 'bg-green-500 border-green-500' : 'border-gray-300')}
+                            className={cn('w-5 h-5 rounded border-2 flex items-center justify-center shrink-0', subtask.completed ? 'bg-green-500 border-green-500' : 'border-border')}
                           >
                             {subtask.completed && <Check className="w-3 h-3 text-white" />}
                           </button>
-                          <span className={cn('text-sm flex-1', subtask.completed && 'line-through text-gray-400')}>{subtask.title}</span>
+                          <span className={cn('text-sm flex-1', subtask.completed && 'line-through text-muted-foreground/80')}>{subtask.title}</span>
                         </div>
                       ))
                     ) : subtasksForSelected.length > 0 ? (
                       subtasksForSelected.map((subtask) => (
-                        <div key={subtask.taskId} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-gray-50 group">
-                          <GripVertical className="w-4 h-4 text-gray-300 opacity-0 group-hover:opacity-100" />
+                        <div key={subtask.taskId} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 group">
+                          <GripVertical className="w-4 h-4 text-muted-foreground/50 opacity-0 group-hover:opacity-100" />
                           <button
                             type="button"
                             onClick={(e) => handleToggleStatus(subtask, e)}
                             disabled={updatingTaskId === subtask.taskId}
-                            className={cn('w-5 h-5 rounded border-2 flex items-center justify-center shrink-0', subtask.status === 'done' ? 'bg-green-500 border-green-500' : 'border-gray-300')}
+                            className={cn('w-5 h-5 rounded border-2 flex items-center justify-center shrink-0', subtask.status === 'done' ? 'bg-green-500 border-green-500' : 'border-border')}
                           >
                             {subtask.status === 'done' && <Check className="w-3 h-3 text-white" />}
                           </button>
-                          <span className={cn('text-sm flex-1', subtask.status === 'done' && 'line-through text-gray-400')}>{subtask.title}</span>
+                          <span className={cn('text-sm flex-1', subtask.status === 'done' && 'line-through text-muted-foreground/80')}>{subtask.title}</span>
                         </div>
                       ))
                     ) : null}
                     <div className="flex items-center gap-2 py-1.5 px-2">
                       <div className="w-4" />
-                      <Circle className="w-5 h-5 text-gray-300 shrink-0" />
+                      <Circle className="w-5 h-5 text-muted-foreground/50 shrink-0" />
                       <input
                         type="text"
                         value={newSubtaskTitle}
                         onChange={(e) => setNewSubtaskTitle(e.target.value)}
                         placeholder="Add a subtask..."
-                        className="flex-1 text-sm outline-none bg-transparent placeholder:text-gray-400"
+                        className="flex-1 text-sm outline-none bg-transparent placeholder:text-muted-foreground/80"
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
                       />
                       <Button type="button" size="sm" onClick={handleAddSubtask} disabled={!newSubtaskTitle.trim()} className="h-7 text-xs">Add</Button>
@@ -806,7 +884,7 @@ export const MyTasks: React.FC = () => {
                           rows={2}
                           className="border-0 resize-none focus-visible:ring-0"
                         />
-                        <div className="flex items-center justify-between px-3 py-2 border-t bg-gray-50">
+                        <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/40">
                           <div className="flex items-center gap-2">
                             <EmojiPickerButton value={newComment} onChange={setNewComment} />
                             <input
@@ -821,10 +899,10 @@ export const MyTasks: React.FC = () => {
                                 e.target.value = '';
                               }}
                             />
-                            <button type="button" onClick={() => commentFileInputRef.current?.click()} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 p-1.5 rounded hover:bg-gray-200">
+                            <button type="button" onClick={() => commentFileInputRef.current?.click()} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 p-1.5 rounded hover:bg-muted">
                               <Paperclip className="w-4 h-4" />Attach files
                             </button>
-                            <button type="button" onClick={() => setShowTimeSpent(!showTimeSpent)} className={cn('text-sm flex items-center gap-1', showTimeSpent ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700')}>
+                            <button type="button" onClick={() => setShowTimeSpent(!showTimeSpent)} className={cn('text-sm flex items-center gap-1', showTimeSpent ? 'text-blue-600' : 'text-muted-foreground hover:text-foreground')}>
                               <Clock className="w-4 h-4" />Time spent
                             </button>
                           </div>
@@ -833,7 +911,7 @@ export const MyTasks: React.FC = () => {
                           </Button>
                         </div>
                         {showTimeSpent && (
-                          <div className="flex items-center gap-2 px-3 py-2 border-t bg-gray-50">
+                          <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-muted/40">
                             <Input
                               type="number"
                               min={0}
@@ -842,15 +920,15 @@ export const MyTasks: React.FC = () => {
                               placeholder="Minutes"
                               className="w-20 h-8"
                             />
-                            <span className="text-sm text-gray-500">min</span>
+                            <span className="text-sm text-muted-foreground">min</span>
                           </div>
                         )}
                         {commentAttachmentFiles.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 px-3 py-2 border-t">
                             {commentAttachmentFiles.map((f, i) => (
-                              <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs">
+                              <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs">
                                 {f.name}
-                                <button type="button" onClick={() => setCommentAttachmentFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-gray-500 hover:text-red-600">
+                                <button type="button" onClick={() => setCommentAttachmentFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-red-600">
                                   <X className="w-3 h-3" />
                                 </button>
                               </span>
@@ -870,7 +948,7 @@ export const MyTasks: React.FC = () => {
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm">{comment.displayName}</span>
-                              <span className="text-xs text-gray-500">{formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}</span>
+                              <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}</span>
                             </div>
                             {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
                               <span className="inline-block mt-1 px-2 py-0.5 bg-green-700 text-white text-xs rounded">
@@ -878,13 +956,13 @@ export const MyTasks: React.FC = () => {
                               </span>
                             )}
                             {comment.text?.trim() && (
-                              <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{comment.text}</p>
+                              <p className="text-sm text-foreground mt-1 whitespace-pre-wrap">{comment.text}</p>
                             )}
                             {comment.attachments && comment.attachments.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-2">
                                 {comment.attachments.map((att) => (
                                   <a key={att.fileId} href={att.fileUrl} target="_blank" rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-sm text-blue-600 hover:text-blue-800 border border-gray-200">
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-sm text-primary hover:text-primary/90 border border-border">
                                     <Paperclip className="w-3.5 h-3.5 shrink-0" />
                                     <span className="truncate max-w-[180px]">{att.fileName}</span>
                                   </a>
@@ -900,13 +978,13 @@ export const MyTasks: React.FC = () => {
                       <div className="space-y-2">
                         {taskComments.map((c) => (
                           <div key={c.commentId} className="flex items-start gap-3 text-sm">
-                            <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                            <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center shrink-0">
                               <span className="text-xs">{c.displayName?.charAt(0) || '?'}</span>
                             </div>
                             <div>
                               <span className="font-medium">{c.displayName}</span>
-                              <span className="text-gray-500"> commented</span>
-                              <span className="text-gray-400"> · {formatDistanceToNow(new Date(c.createdAt), { addSuffix: true })}</span>
+                              <span className="text-muted-foreground"> commented</span>
+                              <span className="text-muted-foreground/80"> · {formatDistanceToNow(new Date(c.createdAt), { addSuffix: true })}</span>
                               {c.timeSpentMinutes != null && c.timeSpentMinutes > 0 && (
                                 <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded">
                                   +{Math.floor(c.timeSpentMinutes / 60)}h {c.timeSpentMinutes % 60}m
@@ -921,8 +999,8 @@ export const MyTasks: React.FC = () => {
                           </div>
                           <div>
                             <span className="font-medium">{organization?.name || 'User'}</span>
-                            <span className="text-gray-500"> created this task</span>
-                            <span className="text-gray-400"> · {selectedTask.createdAt ? formatDistanceToNow(new Date(selectedTask.createdAt), { addSuffix: true }) : ''}</span>
+                            <span className="text-muted-foreground"> created this task</span>
+                            <span className="text-muted-foreground/80"> · {selectedTask.createdAt ? formatDistanceToNow(new Date(selectedTask.createdAt), { addSuffix: true }) : ''}</span>
                           </div>
                         </div>
                       </div>
@@ -930,10 +1008,11 @@ export const MyTasks: React.FC = () => {
                   </Tabs>
                 </div>
               </div>
+            )
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="flex items-center justify-center h-full text-muted-foreground">
                 <div className="text-center">
-                  <CheckSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <CheckSquare className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p className="font-medium">Select a task</p>
                   <p className="text-sm">Click on a task to see details</p>
                 </div>

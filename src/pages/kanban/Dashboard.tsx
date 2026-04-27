@@ -80,7 +80,9 @@ import LimitReachedModal from '@/components/ui/LimitReachedModal';
 import { fetchProjectTemplates } from '@/services/supabase/templates';
 import type { ProjectTemplate } from '@/types/projectTemplate';
 import { createTask } from '@/services/supabase/database';
-import { LayoutTemplate } from 'lucide-react';
+import { LayoutTemplate, Lock } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { hashLockPin, clearProjectLockUnlockedInSession } from '@/lib/projectLockPin';
 import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist';
 
 const PROJECT_COLORS = [
@@ -171,6 +173,9 @@ export const Dashboard: React.FC = () => {
   const [newProjectEndDate, setNewProjectEndDate] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
+  const [editProjectLocked, setEditProjectLocked] = useState(false);
+  const [editLockPinNew, setEditLockPinNew] = useState('');
+  const [editLockPinConfirm, setEditLockPinConfirm] = useState('');
 
   const [showWorkspacesModal, setShowWorkspacesModal] = useState(false);
 
@@ -336,12 +341,32 @@ export const Dashboard: React.FC = () => {
     setEditEndDate(
       project.endDate ? new Date(project.endDate).toISOString().split('T')[0] : ''
     );
+    setEditProjectLocked(!!project.isLocked);
+    setEditLockPinNew('');
+    setEditLockPinConfirm('');
   };
   const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProject || !editName.trim()) return;
     if (editingProject.ownerId !== user?.userId) {
       toast.error('Only the project owner can edit this project.');
+      return;
+    }
+
+    let lockPinHashPayload: string | null | undefined = undefined;
+    if (!editProjectLocked) {
+      lockPinHashPayload = null;
+      clearProjectLockUnlockedInSession(editingProject.projectId);
+    } else if (editLockPinNew.trim()) {
+      if (editLockPinNew !== editLockPinConfirm) {
+        toast.error('PIN and confirmation do not match');
+        return;
+      }
+      lockPinHashPayload = await hashLockPin(editLockPinNew, editingProject.projectId);
+    } else if (editingProject.lockPinHash) {
+      lockPinHashPayload = undefined;
+    } else {
+      toast.error('Set a lock PIN, or turn off "Lock with PIN".');
       return;
     }
 
@@ -352,11 +377,16 @@ export const Dashboard: React.FC = () => {
         description: editDescription,
         startDate: editStartDate || null,
         endDate: editEndDate || null,
+        isLocked: editProjectLocked,
+        ...(lockPinHashPayload !== undefined ? { lockPinHash: lockPinHashPayload } : {}),
       });
       if (success) {
         setEditingProject(null);
         setEditName('');
         setEditDescription('');
+        setEditProjectLocked(false);
+        setEditLockPinNew('');
+        setEditLockPinConfirm('');
         toast.success('Project updated', { id: toastId });
       } else {
         toast.error('Failed to update project', { id: toastId });
@@ -1413,6 +1443,56 @@ export const Dashboard: React.FC = () => {
                   onChange={(e) => setEditEndDate(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Lock className="w-4 h-4" aria-hidden />
+                    Lock with PIN
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Members (not the owner) must enter this PIN to open the project. Org admins can always open.
+                  </p>
+                </div>
+                <Switch
+                  checked={editProjectLocked}
+                  onCheckedChange={(v) => {
+                    setEditProjectLocked(v);
+                    if (!v) {
+                      setEditLockPinNew('');
+                      setEditLockPinConfirm('');
+                    }
+                  }}
+                />
+              </div>
+              {editProjectLocked && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="editProjectLockPin">PIN {editingProject?.lockPinHash ? '(change)' : ''}</Label>
+                    <Input
+                      id="editProjectLockPin"
+                      type="password"
+                      autoComplete="new-password"
+                      value={editLockPinNew}
+                      onChange={(e) => setEditLockPinNew(e.target.value)}
+                      placeholder={editingProject?.lockPinHash ? 'New PIN' : 'Set PIN'}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editProjectLockPinConfirm">Confirm PIN</Label>
+                    <Input
+                      id="editProjectLockPinConfirm"
+                      type="password"
+                      autoComplete="new-password"
+                      value={editLockPinConfirm}
+                      onChange={(e) => setEditLockPinConfirm(e.target.value)}
+                      placeholder="Confirm"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter>

@@ -168,12 +168,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       !(hasLockPin && pinUnlockedSession),
   );
 
+  /** Until PIN is entered, do not show title, description, or comments. */
+  const mustUnlockToView = useMemo(
+    () =>
+      Boolean(
+        isEditing &&
+          task?.isLocked &&
+          !canOverrideTaskLock &&
+          hasLockPin &&
+          !pinUnlockedSession,
+      ),
+    [
+      isEditing,
+      task?.isLocked,
+      task?.taskId,
+      canOverrideTaskLock,
+      hasLockPin,
+      pinUnlockedSession,
+    ],
+  );
+
   const [activityRefetchNonce, setActivityRefetchNonce] = useState(0);
 
   const aiEnabled = isAIEnabled();
   const orgId = organization?.organizationId || user?.organizationId || (user ? `local-${user.userId}` : '');
   const { events: taskActivityEvents, loading: taskActivityLoading } = useTaskActivity(
-    open && task?.taskId ? task.taskId : null,
+    open && task?.taskId && !mustUnlockToView ? task.taskId : null,
     orgId || null,
     activityRefetchNonce,
   );
@@ -235,13 +255,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   }, [task?.taskId, open]);
 
   useEffect(() => {
-    if (!open || !task?.taskId || !orgId) {
+    if (!open || !task?.taskId || !orgId || mustUnlockToView) {
       setTaskComments([]);
       return;
     }
     const unsub = subscribeToComments(task.taskId, orgId, setTaskComments);
     return () => unsub();
-  }, [open, task?.taskId, orgId]);
+  }, [open, task?.taskId, orgId, mustUnlockToView]);
 
   useEffect(() => {
     if (!open) {
@@ -680,6 +700,44 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         className="sm:max-w-[1024px] max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 [&>button]:top-3.5"
         aria-describedby={undefined}
       >
+        {mustUnlockToView ? (
+          <div className="flex flex-col items-center justify-center px-6 py-12 sm:py-16 gap-5 text-center min-h-[min(420px,70vh)]">
+            <KeyRound className="w-14 h-14 text-muted-foreground" aria-hidden />
+            <div className="space-y-1 max-w-sm">
+              <h2 className="text-lg font-semibold text-foreground">This task is locked</h2>
+              <p className="text-sm text-muted-foreground">
+                Enter the PIN to view details, comments, and activity. This device remembers the unlock
+                until you close the tab or sign out of the browser.
+              </p>
+            </div>
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder="Enter PIN"
+              value={unlockAttempt}
+              onChange={(e) => setUnlockAttempt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void verifyUnlockPin();
+              }}
+              className="max-w-xs bg-background border-border"
+            />
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => { onClose(); setUnlockAttempt(''); }}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void verifyUnlockPin()}
+                disabled={!unlockAttempt.trim()}
+                className="gap-1.5"
+              >
+                <KeyRound className="w-4 h-4" />
+                Unlock
+              </Button>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* ── Header ──────────────────────────────────────── */}
         <DialogHeader className="px-5 py-3 pr-14 border-b border-border space-y-0">
           <div className="flex items-center gap-3">
@@ -1105,7 +1163,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           </div>
                         );
                       })()}
-                      <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-secondary/30">
+                      <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/50">
                         <div className="flex items-center gap-1">
                           <EmojiPickerButton
                             value={newComment}
@@ -1720,6 +1778,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );

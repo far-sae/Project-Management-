@@ -66,7 +66,7 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
           {workspaces.map((workspace) => {
             const projectCount = getProjectCount(workspace.workspaceId);
-            const isDefault = workspace.isDefault;
+            const isPrimary = workspace.isDefault;
 
             return (
               <Card
@@ -82,18 +82,13 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                       <CardTitle className="text-lg flex items-center gap-2">
                         <FolderKanban className="w-5 h-5 text-orange-500" />
                         {workspace.name}
-                        {isDefault && (
-                          <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600">
-                            Default
-                          </span>
-                        )}
                       </CardTitle>
                       <CardDescription className="mt-2">
                         {projectCount} {projectCount === 1 ? 'project' : 'projects'}
                       </CardDescription>
                     </div>
 
-                    {!isDefault && (
+                    {!isPrimary && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload } from 'lucide-react';
+import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload, KeyRound, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { useTasks } from '@/hooks/useTasks';
 import { getProject, updateProject } from '@/services/supabase/database';
 import { supabase } from '@/services/supabase';
@@ -18,7 +19,9 @@ import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { ProjectRightRail } from '@/components/project/ProjectRightRail';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
+import { PresenceStatusMenu } from '@/components/presence/PresenceStatusMenu';
 import { usePresence } from '@/hooks/usePresence';
+import { usePresenceStatusPreference } from '@/hooks/usePresenceStatusPreference';
 import {
   ALL_WORKSPACES_ID,
   useSelectedWorkspace,
@@ -29,6 +32,12 @@ import { tasksToCsv, downloadCsv } from '@/services/csv/tasksCsv';
 import type { SavedView } from '@/types/savedView';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  hashLockPin,
+  isProjectLockUnlockedInSession,
+  setProjectLockUnlockedInSession,
+} from '@/lib/projectLockPin';
+import { cn } from '@/lib/utils';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -177,6 +186,8 @@ export const ProjectView: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { selectedId: selectedWorkspaceId, isAll } = useSelectedWorkspace();
+  const { preference: presencePreference, setPreference: setPresencePreference } =
+    usePresenceStatusPreference();
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkTaskId = searchParams.get('taskId');
   const dueDayParam = searchParams.get('dueDay');
@@ -192,10 +203,6 @@ export const ProjectView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const { peers, broadcastTyping, typingPeers } = usePresence({
-    channelKey: projectId ?? null,
-    currentTaskId: activeTaskId,
-  });
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline'>('kanban');
@@ -234,6 +241,59 @@ export const ProjectView: React.FC = () => {
     }
   }, [rightRailOpen]);
 
+  const { isAdmin } = useOrganization();
+  const [projectUnlockNonce, setProjectUnlockNonce] = useState(0);
+  const [projectPin, setProjectPin] = useState('');
+  const [projectPinError, setProjectPinError] = useState(false);
+
+  const canOverrideProjectLock = useMemo(
+    () => Boolean(user && project && (project.ownerId === user.userId || isAdmin)),
+    [user, project, isAdmin],
+  );
+
+  const needsProjectLockGate = useMemo(
+    () =>
+      Boolean(
+        project &&
+          user &&
+          project.isLocked &&
+          project.lockPinHash &&
+          !canOverrideProjectLock &&
+          !isProjectLockUnlockedInSession(project.projectId),
+      ),
+    [project, user, canOverrideProjectLock, projectUnlockNonce],
+  );
+
+  useEffect(() => {
+    setProjectPin('');
+    setProjectPinError(false);
+  }, [projectId]);
+
+  const handleProjectUnlock = useCallback(async () => {
+    if (!project?.lockPinHash || !projectId) return;
+    const h = await hashLockPin(projectPin, projectId);
+    if (h === project.lockPinHash) {
+      setProjectLockUnlockedInSession(projectId);
+      setProjectPin('');
+      setProjectPinError(false);
+      setProjectUnlockNonce((n) => n + 1);
+      toast.success('Project unlocked for this session');
+    } else {
+      setProjectPinError(true);
+      toast.error('Incorrect PIN');
+    }
+  }, [project, projectId, projectPin]);
+
+  const { peers, broadcastTyping, typingPeers } = usePresence({
+    channelKey: project && !needsProjectLockGate ? projectId ?? null : null,
+    currentTaskId: activeTaskId,
+    presencePreference,
+  });
+  const presenceByUserId = useMemo(
+    () => new Map(peers.map((p) => [p.userId, p])),
+    [peers],
+  );
+
   // If user switches sidebar workspace to one that does not contain this project,
   // the board would look "unchanged" while the filter updates — redirect to dashboard.
   useEffect(() => {
@@ -256,7 +316,7 @@ export const ProjectView: React.FC = () => {
     limitModal,
     closeLimitModal,
   } = useTasks(
-    projectId || null,
+    project && !needsProjectLockGate ? projectId ?? null : null,
     project?.organizationId || null,
   );
 
@@ -460,6 +520,51 @@ export const ProjectView: React.FC = () => {
     );
   }
 
+  if (needsProjectLockGate) {
+    return (
+      <div className="flex h-screen bg-background">
+        <Sidebar
+          project={null}
+          tasks={[]}
+          selectedStatus={selectedStatus}
+          onStatusChange={setSelectedStatus}
+          columns={boardColumns}
+        />
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <Lock className="w-12 h-12 text-muted-foreground mb-4" aria-hidden />
+          <h1 className="text-xl font-semibold text-foreground text-center">This project is locked</h1>
+          <p className="text-sm text-muted-foreground text-center max-w-md mt-2">
+            Enter the project PIN to open the board, tasks, and chat. Project owners and org admins can
+            open without a PIN.
+          </p>
+          <Input
+            type="password"
+            autoComplete="off"
+            placeholder="PIN"
+            value={projectPin}
+            onChange={(e) => {
+              setProjectPin(e.target.value);
+              setProjectPinError(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleProjectUnlock();
+            }}
+            className={cn('mt-6 max-w-xs bg-background', projectPinError && 'border-destructive')}
+          />
+          <div className="flex flex-wrap gap-2 mt-4 justify-center">
+            <Button type="button" onClick={() => void handleProjectUnlock()} className="gap-2">
+              <KeyRound className="w-4 h-4" />
+              Unlock
+            </Button>
+            <Button type="button" variant="outline" onClick={() => navigate('/dashboard')}>
+              Back to projects
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar
@@ -492,9 +597,15 @@ export const ProjectView: React.FC = () => {
             </Breadcrumb>
           }
           right={
-            peers.length > 0 ? (
-              <PresenceAvatars peers={peers} className="mr-1" />
-            ) : null
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <PresenceStatusMenu
+                preference={presencePreference}
+                onChange={setPresencePreference}
+              />
+              {peers.length > 0 ? (
+                <PresenceAvatars peers={peers} className="mr-0" />
+              ) : null}
+            </div>
           }
         />
 
@@ -785,6 +896,7 @@ export const ProjectView: React.FC = () => {
           project={project}
           open={rightRailOpen}
           onOpenChange={setRightRailOpen}
+          presenceByUserId={presenceByUserId}
         />
       </main>
 

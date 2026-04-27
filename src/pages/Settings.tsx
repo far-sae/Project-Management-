@@ -383,9 +383,9 @@ export const Settings: React.FC = () => {
                       type="email"
                       value={email}
                       disabled
-                      className="bg-gray-50"
+                      className="bg-muted/50 text-muted-foreground"
                     />
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       Email cannot be changed
                     </p>
                   </div>
@@ -484,28 +484,28 @@ export const Settings: React.FC = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <div className="p-4 rounded-lg border border-orange-500/30 bg-gradient-to-br from-orange-500/10 to-card">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-lg">
+                        <p className="font-medium text-lg text-foreground">
                           {subscription?.status === "trial"
                             ? "Free Trial"
                             : subscription?.tier
                               ? `${subscription.tier.charAt(0).toUpperCase()}${subscription.tier.slice(1)} Plan`
                               : "No Plan"}
                         </p>
-                        <Badge className="bg-orange-100 text-orange-800">
+                        <Badge className="bg-orange-500/15 text-orange-900 dark:text-orange-200 border border-orange-500/30">
                           {subscription?.status || "Unknown"}
                         </Badge>
                       </div>
                       {trialInfo && (
                         <>
-                          <p className="text-sm text-orange-700 mt-1">
+                          <p className="text-sm text-orange-800 dark:text-orange-200/90 mt-1">
                             {trialInfo.daysRemaining} days remaining in your
                             free trial.
                           </p>
-                          <p className="text-xs text-gray-600 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Trial ends:{" "}
                             {trialInfo.trialEndDate.toLocaleDateString()}
                           </p>
@@ -513,7 +513,7 @@ export const Settings: React.FC = () => {
                       )}
                       {subscription?.status === "active" &&
                         subscription.currentPeriodEnd && (
-                          <p className="text-sm text-gray-600 mt-1">
+                          <p className="text-sm text-muted-foreground mt-1">
                             Next billing:{" "}
                             {new Date(
                               subscription.currentPeriodEnd,
@@ -539,7 +539,7 @@ export const Settings: React.FC = () => {
                     <div className="flex items-center justify-between p-4 border rounded-lg">
                       <div>
                         <p className="font-medium">Cancel at period end</p>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-muted-foreground">
                           Turn off auto-renew. Access continues until period ends.
                         </p>
                       </div>
@@ -549,10 +549,10 @@ export const Settings: React.FC = () => {
                         onCheckedChange={handleCancelAtPeriodEnd}
                       />
                     </div>
-                    <div className="flex items-center justify-between p-4 border rounded-lg border-orange-200 bg-orange-50/50">
+                    <div className="flex items-center justify-between p-4 border rounded-lg border-orange-500/30 bg-orange-500/5">
                       <div>
                         <p className="font-medium">Cancel immediately</p>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-muted-foreground">
                           End your subscription now. You lose paid access right away. You can re-subscribe anytime from Pricing.
                         </p>
                       </div>
@@ -587,7 +587,7 @@ export const Settings: React.FC = () => {
                 <div>
                   <h3 className="font-medium mb-3">Change Password</h3>
                   {user?.provider === "google" ? (
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-muted-foreground">
                       Not available for Google sign-in accounts.
                     </p>
                   ) : (
@@ -637,7 +637,7 @@ export const Settings: React.FC = () => {
 
                 <div>
                   <h3 className="font-medium mb-2 text-red-600">Danger Zone</h3>
-                  <p className="text-sm text-gray-500 mb-3">
+                  <p className="text-sm text-muted-foreground mb-3">
                     To delete your account, contact our support team.
                   </p>
                   <Button variant="destructive" onClick={handleDeleteAccount}>

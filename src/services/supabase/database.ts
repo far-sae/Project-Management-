@@ -280,7 +280,7 @@ export const createProject = async (
           .from("workspaces")
           .insert({
             workspace_id: defaultWsId,
-            name: "Default Workspace",
+            name: "Workspace",
             organization_id: organizationId,
             is_default: true,
             created_at: now,
@@ -367,6 +367,8 @@ export const createProject = async (
     },
     startDate: data.start_date ? new Date(data.start_date) : null,
     endDate: data.end_date ? new Date(data.end_date) : null,
+    isLocked: data.is_locked ?? false,
+    lockPinHash: data.lock_pin_hash ?? null,
   } as Project;
 };
 
@@ -418,6 +420,8 @@ const convertToProject = (data: any): Project => {
     columns: data.columns || [],
     startDate: data.start_date ? new Date(data.start_date) : null,
     endDate: data.end_date ? new Date(data.end_date) : null,
+    isLocked: data.is_locked ?? false,
+    lockPinHash: data.lock_pin_hash ?? null,
   };
 };
 
@@ -480,17 +484,20 @@ export const getUserProjects = async (
 
   if (ownerError) console.error("Failed to fetch owner projects:", ownerError);
 
+  const memberContains = JSON.stringify([{ userId }]);
+  const legacyMemberContains = JSON.stringify([{ user_id: userId }]);
+
   const { data: memberProjects, error: memberError } = await supabase
     .from("projects")
     .select("*")
-    .contains("members", [{ userId }]);
+    .filter("members", "cs", memberContains);
 
   if (memberError) console.error("Failed to fetch member projects:", memberError);
 
   const { data: legacyMemberProjects, error: legacyMemberError } = await supabase
     .from("projects")
     .select("*")
-    .contains("members", [{ user_id: userId }]);
+    .filter("members", "cs", legacyMemberContains);
 
   if (legacyMemberError) {
     console.error("Failed to fetch legacy member projects:", legacyMemberError);
@@ -525,6 +532,8 @@ export const updateProject = async (
   if (input.columns) updateData.columns = input.columns;
   if (input.startDate !== undefined) updateData.start_date = input.startDate;
   if (input.endDate !== undefined) updateData.end_date = input.endDate;
+  if (input.isLocked !== undefined) updateData.is_locked = input.isLocked;
+  if (input.lockPinHash !== undefined) updateData.lock_pin_hash = input.lockPinHash;
 
   const { error } = await supabase
     .from("projects")

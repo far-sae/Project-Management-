@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { PresencePeer } from '@/hooks/usePresence';
 
-interface KanbanColumnProps {
+export interface KanbanColumnProps {
   id: string;
   title: string;
   color: string;
@@ -30,6 +30,12 @@ interface KanbanColumnProps {
   isTaskDragDisabled?: (task: Task) => boolean;
   /** First task selected in "swap two tasks" mode (for highlight). */
   swapPickId?: string | null;
+  /** When using horizontal column reorder, ref + style on the column shell. */
+  boardColumnRef?: React.Ref<HTMLDivElement>;
+  boardColumnStyle?: React.CSSProperties;
+  boardColumnClassName?: string;
+  /** Rendered in the header (e.g. column reorder grip). */
+  orderHandle?: React.ReactNode;
 }
 
 export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
@@ -48,6 +54,10 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
   peersByTask,
   isTaskDragDisabled,
   swapPickId = null,
+  boardColumnRef,
+  boardColumnStyle,
+  boardColumnClassName,
+  orderHandle,
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -56,14 +66,18 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
 
   return (
     <div
+      ref={boardColumnRef}
+      style={boardColumnStyle}
       className={cn(
         'flex flex-col w-72 min-w-72 bg-surface-2 rounded-xl border border-border',
         isOver && 'ring-2 ring-primary/50',
+        boardColumnClassName,
       )}
     >
       <div className="px-3 pt-3 pb-2">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            {orderHandle}
             <div
               className="w-2.5 h-2.5 rounded-full shrink-0"
               style={{ backgroundColor: color }}
