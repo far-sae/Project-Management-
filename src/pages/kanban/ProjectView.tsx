@@ -5,7 +5,6 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 import { useAuth } from '@/context/AuthContext';
-import { useOrganization } from '@/context/OrganizationContext';
 import { useTasks } from '@/hooks/useTasks';
 import { getProject, updateProject, verifyProjectLockPin } from '@/services/supabase/database';
 import { supabase } from '@/services/supabase';
@@ -240,16 +239,11 @@ export const ProjectView: React.FC = () => {
     }
   }, [rightRailOpen]);
 
-  const { isAdmin } = useOrganization();
   const [projectUnlockNonce, setProjectUnlockNonce] = useState(0);
   const [projectPin, setProjectPin] = useState('');
   const [projectPinError, setProjectPinError] = useState(false);
 
-  const canOverrideProjectLock = useMemo(
-    () => Boolean(user && project && (project.ownerId === user.userId || isAdmin)),
-    [user, project, isAdmin],
-  );
-
+  /** Everyone (including the project owner) must enter the PIN for this session. */
   const needsProjectLockGate = useMemo(
     () =>
       Boolean(
@@ -257,13 +251,12 @@ export const ProjectView: React.FC = () => {
           user &&
           project.isLocked &&
           project.hasLockPin &&
-          !canOverrideProjectLock &&
           !isProjectLockUnlockedInSession(
             project.projectId,
             project.lockPinVersion ?? 0,
           ),
       ),
-    [project, user, canOverrideProjectLock, projectUnlockNonce],
+    [project, user, projectUnlockNonce],
   );
 
   useEffect(() => {
@@ -540,8 +533,9 @@ export const ProjectView: React.FC = () => {
           <Lock className="w-12 h-12 text-muted-foreground mb-4" aria-hidden />
           <h1 className="text-xl font-semibold text-foreground text-center">This project is locked</h1>
           <p className="text-sm text-muted-foreground text-center max-w-md mt-2">
-            Enter the project PIN to open the board, tasks, and chat. Project owners and org admins can
-            open without a PIN.
+            Enter the project PIN to open the board, tasks, and chat. Everyone with access—including the
+            owner—needs the PIN each session. Only the owner can set or change this PIN in project
+            settings.
           </p>
           <Input
             type="password"

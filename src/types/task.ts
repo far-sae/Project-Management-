@@ -50,8 +50,8 @@ export interface Task {
   urgent?: boolean;
   /** When true, only creator, assignees, and project owner can see this task */
   isLocked?: boolean;
-  /** SHA-256 hex; optional PIN gate for editing when locked (see hashLockPin). */
-  lockPinHash?: string | null;
+  /** True when a task PIN is configured; hash is not sent to clients. */
+  hasLockPin?: boolean;
   position: number;
   attachments: TaskAttachment[];
   commentsCount: number;

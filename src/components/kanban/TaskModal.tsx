@@ -56,6 +56,7 @@ import {
   addCommentWithGlobalSync,
   notifyTaskCommentMentions,
   subscribeToComments,
+  verifyTaskLockPin,
 } from '@/services/supabase/database';
 import { markOnboardingAi } from '@/components/onboarding/OnboardingChecklist';
 import { useTaskActivity } from '@/hooks/useActivity';
@@ -160,7 +161,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return isAdmin;
   }, [user, project?.ownerId, isAdmin]);
 
-  const hasLockPin = Boolean(task?.lockPinHash);
+  const hasLockPin = Boolean(task?.hasLockPin);
   const readOnlyTask = Boolean(
     isEditing &&
       task?.isLocked &&
@@ -682,9 +683,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const verifyUnlockPin = async () => {
-    if (!task?.taskId || !task.lockPinHash) return;
-    const h = await hashLockPin(unlockAttempt, task.taskId);
-    if (h === task.lockPinHash) {
+    if (!task?.taskId || !task.hasLockPin) return;
+    const ok = await verifyTaskLockPin(task.taskId, unlockAttempt);
+    if (ok) {
       setTaskLockUnlockedInSession(task.taskId);
       setPinUnlockedSession(true);
       setShowUnlockGate(false);
@@ -1570,7 +1571,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setLockPinConfirm(e.target.value)}
                       className="h-8 text-xs"
                     />
-                    {task?.lockPinHash && (
+                    {task?.hasLockPin && (
                       <p className="text-[11px] text-muted-foreground">
                         A PIN is already set. Save with blank fields to keep it, or enter a new one to replace it.
                       </p>

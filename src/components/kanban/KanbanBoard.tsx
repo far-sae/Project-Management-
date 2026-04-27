@@ -149,7 +149,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     (t: Task) => {
       if (!t.isLocked) return true;
       if (canOverrideTaskLock) return true;
-      if (t.lockPinHash && isTaskLockUnlockedInSession(t.taskId)) return true;
+      if (t.hasLockPin && isTaskLockUnlockedInSession(t.taskId)) return true;
       return false;
     },
     [canOverrideTaskLock],
@@ -684,7 +684,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         if (
           selectedTask.isLocked &&
           !canOverrideTaskLock &&
-          (!selectedTask.lockPinHash ||
+          (!selectedTask.hasLockPin ||
             !isTaskLockUnlockedInSession(selectedTask.taskId))
         ) {
           throw new Error(

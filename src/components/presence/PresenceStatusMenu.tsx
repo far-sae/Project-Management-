@@ -149,6 +149,7 @@ export const PresenceStatusAvatarMenu: React.FC<PresenceStatusMenuProps & { clas
             className,
           )}
           title="Your status in this project"
+          aria-label="Your status in this project"
         >
           <Avatar className="h-8 w-8 ring-2 ring-border">
             <AvatarImage src={user?.photoURL || undefined} alt={user?.displayName || ''} />

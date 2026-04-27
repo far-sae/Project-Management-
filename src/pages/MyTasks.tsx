@@ -27,15 +27,17 @@ import {
 import { useAllTasks } from '@/hooks/useAllTasks';
 import { useProjects } from '@/hooks/useProjects';
 import { useOrganization } from '@/context/OrganizationContext';
-import {
-  hashLockPin,
-  isTaskLockUnlockedInSession,
-  setTaskLockUnlockedInSession,
-} from '@/lib/taskLockPin';
+import { isTaskLockUnlockedInSession, setTaskLockUnlockedInSession } from '@/lib/taskLockPin';
 import { useAuth } from '@/context/AuthContext';
 import { Task, TaskComment, TaskSubtask, UpdateTaskInput } from '@/types';
 import { TaskModal } from '@/components/kanban/TaskModal';
-import { updateTask, addCommentWithGlobalSync, subscribeToComments, createDueReminderNotifications } from '@/services/supabase/database';
+import {
+  updateTask,
+  addCommentWithGlobalSync,
+  subscribeToComments,
+  createDueReminderNotifications,
+  verifyTaskLockPin,
+} from '@/services/supabase/database';
 import { uploadCommentAttachment } from '@/services/supabase/storage';
 import { cn } from '@/lib/utils';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
@@ -94,7 +96,7 @@ export const MyTasks: React.FC = () => {
     (t: Task) =>
       Boolean(
         t.isLocked &&
-          t.lockPinHash &&
+          t.hasLockPin &&
           !canOverrideTaskLock(t) &&
           !isTaskLockUnlockedInSession(t.taskId),
       ),
@@ -107,9 +109,9 @@ export const MyTasks: React.FC = () => {
   }, [selectedTask?.taskId]);
 
   const handleMyTasksUnlock = useCallback(async () => {
-    if (!selectedTask?.lockPinHash) return;
-    const h = await hashLockPin(myTasksPin, selectedTask.taskId);
-    if (h === selectedTask.lockPinHash) {
+    if (!selectedTask?.hasLockPin) return;
+    const ok = await verifyTaskLockPin(selectedTask.taskId, myTasksPin);
+    if (ok) {
       setTaskLockUnlockedInSession(selectedTask.taskId);
       setMyTasksPin('');
       setMyTasksPinError(false);

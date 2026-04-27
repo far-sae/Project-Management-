@@ -9,7 +9,7 @@ comment on column public.projects.lock_pin_version is 'Increments when lock_pin_
 
 update public.projects
 set lock_pin_version = greatest(lock_pin_version, 1)
-where lock_pin_hash is not null
+where coalesce(btrim(lock_pin_hash), '') <> ''
   and lock_pin_version = 0;
 
 create or replace function public.projects_touch_lock_version()
@@ -17,14 +17,16 @@ returns trigger
 language plpgsql
 as $fn$
 begin
-  if tg_op = 'insert' then
+  if TG_OP = 'INSERT' then
     if new.lock_pin_hash is not null and btrim(new.lock_pin_hash) <> '' then
       new.lock_pin_version := greatest(coalesce(new.lock_pin_version, 0), 1);
     end if;
     return new;
   end if;
-  if old.lock_pin_hash is distinct from new.lock_pin_hash then
-    new.lock_pin_version := coalesce(old.lock_pin_version, 0) + 1;
+  if TG_OP = 'UPDATE' then
+    if old.lock_pin_hash is distinct from new.lock_pin_hash then
+      new.lock_pin_version := coalesce(old.lock_pin_version, 0) + 1;
+    end if;
   end if;
   return new;
 end;

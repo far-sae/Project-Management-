@@ -18,6 +18,10 @@ import { sendTaskAssignedEmail } from "@/services/email/taskAssignedEmail";
 import { isAppOwner } from "@/lib/app-owner";
 import { INDIA_PRICING } from "@/types/subscription";
 
+/** Project columns safe for the browser—never includes lock_pin_hash. Requires migration 019 (has_lock_pin). */
+const PROJECTS_SAFE_SELECT =
+  "project_id, name, description, cover_color, owner_id, organization_id, workspace_id, created_by, members, columns, created_at, updated_at, start_date, end_date, settings, stats, is_locked, lock_pin_version, has_lock_pin";
+
 // ============================================
 // LIMIT HELPERS
 // ============================================
@@ -335,7 +339,7 @@ export const createProject = async (
   const { data, error } = await supabase
     .from("projects")
     .insert(project)
-    .select()
+    .select(PROJECTS_SAFE_SELECT)
     .single();
 
   if (error) {
@@ -368,7 +372,7 @@ export const createProject = async (
     startDate: data.start_date ? new Date(data.start_date) : null,
     endDate: data.end_date ? new Date(data.end_date) : null,
     isLocked: data.is_locked ?? false,
-    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
+    hasLockPin: Boolean(data.has_lock_pin),
     lockPinVersion:
       typeof data.lock_pin_version === "number" ? data.lock_pin_version : 0,
   } as Project;
@@ -423,7 +427,7 @@ const convertToProject = (data: any): Project => {
     startDate: data.start_date ? new Date(data.start_date) : null,
     endDate: data.end_date ? new Date(data.end_date) : null,
     isLocked: data.is_locked ?? false,
-    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
+    hasLockPin: Boolean(data.has_lock_pin),
     lockPinVersion:
       typeof data.lock_pin_version === "number" ? data.lock_pin_version : 0,
   };
@@ -445,6 +449,21 @@ export const verifyProjectLockPin = async (
   return data === true;
 };
 
+export const verifyTaskLockPin = async (
+  taskId: string,
+  pinPlain: string,
+): Promise<boolean> => {
+  const { data, error } = await supabase.rpc("verify_task_lock_pin", {
+    p_task_id: taskId,
+    p_pin: pinPlain,
+  });
+  if (error) {
+    logger.error("verify_task_lock_pin failed:", error);
+    return false;
+  }
+  return data === true;
+};
+
 export const getProject = async (
   projectId: string,
   organizationId: string,
@@ -453,7 +472,7 @@ export const getProject = async (
 ): Promise<Project | null> => {
   let query = supabase
     .from("projects")
-    .select("*")
+    .select(PROJECTS_SAFE_SELECT)
     .eq("project_id", projectId);
 
   if (organizationId && !organizationId.startsWith("local-")) {
@@ -467,7 +486,7 @@ export const getProject = async (
   if (!data && userId) {
     const retry = await supabase
       .from("projects")
-      .select("*")
+      .select(PROJECTS_SAFE_SELECT)
       .eq("project_id", projectId)
       .maybeSingle();
     data = retry.data;
@@ -499,7 +518,7 @@ export const getUserProjects = async (
 ): Promise<Project[]> => {
   const { data: ownerProjects, error: ownerError } = await supabase
     .from("projects")
-    .select("*")
+    .select(PROJECTS_SAFE_SELECT)
     .eq("owner_id", userId);
 
   if (ownerError) console.error("Failed to fetch owner projects:", ownerError);
@@ -509,14 +528,14 @@ export const getUserProjects = async (
 
   const { data: memberProjects, error: memberError } = await supabase
     .from("projects")
-    .select("*")
+    .select(PROJECTS_SAFE_SELECT)
     .filter("members", "cs", memberContains);
 
   if (memberError) console.error("Failed to fetch member projects:", memberError);
 
   const { data: legacyMemberProjects, error: legacyMemberError } = await supabase
     .from("projects")
-    .select("*")
+    .select(PROJECTS_SAFE_SELECT)
     .filter("members", "cs", legacyMemberContains);
 
   if (legacyMemberError) {
@@ -541,6 +560,37 @@ export const updateProject = async (
   input: UpdateProjectInput,
   organizationId: string,
 ): Promise<void> => {
+  const touchesProjectLock =
+    input.isLocked !== undefined || input.lockPinHash !== undefined;
+  if (touchesProjectLock) {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    if (!authUser?.id) {
+      throw new Error("User not authenticated");
+    }
+    let ownerQuery = supabase
+      .from("projects")
+      .select("owner_id")
+      .eq("project_id", projectId);
+    if (organizationId && !organizationId.startsWith("local-")) {
+      ownerQuery = ownerQuery.eq("organization_id", organizationId);
+    }
+    const { data: row, error: ownerFetchError } = await ownerQuery.maybeSingle();
+    if (ownerFetchError) {
+      logger.error("updateProject: owner check failed:", ownerFetchError);
+      throw ownerFetchError;
+    }
+    if (!row) {
+      throw new Error("Project not found");
+    }
+    if (String(row.owner_id) !== String(authUser.id)) {
+      throw new Error(
+        "Only the project owner can change lock or PIN settings.",
+      );
+    }
+  }
+
   const updateData: any = { updated_at: new Date().toISOString() };
 
   if (input.name) updateData.name = input.name;
@@ -748,7 +798,7 @@ export const createTask = async (
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
     isLocked: data.is_locked || false,
-    lockPinHash: data.lock_pin_hash ?? null,
+    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -788,7 +838,7 @@ export const getTask = async (
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
     isLocked: data.is_locked || false,
-    lockPinHash: data.lock_pin_hash ?? null,
+    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -837,6 +887,7 @@ export const getProjectTasks = async (
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
     isLocked: task.is_locked || false,
+    hasLockPin: Boolean(task.is_locked && task.lock_pin_hash),
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -895,7 +946,7 @@ export const getOrganizationTasks = async (
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
     isLocked: task.is_locked || false,
-    lockPinHash: task.lock_pin_hash ?? null,
+    hasLockPin: Boolean(task.is_locked && task.lock_pin_hash),
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -1116,9 +1167,10 @@ export const getTasksAssignedToUser = async (
     assignees: task.assignees || [],
     tags: task.tags || [],
     subtasks: task.subtasks || [],
+    parentTaskId: task.parent_task_id,
     urgent: task.urgent,
     isLocked: task.is_locked || false,
-    lockPinHash: task.lock_pin_hash ?? null,
+    hasLockPin: Boolean(task.is_locked && task.lock_pin_hash),
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,

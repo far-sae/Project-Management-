@@ -1456,7 +1456,8 @@ export const Dashboard: React.FC = () => {
                     Lock with PIN
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Members (not the owner) must enter this PIN to open the project. Org admins can always open.
+                    Only you (the project owner) can set or change this PIN. Everyone with access—including
+                    you—must enter it to open the project in each browser session.
                   </p>
                 </div>
                 <Switch
