@@ -45,6 +45,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { isTaskLockUnlockedInSession } from '@/lib/taskLockPin';
 
 export type TaskSortOption = 'manual' | 'priority' | 'due' | 'recent';
 
@@ -493,9 +494,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       delete cleanInput.subtasks;
 
       if (selectedTask) {
-        if (selectedTask.isLocked && !canOverrideTaskLock) {
+        if (
+          selectedTask.isLocked &&
+          !canOverrideTaskLock &&
+          (!selectedTask.lockPinHash ||
+            !isTaskLockUnlockedInSession(selectedTask.taskId))
+        ) {
           throw new Error(
-            'This task is locked. Only the project owner or an admin can edit it.',
+            'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
           );
         }
         const updatePayload = { ...cleanInput } as UpdateTaskInput & {
@@ -550,6 +556,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             payloadSubtasks && payloadSubtasks.length > 0 ? payloadSubtasks : undefined,
           urgent: base.urgent,
           isLocked: base.isLocked,
+          lockPinHash: base.lockPinHash,
           projectName: base.projectName,
           createdByDisplayName: base.createdByDisplayName,
           createdByPhotoURL: base.createdByPhotoURL,

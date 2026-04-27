@@ -398,7 +398,7 @@ export const MyTasks: React.FC = () => {
       <Sidebar />
       <main className="flex-1 overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="border-b bg-white px-6 py-4">
+        <div className="border-b bg-card px-6 py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <p className="text-sm text-gray-600">
               Hi, <span className="font-medium">{user?.email || 'User'}.</span>{' '}
@@ -436,8 +436,8 @@ export const MyTasks: React.FC = () => {
 
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel */}
-          <div className="w-1/2 border-r overflow-y-auto bg-white">
-            <div className="sticky top-0 bg-white border-b z-10">
+          <div className="w-1/2 border-r overflow-y-auto bg-card">
+            <div className="sticky top-0 bg-card border-b z-10">
               <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'mytasks' | 'updates')}>
                 <div className="px-4 pt-2">
                   <TabsList className="h-9 bg-transparent p-0 gap-4">
@@ -627,7 +627,7 @@ export const MyTasks: React.FC = () => {
           </div>
 
           {/* Right Panel - Task Detail */}
-          <div className="w-1/2 overflow-y-auto bg-white">
+          <div className="w-1/2 overflow-y-auto bg-card">
             {selectedTask ? (
               <div className="p-6 space-y-6">
                 <div className="flex items-start gap-3">

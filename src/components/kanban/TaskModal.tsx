@@ -37,15 +37,21 @@ import {
   Trash2, Loader2, Sparkles, Wand2, MessageSquare,
   ListTree, Paperclip, X, Check, Circle, Activity, Clock,
   CheckCircle2, Lock, MoreHorizontal, Bell, Mail, Link2,
-  AlertTriangle, Save,
+  AlertTriangle, Save, KeyRound,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { supabase } from '@/services/supabase';
 import {
   isAIEnabled, expandDescription, refineDescription,
-  suggestPriorityAndDueDate, AIError, SmartSuggestionResponse,
+  suggestPriorityAndDueDate, generateTitle, AIError, SmartSuggestionResponse,
 } from '@/services/ai';
+import {
+  hashLockPin,
+  isTaskLockUnlockedInSession,
+  setTaskLockUnlockedInSession,
+  clearTaskLockUnlockedInSession,
+} from '@/lib/taskLockPin';
 import {
   addCommentWithGlobalSync,
   notifyTaskCommentMentions,
@@ -111,6 +117,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [assignees, setAssignees] = useState<TaskAssignee[]>([]);
   const [urgent, setUrgent] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [lockPinNew, setLockPinNew] = useState('');
+  const [lockPinConfirm, setLockPinConfirm] = useState('');
+  const [pinUnlockedSession, setPinUnlockedSession] = useState(false);
+  const [showUnlockGate, setShowUnlockGate] = useState(false);
+  const [unlockAttempt, setUnlockAttempt] = useState('');
   const [initialComment, setInitialComment] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
@@ -149,7 +160,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return isAdmin;
   }, [user, project?.ownerId, isAdmin]);
 
-  const readOnlyTask = Boolean(isEditing && task?.isLocked && !canOverrideTaskLock);
+  const hasLockPin = Boolean(task?.lockPinHash);
+  const readOnlyTask = Boolean(
+    isEditing &&
+      task?.isLocked &&
+      !canOverrideTaskLock &&
+      !(hasLockPin && pinUnlockedSession),
+  );
 
   const [activityRefetchNonce, setActivityRefetchNonce] = useState(0);
 
@@ -201,6 +218,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setSaveError(null);
     setLastSavedAt(null);
   }, [task, initialStatus]);
+
+  useEffect(() => {
+    if (!task?.taskId) {
+      setPinUnlockedSession(false);
+      return;
+    }
+    setPinUnlockedSession(isTaskLockUnlockedInSession(task.taskId));
+  }, [task?.taskId, open]);
+
+  useEffect(() => {
+    setLockPinNew('');
+    setLockPinConfirm('');
+    setUnlockAttempt('');
+    setShowUnlockGate(false);
+  }, [task?.taskId, open]);
 
   useEffect(() => {
     if (!open || !task?.taskId || !orgId) {
@@ -391,6 +423,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
+  const handleGenerateTitleFromDescription = async () => {
+    if (!description.trim() || description.trim().length < 10 || !user) return;
+    setAiLoading((p) => ({ ...p, description: true }));
+    setAiError(null);
+    try {
+      const result = await generateTitle(user.userId, {
+        description: description.trim(),
+        projectContext: projectName,
+      });
+      setTitle(result.title);
+      markOnboardingAi();
+      toast.success('Title updated from description');
+    } catch (error) {
+      setAiError((error as AIError).message);
+    } finally {
+      setAiLoading((p) => ({ ...p, description: false }));
+    }
+  };
+
   const handleApplySuggestions = () => {
     if (!aiSuggestion) return;
     setPriority(aiSuggestion.priority);
@@ -500,6 +551,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setSaveError(null);
     setLoading(true);
     try {
+      let lockPinHashPayload: string | null | undefined = undefined;
+      if (!isLocked) {
+        lockPinHashPayload = null;
+        if (isEditing && task?.taskId) clearTaskLockUnlockedInSession(task.taskId);
+      } else if (isEditing && lockPinNew.trim()) {
+        if (lockPinNew !== lockPinConfirm) {
+          toast.error('PIN and confirmation do not match');
+          setLoading(false);
+          return;
+        }
+        lockPinHashPayload = await hashLockPin(lockPinNew, task!.taskId);
+      } else if (!isEditing && lockPinNew.trim()) {
+        toast.info('Save the task first, then open it again to set a lock PIN.');
+        setLoading(false);
+        return;
+      }
+
       const basePayload = {
         title,
         description,
@@ -511,6 +579,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         subtasks: subtasks.length > 0 ? subtasks : undefined,
         urgent,
         isLocked,
+        ...(lockPinHashPayload !== undefined
+          ? { lockPinHash: lockPinHashPayload }
+          : {}),
       };
 
       if (isEditing) {
@@ -589,14 +660,28 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
+  const verifyUnlockPin = async () => {
+    if (!task?.taskId || !task.lockPinHash) return;
+    const h = await hashLockPin(unlockAttempt, task.taskId);
+    if (h === task.lockPinHash) {
+      setTaskLockUnlockedInSession(task.taskId);
+      setPinUnlockedSession(true);
+      setShowUnlockGate(false);
+      setUnlockAttempt('');
+      toast.success('Unlocked — you can edit this task');
+    } else {
+      toast.error('Incorrect PIN');
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent
-        className="sm:max-w-[1024px] max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0"
+        className="sm:max-w-[1024px] max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 [&>button]:top-3.5"
         aria-describedby={undefined}
       >
         {/* ── Header ──────────────────────────────────────── */}
-        <DialogHeader className="px-5 py-3 border-b border-border space-y-0">
+        <DialogHeader className="px-5 py-3 pr-14 border-b border-border space-y-0">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -623,7 +708,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 shrink-0 h-9">
               {peersOnTask.length > 0 && (
                 <div
                   className="hidden sm:flex items-center gap-1 mr-2"
@@ -668,7 +753,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  className="h-9 w-9 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
                   onClick={() => setShowNotifyModal(true)}
                   title="Notify team members"
                 >
@@ -678,7 +763,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="h-9 w-9 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
                 onClick={copyTaskUrl}
                 disabled={!task}
                 title="Copy task URL"
@@ -691,7 +776,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      className="h-9 w-9 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
                     >
                       <MoreHorizontal className="w-4 h-4" />
                     </Button>
@@ -707,6 +792,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         >
                           <Sparkles className="w-4 h-4 mr-2 text-primary" />
                           AI: priority &amp; due date
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={handleGenerateTitleFromDescription}
+                          disabled={
+                            readOnlyTask ||
+                            description.trim().length < 10 ||
+                            aiLoading.description
+                          }
+                        >
+                          <Sparkles className="w-4 h-4 mr-2 text-primary" />
+                          AI: title from description
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={handleExpandDescription}
@@ -757,9 +853,29 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         )}
 
         {readOnlyTask && (
-          <div className="mx-5 mt-3 p-2.5 rounded-md text-sm flex items-center gap-2 bg-secondary border border-border text-foreground">
+          <div className="mx-5 mt-3 p-2.5 rounded-md text-sm flex flex-wrap items-center gap-2 bg-secondary border border-border text-foreground">
             <Lock className="w-4 h-4 shrink-0 text-warning" />
-            This task is locked. Only the project owner or a workspace admin can make changes.
+            {hasLockPin ? (
+              <>
+                <span className="flex-1 min-w-[200px]">
+                  This task is locked with a PIN. Enter it to edit (this device only until you clear browser data).
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0 gap-1"
+                  onClick={() => setShowUnlockGate(true)}
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  Enter PIN
+                </Button>
+              </>
+            ) : (
+              <span>
+                This task is locked. Only the project owner or a workspace admin can make changes.
+              </span>
+            )}
           </div>
         )}
 
@@ -1374,6 +1490,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <Lock className="w-4 h-4 text-warning" />
                   <span className="text-foreground">Lock (sensitive)</span>
                 </label>
+                {isEditing && isLocked && canOverrideTaskLock && (
+                  <div className="mt-2 space-y-2 pl-2 border-l-2 border-border">
+                    <p className="text-[11px] text-muted-foreground">
+                      Optional PIN so assignees can unlock and edit on this task. Leave blank to keep the current PIN.
+                    </p>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="New PIN"
+                      value={lockPinNew}
+                      onChange={(e) => setLockPinNew(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Confirm PIN"
+                      value={lockPinConfirm}
+                      onChange={(e) => setLockPinConfirm(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                    {task?.lockPinHash && (
+                      <p className="text-[11px] text-muted-foreground">
+                        A PIN is already set. Save with blank fields to keep it, or enter a new one to replace it.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {!isEditing && isLocked && (
+                  <p className="text-[11px] text-muted-foreground mt-1 pl-2">
+                    After you create the task, open it again to add an optional PIN for collaborators.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1529,6 +1678,44 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 }}
               >
                 Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={showUnlockGate} onOpenChange={setShowUnlockGate}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5" />
+                Unlock task
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Enter the PIN set by a project owner or admin for this locked task.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder="PIN"
+              value={unlockAttempt}
+              onChange={(e) => setUnlockAttempt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void verifyUnlockPin();
+              }}
+              className="mt-2"
+            />
+            <AlertDialogFooter className="mt-4">
+              <AlertDialogCancel onClick={() => { setShowUnlockGate(false); setUnlockAttempt(''); }}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void verifyUnlockPin();
+                }}
+              >
+                Unlock
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

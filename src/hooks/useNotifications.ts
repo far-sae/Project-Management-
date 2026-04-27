@@ -5,15 +5,40 @@ import {
   subscribeToUserNotifications,
   markNotificationRead as markRead,
 } from "@/services/supabase/database";
+import { supabase } from "@/services/supabase/config";
 
 export const useNotifications = (userId: string | null, limit = 30) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const fetchErrorToastShown = useRef(false);
+  const [effectiveUserId, setEffectiveUserId] = useState<string | null>(userId);
+
+  useEffect(() => {
+    setEffectiveUserId(userId);
+  }, [userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+      const authId = session?.user?.id ?? null;
+      setEffectiveUserId(authId ?? userId);
+    })();
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      const authId = session?.user?.id ?? null;
+      setEffectiveUserId(authId ?? userId);
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [userId]);
 
   // Subscribe to notifications so the bell updates in real time when new ones are created
   useEffect(() => {
-    if (!userId) {
+    const uid = effectiveUserId;
+    if (!uid) {
       setNotifications([]);
       setLoading(false);
       return;
@@ -22,7 +47,7 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     fetchErrorToastShown.current = false;
     setLoading(true);
     const unsub = subscribeToUserNotifications(
-      userId,
+      uid,
       (data) => {
         setNotifications(data);
         setLoading(false);
@@ -41,26 +66,28 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     return () => {
       unsub();
     };
-  }, [userId, limit]);
+  }, [effectiveUserId, limit]);
 
   const fetchNotifications = useCallback(async () => {
-    if (!userId) return;
+    const uid = effectiveUserId;
+    if (!uid) return;
     setLoading(true);
     try {
       const { fetchUserNotifications } = await import("@/services/supabase/database");
-      const data = await fetchUserNotifications(userId, limit);
+      const data = await fetchUserNotifications(uid, limit);
       setNotifications(data);
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
       setLoading(false);
     }
-  }, [userId, limit]);
+  }, [effectiveUserId, limit]);
 
   const markAsRead = async (notificationId: string) => {
-    if (!userId) return;
+    const uid = effectiveUserId;
+    if (!uid) return;
     try {
-      await markRead(userId, notificationId);
+      await markRead(uid, notificationId);
       // Update local state
       setNotifications((prev) =>
         prev.map((n) =>

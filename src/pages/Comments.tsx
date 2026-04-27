@@ -57,8 +57,8 @@ export const Comments: React.FC = () => {
       <div className="flex h-screen bg-background">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Comments</h1>
-          <p className="text-gray-500">Sign in to view your task comments.</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Comments</h1>
+          <p className="text-muted-foreground">Sign in to view your task comments.</p>
         </main>
       </div>
     );
@@ -70,8 +70,8 @@ export const Comments: React.FC = () => {
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Comments</h1>
-          <p className="text-gray-500">View all comments across your projects</p>
+          <h1 className="text-3xl font-bold text-foreground">Comments</h1>
+          <p className="text-muted-foreground">View all comments across your projects</p>
         </div>
 
         <Card>
@@ -79,7 +79,7 @@ export const Comments: React.FC = () => {
             <CardTitle>
               Recent Comments
               {filteredComments.length > 0 && (
-                <span className="ml-2 text-sm font-normal text-gray-500">
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
                   ({filteredComments.length} total)
                 </span>
               )}
@@ -94,13 +94,13 @@ export const Comments: React.FC = () => {
               </Alert>
             )}
             {loading ? (
-              <div className="text-center py-16 text-gray-500">
-                <Loader2 className="w-12 h-12 mx-auto mb-4 text-gray-300 animate-spin" />
+              <div className="text-center py-16 text-muted-foreground">
+                <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50 animate-spin" />
                 <p className="text-lg font-medium">Loading comments...</p>
               </div>
             ) : filteredComments.length === 0 ? (
-              <div className="text-center py-16 text-gray-500">
-                <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+              <div className="text-center py-16 text-muted-foreground">
+                <MessageSquare className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
                 <p className="text-lg font-medium">No comments yet</p>
                 <p className="text-sm">Comments on tasks will appear here</p>
               </div>
@@ -109,7 +109,7 @@ export const Comments: React.FC = () => {
                 {filteredComments.map((comment) => (
                   <div
                     key={comment.commentId}
-                    className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer group"
+                    className="p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group"
                     onClick={() => handleCommentClick(comment)}
                   >
                     <div className="flex items-start gap-3">
@@ -126,7 +126,7 @@ export const Comments: React.FC = () => {
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center flex-wrap gap-2 mb-1">
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-foreground">
                             {comment.displayName}
                           </span>
                           <span className="text-gray-400">commented on</span>
@@ -134,7 +134,7 @@ export const Comments: React.FC = () => {
                             {comment.taskTitle}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-500 mb-2">
+                        <div className="text-xs text-muted-foreground mb-2">
                           in <span className="font-medium">{comment.projectName}</span>
                         </div>
                         {comment.text?.trim() ? (
@@ -147,7 +147,7 @@ export const Comments: React.FC = () => {
                           />
                         )}
                         <div className="mt-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Clock className="w-3 h-3" />
                             {formatDistanceToNow(new Date(comment.createdAt), {
                               addSuffix: true,
@@ -197,11 +197,11 @@ export const Comments: React.FC = () => {
                     Commented on <strong>{selectedComment.taskTitle}</strong> in <strong>{selectedComment.projectName}</strong>
                   </p>
                   {selectedComment.text?.trim() && (
-                    <div className="bg-gray-50 p-3 rounded text-sm text-gray-800">
+                    <div className="bg-gray-50 p-3 rounded text-sm text-foreground">
                       {selectedComment.text}
                     </div>
                   )}
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Clock className="w-3 h-3" />
                     {formatDistanceToNow(new Date(selectedComment.createdAt), { addSuffix: true })}
                     {selectedComment.isEdited && (

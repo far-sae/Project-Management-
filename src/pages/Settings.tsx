@@ -74,6 +74,7 @@ export const Settings: React.FC = () => {
     taskAssigned: true,
     taskCompleted: true,
     projectUpdates: true,
+    projectChatMessage: true,
   });
 
   useEffect(() => {
@@ -83,8 +84,14 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(NOTIFICATIONS_KEY);
-      if (stored)
-        setNotifications((prev) => ({ ...prev, ...JSON.parse(stored) }));
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, boolean>;
+        setNotifications((prev) => ({
+          ...prev,
+          ...parsed,
+          projectChatMessage: parsed.projectChatMessage !== false,
+        }));
+      }
     } catch {}
   }, []);
 
@@ -436,16 +443,21 @@ export const Settings: React.FC = () => {
                       label: "Project Updates",
                       desc: "Updates about your projects",
                     },
+                    {
+                      key: "projectChatMessage",
+                      label: "Project chat",
+                      desc: "When someone posts in a project chat you belong to",
+                    },
                   ] as const
                 ).map(({ key, label, desc }, i, arr) => (
                   <React.Fragment key={key}>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">{label}</p>
-                        <p className="text-sm text-gray-500">{desc}</p>
+                        <p className="text-sm text-muted-foreground">{desc}</p>
                       </div>
                       <Switch
-                        checked={notifications[key]}
+                        checked={notifications[key as keyof typeof notifications] !== false}
                         onCheckedChange={(checked) =>
                           handleNotificationChange(key, checked)
                         }
@@ -454,7 +466,7 @@ export const Settings: React.FC = () => {
                     {i < arr.length - 1 && <Separator />}
                   </React.Fragment>
                 ))}
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Your preferences are saved automatically.
                 </p>
               </CardContent>

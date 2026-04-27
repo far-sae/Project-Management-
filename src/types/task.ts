@@ -50,6 +50,8 @@ export interface Task {
   urgent?: boolean;
   /** When true, only creator, assignees, and project owner can see this task */
   isLocked?: boolean;
+  /** SHA-256 hex; optional PIN gate for editing when locked (see hashLockPin). */
+  lockPinHash?: string | null;
   position: number;
   attachments: TaskAttachment[];
   commentsCount: number;
@@ -114,6 +116,7 @@ export interface CreateTaskInput {
   parentTaskId?: string | null;
   urgent?: boolean;
   isLocked?: boolean;
+  lockPinHash?: string | null;
   /** For activity log (task_created) */
   projectName?: string;
   createdByDisplayName?: string;
@@ -133,6 +136,7 @@ export interface UpdateTaskInput {
   parentTaskId?: string | null;
   urgent?: boolean;
   isLocked?: boolean;
+  lockPinHash?: string | null;
   position?: number;
   /** For activity log (subtask_created / subtask_done) */
   activityBy?: { userId: string; displayName: string; photoURL?: string };

@@ -682,6 +682,7 @@ export const createTask = async (
     parent_task_id: input.parentTaskId || null,
     urgent: input.urgent || false,
     is_locked: input.isLocked || false,
+    lock_pin_hash: input.lockPinHash ?? null,
     position,
     attachments: input.attachments || [],
     comments_count: 0,
@@ -718,6 +719,7 @@ export const createTask = async (
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
     isLocked: data.is_locked || false,
+    lockPinHash: data.lock_pin_hash ?? null,
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -757,6 +759,7 @@ export const getTask = async (
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
     isLocked: data.is_locked || false,
+    lockPinHash: data.lock_pin_hash ?? null,
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -863,6 +866,7 @@ export const getOrganizationTasks = async (
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
     isLocked: task.is_locked || false,
+    lockPinHash: task.lock_pin_hash ?? null,
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -1084,6 +1088,7 @@ export const getTasksAssignedToUser = async (
     subtasks: task.subtasks || [],
     urgent: task.urgent,
     isLocked: task.is_locked || false,
+    lockPinHash: task.lock_pin_hash ?? null,
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -1593,7 +1598,7 @@ export const notifyTaskCommentMentions = async (params: {
   }
 };
 
-/** @mentions in project chat (no task link). */
+/** @mentions in project chat (no task link). Returns user IDs notified. */
 export const notifyProjectChatMentions = async (params: {
   text: string;
   members: { userId: string; displayName: string; email: string }[];
@@ -1601,7 +1606,7 @@ export const notifyProjectChatMentions = async (params: {
   actorDisplayName: string;
   projectId: string;
   projectName: string;
-}): Promise<void> => {
+}): Promise<string[]> => {
   const { text, members, actorUserId, actorDisplayName, projectId, projectName } =
     params;
   const ids = findMentionedUserIdsFromText(text, members, actorUserId);
@@ -1615,6 +1620,36 @@ export const notifyProjectChatMentions = async (params: {
       actorUserId,
       actorDisplayName,
     }).catch((e) => logger.warn("project_chat mention:", e));
+  }
+  return ids;
+};
+
+/** Notify project members about a new chat message (excluding author and optional skips). */
+export const notifyProjectChatMessageToMembers = async (params: {
+  projectId: string;
+  projectName: string;
+  actorUserId: string;
+  actorDisplayName: string;
+  body: string;
+  memberUserIds: string[];
+  skipUserIds: string[];
+}): Promise<void> => {
+  const skip = new Set(params.skipUserIds.filter(Boolean));
+  const preview =
+    params.body.length > 140
+      ? `${params.body.slice(0, 137)}…`
+      : params.body;
+  for (const userId of params.memberUserIds) {
+    if (!userId || userId === params.actorUserId || skip.has(userId)) continue;
+    await createNotification({
+      userId,
+      type: "project_chat_message",
+      title: `Chat: ${params.projectName}`,
+      body: `${params.actorDisplayName}: ${preview}`,
+      projectId: params.projectId,
+      actorUserId: params.actorUserId,
+      actorDisplayName: params.actorDisplayName,
+    }).catch((e) => logger.warn("project_chat broadcast:", e));
   }
 };
 

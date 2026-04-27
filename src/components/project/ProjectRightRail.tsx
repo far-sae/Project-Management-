@@ -26,6 +26,7 @@ import {
   subscribeToProjectChat,
   insertProjectChatMessage,
   notifyProjectChatMentions,
+  notifyProjectChatMessageToMembers,
   type ProjectChatMessage,
 } from '@/services/supabase/database';
 import { toast } from 'sonner';
@@ -181,13 +182,25 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         body,
         taskId: null,
       });
-      void notifyProjectChatMentions({
+      const mentionedIds = await notifyProjectChatMentions({
         text: body,
         members: mentionMembers,
         actorUserId: user.userId,
         actorDisplayName: user.displayName || user.email || 'User',
         projectId: project.projectId,
         projectName: project.name,
+      });
+      const memberIds = dedupedMembers
+        .map((m) => m.userId)
+        .filter((id): id is string => Boolean(id));
+      void notifyProjectChatMessageToMembers({
+        projectId: project.projectId,
+        projectName: project.name,
+        actorUserId: user.userId,
+        actorDisplayName: user.displayName || user.email || 'User',
+        body,
+        memberUserIds: memberIds,
+        skipUserIds: [user.userId, ...mentionedIds],
       });
       setChatInput('');
     } catch (e) {
@@ -202,6 +215,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     project.organizationId,
     project.name,
     mentionMembers,
+    dedupedMembers,
   ]);
 
   const membersSection = (

@@ -567,12 +567,13 @@ export const Dashboard: React.FC = () => {
         )}
 
         <div className="p-8 animate-fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-primary/[0.07] via-card to-card p-6 sm:p-8 mb-8 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-foreground">
                 Welcome back, {user?.displayName?.split(' ')[0]}!
               </h1>
-              <p className="text-muted-foreground">Your command center – tasks, activity, and projects</p>
+              <p className="text-muted-foreground mt-1">Your command center – tasks, activity, and projects</p>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
@@ -647,6 +648,7 @@ export const Dashboard: React.FC = () => {
                 New Project
               </Button>
             </div>
+          </div>
           </div>
 
           <div className="mb-6">

@@ -35,7 +35,7 @@ const OWNER_EMAIL = 'smtkur31@gmail.com';
 
 export const Team: React.FC = () => {
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, refreshOrganization } = useOrganization();
   const { projects, refreshProjects } = useProjects();
   const { hasFeature, currentTier, pricing } = useSubscription();
   const navigate = useNavigate();
@@ -148,7 +148,12 @@ export const Team: React.FC = () => {
       }
 
       const ownerId = projectRow?.owner_id || selectedProjectData?.ownerId || null;
-      const membersFromProject = (projectRow?.members || selectedProjectData?.members || []) as Array<any>;
+      // Prefer DB row only when fetch succeeded — avoid stale hook cache showing removed members.
+      const membersFromProject = (
+        projectRow != null
+          ? (projectRow.members || [])
+          : (selectedProjectData?.members || [])
+      ) as Array<any>;
       setProjectOwnerId(ownerId);
 
       if (projectOrgId) {
@@ -297,9 +302,9 @@ export const Team: React.FC = () => {
         prev.filter((m) => m.userId !== member.userId),
       );
 
-      refreshProjects();
-
-      loadTeamData();
+      await refreshProjects();
+      await refreshOrganization();
+      await loadTeamData();
     } catch (error) {
       console.error('Error removing member:', error);
       setInfoDialog({
@@ -315,7 +320,7 @@ export const Team: React.FC = () => {
     switch (role) {
       case 'owner': return <Badge className="bg-yellow-100 text-yellow-800"><Crown className="w-3 h-3 mr-1" />Owner</Badge>;
       case 'admin': return <Badge className="bg-purple-100 text-purple-800"><Shield className="w-3 h-3 mr-1" />Admin</Badge>;
-      case 'viewer': return <Badge className="bg-gray-100 text-gray-800"><User className="w-3 h-3 mr-1" />Viewer</Badge>;
+      case 'viewer': return <Badge className="bg-gray-100 text-foreground"><User className="w-3 h-3 mr-1" />Viewer</Badge>;
       default: return <Badge className="bg-blue-100 text-blue-800"><User className="w-3 h-3 mr-1" />Member</Badge>;
     }
   };
@@ -416,15 +421,15 @@ export const Team: React.FC = () => {
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Team</h1>
-            <p className="text-gray-500">Manage your team members and their roles</p>
+            <h1 className="text-3xl font-bold text-foreground">Team</h1>
+            <p className="text-muted-foreground">Manage your team members and their roles</p>
           </div>
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-gray-200 rounded-xl text-center">
+          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center">
             <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
               <Lock className="w-8 h-8 text-orange-500" />
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Team Collaboration</h2>
-            <p className="text-gray-500 mb-2 max-w-md">
+            <h2 className="text-xl font-bold text-foreground mb-2">Team Collaboration</h2>
+            <p className="text-muted-foreground mb-2 max-w-md">
               Invite team members, assign roles, and collaborate on projects together.
             </p>
             <p className="text-sm text-orange-600 font-medium mb-6">
@@ -448,8 +453,8 @@ export const Team: React.FC = () => {
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Team</h1>
-            <p className="text-gray-500">
+            <h1 className="text-3xl font-bold text-foreground">Team</h1>
+            <p className="text-muted-foreground">
               {isProjectOwner && selectedProject
                 ? "As project owner, you can invite team members by email and manage roles."
                 : "Manage your team members and their roles"}
@@ -483,14 +488,14 @@ export const Team: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Total Members</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Members</CardTitle>
               <Users className="w-4 h-4 text-blue-500" />
             </CardHeader>
             <CardContent><div className="text-2xl font-bold">{allMembers.length}</div></CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Admins</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Admins</CardTitle>
               <Shield className="w-4 h-4 text-purple-500" />
             </CardHeader>
             <CardContent>
@@ -501,7 +506,7 @@ export const Team: React.FC = () => {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Pending Invites</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pending Invites</CardTitle>
               <Mail className="w-4 h-4 text-orange-500" />
             </CardHeader>
             <CardContent>
@@ -516,7 +521,7 @@ export const Team: React.FC = () => {
           <CardHeader><CardTitle>Team Members</CardTitle></CardHeader>
           <CardContent>
             {!selectedProject ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                 <p>Select a project to view team members</p>
               </div>
@@ -525,14 +530,14 @@ export const Team: React.FC = () => {
                 <Loader2 className="w-8 h-8 mx-auto animate-spin text-gray-400" />
               </div>
             ) : allMembers.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                 <p>No team members yet</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {allMembers.map((member) => (
-                  <div key={member.userId} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div key={member.userId} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
                     <div className="flex items-center gap-4">
                       <Avatar>
                         <AvatarImage src={member.photoURL} />
@@ -541,13 +546,13 @@ export const Team: React.FC = () => {
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium text-gray-900">
+                        <p className="font-medium text-foreground">
                           {member.displayName}
                           {member.userId === user?.userId && (
-                            <span className="ml-2 text-sm text-gray-500">(You)</span>
+                            <span className="ml-2 text-sm text-muted-foreground">(You)</span>
                           )}
                         </p>
-                        <p className="text-sm text-gray-500">{member.email}</p>
+                        <p className="text-sm text-muted-foreground">{member.email}</p>
                       </div>
                     </div>
 
@@ -590,8 +595,8 @@ export const Team: React.FC = () => {
                           <Mail className="w-5 h-5 text-yellow-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{invitation.inviteeEmail}</p>
-                          <p className="text-sm text-gray-500 flex items-center gap-1">
+                          <p className="font-medium text-foreground">{invitation.inviteeEmail}</p>
+                          <p className="text-sm text-muted-foreground flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             Expires {new Date(invitation.expiresAt).toLocaleDateString()}
                           </p>
@@ -649,7 +654,7 @@ export const Team: React.FC = () => {
                       <div className="flex items-center gap-2"><User className="w-4 h-4 text-blue-500" />Member - Can create and edit tasks</div>
                     </SelectItem>
                     <SelectItem value="viewer">
-                      <div className="flex items-center gap-2"><User className="w-4 h-4 text-gray-500" />Viewer - Read-only access</div>
+                      <div className="flex items-center gap-2"><User className="w-4 h-4 text-muted-foreground" />Viewer - Read-only access</div>
                     </SelectItem>
                   </SelectContent>
                 </Select>

@@ -10,6 +10,7 @@ import {
   Trash2,
   AlarmClock,
   Search,
+  MessageSquare,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -94,6 +95,8 @@ const typeIcon = (type: AppNotification['type']) => {
       return <AlarmClock className="w-4 h-4" />;
     case 'project_invite':
       return <UserPlus className="w-4 h-4" />;
+    case 'project_chat_message':
+      return <MessageSquare className="w-4 h-4" />;
     default:
       return <Bell className="w-4 h-4" />;
   }
