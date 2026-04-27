@@ -48,6 +48,7 @@ import {
   ArrowRight,
   ListTree,
   CheckCircle2,
+  TrendingUp,
   Pencil,
   Files,
   Users,
@@ -136,6 +137,7 @@ export const Dashboard: React.FC = () => {
     upcomingTasks,
     tasksAssignedToMe,
     overdueTasks,
+    tasks,
     loading: tasksLoading,
   } = useAllTasks();
 
@@ -601,6 +603,13 @@ export const Dashboard: React.FC = () => {
   const upcomingTasksInWorkspace = filterTasksByWorkspace(upcomingTasks);
   const tasksAssignedToMeInWorkspace = filterTasksByWorkspace(tasksAssignedToMe);
   const overdueTasksInWorkspace = filterTasksByWorkspace(overdueTasks);
+  const allTasksInWorkspace = filterTasksByWorkspace(tasks);
+  const completedTasksInWorkspace = allTasksInWorkspace.filter((t) => t.status === 'done').length;
+  const completionRate = allTasksInWorkspace.length > 0
+    ? Math.round((completedTasksInWorkspace / allTasksInWorkspace.length) * 100)
+    : 0;
+  const activeProjectsInWorkspace = filteredProjects.filter((p) => p.stats.totalTasks > 0).length;
+  const lockedProjectsInWorkspace = filteredProjects.filter(projectPinLocked).length;
 
   const activityInWorkspace = useMemo(
     () => {
@@ -611,6 +620,7 @@ export const Dashboard: React.FC = () => {
     },
     [activityEvents, workspaceProjectIds, selectedWorkspaceId]
   );
+  const recentActivityInWorkspace = activityInWorkspace.slice(0, 5);
 
   const workspaceListForSelect = useMemo(() => {
     const list: Array<any> = [{
@@ -795,6 +805,89 @@ export const Dashboard: React.FC = () => {
                       {overdueTasksInWorkspace.length}
                     </div>
                     <p className="text-xs text-muted-foreground">Needs attention</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <Card className="xl:col-span-2 overflow-hidden">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-emerald-500" />
+                      Workspace Pulse
+                    </CardTitle>
+                    <CardDescription>
+                      A quick health check across the selected workspace.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                        <p className="text-xs font-medium text-muted-foreground">Completion</p>
+                        <p className="mt-2 text-2xl font-bold text-foreground">{completionRate}%</p>
+                        <div className="mt-3 h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-500"
+                            style={{ width: `${completionRate}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                        <p className="text-xs font-medium text-muted-foreground">Total tasks</p>
+                        <p className="mt-2 text-2xl font-bold text-foreground">{allTasksInWorkspace.length}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">{completedTasksInWorkspace} completed</p>
+                      </div>
+                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                        <p className="text-xs font-medium text-muted-foreground">Active projects</p>
+                        <p className="mt-2 text-2xl font-bold text-foreground">{activeProjectsInWorkspace}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">{filteredProjects.length} visible</p>
+                      </div>
+                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                        <p className="text-xs font-medium text-muted-foreground">Protected</p>
+                        <p className="mt-2 text-2xl font-bold text-foreground">{lockedProjectsInWorkspace}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">PIN locked projects</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-primary" />
+                      Latest Activity
+                    </CardTitle>
+                    <CardDescription>Recent changes in this workspace.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {activityLoading ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : recentActivityInWorkspace.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-4">No recent activity yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {recentActivityInWorkspace.map((ev) => (
+                          <button
+                            key={ev.activityId}
+                            type="button"
+                            onClick={() => navigate(`/project/${ev.projectId}`)}
+                            className="w-full text-left rounded-lg border border-border bg-background/60 p-3 hover:bg-secondary/50 transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {ev.taskTitle || ev.projectName || 'Project activity'}
+                              </p>
+                              <ArrowRight className="w-4 h-4 shrink-0 text-muted-foreground" />
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {ev.displayName} · {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>

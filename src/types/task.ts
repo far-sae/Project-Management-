@@ -103,6 +103,8 @@ export interface GlobalComment {
 }
 
 export interface CreateTaskInput {
+  /** Optional client-generated id, used when a PIN hash must be derived before insert. */
+  taskId?: string;
   projectId: string;
   title: string;
   description?: string;

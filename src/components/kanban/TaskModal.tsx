@@ -154,12 +154,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
   const isEditing = !!task;
-  /** Locked tasks: only project owner or workspace admin may edit (matches KanbanBoard). */
+  /** Locked tasks: project owner, workspace admin, or task creator may manage the lock/PIN. */
   const canOverrideTaskLock = useMemo(() => {
     if (!user) return false;
     if (project?.ownerId === user.userId) return true;
+    if (task?.createdBy === user.userId) return true;
     return isAdmin;
-  }, [user, project?.ownerId, isAdmin]);
+  }, [user, project?.ownerId, task?.createdBy, isAdmin]);
 
   const hasLockPin = Boolean(task?.hasLockPin);
   const readOnlyTask = Boolean(
@@ -573,6 +574,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setLoading(true);
     try {
       let lockPinHashPayload: string | null | undefined = undefined;
+      let createdTaskId: string | undefined;
       if (!isLocked) {
         lockPinHashPayload = null;
         if (isEditing && task?.taskId) clearTaskLockUnlockedInSession(task.taskId);
@@ -584,9 +586,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         }
         lockPinHashPayload = await hashLockPin(lockPinNew, task!.taskId);
       } else if (!isEditing && lockPinNew.trim()) {
-        toast.info('Save the task first, then open it again to set a lock PIN.');
-        setLoading(false);
-        return;
+        if (lockPinNew !== lockPinConfirm) {
+          toast.error('PIN and confirmation do not match');
+          setLoading(false);
+          return;
+        }
+        createdTaskId = crypto.randomUUID();
+        lockPinHashPayload = await hashLockPin(lockPinNew, createdTaskId);
       }
 
       const basePayload = {
@@ -629,6 +635,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         toast.success('Task updated');
       } else {
         await onSave({
+          ...(createdTaskId ? { taskId: createdTaskId } : {}),
           projectId,
           ...basePayload,
           projectName,
@@ -1550,10 +1557,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <Lock className="w-4 h-4 text-warning" />
                   <span className="text-foreground">Lock (sensitive)</span>
                 </label>
-                {isEditing && isLocked && canOverrideTaskLock && (
+                {isLocked && (!isEditing || canOverrideTaskLock) && (
                   <div className="mt-2 space-y-2 pl-2 border-l-2 border-border">
                     <p className="text-[11px] text-muted-foreground">
-                      Optional PIN so assignees can unlock and edit on this task. Leave blank to keep the current PIN.
+                      Optional PIN so assignees can unlock and edit on this task.
+                      {isEditing && ' Leave blank to keep the current PIN.'}
                     </p>
                     <Input
                       type="password"
@@ -1571,7 +1579,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setLockPinConfirm(e.target.value)}
                       className="h-8 text-xs"
                     />
-                    {task?.hasLockPin && (
+                    {isEditing && task?.hasLockPin && (
                       <p className="text-[11px] text-muted-foreground">
                         A PIN is already set. Save with blank fields to keep it, or enter a new one to replace it.
                       </p>
@@ -1580,7 +1588,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 )}
                 {!isEditing && isLocked && (
                   <p className="text-[11px] text-muted-foreground mt-1 pl-2">
-                    After you create the task, open it again to add an optional PIN for collaborators.
+                    Add a PIN now to require collaborators to unlock before editing, or leave blank for owner/assignee-only visibility.
                   </p>
                 )}
               </div>

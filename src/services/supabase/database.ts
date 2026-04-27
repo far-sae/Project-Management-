@@ -691,7 +691,7 @@ export const createTask = async (
   }
 
   const now = new Date().toISOString();
-  const taskId = crypto.randomUUID();
+  const taskId = input.taskId || crypto.randomUUID();
   const priority = input.priority || "medium";
 
   const { data: existingTasks } = await supabase
@@ -1356,11 +1356,16 @@ export const markNotificationRead = async (
   userId: string,
   notificationId: string,
 ): Promise<void> => {
-  await supabase
+  const { error } = await supabase
     .from("notifications")
     .update({ read: true })
     .eq("notification_id", notificationId)
     .eq("user_id", userId);
+  if (error) {
+    throw new Error(
+      `markNotificationRead failed for notificationId=${notificationId}: ${error.message}`,
+    );
+  }
 };
 
 /** Mark every unread notification for the user as read. */
@@ -1539,7 +1544,7 @@ export const createDueReminderNotifications = async (params: {
         body: `"${task.title}" is due in ${projectName} within ${hoursAhead}h`,
         taskId: task.taskId,
         projectId: task.projectId,
-      }).catch(() => {});
+      }).catch((e) => logger.warn("createNotification task_reminder:", e));
     }
   }
 };

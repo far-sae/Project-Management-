@@ -21,7 +21,7 @@ import type { Project } from '@/types';
 import { useActivity } from '@/hooks/useActivity';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, isSameDay } from 'date-fns';
 import {
   subscribeToProjectChat,
   insertProjectChatMessage,
@@ -94,6 +94,15 @@ const summarizeActivity = (
   }
 };
 
+const messageDayLabel = (date: Date) => {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (isSameDay(date, today)) return 'Today';
+  if (isSameDay(date, yesterday)) return 'Yesterday';
+  return format(date, 'MMM d, yyyy');
+};
+
 export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   project,
   open,
@@ -158,6 +167,18 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const chatRows = useMemo(
+    () =>
+      chatMessages.map((msg, index) => {
+        const createdAt = new Date(msg.createdAt);
+        const previous = chatMessages[index - 1];
+        const showDay =
+          !previous || !isSameDay(new Date(previous.createdAt), createdAt);
+        return { msg, createdAt, showDay };
+      }),
+    [chatMessages],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -345,12 +366,17 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   return (
     <aside
       className={cn(
-        'fixed bottom-5 right-5 z-40 flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl',
-        'w-[min(28rem,calc(100vw-1.5rem))] h-[min(36rem,calc(100vh-6rem))]',
+        'fixed bottom-5 right-5 z-40 flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl',
+        'w-[min(30rem,calc(100vw-1.5rem))] h-[min(40rem,calc(100vh-6rem))]',
       )}
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 bg-card/95 backdrop-blur-sm">
-        <p className="text-sm font-semibold text-foreground">Project</p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{project.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {dedupedMembers.length} members · {chatMessages.length} messages
+          </p>
+        </div>
         <Button
           variant="ghost"
           size="icon"
@@ -382,79 +408,118 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           value="chat"
           className="flex-1 flex flex-col min-h-0 mt-2 px-0 data-[state=inactive]:hidden overflow-hidden"
         >
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-3 pb-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3">
             {chatLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             ) : chatMessages.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8 px-2">
-                Start a conversation about this project. Use @name to notify teammates.
-              </p>
-            ) : (
-              chatMessages.map((msg) => (
-                <div key={msg.messageId} className="flex gap-3">
-                  <Avatar className="w-9 h-9 shrink-0">
-                    <AvatarImage src={msg.photoURL} alt={msg.displayName} />
-                    <AvatarFallback className="text-xs bg-primary-soft text-primary-soft-foreground">
-                      {(msg.displayName || '?').charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-foreground">
-                        {msg.displayName}
-                      </span>
-                      <PresenceStatusInline
-                        peer={presenceByUserId?.get(msg.userId)}
-                        className="gap-1"
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(msg.createdAt), {
-                          addSuffix: true,
-                        })}
-                      </span>
-                    </div>
-                    <p className="text-sm text-foreground mt-1 whitespace-pre-wrap break-words leading-relaxed">
-                      {msg.body}
-                    </p>
-                  </div>
+              <div className="flex flex-col items-center justify-center text-center py-12 px-4">
+                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
+                  <MessageSquare className="w-6 h-6" />
                 </div>
-              ))
+                <p className="text-sm font-medium text-foreground">No project messages yet</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                  Start a conversation, share blockers, or use @name to notify a teammate.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {chatRows.map(({ msg, createdAt, showDay }) => {
+                  const mine = msg.userId === user?.userId;
+                  return (
+                    <div key={msg.messageId}>
+                      {showDay && (
+                        <div className="sticky top-2 z-10 flex justify-center py-2">
+                          <span className="rounded-full border border-border bg-card/95 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur">
+                            {messageDayLabel(createdAt)}
+                          </span>
+                        </div>
+                      )}
+                      <div className={cn('flex gap-2', mine && 'justify-end')}>
+                        {!mine && (
+                          <Avatar className="w-8 h-8 shrink-0 mt-5">
+                            <AvatarImage src={msg.photoURL} alt={msg.displayName} />
+                            <AvatarFallback className="text-xs bg-primary-soft text-primary-soft-foreground">
+                              {(msg.displayName || '?').charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                        <div className={cn('max-w-[82%]', mine && 'flex flex-col items-end')}>
+                          <div
+                            className={cn(
+                              'mb-1 flex items-center gap-1.5 text-xs text-muted-foreground',
+                              mine && 'justify-end',
+                            )}
+                          >
+                            <span className="font-medium text-foreground">
+                              {mine ? 'You' : msg.displayName}
+                            </span>
+                            {!mine && (
+                              <PresenceStatusInline
+                                peer={presenceByUserId?.get(msg.userId)}
+                                className="gap-1"
+                              />
+                            )}
+                            <span>{format(createdAt, 'p')}</span>
+                          </div>
+                          <div
+                            className={cn(
+                              'rounded-2xl border px-3 py-2 text-sm leading-relaxed shadow-sm whitespace-pre-wrap break-words',
+                              mine
+                                ? 'rounded-br-md border-primary/25 bg-primary text-primary-foreground'
+                                : 'rounded-bl-md border-border bg-muted/50 text-foreground',
+                            )}
+                          >
+                            {msg.body}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
             <div ref={chatEndRef} />
           </div>
-          <div className="shrink-0 border-t border-border p-3 space-y-2 bg-card">
-            <Textarea
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Message the project… (@name to notify)"
-              rows={3}
-              className="min-h-[4.5rem] text-sm resize-none"
-              disabled={!user || chatSending}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void handleSendChat();
-                }
-              }}
-            />
-            <Button
-              type="button"
-              size="default"
-              className="w-full"
-              disabled={!user || !chatInput.trim() || chatSending}
-              onClick={() => void handleSendChat()}
-            >
-              {chatSending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Send
-                </>
-              )}
-            </Button>
+          <div className="shrink-0 border-t border-border p-3 bg-card">
+            <div className="rounded-2xl border border-border bg-background p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring">
+              <Textarea
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Message the project… (@name to notify)"
+                rows={2}
+                className="min-h-[3.5rem] resize-none border-0 bg-transparent p-2 text-sm shadow-none focus-visible:ring-0"
+                disabled={!user || chatSending}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSendChat();
+                  }
+                }}
+              />
+              <div className="flex items-center justify-between gap-2 px-1 pb-1">
+                <p className="text-[11px] text-muted-foreground">
+                  Enter to send · Shift+Enter for newline
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 rounded-full px-3"
+                  disabled={!user || !chatInput.trim() || chatSending}
+                  onClick={() => void handleSendChat()}
+                >
+                  {chatSending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5 mr-1.5" />
+                      Send
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </TabsContent>
 
