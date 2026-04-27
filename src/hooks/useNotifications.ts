@@ -6,6 +6,7 @@ import {
   markNotificationRead as markRead,
 } from "@/services/supabase/database";
 import { supabase } from "@/services/supabase/config";
+import { onNotificationsRefresh } from "@/lib/notificationEvents";
 
 export const useNotifications = (userId: string | null, limit = 30) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -89,6 +90,22 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
+  }, [fetchNotifications]);
+
+  // Refetch when any code path inserts a row (Real-time may be off for `notifications` in some projects).
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const off = onNotificationsRefresh(() => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        debounceRef.current = null;
+        void fetchNotifications();
+      }, 150);
+    });
+    return () => {
+      off();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [fetchNotifications]);
 
   const markAsRead = async (notificationId: string) => {

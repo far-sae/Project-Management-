@@ -25,6 +25,7 @@ const NOTIFICATION_TYPE_TO_CATEGORY: Record<
   NotificationType,
   keyof Omit<UserNotificationPreferences, "email" | "push">
 > = {
+  task_created: "projectUpdates",
   task_assigned: "taskAssigned",
   task_updated: "projectUpdates",
   task_completed: "taskCompleted",

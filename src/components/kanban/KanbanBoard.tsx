@@ -26,12 +26,14 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
+  createNotification,
   createNotificationsForTaskUpdate,
   addCommentWithGlobalSync,
   bulkUpdateTasks,
   bulkDeleteTasks,
   bulkReorderTasks,
 } from '@/services/supabase/database';
+import { logger } from '@/lib/logger';
 import { SortableBoardColumn } from './SortableBoardColumn';
 import {
   boardColumnSortId,
@@ -761,20 +763,47 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         queueMicrotask(() => openCommandPalette());
 
         if (user) {
-          createNotificationsForTaskUpdate({
-            taskId: newTask.taskId,
-            projectId,
-            projectName: projName,
-            taskTitle: newTask.title,
-            previousAssignees: [],
-            newAssignees: parentPayload.assignees ?? [],
-            previousStatus: undefined,
-            newStatus: parentPayload.status,
-            actorUserId: user.userId,
-            actorDisplayName: user.displayName || 'User',
-            getAssigneeEmail,
-            includeActor: true,
-          }).catch(() => {});
+          const assignees = parentPayload.assignees ?? [];
+          void (async () => {
+            try {
+              if (assignees.length > 0) {
+                await createNotificationsForTaskUpdate({
+                  taskId: newTask.taskId,
+                  projectId,
+                  projectName: projName,
+                  taskTitle: newTask.title,
+                  previousAssignees: [],
+                  newAssignees: assignees,
+                  previousStatus: undefined,
+                  newStatus: parentPayload.status,
+                  actorUserId: user.userId,
+                  actorDisplayName: user.displayName || 'User',
+                  getAssigneeEmail,
+                  includeActor: true,
+                });
+              } else {
+                // New tasks start with empty assignees; without this, nothing is inserted and the bell stays empty.
+                await createNotification({
+                  userId: user.userId,
+                  type: 'task_created',
+                  title: 'Task created',
+                  body: `You created "${newTask.title}" in ${projName}`,
+                  taskId: newTask.taskId,
+                  projectId,
+                  actorUserId: user.userId,
+                  actorDisplayName: user.displayName || 'User',
+                });
+              }
+            } catch (e) {
+              logger.warn('Notification after create failed:', e);
+              toast.error(
+                e instanceof Error
+                  ? e.message
+                  : 'Could not save notification. Apply Supabase migrations (notifications table + RLS).',
+                { id: 'task-create-notification' },
+              );
+            }
+          })();
         }
         if (newTask && initialComment?.trim() && user) {
           const orgIdLocal =

@@ -1,4 +1,5 @@
 export type NotificationType =
+  | 'task_created'
   | 'task_assigned'
   | 'task_updated'
   | 'task_completed'

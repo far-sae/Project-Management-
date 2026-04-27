@@ -87,6 +87,8 @@ const isAssignment = (n: AppNotification) => n.type === 'task_assigned';
 
 const typeIcon = (type: AppNotification['type']) => {
   switch (type) {
+    case 'task_created':
+      return <CheckCheck className="w-4 h-4" />;
     case 'task_assigned':
       return <UserPlus className="w-4 h-4" />;
     case 'comment_mention':

@@ -21,6 +21,7 @@ import {
   isEmailForTaskEventAllowed,
 } from "@/lib/notificationPreferences";
 import { isAppOwner } from "@/lib/app-owner";
+import { dispatchNotificationsRefresh } from "@/lib/notificationEvents";
 import { INDIA_PRICING } from "@/types/subscription";
 
 /** Project columns safe for the browser—never includes lock_pin_hash. Requires migration 019 (has_lock_pin). */
@@ -698,6 +699,9 @@ export const createTask = async (
   const now = new Date().toISOString();
   const taskId = input.taskId || crypto.randomUUID();
   const priority = input.priority || "medium";
+  const hasPin =
+    typeof input.lockPinHash === "string" && input.lockPinHash.length > 0;
+  const isLockedRow = Boolean(input.isLocked) || hasPin;
 
   const { data: existingTasks } = await supabase
     .from("tasks")
@@ -727,7 +731,7 @@ export const createTask = async (
     subtasks: input.subtasks || [],
     parent_task_id: input.parentTaskId || null,
     urgent: input.urgent || false,
-    is_locked: input.isLocked || false,
+    is_locked: isLockedRow,
     lock_pin_hash: input.lockPinHash ?? null,
     position,
     attachments: input.attachments || [],
@@ -1346,6 +1350,8 @@ export const createNotification = async (
     logger.error("Failed to create notification:", error);
     throw error;
   }
+
+  dispatchNotificationsRefresh();
 
   return {
     notificationId: data.notification_id,
