@@ -191,12 +191,23 @@ export const MyTasks: React.FC = () => {
     });
   }, [setSearchParams]);
 
-  // Subscribe to comments for selected task
+  const commentsBlockedByTaskPin = Boolean(
+    selectedTask && taskNeedsPinToView(selectedTask),
+  );
+
+  // Subscribe to comments for selected task (not while PIN-locked for this user)
   useEffect(() => {
-    if (!selectedTask?.taskId || !orgId) { setTaskComments([]); return; }
+    if (!selectedTask?.taskId || !orgId) {
+      setTaskComments([]);
+      return;
+    }
+    if (commentsBlockedByTaskPin) {
+      setTaskComments([]);
+      return;
+    }
     const unsub = subscribeToComments(selectedTask.taskId, orgId, setTaskComments);
     return () => unsub();
-  }, [selectedTask?.taskId, orgId]);
+  }, [selectedTask?.taskId, orgId, commentsBlockedByTaskPin]);
 
   // Automate: due-date reminders for tasks due within 24h (once per task/user per 24h)
   useEffect(() => {

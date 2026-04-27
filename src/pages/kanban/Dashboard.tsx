@@ -356,14 +356,17 @@ export const Dashboard: React.FC = () => {
     let lockPinHashPayload: string | null | undefined = undefined;
     if (!editProjectLocked) {
       lockPinHashPayload = null;
-      clearProjectLockUnlockedInSession(editingProject.projectId);
+      clearProjectLockUnlockedInSession(
+        editingProject.projectId,
+        editingProject.lockPinVersion ?? 0,
+      );
     } else if (editLockPinNew.trim()) {
       if (editLockPinNew !== editLockPinConfirm) {
         toast.error('PIN and confirmation do not match');
         return;
       }
       lockPinHashPayload = await hashLockPin(editLockPinNew, editingProject.projectId);
-    } else if (editingProject.lockPinHash) {
+    } else if (editingProject.hasLockPin) {
       lockPinHashPayload = undefined;
     } else {
       toast.error('Set a lock PIN, or turn off "Lock with PIN".');
@@ -1470,14 +1473,14 @@ export const Dashboard: React.FC = () => {
               {editProjectLocked && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="editProjectLockPin">PIN {editingProject?.lockPinHash ? '(change)' : ''}</Label>
+                    <Label htmlFor="editProjectLockPin">PIN {editingProject?.hasLockPin ? '(change)' : ''}</Label>
                     <Input
                       id="editProjectLockPin"
                       type="password"
                       autoComplete="new-password"
                       value={editLockPinNew}
                       onChange={(e) => setEditLockPinNew(e.target.value)}
-                      placeholder={editingProject?.lockPinHash ? 'New PIN' : 'Set PIN'}
+                      placeholder={editingProject?.hasLockPin ? 'New PIN' : 'Set PIN'}
                     />
                   </div>
                   <div className="space-y-2">

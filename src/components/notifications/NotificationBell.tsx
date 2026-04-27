@@ -111,7 +111,13 @@ export const NotificationBell: React.FC = () => {
 
   const handleClick = (n: AppNotification) => {
     if (!n.read) markAsRead(n.notificationId);
-    if (n.projectId) navigate(`/project/${n.projectId}`);
+    if (n.taskId && n.projectId) {
+      navigate(`/project/${n.projectId}?taskId=${encodeURIComponent(n.taskId)}`);
+    } else if (n.projectId) {
+      navigate(`/project/${n.projectId}`);
+    } else {
+      navigate("/inbox");
+    }
     setOpen(false);
   };
 

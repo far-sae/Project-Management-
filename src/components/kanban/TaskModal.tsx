@@ -594,9 +594,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         status,
         priority,
         dueDate: dueDate ?? null,
-        assignees: assignees.length > 0 ? assignees : undefined,
-        tags: tags.length > 0 ? tags : undefined,
-        subtasks: subtasks.length > 0 ? subtasks : undefined,
+        // Always send arrays when editing so clearing assignees/tags/subtasks persists in the DB.
+        assignees: isEditing ? assignees : assignees.length > 0 ? assignees : undefined,
+        tags: isEditing ? tags : tags.length > 0 ? tags : undefined,
+        subtasks: isEditing ? subtasks : subtasks.length > 0 ? subtasks : undefined,
         urgent,
         isLocked,
         ...(lockPinHashPayload !== undefined

@@ -90,17 +90,23 @@ export const usePresence = ({
     currentTaskId,
   };
 
+  /** Stable joinedAt for this channel session so re-tracks do not reshuffle peer order. */
+  const sessionJoinedAtRef = useRef<number | null>(null);
+
   const buildTrackMeta = useCallback((): PresencePeer | null => {
     if (!user?.userId) return null;
     const o = trackOptsRef.current;
     const av = buildAvailability(o.presencePreference, o.tabVisible);
     if (av === 'hidden') return null;
+    if (sessionJoinedAtRef.current === null) {
+      sessionJoinedAtRef.current = Date.now();
+    }
     return {
       userId: user.userId,
       displayName: user.displayName || user.email || 'Someone',
       photoURL: user.photoURL || undefined,
       currentTaskId: o.currentTaskId ?? null,
-      joinedAt: Date.now(),
+      joinedAt: sessionJoinedAtRef.current,
       availability: av,
     };
   }, [user?.userId, user?.displayName, user?.email, user?.photoURL]);
@@ -189,6 +195,7 @@ export const usePresence = ({
         /* noop */
       }
       channelRef.current = null;
+      sessionJoinedAtRef.current = null;
       setPeers([]);
       setSelfKey(null);
       typingMap.current.clear();

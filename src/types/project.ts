@@ -36,9 +36,12 @@ export interface Project {
   columns?: KanbanColumn[];
   startDate?: Date | null;
   endDate?: Date | null;
-  /** When set with lockPinHash, the UI may require a PIN to open the project (owner / org admin can bypass). */
+  /** When true with hasLockPin, the UI may require a PIN to open the project (owner / org admin can bypass). */
   isLocked?: boolean;
-  lockPinHash?: string | null;
+  /** True when a lock PIN is configured; the hash is not sent to clients. */
+  hasLockPin?: boolean;
+  /** Bumps when the project PIN changes; used to scope session unlock. */
+  lockPinVersion?: number;
 }
 
 export interface CreateProjectInput {

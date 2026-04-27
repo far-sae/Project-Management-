@@ -7,7 +7,7 @@ import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useTasks } from '@/hooks/useTasks';
-import { getProject, updateProject } from '@/services/supabase/database';
+import { getProject, updateProject, verifyProjectLockPin } from '@/services/supabase/database';
 import { supabase } from '@/services/supabase';
 import { Project, Task, TaskStatus } from '@/types';
 import { DEFAULT_COLUMNS } from '@/types/task';
@@ -19,7 +19,7 @@ import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { ProjectRightRail } from '@/components/project/ProjectRightRail';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
-import { PresenceStatusMenu } from '@/components/presence/PresenceStatusMenu';
+import { PresenceStatusAvatarMenu } from '@/components/presence/PresenceStatusMenu';
 import { usePresence } from '@/hooks/usePresence';
 import { usePresenceStatusPreference } from '@/hooks/usePresenceStatusPreference';
 import {
@@ -33,7 +33,6 @@ import type { SavedView } from '@/types/savedView';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  hashLockPin,
   isProjectLockUnlockedInSession,
   setProjectLockUnlockedInSession,
 } from '@/lib/projectLockPin';
@@ -257,9 +256,12 @@ export const ProjectView: React.FC = () => {
         project &&
           user &&
           project.isLocked &&
-          project.lockPinHash &&
+          project.hasLockPin &&
           !canOverrideProjectLock &&
-          !isProjectLockUnlockedInSession(project.projectId),
+          !isProjectLockUnlockedInSession(
+            project.projectId,
+            project.lockPinVersion ?? 0,
+          ),
       ),
     [project, user, canOverrideProjectLock, projectUnlockNonce],
   );
@@ -267,13 +269,13 @@ export const ProjectView: React.FC = () => {
   useEffect(() => {
     setProjectPin('');
     setProjectPinError(false);
-  }, [projectId]);
+  }, [projectId, project?.lockPinVersion]);
 
   const handleProjectUnlock = useCallback(async () => {
-    if (!project?.lockPinHash || !projectId) return;
-    const h = await hashLockPin(projectPin, projectId);
-    if (h === project.lockPinHash) {
-      setProjectLockUnlockedInSession(projectId);
+    if (!project?.hasLockPin || !projectId) return;
+    const ok = await verifyProjectLockPin(projectId, projectPin);
+    if (ok) {
+      setProjectLockUnlockedInSession(projectId, project.lockPinVersion ?? 0);
       setProjectPin('');
       setProjectPinError(false);
       setProjectUnlockNonce((n) => n + 1);
@@ -292,6 +294,10 @@ export const ProjectView: React.FC = () => {
   const presenceByUserId = useMemo(
     () => new Map(peers.map((p) => [p.userId, p])),
     [peers],
+  );
+  const peerAvatarsOthers = useMemo(
+    () => (user?.userId ? peers.filter((p) => p.userId !== user.userId) : peers),
+    [peers, user?.userId],
   );
 
   // If user switches sidebar workspace to one that does not contain this project,
@@ -597,13 +603,13 @@ export const ProjectView: React.FC = () => {
             </Breadcrumb>
           }
           right={
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <PresenceStatusMenu
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <PresenceStatusAvatarMenu
                 preference={presencePreference}
                 onChange={setPresencePreference}
               />
-              {peers.length > 0 ? (
-                <PresenceAvatars peers={peers} className="mr-0" />
+              {peerAvatarsOthers.length > 0 ? (
+                <PresenceAvatars peers={peerAvatarsOthers} className="mr-0" />
               ) : null}
             </div>
           }

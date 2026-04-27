@@ -368,7 +368,9 @@ export const createProject = async (
     startDate: data.start_date ? new Date(data.start_date) : null,
     endDate: data.end_date ? new Date(data.end_date) : null,
     isLocked: data.is_locked ?? false,
-    lockPinHash: data.lock_pin_hash ?? null,
+    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
+    lockPinVersion:
+      typeof data.lock_pin_version === "number" ? data.lock_pin_version : 0,
   } as Project;
 };
 
@@ -421,8 +423,26 @@ const convertToProject = (data: any): Project => {
     startDate: data.start_date ? new Date(data.start_date) : null,
     endDate: data.end_date ? new Date(data.end_date) : null,
     isLocked: data.is_locked ?? false,
-    lockPinHash: data.lock_pin_hash ?? null,
+    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
+    lockPinVersion:
+      typeof data.lock_pin_version === "number" ? data.lock_pin_version : 0,
   };
+};
+
+/** Server-side PIN check; does not expose the stored hash to the client. */
+export const verifyProjectLockPin = async (
+  projectId: string,
+  pinPlain: string,
+): Promise<boolean> => {
+  const { data, error } = await supabase.rpc("verify_project_lock_pin", {
+    p_project_id: projectId,
+    p_pin: pinPlain,
+  });
+  if (error) {
+    logger.error("verify_project_lock_pin failed:", error);
+    return false;
+  }
+  return data === true;
 };
 
 export const getProject = async (
@@ -913,6 +933,7 @@ export const updateTask = async (
   if (input.subtasks !== undefined) updateData.subtasks = input.subtasks;
   if (input.urgent !== undefined) updateData.urgent = input.urgent;
   if (input.isLocked !== undefined) updateData.is_locked = input.isLocked;
+  if (input.lockPinHash !== undefined) updateData.lock_pin_hash = input.lockPinHash;
   if (input.position !== undefined) updateData.position = input.position;
   if (input.attachments !== undefined)
     updateData.attachments = input.attachments;
