@@ -1425,6 +1425,11 @@ export const createNotificationsForTaskUpdate = async (params: {
   actorDisplayName: string;
   /** When set (e.g. org members), sends optional EmailJS assignee email if env is configured. */
   getAssigneeEmail?: (userId: string) => string | undefined;
+  /**
+   * Pass `true` on task creation so solo users (and people who assign themselves) still get the
+   * bell/inbox notification. Default `false` mirrors the old "skip self" behavior for edits.
+   */
+  includeActor?: boolean;
 }): Promise<void> => {
   const {
     taskId,
@@ -1438,6 +1443,7 @@ export const createNotificationsForTaskUpdate = async (params: {
     actorUserId,
     actorDisplayName,
     getAssigneeEmail,
+    includeActor = false,
   } = params;
 
   const previousIds = new Set(previousAssignees.map((a) => a.userId));
@@ -1446,19 +1452,26 @@ export const createNotificationsForTaskUpdate = async (params: {
   try {
     // New assignees: task_assigned
     for (const a of newAssignees) {
-      if (!previousIds.has(a.userId) && a.userId !== actorUserId) {
+      const isActor = a.userId === actorUserId;
+      const isNewAssignment = !previousIds.has(a.userId);
+      const shouldNotify = isNewAssignment && (includeActor || !isActor);
+      if (shouldNotify) {
         await createNotification({
           userId: a.userId,
           type: "task_assigned",
-          title: "Task assigned to you",
-          body: `${actorDisplayName} assigned you to "${taskTitle}" in ${projectName}`,
+          title: isActor ? "You assigned yourself" : "Task assigned to you",
+          body: isActor
+            ? `You assigned yourself to "${taskTitle}" in ${projectName}`
+            : `${actorDisplayName} assigned you to "${taskTitle}" in ${projectName}`,
           taskId,
           projectId,
           actorUserId,
           actorDisplayName,
         }).catch((e) => logger.warn("createNotification task_assigned:", e));
 
-        const email = getAssigneeEmail?.(a.userId)?.trim();
+        // Skip the assignee email when the user assigned themselves — sending yourself an
+        // email about your own action is noise.
+        const email = isActor ? undefined : getAssigneeEmail?.(a.userId)?.trim();
         if (email && email.includes("@")) {
           const aprefs = await getUserNotificationPreferences(a.userId);
           if (isEmailForTaskEventAllowed(aprefs, "task_assigned")) {

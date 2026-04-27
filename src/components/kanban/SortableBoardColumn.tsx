@@ -43,17 +43,19 @@ export const SortableBoardColumn: React.FC<SortableBoardColumnProps> = ({
       boardColumnRef={setNodeRef}
       boardColumnStyle={style}
       boardColumnClassName={cn(
-        isDragging && 'ring-2 ring-primary/40 shadow-lg opacity-90',
+        isDragging &&
+          'z-10 scale-[1.02] ring-2 ring-primary/50 shadow-2xl shadow-primary/10 opacity-95',
       )}
       orderHandle={
         <button
           type="button"
           ref={setActivatorNodeRef}
           className={cn(
-            'h-6 w-6 inline-flex items-center justify-center rounded-md -ml-0.5',
-            'text-muted-foreground hover:text-foreground hover:bg-secondary',
+            'h-7 w-7 inline-flex items-center justify-center rounded-lg -ml-0.5',
+            'text-muted-foreground hover:text-foreground hover:bg-primary/10',
             'cursor-grab active:cursor-grabbing touch-none shrink-0',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
+            'transition-colors',
           )}
           aria-label="Drag to reorder column"
           title="Drag to reorder column"

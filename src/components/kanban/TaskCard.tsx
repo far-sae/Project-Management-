@@ -15,8 +15,11 @@ import {
 import { cn } from '@/lib/utils';
 import type { PresencePeer } from '@/hooks/usePresence';
 
+/** Stable id for dnd-kit when `task` is missing (hooks must run before any return). */
+const PLACEHOLDER_SORTABLE_ID = '__task-card-placeholder__';
+
 interface TaskCardProps {
-  task: Task;
+  task: Task | null | undefined;
   onClick?: (task: Task, event?: React.MouseEvent) => void;
   isDragging?: boolean;
   /** When true, render in selectable mode with checkbox + selected state. */
@@ -80,14 +83,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   dragDisabled = false,
   swapHighlight = false,
 }) => {
-  if (!task) return null;
-
-  const assignees = Array.isArray(task.assignees) ? task.assignees : [];
-  const attachments = Array.isArray(task.attachments) ? task.attachments : [];
-  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
-  const commentsCount =
-    typeof task.commentsCount === 'number' ? task.commentsCount : 0;
-
   const {
     attributes,
     listeners,
@@ -96,10 +91,25 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     transition,
     isDragging: isSortableDragging,
   } = useSortable({
-    id: task.taskId,
-    data: { type: 'task' as const, task },
-    disabled: selectable || dragDisabled,
+    id: task?.taskId ?? PLACEHOLDER_SORTABLE_ID,
+    data: { type: 'task' as const, task: task ?? undefined },
+    disabled: !task || selectable || dragDisabled,
   });
+
+  const subtaskProgress = useMemo(() => {
+    if (!task) return null;
+    const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+    if (subtasks.length === 0) return null;
+    const done = subtasks.filter((s) => s.completed).length;
+    return { done, total: subtasks.length, pct: (done / subtasks.length) * 100 };
+  }, [task]);
+
+  if (!task) return null;
+
+  const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+  const attachments = Array.isArray(task.attachments) ? task.attachments : [];
+  const commentsCount =
+    typeof task.commentsCount === 'number' ? task.commentsCount : 0;
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -112,12 +122,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     task.dueDate &&
     new Date(task.dueDate) < new Date() &&
     task.status !== 'done';
-
-  const subtaskProgress = useMemo(() => {
-    if (subtasks.length === 0) return null;
-    const done = subtasks.filter((s) => s.completed).length;
-    return { done, total: subtasks.length, pct: (done / subtasks.length) * 100 };
-  }, [subtasks]);
 
   const priorityTone =
     task.priority && PRIORITY_TONES[task.priority]
@@ -140,8 +144,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         onClick?.(task, e);
       }}
       className={cn(
-        'group relative bg-card text-card-foreground rounded-lg border border-border shadow-sm p-3 mb-2.5 border-l-[3px]',
-        'transition-all hover:border-foreground/20 hover:shadow-md',
+        'group relative bg-card text-card-foreground rounded-xl border border-border/80 shadow-sm p-3 mb-2.5 border-l-[3px]',
+        'transition-all hover:border-foreground/25 hover:shadow-md',
         selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
         selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
         swapHighlight && 'ring-2 ring-amber-500 ring-offset-1 ring-offset-background',

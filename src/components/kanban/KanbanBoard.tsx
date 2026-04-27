@@ -8,7 +8,6 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  closestCenter,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -34,7 +33,11 @@ import {
   bulkReorderTasks,
 } from '@/services/supabase/database';
 import { SortableBoardColumn } from './SortableBoardColumn';
-import { boardColumnSortId, parseBoardColumnSortId } from './boardColumnSortIds';
+import {
+  boardColumnSortId,
+  parseBoardColumnSortId,
+  kanbanBoardCollisionDetection,
+} from './boardColumnSortIds';
 import { TaskCard } from './TaskCard';
 import { TaskModal } from './TaskModal';
 import { BulkActionBar } from './BulkActionBar';
@@ -731,6 +734,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         };
         const initialComment = base._initialComment;
         const parentPayload: CreateTaskInput = {
+          // Forward client-generated id when the modal pre-hashed a PIN against it.
+          // Without this, the inserted row gets a different uuid and the PIN never matches.
+          ...(base.taskId ? { taskId: base.taskId } : {}),
           projectId: base.projectId || projectId,
           title: base.title || '',
           description: base.description,
@@ -753,6 +759,23 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           throw new Error('Failed to create task. Please try again.');
         }
         queueMicrotask(() => openCommandPalette());
+
+        if (user) {
+          createNotificationsForTaskUpdate({
+            taskId: newTask.taskId,
+            projectId,
+            projectName: projName,
+            taskTitle: newTask.title,
+            previousAssignees: [],
+            newAssignees: parentPayload.assignees ?? [],
+            previousStatus: undefined,
+            newStatus: parentPayload.status,
+            actorUserId: user.userId,
+            actorDisplayName: user.displayName || 'User',
+            getAssigneeEmail,
+            includeActor: true,
+          }).catch(() => {});
+        }
         if (newTask && initialComment?.trim() && user) {
           const orgIdLocal =
             project?.organizationId || user.organizationId || `local-${user.userId}`;
@@ -957,7 +980,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     <>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={kanbanBoardCollisionDetection}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
@@ -982,7 +1005,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             </Button>
           </div>
         )}
-        <div className="flex gap-4 pb-4 px-4 min-w-max">
+        <div className="flex gap-5 pb-5 px-5 min-w-max">
           <SortableContext
             items={columnSortIds}
             strategy={horizontalListSortingStrategy}
@@ -1042,13 +1065,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           {activeTask ? (
             <TaskCard task={activeTask} isDragging />
           ) : activeColumn ? (
-            <div className="w-72 min-w-72 flex flex-col bg-surface-2 rounded-xl border-2 border-primary/30 shadow-2xl p-3">
-              <div className="flex items-center gap-2">
+            <div className="w-72 min-w-72 flex flex-col rounded-2xl border border-primary/35 bg-surface-2 p-3.5 shadow-2xl shadow-primary/15 ring-2 ring-primary/20">
+              <div className="flex items-center gap-2.5">
                 <div
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-background"
                   style={{ backgroundColor: activeColumn.color }}
                 />
-                <p className="font-semibold text-sm truncate">{activeColumn.title}</p>
+                <p className="font-semibold text-[15px] tracking-tight truncate">
+                  {activeColumn.title}
+                </p>
               </div>
             </div>
           ) : null}

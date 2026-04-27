@@ -203,8 +203,9 @@ export const Settings: React.FC = () => {
 
   // ── Notifications ─────────────────────────────────────────
   const handleNotificationChange = async (key: string, checked: boolean) => {
+    const prev = notifications;
     const next: UserNotificationPreferences = {
-      ...notifications,
+      ...prev,
       [key]: checked,
     };
     setNotifications(next);
@@ -222,6 +223,12 @@ export const Settings: React.FC = () => {
       .update({ notification_preferences: next as unknown as Record<string, boolean> })
       .eq("id", user.userId);
     if (error) {
+      setNotifications(prev);
+      try {
+        localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(prev));
+      } catch {
+        /* ignore */
+      }
       toast.error(
         "Could not sync preferences to your account. " + error.message,
       );

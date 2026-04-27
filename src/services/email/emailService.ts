@@ -128,7 +128,8 @@ export const getInvitationEmailFailureHint = (
       "\"Gmail_API: Invalid grant\")."
     );
   }
-  return result.text?.trim() ? result.text : "";
+  const trimmed = result.text?.trim() ?? "";
+  return trimmed ? trimmed : "";
 };
 
 export const isEmailServiceConfigured = (): boolean => {
