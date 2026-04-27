@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   ALL_WORKSPACES_ID,
+  UNASSIGNED_WORKSPACE_ID,
   useSelectedWorkspace,
 } from '@/hooks/useSelectedWorkspace';
 import { useNavigate } from 'react-router-dom';
@@ -30,13 +31,15 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
   className,
   onCreateClick,
 }) => {
-  const { workspaces, selectedId, selected, isAll, select } =
+  const { workspaces, selectedId, selected, isAll, isUnassigned, select } =
     useSelectedWorkspace();
   const navigate = useNavigate();
 
   const triggerLabel = isAll
     ? 'All workspaces'
-    : selected?.name || 'Select workspace';
+    : isUnassigned
+      ? 'Unassigned projects'
+      : selected?.name || 'Select workspace';
 
   return (
     <DropdownMenu>
@@ -78,6 +81,11 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
           <span className="flex-1">All workspaces</span>
           {isAll && <Check className="w-4 h-4 text-primary" />}
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => select(UNASSIGNED_WORKSPACE_ID)}>
+          <LayoutGrid className="w-4 h-4 mr-2 opacity-70" />
+          <span className="flex-1">Unassigned projects</span>
+          {isUnassigned && <Check className="w-4 h-4 text-primary" />}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {workspaces.length === 0 && (
           <DropdownMenuItem disabled>
@@ -85,7 +93,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
           </DropdownMenuItem>
         )}
         {workspaces.map((w) => {
-          const active = !isAll && w.workspaceId === selectedId;
+          const active = !isAll && !isUnassigned && w.workspaceId === selectedId;
           return (
             <DropdownMenuItem
               key={w.workspaceId}

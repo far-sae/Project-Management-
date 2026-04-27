@@ -11,6 +11,7 @@ import { useActivity } from '@/hooks/useActivity';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import {
   ALL_WORKSPACES_ID,
+  UNASSIGNED_WORKSPACE_ID,
   useSelectedWorkspace,
 } from '@/hooks/useSelectedWorkspace';
 import { ActivityEvent } from '@/types/activity';
@@ -74,7 +75,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/services/supabase';
 import { useSubscription } from '@/context/SubscriptionContext';
 import LimitReachedModal from '@/components/ui/LimitReachedModal';
 import { fetchProjectTemplates } from '@/services/supabase/templates';
@@ -135,7 +135,6 @@ export const Dashboard: React.FC = () => {
     addWorkspace,
     editWorkspace,
     removeWorkspace,
-    DEFAULT_WORKSPACE_ID,
   } = useWorkspaces();
 
 
@@ -150,7 +149,7 @@ export const Dashboard: React.FC = () => {
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [selectedColor, setSelectedColor] = useState(PROJECT_COLORS[0]);
-  const [selectedProjectWorkspaceId, setSelectedProjectWorkspaceId] = useState<string>(DEFAULT_WORKSPACE_ID);
+  const [selectedProjectWorkspaceId, setSelectedProjectWorkspaceId] = useState<string>(UNASSIGNED_WORKSPACE_ID);
   const [creating, setCreating] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -248,34 +247,16 @@ export const Dashboard: React.FC = () => {
     const toastId = toast.loading('Creating project...');
 
     try {
-      let actualWorkspaceId = selectedProjectWorkspaceId;
-
-      if (actualWorkspaceId === DEFAULT_WORKSPACE_ID) {
-        const defaultWorkspace = workspaces.find(w => w.isDefault) || workspaces[0];
-
-        if (defaultWorkspace) {
-          actualWorkspaceId = defaultWorkspace.workspaceId;
-        } else {
-          const { data: workspace } = await supabase
-            .from('workspaces')
-            .select('workspace_id')
-            .eq('organization_id', orgId)
-            .eq('is_default', true)
-            .single();
-
-          if (workspace) {
-            actualWorkspaceId = workspace.workspace_id;
-          }
-        }
-      }
-
       const useTemplate = createTab === 'template' && selectedTemplate;
 
       const project = await addProject({
         name: newProjectName,
         description: newProjectDescription || (useTemplate ? selectedTemplate!.description ?? '' : ''),
         coverColor: selectedColor,
-        workspaceId: actualWorkspaceId,
+        workspaceId:
+          selectedProjectWorkspaceId === UNASSIGNED_WORKSPACE_ID
+            ? undefined
+            : selectedProjectWorkspaceId,
         startDate: newProjectStartDate || null,
         endDate: newProjectEndDate || null,
         columns: useTemplate ? selectedTemplate!.columns : undefined,
@@ -458,7 +439,12 @@ export const Dashboard: React.FC = () => {
   };
 
   const openDeleteWorkspaceDialog = (workspaceId: string, workspaceName: string) => {
-    if (workspaceId === DEFAULT_WORKSPACE_ID) return;
+    if (
+      workspaceId === ALL_WORKSPACES_ID ||
+      workspaceId === UNASSIGNED_WORKSPACE_ID
+    ) {
+      return;
+    }
     setDeleteDialog({ open: true, type: 'workspace', id: workspaceId, name: workspaceName });
   };
 
@@ -478,7 +464,7 @@ export const Dashboard: React.FC = () => {
       const toastId = toast.loading('Deleting workspace...');
       try {
         await removeWorkspace(deleteDialog.id);
-        if (selectedWorkspaceId === deleteDialog.id) handleWorkspaceChange(DEFAULT_WORKSPACE_ID);
+        if (selectedWorkspaceId === deleteDialog.id) handleWorkspaceChange(ALL_WORKSPACES_ID);
         setShowEditWorkspaceModal(false);
         setEditingWorkspaceId(null);
         toast.success('Workspace deleted', { id: toastId });
@@ -511,11 +497,8 @@ export const Dashboard: React.FC = () => {
 
   const filteredProjects = selectedWorkspaceId === ALL_WORKSPACES_ID
     ? projects
-    : selectedWorkspaceId === DEFAULT_WORKSPACE_ID
-      ? projects.filter((p) => {
-        const defaultWs = workspaces.find(w => w.isDefault);
-        return p.workspaceId === defaultWs?.workspaceId;
-      })
+    : selectedWorkspaceId === UNASSIGNED_WORKSPACE_ID
+      ? projects.filter((p) => !p.workspaceId)
       : projects.filter((p) => p.workspaceId === selectedWorkspaceId);
 
   const sharedProjects = projects.filter(
@@ -636,8 +619,8 @@ export const Dashboard: React.FC = () => {
                   View All
                 </Button>
 
-                {selectedWorkspaceId !== DEFAULT_WORKSPACE_ID &&
-                  selectedWorkspaceId !== ALL_WORKSPACES_ID && (
+                {selectedWorkspaceId !== ALL_WORKSPACES_ID &&
+                  selectedWorkspaceId !== UNASSIGNED_WORKSPACE_ID && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
@@ -875,57 +858,83 @@ export const Dashboard: React.FC = () => {
                       {filteredProjects.map((project) => (
                         <Card
                           key={project.projectId}
-                          className="cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-200 group"                        >
+                          className="cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-200 group"
+                        >
                           <div
                             className="h-2 rounded-t-lg"
                             style={{ backgroundColor: project.coverColor }}
                           />
-                          <CardHeader className="flex flex-row items-start justify-between">
+                          <CardHeader className="flex flex-row items-start justify-between gap-2">
                             <div
-                              className="flex-1 group-hover:text-orange-600 transition-colors"
+                              className="flex-1 min-w-0 group-hover:text-orange-600 transition-colors"
                               onClick={() => navigate(`/project/${project.projectId}`)}
                             >
-                              <CardTitle className="text-lg">{project.name}</CardTitle>
+                              <div className="flex items-center gap-2">
+                                <CardTitle className="text-lg">{project.name}</CardTitle>
+                                {project.isLocked && project.hasLockPin && (
+                                  <span title="PIN lock enabled">
+                                    <Lock className="w-4 h-4 shrink-0 text-muted-foreground" aria-hidden />
+                                  </span>
+                                )}
+                              </div>
                               <CardDescription className="line-clamp-2">
                                 {project.description || 'No description'}
                               </CardDescription>
                             </div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
+                            <div className="flex items-start gap-0.5 shrink-0">
+                              {project.ownerId === user?.userId && (
                                 <Button
+                                  type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                  className="h-8 w-8 text-muted-foreground"
+                                  title="Lock & PIN"
+                                  aria-label="Open project settings for lock and PIN"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditProject(project);
+                                  }}
                                 >
-                                  <MoreHorizontal className="w-4 h-4" />
+                                  <Lock className="w-4 h-4" />
                                 </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() => navigate(`/project/${project.projectId}`)}
-                                >
-                                  <Files className="w-4 h-4 mr-2" />
-                                  Open
-                                </DropdownMenuItem>
-                                {project.ownerId === user?.userId && (
-                                  <DropdownMenuItem
-                                    onClick={() => openEditProject(project)}
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
                                   >
-                                    <Pencil className="w-4 h-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                )}
-                                {project.ownerId === user?.userId && (
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
                                   <DropdownMenuItem
-                                    className="text-red-600"
-                                    onClick={() => openDeleteProjectDialog(project.projectId, project.name)}
+                                    onClick={() => navigate(`/project/${project.projectId}`)}
                                   >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
+                                    <Files className="w-4 h-4 mr-2" />
+                                    Open
                                   </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                                  {project.ownerId === user?.userId && (
+                                    <DropdownMenuItem
+                                      onClick={() => openEditProject(project)}
+                                    >
+                                      <Pencil className="w-4 h-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                  )}
+                                  {project.ownerId === user?.userId && (
+                                    <DropdownMenuItem
+                                      className="text-red-600"
+                                      onClick={() => openDeleteProjectDialog(project.projectId, project.name)}
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
                           </CardHeader>
                           <CardContent onClick={() => navigate(`/project/${project.projectId}`)}>
                             <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -1202,7 +1211,7 @@ export const Dashboard: React.FC = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={DEFAULT_WORKSPACE_ID}>Default</SelectItem>
+                  <SelectItem value={UNASSIGNED_WORKSPACE_ID}>No workspace</SelectItem>
                   {workspaces.map((w) => (
                     <SelectItem key={w.workspaceId} value={w.workspaceId}>
                       {w.name}
@@ -1531,7 +1540,6 @@ export const Dashboard: React.FC = () => {
           setShowCreateWorkspaceModal(true);
         }}
         onSelectWorkspace={handleWorkspaceChange}
-        defaultWorkspaceId={DEFAULT_WORKSPACE_ID}
       />
 
       {/* ✅ Plan limit modal — shows when project/workspace limit is hit */}

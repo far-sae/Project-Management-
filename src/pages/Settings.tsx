@@ -24,6 +24,7 @@ import {
   setUserCancelAtPeriodEnd,
 } from "@/services/supabase/auth";
 import { supabase } from "@/services/supabase/config";
+import { SUPPORT_EMAIL } from "@/lib/support-email";
 import { uploadAvatar } from "@/services/supabase/storage";
 import {
   User,
@@ -209,7 +210,7 @@ export const Settings: React.FC = () => {
 
   // ── Delete Account ────────────────────────────────────────
   const handleDeleteAccount = () => {
-    toast("To delete your account, email smtkur31@gmail.com", {
+    toast(`To delete your account, email ${SUPPORT_EMAIL}`, {
       icon: "📧",
       duration: 6000,
     });

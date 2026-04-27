@@ -232,9 +232,16 @@ export const Calendar: React.FC = () => {
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Calendar</h1>
-            <p className="text-muted-foreground">View tasks and projects by due date</p>
+          <div className="flex items-start gap-3">
+            <img
+              src="/favicon.svg"
+              alt=""
+              className="w-10 h-10 rounded-xl object-contain shrink-0 mt-1"
+            />
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">TaskCalendar</h1>
+              <p className="text-muted-foreground">View tasks by due date</p>
+            </div>
           </div>
           <Button
             variant="outline"

@@ -15,6 +15,7 @@ import {
   Shield,
   GanttChartSquare,
   Lock,
+  Unlock,
   Inbox,
   Star,
   Activity,
@@ -41,6 +42,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import {
+  isProjectLockUnlockedInSession,
+  clearProjectLockUnlockedInSession,
+} from '@/lib/projectLockPin';
+import { toast } from 'sonner';
 
 interface SidebarProps {
   project?: Project | null;
@@ -73,16 +79,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const location = useLocation();
 
   const { projects } = useProjects();
-  const { selectedId: selectedWorkspaceId, isAll } = useSelectedWorkspace();
+  const { selectedId: selectedWorkspaceId, isAll, isUnassigned } =
+    useSelectedWorkspace();
   const { pinnedIds, isPinned, toggle: togglePin } = usePinnedProjects();
 
   const visibleProjects = useMemo(() => {
     if (isAll) return projects;
+    if (isUnassigned) return projects.filter((p) => !p.workspaceId);
     return projects.filter((p) => {
       if (!p.workspaceId) return true;
       return p.workspaceId === selectedWorkspaceId;
     });
-  }, [projects, selectedWorkspaceId, isAll]);
+  }, [projects, selectedWorkspaceId, isAll, isUnassigned]);
 
   const sortedProjects = useMemo(() => {
     const pinnedSet = new Set(pinnedIds);
@@ -144,8 +152,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex items-center justify-between gap-2">
           <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
             <img
-              src="/logo.png"
-              alt="TaskCalendar"
+              src="/favicon.svg"
+              alt=""
               className="w-8 h-8 rounded-lg object-contain shrink-0"
             />
             <h1 className="font-semibold text-foreground truncate">TaskCalendar</h1>
@@ -230,6 +238,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {projectsForNav.slice(0, 30).map((p) => {
                   const active = location.pathname === `/project/${p.projectId}`;
                   const pinned = isPinned(p.projectId);
+                  const sessionUnlocked =
+                    p.isLocked &&
+                    p.hasLockPin &&
+                    isProjectLockUnlockedInSession(
+                      p.projectId,
+                      p.lockPinVersion ?? 0,
+                    );
                   return (
                     <div
                       key={p.projectId}
@@ -249,12 +264,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           style={{ background: p.coverColor || 'hsl(var(--primary))' }}
                         />
                         <span className="text-sm font-medium truncate">{p.name}</span>
-                        {p.isLocked && p.hasLockPin && (
-                          <span title="Locked with PIN" className="inline-flex">
+                        {p.isLocked && p.hasLockPin && !sessionUnlocked && (
+                          <span title="PIN required to open" className="inline-flex">
                             <Lock className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-label="Project locked with PIN" />
                           </span>
                         )}
                       </Link>
+                      {p.isLocked && p.hasLockPin && sessionUnlocked && (
+                        <button
+                          type="button"
+                          title="Session unlocked — click to require PIN again"
+                          className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary shrink-0"
+                          aria-label="Lock project again for this session"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            clearProjectLockUnlockedInSession(
+                              p.projectId,
+                              p.lockPinVersion ?? 0,
+                            );
+                            toast.success('PIN will be required again when you open this project.');
+                          }}
+                        >
+                          <Unlock className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => {

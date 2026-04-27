@@ -9,8 +9,6 @@ import {
   subscribeToProjects,
 } from "@/services/supabase/database";
 import { Project, CreateProjectInput, UpdateProjectInput } from "@/types";
-import { supabase } from "@/services/supabase";
-
 // ── Limit error is identifiable by this prefix ───────────────────────
 export const LIMIT_ERROR_PREFIX = "LIMIT_REACHED:";
 
@@ -95,32 +93,12 @@ export const useProjects = () => {
 
         if (!input) throw new Error("Input is required");
 
-        // Fetch default workspace if not provided
-        let workspaceId = input.workspaceId;
-        if (!workspaceId) {
-
-          const { data: workspace, error: wsError } = await supabase
-            .from("workspaces")
-            .select("workspace_id")
-            .eq("organization_id", effectiveOrgId)
-            .eq("is_default", true)
-            .single();
-
-          if (wsError || !workspace) {
-            throw new Error(
-              "No default workspace found. Please create a workspace first.",
-            );
-          }
-
-          workspaceId = workspace.workspace_id;
-        }
-
         const newProject = await createProject(
           user.userId,
           user.email,
           user.displayName,
           user.photoURL,
-          { ...input, workspaceId },
+          input,
           effectiveOrgId,
         );
 

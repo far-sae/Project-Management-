@@ -30,8 +30,7 @@ import { sendInvitationEmail } from '@/services/email/emailService';
 import { checkTeamMemberLimit, supabase } from '@/services/supabase';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-
-const OWNER_EMAIL = 'smtkur31@gmail.com';
+import { SUPPORT_EMAIL } from '@/lib/support-email';
 
 export const Team: React.FC = () => {
   const { user } = useAuth();
@@ -764,7 +763,7 @@ export const Team: React.FC = () => {
                     setLimitModal({ open: false, message: '', max: null });
                     const priceId = pricing.tiers.advanced.extraUserPriceId;
                     if (!priceId || !user?.userId) {
-                      window.location.href = `mailto:${OWNER_EMAIL}?subject=Add extra team seat (Advanced)&body=Hi, I'd like to add an extra team seat to my Advanced plan.`;
+                      window.location.href = `mailto:${SUPPORT_EMAIL}?subject=Add extra team seat (Advanced)&body=Hi, I'd like to add an extra team seat to my Advanced plan.`;
                       return;
                     }
                     setAddSeatLoading(true);
@@ -788,7 +787,7 @@ export const Team: React.FC = () => {
                       window.location.href = data.url;
                     } catch (e) {
                       toast.error(e instanceof Error ? e.message : 'Failed to start checkout', { id: toastId });
-                      window.location.href = `mailto:${OWNER_EMAIL}?subject=Add extra team seat (Advanced)&body=Hi, I'd like to add an extra team seat to my Advanced plan.`;
+                      window.location.href = `mailto:${SUPPORT_EMAIL}?subject=Add extra team seat (Advanced)&body=Hi, I'd like to add an extra team seat to my Advanced plan.`;
                     } finally {
                       setAddSeatLoading(false);
                     }

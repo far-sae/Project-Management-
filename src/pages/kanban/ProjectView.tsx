@@ -23,6 +23,7 @@ import { usePresence } from '@/hooks/usePresence';
 import { usePresenceStatusPreference } from '@/hooks/usePresenceStatusPreference';
 import {
   ALL_WORKSPACES_ID,
+  UNASSIGNED_WORKSPACE_ID,
   useSelectedWorkspace,
 } from '@/hooks/useSelectedWorkspace';
 import { CsvImportDialog } from '@/components/import/CsvImportDialog';
@@ -183,7 +184,8 @@ export const ProjectView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string; }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { selectedId: selectedWorkspaceId, isAll } = useSelectedWorkspace();
+  const { selectedId: selectedWorkspaceId, isAll, isUnassigned } =
+    useSelectedWorkspace();
   const { preference: presencePreference, setPreference: setPresencePreference } =
     usePresenceStatusPreference();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -296,14 +298,36 @@ export const ProjectView: React.FC = () => {
   // If user switches sidebar workspace to one that does not contain this project,
   // the board would look "unchanged" while the filter updates — redirect to dashboard.
   useEffect(() => {
-    if (!project?.workspaceId || isAll || selectedWorkspaceId === ALL_WORKSPACES_ID) {
+    if (!project || isAll || selectedWorkspaceId === ALL_WORKSPACES_ID) {
       return;
     }
+    if (isUnassigned || selectedWorkspaceId === UNASSIGNED_WORKSPACE_ID) {
+      if (project.workspaceId) {
+        toast.info(
+          'This project is assigned to a workspace. Opening the dashboard.',
+        );
+        navigate('/dashboard');
+      }
+      return;
+    }
+
+    // Unassigned projects stay open in any workspace view (sidebar lists them everywhere).
+    if (!project.workspaceId) {
+      return;
+    }
+
     if (project.workspaceId !== selectedWorkspaceId) {
       toast.info('Switched workspace — this project belongs elsewhere. Opening the dashboard.');
       navigate('/dashboard');
     }
-  }, [project?.workspaceId, selectedWorkspaceId, isAll, navigate, project]);
+  }, [
+    project,
+    project?.workspaceId,
+    selectedWorkspaceId,
+    isAll,
+    isUnassigned,
+    navigate,
+  ]);
 
   const {
     tasks,

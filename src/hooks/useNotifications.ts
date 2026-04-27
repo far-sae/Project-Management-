@@ -83,6 +83,14 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     }
   }, [effectiveUserId, limit]);
 
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") void fetchNotifications();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [fetchNotifications]);
+
   const markAsRead = async (notificationId: string) => {
     const uid = effectiveUserId;
     if (!uid) return;

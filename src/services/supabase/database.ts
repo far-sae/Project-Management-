@@ -250,65 +250,14 @@ export const createProject = async (
     inputWorkspaceId: input.workspaceId,
   });
 
-  let workspaceId = input.workspaceId;
-
-  if (!workspaceId || workspaceId === "default") {
-    console.log("📡 Fetching default workspace for organization...");
-
-    try {
-      const { data: workspace, error: wsError } = await Promise.race([
-        supabase
-          .from("workspaces")
-          .select("workspace_id")
-          .eq("organization_id", organizationId)
-          .eq("is_default", true)
-          .single(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Workspace fetch timeout")), 5000),
-        ) as any,
-      ]);
-
-      console.log("📋 Workspace query result:", { workspace, error: wsError });
-
-      if (wsError || !workspace) {
-        console.log("⚠️ No default workspace found, creating one...");
-
-        // ✅ Check workspace limit before auto-creating
-        const wsLimitCheck = await checkWorkspaceLimit(ownerId, organizationId);
-        if (!wsLimitCheck.allowed) {
-          throw new Error(wsLimitCheck.message);
-        }
-
-        const defaultWsId = crypto.randomUUID();
-        const { data: newWs, error: createErr } = await supabase
-          .from("workspaces")
-          .insert({
-            workspace_id: defaultWsId,
-            name: "Workspace",
-            organization_id: organizationId,
-            is_default: true,
-            created_at: now,
-            updated_at: now,
-          })
-          .select()
-          .single();
-
-        if (createErr || !newWs) {
-          logger.error("Failed to create default workspace:", createErr);
-          throw new Error("Failed to create workspace. Please try again.");
-        }
-
-        workspaceId = newWs.workspace_id;
-        console.log("✅ Default workspace created:", workspaceId);
-      } else {
-        workspaceId = workspace.workspace_id;
-        console.log("✅ Using existing default workspace:", workspaceId);
-      }
-    } catch (err) {
-      logger.error("Error handling workspace:", err);
-      throw err; // ← re-throw so limit messages bubble up
-    }
-  }
+  const rawWs = input.workspaceId?.trim();
+  const workspaceId: string | null =
+    rawWs &&
+    rawWs !== "default" &&
+    rawWs !== "__unassigned__" &&
+    rawWs !== "__UNASSIGNED_PROJECTS__"
+      ? rawWs
+      : null;
 
   const project = {
     project_id: projectId,
@@ -605,28 +554,50 @@ export const updateProject = async (
   if (input.isLocked !== undefined) updateData.is_locked = input.isLocked;
   if (input.lockPinHash !== undefined) updateData.lock_pin_hash = input.lockPinHash;
 
-  const { error } = await supabase
+  const { data: orgRow, error: orgFetchError } = await supabase
+    .from("projects")
+    .select("organization_id")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (orgFetchError) {
+    logger.error("updateProject: organization check failed:", orgFetchError);
+    throw orgFetchError;
+  }
+  if (!orgRow) {
+    throw new Error("Project not found or you do not have access to update it.");
+  }
+  if (String(orgRow.organization_id ?? "") !== String(organizationId ?? "")) {
+    throw new Error(
+      "You do not have permission to update this project in this organization.",
+    );
+  }
+
+  const { data: updatedRows, error } = await supabase
     .from("projects")
     .update(updateData)
     .eq("project_id", projectId)
-    .eq("organization_id", organizationId);
+    .eq("organization_id", organizationId)
+    .select("project_id");
 
   if (error) {
     logger.error("Failed to update project:", error);
     throw error;
   }
+  if (!updatedRows?.length) {
+    throw new Error("Project not found or you do not have access to update it.");
+  }
 };
 
 export const deleteProject = async (
   projectId: string,
-  organizationId: string,
+  _organizationId: string,
 ): Promise<void> => {
   // Delete related comments for this project's tasks and global comments feed
   const { data: taskRows, error: taskFetchError } = await supabase
     .from("tasks")
     .select("task_id")
-    .eq("project_id", projectId)
-    .eq("organization_id", organizationId);
+    .eq("project_id", projectId);
 
   if (taskFetchError) {
     logger.error("Failed to load project tasks before delete:", taskFetchError);
@@ -640,24 +611,15 @@ export const deleteProject = async (
   }
 
   // Also remove any remaining global comments keyed only by project_id
-  await supabase
-    .from("global_comments")
-    .delete()
-    .eq("project_id", projectId)
-    .eq("organization_id", organizationId);
+  await supabase.from("global_comments").delete().eq("project_id", projectId);
 
   // Finally delete tasks and the project itself
-  await supabase
-    .from("tasks")
-    .delete()
-    .eq("project_id", projectId)
-    .eq("organization_id", organizationId);
+  await supabase.from("tasks").delete().eq("project_id", projectId);
 
   const { error } = await supabase
     .from("projects")
     .delete()
-    .eq("project_id", projectId)
-    .eq("organization_id", organizationId);
+    .eq("project_id", projectId);
 
   if (error) {
     logger.error("Failed to delete project:", error);

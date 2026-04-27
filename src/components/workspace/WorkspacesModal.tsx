@@ -27,7 +27,6 @@ interface WorkspacesModalProps {
   onDeleteWorkspace: (workspaceId: string) => void;
   onCreateWorkspace: () => void;
   onSelectWorkspace: (workspaceId: string) => void;
-  defaultWorkspaceId: string;
 }
 
 export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
@@ -39,14 +38,9 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
   onDeleteWorkspace,
   onCreateWorkspace,
   onSelectWorkspace,
-  defaultWorkspaceId,
 }) => {
-  const getProjectCount = (workspaceId: string) => {
-    if (workspaceId === defaultWorkspaceId) {
-      return projects.filter(p => !p.workspaceId || p.workspaceId === defaultWorkspaceId).length;
-    }
-    return projects.filter(p => p.workspaceId === workspaceId).length;
-  };
+  const getProjectCount = (workspaceId: string) =>
+    projects.filter((p) => p.workspaceId === workspaceId).length;
 
   const handleSelectWorkspace = (workspaceId: string) => {
     onSelectWorkspace(workspaceId);

@@ -6,16 +6,17 @@ import { PricingTiers } from '@/components/subscription/PricingTiers';
 import { CheckoutForm } from '@/components/subscription/CheckoutForm';
 import { SubscriptionTier, BillingCycle } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Shield, Zap, Clock, HeartHandshake, Lock, Check, Loader2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { ArrowLeft, Shield, Zap, Clock, HeartHandshake, Loader2 } from 'lucide-react';
 import { supabase } from '@/services/supabase/config';
 import { toast } from 'sonner';
+import { SUPPORT_EMAIL } from '@/lib/support-email';
 
 export const Pricing: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const { trialInfo, subscription, pricing, refreshSubscription } = useSubscription();
+  const { trialInfo, subscription, refreshSubscription } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<{
     tier: SubscriptionTier;
     billingCycle: BillingCycle;
@@ -98,13 +99,13 @@ export const Pricing: React.FC = () => {
   // After Stripe redirect: show verifying state so subscription is applied before dashboard
   if (verifyingAfterCheckout) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex items-center justify-center">
-        <Card className="max-w-md mx-auto">
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md mx-auto border-border">
           <CardContent className="pt-6">
             <div className="text-center py-8">
-              <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Applying your subscription</h3>
-              <p className="text-sm text-gray-500">You’ll be redirected to the dashboard in a moment.</p>
+              <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">Applying your subscription</h3>
+              <p className="text-sm text-muted-foreground">You’ll be redirected to the dashboard in a moment.</p>
             </div>
           </CardContent>
         </Card>
@@ -114,7 +115,7 @@ export const Pricing: React.FC = () => {
 
   if (selectedPlan) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 py-12 px-4">
+      <div className="min-h-screen bg-background py-12 px-4">
         <div className="max-w-md mx-auto">
           <Button
             variant="ghost"
@@ -137,7 +138,7 @@ export const Pricing: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-7xl mx-auto px-4 py-12">
         <div className="flex items-center justify-between mb-8">
           <Button
@@ -149,76 +150,30 @@ export const Pricing: React.FC = () => {
           </Button>
 
           {trialInfo?.isInTrial && (
-            <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-full text-sm font-medium">
+            <div className="bg-primary/15 text-primary border border-primary/20 px-4 py-2 rounded-full text-sm font-medium">
               {trialInfo.daysRemaining} days left in trial
             </div>
           )}
         </div>
 
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             Choose Your Plan
           </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Start with a 28-day free trial (no credit card required). After 28 days, if you don't subscribe, you'll automatically move to the free Starter plan. Subscribe anytime to Basic or Advanced. Payment via Stripe; you’ll get an email confirmation when you buy and when your plan renews (monthly or yearly).
-            Cancel anytime.
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            Start with a 28-day free trial (no credit card required). After 28 days, if you don&apos;t subscribe, you&apos;ll automatically move to the free Starter plan. Use the monthly/yearly switch above the plans to see prices for each billing period. Basic and Advanced are paid through Stripe; you&apos;ll get an email when you buy and when your plan renews. Cancel anytime.
+            {(subscription?.tier === 'starter' || subscription?.status === 'expired') && subscription?.tier !== undefined && (
+              <span className="block text-sm text-primary font-medium mt-3">
+                On Starter or cancelled? Upgrade or re-subscribe to Basic or Advanced below anytime.
+              </span>
+            )}
           </p>
-          {(subscription?.tier === 'starter' || subscription?.status === 'expired') && subscription?.tier !== undefined && (
-            <p className="text-sm text-orange-600 mt-2 font-medium">
-              On Starter or cancelled? You can upgrade or re-subscribe to Basic or Advanced below anytime.
-            </p>
-          )}
         </div>
 
         <PricingTiers onSelectPlan={handleSelectPlan} />
 
-        {/* What's included by plan — service summary & locks (Basic vs Advanced) */}
         <div className="mt-16">
-          <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">
-            What's included by plan
-          </h2>
-          <p className="text-center text-gray-500 text-sm mb-8">
-            Basic and Advanced plans are locked to the services below. Upgrade to unlock more.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(['starter', 'basic', 'advanced', 'premium'] as const).map((tier) => {
-              const tierPricing = pricing.tiers[tier];
-              const name = tier === 'starter' ? 'Starter' : tier === 'basic' ? 'Basic' : tier === 'advanced' ? 'Advanced' : 'Premium';
-              return (
-                <Card key={tier} className="bg-white">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <ul className="space-y-1.5 text-sm text-gray-600">
-                      {tierPricing.features.map((f, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <Check className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                    {tier === 'basic' && (
-                      <p className="mt-3 text-xs text-amber-600 flex items-center gap-1">
-                        <Lock className="w-3 h-3" />
-                        Team, Timeline & Contracts require Advanced or higher
-                      </p>
-                    )}
-                    {tier === 'advanced' && (
-                      <p className="mt-3 text-xs text-green-600 flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Includes all Basic services + collaboration & analytics
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mt-16">
-          <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">
+          <h2 className="text-2xl font-bold text-center text-foreground mb-8">
             Why Choose TaskCalendar?
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -227,27 +182,31 @@ export const Pricing: React.FC = () => {
               return (
                 <div
                   key={index}
-                  className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
+                  className="bg-card text-card-foreground border border-border rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4">
-                    <Icon className="w-6 h-6 text-orange-600" />
+                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                    <Icon className="w-6 h-6 text-primary" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">{benefit.title}</h3>
-                  <p className="text-sm text-gray-600">{benefit.description}</p>
+                  <h3 className="font-semibold text-foreground mb-2">{benefit.title}</h3>
+                  <p className="text-sm text-muted-foreground">{benefit.description}</p>
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div className="mt-16 bg-white rounded-2xl p-8 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Questions? We're here to help.
+        <div className="mt-16 bg-card border border-border rounded-2xl p-8 text-center">
+          <h2 className="text-2xl font-bold text-foreground mb-4">
+            Questions? We&apos;re here to help.
           </h2>
-          <p className="text-gray-600 mb-6">
+          <p className="text-muted-foreground mb-6">
             Contact our support team for any questions about our plans or features.
           </p>
-          <Button variant="outline">Contact Support</Button>
+          <Button variant="outline" asChild>
+            <a href={`mailto:${SUPPORT_EMAIL}?subject=TaskCalendar%20—%20Plan%20question`}>
+              Contact Support
+            </a>
+          </Button>
         </div>
       </div>
     </div>

@@ -5,6 +5,8 @@ import type { Workspace } from "@/types/workspace";
 const STORAGE_KEY = "selectedWorkspaceId";
 const EVENT_NAME = "app:selected-workspace-changed";
 export const ALL_WORKSPACES_ID = "__ALL_WORKSPACES__";
+/** Virtual filter: projects with no workspace assigned (not tied to org "default" workspace). */
+export const UNASSIGNED_WORKSPACE_ID = "__UNASSIGNED_PROJECTS__";
 
 const readStored = (): string | null => {
   try {
@@ -41,7 +43,7 @@ export const useSelectedWorkspace = () => {
   // If the stored workspace is no longer visible (deleted, switched org), show all workspaces.
   useEffect(() => {
     if (loading) return;
-    if (id === ALL_WORKSPACES_ID) return;
+    if (id === ALL_WORKSPACES_ID || id === UNASSIGNED_WORKSPACE_ID) return;
     const exists = workspaces.some((w) => w.workspaceId === id);
     if (!exists) {
       setId(ALL_WORKSPACES_ID);
@@ -68,7 +70,7 @@ export const useSelectedWorkspace = () => {
   }, []);
 
   const selected: Workspace | null = useMemo(() => {
-    if (id === ALL_WORKSPACES_ID) return null;
+    if (id === ALL_WORKSPACES_ID || id === UNASSIGNED_WORKSPACE_ID) return null;
     return workspaces.find((w) => w.workspaceId === id) || null;
   }, [workspaces, id]);
 
@@ -80,6 +82,7 @@ export const useSelectedWorkspace = () => {
     select,
     DEFAULT_WORKSPACE_ID,
     isAll: id === ALL_WORKSPACES_ID,
+    isUnassigned: id === UNASSIGNED_WORKSPACE_ID,
   };
 };
 

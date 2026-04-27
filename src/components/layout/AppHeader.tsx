@@ -1,5 +1,4 @@
 import React, { type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Search,
   Command,
@@ -7,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { openShortcutsModal } from '@/components/command/CommandPalette';
 
 interface AppHeaderProps {
   /** Slot for breadcrumbs / title */
@@ -39,7 +39,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onSearchClick,
   className,
 }) => {
-  const navigate = useNavigate();
   const isMac =
     typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
@@ -82,9 +81,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             variant="ghost"
             size="icon"
             className="text-muted-foreground"
-            onClick={() => navigate('/settings')}
-            aria-label="Help"
-            title="Help & shortcuts"
+            onClick={() => openShortcutsModal()}
+            aria-label="Keyboard shortcuts and help"
+            title="Shortcuts & help (?)"
           >
             <HelpCircle className="w-4 h-4" />
           </Button>
