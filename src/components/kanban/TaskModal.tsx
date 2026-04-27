@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -34,7 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Trash2, Loader2, Sparkles, Wand2, MessageSquare,
-  ListTree, X, Check, Circle, Activity,
+  ListTree, Paperclip, X, Check, Circle, Activity, Clock,
   CheckCircle2, Lock, MoreHorizontal, Bell, Mail, Link2,
   AlertTriangle, Save, KeyRound, Users,
 } from 'lucide-react';
@@ -65,8 +66,9 @@ import { SubtaskDecompositionModal } from './SubtaskDecompositionModal';
 import { NotifyModal } from './NotifyModal';
 import { DayPickerPopover } from './DayPickerPopover';
 import { AssigneePicker } from './AssigneePicker';
-import { TaskThreadChat } from './TaskThreadChat';
-import { cn } from '@/lib/utils';
+import { EmojiPickerButton } from '@/components/ui/emoji-picker';
+import { cn, truncateFileName } from '@/lib/utils';
+import AttachmentPreview from '../ui/AttachmentPreview';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
@@ -668,6 +670,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
+  const formatTimeLogged = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    if (h > 0 && m > 0) return `${h}h ${m}m`;
+    if (h > 0) return `${h}h`;
+    return `${m}m`;
+  };
+
   const copyTaskUrl = async () => {
     if (!task) return;
     try {
@@ -1109,48 +1119,228 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   value={activeTab}
                   onValueChange={(v) => setActiveTab(v as 'comments' | 'activity')}
                 >
-                  <TabsList className="grid w-full grid-cols-2 h-10 p-1 rounded-xl bg-muted/50 border border-border/60">
-                    <TabsTrigger
-                      value="comments"
-                      className="text-sm rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"
-                    >
-                      <MessageSquare className="w-4 h-4 shrink-0" />
-                      Chat
+                  <TabsList className="grid w-full grid-cols-2 h-9">
+                    <TabsTrigger value="comments" className="text-sm">
+                      <MessageSquare className="w-4 h-4 mr-1.5" />
+                      Comments
                     </TabsTrigger>
-                    <TabsTrigger
-                      value="activity"
-                      className="text-sm rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"
-                    >
-                      <Activity className="w-4 h-4 shrink-0" />
+                    <TabsTrigger value="activity" className="text-sm">
+                      <Activity className="w-4 h-4 mr-1.5" />
                       Activity
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="comments" className="mt-3 space-y-3 focus-visible:outline-none">
-                    <TaskThreadChat
-                      taskId={task.taskId}
-                      currentUserId={user?.userId}
-                      readOnly={readOnlyTask}
-                      taskComments={taskComments}
-                      newComment={newComment}
-                      onNewCommentChange={setNewComment}
-                      onTyping={() => {
-                        if (task?.taskId) scheduleCommentTypingBroadcast(task.taskId);
-                      }}
-                      typingPeers={
-                        task.taskId && typingPeers ? typingPeers(task.taskId) : []
-                      }
-                      commentLoading={commentLoading}
-                      onSendComment={handleAddComment}
-                      commentAttachmentFiles={commentAttachmentFiles}
-                      setCommentAttachmentFiles={setCommentAttachmentFiles}
-                      showTimeSpent={showTimeSpent}
-                      setShowTimeSpent={setShowTimeSpent}
-                      commentTimeSpentMinutes={commentTimeSpentMinutes}
-                      setCommentTimeSpentMinutes={setCommentTimeSpentMinutes}
-                      commentFileInputRef={commentFileInputRef}
-                      maxFileSize={MAX_FILE_SIZE}
-                    />
+                  <TabsContent value="comments" className="mt-3 space-y-3">
+                    <div className="border border-border rounded-lg bg-card">
+                      <Textarea
+                        value={newComment}
+                        onChange={(e) => {
+                          setNewComment(e.target.value);
+                          if (task?.taskId) {
+                            scheduleCommentTypingBroadcast(task.taskId);
+                          }
+                        }}
+                        placeholder="Write a comment…"
+                        rows={2}
+                        disabled={readOnlyTask}
+                        className="border-0 resize-none focus-visible:ring-0 bg-transparent"
+                      />
+                      {task?.taskId && typingPeers && (() => {
+                        const typing = typingPeers(task.taskId);
+                        if (typing.length === 0) return null;
+                        const names = typing.map((p) => p.displayName);
+                        const label =
+                          names.length === 1
+                            ? `${names[0]} is typing…`
+                            : names.length === 2
+                            ? `${names[0]} and ${names[1]} are typing…`
+                            : `${names[0]}, ${names[1]} and ${names.length - 2} more are typing…`;
+                        return (
+                          <div className="px-3 pb-2 -mt-1 text-[11px] text-muted-foreground flex items-center gap-1.5">
+                            <span className="inline-flex gap-0.5">
+                              <span className="w-1 h-1 rounded-full bg-muted-foreground animate-pulse" />
+                              <span
+                                className="w-1 h-1 rounded-full bg-muted-foreground animate-pulse"
+                                style={{ animationDelay: '120ms' }}
+                              />
+                              <span
+                                className="w-1 h-1 rounded-full bg-muted-foreground animate-pulse"
+                                style={{ animationDelay: '240ms' }}
+                              />
+                            </span>
+                            {label}
+                          </div>
+                        );
+                      })()}
+                      <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/50">
+                        <div className="flex items-center gap-1">
+                          <EmojiPickerButton
+                            value={newComment}
+                            onChange={setNewComment}
+                            disabled={readOnlyTask}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => commentFileInputRef.current?.click()}
+                            disabled={readOnlyTask}
+                            className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs disabled:opacity-50"
+                          >
+                            <Paperclip className="w-3.5 h-3.5" />
+                            Attach
+                          </button>
+                          <input
+                            ref={commentFileInputRef}
+                            type="file"
+                            multiple
+                            accept="*/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const files = e.target.files;
+                              if (!files?.length) return;
+                              const validFiles: File[] = [];
+                              for (const file of Array.from(files)) {
+                                if (file.size > MAX_FILE_SIZE) {
+                                  toast.error(`${file.name} exceeds 2MB limit`);
+                                  continue;
+                                }
+                                validFiles.push(file);
+                              }
+                              if (validFiles.length > 0) {
+                                setCommentAttachmentFiles((prev) => [...prev, ...validFiles]);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowTimeSpent(!showTimeSpent)}
+                            disabled={readOnlyTask}
+                            className={cn(
+                              'p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs',
+                              showTimeSpent && 'bg-secondary text-foreground',
+                            )}
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            Time
+                          </button>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleAddComment}
+                          disabled={
+                            readOnlyTask ||
+                            (!newComment.trim() && commentAttachmentFiles.length === 0) ||
+                            commentLoading
+                          }
+                        >
+                          {commentLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            'Comment'
+                          )}
+                        </Button>
+                      </div>
+
+                      {showTimeSpent && (
+                        <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-secondary/30">
+                          <Input
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            value={
+                              commentTimeSpentMinutes === '' ? '' : commentTimeSpentMinutes
+                            }
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setCommentTimeSpentMinutes(
+                                v === '' ? '' : Math.max(0, parseInt(v, 10) || 0),
+                              );
+                            }}
+                            className="w-20 h-8 text-center"
+                          />
+                          <span className="text-xs text-muted-foreground">minutes</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowTimeSpent(false);
+                              setCommentTimeSpentMinutes('');
+                            }}
+                            className="ml-auto text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+
+                      {commentAttachmentFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 px-3 py-2 border-t border-border">
+                          {commentAttachmentFiles.map((f, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-secondary rounded text-xs"
+                              title={f.name}
+                            >
+                              <span className="truncate max-w-[150px]">
+                                {truncateFileName(f.name, 20)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCommentAttachmentFiles((p) =>
+                                    p.filter((_, idx) => idx !== i),
+                                  )
+                                }
+                                className="text-muted-foreground hover:text-destructive"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 max-h-72 overflow-y-auto">
+                      {taskComments.map((comment) => (
+                        <div key={comment.commentId} className="flex gap-3">
+                          <Avatar className="w-8 h-8 shrink-0">
+                            <AvatarImage src={comment.photoURL} />
+                            <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
+                              {comment.displayName?.charAt(0).toUpperCase() || '?'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm text-foreground">
+                                {comment.displayName}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+                              </span>
+                            </div>
+                            {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
+                              <span className="inline-block mt-1 px-2 py-0.5 bg-success-soft text-success-soft-foreground text-xs rounded-full">
+                                {formatTimeLogged(comment.timeSpentMinutes)} logged
+                              </span>
+                            )}
+                            {comment.text?.trim() && (
+                              <p className="text-sm text-foreground mt-1 whitespace-pre-wrap break-words">
+                                {comment.text}
+                              </p>
+                            )}
+                            {comment.attachments && comment.attachments.length > 0 && (
+                              <AttachmentPreview attachments={comment.attachments} />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {taskComments.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          No comments yet
+                        </p>
+                      )}
+                    </div>
                   </TabsContent>
 
                   <TabsContent value="activity" className="mt-3 space-y-3">

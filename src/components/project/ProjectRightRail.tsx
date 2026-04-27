@@ -1,7 +1,5 @@
 import React, { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import {
-  PanelRightClose,
-  PanelRightOpen,
   MessageSquare,
   Plus,
   CheckCircle2,
@@ -11,6 +9,8 @@ import {
   Send,
   Loader2,
   Users,
+  ChevronUp,
+  Minus,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -349,57 +349,105 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     </section>
   );
 
+  const railWidth = 'w-[min(22rem,calc(100vw-1.25rem))]';
+
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => onOpenChange(true)}
-        aria-label="Open project chat, team, and feed"
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground shadow-lg hover:bg-secondary/90"
+      <div
+        className="fixed bottom-0 right-0 z-[100] flex flex-col items-end pointer-events-none p-0"
+        role="complementary"
+        aria-label="Project messaging"
       >
-        <PanelRightOpen className="w-5 h-5 text-muted-foreground" />
-        <span className="hidden sm:inline">Chat & team</span>
-      </button>
+        <button
+          type="button"
+          onClick={() => onOpenChange(true)}
+          aria-label="Open project messages and team"
+          className={cn(
+            'pointer-events-auto relative mb-0 mr-3 sm:mr-5 flex min-h-[3.25rem] items-center gap-3 rounded-t-xl border border-b-0 border-border',
+            'bg-gradient-to-b from-card to-muted/30 pl-3 pr-2 text-left shadow-[0_-6px_24px_rgba(0,0,0,0.1)]',
+            'transition-colors hover:from-card hover:to-muted/50 dark:shadow-[0_-8px_32px_rgba(0,0,0,0.45)]',
+            railWidth,
+          )}
+        >
+        <div className="absolute top-0 left-3 right-3 h-0.5 rounded-b-full bg-primary" />
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/20">
+            <MessageSquare className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1 py-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Messaging
+            </p>
+            <p className="truncate text-sm font-semibold text-foreground">{project.name}</p>
+            {chatMessages.length > 0 && (
+              <p className="truncate text-xs text-muted-foreground">
+                {chatMessages[chatMessages.length - 1]?.body?.slice(0, 80) || '—'}
+                {String(chatMessages[chatMessages.length - 1]?.body || '').length > 80
+                  ? '…'
+                  : ''}
+              </p>
+            )}
+          </div>
+          <ChevronUp className="h-5 w-5 shrink-0 text-muted-foreground" />
+        </button>
+      </div>
     );
   }
 
   return (
-    <aside
-      className={cn(
-        'fixed bottom-5 right-5 z-40 flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl',
-        'w-[min(30rem,calc(100vw-1.5rem))] h-[min(40rem,calc(100vh-6rem))]',
-      )}
+    <div
+      className="fixed bottom-0 right-0 z-[100] flex flex-col items-end pointer-events-none p-0"
+      role="complementary"
+      aria-label="Project messages"
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 bg-card/95 backdrop-blur-sm">
+      <aside
+        className={cn(
+          'pointer-events-auto mb-0 mr-3 sm:mr-5 flex flex-col overflow-hidden rounded-t-2xl border border-b-0 border-border',
+          'bg-gradient-to-b from-card via-card to-background shadow-[0_-8px_40px_rgba(0,0,0,0.12)]',
+          'dark:shadow-[0_-12px_40px_rgba(0,0,0,0.5)]',
+          railWidth,
+          'h-[min(32rem,72svh)] max-h-[calc(100vh-1.5rem)]',
+        )}
+      >
+        <div className="h-1 w-full shrink-0 bg-primary" />
+        <div className="flex items-center justify-between gap-2 border-b border-border/80 bg-card/90 px-3 py-2.5 backdrop-blur-sm">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{project.name}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm font-semibold text-foreground truncate leading-tight">{project.name}</p>
+          <p className="text-[11px] text-muted-foreground">
             {dedupedMembers.length} members · {chatMessages.length} messages
           </p>
         </div>
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 text-muted-foreground shrink-0"
+          className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
           onClick={() => onOpenChange(false)}
-          aria-label="Hide project panel"
+          aria-label="Minimize project messages"
         >
-          <PanelRightClose className="w-5 h-5" />
+          <Minus className="h-5 w-5" />
         </Button>
       </div>
 
-      <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0">
-        <TabsList className="shrink-0 mx-3 mt-3 h-11 grid grid-cols-3 gap-1 p-1 rounded-lg">
-          <TabsTrigger value="chat" className="text-sm px-2 gap-1.5">
-            <MessageSquare className="w-4 h-4" />
+      <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">
+        <TabsList className="shrink-0 mx-2 mt-2 grid h-10 grid-cols-3 gap-0.5 rounded-lg border border-border/50 bg-muted/40 p-0.5">
+          <TabsTrigger
+            value="chat"
+            className="text-xs sm:text-sm gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+          >
+            <MessageSquare className="h-3.5 w-3.5 shrink-0" />
             Chat
           </TabsTrigger>
-          <TabsTrigger value="members" className="text-sm px-2 gap-1.5">
-            <Users className="w-4 h-4" />
+          <TabsTrigger
+            value="members"
+            className="text-xs sm:text-sm gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+          >
+            <Users className="h-3.5 w-3.5 shrink-0" />
             Team
           </TabsTrigger>
-          <TabsTrigger value="activity" className="text-sm px-2 gap-1.5">
-            <ActivityIcon className="w-4 h-4" />
+          <TabsTrigger
+            value="activity"
+            className="text-xs sm:text-sm gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+          >
+            <ActivityIcon className="h-3.5 w-3.5 shrink-0" />
             Feed
           </TabsTrigger>
         </TabsList>
@@ -482,14 +530,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             )}
             <div ref={chatEndRef} />
           </div>
-          <div className="shrink-0 border-t border-border p-3 bg-card">
-            <div className="rounded-2xl border border-border bg-background p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring">
+          <div className="shrink-0 border-t border-border/80 bg-muted/20 p-2.5">
+            <div className="rounded-2xl border border-border/60 bg-background/90 p-1.5 shadow-inner focus-within:ring-2 focus-within:ring-primary/25">
               <Textarea
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Message the project… (@name to notify)"
+                placeholder="Write a message… (@name to notify)"
                 rows={2}
-                className="min-h-[3.5rem] resize-none border-0 bg-transparent p-2 text-sm shadow-none focus-visible:ring-0"
+                className="min-h-[3.25rem] resize-none rounded-xl border-0 bg-transparent px-2.5 py-2 text-sm shadow-none focus-visible:ring-0"
                 disabled={!user || chatSending}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -538,6 +586,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         </TabsContent>
       </Tabs>
     </aside>
+    </div>
   );
 };
 
