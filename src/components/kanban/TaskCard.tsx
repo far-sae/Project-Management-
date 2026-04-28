@@ -11,9 +11,13 @@ import {
   AlertTriangle,
   CheckSquare,
   Check,
+  KeyRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PresencePeer } from '@/hooks/usePresence';
+import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
+import { isTaskLockUnlockedInSession } from '@/lib/taskLockPin';
 
 /** Stable id for dnd-kit when `task` is missing (hooks must run before any return). */
 const PLACEHOLDER_SORTABLE_ID = '__task-card-placeholder__';
@@ -83,6 +87,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   dragDisabled = false,
   swapHighlight = false,
 }) => {
+  const { user } = useAuth();
+  const { isAdmin } = useOrganization();
+
   const {
     attributes,
     listeners,
@@ -103,6 +110,32 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     const done = subtasks.filter((s) => s.completed).length;
     return { done, total: subtasks.length, pct: (done / subtasks.length) * 100 };
   }, [task]);
+
+  /**
+   * A locked task hides title/description/tags/comment counts on the board until the
+   * viewer either (a) is the creator / an assignee / a workspace admin, or (b) has
+   * already entered the PIN this session. Not memoized — `isTaskLockUnlockedInSession`
+   * reads sessionStorage and must re-run every render after unlock.
+   */
+  let isLockMasked = false;
+  if (task?.isLocked) {
+    if (!user) {
+      isLockMasked = true;
+    } else if (isAdmin) {
+      isLockMasked = false;
+    } else if (task.createdBy === user.userId) {
+      isLockMasked = false;
+    } else if (
+      Array.isArray(task.assignees) &&
+      task.assignees.some((a) => a.userId === user.userId)
+    ) {
+      isLockMasked = false;
+    } else if (task.hasLockPin && isTaskLockUnlockedInSession(task.taskId)) {
+      isLockMasked = false;
+    } else {
+      isLockMasked = true;
+    }
+  }
 
   if (!task) return null;
 
@@ -206,19 +239,43 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
       {/* Title row */}
       <div className="flex items-start gap-2 mb-1.5">
-        <h4 className="flex-1 font-medium text-sm text-foreground line-clamp-2 [.dense_&]:text-[13px] leading-snug">
-          {task.title}
-        </h4>
+        {isLockMasked ? (
+          <div className="flex-1 flex items-center gap-2 rounded-md bg-warning-soft/60 px-2 py-1.5 ring-1 ring-warning/30">
+            <Lock className="w-3.5 h-3.5 text-warning-soft-foreground shrink-0" />
+            <span className="text-[12px] font-medium text-warning-soft-foreground tracking-wide">
+              Locked task
+            </span>
+            {task.hasLockPin && (
+              <span
+                className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-warning-soft-foreground/80"
+                title="A PIN is required to view"
+              >
+                <KeyRound className="w-3 h-3" />
+                PIN
+              </span>
+            )}
+          </div>
+        ) : (
+          <h4 className="flex-1 font-medium text-sm text-foreground line-clamp-2 [.dense_&]:text-[13px] leading-snug">
+            {task.title}
+          </h4>
+        )}
       </div>
 
-      {task.description && (
+      {!isLockMasked && task.description && (
         <p className="text-xs text-muted-foreground/90 mb-2 line-clamp-2 [.dense_&]:hidden">
           {task.description}
         </p>
       )}
 
+      {isLockMasked && (
+        <p className="text-[11px] text-muted-foreground mb-2 [.dense_&]:hidden">
+          Title, description, and comments are hidden until you unlock this task.
+        </p>
+      )}
+
       {/* Subtask progress */}
-      {subtaskProgress && (
+      {!isLockMasked && subtaskProgress && (
         <div className="mb-2">
           <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-0.5">
             <span className="inline-flex items-center gap-1">
@@ -237,7 +294,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       )}
 
       {/* Tags */}
-      {task.tags && task.tags.length > 0 && (
+      {!isLockMasked && task.tags && task.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2 [.dense_&]:hidden">
           {task.tags.slice(0, 3).map((tag) => (
             <span
@@ -303,14 +360,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             </span>
           )}
 
-          {commentsCount > 0 && (
+          {!isLockMasked && commentsCount > 0 && (
             <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
               <MessageSquare className="w-3 h-3" />
               {commentsCount}
             </span>
           )}
 
-          {attachments.length > 0 && (
+          {!isLockMasked && attachments.length > 0 && (
             <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
               <Paperclip className="w-3 h-3" />
               {attachments.length}
@@ -318,7 +375,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           )}
         </div>
 
-        {assignees.length > 0 && (
+        {!isLockMasked && assignees.length > 0 && (
           <div className="flex -space-x-1.5 shrink-0">
             {assignees.slice(0, 3).map((assignee) => (
               <Avatar

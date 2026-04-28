@@ -65,4 +65,8 @@ export interface AIError {
   code: 'RATE_LIMIT' | 'API_ERROR' | 'INVALID_INPUT' | 'NO_API_KEY';
   message: string;
   retryAfter?: number;
+  /** Original error when message wraps a downstream failure */
+  originalError?: unknown;
+  /** Snippet of raw model output when parsing fails */
+  responseSnippet?: string;
 }

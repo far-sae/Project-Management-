@@ -168,6 +168,44 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   const [chatSending, setChatSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  /** Persist a per-project "last seen" timestamp so the dock can show an unread badge. */
+  const lastSeenStorageKey = `project_chat_last_seen:${project.projectId}`;
+  const [lastSeenAt, setLastSeenAt] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    try {
+      const raw = window.localStorage.getItem(lastSeenStorageKey);
+      return raw ? Number(raw) || 0 : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const unreadCount = useMemo(() => {
+    if (open) return 0;
+    if (!user) return 0;
+    return chatMessages.reduce((acc, m) => {
+      if (m.userId === user.userId) return acc;
+      return new Date(m.createdAt).getTime() > lastSeenAt ? acc + 1 : acc;
+    }, 0);
+  }, [chatMessages, lastSeenAt, open, user]);
+
+  const recentSenders = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { userId: string; displayName: string; photoURL?: string }[] = [];
+    for (let i = chatMessages.length - 1; i >= 0 && result.length < 3; i--) {
+      const m = chatMessages[i];
+      if (!m || !m.userId || seen.has(m.userId)) continue;
+      if (user && m.userId === user.userId) continue;
+      seen.add(m.userId);
+      result.push({
+        userId: m.userId,
+        displayName: m.displayName || 'User',
+        photoURL: m.photoURL,
+      });
+    }
+    return result;
+  }, [chatMessages, user]);
+
   const chatRows = useMemo(
     () =>
       chatMessages.map((msg, index) => {
@@ -189,6 +227,18 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     });
     return () => unsub();
   }, [open, project.projectId]);
+
+  /** When the dock opens — or new messages arrive while open — bump the last-seen marker. */
+  useEffect(() => {
+    if (!open) return;
+    const now = Date.now();
+    setLastSeenAt(now);
+    try {
+      window.localStorage.setItem(lastSeenStorageKey, String(now));
+    } catch {
+      /* ignore */
+    }
+  }, [open, chatMessages.length, lastSeenStorageKey]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -349,7 +399,13 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     </section>
   );
 
-  const railWidth = 'w-[min(22rem,calc(100vw-1.25rem))]';
+  const railWidth = 'w-[min(23rem,calc(100vw-1.25rem))]';
+  const lastMessage = chatMessages[chatMessages.length - 1];
+  const lastMessagePreview = lastMessage
+    ? `${lastMessage.userId === user?.userId ? 'You' : lastMessage.displayName?.split(' ')[0] || ''}${
+        lastMessage.userId === user?.userId || !lastMessage.displayName ? '' : ':'
+      } ${lastMessage.body || ''}`
+    : null;
 
   if (!open) {
     return (
@@ -363,31 +419,62 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           onClick={() => onOpenChange(true)}
           aria-label="Open project messages and team"
           className={cn(
-            'pointer-events-auto relative mb-0 mr-3 sm:mr-5 flex min-h-[3.25rem] items-center gap-3 rounded-t-xl border border-b-0 border-border',
-            'bg-gradient-to-b from-card to-muted/30 pl-3 pr-2 text-left shadow-[0_-6px_24px_rgba(0,0,0,0.1)]',
-            'transition-colors hover:from-card hover:to-muted/50 dark:shadow-[0_-8px_32px_rgba(0,0,0,0.45)]',
+            'pointer-events-auto group relative mb-0 mr-3 sm:mr-5 flex min-h-[3.5rem] items-center gap-3',
+            'rounded-t-2xl border border-b-0 border-border bg-card pl-3 pr-3 text-left',
+            'shadow-[0_-8px_28px_rgba(0,0,0,0.18)] transition-all duration-150',
+            'hover:bg-muted/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
             railWidth,
           )}
         >
-        <div className="absolute top-0 left-3 right-3 h-0.5 rounded-b-full bg-primary" />
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/20">
-            <MessageSquare className="h-4 w-4" />
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+            <MessageSquare className="h-[18px] w-[18px]" />
+            {unreadCount > 0 && (
+              <span
+                className={cn(
+                  'absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full',
+                  'bg-destructive text-destructive-foreground text-[10px] font-semibold leading-[18px] text-center',
+                  'ring-2 ring-card shadow-sm',
+                )}
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </div>
           <div className="min-w-0 flex-1 py-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Messaging
-            </p>
-            <p className="truncate text-sm font-semibold text-foreground">{project.name}</p>
-            {chatMessages.length > 0 && (
-              <p className="truncate text-xs text-muted-foreground">
-                {chatMessages[chatMessages.length - 1]?.body?.slice(0, 80) || '—'}
-                {String(chatMessages[chatMessages.length - 1]?.body || '').length > 80
-                  ? '…'
-                  : ''}
+            <div className="flex items-center gap-1.5">
+              <p className="truncate text-[13px] font-semibold text-foreground leading-tight">
+                {project.name}
+              </p>
+              {unreadCount > 0 && (
+                <span className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-primary animate-pulse" />
+              )}
+            </div>
+            {lastMessagePreview ? (
+              <p className="truncate text-[11.5px] text-muted-foreground mt-0.5">
+                {lastMessagePreview.slice(0, 80)}
+                {lastMessagePreview.length > 80 ? '…' : ''}
+              </p>
+            ) : (
+              <p className="truncate text-[11.5px] text-muted-foreground mt-0.5">
+                {dedupedMembers.length} members · Start the conversation
               </p>
             )}
           </div>
-          <ChevronUp className="h-5 w-5 shrink-0 text-muted-foreground" />
+          {recentSenders.length > 0 ? (
+            <div className="flex -space-x-1.5 shrink-0 mr-1">
+              {recentSenders.map((s) => (
+                <Avatar key={s.userId} className="w-6 h-6 ring-2 ring-card">
+                  <AvatarImage src={s.photoURL} alt={s.displayName} />
+                  <AvatarFallback className="text-[10px] bg-primary-soft text-primary-soft-foreground">
+                    {(s.displayName || '?').charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
+          ) : null}
+          <ChevronUp
+            className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5"
+          />
         </button>
       </div>
     );
@@ -402,30 +489,35 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       <aside
         className={cn(
           'pointer-events-auto mb-0 mr-3 sm:mr-5 flex flex-col overflow-hidden rounded-t-2xl border border-b-0 border-border',
-          'bg-gradient-to-b from-card via-card to-background shadow-[0_-8px_40px_rgba(0,0,0,0.12)]',
-          'dark:shadow-[0_-12px_40px_rgba(0,0,0,0.5)]',
+          'bg-card shadow-[0_-12px_40px_rgba(0,0,0,0.22)]',
           railWidth,
           'h-[min(32rem,72svh)] max-h-[calc(100vh-1.5rem)]',
         )}
       >
-        <div className="h-1 w-full shrink-0 bg-primary" />
-        <div className="flex items-center justify-between gap-2 border-b border-border/80 bg-card/90 px-3 py-2.5 backdrop-blur-sm">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate leading-tight">{project.name}</p>
-          <p className="text-[11px] text-muted-foreground">
-            {dedupedMembers.length} members · {chatMessages.length} messages
-          </p>
+        <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+              <MessageSquare className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground truncate leading-tight">
+                {project.name}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {dedupedMembers.length} members · {chatMessages.length} messages
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+            onClick={() => onOpenChange(false)}
+            aria-label="Minimize project messages"
+          >
+            <Minus className="h-5 w-5" />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-          onClick={() => onOpenChange(false)}
-          aria-label="Minimize project messages"
-        >
-          <Minus className="h-5 w-5" />
-        </Button>
-      </div>
 
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="shrink-0 mx-2 mt-2 grid h-10 grid-cols-3 gap-0.5 rounded-lg border border-border/50 bg-muted/40 p-0.5">
@@ -486,17 +578,17 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                       )}
                       <div className={cn('flex gap-2', mine && 'justify-end')}>
                         {!mine && (
-                          <Avatar className="w-8 h-8 shrink-0 mt-5">
+                          <Avatar className="w-7 h-7 shrink-0 mt-5">
                             <AvatarImage src={msg.photoURL} alt={msg.displayName} />
-                            <AvatarFallback className="text-xs bg-primary-soft text-primary-soft-foreground">
+                            <AvatarFallback className="text-[11px] bg-primary-soft text-primary-soft-foreground">
                               {(msg.displayName || '?').charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                         )}
-                        <div className={cn('max-w-[82%]', mine && 'flex flex-col items-end')}>
+                        <div className={cn('max-w-[78%] min-w-0', mine && 'flex flex-col items-end')}>
                           <div
                             className={cn(
-                              'mb-1 flex items-center gap-1.5 text-xs text-muted-foreground',
+                              'mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground',
                               mine && 'justify-end',
                             )}
                           >
@@ -513,10 +605,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                           </div>
                           <div
                             className={cn(
-                              'rounded-2xl border px-3 py-2 text-sm leading-relaxed shadow-sm whitespace-pre-wrap break-words',
+                              'rounded-2xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
                               mine
-                                ? 'rounded-br-md border-primary/25 bg-primary text-primary-foreground'
-                                : 'rounded-bl-md border-border bg-muted/50 text-foreground',
+                                ? 'rounded-br-md bg-primary text-primary-foreground shadow-sm'
+                                : 'rounded-bl-md bg-muted text-foreground border border-border/60',
                             )}
                           >
                             {msg.body}
@@ -530,14 +622,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             )}
             <div ref={chatEndRef} />
           </div>
-          <div className="shrink-0 border-t border-border/80 bg-muted/20 p-2.5">
-            <div className="rounded-2xl border border-border/60 bg-background/90 p-1.5 shadow-inner focus-within:ring-2 focus-within:ring-primary/25">
+          <div className="shrink-0 border-t border-border/70 bg-card p-2.5">
+            <div className="rounded-2xl border border-border/60 bg-background p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
               <Textarea
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Write a message… (@name to notify)"
                 rows={2}
-                className="min-h-[3.25rem] resize-none rounded-xl border-0 bg-transparent px-2.5 py-2 text-sm shadow-none focus-visible:ring-0"
+                className="min-h-[3rem] resize-none rounded-xl border-0 bg-transparent px-2.5 py-1.5 text-[13px] leading-relaxed shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/70"
                 disabled={!user || chatSending}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -546,22 +638,22 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   }
                 }}
               />
-              <div className="flex items-center justify-between gap-2 px-1 pb-1">
-                <p className="text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5">
+                <p className="text-[10.5px] text-muted-foreground">
                   Enter to send · Shift+Enter for newline
                 </p>
                 <Button
                   type="button"
                   size="sm"
-                  className="h-8 rounded-full px-3"
+                  className="h-7 rounded-full px-3 text-xs"
                   disabled={!user || !chatInput.trim() || chatSending}
                   onClick={() => void handleSendChat()}
                 >
                   {chatSending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
                     <>
-                      <Send className="w-3.5 h-3.5 mr-1.5" />
+                      <Send className="w-3 h-3 mr-1" />
                       Send
                     </>
                   )}

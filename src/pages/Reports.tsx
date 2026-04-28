@@ -10,6 +10,7 @@ import {
   BarChart3, TrendingUp, CheckCircle, Clock, Loader2, ArrowRight,
   Users, Briefcase, Timer, LayoutDashboard, FolderKanban, Lock,
   DollarSign, FileText, RefreshCw, AlertTriangle, AlertCircle, X,
+  Sparkles, Brain, ShieldAlert, Lightbulb, MessageSquare, Send, Trophy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -35,6 +36,16 @@ import { DEFAULT_COLUMNS } from '@/types';
 import { getOrganizationContracts, Contract } from '@/services/supabase/contracts';
 import { format } from 'date-fns';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
+import {
+  generateReportInsights,
+  answerReportQuestion,
+  isAIEnabled,
+  type ReportMetricsSnapshot,
+  type ReportInsightsResponse,
+  type AIError,
+} from '@/services/ai';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 const ALL_WORKSPACES_ID = '__all__';
 
@@ -80,6 +91,16 @@ export const Reports: React.FC = () => {
     description: string;
     onConfirm: () => void;
   }>({ open: false, title: '', description: '', onConfirm: () => { } });
+
+  // AI insights state
+  const aiAvailable = isAIEnabled();
+  const [aiInsights, setAiInsights] = useState<ReportInsightsResponse | null>(null);
+  const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
+  const [aiInsightsError, setAiInsightsError] = useState<string | null>(null);
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [aiAskLoading, setAiAskLoading] = useState(false);
+  const [aiAskError, setAiAskError] = useState<string | null>(null);
 
   const orgId = organization?.organizationId || user?.organizationId || (user ? `local-${user.userId}` : '');
 
@@ -223,6 +244,134 @@ export const Reports: React.FC = () => {
     () => [...filteredTasks].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 8),
     [filteredTasks]
   );
+
+  /** Aggregated snapshot for the AI insight call. Recomputes when filters change. */
+  const aiSnapshot = useMemo<ReportMetricsSnapshot>(() => {
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+
+    const overdueTasks = filteredTasks.filter(
+      (t) => t.dueDate && new Date(t.dueDate).getTime() < now && t.status !== 'done',
+    ).length;
+
+    const stalledTasks = filteredTasks.filter(
+      (t) => t.status !== 'done' && now - new Date(t.updatedAt).getTime() > fourteenDaysMs,
+    ).length;
+
+    const unassignedTasks = filteredTasks.filter(
+      (t) => !t.assignees || t.assignees.length === 0,
+    ).length;
+
+    const highPriorityOpen = filteredTasks.filter(
+      (t) => t.priority === 'high' && t.status !== 'done',
+    ).length;
+
+    const recentlyCompleted7d = filteredTasks.filter(
+      (t) => t.status === 'done' && now - new Date(t.updatedAt).getTime() <= sevenDaysMs,
+    ).length;
+
+    const recentlyCreated7d = filteredTasks.filter(
+      (t) => now - new Date(t.createdAt).getTime() <= sevenDaysMs,
+    ).length;
+
+    const byStatus: Record<string, number> = {};
+    for (const t of filteredTasks) {
+      byStatus[t.status] = (byStatus[t.status] || 0) + 1;
+    }
+
+    const byPriority = { high: 0, medium: 0, low: 0 } as { high: number; medium: number; low: number };
+    for (const t of filteredTasks) {
+      if (t.priority === 'high') byPriority.high++;
+      else if (t.priority === 'low') byPriority.low++;
+      else byPriority.medium++;
+    }
+
+    const topAssignees = [...tasksByUser]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+      .map((u) => ({ name: u.displayName, total: u.count, done: u.done }));
+
+    const topProjects = filteredProjects
+      .map((p) => {
+        const total = p.stats.totalTasks;
+        const done = p.stats.completedTasks;
+        return {
+          name: p.name,
+          total,
+          done,
+          rate: total > 0 ? Math.round((done / total) * 100) : 0,
+        };
+      })
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+
+    const workspaceLabel =
+      reportWorkspaceId === ALL_WORKSPACES_ID
+        ? 'All workspaces'
+        : workspaces.find((w) => w.workspaceId === reportWorkspaceId)?.name || 'Workspace';
+
+    return {
+      workspaceLabel,
+      totalProjects,
+      totalTasks,
+      completedTasks,
+      completionRate,
+      overdueTasks,
+      stalledTasks,
+      unassignedTasks,
+      highPriorityOpen,
+      timeLoggedMinutes,
+      recentlyCompleted7d,
+      recentlyCreated7d,
+      byStatus,
+      byPriority,
+      topAssignees,
+      topProjects,
+    };
+  }, [
+    filteredTasks,
+    filteredProjects,
+    tasksByUser,
+    totalProjects,
+    totalTasks,
+    completedTasks,
+    completionRate,
+    timeLoggedMinutes,
+    reportWorkspaceId,
+    workspaces,
+  ]);
+
+  const handleGenerateAiInsights = async () => {
+    if (!user) return;
+    setAiInsightsLoading(true);
+    setAiInsightsError(null);
+    try {
+      const insights = await generateReportInsights(user.userId, aiSnapshot);
+      setAiInsights(insights);
+    } catch (err) {
+      const aiErr = err as AIError;
+      setAiInsightsError(aiErr.message || 'Failed to generate insights.');
+    } finally {
+      setAiInsightsLoading(false);
+    }
+  };
+
+  const handleAskAi = async () => {
+    if (!user || !aiQuestion.trim()) return;
+    setAiAskLoading(true);
+    setAiAskError(null);
+    setAiAnswer(null);
+    try {
+      const answer = await answerReportQuestion(user.userId, aiSnapshot, aiQuestion);
+      setAiAnswer(answer);
+    } catch (err) {
+      const aiErr = err as AIError;
+      setAiAskError(aiErr.message || 'Could not answer that.');
+    } finally {
+      setAiAskLoading(false);
+    }
+  };
 
   // Business metrics calculations with multi-currency support
   const businessMetrics = useMemo(() => {
@@ -462,6 +611,224 @@ export const Reports: React.FC = () => {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* AI Insights */}
+                <Card className="mb-6 border bg-gradient-to-br from-violet-500/[0.06] via-card to-orange-500/[0.04] border-violet-500/30 shadow-md overflow-hidden">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-violet-500/10 ring-1 ring-violet-500/30 text-violet-500 flex items-center justify-center">
+                          <Brain className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <CardTitle className="text-base">AI Insights</CardTitle>
+                            <Badge variant="outline" className="border-violet-500/40 text-violet-600 dark:text-violet-300 bg-violet-500/10 text-[10px] uppercase tracking-wider">
+                              Beta
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-0.5">
+                            Executive summary, risks, and recommendations from your live metrics.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {aiInsights && (
+                          <span className="text-[11px] text-muted-foreground hidden md:inline">
+                            Generated {format(new Date(aiInsights.generatedAt), 'MMM d, p')}
+                          </span>
+                        )}
+                        <Button
+                          size="sm"
+                          disabled={!aiAvailable || aiInsightsLoading || totalTasks === 0}
+                          onClick={handleGenerateAiInsights}
+                          className="bg-gradient-to-r from-violet-500 to-orange-500 text-white border-0 hover:opacity-90"
+                        >
+                          {aiInsightsLoading ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              Analyzing…
+                            </>
+                          ) : aiInsights ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                              Regenerate
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                              Generate insights
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {!aiAvailable && (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>AI not configured</AlertTitle>
+                        <AlertDescription>
+                          Deploy the <code className="text-xs">ai-chat</code> Supabase Edge
+                          Function and set <code className="text-xs">OPENAI_API_KEY</code> to
+                          unlock AI insights.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {aiInsightsError && (
+                      <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Couldn't generate insights</AlertTitle>
+                        <AlertDescription>{aiInsightsError}</AlertDescription>
+                      </Alert>
+                    )}
+                    {!aiInsights && !aiInsightsLoading && !aiInsightsError && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                          { icon: Trophy, label: 'Wins', desc: 'What\'s working well right now' },
+                          { icon: ShieldAlert, label: 'Risks', desc: 'Overdue, stalled, or unassigned' },
+                          { icon: Lightbulb, label: 'Actions', desc: 'Concrete next steps for the team' },
+                        ].map(({ icon: Icon, label, desc }) => (
+                          <div
+                            key={label}
+                            className="rounded-lg border border-border/60 bg-card/60 p-3 flex items-start gap-2.5"
+                          >
+                            <Icon className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-sm font-medium">{label}</p>
+                              <p className="text-xs text-muted-foreground">{desc}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {aiInsightsLoading && (
+                      <div className="space-y-3">
+                        <div className="h-3 rounded bg-muted/70 animate-pulse w-3/4" />
+                        <div className="h-3 rounded bg-muted/70 animate-pulse w-2/3" />
+                        <div className="h-3 rounded bg-muted/70 animate-pulse w-5/6" />
+                      </div>
+                    )}
+                    {aiInsights && (
+                      <>
+                        <div className="rounded-lg border border-border/60 bg-card/70 p-4">
+                          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                            Executive summary
+                          </p>
+                          <p className="text-sm leading-relaxed">{aiInsights.summary}</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {aiInsights.highlights.map((h, idx) => {
+                            const tone =
+                              h.type === 'win'
+                                ? { Icon: Trophy, ring: 'ring-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10' }
+                                : h.type === 'risk'
+                                  ? { Icon: ShieldAlert, ring: 'ring-red-500/30', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10' }
+                                  : h.type === 'forecast'
+                                    ? { Icon: TrendingUp, ring: 'ring-blue-500/30', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' }
+                                    : { Icon: Lightbulb, ring: 'ring-amber-500/30', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-500/10' };
+                            const Icon = tone.Icon;
+                            return (
+                              <div
+                                key={`${h.title}-${idx}`}
+                                className={`rounded-lg border border-border/60 bg-card p-3 flex gap-2.5 ring-1 ${tone.ring}`}
+                              >
+                                <div className={`w-8 h-8 rounded-lg ${tone.bg} ${tone.text} flex items-center justify-center shrink-0`}>
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold leading-snug">{h.title}</p>
+                                  <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{h.detail}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {aiInsights.forecast && (
+                          <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 flex gap-2.5">
+                            <TrendingUp className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wider text-blue-600 dark:text-blue-300 mb-0.5">
+                                Forecast
+                              </p>
+                              <p className="text-sm leading-relaxed">{aiInsights.forecast}</p>
+                            </div>
+                          </div>
+                        )}
+                        {aiInsights.recommendations.length > 0 && (
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
+                              Recommended next steps
+                            </p>
+                            <ol className="space-y-1.5">
+                              {aiInsights.recommendations.map((rec, idx) => (
+                                <li
+                                  key={`${idx}-${rec.slice(0, 12)}`}
+                                  className="flex items-start gap-2 text-sm"
+                                >
+                                  <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500/15 text-violet-600 dark:text-violet-300 text-[11px] font-semibold shrink-0">
+                                    {idx + 1}
+                                  </span>
+                                  <span className="leading-relaxed">{rec}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Ask AI follow-up */}
+                    <div className="pt-3 border-t border-border/60">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                        <MessageSquare className="w-3 h-3" />
+                        Ask anything about your data
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Input
+                          value={aiQuestion}
+                          placeholder="e.g. Which person has the most overdue work?"
+                          onChange={(e) => setAiQuestion(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !aiAskLoading) {
+                              e.preventDefault();
+                              void handleAskAi();
+                            }
+                          }}
+                          disabled={!aiAvailable || aiAskLoading}
+                          className="flex-1"
+                        />
+                        <Button
+                          size="default"
+                          onClick={() => void handleAskAi()}
+                          disabled={!aiAvailable || aiAskLoading || !aiQuestion.trim()}
+                          variant="outline"
+                        >
+                          {aiAskLoading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Send className="w-3.5 h-3.5 mr-1.5" />
+                              Ask
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      {aiAskError && (
+                        <p className="text-xs text-destructive mt-2">{aiAskError}</p>
+                      )}
+                      {aiAnswer && (
+                        <div className="mt-3 rounded-lg border border-border/60 bg-card p-3">
+                          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                            Answer
+                          </p>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{aiAnswer}</p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {/* Time Tracking Card */}
                 <Card className="mb-6 border border-border shadow-md bg-card">

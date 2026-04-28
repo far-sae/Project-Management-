@@ -78,10 +78,57 @@ export const Settings: React.FC = () => {
   const [notifications, setNotifications] = useState<UserNotificationPreferences>({
     ...DEFAULT_NOTIFICATION_PREFERENCES,
   });
+  /** "saving" while syncing to Supabase, "saved" briefly after a successful sync, then idle. */
+  const [notifSaveState, setNotifSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const notifSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notifSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notifPendingPrefsRef = useRef<UserNotificationPreferences | null>(null);
+  /** Used in unmount flush so prefs sync runs with the latest user id. */
+  const notifUserIdRef = useRef<string | undefined>(user?.userId);
+  /** Avoid overlapping Supabase writes from cleanup + deferred timer firing. */
+  const notifSyncInFlightRef = useRef(false);
 
   useEffect(() => {
     setDisplayName(user?.displayName || "");
   }, [user?.displayName]);
+
+  useEffect(() => {
+    notifUserIdRef.current = user?.userId;
+  }, [user?.userId]);
+
+  useEffect(() => {
+    return () => {
+      if (notifSyncTimerRef.current) {
+        clearTimeout(notifSyncTimerRef.current);
+        notifSyncTimerRef.current = null;
+      }
+      if (notifSavedTimerRef.current) {
+        clearTimeout(notifSavedTimerRef.current);
+        notifSavedTimerRef.current = null;
+      }
+
+      const prefs = notifPendingPrefsRef.current;
+      const uid = notifUserIdRef.current;
+      if (!prefs || !uid || notifSyncInFlightRef.current) return;
+
+      notifSyncInFlightRef.current = true;
+      void (async () => {
+        try {
+          const { error } = await supabase
+            .from("user_profiles")
+            .update({
+              notification_preferences: prefs as unknown as Record<string, boolean>,
+            })
+            .eq("id", uid);
+          if (!error) {
+            invalidateNotificationPreferencesCache(uid);
+          }
+        } finally {
+          notifSyncInFlightRef.current = false;
+        }
+      })();
+    };
+  }, []);
 
   /** Load from Supabase (so other users’ actions respect your settings); fall back to localStorage migration. */
   useEffect(() => {
@@ -202,11 +249,65 @@ export const Settings: React.FC = () => {
   };
 
   // ── Notifications ─────────────────────────────────────────
-  const handleNotificationChange = async (key: string, checked: boolean) => {
-    const prev = notifications;
+  /**
+   * Optimistic toggle: flip the UI immediately, persist to localStorage right away (so other
+   * tabs pick it up even if Supabase is slow), and debounce the Supabase sync so a flurry of
+   * clicks compresses into a single network call. Only surface a toast on error.
+   */
+  const handleNotificationChange = (key: string, checked: boolean) => {
+    setNotifications((prev) => {
+      const next: UserNotificationPreferences = { ...prev, [key]: checked };
+      try {
+        localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      notifPendingPrefsRef.current = next;
+      return next;
+    });
+
+    if (!user?.userId) {
+      // Local-only: show "saved" briefly without spamming a toast.
+      setNotifSaveState('saved');
+      if (notifSavedTimerRef.current) clearTimeout(notifSavedTimerRef.current);
+      notifSavedTimerRef.current = setTimeout(() => setNotifSaveState('idle'), 1200);
+      return;
+    }
+
+    setNotifSaveState('saving');
+    if (notifSyncTimerRef.current) clearTimeout(notifSyncTimerRef.current);
+    notifSyncTimerRef.current = setTimeout(async () => {
+      const prefsToSave = notifPendingPrefsRef.current;
+      if (!prefsToSave || !user?.userId) return;
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({
+          notification_preferences: prefsToSave as unknown as Record<string, boolean>,
+        })
+        .eq("id", user.userId);
+      if (error) {
+        toast.error(
+          "Could not sync preferences to your account. " + error.message,
+        );
+        setNotifSaveState('idle');
+        return;
+      }
+      invalidateNotificationPreferencesCache(user.userId);
+      setNotifSaveState('saved');
+      if (notifSavedTimerRef.current) clearTimeout(notifSavedTimerRef.current);
+      notifSavedTimerRef.current = setTimeout(() => setNotifSaveState('idle'), 1500);
+    }, 350);
+  };
+
+  /** Toggle the entire group on or off in one click. */
+  const handleNotificationsBulk = (checked: boolean) => {
     const next: UserNotificationPreferences = {
-      ...prev,
-      [key]: checked,
+      email: checked,
+      push: checked,
+      taskAssigned: checked,
+      taskCompleted: checked,
+      projectUpdates: checked,
+      projectChatMessage: checked,
     };
     setNotifications(next);
     try {
@@ -214,28 +315,34 @@ export const Settings: React.FC = () => {
     } catch {
       /* ignore */
     }
+    notifPendingPrefsRef.current = next;
     if (!user?.userId) {
-      toast.success("Notification preferences saved on this device");
+      setNotifSaveState('saved');
+      if (notifSavedTimerRef.current) clearTimeout(notifSavedTimerRef.current);
+      notifSavedTimerRef.current = setTimeout(() => setNotifSaveState('idle'), 1200);
       return;
     }
-    const { error } = await supabase
-      .from("user_profiles")
-      .update({ notification_preferences: next as unknown as Record<string, boolean> })
-      .eq("id", user.userId);
-    if (error) {
-      setNotifications(prev);
-      try {
-        localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(prev));
-      } catch {
-        /* ignore */
+    setNotifSaveState('saving');
+    if (notifSyncTimerRef.current) clearTimeout(notifSyncTimerRef.current);
+    notifSyncTimerRef.current = setTimeout(async () => {
+      const prefsToSave = notifPendingPrefsRef.current;
+      if (!prefsToSave || !user?.userId) return;
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({
+          notification_preferences: prefsToSave as unknown as Record<string, boolean>,
+        })
+        .eq("id", user.userId);
+      if (error) {
+        toast.error("Could not sync preferences. " + error.message);
+        setNotifSaveState('idle');
+        return;
       }
-      toast.error(
-        "Could not sync preferences to your account. " + error.message,
-      );
-      return;
-    }
-    invalidateNotificationPreferencesCache(user.userId);
-    toast.success("Notification preferences saved");
+      invalidateNotificationPreferencesCache(user.userId);
+      setNotifSaveState('saved');
+      if (notifSavedTimerRef.current) clearTimeout(notifSavedTimerRef.current);
+      notifSavedTimerRef.current = setTimeout(() => setNotifSaveState('idle'), 1500);
+    }, 250);
   };
 
   // ── Password ──────────────────────────────────────────────
@@ -476,66 +583,145 @@ export const Settings: React.FC = () => {
           {/* NOTIFICATIONS TAB */}
           <TabsContent value="notifications">
             <Card>
-              <CardHeader>
-                <CardTitle>Notification Preferences</CardTitle>
-                <CardDescription>
-                  Choose how you want to be notified
-                </CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Notification Preferences</CardTitle>
+                  <CardDescription>Choose how you want to be notified</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    aria-live="polite"
+                    className={`flex items-center gap-1.5 text-xs transition-opacity duration-200 ${
+                      notifSaveState === 'idle'
+                        ? 'opacity-0 pointer-events-none'
+                        : 'opacity-100'
+                    } ${notifSaveState === 'saved' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}
+                  >
+                    {notifSaveState === 'saving' ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Saving…
+                      </>
+                    ) : notifSaveState === 'saved' ? (
+                      <>
+                        <span className="inline-flex w-1.5 h-1.5 rounded-full bg-green-500" />
+                        Saved
+                      </>
+                    ) : null}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => {
+                      const allOn = Object.values(notifications).every((v) => v !== false);
+                      handleNotificationsBulk(!allOn);
+                    }}
+                  >
+                    {Object.values(notifications).every((v) => v !== false)
+                      ? 'Pause all'
+                      : 'Enable all'}
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {(
-                  [
-                    {
-                      key: "email",
-                      label: "Email Notifications",
-                      desc: "Receive notifications via email",
-                    },
-                    {
-                      key: "push",
-                      label: "Push Notifications",
-                      desc: "Receive push notifications",
-                    },
-                    {
-                      key: "taskAssigned",
-                      label: "Task Assignments",
-                      desc: "When a task is assigned to you",
-                    },
-                    {
-                      key: "taskCompleted",
-                      label: "Task Completion",
-                      desc: "When tasks you created are completed",
-                    },
-                    {
-                      key: "projectUpdates",
-                      label: "Project Updates",
-                      desc: "Updates about your projects",
-                    },
-                    {
-                      key: "projectChatMessage",
-                      label: "Project chat",
-                      desc: "When someone posts in a project chat you belong to",
-                    },
-                  ] as const
-                ).map(({ key, label, desc }, i, arr) => (
-                  <React.Fragment key={key}>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{label}</p>
-                        <p className="text-sm text-muted-foreground">{desc}</p>
-                      </div>
-                      <Switch
-                        checked={notifications[key as keyof typeof notifications] !== false}
-                        onCheckedChange={(checked) =>
-                          handleNotificationChange(key, checked)
-                        }
-                      />
-                    </div>
-                    {i < arr.length - 1 && <Separator />}
-                  </React.Fragment>
-                ))}
-                <p className="text-sm text-muted-foreground">
-                  Saved to your account so in-app and email notifications follow these choices. Email
-                  still requires your project&apos;s mail service (e.g. EmailJS) to be connected.
+              <CardContent className="space-y-6">
+                <section>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                    Channels
+                  </p>
+                  <div className="rounded-xl border border-border/70 divide-y divide-border/60 overflow-hidden bg-card">
+                    {(
+                      [
+                        {
+                          key: 'email',
+                          label: 'Email',
+                          desc: 'Receive notifications by email',
+                        },
+                        {
+                          key: 'push',
+                          label: 'Browser & desktop push',
+                          desc: 'In-app banners and (when enabled) browser push',
+                        },
+                      ] as const
+                    ).map(({ key, label, desc }) => {
+                      const value = notifications[key] !== false;
+                      return (
+                        <div
+                          key={key}
+                          className={`flex items-center justify-between px-4 py-3 transition-colors ${
+                            value ? '' : 'bg-muted/30'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-4">
+                            <p className="font-medium text-sm">{label}</p>
+                            <p className="text-xs text-muted-foreground">{desc}</p>
+                          </div>
+                          <Switch
+                            checked={value}
+                            onCheckedChange={(checked) => handleNotificationChange(key, checked)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                    What you get notified about
+                  </p>
+                  <div className="rounded-xl border border-border/70 divide-y divide-border/60 overflow-hidden bg-card">
+                    {(
+                      [
+                        {
+                          key: 'taskAssigned',
+                          label: 'Task assignments',
+                          desc: 'When a task is assigned to you',
+                        },
+                        {
+                          key: 'taskCompleted',
+                          label: 'Task completion',
+                          desc: 'When tasks you created are completed',
+                        },
+                        {
+                          key: 'projectUpdates',
+                          label: 'Project updates',
+                          desc: 'Comments, status changes, mentions',
+                        },
+                        {
+                          key: 'projectChatMessage',
+                          label: 'Project chat',
+                          desc: 'When someone posts in a project chat you belong to',
+                        },
+                      ] as const
+                    ).map(({ key, label, desc }) => {
+                      const value = notifications[key] !== false;
+                      return (
+                        <div
+                          key={key}
+                          className={`flex items-center justify-between px-4 py-3 transition-colors ${
+                            value ? '' : 'bg-muted/30'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-4">
+                            <p className="font-medium text-sm">{label}</p>
+                            <p className="text-xs text-muted-foreground">{desc}</p>
+                          </div>
+                          <Switch
+                            checked={value}
+                            onCheckedChange={(checked) => handleNotificationChange(key, checked)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <p className="text-xs text-muted-foreground">
+                  Saved to your account so in-app and email notifications follow these choices.
+                  Email still requires your project&apos;s mail service (e.g. EmailJS) to be
+                  connected.
                 </p>
               </CardContent>
             </Card>

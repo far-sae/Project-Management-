@@ -73,6 +73,22 @@ import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
 
+/** Relative time for comments/activity; avoids "Invalid Date" when createdAt is missing or bad. */
+function formatDistanceSafe(
+  createdAt: Date | string | number | null | undefined,
+  fallback = 'Unknown',
+): string {
+  if (createdAt == null) return fallback;
+  const d =
+    createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return fallback;
+  try {
+    return formatDistanceToNow(d, { addSuffix: true });
+  } catch {
+    return fallback;
+  }
+}
+
 interface Subtask {
   id: string;
   title: string;
@@ -1316,7 +1332,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 {comment.displayName}
                               </span>
                               <span className="text-xs text-muted-foreground">
-                                {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+                                {formatDistanceSafe(comment.createdAt)}
                               </span>
                             </div>
                             {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
@@ -1388,7 +1404,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 </span>
                               )}
                               <span className="text-muted-foreground">
-                                {' '}· {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
+                                {' '}· {formatDistanceSafe(ev.createdAt)}
                               </span>
                             </div>
                           </div>
@@ -1647,14 +1663,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             {/* Created/updated meta */}
             {isEditing && task && (
               <div className="text-[11px] text-muted-foreground border-t border-border pt-3 space-y-0.5">
-                {task.createdAt && (
+                {task.createdAt != null && (
                   <p>
-                    Created {formatDistanceToNow(new Date(task.createdAt), { addSuffix: true })}
+                    Created {formatDistanceSafe(task.createdAt)}
                   </p>
                 )}
-                {task.updatedAt && (
+                {task.updatedAt != null && (
                   <p>
-                    Updated {formatDistanceToNow(new Date(task.updatedAt), { addSuffix: true })}
+                    Updated {formatDistanceSafe(task.updatedAt)}
                   </p>
                 )}
               </div>
