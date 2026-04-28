@@ -19,6 +19,8 @@ interface ImportMetaEnv {
   readonly VITE_EMAILJS_NOTIFICATION_TEMPLATE_ID?: string
   /** Legacy fallback: dedicated assignment-only template. */
   readonly VITE_EMAILJS_TASK_ASSIGNED_TEMPLATE_ID?: string
+  /** Set to "true" after migration 021 is deployed to use verify_task_lock_pin RPC; default is client-only PIN check (no RPC). */
+  readonly VITE_VERIFY_TASK_LOCK_PIN_RPC?: string
 }
 
 interface ImportMeta {

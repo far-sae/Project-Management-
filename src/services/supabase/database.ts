@@ -53,6 +53,37 @@ export function taskHasLockPin(row: {
 
 /** Log once when task PIN RPC is unavailable — avoids console spam in production builds. */
 let warnedTaskPinRpcFallbackUsed = false;
+
+/**
+ * `verify_task_lock_pin` is opt-in (`VITE_VERIFY_TASK_LOCK_PIN_RPC=true`) so builds without
+ * migration 021 never hit a 404. If RPC is enabled but PostgREST still cannot find the
+ * function, we disable for the rest of the session after the first missing-function error.
+ */
+let verifyTaskLockPinRpcDisabled =
+  import.meta.env.VITE_VERIFY_TASK_LOCK_PIN_RPC !== "true";
+
+function isVerifyTaskLockPinMissingError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as Record<string, unknown>;
+  const code = String(e.code ?? "");
+  const msg = `${e.message ?? ""}`.toLowerCase();
+  const details = `${e.details ?? ""} ${e.hint ?? ""}`.toLowerCase();
+  const statusRaw = e.status ?? e.statusCode;
+  const status =
+    typeof statusRaw === "number"
+      ? statusRaw
+      : typeof statusRaw === "string"
+        ? Number.parseInt(statusRaw, 10)
+        : NaN;
+  return (
+    code === "PGRST202" ||
+    (Number.isFinite(status) && status === 404) ||
+    msg.includes("could not find the function") ||
+    msg.includes("function verify_task_lock_pin") ||
+    msg === "not found" ||
+    details.includes("verify_task_lock_pin")
+  );
+}
 async function verifyTaskPinClientSideFallback(
   taskId: string,
   trimmedPin: string,
@@ -525,33 +556,44 @@ export const verifyTaskLockPin = async (
   const trimmedPin = pinPlain.trim();
   if (!trimmedPin) return false;
 
-  const { data, error } = await supabase.rpc("verify_task_lock_pin", {
-    p_task_id: taskId,
-    p_pin: trimmedPin,
-  });
+  if (!verifyTaskLockPinRpcDisabled) {
+    const { data, error } = await supabase.rpc("verify_task_lock_pin", {
+      p_task_id: taskId,
+      p_pin: trimmedPin,
+    });
 
-  if (!error) {
-    return data === true;
-  }
+    if (!error) {
+      return data === true;
+    }
 
-  /**
-   * Supabase/PostgREST often returns a minimal error for missing RPCs (HTTP 404) where
-   * `code`/`message` do not mention the function name. Wrong PIN is returned as
-   * `{ data: false, error: null }` when the RPC exists — so any `error` here is
-   * treated as “RPC did not answer decisively” and we verify locally when RLS allows
-   * reading `tasks.lock_pin_hash`.
-   */
-  if (!warnedTaskPinRpcFallbackUsed) {
-    warnedTaskPinRpcFallbackUsed = true;
-    logger.warn(
-      "verify_task_lock_pin RPC did not complete; verifying PIN locally. For server-side checks only, apply migration 021_verify_task_lock_pin.sql and run NOTIFY pgrst, 'reload schema'; in the SQL editor.",
-    );
+    if (isVerifyTaskLockPinMissingError(error)) {
+      verifyTaskLockPinRpcDisabled = true;
+    }
+
+    /**
+     * Wrong PIN when the RPC exists is `{ data: false, error: null }`. Any `error` means the
+     * RPC did not answer decisively — verify locally when RLS allows `lock_pin_hash`.
+     */
+    if (!warnedTaskPinRpcFallbackUsed) {
+      warnedTaskPinRpcFallbackUsed = true;
+      logger.warn(
+        verifyTaskLockPinRpcDisabled
+          ? "verify_task_lock_pin is not in the API schema (apply supabase/migrations/021_verify_task_lock_pin.sql, then NOTIFY pgrst, 'reload schema';). Using client-side PIN check until then."
+          : "verify_task_lock_pin RPC did not complete; verifying PIN locally. For server-side checks only, apply migration 021_verify_task_lock_pin.sql and run NOTIFY pgrst, 'reload schema'; in the SQL editor.",
+        error,
+      );
+    }
+
+    const localAfterRpc = await verifyTaskPinClientSideFallback(taskId, trimmedPin);
+    if (localAfterRpc !== null) return localAfterRpc;
+
+    logger.warn("verify_task_lock_pin: could not verify PIN (RPC error and no local hash).", error);
+    return false;
   }
 
   const local = await verifyTaskPinClientSideFallback(taskId, trimmedPin);
   if (local !== null) return local;
-
-  logger.warn("verify_task_lock_pin: could not verify PIN (RPC error and no local hash).", error);
+  logger.warn("verify_task_lock_pin: client-side PIN check failed (no hash or row).");
   return false;
 };
 
