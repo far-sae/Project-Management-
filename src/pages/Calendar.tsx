@@ -223,7 +223,7 @@ export const Calendar: React.FC = () => {
                     ${task.status === 'done'
                       ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 line-through hover:bg-emerald-500/30'
                       : task.urgent
-                        ? 'bg-destructive/20 text-destructive hover:bg-destructive/30'
+                        ? 'bg-destructive/25 text-destructive ring-1 ring-destructive/40 border border-destructive/35 hover:bg-destructive/35 font-medium'
                         : 'bg-primary/20 text-primary hover:bg-primary/30'
                     }`}
                   onClick={(e) => {

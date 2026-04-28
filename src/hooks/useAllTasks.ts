@@ -53,14 +53,6 @@ export const useAllTasks = () => {
     refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible' && user) refresh();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [refresh, user]);
-
   const tasksAssignedToMe = tasks.filter((t) =>
     t.assignees?.some((a) => a.userId === user?.userId),
   );

@@ -1519,18 +1519,65 @@ export const createNotification = async (
     created_at: now,
   };
 
-  const { data, error } = await supabase
-    .from("notifications")
-    .insert(insertRow)
-    .select()
-    .single();
+  /**
+   * Prefer the SECURITY DEFINER RPC `create_notification_v1` (migration 028) so cross-user
+   * inserts are reliable even when the notifications table has a strict
+   * `with check (auth.uid() = user_id)` policy. Fall back to a direct insert when the RPC
+   * isn't deployed yet — that path still works for permissive RLS deployments.
+   */
+  let data: Record<string, unknown> | null = null;
+  let error: { code?: string; message?: string; status?: number; details?: string } | null = null;
+
+  const rpcRes = await supabase.rpc("create_notification_v1", {
+    p_user_id: input.userId,
+    p_type: input.type,
+    p_title: input.title,
+    p_message: input.body,
+    p_task_id: input.taskId ?? null,
+    p_project_id: input.projectId ?? null,
+    p_actor_user_id: input.actorUserId ?? null,
+    p_actor_display_name: input.actorDisplayName ?? null,
+  });
+
+  const rpcMissing =
+    rpcRes.error &&
+    /function .*create_notification_v1.* does not exist|could not find the function|PGRST202/i.test(
+      `${rpcRes.error.message ?? ""} ${(rpcRes.error as { details?: string }).details ?? ""} ${(rpcRes.error as { code?: string }).code ?? ""}`,
+    );
+
+  if (rpcRes.error && !rpcMissing) {
+    error = rpcRes.error as unknown as typeof error;
+  } else if (rpcRes.data && typeof rpcRes.data === "object") {
+    const row = rpcRes.data as Record<string, unknown>;
+    data = {
+      notification_id: row.notification_id ?? notificationId,
+      user_id: row.user_id ?? input.userId,
+      type: row.type ?? input.type,
+      title: row.title ?? input.title,
+      message: row.message ?? input.body,
+      task_id: row.task_id ?? input.taskId ?? null,
+      project_id: row.project_id ?? input.projectId ?? null,
+      actor_user_id: row.actor_user_id ?? input.actorUserId ?? null,
+      actor_display_name: row.actor_display_name ?? input.actorDisplayName ?? null,
+      read: row.read ?? false,
+      created_at: row.created_at ?? now,
+    };
+  } else if (rpcMissing) {
+    const direct = await supabase
+      .from("notifications")
+      .insert(insertRow)
+      .select()
+      .single();
+    data = direct.data as Record<string, unknown> | null;
+    error = direct.error as typeof error;
+  }
 
   if (error) {
     if (isNotificationsInsertForbidden(error)) {
       if (!warnedNotificationsInsertDenied) {
         warnedNotificationsInsertDenied = true;
         logger.warn(
-          "Skipping notification inserts until RLS allows them (got 403/permission denied). Apply the notifications migrations and policies on Supabase.",
+          "Notifications still blocked by RLS even via RPC. Apply migration 028_create_notification_rpc.sql so cross-user notifications can fire (and 001_notifications_table.sql for the table itself).",
           error,
         );
       }
@@ -1538,6 +1585,9 @@ export const createNotification = async (
     }
     logger.error("Failed to create notification:", error);
     throw error;
+  }
+  if (!data) {
+    return { status: "rls" };
   }
 
   dispatchNotificationsRefresh();
@@ -1570,18 +1620,19 @@ export const createNotification = async (
     })();
   }
 
+  const row = data as Record<string, unknown>;
   const appNotification: AppNotification = {
-    notificationId: data.notification_id,
-    userId: data.user_id,
-    type: data.type,
-    title: data.title,
-    body: data.message,
-    taskId: data.task_id,
-    projectId: data.project_id,
-    actorUserId: data.actor_user_id,
-    actorDisplayName: data.actor_display_name,
-    read: data.read,
-    createdAt: new Date(data.created_at),
+    notificationId: String(row.notification_id ?? notificationId),
+    userId: String(row.user_id ?? input.userId),
+    type: row.type as AppNotification["type"],
+    title: String(row.title ?? input.title),
+    body: String(row.message ?? input.body),
+    taskId: (row.task_id as string | null | undefined) ?? undefined,
+    projectId: (row.project_id as string | null | undefined) ?? undefined,
+    actorUserId: (row.actor_user_id as string | null | undefined) ?? undefined,
+    actorDisplayName: (row.actor_display_name as string | null | undefined) ?? undefined,
+    read: Boolean(row.read ?? false),
+    createdAt: new Date(String(row.created_at ?? now)),
   };
   return { status: "ok", notification: appNotification };
 };

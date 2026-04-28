@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
@@ -7,34 +7,50 @@ import { SubscriptionProvider } from '@/context/SubscriptionContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
+// Eager — these are auth gates / public pages that load fast on their own.
 import { Login } from '@/pages/auth/Login';
 import { Signup } from '@/pages/auth/Signup';
-import { Dashboard } from '@/pages/kanban/Dashboard';
-import { ProjectView } from '@/pages/kanban/ProjectView';
-import { MyTasks } from '@/pages/MyTasks';
-import { Team } from '@/pages/Team';
-import { Calendar } from '@/pages/Calendar';
-import { Files } from '@/pages/Files';
-import { Comments } from '@/pages/Comments';
-import { Contracts } from '@/pages/Contracts';
-import { Reports } from '@/pages/Reports';
-import { TimelineOverview } from '@/pages/TimelineOverview';
-import { Settings } from '@/pages/Settings';
-import { Inbox } from '@/pages/Inbox';
-import { Workload } from '@/pages/Workload';
-import { AcceptInvite } from '@/pages/AcceptInvite';
-import { Pricing } from '@/pages/subscription/Pricing';
-import { AdminDashboard } from '@/pages/admin/AdminDashboard';
 import LandingPage from '@/pages/landing/LandingPage';
-import AboutPage from '@/pages/legal/AboutPage';
-import ContractsInfoPage from '@/pages/legal/ContractsInfoPage';
-import PrivacyPolicyPage from '@/pages/legal/PrivacyPolicyPage';
-import TermsPage from '@/pages/legal/TermsPage';
+
+// Lazy — every authenticated/heavy page is fetched on demand. This shrinks the initial JS
+// bundle from "everything" to "shell + landing/auth", which is the single biggest perf win
+// for first paint and subsequent route warmth.
+const Dashboard = React.lazy(() => import('@/pages/kanban/Dashboard').then((m) => ({ default: m.Dashboard })));
+const ProjectView = React.lazy(() => import('@/pages/kanban/ProjectView').then((m) => ({ default: m.ProjectView })));
+const MyTasks = React.lazy(() => import('@/pages/MyTasks').then((m) => ({ default: m.MyTasks })));
+const Team = React.lazy(() => import('@/pages/Team').then((m) => ({ default: m.Team })));
+const CalendarPage = React.lazy(() => import('@/pages/Calendar').then((m) => ({ default: m.Calendar })));
+const Files = React.lazy(() => import('@/pages/Files').then((m) => ({ default: m.Files })));
+const Comments = React.lazy(() => import('@/pages/Comments').then((m) => ({ default: m.Comments })));
+const Contracts = React.lazy(() => import('@/pages/Contracts').then((m) => ({ default: m.Contracts })));
+const Reports = React.lazy(() => import('@/pages/Reports').then((m) => ({ default: m.Reports })));
+const TimelineOverview = React.lazy(() => import('@/pages/TimelineOverview').then((m) => ({ default: m.TimelineOverview })));
+const Settings = React.lazy(() => import('@/pages/Settings').then((m) => ({ default: m.Settings })));
+const Inbox = React.lazy(() => import('@/pages/Inbox').then((m) => ({ default: m.Inbox })));
+const Workload = React.lazy(() => import('@/pages/Workload').then((m) => ({ default: m.Workload })));
+const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
+const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
+const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const AboutPage = React.lazy(() => import('@/pages/legal/AboutPage'));
+const ContractsInfoPage = React.lazy(() => import('@/pages/legal/ContractsInfoPage'));
+const PrivacyPolicyPage = React.lazy(() => import('@/pages/legal/PrivacyPolicyPage'));
+const TermsPage = React.lazy(() => import('@/pages/legal/TermsPage'));
+
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
 import CookieBanner from '@/components/landing/CookieBanner';
 import { CommandPalette } from '@/components/command/CommandPalette';
+
+const RouteFallback: React.FC = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background">
+    <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
+
+const lazyRoute = (node: React.ReactNode) => (
+  <Suspense fallback={<RouteFallback />}>{node}</Suspense>
+);
 
 
 const RootRedirect: React.FC = () => {
@@ -71,18 +87,18 @@ export default function App() {
         children: [
           { path: '/login', element: <Login /> },
           { path: '/signup', element: <Signup /> },
-          { path: '/pricing', element: <Pricing /> },
-          { path: '/about', element: <AboutPage /> },
-          { path: '/contracts-info', element: <ContractsInfoPage /> },
-          { path: '/privacy', element: <PrivacyPolicyPage /> },
-          { path: '/terms', element: <TermsPage /> },
-          { path: '/accept-invite/:token', element: <AcceptInvite /> },
+          { path: '/pricing', element: lazyRoute(<Pricing />) },
+          { path: '/about', element: lazyRoute(<AboutPage />) },
+          { path: '/contracts-info', element: lazyRoute(<ContractsInfoPage />) },
+          { path: '/privacy', element: lazyRoute(<PrivacyPolicyPage />) },
+          { path: '/terms', element: lazyRoute(<TermsPage />) },
+          { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
           { path: '/', element: <LandingPage /> },
           {
             path: '/dashboard',
             element: (
               <ProtectedRoute requireSubscription>
-                <Dashboard />
+                {lazyRoute(<Dashboard />)}
               </ProtectedRoute>
             ),
           },
@@ -90,7 +106,7 @@ export default function App() {
             path: '/project/:projectId',
             element: (
               <ProtectedRoute requireSubscription>
-                <ProjectView />
+                {lazyRoute(<ProjectView />)}
               </ProtectedRoute>
             ),
           },
@@ -98,7 +114,7 @@ export default function App() {
             path: '/tasks',
             element: (
               <ProtectedRoute requireSubscription>
-                <MyTasks />
+                {lazyRoute(<MyTasks />)}
               </ProtectedRoute>
             ),
           },
@@ -106,7 +122,7 @@ export default function App() {
             path: '/inbox',
             element: (
               <ProtectedRoute requireSubscription>
-                <Inbox />
+                {lazyRoute(<Inbox />)}
               </ProtectedRoute>
             ),
           },
@@ -114,7 +130,7 @@ export default function App() {
             path: '/workload',
             element: (
               <ProtectedRoute requireSubscription>
-                <Workload />
+                {lazyRoute(<Workload />)}
               </ProtectedRoute>
             ),
           },
@@ -122,7 +138,7 @@ export default function App() {
             path: '/team',
             element: (
               <ProtectedRoute requireSubscription>
-                <Team />
+                {lazyRoute(<Team />)}
               </ProtectedRoute>
             ),
           },
@@ -130,7 +146,7 @@ export default function App() {
             path: '/calendar',
             element: (
               <ProtectedRoute requireSubscription>
-                <Calendar />
+                {lazyRoute(<CalendarPage />)}
               </ProtectedRoute>
             ),
           },
@@ -138,7 +154,7 @@ export default function App() {
             path: '/files',
             element: (
               <ProtectedRoute requireSubscription>
-                <Files />
+                {lazyRoute(<Files />)}
               </ProtectedRoute>
             ),
           },
@@ -146,7 +162,7 @@ export default function App() {
             path: '/comments',
             element: (
               <ProtectedRoute requireSubscription>
-                <Comments />
+                {lazyRoute(<Comments />)}
               </ProtectedRoute>
             ),
           },
@@ -154,7 +170,7 @@ export default function App() {
             path: '/contracts',
             element: (
               <ProtectedRoute requireSubscription>
-                <Contracts />
+                {lazyRoute(<Contracts />)}
               </ProtectedRoute>
             ),
           },
@@ -162,7 +178,7 @@ export default function App() {
             path: '/reports',
             element: (
               <ProtectedRoute requireSubscription>
-                <Reports />
+                {lazyRoute(<Reports />)}
               </ProtectedRoute>
             ),
           },
@@ -170,7 +186,7 @@ export default function App() {
             path: '/timeline',
             element: (
               <ProtectedRoute requireSubscription>
-                <TimelineOverview />
+                {lazyRoute(<TimelineOverview />)}
               </ProtectedRoute>
             ),
           },
@@ -178,7 +194,7 @@ export default function App() {
             path: '/settings',
             element: (
               <ProtectedRoute requireSubscription>
-                <Settings />
+                {lazyRoute(<Settings />)}
               </ProtectedRoute>
             ),
           },
@@ -186,7 +202,7 @@ export default function App() {
             path: '/admin',
             element: (
               <ProtectedRoute requireAdmin>
-                <AdminDashboard />
+                {lazyRoute(<AdminDashboard />)}
               </ProtectedRoute>
             ),
           },

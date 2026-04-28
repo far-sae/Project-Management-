@@ -55,6 +55,7 @@ import {
 } from '@/lib/taskLockPin';
 import {
   addCommentWithGlobalSync,
+  deleteComment,
   notifyTaskCommentMentions,
   subscribeToComments,
   verifyTaskLockPin,
@@ -145,6 +146,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [commentTimeSpentMinutes, setCommentTimeSpentMinutes] = useState<number | ''>('');
   const [showTimeSpent, setShowTimeSpent] = useState(false);
   const [commentLoading, setCommentLoading] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
   const [commentSummary, setCommentSummary] = useState<CommentSummary | null>(null);
   const [commentSummaryLoading, setCommentSummaryLoading] = useState(false);
@@ -227,8 +229,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     photoURL: string;
   }>>([]);
 
-  // Reset state on task change / modal open
+  // Reset state when opening the modal or switching tasks — not on every parent refetch of the same task (avoids wiping drafts after tab switch).
   useEffect(() => {
+    if (!open) return;
     if (task) {
       setTitle(task.title);
       setDescription(task.description);
@@ -256,7 +259,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
     setSaveError(null);
     setLastSavedAt(null);
-  }, [task, initialStatus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: `task` object identity updates after realtime/refetch must not reset fields
+  }, [open, task?.taskId, initialStatus]);
 
   useEffect(() => {
     if (!task?.taskId) {
@@ -608,6 +612,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setCommentLoading(false);
     }
   }, [newComment, commentAttachmentFiles, commentTimeSpentMinutes, task, user, orgId, projectId, projectName, projectAssignableMembers]);
+
+  const handleDeleteComment = useCallback(
+    async (commentId: string) => {
+      if (readOnlyTask || !task || !user) return;
+      setDeletingCommentId(commentId);
+      const toastId = toast.loading('Deleting comment...');
+      try {
+        await deleteComment(commentId);
+        setActivityRefetchNonce((n) => n + 1);
+        toast.success('Comment deleted', { id: toastId });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to delete comment', {
+          id: toastId,
+        });
+      } finally {
+        setDeletingCommentId(null);
+      }
+    },
+    [readOnlyTask, task, user],
+  );
 
   // ── Subtask helpers ────────────────────────────────────────
   const addSubtask = () => {
@@ -1533,13 +1557,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium text-sm text-foreground">
-                                {comment.displayName}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {formatDistanceSafe(comment.createdAt)}
-                              </span>
+                            <div className="flex items-center gap-2 flex-wrap justify-between">
+                              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                <span className="font-medium text-sm text-foreground">
+                                  {comment.displayName}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {formatDistanceSafe(comment.createdAt)}
+                                </span>
+                              </div>
+                              {(comment.userId === user?.userId || isAdmin) && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                                  disabled={readOnlyTask || deletingCommentId === comment.commentId}
+                                  aria-label="Delete comment"
+                                  onClick={() => void handleDeleteComment(comment.commentId)}
+                                >
+                                  {deletingCommentId === comment.commentId ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
                             </div>
                             {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
                               <span className="inline-block mt-1 px-2 py-0.5 bg-success-soft text-success-soft-foreground text-xs rounded-full">

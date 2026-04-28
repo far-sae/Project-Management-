@@ -162,11 +162,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       : null;
 
   const priorityColor = task.priorityColor || 'hsl(var(--muted-foreground))';
+  const isUrgentActive = Boolean(task.urgent && task.status !== 'done');
 
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, borderLeftColor: priorityColor }}
+      style={{
+        ...style,
+        borderLeftColor: isUrgentActive ? 'hsl(var(--destructive))' : priorityColor,
+      }}
       {...(selectable ? {} : attributes)}
       {...(selectable ? {} : listeners)}
       onClick={(e) => {
@@ -179,6 +183,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       className={cn(
         'group relative mb-2.5 rounded-lg border border-border/70 border-l-[3px] bg-background/80 p-3 text-card-foreground shadow-sm',
         'transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-card hover:shadow-md',
+        isUrgentActive &&
+          'border-destructive/45 bg-destructive/[0.07] ring-1 ring-destructive/25 hover:border-destructive/50 hover:bg-destructive/[0.09]',
         selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
         selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
         swapHighlight && 'ring-2 ring-amber-500 ring-offset-1 ring-offset-background',

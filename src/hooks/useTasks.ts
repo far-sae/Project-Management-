@@ -51,25 +51,6 @@ export const useTasks = (
     return () => unsubscribe();
   }, [projectId, effectiveOrgId, user?.userId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const onVisibility = () => {
-      if (document.visibilityState !== "visible" || !projectId || !effectiveOrgId) return;
-      getProjectTasks(projectId, effectiveOrgId, user?.userId)
-        .then((fresh) => {
-          if (!cancelled) setTasks(fresh);
-        })
-        .catch((err) => {
-          logger.error("useTasks visibility refetch failed:", err);
-        });
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [projectId, effectiveOrgId, user?.userId]);
-
   const addTask = useCallback(
     async (input: CreateTaskInput): Promise<Task | null> => {
       if (!user) return null;

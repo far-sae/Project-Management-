@@ -24,7 +24,7 @@ create policy "Users can update own notifications (mark read)"
   to authenticated
   using ((select auth.uid()) = user_id);
 
--- Assignees receive rows where user_id may differ from the actor; keep permissive insert for authenticated clients + RPC (SECURITY INVOKER).
+-- Assignees receive rows where user_id may differ from the actor; keep permissive insert for authenticated clients + create_notification_v1 RPC (SECURITY DEFINER).
 create policy "Authenticated users can insert notifications"
   on public.notifications for insert
   to authenticated

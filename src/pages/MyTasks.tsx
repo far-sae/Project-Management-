@@ -765,6 +765,7 @@ export const MyTasks: React.FC = () => {
                             : task.priority === 'low'
                               ? 'bg-emerald-500'
                               : 'bg-amber-500';
+                        const isUrgentActive = Boolean(task.urgent && !isDone);
                         return (
                           <div
                             key={task.taskId}
@@ -773,8 +774,14 @@ export const MyTasks: React.FC = () => {
                               'group relative flex items-start gap-3 px-4 py-3 cursor-pointer transition-all',
                               'hover:bg-secondary/50',
                               isSelected
-                                ? 'bg-primary/[0.07] before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:rounded-r before:bg-primary'
-                                : '',
+                                ? cn(
+                                    'before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:rounded-r',
+                                    isUrgentActive
+                                      ? 'bg-destructive/[0.08] before:bg-destructive'
+                                      : 'bg-primary/[0.07] before:bg-primary',
+                                  )
+                                : isUrgentActive &&
+                                    'border-l-[3px] border-l-destructive bg-destructive/[0.06]',
                             )}
                           >
                             <button
