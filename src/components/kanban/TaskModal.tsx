@@ -56,6 +56,7 @@ import {
 import {
   addCommentWithGlobalSync,
   deleteComment,
+  getTaskComments,
   notifyTaskCommentMentions,
   subscribeToComments,
   verifyTaskLockPin,
@@ -615,14 +616,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const handleDeleteComment = useCallback(
     async (commentId: string) => {
-      if (readOnlyTask || !task || !user) return;
+      if (readOnlyTask || !task || !user || !orgId) return;
       setDeletingCommentId(commentId);
+      setTaskComments((prev) => prev.filter((c) => c.commentId !== commentId));
       const toastId = toast.loading('Deleting comment...');
       try {
         await deleteComment(commentId);
         setActivityRefetchNonce((n) => n + 1);
         toast.success('Comment deleted', { id: toastId });
       } catch (error) {
+        try {
+          const fresh = await getTaskComments(task.taskId, orgId);
+          setTaskComments(fresh);
+        } catch {
+          /* keep optimistic list if refetch fails */
+        }
         toast.error(error instanceof Error ? error.message : 'Failed to delete comment', {
           id: toastId,
         });
@@ -630,7 +638,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setDeletingCommentId(null);
       }
     },
-    [readOnlyTask, task, user],
+    [readOnlyTask, task, user, orgId],
   );
 
   // ── Subtask helpers ────────────────────────────────────────
