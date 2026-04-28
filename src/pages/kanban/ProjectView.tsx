@@ -592,7 +592,11 @@ export const ProjectView: React.FC = () => {
           </p>
           <Input
             type="password"
-            autoComplete="off"
+            name="project-unlock-pin"
+            autoComplete="new-password"
+            data-1p-ignore
+            data-lpignore="true"
+            data-form-type="other"
             placeholder="PIN"
             value={projectPin}
             onChange={(e) => {

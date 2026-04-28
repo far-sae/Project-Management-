@@ -936,7 +936,11 @@ export const MyTasks: React.FC = () => {
                   </p>
                   <Input
                     type="password"
-                    autoComplete="off"
+                    name="my-tasks-unlock-pin"
+                    autoComplete="new-password"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-form-type="other"
                     placeholder="PIN"
                     value={myTasksPin}
                     onChange={(e) => {

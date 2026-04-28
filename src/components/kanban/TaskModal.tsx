@@ -178,17 +178,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const readOnlyTask = Boolean(
     isEditing &&
       task?.isLocked &&
-      (lockedWithPin ? !pinUnlockedSession : !canOverrideTaskLock),
+      !canOverrideTaskLock &&
+      (lockedWithPin ? !pinUnlockedSession : true),
   );
 
-  /** Until PIN is entered, do not show title, description, comments, or activity. */
+  /** Until PIN is entered, do not show title, description, comments, or activity.
+   *  Project owner / org admin / task creator bypass the PIN — they own the workspace. */
   const mustUnlockToView = useMemo(
     () =>
       Boolean(
         isEditing &&
           task?.isLocked &&
           hasLockPin &&
-          !pinUnlockedSession,
+          !pinUnlockedSession &&
+          !canOverrideTaskLock,
       ),
     [
       isEditing,
@@ -196,6 +199,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       task?.taskId,
       hasLockPin,
       pinUnlockedSession,
+      canOverrideTaskLock,
     ],
   );
 
@@ -781,8 +785,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
             <Input
               type="password"
-              autoComplete="off"
+              name="task-unlock-pin"
+              autoComplete="new-password"
               autoFocus
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
               placeholder="Enter PIN"
               value={unlockAttempt}
               onChange={(e) => setUnlockAttempt(e.target.value)}
@@ -1766,7 +1774,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </p>
                     <Input
                       type="password"
+                      name="task-new-pin"
                       autoComplete="new-password"
+                      data-1p-ignore
+                      data-lpignore="true"
+                      data-form-type="other"
                       placeholder="New PIN"
                       value={lockPinNew}
                       onChange={(e) => setLockPinNew(e.target.value)}
@@ -1774,7 +1786,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     />
                     <Input
                       type="password"
+                      name="task-confirm-pin"
                       autoComplete="new-password"
+                      data-1p-ignore
+                      data-lpignore="true"
+                      data-form-type="other"
                       placeholder="Confirm PIN"
                       value={lockPinConfirm}
                       onChange={(e) => setLockPinConfirm(e.target.value)}
@@ -1993,7 +2009,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </AlertDialogHeader>
             <Input
               type="password"
-              autoComplete="off"
+              name="task-unlock-pin-2"
+              autoComplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-form-type="other"
               placeholder="PIN"
               value={unlockAttempt}
               onChange={(e) => setUnlockAttempt(e.target.value)}

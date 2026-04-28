@@ -161,9 +161,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const canMoveTask = useCallback(
     (t: Task) => {
       if (!t.isLocked) return true;
-      if (t.hasLockPin && isTaskLockUnlockedInSession(t.taskId)) return true;
-      if (t.hasLockPin) return false;
+      // Project owner / workspace admin always bypass — they bought the plan and own the workspace.
       if (canOverrideTaskLock) return true;
+      if (t.hasLockPin && isTaskLockUnlockedInSession(t.taskId)) return true;
       return false;
     },
     [canOverrideTaskLock],
@@ -247,7 +247,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       }
       if (!canMoveTask(a) || !canMoveTask(b)) {
         toast.error(
-          'One of these tasks is locked. Unlock with PIN, or ask the project owner or an admin.',
+          canOverrideTaskLock
+            ? 'One of these tasks has a PIN. Open it and unlock first.'
+            : 'One of these tasks is locked. Unlock with PIN, or ask the project owner or an admin.',
         );
         finish();
         return;
@@ -294,7 +296,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       finish();
       await onTasksRefresh?.();
     },
-    [tasks, editTask, canMoveTask, onTasksRefresh],
+    [tasks, editTask, canMoveTask, canOverrideTaskLock, onTasksRefresh],
   );
 
   // ── Column-edit modal state ────────────────────────────────
@@ -478,7 +480,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
       if (!canMoveTask(movedTask)) {
         toast.error(
-          'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
+          canOverrideTaskLock
+            ? 'This task has a PIN. Open it and unlock first to move it.'
+            : 'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
         );
         return;
       }
@@ -568,6 +572,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       orgId,
       tasksByStatus,
       canMoveTask,
+      canOverrideTaskLock,
       onRequestManualSort,
       getAssigneeEmail,
       sortedColumns,
@@ -616,7 +621,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         event?.stopPropagation();
         if (!canMoveTask(task)) {
           toast.error(
-            'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
+            canOverrideTaskLock
+              ? 'This task has a PIN. Open it and unlock first to swap it.'
+              : 'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
           );
           return;
         }
@@ -651,6 +658,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       taskSwapMode,
       swapPickId,
       canMoveTask,
+      canOverrideTaskLock,
       handleSwapPair,
       selectionMode,
       handleTaskSelect,
@@ -701,14 +709,17 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       delete cleanInput.subtasks;
 
       if (selectedTask) {
-        if (
+        const lockBlocks =
           selectedTask.isLocked &&
+          !canOverrideTaskLock &&
           (selectedTask.hasLockPin
             ? !isTaskLockUnlockedInSession(selectedTask.taskId)
-            : !canOverrideTaskLock)
-        ) {
+            : true);
+        if (lockBlocks) {
           throw new Error(
-            'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
+            selectedTask.hasLockPin
+              ? 'This task is locked. Unlock it with the PIN to edit.'
+              : 'This task is locked. Only the project owner or a workspace admin can edit it.',
           );
         }
         const updatePayload = { ...cleanInput } as UpdateTaskInput & {
@@ -860,26 +871,22 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const handleDeleteTask = useCallback(
     async (taskId: string) => {
       const t = tasks.find((x) => x.taskId === taskId);
-      if (
-        t?.isLocked &&
-        (t.hasLockPin ? !isTaskLockUnlockedInSession(t.taskId) : !canOverrideTaskLock)
-      ) {
-        toast.error('This task is locked. Unlock it first, or ask the project owner or an admin.');
+      if (t && !canMoveTask(t)) {
+        toast.error(
+          t.hasLockPin
+            ? 'This task is locked. Unlock it with the PIN to delete.'
+            : 'This task is locked. Only the project owner or a workspace admin can delete it.',
+        );
         return;
       }
       await removeTask(taskId);
     },
-    [removeTask, tasks, canOverrideTaskLock],
+    [removeTask, tasks, canMoveTask],
   );
 
   const handleCreateSubtasks = useCallback(
     async (subtasks: CreateTaskInput[]) => {
-      if (
-        selectedTask?.isLocked &&
-        (selectedTask.hasLockPin
-          ? !isTaskLockUnlockedInSession(selectedTask.taskId)
-          : !canOverrideTaskLock)
-      ) {
+      if (selectedTask && !canMoveTask(selectedTask)) {
         toast.error('This task is locked. Unlock it before adding subtasks.');
         return;
       }
@@ -892,7 +899,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           throw new Error('Failed to create subtask. Please try again.');
       }
     },
-    [addTask, selectedTask, canOverrideTaskLock],
+    [addTask, selectedTask, canMoveTask],
   );
 
   const handleCloseModal = useCallback(() => {
@@ -905,22 +912,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   // ── Bulk action helpers ────────────────────────────────────
   const ids = useMemo(() => Array.from(selectedIds), [selectedIds]);
 
+  const lockedSelection = useCallback(
+    () =>
+      ids.some((id) => {
+        const t = tasks.find((x) => x.taskId === id);
+        return t ? !canMoveTask(t) : false;
+      }),
+    [ids, tasks, canMoveTask],
+  );
+
+  const lockedSelectionToast = canOverrideTaskLock
+    ? 'Some selected tasks have a PIN. Open them and unlock to include in this action.'
+    : 'Some selected tasks are locked. Deselect them or ask the project owner or an admin.';
+
   const runBulk = useCallback(
     async (patch: UpdateTaskInput, successMessage: string) => {
       if (!orgId || ids.length === 0) return;
-      const blocked = ids.filter((id) => {
-        const t = tasks.find((x) => x.taskId === id);
-        return Boolean(
-          t?.isLocked &&
-            (t.hasLockPin
-              ? !isTaskLockUnlockedInSession(t.taskId)
-              : !canOverrideTaskLock),
-        );
-      });
-      if (blocked.length > 0) {
-        toast.error(
-          'Some selected tasks are locked. Deselect them or ask a project owner or admin.',
-        );
+      if (lockedSelection()) {
+        toast.error(lockedSelectionToast);
         return;
       }
       try {
@@ -931,24 +940,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         toast.error(err instanceof Error ? err.message : 'Bulk update failed');
       }
     },
-    [orgId, ids, onTasksRefresh, tasks, canOverrideTaskLock],
+    [orgId, ids, onTasksRefresh, lockedSelection, lockedSelectionToast],
   );
 
   const handleBulkDelete = useCallback(async () => {
     if (!orgId || ids.length === 0) return;
-    const blocked = ids.filter((id) => {
-      const t = tasks.find((x) => x.taskId === id);
-      return Boolean(
-        t?.isLocked &&
-          (t.hasLockPin
-            ? !isTaskLockUnlockedInSession(t.taskId)
-            : !canOverrideTaskLock),
-      );
-    });
-    if (blocked.length > 0) {
-      toast.error(
-        'Some selected tasks are locked. Deselect them or ask a project owner or admin.',
-      );
+    if (lockedSelection()) {
+      toast.error(lockedSelectionToast);
       return;
     }
     try {
@@ -959,7 +957,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Bulk delete failed');
     }
-  }, [orgId, ids, clearSelection, onTasksRefresh, tasks, canOverrideTaskLock]);
+  }, [orgId, ids, clearSelection, onTasksRefresh, lockedSelection, lockedSelectionToast]);
 
   // ── Column CRUD handlers (unchanged) ──────────────────────
   const handleAddColumn = useCallback(() => {
