@@ -87,14 +87,15 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     };
   }, [effectiveUserId, limit]);
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     const uid = effectiveUserId;
     if (!uid) return;
     const {
       data: { session },
     } = await supabase.auth.getSession();
     if (!session?.user?.id || session.user.id !== uid) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const { fetchUserNotifications } = await import("@/services/supabase/database");
       const data = await fetchUserNotifications(uid, limit);
@@ -102,13 +103,13 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [effectiveUserId, limit]);
 
   useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "visible") void fetchNotifications();
+      if (document.visibilityState === "visible") void fetchNotifications({ silent: true });
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);

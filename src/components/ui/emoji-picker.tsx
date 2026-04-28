@@ -19,6 +19,8 @@ interface EmojiPickerButtonProps {
   onChange: (value: string) => void;
   /** When set, picking an emoji invokes this only (e.g. reactions) instead of appending to value. */
   onPickEmoji?: (emoji: string) => void;
+  /** Use inside Dialog/Popover so the parent layer does not steal focus and dismiss (Radix modal stacking). */
+  nested?: boolean;
   className?: string;
   disabled?: boolean;
 }
@@ -27,6 +29,7 @@ export function EmojiPickerButton({
   value,
   onChange,
   onPickEmoji,
+  nested = false,
   className,
   disabled = false,
 }: EmojiPickerButtonProps) {
@@ -42,7 +45,11 @@ export function EmojiPickerButton({
   };
 
   return (
-    <DropdownMenu open={disabled ? false : open} onOpenChange={disabled ? () => {} : setOpen}>
+    <DropdownMenu
+      modal={!nested}
+      open={disabled ? false : open}
+      onOpenChange={disabled ? () => {} : setOpen}
+    >
       <DropdownMenuTrigger asChild>
         <Button
           type="button"

@@ -788,6 +788,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                             )}
                             <span>{format(createdAt, 'p')}</span>
                             <Popover
+                              modal={false}
                               open={reactionMenuForId === msg.messageId}
                               onOpenChange={(next) =>
                                 setReactionMenuForId(next ? msg.messageId : null)
@@ -818,6 +819,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                                       key={emoji}
                                       type="button"
                                       className="text-[22px] leading-none hover:bg-muted rounded-md p-1.5 min-w-[2.25rem]"
+                                      onPointerDown={(e) => e.preventDefault()}
                                       onClick={() => {
                                         void handleToggleReaction(msg.messageId, emoji);
                                         setReactionMenuForId(null);
@@ -831,6 +833,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                                   <EmojiPickerButton
                                     value=""
                                     onChange={() => {}}
+                                    nested
                                     onPickEmoji={(emoji) => {
                                       void handleToggleReaction(msg.messageId, emoji);
                                       setReactionMenuForId(null);

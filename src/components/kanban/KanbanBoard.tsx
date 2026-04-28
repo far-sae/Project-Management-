@@ -349,6 +349,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
   }, [openTaskId, tasks, onOpenedTask, onBeforeOpenTaskModal]);
 
+  /** Merge realtime task list into the open modal so refetches/tab focus never strand or close it */
+  useEffect(() => {
+    if (!isModalOpen) return;
+    setSelectedTask((prev) => {
+      if (!prev?.taskId) return prev;
+      const fresh = tasks.find((t) => t.taskId === prev.taskId);
+      return fresh ?? prev;
+    });
+  }, [tasks, isModalOpen]);
+
   // Tell parent which task the user is currently viewing so it can broadcast
   // it via presence; clear when the modal closes.
   useEffect(() => {

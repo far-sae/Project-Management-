@@ -1539,11 +1539,23 @@ export const createNotification = async (
     p_actor_display_name: input.actorDisplayName ?? null,
   });
 
+  const rpcErr = rpcRes.error as {
+    message?: string;
+    details?: string;
+    hint?: string;
+    code?: string;
+    status?: number;
+  } | null;
+  const rpcErrText = `${rpcErr?.message ?? ""} ${rpcErr?.details ?? ""} ${rpcErr?.hint ?? ""} ${rpcErr?.code ?? ""}`;
+  /** HTTP 404 / missing RPC — fall back to direct insert (needs permissive RLS or migration 028).
+   *  Do not treat PGRST301 / PGRST204 as missing-RPC (auth / content negotiation / other API errors). */
   const rpcMissing =
-    rpcRes.error &&
-    /function .*create_notification_v1.* does not exist|could not find the function|PGRST202/i.test(
-      `${rpcRes.error.message ?? ""} ${(rpcRes.error as { details?: string }).details ?? ""} ${(rpcRes.error as { code?: string }).code ?? ""}`,
-    );
+    !!rpcErr &&
+    (rpcErr.status === 404 ||
+      /\b404\b/.test(rpcErr.message ?? "") ||
+      /does not exist|could not find|not\s*found|unknown.*function|PGRST202\b/i.test(
+        rpcErrText,
+      ));
 
   if (rpcRes.error && !rpcMissing) {
     error = rpcRes.error as unknown as typeof error;
