@@ -1,14 +1,28 @@
 // Supabase Edge Function: Proxy OpenAI chat requests (fixes CORS)
 // Deploy: supabase functions deploy ai-chat
-// Set secret: OPENAI_API_KEY
+//
+// Secrets (Dashboard → Edge Functions → Manage secrets):
+//   OPENAI_API_KEY   — required (sk-… from OpenAI)
+//
+// Troubleshooting HTTP 502/503/500:
+// • 503 MISSING_OPENAI_KEY — set OPENAI_API_KEY then redeploy
+// • 401/403 from OpenAI — key revoked, typo, or org restrictions
+// • 429 — rate/quota (check billing and usage limits at OpenAI)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import OpenAI from "https://esm.sh/openai@4.20.0";
+import OpenAI from "https://esm.sh/openai@4.104.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+function json(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -16,34 +30,55 @@ serve(async (req) => {
   }
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ error: "Method not allowed" }, 405);
   }
 
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  const apiKeyRaw = Deno.env.get("OPENAI_API_KEY");
+  const apiKey = typeof apiKeyRaw === "string" ? apiKeyRaw.trim() : "";
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "AI is not configured. Please add OPENAI_API_KEY." }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    return json(
+      {
+        error:
+          "OPENAI_API_KEY is not set on this Edge Function. In Supabase: Project Settings → Edge Functions → Secrets, add OPENAI_API_KEY with your OpenAI secret key (sk-…), then redeploy: supabase functions deploy ai-chat",
+        code: "MISSING_OPENAI_KEY",
+      },
+      503,
     );
   }
 
+  let payload: unknown;
   try {
-    const body = (await req.json()) as {
-      prompt: string;
-      model?: string;
-      temperature?: number;
-      max_tokens?: number;
-    };
-    const { prompt, model = "gpt-4o-mini", temperature = 0.7, max_tokens = 500 } = body;
+    payload = await req.json();
+  } catch (_) {
+    return json({ error: "Invalid JSON body" }, 400);
+  }
 
-    if (!prompt || typeof prompt !== "string") {
-      return new Response(
-        JSON.stringify({ error: "Missing or invalid prompt" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+  try {
+    const body = payload as {
+      prompt?: unknown;
+      model?: unknown;
+      temperature?: unknown;
+      max_tokens?: unknown;
+    };
+    const prompt = body.prompt;
+
+    const model =
+      typeof body.model === "string" && body.model.trim().length > 0
+        ? body.model.trim()
+        : "gpt-4o-mini";
+    const temperature =
+      typeof body.temperature === "number" && Number.isFinite(body.temperature)
+        ? body.temperature
+        : 0.7;
+    const max_tokens =
+      typeof body.max_tokens === "number" &&
+        Number.isFinite(body.max_tokens) &&
+        body.max_tokens > 0
+        ? Math.min(Math.floor(body.max_tokens), 16_384)
+        : 500;
+
+    if (typeof prompt !== "string" || !prompt.trim()) {
+      return json({ error: "Missing or invalid prompt" }, 400);
     }
 
     const client = new OpenAI({ apiKey });
@@ -55,16 +90,59 @@ serve(async (req) => {
     });
 
     const content = response.choices[0]?.message?.content ?? "";
-    return new Response(JSON.stringify({ content }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ content }, 200);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "AI request failed";
     console.error("ai-chat error:", err);
-    return new Response(
-      JSON.stringify({ error: msg }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+
+    const any = err as {
+      status?: number;
+      code?: string;
+      message?: string;
+    };
+
+    const msgRaw =
+      typeof any.message === "string" && any.message.trim().length > 0
+        ? any.message
+        : err instanceof Error && err.message
+          ? err.message
+          : "AI request failed";
+
+    let hint = msgRaw;
+    const status =
+      typeof any.status === "number" ? any.status : undefined;
+
+    if (
+      /\binvalid\b.*\bapi\b.*\bkey\b/i.test(msgRaw) ||
+      msgRaw.toLowerCase().includes("incorrect api key") ||
+      status === 401
+    ) {
+      hint =
+        `${msgRaw}. Check OPENAI_API_KEY in Supabase Edge Function secrets (sk-… key must be active).`;
+    } else if (status === 429 || /\bquota\b|\brate\b|\blimit\b/i.test(msgRaw)) {
+      hint =
+        `${msgRaw}. You may be rate-limited or out of quota—check usage and billing on platform.openai.com.`;
+    } else if (status === 404) {
+      hint =
+        `${msgRaw}. The requested model may be unavailable or the name incorrect for your org.`;
+    }
+
+    const httpStatus =
+      status === 429
+        ? 429
+        : typeof status === "number" &&
+            status >= 400 &&
+            status < 600
+          ? 502
+          : 500;
+
+    return json(
+      {
+        error: hint,
+        code: typeof any.code === "string"
+          ? any.code
+          : "OPENAI_REQUEST_FAILED",
+      },
+      httpStatus,
     );
   }
 });

@@ -1,5 +1,5 @@
-import { supabase } from '@/services/supabase/config';
 import { isAIEnabled, AI_CONFIG } from './openai';
+import { invokeAiChatEdge } from './invokeAiChatEdge';
 import { rateLimiter } from './rateLimiter';
 import type { AIError, Subtask } from './types';
 import type { TaskPriority } from '@/types/task';
@@ -64,31 +64,12 @@ async function invokeAI<T>(
     } as AIError;
   }
 
-  const { data, error } = await supabase.functions.invoke('ai-chat', {
-    body: {
-      prompt,
-      model: AI_CONFIG.model,
-      temperature: options?.temperature ?? 0.4,
-      max_tokens: options?.maxTokens ?? 700,
-    },
+  const content = await invokeAiChatEdge({
+    prompt,
+    model: AI_CONFIG.model,
+    temperature: options?.temperature ?? 0.4,
+    max_tokens: options?.maxTokens ?? 700,
   });
-
-  if (error) {
-    throw {
-      code: 'API_ERROR',
-      message: (error as { message?: string }).message || 'AI request failed',
-    } as AIError;
-  }
-  if (data?.error) {
-    throw {
-      code: 'API_ERROR',
-      message: typeof data.error === 'string' ? data.error : 'AI request failed',
-    } as AIError;
-  }
-  const content = data?.content;
-  if (!content) {
-    throw { code: 'API_ERROR', message: 'No response from AI' } as AIError;
-  }
   return parse(String(content));
 }
 

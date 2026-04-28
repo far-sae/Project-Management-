@@ -155,8 +155,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const canMoveTask = useCallback(
     (t: Task) => {
       if (!t.isLocked) return true;
-      if (canOverrideTaskLock) return true;
       if (t.hasLockPin && isTaskLockUnlockedInSession(t.taskId)) return true;
+      if (t.hasLockPin) return false;
+      if (canOverrideTaskLock) return true;
       return false;
     },
     [canOverrideTaskLock],
@@ -692,9 +693,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       if (selectedTask) {
         if (
           selectedTask.isLocked &&
-          !canOverrideTaskLock &&
-          (!selectedTask.hasLockPin ||
-            !isTaskLockUnlockedInSession(selectedTask.taskId))
+          (selectedTask.hasLockPin
+            ? !isTaskLockUnlockedInSession(selectedTask.taskId)
+            : !canOverrideTaskLock)
         ) {
           throw new Error(
             'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
@@ -849,8 +850,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const handleDeleteTask = useCallback(
     async (taskId: string) => {
       const t = tasks.find((x) => x.taskId === taskId);
-      if (t?.isLocked && !canOverrideTaskLock) {
-        toast.error('This task is locked. Only the project owner or an admin can delete it.');
+      if (
+        t?.isLocked &&
+        (t.hasLockPin ? !isTaskLockUnlockedInSession(t.taskId) : !canOverrideTaskLock)
+      ) {
+        toast.error('This task is locked. Unlock it first, or ask the project owner or an admin.');
         return;
       }
       await removeTask(taskId);
@@ -860,8 +864,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const handleCreateSubtasks = useCallback(
     async (subtasks: CreateTaskInput[]) => {
-      if (selectedTask?.isLocked && !canOverrideTaskLock) {
-        toast.error('This task is locked.');
+      if (
+        selectedTask?.isLocked &&
+        (selectedTask.hasLockPin
+          ? !isTaskLockUnlockedInSession(selectedTask.taskId)
+          : !canOverrideTaskLock)
+      ) {
+        toast.error('This task is locked. Unlock it before adding subtasks.');
         return;
       }
       for (const subtask of subtasks) {
@@ -890,7 +899,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       if (!orgId || ids.length === 0) return;
       const blocked = ids.filter((id) => {
         const t = tasks.find((x) => x.taskId === id);
-        return t?.isLocked && !canOverrideTaskLock;
+        return Boolean(
+          t?.isLocked &&
+            (t.hasLockPin
+              ? !isTaskLockUnlockedInSession(t.taskId)
+              : !canOverrideTaskLock),
+        );
       });
       if (blocked.length > 0) {
         toast.error(
@@ -913,7 +927,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     if (!orgId || ids.length === 0) return;
     const blocked = ids.filter((id) => {
       const t = tasks.find((x) => x.taskId === id);
-      return t?.isLocked && !canOverrideTaskLock;
+      return Boolean(
+        t?.isLocked &&
+          (t.hasLockPin
+            ? !isTaskLockUnlockedInSession(t.taskId)
+            : !canOverrideTaskLock),
+      );
     });
     if (blocked.length > 0) {
       toast.error(

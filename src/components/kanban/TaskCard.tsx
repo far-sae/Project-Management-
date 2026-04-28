@@ -119,7 +119,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
    */
   let isLockMasked = false;
   if (task?.isLocked) {
-    if (!user) {
+    if (task.hasLockPin && !isTaskLockUnlockedInSession(task.taskId)) {
+      isLockMasked = true;
+    } else if (!user) {
       isLockMasked = true;
     } else if (isAdmin) {
       isLockMasked = false;
@@ -129,8 +131,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       Array.isArray(task.assignees) &&
       task.assignees.some((a) => a.userId === user.userId)
     ) {
-      isLockMasked = false;
-    } else if (task.hasLockPin && isTaskLockUnlockedInSession(task.taskId)) {
       isLockMasked = false;
     } else {
       isLockMasked = true;

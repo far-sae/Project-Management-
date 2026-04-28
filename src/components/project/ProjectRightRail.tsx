@@ -167,6 +167,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatSoundStateRef = useRef<{
+    initialized: boolean;
+    latestMessageId: string | null;
+  }>({ initialized: false, latestMessageId: null });
 
   /** Persist a per-project "last seen" timestamp so the dock can show an unread badge. */
   const lastSeenStorageKey = `project_chat_last_seen:${project.projectId}`;
@@ -218,15 +222,40 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     [chatMessages],
   );
 
+  const playChatSound = useCallback(() => {
+    try {
+      const AudioContextCtor =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!AudioContextCtor) return;
+      const ctx = new AudioContextCtor();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(740, ctx.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(520, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.2);
+      window.setTimeout(() => void ctx.close().catch(() => {}), 260);
+    } catch {
+      /* Browsers can block audio until the user has interacted with the page. */
+    }
+  }, []);
+
   useEffect(() => {
-    if (!open) return;
     setChatLoading(true);
     const unsub = subscribeToProjectChat(project.projectId, (list) => {
       setChatMessages(list);
       setChatLoading(false);
     });
     return () => unsub();
-  }, [open, project.projectId]);
+  }, [project.projectId]);
 
   /** When the dock opens — or new messages arrive while open — bump the last-seen marker. */
   useEffect(() => {
@@ -243,6 +272,29 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (chatLoading) return;
+    const latest = chatMessages[chatMessages.length - 1] ?? null;
+    const latestMessageId = latest?.messageId ?? null;
+    const state = chatSoundStateRef.current;
+
+    if (!state.initialized) {
+      chatSoundStateRef.current = { initialized: true, latestMessageId };
+      return;
+    }
+
+    if (
+      latest &&
+      latestMessageId &&
+      latestMessageId !== state.latestMessageId &&
+      latest.userId !== user?.userId
+    ) {
+      playChatSound();
+    }
+
+    chatSoundStateRef.current = { initialized: true, latestMessageId };
+  }, [chatLoading, chatMessages, playChatSound, user?.userId]);
 
   const handleSendChat = useCallback(async () => {
     const body = chatInput.trim();
@@ -266,9 +318,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         projectId: project.projectId,
         projectName: project.name,
       });
-      const memberIds = dedupedMembers
-        .map((m) => m.userId)
-        .filter((id): id is string => Boolean(id));
+      const memberIds = Array.from(
+        new Set(
+          [project.ownerId, ...dedupedMembers.map((m) => m.userId)]
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
       void notifyProjectChatMessageToMembers({
         projectId: project.projectId,
         projectName: project.name,
@@ -289,6 +344,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     user,
     project.projectId,
     project.organizationId,
+    project.ownerId,
     project.name,
     mentionMembers,
     dedupedMembers,

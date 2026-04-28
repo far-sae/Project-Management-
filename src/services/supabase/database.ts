@@ -14,11 +14,10 @@ import {
 import { ActivityEvent, CreateActivityInput } from "@/types/activity";
 import { AppNotification, CreateNotificationInput } from "@/types/notification";
 import { logger } from "@/lib/logger";
-import { sendTaskAssignedEmail } from "@/services/email/taskAssignedEmail";
+import { sendNotificationEmail } from "@/services/email/emailService";
 import {
   getUserNotificationPreferences,
   isInAppNotificationAllowed,
-  isEmailForTaskEventAllowed,
 } from "@/lib/notificationPreferences";
 import { isAppOwner } from "@/lib/app-owner";
 import { dispatchNotificationsRefresh } from "@/lib/notificationEvents";
@@ -27,6 +26,39 @@ import { INDIA_PRICING } from "@/types/subscription";
 /** Project columns safe for the browser—never includes lock_pin_hash. Requires migration 019 (has_lock_pin). */
 const PROJECTS_SAFE_SELECT =
   "project_id, name, description, cover_color, owner_id, organization_id, workspace_id, created_by, members, columns, created_at, updated_at, start_date, end_date, settings, stats, is_locked, lock_pin_version, has_lock_pin";
+
+const userEmailCache = new Map<
+  string,
+  { email: string; displayName: string; at: number }
+>();
+const USER_EMAIL_CACHE_MS = 60_000;
+
+async function getUserEmailForNotification(
+  userId: string,
+): Promise<{ email: string; displayName: string } | null> {
+  const now = Date.now();
+  const cached = userEmailCache.get(userId);
+  if (cached && now - cached.at < USER_EMAIL_CACHE_MS) {
+    return { email: cached.email, displayName: cached.displayName };
+  }
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("email, display_name")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    logger.warn("Could not resolve notification recipient email:", error.message);
+    return null;
+  }
+
+  const email = String(data?.email || "").trim();
+  if (!email || !email.includes("@")) return null;
+  const displayName = String(data?.display_name || "").trim();
+  userEmailCache.set(userId, { email, displayName, at: now });
+  return { email, displayName };
+}
 
 // ============================================
 // LIMIT HELPERS
@@ -1353,6 +1385,31 @@ export const createNotification = async (
 
   dispatchNotificationsRefresh();
 
+  if (prefs.email !== false && input.actorUserId !== input.userId) {
+    void (async () => {
+      try {
+        const recipient = await getUserEmailForNotification(input.userId);
+        if (!recipient) return;
+        const actionUrl =
+          typeof window !== "undefined" && input.projectId
+            ? `${window.location.origin}/project/${input.projectId}${
+                input.taskId ? `?taskId=${input.taskId}` : ""
+              }`
+            : "";
+        await sendNotificationEmail({
+          toEmail: recipient.email,
+          toName: recipient.displayName,
+          title: input.title,
+          body: input.body,
+          actorDisplayName: input.actorDisplayName,
+          actionUrl,
+        });
+      } catch (e) {
+        logger.warn("Notification email failed:", e);
+      }
+    })();
+  }
+
   return {
     notificationId: data.notification_id,
     userId: data.user_id,
@@ -1448,7 +1505,6 @@ export const createNotificationsForTaskUpdate = async (params: {
     newStatus,
     actorUserId,
     actorDisplayName,
-    getAssigneeEmail,
     includeActor = false,
   } = params;
 
@@ -1477,24 +1533,6 @@ export const createNotificationsForTaskUpdate = async (params: {
 
         // Skip the assignee email when the user assigned themselves — sending yourself an
         // email about your own action is noise.
-        const email = isActor ? undefined : getAssigneeEmail?.(a.userId)?.trim();
-        if (email && email.includes("@")) {
-          const aprefs = await getUserNotificationPreferences(a.userId);
-          if (isEmailForTaskEventAllowed(aprefs, "task_assigned")) {
-            const taskUrl =
-              typeof window !== "undefined"
-                ? `${window.location.origin}/project/${projectId}?taskId=${taskId}`
-                : "";
-            void sendTaskAssignedEmail({
-              toEmail: email,
-              assigneeDisplayName: a.displayName,
-              taskTitle,
-              projectName,
-              actorDisplayName,
-              taskUrl,
-            });
-          }
-        }
       }
     }
 

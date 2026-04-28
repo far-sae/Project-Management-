@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -166,11 +166,27 @@ export const Calendar: React.FC = () => {
     return p?.name || 'Unknown';
   };
 
+  const monthTasks = useMemo(
+    () =>
+      tasks.filter((task) => {
+        if (!task.dueDate) return false;
+        const d = new Date(task.dueDate);
+        return (
+          d.getMonth() === currentDate.getMonth() &&
+          d.getFullYear() === currentDate.getFullYear()
+        );
+      }),
+    [currentDate, tasks],
+  );
+
+  const completedMonthTasks = monthTasks.filter((task) => task.status === 'done').length;
+  const urgentMonthTasks = monthTasks.filter((task) => task.urgent).length;
+
   const renderCalendarDays = () => {
     const days: JSX.Element[] = [];
 
     for (let i = 0; i < startingDay; i++) {
-      days.push(<div key={`empty-${i}`} className="h-24 bg-muted/20 border border-border" />);
+      days.push(<div key={`empty-${i}`} className="min-h-28 rounded-lg border border-border/40 bg-muted/15" />);
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -179,12 +195,12 @@ export const Calendar: React.FC = () => {
       days.push(
         <div
           key={day}
-          className={`h-24 border border-border p-2 hover:bg-muted/40 cursor-pointer overflow-y-auto ${isToday(day) ? 'bg-orange-500/10 border-orange-500/30' : 'bg-card'
+          className={`min-h-28 cursor-pointer overflow-y-auto rounded-lg border p-2.5 transition-colors hover:bg-muted/40 ${isToday(day) ? 'border-primary/40 bg-primary/10 shadow-sm' : 'border-border/60 bg-card/85'
             }`}
         >
           <span
             className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm ${isToday(day)
-              ? 'bg-orange-500 text-white font-bold'
+              ? 'bg-primary text-primary-foreground font-bold shadow-sm'
               : 'text-foreground'
               }`}
           >
@@ -196,7 +212,7 @@ export const Calendar: React.FC = () => {
               {dayTasks.slice(0, 2).map((task) => (
                 <div
                   key={task.taskId}
-                  className={`text-xs truncate px-1 py-0.5 rounded cursor-pointer flex items-center gap-1
+                  className={`flex cursor-pointer items-center gap-1 truncate rounded-md px-1.5 py-1 text-xs
                     ${task.status === 'done'
                       ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 line-through hover:bg-emerald-500/30'
                       : task.urgent
@@ -215,7 +231,7 @@ export const Calendar: React.FC = () => {
               ))}
 
               {dayTasks.length > 2 && (
-                <div className="text-xs text-muted-foreground px-1">
+                <div className="px-1 text-xs text-muted-foreground">
                   +{dayTasks.length - 2} more
                 </div>
               )}
@@ -231,8 +247,9 @@ export const Calendar: React.FC = () => {
   return (
     <div className="flex h-screen bg-background">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="flex items-center justify-between mb-8">
+      <main className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))] p-4 sm:p-6 lg:p-8">
+        <div className="mb-6 rounded-lg border border-border/70 bg-card/80 p-5 shadow-sm shadow-black/5 backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 leading-none">
             <TaskCalendarLogo sizeClass="h-9 w-9 sm:h-10 sm:w-10" />
             <div className="min-w-0 pt-0.5">
@@ -243,22 +260,38 @@ export const Calendar: React.FC = () => {
           <Button
             variant="outline"
             onClick={() => setCurrentDate(new Date())}
+            className="rounded-lg bg-background/80"
           >
             <CalendarIcon className="w-4 h-4 mr-2" />
             Today
           </Button>
         </div>
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Due this month</p>
+            <p className="mt-1 text-2xl font-semibold">{monthTasks.length}</p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Completed</p>
+            <p className="mt-1 text-2xl font-semibold text-success">{completedMonthTasks}</p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Urgent</p>
+            <p className="mt-1 text-2xl font-semibold text-destructive">{urgentMonthTasks}</p>
+          </div>
+        </div>
+        </div>
 
-        <Card>
+        <Card className="overflow-hidden rounded-lg border-border/70 bg-card/85 shadow-sm shadow-black/5">
           <CardHeader className="flex flex-row items-center justify-between">
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={prevMonth}>
+              <Button variant="ghost" size="icon" className="rounded-lg" onClick={prevMonth}>
                 <ChevronLeft className="w-5 h-5" />
               </Button>
               <CardTitle>
                 {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
               </CardTitle>
-              <Button variant="ghost" size="icon" onClick={nextMonth}>
+              <Button variant="ghost" size="icon" className="rounded-lg" onClick={nextMonth}>
                 <ChevronRight className="w-5 h-5" />
               </Button>
             </div>
@@ -276,11 +309,11 @@ export const Calendar: React.FC = () => {
                 <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
               </div>
             ) : (
-              <div className="grid grid-cols-7 gap-0">
+              <div className="grid grid-cols-7 gap-2">
                 {DAYS.map((day) => (
                   <div
                     key={day}
-                    className="h-10 flex items-center justify-center font-medium text-muted-foreground text-sm border-b border-border"
+                    className="flex h-10 items-center justify-center rounded-lg bg-muted/30 text-sm font-medium text-muted-foreground"
                   >
                     {day}
                   </div>

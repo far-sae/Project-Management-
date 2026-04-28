@@ -184,20 +184,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   }, [user, project?.ownerId, task?.createdBy, isAdmin]);
 
   const hasLockPin = Boolean(task?.hasLockPin);
+  const lockedWithPin = Boolean(isEditing && task?.isLocked && hasLockPin);
   const readOnlyTask = Boolean(
     isEditing &&
       task?.isLocked &&
-      !canOverrideTaskLock &&
-      !(hasLockPin && pinUnlockedSession),
+      (lockedWithPin ? !pinUnlockedSession : !canOverrideTaskLock),
   );
 
-  /** Until PIN is entered, do not show title, description, or comments. */
+  /** Until PIN is entered, do not show title, description, comments, or activity. */
   const mustUnlockToView = useMemo(
     () =>
       Boolean(
         isEditing &&
           task?.isLocked &&
-          !canOverrideTaskLock &&
           hasLockPin &&
           !pinUnlockedSession,
       ),
@@ -205,7 +204,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       isEditing,
       task?.isLocked,
       task?.taskId,
-      canOverrideTaskLock,
       hasLockPin,
       pinUnlockedSession,
     ],

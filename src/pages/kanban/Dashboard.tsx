@@ -650,13 +650,13 @@ export const Dashboard: React.FC = () => {
     <div className="flex h-screen bg-background">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))]">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}
 
-        <div className="p-8 animate-fade-in">
-          <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-primary/[0.07] via-card to-card p-6 sm:p-8 mb-8 shadow-sm">
+        <div className="animate-fade-in p-4 sm:p-6 lg:p-8">
+          <div className="mb-8 rounded-lg border border-border/70 bg-card/80 p-6 shadow-sm shadow-black/5 backdrop-blur-xl sm:p-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3 leading-none">
               <div className="min-w-0 pt-0.5">
@@ -674,7 +674,7 @@ export const Dashboard: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-foreground">Workspace</span>
                 <Select value={selectedWorkspaceId} onValueChange={handleWorkspaceChange}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-[200px] rounded-lg bg-background/80">
                     <SelectValue placeholder="Select workspace" />
                   </SelectTrigger>
 
@@ -735,7 +735,7 @@ export const Dashboard: React.FC = () => {
               </Button>
               <Button
                 onClick={() => { setShowCreateModal(true); setCreateError(null); }}
-                className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+                  className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 New Project
@@ -758,7 +758,7 @@ export const Dashboard: React.FC = () => {
             <TabsContent value="overview" className="space-y-6">
               {/* Quick stats */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card>
+                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground">Tasks for Today</CardTitle>
                   </CardHeader>
@@ -769,7 +769,7 @@ export const Dashboard: React.FC = () => {
                     <p className="text-xs text-muted-foreground">Due today in this workspace</p>
                   </CardContent>
                 </Card>
-                <Card>
+                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground">My Tasks</CardTitle>
                   </CardHeader>
@@ -780,7 +780,7 @@ export const Dashboard: React.FC = () => {
                     <p className="text-xs text-muted-foreground">Assigned to you</p>
                   </CardContent>
                 </Card>
-                <Card>
+                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground">Upcoming</CardTitle>
                   </CardHeader>
@@ -791,7 +791,7 @@ export const Dashboard: React.FC = () => {
                     <p className="text-xs text-muted-foreground">Next deadlines</p>
                   </CardContent>
                 </Card>
-                <Card>
+                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground">Overdue</CardTitle>
                   </CardHeader>
@@ -805,7 +805,7 @@ export const Dashboard: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                <Card className="xl:col-span-2 overflow-hidden">
+                <Card className="xl:col-span-2 overflow-hidden border-border/70 bg-card/85 shadow-sm shadow-black/5">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2">
                       <TrendingUp className="w-5 h-5 text-emerald-500" />
@@ -817,7 +817,7 @@ export const Dashboard: React.FC = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
                         <p className="text-xs font-medium text-muted-foreground">Completion</p>
                         <p className="mt-2 text-2xl font-bold text-foreground">{completionRate}%</p>
                         <div className="mt-3 h-2 rounded-full bg-muted overflow-hidden">
@@ -827,17 +827,17 @@ export const Dashboard: React.FC = () => {
                           />
                         </div>
                       </div>
-                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
                         <p className="text-xs font-medium text-muted-foreground">Total tasks</p>
                         <p className="mt-2 text-2xl font-bold text-foreground">{allTasksInWorkspace.length}</p>
                         <p className="mt-2 text-xs text-muted-foreground">{completedTasksInWorkspace} completed</p>
                       </div>
-                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
                         <p className="text-xs font-medium text-muted-foreground">Active projects</p>
                         <p className="mt-2 text-2xl font-bold text-foreground">{activeProjectsInWorkspace}</p>
                         <p className="mt-2 text-xs text-muted-foreground">{filteredProjects.length} visible</p>
                       </div>
-                      <div className="rounded-xl border border-border bg-muted/30 p-4">
+                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
                         <p className="text-xs font-medium text-muted-foreground">Protected</p>
                         <p className="mt-2 text-2xl font-bold text-foreground">{lockedProjectsInWorkspace}</p>
                         <p className="mt-2 text-xs text-muted-foreground">PIN locked projects</p>
@@ -846,7 +846,7 @@ export const Dashboard: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2">
                       <Activity className="w-5 h-5 text-primary" />
@@ -888,7 +888,7 @@ export const Dashboard: React.FC = () => {
               </div>
 
               {/* Tasks for Today */}
-              <Card>
+              <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <CheckSquare className="w-5 h-5 text-orange-500" />
@@ -941,7 +941,7 @@ export const Dashboard: React.FC = () => {
               </Card>
 
               {/* Upcoming deadlines */}
-              <Card>
+              <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="w-5 h-5 text-blue-500" />
@@ -983,7 +983,7 @@ export const Dashboard: React.FC = () => {
               </Card>
 
               {/* Projects */}
-              <Card>
+              <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FolderKanban className="w-5 h-5 text-orange-500" />

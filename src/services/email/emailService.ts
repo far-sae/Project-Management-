@@ -3,6 +3,10 @@ import { logger } from "@/lib/logger";
 
 const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
 const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
+const EMAILJS_NOTIFICATION_TEMPLATE_ID =
+  import.meta.env.VITE_EMAILJS_NOTIFICATION_TEMPLATE_ID ||
+  import.meta.env.VITE_EMAILJS_TASK_ASSIGNED_TEMPLATE_ID ||
+  EMAILJS_TEMPLATE_ID;
 const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
 
 type InvitationEmailParams = {
@@ -141,6 +145,71 @@ export const isEmailServiceConfigured = (): boolean => {
       EMAILJS_TEMPLATE_ID !== "undefined" &&
       EMAILJS_PUBLIC_KEY !== "undefined",
   );
+};
+
+export const isNotificationEmailConfigured = (): boolean => {
+  return Boolean(
+    EMAILJS_SERVICE_ID &&
+      EMAILJS_NOTIFICATION_TEMPLATE_ID &&
+      EMAILJS_PUBLIC_KEY &&
+      EMAILJS_SERVICE_ID !== "undefined" &&
+      EMAILJS_NOTIFICATION_TEMPLATE_ID !== "undefined" &&
+      EMAILJS_PUBLIC_KEY !== "undefined",
+  );
+};
+
+export const sendNotificationEmail = async (params: {
+  toEmail: string;
+  toName?: string;
+  title: string;
+  body: string;
+  actorDisplayName?: string;
+  projectName?: string;
+  taskTitle?: string;
+  actionUrl?: string;
+}): Promise<InvitationEmailResult> => {
+  const cleanedEmail = params.toEmail.trim();
+  if (!cleanedEmail || !cleanedEmail.includes("@")) return { ok: false };
+  if (!isNotificationEmailConfigured()) {
+    logger.warn("EmailJS notification template not configured; skipping notification email");
+    return { ok: false };
+  }
+
+  const toName = params.toName?.trim() || cleanedEmail.split("@")[0] || cleanedEmail;
+  const templateParams = {
+    to_email: cleanedEmail,
+    to_name: toName,
+    user_email: cleanedEmail,
+    email: cleanedEmail,
+    subject: params.title,
+    title: params.title,
+    notification_title: params.title,
+    message: params.body,
+    notification_body: params.body,
+    body: params.body,
+    actor_name: params.actorDisplayName || "",
+    from_name: params.actorDisplayName || "TaskCalendar",
+    project_name: params.projectName || "",
+    task_title: params.taskTitle || "",
+    action_url: params.actionUrl || "",
+    task_url: params.actionUrl || "",
+    preheader: params.body,
+  };
+
+  try {
+    await emailjs.send(
+      EMAILJS_SERVICE_ID!,
+      EMAILJS_NOTIFICATION_TEMPLATE_ID!,
+      templateParams,
+      { publicKey: EMAILJS_PUBLIC_KEY! },
+    );
+    logger.log("Notification email sent to:", cleanedEmail);
+    return { ok: true };
+  } catch (error: unknown) {
+    const { status, text } = parseEmailJsSendError(error);
+    logger.warn("Notification email request failed:", error, status, text);
+    return { ok: false, status, text };
+  }
 };
 
 export const openInvitationMailto = (params: InvitationEmailParams): void => {
