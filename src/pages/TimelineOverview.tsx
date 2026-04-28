@@ -403,15 +403,51 @@ export const TimelineOverview: React.FC = () => {
       <main className="flex-1 overflow-hidden flex flex-col">
 
         {/* ── Top header ── */}
-        <div className="border-b border-border bg-card px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold text-foreground">Timeline Overview</h1>
-            <Button variant="ghost" size="sm" className="text-primary hover:text-primary/90 hover:bg-primary/10" onClick={() => navigate('/reports')}>
+        <div className="sticky top-0 z-30 border-b border-border/70 bg-card/80 backdrop-blur-xl shadow-sm shadow-black/5 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold text-foreground tracking-tight truncate">
+                Timeline Overview
+              </h1>
+              <p className="text-xs text-muted-foreground hidden sm:block">
+                Visual project timeline across {projects.length} {projects.length === 1 ? 'project' : 'projects'}
+              </p>
+            </div>
+            <span className="hidden md:inline-flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2 py-1 text-[11px] text-muted-foreground">
+              {timeGranularity === 'day'
+                ? 'Day view'
+                : timeGranularity === 'week'
+                ? 'Week view'
+                : 'Month view'}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary hover:text-primary/90 hover:bg-primary/10 hidden sm:inline-flex"
+              onClick={() => navigate('/reports')}
+            >
               <FileBarChart className="w-4 h-4 mr-2" />
-              Build Report
+              Build report
             </Button>
           </div>
           <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center rounded-md border border-border bg-background p-0.5">
+              {(['day', 'week', 'month'] as const).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setTimeGranularity(g)}
+                  className={cn(
+                    'px-2.5 py-1 text-xs rounded-sm transition-colors',
+                    timeGranularity === g
+                      ? 'bg-secondary text-foreground font-medium shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {g === 'day' ? 'Day' : g === 'week' ? 'Week' : 'Month'}
+                </button>
+              ))}
+            </div>
             <Button
               variant="outline"
               size="sm"

@@ -436,41 +436,77 @@ export const verifyProjectLockPin = async (
   return data === true;
 };
 
+/**
+ * Verify a task PIN. Prefers the server RPC (so the hash never leaves the DB),
+ * but falls back to a client-side compare against `tasks.lock_pin_hash` when the RPC
+ * is missing or PostgREST has a stale schema cache. The fallback only runs when RLS
+ * already lets this user read the task row, so it cannot be used to brute-force locks
+ * the user couldn't otherwise see.
+ */
 export const verifyTaskLockPin = async (
   taskId: string,
   pinPlain: string,
 ): Promise<boolean> => {
+  if (!taskId || !pinPlain) return false;
+  const trimmedPin = pinPlain.trim();
+  if (!trimmedPin) return false;
+
   const { data, error } = await supabase.rpc("verify_task_lock_pin", {
     p_task_id: taskId,
-    p_pin: pinPlain,
+    p_pin: trimmedPin,
   });
-  if (error) {
-    const err = error as {
-      code?: string;
-      message?: string;
-      details?: string;
-      hint?: string;
-    };
-    const blob = [err.code, err.message, err.details, err.hint].filter(Boolean).join(" ");
-    /** PostgREST 404 / missing RPC — avoid noisy prod console; fix is DB migration + schema reload. */
-    const rpcMissingOrStaleSchema =
-      err.code === "PGRST202" ||
-      /verify_task_lock_pin/i.test(blob) ||
-      /verify_task_lock_pin/i.test(JSON.stringify(error)) ||
-      (/schema cache/i.test(blob) &&
-        (/function/i.test(blob) || /rpc/i.test(JSON.stringify(error))));
 
-    if (rpcMissingOrStaleSchema) {
-      logger.warn(
-        "verify_task_lock_pin unavailable — apply migration 021_verify_task_lock_pin.sql to your Supabase project; if the function already exists, run NOTIFY pgrst, 'reload schema'; in the SQL editor.",
-        error,
-      );
-    } else {
-      logger.error("verify_task_lock_pin failed:", error);
-    }
+  if (!error) {
+    return data === true;
+  }
+
+  const err = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+  };
+  const blob = [err.code, err.message, err.details, err.hint].filter(Boolean).join(" ");
+  const rpcMissingOrStaleSchema =
+    err.code === "PGRST202" ||
+    /verify_task_lock_pin/i.test(blob) ||
+    /verify_task_lock_pin/i.test(JSON.stringify(error)) ||
+    (/schema cache/i.test(blob) &&
+      (/function/i.test(blob) || /rpc/i.test(JSON.stringify(error))));
+
+  if (!rpcMissingOrStaleSchema) {
+    logger.error("verify_task_lock_pin failed:", error);
     return false;
   }
-  return data === true;
+
+  logger.warn(
+    "verify_task_lock_pin RPC unavailable — falling back to client-side compare. To use the secure server-side check apply migration 021_verify_task_lock_pin.sql, then NOTIFY pgrst, 'reload schema'; in the SQL editor.",
+  );
+
+  try {
+    const { data: row, error: rowError } = await supabase
+      .from("tasks")
+      .select("lock_pin_hash, is_locked")
+      .eq("task_id", taskId)
+      .maybeSingle();
+    if (rowError || !row) return false;
+    const storedHash = (row as { lock_pin_hash?: string | null }).lock_pin_hash;
+    const isLocked = (row as { is_locked?: boolean | null }).is_locked;
+    if (!storedHash || isLocked === false) return false;
+
+    const enc = new TextEncoder();
+    const buf = await crypto.subtle.digest(
+      "SHA-256",
+      enc.encode(`${trimmedPin}\n${taskId}`),
+    );
+    const computed = Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return computed === storedHash;
+  } catch (fallbackErr) {
+    logger.warn("verify_task_lock_pin fallback failed:", fallbackErr);
+    return false;
+  }
 };
 
 export const getProject = async (

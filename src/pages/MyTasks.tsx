@@ -455,44 +455,80 @@ export const MyTasks: React.FC = () => {
     return allTasks.filter(t => t.parentTaskId === selectedTask.taskId);
   }, [selectedTask, allTasks]);
 
+  const dueTodayCount = taskGroups.find((g) => g.label === 'Today')?.tasks.length || 0;
+  const overdueCount = useMemo(() => {
+    const now = new Date();
+    return tasksAssignedToMe.filter((t) => {
+      if (!t.dueDate || t.status === 'done') return false;
+      return new Date(t.dueDate) < now;
+    }).length;
+  }, [tasksAssignedToMe]);
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar />
       <main className="flex-1 overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="border-b bg-card px-6 py-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              Hi, <span className="font-medium">{user?.email || 'User'}.</span>{' '}
-              {workloadDeepLink ? (
+        <div className="border-b border-border/70 bg-card/60 backdrop-blur-sm px-6 py-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+                {workloadDeepLink ? 'Workload' : 'My Tasks'}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                {workloadDeepLink ? (
+                  <>
+                    Showing {tasksForList.length} task{tasksForList.length !== 1 ? 's' : ''}
+                    {workloadAssigneeId ? (
+                      <> for <span className="font-medium text-foreground">{getAssigneeLabel(workloadAssigneeId)}</span></>
+                    ) : null}
+                    {workloadDueDay && startOfDayFromYmd(workloadDueDay) ? (
+                      <>
+                        {' '}due{' '}
+                        <span className="font-medium text-foreground">
+                          {format(startOfDayFromYmd(workloadDueDay)!, 'MMM d, yyyy')}
+                        </span>
+                      </>
+                    ) : workloadDueDay ? (
+                      <> (invalid date filter)</>
+                    ) : null}
+                    .
+                  </>
+                ) : (
+                  <>
+                    Hi <span className="font-medium text-foreground">{user?.displayName || user?.email || 'there'}</span> — here's what's on your plate today.
+                  </>
+                )}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {!workloadDeepLink && (
                 <>
-                  Showing {tasksForList.length} task{tasksForList.length !== 1 ? 's' : ''}
-                  {workloadAssigneeId ? (
-                    <> for <span className="font-medium">{getAssigneeLabel(workloadAssigneeId)}</span></>
-                  ) : null}
-                  {workloadDueDay && startOfDayFromYmd(workloadDueDay) ? (
-                    <> due{' '}
-                      <span className="font-medium">
-                        {format(startOfDayFromYmd(workloadDueDay)!, 'MMM d, yyyy')}
-                      </span>
-                    </>
-                  ) : workloadDueDay ? (
-                    <> (invalid date filter)</>
-                  ) : null}
-                  .
-                </>
-              ) : (
-                <>
-                  You have {tasksAssignedToMe.length} task{tasksAssignedToMe.length !== 1 ? 's' : ''},{' '}
-                  {taskGroups.find(g => g.label === 'Today')?.tasks.length || 0} due today.
+                  <span className="inline-flex items-center gap-2 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs">
+                    <span className="font-semibold text-foreground tabular-nums">
+                      {tasksAssignedToMe.length}
+                    </span>
+                    <span className="text-muted-foreground">total</span>
+                  </span>
+                  <span className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary-soft/60 text-primary-soft-foreground px-3 py-1.5 text-xs">
+                    <span className="font-semibold tabular-nums">{dueTodayCount}</span>
+                    <span>due today</span>
+                  </span>
+                  {overdueCount > 0 && (
+                    <span className="inline-flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive-soft/60 text-destructive-soft-foreground px-3 py-1.5 text-xs">
+                      <span className="font-semibold tabular-nums">{overdueCount}</span>
+                      <span>overdue</span>
+                    </span>
+                  )}
                 </>
               )}
-            </p>
-            {workloadDeepLink && (
-              <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={clearWorkloadQuery}>
-                Clear filter
-              </Button>
-            )}
+              {workloadDeepLink && (
+                <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={clearWorkloadQuery}>
+                  Clear filter
+                </Button>
+              )}
+            </div>
           </div>
           {user?.userId && !workloadDeepLink && (
             <div className="mt-4">
@@ -606,34 +642,41 @@ export const MyTasks: React.FC = () => {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0 flex-1">
-                                  <p className={cn('font-medium text-foreground truncate', isDone && 'line-through text-muted-foreground')}>
-                                    {task.title}
+                                  <p className={cn('font-medium text-foreground truncate flex items-center gap-1.5', isDone && 'line-through text-muted-foreground')}>
+                                    {task.isLocked && (
+                                      <Lock className="w-3.5 h-3.5 text-warning shrink-0" aria-label="Locked" />
+                                    )}
+                                    <span className="truncate">{task.title}</span>
                                   </p>
-                                  {subtaskTotal > 0 && (
-                                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                                      <CheckSquare className="w-3 h-3" />
-                                      <span>{subtaskCompleted}/{subtaskTotal}</span>
-                                    </div>
-                                  )}
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    {getWorkspaceName(task.projectId)} » {getProjectName(task.projectId)}
-                                  </p>
+                                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                                    <span className="truncate">
+                                      {getWorkspaceName(task.projectId)} » {getProjectName(task.projectId)}
+                                    </span>
+                                    {subtaskTotal > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 shrink-0">
+                                        <CheckSquare className="w-3 h-3" />
+                                        {subtaskCompleted}/{subtaskTotal}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   {task.urgent && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-destructive/15 text-destructive">Urgent</span>
                                   )}
                                   {task.assignees?.[0] && (
-                                    <Avatar className="w-7 h-7">
+                                    <Avatar className="w-7 h-7 ring-1 ring-border">
                                       <AvatarImage src={task.assignees[0].photoURL} />
-                                      <AvatarFallback className="bg-teal-500 text-white text-xs">
+                                      <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                                         {task.assignees[0].displayName?.charAt(0).toUpperCase() || '?'}
                                       </AvatarFallback>
                                     </Avatar>
                                   )}
-                                  <span className={cn('text-sm', isOverdue ? 'text-red-500 font-medium' : 'text-muted-foreground')}>
-                                    {getDueDateLabel(task)}
-                                  </span>
+                                  {task.dueDate && (
+                                    <span className={cn('text-xs whitespace-nowrap rounded-md px-2 py-0.5', isOverdue ? 'bg-destructive-soft/60 text-destructive font-medium' : 'text-muted-foreground')}>
+                                      {getDueDateLabel(task)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>

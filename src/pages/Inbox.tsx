@@ -242,10 +242,17 @@ export const Inbox: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto">
           <div className="w-full max-w-[1200px] mx-auto px-4 lg:px-6 py-6">
-            <Card>
+            <Card className="overflow-hidden">
               <CardHeader className="pb-3 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <CardTitle className="text-base font-semibold">Notifications</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle className="text-base font-semibold">Notifications</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {unreadCount > 0
+                        ? `${unreadCount} unread · stay on top of mentions, assignments and reminders`
+                        : "You're all caught up"}
+                    </p>
+                  </div>
                   {unreadCount > 0 && (
                     <Button variant="outline" size="sm" onClick={handleMarkAllRead} className="shrink-0 w-fit">
                       <CheckCheck className="w-4 h-4 mr-1.5" />

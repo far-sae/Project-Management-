@@ -1015,10 +1015,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && title.trim()) {
+                  e.preventDefault();
+                  void handleSubmit();
+                }
+              }}
               placeholder="Task title…"
               autoFocus={!isEditing}
               disabled={readOnlyTask}
-              className="text-2xl font-semibold border-0 px-0 h-auto py-1 placeholder:text-muted-foreground focus-visible:ring-0 bg-transparent"
+              className="text-2xl font-semibold tracking-tight border-0 px-0 h-auto py-1 placeholder:text-muted-foreground/70 focus-visible:ring-0 bg-transparent"
             />
 
             {/* Description */}
@@ -1847,13 +1853,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         </form>
 
         {/* ── Footer ──────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-card">
-          <div>
-            {!title.trim() && (
-              <span className="text-xs text-destructive">Enter a task title first</span>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-border bg-card/60 backdrop-blur-sm">
+          <div className="min-h-[1.25rem]">
+            {!title.trim() ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Enter a task title first
+              </span>
+            ) : isEditing ? (
+              <span className="text-[11px] text-muted-foreground">
+                Changes save when you click <span className="font-medium text-foreground">Save changes</span>.
+              </span>
+            ) : (
+              <span className="text-[11px] text-muted-foreground">
+                Press <kbd className="rounded border border-border bg-card px-1 py-0.5 text-[10px] font-medium">⌘</kbd>
+                <span className="mx-0.5">+</span>
+                <kbd className="rounded border border-border bg-card px-1 py-0.5 text-[10px] font-medium">Enter</kbd> to create.
+              </span>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
@@ -1861,16 +1880,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               type="button"
               onClick={() => handleSubmit()}
               disabled={loading || !title.trim() || readOnlyTask}
+              className="gap-1.5 shadow-sm"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Saving…
                 </>
               ) : isEditing ? (
-                'Save changes'
+                <>
+                  <Save className="w-4 h-4" />
+                  Save changes
+                </>
               ) : (
-                'Create task'
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Create task
+                </>
               )}
             </Button>
           </div>
