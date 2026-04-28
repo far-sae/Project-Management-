@@ -44,6 +44,7 @@ import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
+import { AIDailyBrief } from '@/components/ai/AIDailyBrief';
 
 function startOfDayFromYmd(ymd: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd.trim())) return null;
@@ -493,6 +494,22 @@ export const MyTasks: React.FC = () => {
               </Button>
             )}
           </div>
+          {user?.userId && !workloadDeepLink && (
+            <div className="mt-4">
+              <AIDailyBrief
+                userId={user.userId}
+                userDisplayName={user.displayName || user.email || 'there'}
+                tasks={tasksAssignedToMe}
+                projectNames={Object.fromEntries(
+                  projects.map((p) => [p.projectId, p.name]),
+                )}
+                onOpenTask={(taskId) => {
+                  const t = tasksAssignedToMe.find((x) => x.taskId === taskId);
+                  if (t) setSelectedTask(t);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex-1 flex overflow-hidden">

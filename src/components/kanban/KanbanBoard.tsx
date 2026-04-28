@@ -55,9 +55,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Plus, ArrowLeftRight } from 'lucide-react';
+import { Plus, ArrowLeftRight, Wand2, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { isTaskLockUnlockedInSession } from '@/lib/taskLockPin';
+import { AIQuickAddModal } from '@/components/ai/AIQuickAddModal';
+import { AIMeetingNotesModal } from '@/components/ai/AIMeetingNotesModal';
 
 export type TaskSortOption = 'manual' | 'priority' | 'due' | 'recent';
 
@@ -291,6 +293,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   // ── Column-edit modal state ────────────────────────────────
   const [showAddColumnModal, setShowAddColumnModal] = useState(false);
   const [showEditColumnModal, setShowEditColumnModal] = useState(false);
+  const [showAIQuickAdd, setShowAIQuickAdd] = useState(false);
+  const [showAIMeetingNotes, setShowAIMeetingNotes] = useState(false);
   const [editingColumn, setEditingColumn] = useState<KanbanColumn | null>(null);
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [newColumnColor, setNewColumnColor] = useState(COLUMN_COLORS[0]);
@@ -1064,6 +1068,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           <div className="flex-shrink-0 w-72 flex flex-col gap-2">
             <Button
               type="button"
+              variant="outline"
+              className="w-full h-11 border-violet-500/40 bg-gradient-to-r from-violet-500/[0.08] to-blue-500/[0.06] text-violet-700 dark:text-violet-300 hover:from-violet-500/[0.14] hover:to-blue-500/[0.10] hover:text-violet-800 dark:hover:text-violet-200"
+              onClick={() => setShowAIQuickAdd(true)}
+            >
+              <Wand2 className="w-4 h-4 mr-2" />
+              AI Quick Add
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-11 border-blue-500/40 bg-gradient-to-r from-blue-500/[0.08] to-violet-500/[0.06] text-blue-700 dark:text-blue-300 hover:from-blue-500/[0.14] hover:to-violet-500/[0.10] hover:text-blue-800 dark:hover:text-blue-200"
+              onClick={() => setShowAIMeetingNotes(true)}
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Notes → Tasks
+            </Button>
+            <Button
+              type="button"
               variant={taskSwapMode ? 'secondary' : 'outline'}
               className="w-full h-12 border-dashed border-2 text-muted-foreground hover:text-foreground hover:border-foreground/30"
               onClick={() => {
@@ -1156,6 +1178,59 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         broadcastTyping={broadcastTyping}
         typingPeers={typingPeers}
       />
+
+      {user && (
+        <>
+          <AIQuickAddModal
+            open={showAIQuickAdd}
+            onOpenChange={setShowAIQuickAdd}
+            currentUserId={user.userId}
+            projectId={projectId}
+            projectName={projName}
+            defaultStatus={sortedColumns[0]?.id || 'todo'}
+            columns={columns.map((c) => ({ id: c.id, title: c.title }))}
+            members={(organization?.members || [])
+              .filter((m, i, arr) => arr.findIndex((x) => x.userId === m.userId) === i)
+              .map((m) => ({
+                userId: m.userId,
+                displayName: m.displayName,
+                email: m.email,
+                photoURL: m.photoURL,
+              }))}
+            onCreate={async (input) => {
+              const created = await addTask(input);
+              if (!created) {
+                throw new Error('Could not create task. Please try again.');
+              }
+              return created;
+            }}
+          />
+          <AIMeetingNotesModal
+            open={showAIMeetingNotes}
+            onOpenChange={setShowAIMeetingNotes}
+            currentUserId={user.userId}
+            projectId={projectId}
+            projectName={projName}
+            defaultStatus={sortedColumns[0]?.id || 'todo'}
+            columns={columns.map((c) => ({ id: c.id, title: c.title }))}
+            members={(organization?.members || [])
+              .filter((m, i, arr) => arr.findIndex((x) => x.userId === m.userId) === i)
+              .map((m) => ({
+                userId: m.userId,
+                displayName: m.displayName,
+                email: m.email,
+                photoURL: m.photoURL,
+              }))}
+            onCreate={async (input) => {
+              const created = await addTask(input);
+              if (!created) {
+                throw new Error('Could not create task');
+              }
+              return created;
+            }}
+          />
+        </>
+      )}
 
       {/* Add column modal */}
       <Dialog open={showAddColumnModal} onOpenChange={setShowAddColumnModal}>

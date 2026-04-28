@@ -16,6 +16,7 @@ import { Sidebar } from '@/components/sidebar/Sidebar';
 import { KanbanBoard, TaskSortOption } from '@/components/kanban/KanbanBoard';
 import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { AppHeader } from '@/components/layout/AppHeader';
+import { AIProjectHealth } from '@/components/ai/AIProjectHealth';
 import { ProjectRightRail } from '@/components/project/ProjectRightRail';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
 import { PresenceStatusAvatarMenu } from '@/components/presence/PresenceStatusMenu';
@@ -668,7 +669,8 @@ export const ProjectView: React.FC = () => {
         )}
 
         <div className="bg-card border-b border-border px-4 lg:px-6 py-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
               <Button
                 variant="ghost"
@@ -828,6 +830,15 @@ export const ProjectView: React.FC = () => {
                 <Settings className="w-4 h-4" />
               </Button>
             </div>
+            </div>
+            {user?.userId ? (
+              <AIProjectHealth
+                projectId={project.projectId}
+                projectName={project.name}
+                userId={user.userId}
+                tasks={tasks}
+              />
+            ) : null}
           </div>
         </div>
 

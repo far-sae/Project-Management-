@@ -45,6 +45,7 @@ import { supabase } from '@/services/supabase';
 import {
   isAIEnabled, expandDescription, refineDescription,
   suggestPriorityAndDueDate, generateTitle, AIError, SmartSuggestionResponse,
+  summarizeCommentThread, type CommentSummary,
 } from '@/services/ai';
 import {
   hashLockPin,
@@ -161,6 +162,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [showTimeSpent, setShowTimeSpent] = useState(false);
   const [commentLoading, setCommentLoading] = useState(false);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
+  const [commentSummary, setCommentSummary] = useState<CommentSummary | null>(null);
+  const [commentSummaryLoading, setCommentSummaryLoading] = useState(false);
+  const [commentSummaryError, setCommentSummaryError] = useState<string | null>(null);
+  const [commentSummaryOpen, setCommentSummaryOpen] = useState(false);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
   const commentTypingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -486,6 +491,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (aiSuggestion.dueDate) setDueDate(new Date(aiSuggestion.dueDate));
     setShowAISuggestion(false);
   };
+
+  // ── Comment summarizer (AI) ────────────────────────────────
+  const handleSummarizeComments = useCallback(async () => {
+    if (!user || !task || taskComments.length === 0) return;
+    setCommentSummaryLoading(true);
+    setCommentSummaryError(null);
+    setCommentSummaryOpen(true);
+    try {
+      const snippets = taskComments.map((c) => ({
+        author: c.displayName || 'User',
+        at: c.createdAt
+          ? (c.createdAt instanceof Date
+              ? c.createdAt.toISOString()
+              : String(c.createdAt))
+          : '',
+        text: (c.text || '').trim() || '(attachment / time logged)',
+      }));
+      const result = await summarizeCommentThread(user.userId, task.title, snippets);
+      setCommentSummary(result);
+    } catch (err) {
+      const aiErr = err as AIError;
+      setCommentSummaryError(aiErr.message || 'Could not summarize the thread.');
+    } finally {
+      setCommentSummaryLoading(false);
+    }
+  }, [user, task, taskComments]);
+
+  // Reset the cached summary whenever the comment count or task changes.
+  useEffect(() => {
+    setCommentSummary(null);
+    setCommentSummaryError(null);
+    setCommentSummaryOpen(false);
+  }, [task?.taskId, taskComments.length]);
 
   // ── Comment handler ────────────────────────────────────────
   const handleAddComment = useCallback(async () => {
@@ -1316,6 +1354,132 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         </div>
                       )}
                     </div>
+
+                    {taskComments.length >= 4 && aiEnabled && (
+                      <div className="rounded-lg border border-violet-500/30 bg-gradient-to-br from-violet-500/[0.06] via-card to-blue-500/[0.04]">
+                        <div className="flex items-center justify-between gap-2 px-3 py-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-7 h-7 rounded-md bg-violet-500/10 ring-1 ring-violet-500/30 text-violet-500 flex items-center justify-center shrink-0">
+                              <Sparkles className="w-3.5 h-3.5" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-foreground leading-tight">
+                                AI thread summary
+                              </p>
+                              <p className="text-[11px] text-muted-foreground leading-tight">
+                                {taskComments.length} comments · TL;DR with decisions and action items
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {commentSummary && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => setCommentSummaryOpen((v) => !v)}
+                              >
+                                {commentSummaryOpen ? 'Hide' : 'Show'}
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs border-violet-500/40 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10"
+                              disabled={commentSummaryLoading}
+                              onClick={() => void handleSummarizeComments()}
+                            >
+                              {commentSummaryLoading ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                  Reading
+                                </>
+                              ) : commentSummary ? (
+                                'Refresh'
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3 h-3 mr-1" />
+                                  Summarize
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                        {commentSummaryOpen && (
+                          <div className="border-t border-violet-500/20 px-3 py-2.5 space-y-2.5">
+                            {commentSummaryError && (
+                              <p className="text-xs text-destructive">{commentSummaryError}</p>
+                            )}
+                            {commentSummaryLoading && !commentSummary && (
+                              <div className="space-y-2">
+                                <div className="h-3 rounded bg-muted/70 animate-pulse w-2/3" />
+                                <div className="h-3 rounded bg-muted/70 animate-pulse w-1/2" />
+                              </div>
+                            )}
+                            {commentSummary && (
+                              <>
+                                {commentSummary.tldr && (
+                                  <p className="text-xs leading-relaxed">
+                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground mr-1.5">
+                                      TL;DR
+                                    </span>
+                                    {commentSummary.tldr}
+                                  </p>
+                                )}
+                                {commentSummary.decisions.length > 0 && (
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                                      Decisions
+                                    </p>
+                                    <ul className="space-y-0.5 text-xs leading-relaxed">
+                                      {commentSummary.decisions.map((d, i) => (
+                                        <li key={i} className="flex gap-1.5">
+                                          <Check className="w-3 h-3 text-emerald-500 mt-0.5 shrink-0" />
+                                          <span>{d}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {commentSummary.openQuestions.length > 0 && (
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                                      Open questions
+                                    </p>
+                                    <ul className="space-y-0.5 text-xs leading-relaxed">
+                                      {commentSummary.openQuestions.map((q, i) => (
+                                        <li key={i} className="flex gap-1.5 text-amber-700 dark:text-amber-300">
+                                          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                                          <span>{q}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {commentSummary.actionItems.length > 0 && (
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                                      Action items
+                                    </p>
+                                    <ul className="space-y-0.5 text-xs leading-relaxed">
+                                      {commentSummary.actionItems.map((a, i) => (
+                                        <li key={i} className="flex gap-1.5">
+                                          <span className="text-violet-500 shrink-0">→</span>
+                                          <span>
+                                            <span className="font-medium">{a.owner}:</span>{' '}
+                                            {a.what}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="space-y-3 max-h-72 overflow-y-auto">
                       {taskComments.map((comment) => (
