@@ -36,42 +36,64 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     };
   }, [userId]);
 
-  // Subscribe to notifications so the bell updates in real time when new ones are created
+  // Subscribe only after Supabase session matches the user id — avoids REST calls as anon before JWT binds.
   useEffect(() => {
-    const uid = effectiveUserId;
-    if (!uid) {
-      setNotifications([]);
-      setLoading(false);
-      return;
-    }
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
 
-    fetchErrorToastShown.current = false;
-    setLoading(true);
-    const unsub = subscribeToUserNotifications(
-      uid,
-      (data) => {
-        setNotifications(data);
+    const start = async () => {
+      const uid = effectiveUserId;
+      if (!uid) {
+        setNotifications([]);
         setLoading(false);
-      },
-      limit,
-      (message) => {
-        if (!fetchErrorToastShown.current) {
-          fetchErrorToastShown.current = true;
-          toast.error(
-            `Could not load notifications. Check your connection or database policies. (${message})`,
-          );
-        }
-      },
-    );
+        return;
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (!session?.user?.id || session.user.id !== uid) {
+        setNotifications([]);
+        setLoading(false);
+        return;
+      }
+
+      fetchErrorToastShown.current = false;
+      setLoading(true);
+      unsub = subscribeToUserNotifications(
+        uid,
+        (data) => {
+          setNotifications(data);
+          setLoading(false);
+        },
+        limit,
+        (message) => {
+          if (!fetchErrorToastShown.current) {
+            fetchErrorToastShown.current = true;
+            toast.error(
+              `Could not load notifications. Check your connection or database policies. (${message})`,
+            );
+          }
+        },
+      );
+    };
+
+    void start();
 
     return () => {
-      unsub();
+      cancelled = true;
+      unsub?.();
     };
   }, [effectiveUserId, limit]);
 
   const fetchNotifications = useCallback(async () => {
     const uid = effectiveUserId;
     if (!uid) return;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user?.id || session.user.id !== uid) return;
     setLoading(true);
     try {
       const { fetchUserNotifications } = await import("@/services/supabase/database");
