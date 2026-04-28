@@ -155,6 +155,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const commentTypingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  /** PIN+locked task id while the dialog is open — used to clear session unlock on close (parent may null `task` before this runs). */
+  const pinLockedTaskIdRef = useRef<string | null>(null);
 
   const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
@@ -272,6 +274,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setUnlockAttempt('');
     setShowUnlockGate(false);
   }, [task?.taskId, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (task?.taskId && task.isLocked && task.hasLockPin) {
+      pinLockedTaskIdRef.current = task.taskId;
+    } else {
+      pinLockedTaskIdRef.current = null;
+    }
+  }, [open, task?.taskId, task?.isLocked, task?.hasLockPin]);
+
+  /** Closing or saving ends the session unlock so the board and DnD require the PIN again. */
+  useEffect(() => {
+    if (open) return;
+    const tid = pinLockedTaskIdRef.current;
+    if (tid) {
+      clearTaskLockUnlockedInSession(tid);
+      pinLockedTaskIdRef.current = null;
+    }
+    setPinUnlockedSession(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !task?.taskId || !orgId || mustUnlockToView) {
@@ -783,8 +805,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             <div className="space-y-1 max-w-sm">
               <h2 className="text-lg font-semibold text-foreground">This task is locked</h2>
               <p className="text-sm text-muted-foreground">
-                Enter the PIN to view details, comments, and activity. This device remembers the unlock
-                until you close the tab or sign out of the browser.
+                Enter the PIN to view details, comments, and activity. When you close this task or
+                save changes, you will need the PIN again to view or edit it.
               </p>
             </div>
             <Input
