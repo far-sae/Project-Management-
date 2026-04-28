@@ -97,6 +97,8 @@ interface KanbanBoardProps {
   onRequestManualSort?: () => void;
   /** Blur any page-level search field so typing (e.g. PIN) does not append to the header search. */
   onBeforeOpenTaskModal?: () => void;
+  /** Fires once the task modal has fully closed — used by parents to restore the page search value. */
+  onAfterCloseTaskModal?: () => void;
 }
 
 const COLUMN_COLORS = [
@@ -140,6 +142,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onTasksRefresh,
   onRequestManualSort,
   onBeforeOpenTaskModal,
+  onAfterCloseTaskModal,
 }) => {
   const { user } = useAuth();
   const projName = projectName || project?.name || 'Project';
@@ -896,7 +899,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setIsModalOpen(false);
     setSelectedTask(null);
     setNewTaskStatus('undefined');
-  }, []);
+    onAfterCloseTaskModal?.();
+  }, [onAfterCloseTaskModal]);
 
   // ── Bulk action helpers ────────────────────────────────────
   const ids = useMemo(() => Array.from(selectedIds), [selectedIds]);

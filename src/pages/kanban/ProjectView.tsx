@@ -209,6 +209,10 @@ export const ProjectView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   /** Blurred when opening a task modal so keystrokes (PIN) do not go into the header search. */
   const boardTaskSearchRef = useRef<HTMLInputElement>(null);
+  /** Snapshots searchQuery while a task modal is open. Restored on close so any keystrokes that
+   *  leaked into the still-mounted search input (e.g., PIN typed before the dialog grabbed
+   *  focus) get cleaned up automatically. */
+  const searchQuerySnapshotRef = useRef<string | null>(null);
   const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline'>('kanban');
   const [sortOption, setSortOption] = useState<TaskSortOption>(() => {
     try {
@@ -877,7 +881,16 @@ export const ProjectView: React.FC = () => {
                     setSortOption('manual');
                     toast('Switched to manual order so drag-and-drop stays put.');
                   }}
-                  onBeforeOpenTaskModal={() => boardTaskSearchRef.current?.blur()}
+                  onBeforeOpenTaskModal={() => {
+                    searchQuerySnapshotRef.current = searchQuery;
+                    boardTaskSearchRef.current?.blur();
+                  }}
+                  onAfterCloseTaskModal={() => {
+                    if (searchQuerySnapshotRef.current !== null) {
+                      setSearchQuery(searchQuerySnapshotRef.current);
+                      searchQuerySnapshotRef.current = null;
+                    }
+                  }}
                 />
               </div>
             ) : viewMode === 'timeline' ? (

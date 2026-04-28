@@ -8,7 +8,6 @@ import {
   DropdownMenu, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Textarea } from '@/components/ui/textarea';
 import {
   CheckSquare, Clock, Loader2, ChevronDown, Check,
   Tag, Paperclip, Calendar, FileText, ListTree,
@@ -39,10 +38,12 @@ import {
   createDueReminderNotifications,
   createOverdueNotifications,
   verifyTaskLockPin,
+  notifyTaskCommentMentions,
 } from '@/services/supabase/database';
 import { uploadCommentAttachment } from '@/services/supabase/storage';
 import { cn } from '@/lib/utils';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
+import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useSearchParams } from 'react-router-dom';
@@ -177,6 +178,26 @@ export const MyTasks: React.FC = () => {
     projects.find((p) => p.projectId === projectId),
     [projects]
   );
+
+  const commentMentionMembers = useMemo(() => {
+    if (!user) return [];
+    const fromOrg = organization?.members?.length
+      ? organization.members.map((m) => ({
+          userId: m.userId,
+          displayName: m.displayName,
+          email: m.email || '',
+          photoURL: m.photoURL,
+        }))
+      : null;
+    if (fromOrg?.length) return fromOrg;
+    const p = selectedTask ? getProject(selectedTask.projectId) : null;
+    return (p?.members ?? []).map((m) => ({
+      userId: m.userId,
+      displayName: m.displayName,
+      email: m.email || '',
+      photoURL: m.photoURL,
+    }));
+  }, [user, organization?.members, selectedTask, getProject]);
 
   const workloadDueDay = searchParams.get('dueDay')?.trim() || null;
   const workloadAssigneeId = searchParams.get('assigneeId')?.trim() || null;
@@ -381,6 +402,7 @@ export const MyTasks: React.FC = () => {
       const visibleToUserIds = (organization?.members?.map(m => m.userId) || [user.userId])
         .filter((id, i, arr) => arr.indexOf(id) === i);
 
+      const commentBody = newComment.trim() || '';
       await addCommentWithGlobalSync(
         selectedTask.taskId,
         selectedTask.projectId,
@@ -389,12 +411,29 @@ export const MyTasks: React.FC = () => {
         user.userId,
         user.displayName || user.email || 'User',
         user.photoURL || '',
-        newComment.trim() || '',
+        commentBody,
         visibleToUserIds,
         orgId,
         attachments.length > 0 ? attachments : undefined,
         timeSpent,
       );
+
+      if (commentBody) {
+        void notifyTaskCommentMentions({
+          text: commentBody,
+          members: commentMentionMembers.map((m) => ({
+            userId: m.userId,
+            displayName: m.displayName,
+            email: m.email,
+          })),
+          actorUserId: user.userId,
+          actorDisplayName: user.displayName || user.email || 'User',
+          taskId: selectedTask.taskId,
+          projectId: selectedTask.projectId,
+          projectName: getProjectName(selectedTask.projectId),
+          taskTitle: selectedTask.title,
+        });
+      }
 
       setNewComment('');
       setCommentTimeSpent('');
@@ -406,7 +445,7 @@ export const MyTasks: React.FC = () => {
     } finally {
       setCommentLoading(false);
     }
-  }, [newComment, commentTimeSpent, commentAttachmentFiles, selectedTask, user, orgId, getProjectName, organization]);
+  }, [newComment, commentTimeSpent, commentAttachmentFiles, selectedTask, user, orgId, getProjectName, organization, commentMentionMembers]);
 
   // Subtask counts
   const getSubtaskCount = useCallback((task: Task) => {
@@ -1095,10 +1134,12 @@ export const MyTasks: React.FC = () => {
 
                     <TabsContent value="comments" className="space-y-4">
                       <div className="border rounded-lg">
-                        <Textarea
+                        <MentionTextarea
                           value={newComment}
-                          onChange={(e) => setNewComment(e.target.value)}
-                          placeholder="Write a comment..."
+                          onChange={setNewComment}
+                          members={commentMentionMembers}
+                          excludeUserId={user?.userId}
+                          placeholder="Write a comment… (@ to mention)"
                           rows={2}
                           className="border-0 resize-none focus-visible:ring-0"
                         />

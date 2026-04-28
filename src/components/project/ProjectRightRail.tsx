@@ -15,7 +15,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 import { useActivity } from '@/hooks/useActivity';
@@ -153,11 +153,13 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             userId: m.userId,
             displayName: m.displayName,
             email: m.email || '',
+            photoURL: m.photoURL,
           }))
       ).map((m) => ({
         userId: m.userId,
         displayName: m.displayName,
         email: m.email || '',
+        photoURL: (m as { photoURL?: string }).photoURL,
       })),
     [organization?.members, dedupedMembers],
   );
@@ -230,19 +232,57 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           .webkitAudioContext;
       if (!AudioContextCtor) return;
       const ctx = new AudioContextCtor();
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(740, ctx.currentTime);
-      oscillator.frequency.exponentialRampToValueAtTime(520, ctx.currentTime + 0.12);
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
-      oscillator.connect(gain);
-      gain.connect(ctx.destination);
-      oscillator.start();
-      oscillator.stop(ctx.currentTime + 0.2);
-      window.setTimeout(() => void ctx.close().catch(() => {}), 260);
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.6, ctx.currentTime);
+      master.connect(ctx.destination);
+
+      // Microsoft Teams-style two-note chime: short higher note → fuller lower note,
+      // with a subtle overtone for bell-like timbre.
+      const playNote = (
+        startOffset: number,
+        freq: number,
+        duration: number,
+        peak: number,
+      ) => {
+        const start = ctx.currentTime + startOffset;
+        const stop = start + duration;
+
+        const osc = ctx.createOscillator();
+        const overtone = ctx.createOscillator();
+        const noteGain = ctx.createGain();
+
+        osc.type = 'sine';
+        overtone.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        // Octave + fifth-ish overtone, quieter, gives the chime its "ting".
+        overtone.frequency.setValueAtTime(freq * 2.01, start);
+
+        noteGain.gain.setValueAtTime(0.0001, start);
+        noteGain.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, stop);
+
+        const overtoneGain = ctx.createGain();
+        overtoneGain.gain.setValueAtTime(0.0001, start);
+        overtoneGain.gain.exponentialRampToValueAtTime(peak * 0.35, start + 0.03);
+        overtoneGain.gain.exponentialRampToValueAtTime(0.0001, stop);
+
+        osc.connect(noteGain);
+        overtone.connect(overtoneGain);
+        noteGain.connect(master);
+        overtoneGain.connect(master);
+
+        osc.start(start);
+        overtone.start(start);
+        osc.stop(stop + 0.02);
+        overtone.stop(stop + 0.02);
+      };
+
+      // Note 1: bright, short (~A5, 880Hz)
+      playNote(0, 880, 0.18, 0.18);
+      // Note 2: warmer, longer, slightly overlapping (~D5, 587Hz)
+      playNote(0.11, 587.33, 0.42, 0.22);
+
+      window.setTimeout(() => void ctx.close().catch(() => {}), 800);
     } catch {
       /* Browsers can block audio until the user has interacted with the page. */
     }
@@ -680,10 +720,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           </div>
           <div className="shrink-0 border-t border-border/70 bg-card/80 p-2.5">
             <div className="rounded-lg border border-border/60 bg-background/90 p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
-              <Textarea
+              <MentionTextarea
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Write a message… (@name to notify)"
+                onChange={setChatInput}
+                members={mentionMembers}
+                excludeUserId={user?.userId}
+                placeholder="Write a message… (@ to mention someone)"
                 rows={2}
                 className="min-h-[3rem] resize-none rounded-md border-0 bg-transparent px-2.5 py-1.5 text-[13px] leading-relaxed shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/70"
                 disabled={!user || chatSending}

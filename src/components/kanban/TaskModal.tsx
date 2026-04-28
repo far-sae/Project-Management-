@@ -68,6 +68,7 @@ import { NotifyModal } from './NotifyModal';
 import { DayPickerPopover } from './DayPickerPopover';
 import { AssigneePicker } from './AssigneePicker';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
+import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
 import AttachmentPreview from '../ui/AttachmentPreview';
 import { toast } from 'sonner';
@@ -1165,10 +1166,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <MessageSquare className="w-3 h-3" />
                   First comment (optional)
                 </Label>
-                <Textarea
+                <MentionTextarea
                   value={initialComment}
-                  onChange={(e) => setInitialComment(e.target.value)}
-                  placeholder="Optional: add a comment along with this task"
+                  onChange={setInitialComment}
+                  members={projectAssignableMembers}
+                  excludeUserId={user?.userId}
+                  placeholder="Optional: add a comment along with this task (@ to mention)"
                   rows={2}
                   className="resize-none"
                 />
@@ -1195,15 +1198,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
                   <TabsContent value="comments" className="mt-3 space-y-3">
                     <div className="border border-border rounded-lg bg-card">
-                      <Textarea
+                      <MentionTextarea
                         value={newComment}
-                        onChange={(e) => {
-                          setNewComment(e.target.value);
+                        onChange={(v) => {
+                          setNewComment(v);
                           if (task?.taskId) {
                             scheduleCommentTypingBroadcast(task.taskId);
                           }
                         }}
-                        placeholder="Write a comment…"
+                        members={projectAssignableMembers}
+                        excludeUserId={user?.userId}
+                        placeholder="Write a comment… (@ to mention)"
                         rows={2}
                         disabled={readOnlyTask}
                         className="border-0 resize-none focus-visible:ring-0 bg-transparent"

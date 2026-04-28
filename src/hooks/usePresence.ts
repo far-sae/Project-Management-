@@ -112,10 +112,12 @@ export const usePresence = ({
   }, [user?.userId, user?.displayName, user?.email, user?.photoURL]);
 
   useEffect(() => {
-    const onVis = () =>
-      setTabVisible(typeof document !== 'undefined' && document.visibilityState === 'visible');
+    if (typeof document === 'undefined') return;
+    const onVis = () => setTabVisible(document.visibilityState === 'visible');
     document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, []);
 
   useEffect(() => {
@@ -202,11 +204,19 @@ export const usePresence = ({
     };
   }, [channelKey, user?.userId, buildTrackMeta]);
 
-  // Re-track when task, profile, status preference, or tab visibility changes (same channel)
+  // Re-track when task, profile, status preference, or tab visibility changes (same channel).
+  // Also optimistically update the local peers list so the user's own availability dot flips
+  // immediately in UIs (chat dock team list, top-right avatar) — without waiting for the
+  // Supabase realtime echo which can otherwise take 100–500ms and feel laggy.
   useEffect(() => {
+    if (!user?.userId) return;
     const channel = channelRef.current;
-    if (!channel || !user?.userId) return;
     const m = buildTrackMeta();
+    setPeers((prev) => {
+      const others = prev.filter((p) => p.userId !== user.userId);
+      return m ? [...others, m] : others;
+    });
+    if (!channel) return;
     if (m) {
       channel.track(m).catch(() => {});
     } else {
@@ -222,6 +232,7 @@ export const usePresence = ({
 
   // Periodically prune expired typing entries
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const interval = window.setInterval(() => {
       const now = Date.now();
       let mutated = false;
@@ -233,7 +244,9 @@ export const usePresence = ({
       }
       if (mutated) forceTick((n) => n + 1);
     }, 1000);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+    };
   }, []);
 
   const broadcastTyping = useCallback(
