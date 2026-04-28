@@ -95,6 +95,8 @@ interface KanbanBoardProps {
   onTasksRefresh?: () => void | Promise<void>;
   /** When the user drags while a non-manual sort is active, parent can switch to manual. */
   onRequestManualSort?: () => void;
+  /** Blur any page-level search field so typing (e.g. PIN) does not append to the header search. */
+  onBeforeOpenTaskModal?: () => void;
 }
 
 const COLUMN_COLORS = [
@@ -137,6 +139,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   typingPeers,
   onTasksRefresh,
   onRequestManualSort,
+  onBeforeOpenTaskModal,
 }) => {
   const { user } = useAuth();
   const projName = projectName || project?.name || 'Project';
@@ -319,11 +322,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const target = tasks.find((t) => t.taskId === openTaskId);
     if (target) {
       handledDeepLinkTaskIdRef.current = openTaskId;
+      onBeforeOpenTaskModal?.();
       setSelectedTask(target);
       setIsModalOpen(true);
       onOpenedTask?.();
     }
-  }, [openTaskId, tasks, onOpenedTask]);
+  }, [openTaskId, tasks, onOpenedTask, onBeforeOpenTaskModal]);
 
   // Tell parent which task the user is currently viewing so it can broadcast
   // it via presence; clear when the modal closes.
@@ -636,6 +640,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         handleTaskSelect(task.taskId, event);
         return;
       }
+      onBeforeOpenTaskModal?.();
       setSelectedTask(task);
       setIsModalOpen(true);
     },
@@ -646,14 +651,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       handleSwapPair,
       selectionMode,
       handleTaskSelect,
+      onBeforeOpenTaskModal,
     ],
   );
 
   const handleAddTask = useCallback((status: string) => {
+    onBeforeOpenTaskModal?.();
     setSelectedTask(null);
     setNewTaskStatus(status);
     setIsModalOpen(true);
-  }, []);
+  }, [onBeforeOpenTaskModal]);
 
   // ── Inline add ────────────────────────────────────────────
   const handleInlineAdd = useCallback(

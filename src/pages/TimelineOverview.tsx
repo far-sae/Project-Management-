@@ -18,6 +18,7 @@ import {
 import { useProjects } from '@/hooks/useProjects';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { cn } from '@/lib/utils';
+import type { Project } from '@/types';
 
 const DAY_WIDTH = 32;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -47,13 +48,16 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
   // Show all projects: use start/end when set, otherwise fallback to createdAt and +90 days
   const visibleProjects = useMemo(() => {
-    return projects.map((p) => {
+    return projects.map((p: Project) => {
       const created = p.createdAt ? new Date(p.createdAt) : new Date();
       const start = p.startDate ? new Date(p.startDate) : created;
       const end = p.endDate
         ? new Date(p.endDate)
         : new Date(start.getTime() + DEFAULT_PROJECT_DAYS * 24 * 60 * 60 * 1000);
-      return { ...p, effectiveStart: start, effectiveEnd: end };
+      const total = p.stats?.totalTasks ?? 0;
+      const completedCount = p.stats?.completedTasks ?? 0;
+      const completed = total > 0 && completedCount >= total;
+      return { ...p, effectiveStart: start, effectiveEnd: end, completed };
     });
   }, [projects]);
 
@@ -104,10 +108,12 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
   if (visibleProjects.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-gray-400 gap-3">
-        <Users className="w-12 h-12 text-gray-300" />
-        <p className="text-lg font-medium text-gray-500">No projects yet</p>
-        <p className="text-sm text-gray-400 text-center max-w-md">
+      <div className="flex flex-col items-center justify-center py-24 gap-3">
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 ring-1 ring-primary/20 flex items-center justify-center">
+          <Users className="w-8 h-8 text-primary" />
+        </div>
+        <p className="text-lg font-medium text-foreground">No projects yet</p>
+        <p className="text-sm text-muted-foreground text-center max-w-md">
           Create or join a project to see it on the timeline. You can set optional start/end dates on projects for more accurate ranges.
         </p>
       </div>
@@ -117,16 +123,16 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
   return (
     <div className="min-w-max">
       {/* Month header */}
-      <div className="sticky top-0 z-20 bg-card border-b border-border">
+      <div className="sticky top-0 z-20 bg-card/95 backdrop-blur-sm border-b border-border">
         <div className="flex">
-          <div className="w-96 shrink-0 border-r border-border bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          <div className="w-96 shrink-0 border-r border-border bg-muted/40 px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
             Project
           </div>
           <div className="flex relative" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
             {monthHeaders.map((m, i) => (
               <div
                 key={i}
-                className="text-xs font-semibold py-2 px-2 border-r border-border text-foreground/80"
+                className="text-[11px] font-semibold py-2 px-2 border-r border-border/70 text-foreground/80 uppercase tracking-wider"
                 style={{ width: m.days * columnWidth }}
               >
                 {m.month} {m.year}
@@ -144,8 +150,10 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                 key={i}
                 id={d.isToday && highlightToday ? 'resource-today-marker' : undefined}
                 className={cn(
-                  'text-xs text-center py-1.5 border-r border-border',
-                  d.isToday && highlightToday ? 'bg-amber-500/20 text-amber-700 dark:text-amber-200 font-bold' : 'text-muted-foreground'
+                  'text-[11px] text-center py-1.5 border-r border-border/60 tabular-nums',
+                  d.isToday && highlightToday
+                    ? 'bg-primary/15 text-primary font-bold ring-1 ring-inset ring-primary/30'
+                    : 'text-muted-foreground'
                 )}
                 style={{ width: columnWidth }}
               >
@@ -190,23 +198,48 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
         const elapsed = Math.max(0, Math.ceil((today.getTime() - projStart.getTime()) / (24 * 60 * 60 * 1000)));
         const progressPct = Math.min(100, Math.round((elapsed / totalDuration) * 100));
 
+        const barColor = project.coverColor || '#6366f1';
+        const status: 'overdue' | 'active' | 'upcoming' | 'done' = project.completed
+          ? 'done'
+          : isOverdue
+            ? 'overdue'
+            : isActive
+              ? 'active'
+              : projStart > today
+                ? 'upcoming'
+                : 'active';
+
         return (
-          <div key={project.projectId} className="flex border-b border-border hover:bg-muted/30 group">
+          <div key={project.projectId} className="flex border-b border-border/60 hover:bg-muted/20 group transition-colors">
             {/* Left: project info */}
-            <div className="w-96 shrink-0 border-r border-border flex items-center px-4 py-3 sticky left-0 z-10 bg-card group-hover:bg-muted/40">
+            <div className="w-96 shrink-0 border-r border-border/70 flex items-center px-4 py-3 sticky left-0 z-10 bg-card group-hover:bg-muted/30">
               <div
-                className="w-3 h-3 rounded-full mr-3 shrink-0"
-                style={{ backgroundColor: project.coverColor || '#f97316' }}
+                className="w-2.5 h-9 rounded-full mr-3 shrink-0"
+                style={{ backgroundColor: barColor }}
+                aria-hidden
               />
               <div className="flex-1 min-w-0">
-                <span
-                  className="font-medium text-sm text-foreground cursor-pointer hover:text-primary truncate block"
-                  onClick={() => navigate(`/project/${project.projectId}`)}
-                >
-                  {project.name}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="font-medium text-sm text-foreground cursor-pointer hover:text-primary truncate"
+                    onClick={() => navigate(`/project/${project.projectId}`)}
+                  >
+                    {project.name}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-semibold ring-1',
+                      status === 'overdue' && 'bg-red-500/15 text-red-600 dark:text-red-300 ring-red-500/30',
+                      status === 'active' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-emerald-500/30',
+                      status === 'upcoming' && 'bg-blue-500/15 text-blue-700 dark:text-blue-300 ring-blue-500/30',
+                      status === 'done' && 'bg-secondary text-muted-foreground ring-border',
+                    )}
+                  >
+                    {status}
+                  </span>
+                </div>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
                     {project.effectiveStart.toLocaleDateString()} → {project.effectiveEnd.toLocaleDateString()}
                   </span>
                 </div>
@@ -214,20 +247,20 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
               {/* Member avatars */}
               <div className="flex -space-x-1.5 ml-2">
-                {[owner, ...members].filter(Boolean).slice(0, 5).map((m: any) => (
-                  <Avatar key={m.userId} className="w-6 h-6 border-2 border-card shadow-sm">
+                {[owner, ...members].filter(Boolean).slice(0, 4).map((m: any) => (
+                  <Avatar key={m.userId} className="w-6 h-6 ring-2 ring-card shadow-sm">
                     <AvatarImage src={m.photoURL} />
                     <AvatarFallback
                       className="text-[10px] font-bold text-white"
-                      style={{ backgroundColor: project.coverColor || '#f97316' }}
+                      style={{ backgroundColor: barColor }}
                     >
                       {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                 ))}
-                {rawMembers.length > 5 && (
-                  <div className="w-6 h-6 rounded-full bg-muted border-2 border-card flex items-center justify-center text-[10px] text-muted-foreground font-bold">
-                    +{rawMembers.length - 5}
+                {rawMembers.length > 4 && (
+                  <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[10px] text-muted-foreground font-bold">
+                    +{rawMembers.length - 4}
                   </div>
                 )}
               </div>
@@ -237,23 +270,36 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
             <div className="flex-1 relative h-14" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
               {/* Today highlight column */}
               {highlightToday && todayOffset >= 0 && todayOffset < totalDays && (
-                <div
-                  className="absolute top-0 bottom-0 bg-amber-500/15"
-                  style={{ left: todayOffset * columnWidth, width: columnWidth }}
-                />
+                <>
+                  <div
+                    className="absolute top-0 bottom-0 bg-primary/10"
+                    style={{ left: todayOffset * columnWidth, width: columnWidth }}
+                  />
+                  <div
+                    className="absolute top-0 bottom-0 w-px bg-primary/60"
+                    style={{ left: todayOffset * columnWidth + columnWidth / 2 }}
+                  />
+                </>
               )}
 
               {/* Project bar */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 rounded-lg flex items-center overflow-hidden shadow-sm cursor-pointer"
+                className={cn(
+                  'absolute top-1/2 -translate-y-1/2 rounded-lg flex items-center overflow-hidden cursor-pointer ring-1 transition-all',
+                  'shadow-sm hover:shadow-md hover:ring-2',
+                  status === 'overdue' && 'ring-red-500/50',
+                  status === 'active' && 'ring-white/30',
+                  status === 'upcoming' && 'ring-white/30',
+                  status === 'done' && 'ring-white/20 opacity-80',
+                )}
                 style={{
                   left: leftPx,
                   width: widthPx,
                   height: 32,
-                  backgroundColor: isOverdue
-                    ? '#fca5a5'
-                    : project.coverColor || '#f97316',
-                  opacity: 0.9,
+                  background:
+                    status === 'overdue'
+                      ? `linear-gradient(135deg, #ef4444, #b91c1c)`
+                      : `linear-gradient(135deg, ${barColor}, ${barColor}cc)`,
                 }}
                 onClick={() => navigate(`/project/${project.projectId}`)}
                 title={`${project.name} · ${project.effectiveStart.toLocaleDateString()} → ${project.effectiveEnd.toLocaleDateString()}`}
@@ -261,7 +307,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                 {/* Progress fill */}
                 {isActive && (
                   <div
-                    className="absolute top-0 left-0 bottom-0 bg-black/15 rounded-l-lg"
+                    className="absolute top-0 left-0 bottom-0 bg-white/20 rounded-l-lg backdrop-brightness-110"
                     style={{ width: `${progressPct}%` }}
                   />
                 )}
@@ -273,15 +319,20 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                       <div
                         key={m.userId}
                         title={m.displayName || m.email}
-                        className="w-5 h-5 rounded-full border border-white/60 flex items-center justify-center text-white text-[9px] font-bold bg-white/20"
+                        className="w-5 h-5 rounded-full ring-1 ring-white/70 flex items-center justify-center text-white text-[9px] font-bold bg-white/25 backdrop-blur-sm"
                       >
                         {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
                       </div>
                     ))}
                   </div>
                   {showTaskLabels && widthPx > 100 && (
-                    <span className="text-white text-xs font-semibold truncate ml-1 drop-shadow">
+                    <span className="text-white text-xs font-semibold truncate ml-1 drop-shadow-sm">
                       {project.name}
+                    </span>
+                  )}
+                  {isActive && widthPx > 160 && (
+                    <span className="ml-auto text-[10px] font-bold text-white/90 tabular-nums px-1.5 py-0.5 rounded bg-black/20">
+                      {progressPct}%
                     </span>
                   )}
                 </div>
@@ -360,8 +411,8 @@ export const TimelineOverview: React.FC = () => {
       <div className="flex h-screen bg-background">
         <Sidebar />
         <main className="flex-1 overflow-hidden flex flex-col items-center justify-center">
-          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mb-4" />
-          <p className="text-gray-600">Loading timeline features...</p>
+          <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+          <p className="text-muted-foreground">Loading timeline features...</p>
         </main>
       </div>
     );
@@ -374,21 +425,24 @@ export const TimelineOverview: React.FC = () => {
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Timeline Overview</h1>
-            <p className="text-gray-500">Visual timeline of all your projects</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">Timeline Overview</h1>
+            <p className="text-muted-foreground">Visual timeline of all your projects</p>
           </div>
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-gray-200 rounded-xl text-center">
-            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
-              <Lock className="w-8 h-8 text-orange-500" />
+          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center bg-card/40">
+            <div className="w-16 h-16 bg-primary/10 ring-1 ring-primary/20 rounded-2xl flex items-center justify-center mb-4">
+              <Lock className="w-8 h-8 text-primary" />
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Timeline Overview</h2>
-            <p className="text-gray-500 mb-2 max-w-md">
+            <h2 className="text-xl font-bold text-foreground mb-2">Timeline Overview</h2>
+            <p className="text-muted-foreground mb-2 max-w-md">
               Visualize all your projects on an interactive Gantt-style timeline.
             </p>
-            <p className="text-sm text-orange-600 font-medium mb-6">
+            <p className="text-sm text-primary font-medium mb-6">
               Available on Advanced plan and above
             </p>
-            <Button className="bg-gradient-to-r from-orange-500 to-red-500" onClick={() => navigate('/pricing')}>
+            <Button
+              className="bg-gradient-to-r from-violet-500 to-blue-500 text-white border-0 hover:opacity-90"
+              onClick={() => navigate('/pricing')}
+            >
               Upgrade to Advanced
             </Button>
           </div>
@@ -480,7 +534,7 @@ export const TimelineOverview: React.FC = () => {
         <div className="flex-1 overflow-auto">
           {projectsLoading ? (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
+              <Loader2 className="w-10 h-10 animate-spin text-primary" />
             </div>
           ) : (
             <ResourceTimeline
@@ -506,7 +560,7 @@ export const TimelineOverview: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="show-weekends">Show weekends</Label>
-                <p className="text-sm text-gray-500">Display Saturday and Sunday columns</p>
+                <p className="text-sm text-muted-foreground">Display Saturday and Sunday columns</p>
               </div>
               <Switch
                 id="show-weekends"
@@ -517,7 +571,7 @@ export const TimelineOverview: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="show-labels">Show task labels</Label>
-                <p className="text-sm text-gray-500">Display project names on timeline bars</p>
+                <p className="text-sm text-muted-foreground">Display project names on timeline bars</p>
               </div>
               <Switch
                 id="show-labels"
@@ -528,7 +582,7 @@ export const TimelineOverview: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <Label htmlFor="highlight-today">Highlight today</Label>
-                <p className="text-sm text-gray-500">Show visual indicator for current day</p>
+                <p className="text-sm text-muted-foreground">Show visual indicator for current day</p>
               </div>
               <Switch
                 id="highlight-today"

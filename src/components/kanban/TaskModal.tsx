@@ -158,13 +158,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
   const isEditing = !!task;
-  /** Locked tasks: project owner, workspace admin, or task creator may manage the lock/PIN. */
+  /** Task without PIN: owner / admin / creator may edit without entering PIN. */
   const canOverrideTaskLock = useMemo(() => {
     if (!user) return false;
     if (project?.ownerId === user.userId) return true;
     if (task?.createdBy === user.userId) return true;
     return isAdmin;
   }, [user, project?.ownerId, task?.createdBy, isAdmin]);
+
+  /** Only the user who created the task may set, change, or clear lock + PIN (create flow always allowed). */
+  const isTaskCreator = Boolean(
+    user && task?.createdBy && task.createdBy === user.userId,
+  );
+  const canManageLockAndPin = !isEditing || isTaskCreator;
 
   const hasLockPin = Boolean(task?.hasLockPin);
   const lockedWithPin = Boolean(isEditing && task?.isLocked && hasLockPin);
@@ -608,26 +614,35 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setSaveError(null);
     setLoading(true);
     try {
+      const isLockedForSave =
+        isEditing && task && user && task.createdBy !== user.userId
+          ? !!task.isLocked
+          : isLocked;
+
       let lockPinHashPayload: string | null | undefined = undefined;
       let createdTaskId: string | undefined;
-      if (!isLocked) {
+      const creatorControlsLock = !isEditing || isTaskCreator;
+
+      if (!isLockedForSave) {
         lockPinHashPayload = null;
         if (isEditing && task?.taskId) clearTaskLockUnlockedInSession(task.taskId);
-      } else if (isEditing && lockPinNew.trim()) {
-        if (lockPinNew !== lockPinConfirm) {
-          toast.error('PIN and confirmation do not match');
-          setLoading(false);
-          return;
+      } else if (creatorControlsLock) {
+        if (isEditing && lockPinNew.trim()) {
+          if (lockPinNew !== lockPinConfirm) {
+            toast.error('PIN and confirmation do not match');
+            setLoading(false);
+            return;
+          }
+          lockPinHashPayload = await hashLockPin(lockPinNew, task!.taskId);
+        } else if (!isEditing && lockPinNew.trim()) {
+          if (lockPinNew !== lockPinConfirm) {
+            toast.error('PIN and confirmation do not match');
+            setLoading(false);
+            return;
+          }
+          createdTaskId = crypto.randomUUID();
+          lockPinHashPayload = await hashLockPin(lockPinNew, createdTaskId);
         }
-        lockPinHashPayload = await hashLockPin(lockPinNew, task!.taskId);
-      } else if (!isEditing && lockPinNew.trim()) {
-        if (lockPinNew !== lockPinConfirm) {
-          toast.error('PIN and confirmation do not match');
-          setLoading(false);
-          return;
-        }
-        createdTaskId = crypto.randomUUID();
-        lockPinHashPayload = await hashLockPin(lockPinNew, createdTaskId);
       }
 
       const basePayload = {
@@ -641,7 +656,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         tags: isEditing ? tags : tags.length > 0 ? tags : undefined,
         subtasks: isEditing ? subtasks : subtasks.length > 0 ? subtasks : undefined,
         urgent,
-        isLocked,
+        isLocked: isLockedForSave,
         ...(lockPinHashPayload !== undefined
           ? { lockPinHash: lockPinHashPayload }
           : {}),
@@ -766,6 +781,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             <Input
               type="password"
               autoComplete="off"
+              autoFocus
               placeholder="Enter PIN"
               value={unlockAttempt}
               onChange={(e) => setUnlockAttempt(e.target.value)}
@@ -1717,21 +1733,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <label
                   className={cn(
                     'flex items-center gap-2 select-none px-2 py-1.5 rounded text-sm',
-                    readOnlyTask ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-secondary',
+                    readOnlyTask || (isEditing && !isTaskCreator)
+                      ? 'opacity-60 cursor-not-allowed'
+                      : 'cursor-pointer hover:bg-secondary',
                   )}
-                  title="Only creator, assignees, and project owner can see this task"
+                  title={
+                    isEditing && !isTaskCreator
+                      ? 'Only the person who created this task can turn lock/PIN on or off'
+                      : 'Only creator, assignees, and project owner can see this task'
+                  }
                 >
                   <input
                     type="checkbox"
                     checked={isLocked}
                     onChange={(e) => setIsLocked(e.target.checked)}
-                    disabled={readOnlyTask}
+                    disabled={readOnlyTask || (isEditing && !isTaskCreator)}
                     className="rounded border-border accent-warning"
                   />
                   <Lock className="w-4 h-4 text-warning" />
                   <span className="text-foreground">Lock (sensitive)</span>
                 </label>
-                {isLocked && (!isEditing || canOverrideTaskLock) && (
+                {isLocked && canManageLockAndPin && (
                   <div className="mt-2 space-y-2 pl-2 border-l-2 border-border">
                     <p className="text-[11px] text-muted-foreground">
                       Optional PIN so assignees can unlock and edit on this task.
@@ -1760,6 +1782,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     )}
                   </div>
                 )}
+                {isLocked &&
+                  isEditing &&
+                  !canManageLockAndPin &&
+                  task?.hasLockPin && (
+                    <p className="mt-2 pl-2 border-l border-border text-[11px] text-muted-foreground">
+                      PIN and lock can only be changed by whoever created this task.
+                    </p>
+                  )}
                 {!isEditing && isLocked && (
                   <p className="text-[11px] text-muted-foreground mt-1 pl-2">
                     Add a PIN now to require collaborators to unlock before editing, or leave blank for owner/assignee-only visibility.

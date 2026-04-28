@@ -95,12 +95,32 @@ const typeIcon = (type: AppNotification['type']) => {
       return <AtSign className="w-4 h-4" />;
     case 'task_reminder':
       return <AlarmClock className="w-4 h-4" />;
+    case 'task_overdue':
+      return <AlarmClock className="w-4 h-4" />;
     case 'project_invite':
       return <UserPlus className="w-4 h-4" />;
     case 'project_chat_message':
       return <MessageSquare className="w-4 h-4" />;
     default:
       return <Bell className="w-4 h-4" />;
+  }
+};
+
+const typeBubbleClasses = (type: AppNotification['type'], unread: boolean): string => {
+  if (!unread) return 'bg-secondary text-secondary-foreground';
+  switch (type) {
+    case 'task_overdue':
+      return 'bg-red-500/15 text-red-600 dark:text-red-300 ring-1 ring-red-500/30';
+    case 'task_reminder':
+      return 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30';
+    case 'task_assigned':
+      return 'bg-blue-500/15 text-blue-600 dark:text-blue-300 ring-1 ring-blue-500/30';
+    case 'comment_mention':
+      return 'bg-violet-500/15 text-violet-600 dark:text-violet-300 ring-1 ring-violet-500/30';
+    case 'task_completed':
+      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30';
+    default:
+      return 'bg-primary text-primary-foreground';
   }
 };
 
@@ -350,10 +370,8 @@ export const Inbox: React.FC = () => {
                               >
                                 <div
                                   className={cn(
-                                    'mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0',
-                                    !n.read
-                                      ? 'bg-primary text-primary-foreground'
-                                      : 'bg-secondary text-secondary-foreground',
+                                    'mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors',
+                                    typeBubbleClasses(n.type, !n.read),
                                   )}
                                 >
                                   {typeIcon(n.type)}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload, KeyRound, Lock } from 'lucide-react';
 import { toast } from 'sonner';
@@ -207,6 +207,8 @@ export const ProjectView: React.FC = () => {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  /** Blurred when opening a task modal so keystrokes (PIN) do not go into the header search. */
+  const boardTaskSearchRef = useRef<HTMLInputElement>(null);
   const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline'>('kanban');
   const [sortOption, setSortOption] = useState<TaskSortOption>(() => {
     try {
@@ -702,6 +704,8 @@ export const ProjectView: React.FC = () => {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
+                  ref={boardTaskSearchRef}
+                  aria-label="Search tasks"
                   placeholder="Search tasks…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -873,6 +877,7 @@ export const ProjectView: React.FC = () => {
                     setSortOption('manual');
                     toast('Switched to manual order so drag-and-drop stays put.');
                   }}
+                  onBeforeOpenTaskModal={() => boardTaskSearchRef.current?.blur()}
                 />
               </div>
             ) : viewMode === 'timeline' ? (

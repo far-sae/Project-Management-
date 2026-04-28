@@ -6,7 +6,8 @@ export type NotificationType =
   | 'comment_mention'
   | 'project_invite'
   | 'subscription_renewed'
-  | 'task_reminder' // due date reminder (automation)
+  | 'task_reminder' // due date reminder — task is due within the next N hours (automation)
+  | 'task_overdue' // due date already passed and task isn't done (automation)
   | 'comment_added' // new comment on a task you're assigned to
   | 'project_chat_message'; // project rail chat (not @mention-only)
 

@@ -1715,6 +1715,88 @@ export const createDueReminderNotifications = async (params: {
   }
 };
 
+type NotifyTaskOverdueRpcRow = {
+  user_id: string;
+  notification_id: string;
+  title: string;
+  message: string;
+  project_id: string;
+  task_id: string;
+};
+
+function parseNotifyTaskOverdueResult(data: unknown): NotifyTaskOverdueRpcRow[] {
+  if (!Array.isArray(data)) return [];
+  return data.filter(
+    (r): r is NotifyTaskOverdueRpcRow =>
+      typeof r === "object" &&
+      r !== null &&
+      typeof (r as NotifyTaskOverdueRpcRow).user_id === "string",
+  );
+}
+
+async function sendOverdueNotificationEmailsForRpcRows(
+  rows: NotifyTaskOverdueRpcRow[],
+): Promise<void> {
+  for (const row of rows) {
+    const prefs = await getUserNotificationPreferences(row.user_id);
+    if (prefs.email === false) continue;
+    void (async () => {
+      try {
+        const recipient = await getUserEmailForNotification(row.user_id);
+        if (!recipient) return;
+        const actionUrl =
+          typeof window !== "undefined"
+            ? `${window.location.origin}/project/${row.project_id}?taskId=${row.task_id}`
+            : "";
+        await sendNotificationEmail({
+          toEmail: recipient.email,
+          toName: recipient.displayName,
+          title: row.title,
+          body: row.message,
+          actionUrl,
+        });
+      } catch (e) {
+        logger.warn("Overdue notification email failed:", e);
+      }
+    })();
+  }
+}
+
+/**
+ * Notify assignees of tasks past their due date and not yet done. Idempotent per UTC calendar day
+ * via notify_task_overdue RPC (unique index + ON CONFLICT DO NOTHING). Optional email follows prefs.
+ */
+export const createOverdueNotifications = async (params: {
+  tasks: { taskId: string; projectId: string; title: string; dueDate: string | null; assignees: { userId: string }[]; status: string }[];
+  projectNames: Record<string, string>;
+}): Promise<void> => {
+  const { tasks } = params;
+  const now = new Date();
+  let anyInserted = false;
+
+  for (const task of tasks) {
+    if (task.status === "done" || !task.dueDate) continue;
+    const due = new Date(task.dueDate);
+    if (Number.isNaN(due.getTime()) || due >= now) continue;
+
+    const { data, error } = await supabase.rpc("notify_task_overdue", {
+      p_task_id: task.taskId,
+    });
+    if (error) {
+      logger.warn("notify_task_overdue:", error.message);
+      continue;
+    }
+    const inserted = parseNotifyTaskOverdueResult(data);
+    if (inserted.length === 0) continue;
+    anyInserted = true;
+    void sendOverdueNotificationEmailsForRpcRows(inserted);
+  }
+
+  if (anyInserted) {
+    dispatchNotificationsRefresh();
+  }
+};
+
 export const fetchUserNotifications = async (
   userId: string,
   limit: number = 30,

@@ -33,6 +33,7 @@ const NOTIFICATION_TYPE_TO_CATEGORY: Record<
   project_invite: "projectUpdates",
   subscription_renewed: "projectUpdates",
   task_reminder: "projectUpdates",
+  task_overdue: "projectUpdates",
   comment_added: "projectUpdates",
   project_chat_message: "projectChatMessage",
 };
