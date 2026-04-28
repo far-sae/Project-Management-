@@ -16,12 +16,26 @@ if (!hasSupabaseEnv) {
 const url = hasSupabaseEnv ? supabaseUrl : "https://placeholder.supabase.co";
 const key = hasSupabaseEnv ? supabaseAnonKey : "placeholder-anon-key";
 
+/**
+ * Skip navigator.locks for auth in the browser. Default Web Locks + React 18 Strict Mode
+ * (double mount/unmount) often leaves orphaned locks → repeated "not released within 5000ms"
+ * warnings and `AbortError: Lock broken ... steal`, and can interrupt in-flight requests.
+ * Session refresh still runs; cross-tab serialization is best-effort only without locks.
+ * @see https://github.com/supabase/supabase-js/issues/2111
+ */
+const browserNoopAuthLock: NonNullable<GoTrueClientOptions["lock"]> = async (
+  _name,
+  _acquireTimeout,
+  fn,
+) => fn();
+
 const authOptions: GoTrueClientOptions = {
   persistSession: true,
   autoRefreshToken: true,
   detectSessionInUrl: true,
-  /** Above default 5s — more headroom before auth-js recovers a stuck lock (multi-tab / Strict Mode). */
+  /** Used when a real lock is in play (non-browser); noop lock below bypasses wait in the browser. */
   lockAcquireTimeout: 15_000,
+  ...(typeof window !== "undefined" ? { lock: browserNoopAuthLock } : {}),
 };
 
 export const supabase: SupabaseClient = createClient(url, key, {
