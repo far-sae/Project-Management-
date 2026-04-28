@@ -445,14 +445,24 @@ export const verifyTaskLockPin = async (
     p_pin: pinPlain,
   });
   if (error) {
-    const code = (error as { code?: string }).code;
-    const msg = (error as { message?: string }).message ?? "";
-    const rpcMissing =
-      code === "PGRST202" ||
-      (/could not find/i.test(msg) && /verify_task_lock_pin/i.test(msg));
-    if (rpcMissing) {
+    const err = error as {
+      code?: string;
+      message?: string;
+      details?: string;
+      hint?: string;
+    };
+    const blob = [err.code, err.message, err.details, err.hint].filter(Boolean).join(" ");
+    /** PostgREST 404 / missing RPC — avoid noisy prod console; fix is DB migration + schema reload. */
+    const rpcMissingOrStaleSchema =
+      err.code === "PGRST202" ||
+      /verify_task_lock_pin/i.test(blob) ||
+      /verify_task_lock_pin/i.test(JSON.stringify(error)) ||
+      (/schema cache/i.test(blob) &&
+        (/function/i.test(blob) || /rpc/i.test(JSON.stringify(error))));
+
+    if (rpcMissingOrStaleSchema) {
       logger.warn(
-        "verify_task_lock_pin is not available on the database (migration 021 not applied or stale PostgREST schema). Run migrations, then SQL: NOTIFY pgrst, 'reload schema';",
+        "verify_task_lock_pin unavailable — apply migration 021_verify_task_lock_pin.sql to your Supabase project; if the function already exists, run NOTIFY pgrst, 'reload schema'; in the SQL editor.",
         error,
       );
     } else {
