@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState, useRef, useCallback } from 'react';
+import React, { useMemo, useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import {
   MessageSquare,
   Plus,
@@ -11,11 +11,14 @@ import {
   Users,
   ChevronUp,
   Minus,
+  Smile,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
+import { EmojiPickerButton } from '@/components/ui/emoji-picker';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 import { useActivity } from '@/hooks/useActivity';
@@ -24,10 +27,13 @@ import { useAuth } from '@/context/AuthContext';
 import { format, formatDistanceToNow, isSameDay } from 'date-fns';
 import {
   subscribeToProjectChat,
+  subscribeToProjectChatReactions,
   insertProjectChatMessage,
   notifyProjectChatMentions,
   notifyProjectChatMessageToMembers,
+  toggleProjectChatReaction,
   type ProjectChatMessage,
+  type ProjectChatReaction,
 } from '@/services/supabase/database';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
@@ -42,6 +48,9 @@ interface ProjectRightRailProps {
   /** Realtime project presence by userId (from the same channel as the header). */
   presenceByUserId?: Map<string, PresencePeer>;
 }
+
+/** WhatsApp-style quick reactions on project chat bubbles */
+const CHAT_QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
 
 const ROLE_BADGES: Record<string, { label: string; className: string }> = {
   owner: {
@@ -181,10 +190,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   );
 
   const [chatMessages, setChatMessages] = useState<ProjectChatMessage[]>([]);
+  const [reactionRows, setReactionRows] = useState<ProjectChatReaction[]>([]);
   const [chatLoading, setChatLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [reactionMenuForId, setReactionMenuForId] = useState<string | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  /** When true, new messages keep the viewport pinned to the bottom */
+  const stickToBottomRef = useRef(true);
   const chatSoundStateRef = useRef<{
     initialized: boolean;
     latestMessageId: string | null;
@@ -239,6 +252,25 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       }),
     [chatMessages],
   );
+
+  /** messageId → emoji → user ids who reacted */
+  const reactionsByMessageId = useMemo(() => {
+    const out: Record<string, Record<string, string[]>> = {};
+    for (const r of reactionRows) {
+      if (!out[r.messageId]) out[r.messageId] = {};
+      const bucket = out[r.messageId][r.emoji];
+      if (bucket) bucket.push(r.userId);
+      else out[r.messageId][r.emoji] = [r.userId];
+    }
+    return out;
+  }, [reactionRows]);
+
+  const handleChatScroll = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = gap < 80;
+  }, []);
 
   const playChatSound = useCallback(() => {
     try {
@@ -306,11 +338,15 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
 
   useEffect(() => {
     setChatLoading(true);
-    const unsub = subscribeToProjectChat(project.projectId, (list) => {
+    const unsubChat = subscribeToProjectChat(project.projectId, (list) => {
       setChatMessages(list);
       setChatLoading(false);
     });
-    return () => unsub();
+    const unsubReactions = subscribeToProjectChatReactions(project.projectId, setReactionRows);
+    return () => {
+      unsubChat();
+      unsubReactions();
+    };
   }, [project.projectId]);
 
   /** When the dock opens — or new messages arrive while open — bump the last-seen marker. */
@@ -325,9 +361,24 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     }
   }, [open, chatMessages.length, lastSeenStorageKey]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  /** Pin viewport to bottom when new content arrives (unless user scrolled up to read). */
+  useLayoutEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el || chatLoading) return;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [chatMessages, reactionRows, chatLoading]);
+
+  /** Opening the rail should land on the latest messages */
+  useLayoutEffect(() => {
+    if (!open) return;
+    stickToBottomRef.current = true;
+    const el = chatScrollRef.current;
+    if (el && !chatLoading) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [open, chatLoading]);
 
   useEffect(() => {
     if (chatLoading) return;
@@ -352,9 +403,26 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     chatSoundStateRef.current = { initialized: true, latestMessageId };
   }, [chatLoading, chatMessages, playChatSound, user?.userId]);
 
+  const handleToggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      if (!user) return;
+      try {
+        await toggleProjectChatReaction({
+          messageId,
+          userId: user.userId,
+          emoji,
+        });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Could not update reaction');
+      }
+    },
+    [user],
+  );
+
   const handleSendChat = useCallback(async () => {
     const body = chatInput.trim();
     if (!body || !user) return;
+    stickToBottomRef.current = true;
     setChatSending(true);
     try {
       await insertProjectChatMessage({
@@ -660,7 +728,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           value="chat"
           className="flex-1 flex flex-col min-h-0 mt-2 px-0 data-[state=inactive]:hidden overflow-hidden"
         >
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3">
+          <div
+            ref={chatScrollRef}
+            onScroll={handleChatScroll}
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 pb-3 scroll-smooth"
+          >
             {chatLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -679,6 +751,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               <div className="space-y-4">
                 {chatRows.map(({ msg, createdAt, showDay }) => {
                   const mine = msg.userId === user?.userId;
+                  const reactionsForMsg = reactionsByMessageId[msg.messageId];
                   return (
                     <div key={msg.messageId}>
                       {showDay && (
@@ -688,7 +761,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                           </span>
                         </div>
                       )}
-                      <div className={cn('flex gap-2', mine && 'justify-end')}>
+                      <div className={cn('flex gap-2 group/msg', mine && 'justify-end')}>
                         {!mine && (
                           <Avatar className="w-7 h-7 shrink-0 mt-5">
                             <AvatarImage src={msg.photoURL} alt={msg.displayName} />
@@ -700,7 +773,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                         <div className={cn('max-w-[78%] min-w-0', mine && 'flex flex-col items-end')}>
                           <div
                             className={cn(
-                              'mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground',
+                              'mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap',
                               mine && 'justify-end',
                             )}
                           >
@@ -714,6 +787,59 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               />
                             )}
                             <span>{format(createdAt, 'p')}</span>
+                            <Popover
+                              open={reactionMenuForId === msg.messageId}
+                              onOpenChange={(next) =>
+                                setReactionMenuForId(next ? msg.messageId : null)
+                              }
+                            >
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    'rounded-md p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/90',
+                                    'opacity-70 group-hover/msg:opacity-100 focus:opacity-100 transition-opacity',
+                                  )}
+                                  aria-label="Add reaction"
+                                >
+                                  <Smile className="w-3.5 h-3.5" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                side="top"
+                                align={mine ? 'end' : 'start'}
+                                sideOffset={6}
+                                className="w-auto p-2 flex flex-wrap gap-0.5 max-w-[240px]"
+                                onOpenAutoFocus={(e) => e.preventDefault()}
+                              >
+                                <div className="flex flex-wrap gap-0.5 justify-center">
+                                  {CHAT_QUICK_REACTIONS.map((emoji) => (
+                                    <button
+                                      key={emoji}
+                                      type="button"
+                                      className="text-[22px] leading-none hover:bg-muted rounded-md p-1.5 min-w-[2.25rem]"
+                                      onClick={() => {
+                                        void handleToggleReaction(msg.messageId, emoji);
+                                        setReactionMenuForId(null);
+                                      }}
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="w-full border-t border-border pt-2 mt-1 flex justify-center">
+                                  <EmojiPickerButton
+                                    value=""
+                                    onChange={() => {}}
+                                    onPickEmoji={(emoji) => {
+                                      void handleToggleReaction(msg.messageId, emoji);
+                                      setReactionMenuForId(null);
+                                    }}
+                                    disabled={!user}
+                                  />
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           </div>
                           <div
                             className={cn(
@@ -725,6 +851,34 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                           >
                             {msg.body}
                           </div>
+                          {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
+                            <div
+                              className={cn(
+                                'flex flex-wrap gap-1 mt-1.5 max-w-full',
+                                mine && 'justify-end',
+                              )}
+                            >
+                              {Object.entries(reactionsForMsg).map(([emoji, userIds]) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  className={cn(
+                                    'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
+                                    'bg-background/90 hover:bg-muted/90 shadow-sm',
+                                    userIds.includes(user?.userId ?? '') &&
+                                      'border-primary/50 bg-primary/15',
+                                  )}
+                                  onClick={() => void handleToggleReaction(msg.messageId, emoji)}
+                                  title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
+                                >
+                                  <span className="leading-none">{emoji}</span>
+                                  <span className="tabular-nums text-muted-foreground">
+                                    {userIds.length}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -732,7 +886,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 })}
               </div>
             )}
-            <div ref={chatEndRef} />
           </div>
           <div className="shrink-0 border-t border-border/70 bg-card/80 p-2.5 pt-2">
             {chatOnlinePeers.length > 0 ? (
@@ -769,9 +922,16 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 }}
               />
               <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5">
-                <p className="text-[10.5px] text-muted-foreground">
-                  Enter to send · Shift+Enter for newline
-                </p>
+                <div className="flex items-center gap-1 min-w-0">
+                  <EmojiPickerButton
+                    value={chatInput}
+                    onChange={setChatInput}
+                    disabled={!user || chatSending}
+                  />
+                  <p className="text-[10.5px] text-muted-foreground truncate">
+                    Enter to send · Shift+Enter for newline
+                  </p>
+                </div>
                 <Button
                   type="button"
                   size="sm"

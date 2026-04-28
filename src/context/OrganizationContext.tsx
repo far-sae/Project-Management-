@@ -8,7 +8,8 @@ interface OrganizationContextType {
   organization: Organization | null;
   loading: boolean;
   error: string | null;
-  refreshOrganization: () => Promise<void>;
+  /** Pass `{ silent: true }` for background refresh (e.g. tab focus) to avoid global loading flashes. */
+  refreshOrganization: (opts?: { silent?: boolean }) => Promise<void>;
   isOwner: boolean;
   isAdmin: boolean;
   canInviteMembers: boolean;
@@ -40,11 +41,14 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   // Main fetch function
   // ============================================
 
-  const fetchOrganization = async () => {
+  const fetchOrganization = async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (authLoading || !user) return;
 
-    setLoading(true);
-    setError(null);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       let foundOrg: Organization | null = null;
@@ -178,7 +182,9 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
         // country: 'US',
       });
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -213,7 +219,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
         },
         () => {
           console.log('🔄 Organization updated - refreshing...');
-          fetchOrganization();
+          void fetchOrganization({ silent: true });
         },
       )
       .subscribe();
@@ -248,10 +254,10 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     }
   }, [user?.userId, user?.organizationId, authLoading]);
 
-  // Refetch when tab becomes visible so data stays in sync across browsers/tabs
+  // Refetch when tab becomes visible — silent so we don’t flash loading across the app.
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && user) fetchOrganization();
+      if (document.visibilityState === 'visible' && user) void fetchOrganization({ silent: true });
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);

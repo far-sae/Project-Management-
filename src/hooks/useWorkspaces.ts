@@ -114,22 +114,23 @@ export const useWorkspaces = () => {
     [orgId],
   );
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!orgId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const list = await getOrganizationWorkspaces(orgId);
       setWorkspaces(list);
     } catch (err) {
       logger.error("useWorkspaces refresh failed:", err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [orgId]);
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === "visible" && orgId) refresh();
+      if (document.visibilityState === "visible" && orgId) void refresh({ silent: true });
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);

@@ -521,26 +521,6 @@ export const ProjectView: React.FC = () => {
     };
   }, [projectId, user?.userId, user?.organizationId, navigate]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const refetchProject = async () => {
-      if (!projectId || !user || document.visibilityState !== 'visible') return;
-      const effectiveOrgId = (user.organizationId || user.userId || '').replace('local-', '');
-      try {
-        const projectData = await getProject(projectId, effectiveOrgId, user.userId, user.email);
-        if (!cancelled && projectData) setProject(projectData);
-      } catch {
-        // Silent fail on visibility refetch
-      }
-    };
-    const onVisibility = () => refetchProject();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      cancelled = true;
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [projectId, user?.userId, user?.organizationId, user?.email]);
-
   // Refetch project when it's updated (e.g. member removed from Team page)
   useEffect(() => {
     if (!projectId || !user) return;

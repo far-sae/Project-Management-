@@ -167,10 +167,13 @@ export const useProjects = () => {
     [user, effectiveOrgId],
   );
 
-  const refreshProjects = useCallback(async () => {
+  const refreshProjects = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!user || !effectiveOrgId) return;
-    setLoading(true);
-    setError(null);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const fetchedProjects = await getUserProjects(
         user.userId,
@@ -183,13 +186,17 @@ export const useProjects = () => {
         err instanceof Error ? err.message : "Failed to fetch projects";
       setError(message);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [user, effectiveOrgId]);
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === "visible" && user && effectiveOrgId) refreshProjects();
+      if (document.visibilityState === "visible" && user && effectiveOrgId) {
+        void refreshProjects({ silent: true });
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);

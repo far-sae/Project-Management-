@@ -108,7 +108,7 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     refreshOrganization();
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') refreshOrganization();
+      if (document.visibilityState === 'visible') void refreshOrganization({ silent: true });
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);

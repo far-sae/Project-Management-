@@ -17,6 +17,8 @@ const COMMON_EMOJIS = [
 interface EmojiPickerButtonProps {
   value: string;
   onChange: (value: string) => void;
+  /** When set, picking an emoji invokes this only (e.g. reactions) instead of appending to value. */
+  onPickEmoji?: (emoji: string) => void;
   className?: string;
   disabled?: boolean;
 }
@@ -24,12 +26,18 @@ interface EmojiPickerButtonProps {
 export function EmojiPickerButton({
   value,
   onChange,
+  onPickEmoji,
   className,
   disabled = false,
 }: EmojiPickerButtonProps) {
   const [open, setOpen] = useState(false);
 
   const insertEmoji = (emoji: string) => {
+    if (onPickEmoji) {
+      onPickEmoji(emoji);
+      setOpen(false);
+      return;
+    }
     onChange(value + emoji);
   };
 
@@ -41,7 +49,10 @@ export function EmojiPickerButton({
           variant="ghost"
           size="icon"
           disabled={disabled}
-          className={cn('h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-200', className)}
+          className={cn(
+            'h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted',
+            className,
+          )}
         >
           <Smile className="w-4 h-4" />
         </Button>
@@ -52,10 +63,10 @@ export function EmojiPickerButton({
             <button
               key={emoji}
               type="button"
-              className="text-lg p-1.5 rounded hover:bg-gray-100"
+              className="text-lg p-1.5 rounded-md hover:bg-muted"
               onClick={() => {
                 insertEmoji(emoji);
-                setOpen(false);
+                if (!onPickEmoji) setOpen(false);
               }}
             >
               {emoji}

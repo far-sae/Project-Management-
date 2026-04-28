@@ -2090,6 +2090,115 @@ const mapProjectChatRow = (d: Record<string, unknown>): ProjectChatMessage => ({
   createdAt: new Date(d.created_at as string),
 });
 
+export interface ProjectChatReaction {
+  reactionId: string;
+  messageId: string;
+  projectId: string;
+  userId: string;
+  emoji: string;
+  createdAt: Date;
+}
+
+const mapProjectChatReactionRow = (d: Record<string, unknown>): ProjectChatReaction => ({
+  reactionId: d.reaction_id as string,
+  messageId: d.message_id as string,
+  projectId: d.project_id as string,
+  userId: d.user_id as string,
+  emoji: d.emoji as string,
+  createdAt: new Date(d.created_at as string),
+});
+
+export const fetchProjectChatReactions = async (
+  projectId: string,
+): Promise<ProjectChatReaction[]> => {
+  const { data, error } = await supabase
+    .from("project_chat_message_reactions")
+    .select("*")
+    .eq("project_id", projectId);
+
+  if (error) {
+    logger.warn("fetchProjectChatReactions:", error.message);
+    return [];
+  }
+  return (data || []).map((row) => mapProjectChatReactionRow(row as Record<string, unknown>));
+};
+
+/** Toggle emoji reaction on a chat message (same emoji again removes). */
+export const toggleProjectChatReaction = async (params: {
+  messageId: string;
+  userId: string;
+  emoji: string;
+}): Promise<void> => {
+  const emoji = params.emoji.trim();
+  if (!emoji) return;
+
+  const { data: existing, error: selErr } = await supabase
+    .from("project_chat_message_reactions")
+    .select("reaction_id")
+    .eq("message_id", params.messageId)
+    .eq("user_id", params.userId)
+    .eq("emoji", emoji)
+    .maybeSingle();
+
+  if (selErr) {
+    logger.error("toggleProjectChatReaction select:", selErr);
+    throw selErr;
+  }
+
+  if (existing && typeof existing === "object" && "reaction_id" in existing) {
+    const rid = (existing as { reaction_id: string }).reaction_id;
+    const { error: delErr } = await supabase
+      .from("project_chat_message_reactions")
+      .delete()
+      .eq("reaction_id", rid);
+    if (delErr) {
+      logger.error("toggleProjectChatReaction delete:", delErr);
+      throw delErr;
+    }
+    return;
+  }
+
+  const { error: insErr } = await supabase.from("project_chat_message_reactions").insert({
+    message_id: params.messageId,
+    user_id: params.userId,
+    emoji,
+  });
+
+  if (insErr) {
+    logger.error("toggleProjectChatReaction insert:", insErr);
+    throw insErr;
+  }
+};
+
+export const subscribeToProjectChatReactions = (
+  projectId: string,
+  callback: (rows: ProjectChatReaction[]) => void,
+) => {
+  const load = () => {
+    fetchProjectChatReactions(projectId).then(callback);
+  };
+
+  load();
+
+  const channel = supabase
+    .channel(`project-chat-r-${projectId}-${Math.random().toString(36).slice(2, 9)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "project_chat_message_reactions",
+        filter: `project_id=eq.${projectId}`,
+      },
+      load,
+    )
+    .subscribe();
+
+  return () => {
+    channel.unsubscribe();
+  };
+};
+
 export const fetchProjectChatMessages = async (
   projectId: string,
   limit: number = 200,
