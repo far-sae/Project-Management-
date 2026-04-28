@@ -399,7 +399,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     </section>
   );
 
-  const railWidth = 'w-[min(23rem,calc(100vw-1.25rem))]';
+  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(23rem,calc(100vw-2.5rem))]';
   const lastMessage = chatMessages[chatMessages.length - 1];
   const lastMessagePreview = lastMessage
     ? `${lastMessage.userId === user?.userId ? 'You' : lastMessage.displayName?.split(' ')[0] || ''}${
@@ -410,7 +410,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   if (!open) {
     return (
       <div
-        className="fixed bottom-0 right-0 z-[100] flex flex-col items-end pointer-events-none p-0"
+        className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-5"
         role="complementary"
         aria-label="Project messaging"
       >
@@ -419,14 +419,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           onClick={() => onOpenChange(true)}
           aria-label="Open project messages and team"
           className={cn(
-            'pointer-events-auto group relative mb-0 mr-3 sm:mr-5 flex min-h-[3.5rem] items-center gap-3',
-            'rounded-t-2xl border border-b-0 border-border bg-card pl-3 pr-3 text-left',
-            'shadow-[0_-8px_28px_rgba(0,0,0,0.18)] transition-all duration-150',
-            'hover:bg-muted/40 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+            'pointer-events-auto group relative flex min-h-[3.75rem] items-center gap-3',
+            'rounded-lg border border-border/70 bg-card/95 pl-3 pr-3 text-left backdrop-blur-xl',
+            'shadow-[0_16px_46px_rgba(0,0,0,0.24)] transition-all duration-150',
+            'hover:-translate-y-0.5 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
             railWidth,
           )}
         >
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
             <MessageSquare className="h-[18px] w-[18px]" />
             {unreadCount > 0 && (
               <span
@@ -482,16 +482,16 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
 
   return (
     <div
-      className="fixed bottom-0 right-0 z-[100] flex flex-col items-end pointer-events-none p-0"
+      className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-5"
       role="complementary"
       aria-label="Project messages"
     >
       <aside
         className={cn(
-          'pointer-events-auto mb-0 mr-3 sm:mr-5 flex flex-col overflow-hidden rounded-t-2xl border border-b-0 border-border',
-          'bg-card shadow-[0_-12px_40px_rgba(0,0,0,0.22)]',
+          'pointer-events-auto flex flex-col overflow-hidden rounded-lg border border-border/70',
+          'bg-card/95 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl',
           railWidth,
-          'h-[min(32rem,72svh)] max-h-[calc(100vh-1.5rem)]',
+          'h-[min(34rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
         )}
       >
         <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
@@ -605,10 +605,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                           </div>
                           <div
                             className={cn(
-                              'rounded-2xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
+                              'rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
                               mine
-                                ? 'rounded-br-md bg-primary text-primary-foreground shadow-sm'
-                                : 'rounded-bl-md bg-muted text-foreground border border-border/60',
+                                ? 'rounded-br-sm bg-primary text-primary-foreground shadow-sm'
+                                : 'rounded-bl-sm bg-muted text-foreground border border-border/60',
                             )}
                           >
                             {msg.body}
@@ -622,14 +622,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             )}
             <div ref={chatEndRef} />
           </div>
-          <div className="shrink-0 border-t border-border/70 bg-card p-2.5">
-            <div className="rounded-2xl border border-border/60 bg-background p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
+          <div className="shrink-0 border-t border-border/70 bg-card/80 p-2.5">
+            <div className="rounded-lg border border-border/60 bg-background/90 p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
               <Textarea
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Write a message… (@name to notify)"
                 rows={2}
-                className="min-h-[3rem] resize-none rounded-xl border-0 bg-transparent px-2.5 py-1.5 text-[13px] leading-relaxed shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/70"
+                className="min-h-[3rem] resize-none rounded-md border-0 bg-transparent px-2.5 py-1.5 text-[13px] leading-relaxed shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/70"
                 disabled={!user || chatSending}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -645,7 +645,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 <Button
                   type="button"
                   size="sm"
-                  className="h-7 rounded-full px-3 text-xs"
+                  className="h-7 rounded-md px-3 text-xs"
                   disabled={!user || !chatInput.trim() || chatSending}
                   onClick={() => void handleSendChat()}
                 >

@@ -69,25 +69,26 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
       ref={boardColumnRef}
       style={boardColumnStyle}
       className={cn(
-        'flex flex-col w-72 min-w-72',
-        'rounded-2xl border border-border/80 bg-surface-2/95',
-        'shadow-sm shadow-black/10 ring-1 ring-inset ring-white/5',
+        'flex w-[18.5rem] min-w-[18.5rem] flex-col overflow-hidden',
+        'rounded-lg border border-border/70 bg-card/90',
+        'shadow-sm shadow-black/10 ring-1 ring-inset ring-white/5 backdrop-blur',
         isOver && 'ring-2 ring-primary/40 ring-offset-0 border-primary/25',
         boardColumnClassName,
       )}
     >
-      <div className="px-3.5 pt-3.5 pb-2.5">
+      <div className="h-1 w-full" style={{ backgroundColor: color }} />
+      <div className="px-3.5 pt-3 pb-2.5">
         <div className="flex items-center justify-between gap-1 mb-1">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             {orderHandle}
             <div
-              className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-background shadow-sm"
+              className="w-2 h-2 rounded-full shrink-0 ring-2 ring-background shadow-sm"
               style={{ backgroundColor: color }}
             />
-            <h3 className="font-semibold text-[15px] leading-tight tracking-tight text-foreground truncate">
+            <h3 className="font-semibold text-[14px] leading-tight tracking-tight text-foreground truncate">
               {title}
             </h3>
-            <span className="text-[11px] tabular-nums text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md font-medium">
+            <span className="text-[11px] tabular-nums text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded font-medium">
               {tasks.length}
             </span>
           </div>
@@ -96,7 +97,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
                 onClick={() => onAddTask(id)}
                 aria-label="Add task with full editor"
                 title="Open full editor"
@@ -108,7 +109,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
                 onClick={onEditColumn}
                 aria-label="Edit column"
               >
@@ -123,7 +124,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
         ref={setNodeRef}
         className={cn(
           'flex-1 px-3 pb-3 overflow-y-auto min-h-[220px] max-h-[calc(100vh-260px)]',
-          'rounded-b-2xl',
+          'rounded-b-lg',
           isOver && 'bg-primary/[0.06]',
         )}
       >
@@ -155,8 +156,8 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
         )}
 
         {!loading && tasks.length === 0 && (
-          <div className="flex flex-col items-center justify-center text-center py-9 px-3 rounded-xl border border-dashed border-border/60 bg-muted/20">
-            <div className="w-10 h-10 rounded-2xl bg-background/50 flex items-center justify-center mb-2.5">
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-9 text-center">
+            <div className="mb-2.5 flex h-10 w-10 items-center justify-center rounded-lg bg-background/60">
               <Inbox className="w-5 h-5 text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground">

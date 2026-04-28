@@ -1038,7 +1038,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             </Button>
           </div>
         )}
-        <div className="flex gap-5 pb-5 px-5 min-w-max">
+        <div className="flex min-w-max gap-4 px-1 pb-5">
           <SortableContext
             items={columnSortIds}
             strategy={horizontalListSortingStrategy}
@@ -1065,11 +1065,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             ))}
           </SortableContext>
 
-          <div className="flex-shrink-0 w-72 flex flex-col gap-2">
+          <div className="flex w-[18.5rem] flex-shrink-0 flex-col gap-2">
             <Button
               type="button"
               variant="outline"
-              className="w-full h-11 border-violet-500/40 bg-gradient-to-r from-violet-500/[0.08] to-blue-500/[0.06] text-violet-700 dark:text-violet-300 hover:from-violet-500/[0.14] hover:to-blue-500/[0.10] hover:text-violet-800 dark:hover:text-violet-200"
+              className="h-10 w-full justify-start rounded-lg border-violet-500/35 bg-violet-500/[0.08] text-violet-700 shadow-sm hover:bg-violet-500/[0.13] hover:text-violet-800 dark:text-violet-300 dark:hover:text-violet-200"
               onClick={() => setShowAIQuickAdd(true)}
             >
               <Wand2 className="w-4 h-4 mr-2" />
@@ -1078,7 +1078,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             <Button
               type="button"
               variant="outline"
-              className="w-full h-11 border-blue-500/40 bg-gradient-to-r from-blue-500/[0.08] to-violet-500/[0.06] text-blue-700 dark:text-blue-300 hover:from-blue-500/[0.14] hover:to-violet-500/[0.10] hover:text-blue-800 dark:hover:text-blue-200"
+              className="h-10 w-full justify-start rounded-lg border-blue-500/35 bg-blue-500/[0.08] text-blue-700 shadow-sm hover:bg-blue-500/[0.13] hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
               onClick={() => setShowAIMeetingNotes(true)}
             >
               <FileText className="w-4 h-4 mr-2" />
@@ -1087,7 +1087,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             <Button
               type="button"
               variant={taskSwapMode ? 'secondary' : 'outline'}
-              className="w-full h-12 border-dashed border-2 text-muted-foreground hover:text-foreground hover:border-foreground/30"
+              className="h-10 w-full justify-start rounded-lg border-dashed text-muted-foreground hover:border-foreground/30 hover:text-foreground"
               onClick={() => {
                 if (taskSwapMode) {
                   setTaskSwapMode(false);
@@ -1103,7 +1103,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             </Button>
             <Button
               variant="outline"
-              className="w-full h-12 border-dashed border-2 text-muted-foreground hover:text-foreground hover:border-foreground/30"
+              className="h-10 w-full justify-start rounded-lg border-dashed text-muted-foreground hover:border-foreground/30 hover:text-foreground"
               onClick={() => setShowAddColumnModal(true)}
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -1116,7 +1116,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           {activeTask ? (
             <TaskCard task={activeTask} isDragging />
           ) : activeColumn ? (
-            <div className="w-72 min-w-72 flex flex-col rounded-2xl border border-primary/35 bg-surface-2 p-3.5 shadow-2xl shadow-primary/15 ring-2 ring-primary/20">
+            <div className="flex w-[18.5rem] min-w-[18.5rem] flex-col rounded-lg border border-primary/35 bg-surface-2 p-3.5 shadow-2xl shadow-primary/15 ring-2 ring-primary/20">
               <div className="flex items-center gap-2.5">
                 <div
                   className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-background"

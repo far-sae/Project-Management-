@@ -177,8 +177,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         onClick?.(task, e);
       }}
       className={cn(
-        'group relative bg-card text-card-foreground rounded-xl border border-border/80 shadow-sm p-3 mb-2.5 border-l-[3px]',
-        'transition-all hover:border-foreground/25 hover:shadow-md',
+        'group relative mb-2.5 rounded-lg border border-border/70 border-l-[3px] bg-background/80 p-3 text-card-foreground shadow-sm',
+        'transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-card hover:shadow-md',
         selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
         selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
         swapHighlight && 'ring-2 ring-amber-500 ring-offset-1 ring-offset-background',
@@ -318,7 +318,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           {priorityTone && (
             <span
               className={cn(
-                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
                 priorityTone.chip,
               )}
               title={`Priority: ${priorityTone.label}`}
@@ -329,7 +329,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           )}
 
           {task.urgent && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-destructive-soft text-destructive-soft-foreground">
+            <span className="inline-flex items-center gap-1 rounded-md bg-destructive-soft px-1.5 py-0.5 text-[10px] font-medium text-destructive-soft-foreground">
               <AlertTriangle className="w-3 h-3" />
               Urgent
             </span>
@@ -337,7 +337,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
           {task.isLocked && (
             <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-warning-soft text-warning-soft-foreground"
+              className="inline-flex items-center gap-1 rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-medium text-warning-soft-foreground"
               title="Locked - only visible to creator, assignees, and project owner"
             >
               <Lock className="w-3 h-3" />
@@ -348,7 +348,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           {task.dueDate && (
             <span
               className={cn(
-                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
                 isOverdue
                   ? 'bg-destructive-soft text-destructive-soft-foreground'
                   : 'bg-secondary text-secondary-foreground',

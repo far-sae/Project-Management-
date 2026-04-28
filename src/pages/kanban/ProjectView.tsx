@@ -622,12 +622,13 @@ export const ProjectView: React.FC = () => {
         columns={boardColumns}
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_38rem,hsl(var(--background)))]">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}
 
         <AppHeader
+          className="border-border/70 bg-card/80 shadow-sm shadow-black/5"
           left={
             <Breadcrumb>
               <BreadcrumbList>
@@ -657,7 +658,7 @@ export const ProjectView: React.FC = () => {
         />
 
         {dueDayParam && (
-          <div className="flex items-center justify-between gap-3 px-4 lg:px-6 py-2 border-b border-border bg-secondary/40 text-sm">
+          <div className="flex items-center justify-between gap-3 px-4 lg:px-6 py-2 border-b border-border/70 bg-card/70 text-sm backdrop-blur">
             <p className="text-muted-foreground">
               Showing tasks due{' '}
               <span className="font-medium text-foreground">{dueDayParam}</span>
@@ -668,8 +669,8 @@ export const ProjectView: React.FC = () => {
           </div>
         )}
 
-        <div className="bg-card border-b border-border px-4 lg:px-6 py-3">
-          <div className="flex flex-col gap-3">
+        <div className="border-b border-border/70 bg-card/75 px-4 py-4 shadow-sm shadow-black/5 backdrop-blur-xl lg:px-6">
+          <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3 min-w-0">
               <Button
@@ -677,40 +678,40 @@ export const ProjectView: React.FC = () => {
                 size="icon"
                 onClick={() => navigate('/dashboard')}
                 aria-label="Back to projects"
-                className="shrink-0"
+                className="h-10 w-10 shrink-0 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
                 <ArrowLeft className="w-5 h-5" />
               </Button>
               <div
-                className="w-2.5 h-2.5 rounded-full shrink-0"
+                className="h-10 w-1.5 rounded-full shrink-0 shadow-sm"
                 style={{ background: project.coverColor || 'hsl(var(--primary))' }}
               />
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold text-foreground truncate">
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground truncate">
                   {project.name}
                 </h1>
                 {project.description && (
-                  <p className="text-xs text-muted-foreground truncate">
+                  <p className="mt-0.5 text-sm text-muted-foreground truncate">
                     {project.description}
                   </p>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search tasks…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-56 md:w-64 h-9"
+                  className="h-10 w-56 rounded-lg border-border/70 bg-background/80 pl-9 shadow-sm md:w-72"
                 />
               </div>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="h-10 rounded-lg border-border/70 bg-background/80 px-3 shadow-sm">
                     <Filter className="w-4 h-4 mr-2" />
                     Filter
                   </Button>
@@ -736,7 +737,7 @@ export const ProjectView: React.FC = () => {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" className="h-10 rounded-lg border-border/70 bg-background/80 px-3 shadow-sm">
                     <ArrowUpDown className="w-4 h-4 mr-2" />
                     Sort
                   </Button>
@@ -776,7 +777,7 @@ export const ProjectView: React.FC = () => {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" title="Import / Export">
+                  <Button variant="outline" size="sm" title="Import / Export" className="h-10 w-10 rounded-lg border-border/70 bg-background/80 p-0 shadow-sm">
                     <Download className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -792,11 +793,11 @@ export const ProjectView: React.FC = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div className="flex border border-border rounded-lg overflow-hidden">
+              <div className="flex h-10 overflow-hidden rounded-lg border border-border/70 bg-background/80 p-0.5 shadow-sm">
                 <Button
                   variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="rounded-none"
+                  className="h-8 rounded-md px-3"
                   onClick={() => setViewMode('kanban')}
                   title="Kanban"
                 >
@@ -805,7 +806,7 @@ export const ProjectView: React.FC = () => {
                 <Button
                   variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="rounded-none"
+                  className="h-8 rounded-md px-3"
                   onClick={() => setViewMode('list')}
                   title="List"
                 >
@@ -814,7 +815,7 @@ export const ProjectView: React.FC = () => {
                 <Button
                   variant={viewMode === 'timeline' ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="rounded-none"
+                  className="h-8 rounded-md px-3"
                   onClick={() => setViewMode('timeline')}
                   title="Timeline"
                 >
@@ -826,6 +827,7 @@ export const ProjectView: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => navigate('/settings')}
+                className="h-10 w-10 rounded-lg border-border/70 bg-background/80 p-0 shadow-sm"
               >
                 <Settings className="w-4 h-4" />
               </Button>
@@ -843,9 +845,9 @@ export const ProjectView: React.FC = () => {
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
-          <div className={`flex-1 min-w-0 p-4 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
+          <div className={`flex-1 min-w-0 px-4 pt-5 pb-24 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
             {viewMode === 'kanban' ? (
-              <div className="h-full overflow-x-auto overflow-y-auto pb-2">
+              <div className="h-full overflow-x-auto overflow-y-auto pb-20">
                 <KanbanBoard
                   projectId={project.projectId}
                   project={project}

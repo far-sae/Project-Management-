@@ -148,7 +148,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
   const [health, setHealth] = useState<ProjectHealthResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const snapshot = useMemo(() => buildSnapshot(projectName, tasks), [projectName, tasks]);
 
@@ -217,15 +217,15 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
   return (
     <section
       className={cn(
-        'rounded-xl border bg-card overflow-hidden transition-colors',
-        tone ? tone.ring + ' ring-1' : 'border-border/70',
-        !tone && 'border-violet-500/30',
+        'overflow-hidden rounded-lg border bg-background/70 shadow-sm shadow-black/5 backdrop-blur transition-colors',
+        tone ? tone.ring + ' border-border/70 ring-1' : 'border-border/70',
+        !tone && 'border-violet-500/25',
       )}
     >
-      <div className="flex items-start gap-3 p-3.5">
+      <div className="flex items-center gap-3 p-3">
         <div
           className={cn(
-            'w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ring-1',
+            'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ring-1',
             tone ? tone.bg : 'bg-violet-500/10 ring-violet-500/30',
             tone ? tone.text : 'text-violet-500',
             tone ? '' : 'ring-violet-500/30',
@@ -234,8 +234,8 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
           <Activity className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex min-w-0 items-center gap-2">
               <h3 className="text-sm font-semibold text-foreground">Project health</h3>
               {tone && (
                 <span
@@ -262,8 +262,8 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
                 onClick={handleAssess}
                 className={
                   health
-                    ? 'h-7 text-xs'
-                    : 'h-7 text-xs bg-gradient-to-r from-violet-500 to-blue-500 text-white border-0 hover:opacity-90'
+                    ? 'h-8 rounded-md text-xs'
+                    : 'h-8 rounded-md border-0 bg-violet-600 text-xs text-white hover:bg-violet-500'
                 }
               >
                 {loading ? (
@@ -287,7 +287,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 w-7 p-0"
+                  className="h-8 w-8 rounded-md p-0"
                   onClick={() => setExpanded((v) => !v)}
                   aria-label={expanded ? 'Collapse' : 'Expand'}
                 >
@@ -315,14 +315,14 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
           {error && <p className="text-xs text-destructive mt-1">{error}</p>}
 
           {health && (
-            <div className="mt-2.5 flex items-center gap-3">
-              <div className="flex items-baseline gap-1">
-                <span className={cn('text-2xl font-bold tabular-nums', tone?.text)}>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="flex min-w-[4.25rem] items-baseline gap-1">
+                <span className={cn('text-[1.7rem] font-bold leading-none tabular-nums', tone?.text)}>
                   {health.score}
                 </span>
                 <span className="text-[11px] text-muted-foreground">/ 100</span>
               </div>
-              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                 <div
                   className={cn('h-full transition-all', tone?.bar || 'bg-primary')}
                   style={{ width: `${health.score}%` }}
