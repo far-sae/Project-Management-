@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 
 import { useAuth } from '@/context/AuthContext';
 import { useTasks } from '@/hooks/useTasks';
-import { getProject, updateProject, verifyProjectLockPin } from '@/services/supabase/database';
+import { getProject, updateProject, verifyProjectLockPin, createDueReminderNotifications, createOverdueNotifications } from '@/services/supabase/database';
 import { supabase } from '@/services/supabase';
 import { Project, Task, TaskStatus } from '@/types';
 import { DEFAULT_COLUMNS } from '@/types/task';
@@ -379,6 +379,34 @@ export const ProjectView: React.FC = () => {
       return format(new Date(t.dueDate), 'yyyy-MM-dd') === dueDayParam;
     });
   }, [tasks, dueDayParam]);
+
+  /** Same automation as My Tasks: due-soon + overdue hooks run while viewing the board so EmailJS/bell fire without visiting My Tasks only. */
+  useEffect(() => {
+    if (!tasks.length || !project || !user) return;
+    const projectNames: Record<string, string> = { [project.projectId]: project.name };
+    const taskPayload = tasks.map((t) => ({
+      taskId: t.taskId,
+      projectId: t.projectId,
+      title: t.title,
+      dueDate:
+        t.dueDate != null
+          ? typeof t.dueDate === 'string'
+            ? t.dueDate
+            : new Date(t.dueDate).toISOString()
+          : null,
+      assignees: (t.assignees ?? []).map((a) => ({ userId: a.userId })),
+      status: t.status,
+    }));
+    void createDueReminderNotifications({
+      tasks: taskPayload,
+      projectNames,
+      hoursAhead: 24,
+    }).catch(() => {});
+    void createOverdueNotifications({
+      tasks: taskPayload,
+      projectNames,
+    }).catch(() => {});
+  }, [tasks, project?.projectId, project?.name, user?.userId]);
 
   const clearDueDayFilter = useCallback(() => {
     setSearchParams(

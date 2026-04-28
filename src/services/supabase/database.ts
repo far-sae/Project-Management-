@@ -21,6 +21,7 @@ import { logger } from "@/lib/logger";
 import { sendNotificationEmail } from "@/services/email/emailService";
 import {
   getUserNotificationPreferences,
+  isEmailDeliveryAllowed,
   isInAppNotificationAllowed,
 } from "@/lib/notificationPreferences";
 import { isAppOwner } from "@/lib/app-owner";
@@ -1541,7 +1542,10 @@ export const createNotification = async (
 
   dispatchNotificationsRefresh();
 
-  if (prefs.email !== false && input.actorUserId !== input.userId) {
+  if (
+    isEmailDeliveryAllowed(prefs, input.type) &&
+    input.actorUserId !== input.userId
+  ) {
     void (async () => {
       try {
         const recipient = await getUserEmailForNotification(input.userId);
@@ -1800,7 +1804,7 @@ async function sendOverdueNotificationEmailsForRpcRows(
 ): Promise<void> {
   for (const row of rows) {
     const prefs = await getUserNotificationPreferences(row.user_id);
-    if (prefs.email === false) continue;
+    if (!isEmailDeliveryAllowed(prefs, "task_overdue")) continue;
     void (async () => {
       try {
         const recipient = await getUserEmailForNotification(row.user_id);

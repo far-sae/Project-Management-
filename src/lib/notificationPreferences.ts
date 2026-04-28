@@ -108,6 +108,17 @@ export function isInAppNotificationAllowed(
   return prefs[cat] !== false;
 }
 
+/** Transactional email for any notification row (global email + per-topic toggles). */
+export function isEmailDeliveryAllowed(
+  prefs: UserNotificationPreferences,
+  type: NotificationType,
+): boolean {
+  if (prefs.email === false) return false;
+  const cat = NOTIFICATION_TYPE_TO_CATEGORY[type];
+  if (!cat) return true;
+  return prefs[cat] !== false;
+}
+
 /** Transactional / marketing email for tasks. */
 export function isEmailForTaskEventAllowed(
   prefs: UserNotificationPreferences,
