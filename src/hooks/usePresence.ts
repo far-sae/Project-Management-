@@ -28,7 +28,11 @@ interface UsePresenceOptions {
   channelKey: string | null;
   /** When set, the user broadcasts they are looking at this task. */
   currentTaskId?: string | null;
-  /** Local preference for how you appear; auto uses tab visibility for online vs offline. */
+  /**
+   * Local preference for how you appear. `auto` stays online while subscribed to the
+   * project channel (tab switches / hidden tabs do not flip you offline; leaving the
+   * project or closing the tab ends presence).
+   */
   presencePreference?: PresenceStatusPreference;
 }
 
@@ -54,12 +58,11 @@ const TYPING_TTL_MS = 3000;
  */
 function buildAvailability(
   presencePreference: PresenceStatusPreference,
-  tabVisible: boolean,
 ): PresenceAvailability | 'hidden' {
   if (presencePreference === 'appear_offline') return 'hidden';
   if (presencePreference === 'dnd') return 'dnd';
   if (presencePreference === 'holiday') return 'holiday';
-  return tabVisible ? 'online' : 'offline';
+  return 'online';
 }
 
 export const usePresence = ({
@@ -70,10 +73,6 @@ export const usePresence = ({
   const { user } = useAuth();
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   const [selfKey, setSelfKey] = useState<string | null>(null);
-  const [tabVisible, setTabVisible] = useState(
-    () =>
-      typeof document === 'undefined' || document.visibilityState === 'visible',
-  );
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   // Mutable typing map keyed by `${userId}:${taskId}` -> last typing timestamp
   const typingMap = useRef(new Map<string, { peer: PresencePeer; at: number; taskId: string }>());
@@ -81,12 +80,10 @@ export const usePresence = ({
 
   const trackOptsRef = useRef({
     presencePreference: 'auto' as PresenceStatusPreference,
-    tabVisible: true,
     currentTaskId: null as string | null | undefined,
   });
   trackOptsRef.current = {
     presencePreference,
-    tabVisible,
     currentTaskId,
   };
 
@@ -96,7 +93,7 @@ export const usePresence = ({
   const buildTrackMeta = useCallback((): PresencePeer | null => {
     if (!user?.userId) return null;
     const o = trackOptsRef.current;
-    const av = buildAvailability(o.presencePreference, o.tabVisible);
+    const av = buildAvailability(o.presencePreference);
     if (av === 'hidden') return null;
     if (sessionJoinedAtRef.current === null) {
       sessionJoinedAtRef.current = Date.now();
@@ -110,15 +107,6 @@ export const usePresence = ({
       availability: av,
     };
   }, [user?.userId, user?.displayName, user?.email, user?.photoURL]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const onVis = () => setTabVisible(document.visibilityState === 'visible');
-    document.addEventListener('visibilitychange', onVis);
-    return () => {
-      document.removeEventListener('visibilitychange', onVis);
-    };
-  }, []);
 
   useEffect(() => {
     if (!channelKey || !user?.userId) return;
@@ -204,7 +192,7 @@ export const usePresence = ({
     };
   }, [channelKey, user?.userId, buildTrackMeta]);
 
-  // Re-track when task, profile, status preference, or tab visibility changes (same channel).
+  // Re-track when task, profile, or status preference changes (same channel).
   // Also optimistically update the local peers list so the user's own availability dot flips
   // immediately in UIs (chat dock team list, top-right avatar) — without waiting for the
   // Supabase realtime echo which can otherwise take 100–500ms and feel laggy.
@@ -222,13 +210,7 @@ export const usePresence = ({
     } else {
       channel.untrack().catch(() => {});
     }
-  }, [
-    buildTrackMeta,
-    user?.userId,
-    presencePreference,
-    tabVisible,
-    currentTaskId,
-  ]);
+  }, [buildTrackMeta, user?.userId, presencePreference, currentTaskId]);
 
   // Periodically prune expired typing entries
   useEffect(() => {

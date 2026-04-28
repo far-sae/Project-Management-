@@ -151,8 +151,20 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const { organization, isAdmin } = useOrganization();
 
-  /** Project owner or org admin may edit/move locked tasks. */
-  const canOverrideTaskLock = useMemo(() => {
+  /** Match TaskModal: project owner, org admin, or task creator bypass PIN/move restrictions. */
+  const canBypassTaskLock = useCallback(
+    (t: Task | null | undefined) => {
+      if (!user) return false;
+      if (project?.ownerId === user.userId) return true;
+      if (isAdmin) return true;
+      if (t?.createdBy === user.userId) return true;
+      return false;
+    },
+    [user, project?.ownerId, isAdmin],
+  );
+
+  /** Owner / admin only — for UI copy where creators still follow normal PIN rules on the board. */
+  const isProjectOwnerOrAdmin = useMemo(() => {
     if (!user) return false;
     if (project?.ownerId === user.userId) return true;
     return isAdmin;
@@ -161,12 +173,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const canMoveTask = useCallback(
     (t: Task) => {
       if (!t.isLocked) return true;
-      // Project owner / workspace admin always bypass — they bought the plan and own the workspace.
-      if (canOverrideTaskLock) return true;
+      if (canBypassTaskLock(t)) return true;
       if (t.hasLockPin && isTaskLockUnlockedInSession(t.taskId)) return true;
       return false;
     },
-    [canOverrideTaskLock],
+    [canBypassTaskLock],
   );
 
   const isTaskDragDisabled = useCallback((t: Task) => !canMoveTask(t), [canMoveTask]);
@@ -247,7 +258,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       }
       if (!canMoveTask(a) || !canMoveTask(b)) {
         toast.error(
-          canOverrideTaskLock
+          isProjectOwnerOrAdmin
             ? 'One of these tasks has a PIN. Open it and unlock first.'
             : 'One of these tasks is locked. Unlock with PIN, or ask the project owner or an admin.',
         );
@@ -296,7 +307,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       finish();
       await onTasksRefresh?.();
     },
-    [tasks, editTask, canMoveTask, canOverrideTaskLock, onTasksRefresh],
+    [tasks, editTask, canMoveTask, isProjectOwnerOrAdmin, onTasksRefresh],
   );
 
   // ── Column-edit modal state ────────────────────────────────
@@ -480,7 +491,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
       if (!canMoveTask(movedTask)) {
         toast.error(
-          canOverrideTaskLock
+          isProjectOwnerOrAdmin
             ? 'This task has a PIN. Open it and unlock first to move it.'
             : 'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
         );
@@ -572,7 +583,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       orgId,
       tasksByStatus,
       canMoveTask,
-      canOverrideTaskLock,
+      isProjectOwnerOrAdmin,
       onRequestManualSort,
       getAssigneeEmail,
       sortedColumns,
@@ -621,7 +632,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         event?.stopPropagation();
         if (!canMoveTask(task)) {
           toast.error(
-            canOverrideTaskLock
+            isProjectOwnerOrAdmin
               ? 'This task has a PIN. Open it and unlock first to swap it.'
               : 'This task is locked. Unlock with PIN, or ask the project owner or an admin.',
           );
@@ -658,7 +669,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       taskSwapMode,
       swapPickId,
       canMoveTask,
-      canOverrideTaskLock,
+      isProjectOwnerOrAdmin,
       handleSwapPair,
       selectionMode,
       handleTaskSelect,
@@ -711,7 +722,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       if (selectedTask) {
         const lockBlocks =
           selectedTask.isLocked &&
-          !canOverrideTaskLock &&
+          !canBypassTaskLock(selectedTask) &&
           (selectedTask.hasLockPin
             ? !isTaskLockUnlockedInSession(selectedTask.taskId)
             : true);
@@ -863,7 +874,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       user,
       projName,
       project,
-      canOverrideTaskLock,
+      canBypassTaskLock,
       getAssigneeEmail,
     ],
   );
@@ -921,7 +932,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     [ids, tasks, canMoveTask],
   );
 
-  const lockedSelectionToast = canOverrideTaskLock
+  const lockedSelectionToast = isProjectOwnerOrAdmin
     ? 'Some selected tasks have a PIN. Open them and unlock to include in this action.'
     : 'Some selected tasks are locked. Deselect them or ask the project owner or an admin.';
 

@@ -27,11 +27,25 @@ import { INDIA_PRICING } from "@/types/subscription";
 const PROJECTS_SAFE_SELECT =
   "project_id, name, description, cover_color, owner_id, organization_id, workspace_id, created_by, members, columns, created_at, updated_at, start_date, end_date, settings, stats, is_locked, lock_pin_version, has_lock_pin";
 
+/** Task columns safe for the browser—never includes lock_pin_hash. Requires migration 027 (has_lock_pin). */
+export const TASKS_SAFE_SELECT =
+  "task_id, project_id, organization_id, title, description, status, priority, priority_color, due_date, assignees, tags, subtasks, parent_task_id, urgent, is_locked, has_lock_pin, position, attachments, comments_count, created_by, created_at, updated_at, completed_at";
+
 const userEmailCache = new Map<
   string,
   { email: string; displayName: string; at: number }
 >();
 const USER_EMAIL_CACHE_MS = 60_000;
+
+/** Prefer migration 027 `has_lock_pin`; fall back to hash when column not yet deployed. */
+export function taskHasLockPin(row: {
+  has_lock_pin?: boolean | null;
+  is_locked?: boolean | null;
+  lock_pin_hash?: string | null;
+}): boolean {
+  if (row.has_lock_pin != null) return Boolean(row.has_lock_pin);
+  return Boolean(row.is_locked && row.lock_pin_hash);
+}
 
 /** Log once when task PIN RPC is unavailable — avoids console spam in production builds. */
 let warnedTaskPinRpcFallbackUsed = false;
@@ -278,7 +292,7 @@ export const checkTaskLimit = async (
 
   const { count } = await supabase
     .from("tasks")
-    .select("*", { count: "exact", head: true })
+    .select("task_id", { count: "exact", head: true })
     .eq("project_id", projectId);
 
   const current = count ?? 0;
@@ -863,7 +877,7 @@ export const createTask = async (
   const { data, error } = await supabase
     .from("tasks")
     .insert(task)
-    .select()
+    .select(TASKS_SAFE_SELECT)
     .single();
 
   if (error) {
@@ -887,7 +901,7 @@ export const createTask = async (
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
     isLocked: data.is_locked || false,
-    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
+    hasLockPin: taskHasLockPin(data),
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -904,7 +918,7 @@ export const getTask = async (
 ): Promise<Task | null> => {
   const { data, error } = await supabase
     .from("tasks")
-    .select("*")
+    .select(TASKS_SAFE_SELECT)
     .eq("task_id", taskId)
     .eq("organization_id", organizationId)
     .single();
@@ -927,7 +941,7 @@ export const getTask = async (
     parentTaskId: data.parent_task_id,
     urgent: data.urgent,
     isLocked: data.is_locked || false,
-    hasLockPin: Boolean(data.is_locked && data.lock_pin_hash),
+    hasLockPin: taskHasLockPin(data),
     position: data.position,
     attachments: data.attachments || [],
     commentsCount: data.comments_count || 0,
@@ -945,7 +959,7 @@ export const getProjectTasks = async (
 ): Promise<Task[]> => {
   let query = supabase
     .from("tasks")
-    .select("*")
+    .select(TASKS_SAFE_SELECT)
     .eq("project_id", projectId)
     .order("position", { ascending: true });
 
@@ -976,7 +990,7 @@ export const getProjectTasks = async (
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
     isLocked: task.is_locked || false,
-    hasLockPin: Boolean(task.is_locked && task.lock_pin_hash),
+    hasLockPin: taskHasLockPin(task),
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -1035,7 +1049,7 @@ export const getOrganizationTasks = async (
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
     isLocked: task.is_locked || false,
-    hasLockPin: Boolean(task.is_locked && task.lock_pin_hash),
+    hasLockPin: taskHasLockPin(task),
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,
@@ -1229,7 +1243,7 @@ export const getTasksAssignedToUser = async (
 ): Promise<Task[]> => {
   let query = supabase
     .from("tasks")
-    .select("*")
+    .select(TASKS_SAFE_SELECT)
     .filter("assignees", "cs", `[{"userId":"${userId}"}]`);
 
   if (organizationId && !organizationId.startsWith("local-")) {
@@ -1259,7 +1273,7 @@ export const getTasksAssignedToUser = async (
     parentTaskId: task.parent_task_id,
     urgent: task.urgent,
     isLocked: task.is_locked || false,
-    hasLockPin: Boolean(task.is_locked && task.lock_pin_hash),
+    hasLockPin: taskHasLockPin(task),
     position: task.position,
     attachments: task.attachments || [],
     commentsCount: task.comments_count || 0,

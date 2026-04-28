@@ -10,7 +10,11 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useProjects } from '@/hooks/useProjects';
-import { getOrganizationTasks } from '@/services/supabase/database';
+import {
+  getOrganizationTasks,
+  TASKS_SAFE_SELECT,
+  taskHasLockPin,
+} from '@/services/supabase/database';
 import { Task } from '@/types';
 import { supabase } from '@/services/supabase';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -63,7 +67,7 @@ export const Calendar: React.FC = () => {
         // 1) Tasks assigned to this user across all orgs
         const { data: assignedData, error: assignedError } = await supabase
           .from('tasks')
-          .select('*')
+          .select(TASKS_SAFE_SELECT)
           .filter('assignees', 'cs', `[{"userId":"${user.userId}"}]`);
 
         if (assignedError) throw assignedError;
@@ -88,7 +92,10 @@ export const Calendar: React.FC = () => {
           assignees: task.assignees || [],
           tags: task.tags || [],
           subtasks: task.subtasks || [],
+          parentTaskId: task.parent_task_id,
           urgent: task.urgent,
+          isLocked: task.is_locked || false,
+          hasLockPin: taskHasLockPin(task),
           position: task.position,
           attachments: task.attachments || [],
           commentsCount: task.comments_count || 0,

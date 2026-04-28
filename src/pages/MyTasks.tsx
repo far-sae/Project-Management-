@@ -114,6 +114,7 @@ export const MyTasks: React.FC = () => {
   const canOverrideTaskLock = useCallback(
     (t: Task) => {
       if (!user) return false;
+      if (t.createdBy === user.userId) return true;
       const p = projects.find((x) => x.projectId === t.projectId);
       if (p?.ownerId === user.userId) return true;
       return isAdmin;

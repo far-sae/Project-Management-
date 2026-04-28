@@ -31,6 +31,7 @@ import {
 } from '@/services/supabase/database';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
+import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
 import { PresenceStatusInline } from '@/components/presence/PresenceStatusInline';
 
 interface ProjectRightRailProps {
@@ -144,6 +145,21 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     }
     return Array.from(map.values());
   }, [project.members]);
+
+  /** Members currently in realtime presence for this project (excludes explicit offline). */
+  const chatOnlinePeers = useMemo(() => {
+    if (!presenceByUserId?.size) return [];
+    const list: PresencePeer[] = [];
+    for (const m of dedupedMembers) {
+      if (!m.userId) continue;
+      const p = presenceByUserId.get(m.userId);
+      if (!p || p.availability === 'offline') continue;
+      list.push(p);
+    }
+    return list.sort((a, b) =>
+      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }),
+    );
+  }, [dedupedMembers, presenceByUserId]);
 
   const mentionMembers = useMemo(
     () =>
@@ -718,7 +734,23 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             )}
             <div ref={chatEndRef} />
           </div>
-          <div className="shrink-0 border-t border-border/70 bg-card/80 p-2.5">
+          <div className="shrink-0 border-t border-border/70 bg-card/80 p-2.5 pt-2">
+            {chatOnlinePeers.length > 0 ? (
+              <div className="flex items-center gap-2 min-h-0 mb-2 px-0.5">
+                <span className="text-[10px] font-medium text-muted-foreground shrink-0">
+                  Online now
+                </span>
+                <div className="min-w-0 flex-1 flex justify-end overflow-hidden">
+                  <PresenceAvatars
+                    peers={chatOnlinePeers}
+                    max={8}
+                    size={24}
+                    showLabels
+                    className="max-w-full"
+                  />
+                </div>
+              </div>
+            ) : null}
             <div className="rounded-lg border border-border/60 bg-background/90 p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
               <MentionTextarea
                 value={chatInput}
