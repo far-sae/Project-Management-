@@ -173,9 +173,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const canMoveTask = useCallback(
     (t: Task) => {
       if (!t.isLocked) return true;
-      if (canBypassTaskLock(t)) return true;
-      if (t.hasLockPin && isTaskLockUnlockedInSession(t.taskId)) return true;
-      return false;
+      // PIN-locked tasks: PIN is the gate for *everyone*, including project owner / admin /
+      // creator. The PIN is what the owner explicitly chose to enforce — bypassing it would
+      // defeat the entire feature. Owner can rotate or remove the PIN, but can't peek without it.
+      if (t.hasLockPin) return isTaskLockUnlockedInSession(t.taskId);
+      // No-PIN locked tasks: owner / admin / creator can manage without ceremony.
+      return canBypassTaskLock(t);
     },
     [canBypassTaskLock],
   );
@@ -720,16 +723,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       delete cleanInput.subtasks;
 
       if (selectedTask) {
-        const lockBlocks =
-          selectedTask.isLocked &&
-          !canBypassTaskLock(selectedTask) &&
-          (selectedTask.hasLockPin
-            ? !isTaskLockUnlockedInSession(selectedTask.taskId)
-            : true);
-        if (lockBlocks) {
+        if (!canMoveTask(selectedTask)) {
           throw new Error(
             selectedTask.hasLockPin
-              ? 'This task is locked. Unlock it with the PIN to edit.'
+              ? 'This task is locked with a PIN. Unlock it before saving changes.'
               : 'This task is locked. Only the project owner or a workspace admin can edit it.',
           );
         }

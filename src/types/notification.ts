@@ -37,3 +37,9 @@ export interface CreateNotificationInput {
   actorUserId?: string;
   actorDisplayName?: string;
 }
+
+/** Outcome of attempting to insert an in-app notification (preference skip vs RLS vs success). */
+export type CreateNotificationResult =
+  | { status: 'ok'; notification: AppNotification }
+  | { status: 'filtered' }
+  | { status: 'rls' };

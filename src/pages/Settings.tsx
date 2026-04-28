@@ -24,6 +24,11 @@ import {
   setUserCancelAtPeriodEnd,
 } from "@/services/supabase/auth";
 import { supabase } from "@/services/supabase/config";
+import { createNotification } from "@/services/supabase/database";
+import {
+  isNotificationEmailConfigured,
+  isEmailServiceConfigured,
+} from "@/services/email/emailService";
 import { SUPPORT_EMAIL } from "@/lib/support-email";
 import { uploadAvatar } from "@/services/supabase/storage";
 import {
@@ -723,6 +728,11 @@ export const Settings: React.FC = () => {
                   Email still requires your project&apos;s mail service (e.g. EmailJS) to be
                   connected.
                 </p>
+
+                <DeliveryDiagnostics
+                  userId={user?.userId}
+                  userDisplayName={user?.displayName}
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -908,3 +918,161 @@ export const Settings: React.FC = () => {
 };
 
 export default Settings;
+
+/**
+ * Surfaces *why* notifications or email aren't arriving so the user has a clear, actionable
+ * answer instead of silent failures. Three checks:
+ *   1. EmailJS notification template configured?
+ *   2. Notifications RLS allows insert? (probed by sending a real notification to self.)
+ *   3. Recipient profile row reachable? (read your own user_profiles row.)
+ */
+const DeliveryDiagnostics: React.FC<{
+  userId: string | undefined;
+  userDisplayName: string | undefined;
+}> = ({ userId, userDisplayName }) => {
+  const emailConfigured = isNotificationEmailConfigured();
+  const inviteEmailConfigured = isEmailServiceConfigured();
+  const [bellState, setBellState] = useState<
+    'idle' | 'testing' | 'ok' | 'filtered' | 'rls' | 'profile' | 'error'
+  >('idle');
+  const [bellDetail, setBellDetail] = useState<string>('');
+
+  const runBellProbe = async () => {
+    if (!userId) {
+      setBellState('error');
+      setBellDetail('Sign in first.');
+      return;
+    }
+    setBellState('testing');
+    setBellDetail('');
+    try {
+      const { data: profile, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('id, email')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profileError || !profile) {
+        setBellState('profile');
+        setBellDetail(
+          profileError?.message ||
+            'No user_profiles row found — the recipient profile is missing, so emails cannot be addressed.',
+        );
+        return;
+      }
+      const result = await createNotification({
+        userId,
+        type: 'task_updated',
+        title: 'Test notification',
+        body: 'If you see this in your bell, the in-app channel is working.',
+        actorUserId: userId,
+        actorDisplayName: userDisplayName || 'You',
+      });
+      switch (result.status) {
+        case 'filtered':
+          setBellState('filtered');
+          setBellDetail(
+            'Skipped — your notification preferences suppress in-app alerts for this type. Enable task updates (or reset preferences) and try again.',
+          );
+          return;
+        case 'rls':
+          setBellState('rls');
+          setBellDetail(
+            'Notifications insert was denied. Apply migrations 001_notifications_table.sql and 024_notification_preferences.sql in Supabase.',
+          );
+          return;
+        case 'ok':
+          setBellState('ok');
+          setBellDetail('Bell delivered. Open the inbox to see it.');
+          return;
+        default: {
+          const _exhaustive: never = result;
+          void _exhaustive;
+        }
+      }
+    } catch (e) {
+      setBellState('error');
+      setBellDetail(e instanceof Error ? e.message : 'Unknown error.');
+    }
+  };
+
+  return (
+    <section className="mt-6">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+        Delivery diagnostics
+      </p>
+      <div className="rounded-xl border border-border/70 divide-y divide-border/60 overflow-hidden bg-card text-sm">
+        <DiagRow
+          label="EmailJS service & public key"
+          ok={inviteEmailConfigured}
+          okText="Configured"
+          missingText="Missing — set VITE_EMAILJS_SERVICE_ID and VITE_EMAILJS_PUBLIC_KEY in your .env"
+        />
+        <DiagRow
+          label="EmailJS notification template"
+          ok={emailConfigured}
+          okText="Configured — assignment, due-soon, overdue, and comment emails will fire"
+          missingText="Missing — set VITE_EMAILJS_NOTIFICATION_TEMPLATE_ID. Without it, no notification emails are sent."
+        />
+        <div className="flex items-start justify-between gap-3 px-4 py-3">
+          <div className="min-w-0 pr-4">
+            <p className="font-medium">In-app bell (RLS probe)</p>
+            <p className="text-xs text-muted-foreground">
+              {bellState === 'idle' &&
+                'Send a test notification to yourself to check the database insert is allowed.'}
+              {bellState === 'testing' && 'Probing…'}
+              {bellState === 'ok' && (
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  ✓ {bellDetail}
+                </span>
+              )}
+              {bellState === 'filtered' && (
+                <span className="text-muted-foreground">{bellDetail}</span>
+              )}
+              {(bellState === 'rls' || bellState === 'profile' || bellState === 'error') && (
+                <span className="text-destructive">{bellDetail}</span>
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void runBellProbe()}
+            disabled={bellState === 'testing' || !userId}
+          >
+            {bellState === 'testing' ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Testing
+              </>
+            ) : (
+              'Send test'
+            )}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const DiagRow: React.FC<{
+  label: string;
+  ok: boolean;
+  okText: string;
+  missingText: string;
+}> = ({ label, ok, okText, missingText }) => (
+  <div className="flex items-start gap-3 px-4 py-3">
+    <span
+      className={`mt-1 inline-block w-2 h-2 rounded-full shrink-0 ${
+        ok ? 'bg-emerald-500' : 'bg-destructive'
+      }`}
+      aria-hidden
+    />
+    <div className="min-w-0">
+      <p className="font-medium">{label}</p>
+      <p className="text-xs text-muted-foreground leading-snug">
+        {ok ? okText : missingText}
+      </p>
+    </div>
+  </div>
+);

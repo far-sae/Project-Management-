@@ -85,7 +85,7 @@ function getDueCalendarDayStartMs(task: {
 
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
-  const { organization, isAdmin } = useOrganization();
+  const { organization } = useOrganization();
   const { projects } = useProjects();
   const { tasksAssignedToMe, loading, tasks: allTasks, refresh } = useAllTasks();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -111,26 +111,19 @@ export const MyTasks: React.FC = () => {
   const [myTasksPin, setMyTasksPin] = useState('');
   const [myTasksPinError, setMyTasksPinError] = useState(false);
 
-  const canOverrideTaskLock = useCallback(
-    (t: Task) => {
-      if (!user) return false;
-      if (t.createdBy === user.userId) return true;
-      const p = projects.find((x) => x.projectId === t.projectId);
-      if (p?.ownerId === user.userId) return true;
-      return isAdmin;
-    },
-    [user, projects, isAdmin],
-  );
-
+  /**
+   * PIN-locked tasks always require the PIN to view, even for the owner/creator/admin —
+   * the PIN is the explicit security gate. (No-PIN locked tasks aren't surfaced via this
+   * gate; they're managed via permissions in the kanban board.)
+   */
   const taskNeedsPinToView = useCallback(
     (t: Task) =>
       Boolean(
         t.isLocked &&
           t.hasLockPin &&
-          !canOverrideTaskLock(t) &&
           !isTaskLockUnlockedInSession(t.taskId),
       ),
-    [canOverrideTaskLock],
+    [],
   );
 
   useEffect(() => {

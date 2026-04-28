@@ -175,23 +175,28 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const hasLockPin = Boolean(task?.hasLockPin);
   const lockedWithPin = Boolean(isEditing && task?.isLocked && hasLockPin);
+  /**
+   * Edit gate.
+   *  - PIN-locked: PIN is the only way through, even for the owner / admin / creator.
+   *    The PIN was set explicitly to enforce a stronger gate; bypassing it for owners would
+   *    defeat the feature.
+   *  - No-PIN locked: owner / admin / creator can edit (no PIN exists to enter).
+   */
   const readOnlyTask = Boolean(
     isEditing &&
       task?.isLocked &&
-      !canOverrideTaskLock &&
-      (lockedWithPin ? !pinUnlockedSession : true),
+      (lockedWithPin ? !pinUnlockedSession : !canOverrideTaskLock),
   );
 
-  /** Until PIN is entered, do not show title, description, comments, or activity.
-   *  Project owner / org admin / task creator bypass the PIN — they own the workspace. */
+  /** Until PIN is entered, hide title, description, comments, activity. Strictly enforced —
+   *  owners can rotate or remove the PIN, but cannot peek without entering it. */
   const mustUnlockToView = useMemo(
     () =>
       Boolean(
         isEditing &&
           task?.isLocked &&
           hasLockPin &&
-          !pinUnlockedSession &&
-          !canOverrideTaskLock,
+          !pinUnlockedSession,
       ),
     [
       isEditing,
@@ -199,7 +204,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       task?.taskId,
       hasLockPin,
       pinUnlockedSession,
-      canOverrideTaskLock,
     ],
   );
 

@@ -100,21 +100,40 @@ export const NotifyModal: React.FC<NotifyModalProps> = ({
           }),
         ),
       );
-      const saved = results.filter((r) => r != null).length;
-      if (saved === 0) {
-        toast.error(
-          'Notifications could not be saved. Check that the notifications table exists and RLS allows inserts (Supabase migrations).',
-        );
-      } else if (saved < recipientIds.length) {
-        toast.warning(
-          `Only ${saved} of ${recipientIds.length} notifications were saved.`,
-        );
-        onClose();
-        setSelectedIds(new Set());
-      } else {
+      const n = recipientIds.length;
+      const saved = results.filter((r) => r.status === 'ok').length;
+      const filtered = results.filter((r) => r.status === 'filtered').length;
+      const rls = results.filter((r) => r.status === 'rls').length;
+      if (saved === n) {
         toast.success(`Notification sent to ${saved} ${saved === 1 ? 'person' : 'people'}`);
         onClose();
         setSelectedIds(new Set());
+      } else if (saved > 0) {
+        const parts: string[] = [];
+        if (filtered > 0) {
+          parts.push(
+            `${filtered} skipped (in-app off for this type in preferences).`,
+          );
+        }
+        if (rls > 0) {
+          parts.push(
+            `${rls} blocked by database policy — check notifications table and RLS migrations.`,
+          );
+        }
+        const extra = parts.length ? ` ${parts.join(' ')}` : '';
+        toast.warning(`Only ${saved} of ${n} notifications were saved.${extra}`);
+        onClose();
+        setSelectedIds(new Set());
+      } else if (rls > 0) {
+        toast.error(
+          'Notifications could not be saved. Check that the notifications table exists and RLS allows inserts (Supabase migrations).',
+        );
+      } else if (filtered === n) {
+        toast.info(
+          'No notifications sent — recipients have in-app alerts turned off for this type in their preferences.',
+        );
+      } else {
+        toast.error('Notifications could not be saved.');
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send notifications');

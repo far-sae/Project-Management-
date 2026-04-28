@@ -12,7 +12,11 @@ import {
   GlobalComment,
 } from "@/types";
 import { ActivityEvent, CreateActivityInput } from "@/types/activity";
-import { AppNotification, CreateNotificationInput } from "@/types/notification";
+import {
+  AppNotification,
+  CreateNotificationInput,
+  CreateNotificationResult,
+} from "@/types/notification";
 import { logger } from "@/lib/logger";
 import { sendNotificationEmail } from "@/services/email/emailService";
 import {
@@ -1448,16 +1452,16 @@ export const subscribeToComments = (
 
 export const createNotification = async (
   input: CreateNotificationInput,
-): Promise<AppNotification | null> => {
+): Promise<CreateNotificationResult> => {
   const prefs = await getUserNotificationPreferences(input.userId);
   if (!isInAppNotificationAllowed(prefs, input.type)) {
-    return null;
+    return { status: "filtered" };
   }
 
   const now = new Date().toISOString();
   const notificationId = crypto.randomUUID();
 
-  const notification = {
+  const insertRow = {
     notification_id: notificationId,
     user_id: input.userId,
     type: input.type,
@@ -1474,7 +1478,7 @@ export const createNotification = async (
 
   const { data, error } = await supabase
     .from("notifications")
-    .insert(notification)
+    .insert(insertRow)
     .select()
     .single();
 
@@ -1487,7 +1491,7 @@ export const createNotification = async (
           error,
         );
       }
-      return null;
+      return { status: "rls" };
     }
     logger.error("Failed to create notification:", error);
     throw error;
@@ -1520,7 +1524,7 @@ export const createNotification = async (
     })();
   }
 
-  return {
+  const appNotification: AppNotification = {
     notificationId: data.notification_id,
     userId: data.user_id,
     type: data.type,
@@ -1532,7 +1536,8 @@ export const createNotification = async (
     actorDisplayName: data.actor_display_name,
     read: data.read,
     createdAt: new Date(data.created_at),
-  } as AppNotification;
+  };
+  return { status: "ok", notification: appNotification };
 };
 
 export const markNotificationRead = async (
