@@ -155,8 +155,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const commentTypingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  /** PIN+locked task id while the dialog is open — used to clear session unlock on close (parent may null `task` before this runs). */
-  const pinLockedTaskIdRef = useRef<string | null>(null);
 
   const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
@@ -275,25 +273,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setShowUnlockGate(false);
   }, [task?.taskId, open]);
 
+  /**
+   * Match project PIN (`ProjectView`): session unlock ends when this editor surface closes,
+   * the task changes, or the component unmounts (e.g. Kanban `key` swap on close). Cleanup
+   * always runs with the correct `taskId` from the last opened PIN-locked task.
+   */
   useEffect(() => {
-    if (!open) return;
-    if (task?.taskId && task.isLocked && task.hasLockPin) {
-      pinLockedTaskIdRef.current = task.taskId;
-    } else {
-      pinLockedTaskIdRef.current = null;
+    if (!open || !task?.taskId || !task.isLocked || !task.hasLockPin) {
+      return;
     }
-  }, [open, task?.taskId, task?.isLocked, task?.hasLockPin]);
-
-  /** Closing or saving ends the session unlock so the board and DnD require the PIN again. */
-  useEffect(() => {
-    if (open) return;
-    const tid = pinLockedTaskIdRef.current;
-    if (tid) {
+    const tid = task.taskId;
+    return () => {
       clearTaskLockUnlockedInSession(tid);
-      pinLockedTaskIdRef.current = null;
-    }
-    setPinUnlockedSession(false);
-  }, [open]);
+      setPinUnlockedSession(false);
+    };
+  }, [open, task?.taskId, task?.isLocked, task?.hasLockPin]);
 
   useEffect(() => {
     if (!open || !task?.taskId || !orgId || mustUnlockToView) {

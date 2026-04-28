@@ -27,7 +27,11 @@ import {
 import { useAllTasks } from '@/hooks/useAllTasks';
 import { useProjects } from '@/hooks/useProjects';
 import { useOrganization } from '@/context/OrganizationContext';
-import { isTaskLockUnlockedInSession, setTaskLockUnlockedInSession } from '@/lib/taskLockPin';
+import {
+  isTaskLockUnlockedInSession,
+  setTaskLockUnlockedInSession,
+  clearTaskLockUnlockedInSession,
+} from '@/lib/taskLockPin';
 import { useAuth } from '@/context/AuthContext';
 import { Task, TaskComment, TaskSubtask, UpdateTaskInput } from '@/types';
 import { TaskModal } from '@/components/kanban/TaskModal';
@@ -94,6 +98,12 @@ export const MyTasks: React.FC = () => {
   const [activeMainTab, setActiveMainTab] = useState<'mytasks' | 'updates'>('mytasks');
   const [activeDetailTab, setActiveDetailTab] = useState<'comments' | 'activity'>('comments');
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const closeTaskModal = useCallback(() => {
+    if (selectedTask?.taskId && selectedTask.isLocked && selectedTask.hasLockPin) {
+      clearTaskLockUnlockedInSession(selectedTask.taskId);
+    }
+    setTaskModalOpen(false);
+  }, [selectedTask]);
   const [showTagInput, setShowTagInput] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
@@ -1281,12 +1291,15 @@ export const MyTasks: React.FC = () => {
         {selectedTask && (
           <TaskModal
             open={taskModalOpen}
-            onClose={() => setTaskModalOpen(false)}
+            onClose={closeTaskModal}
             task={selectedTask}
             projectId={selectedTask.projectId}
             projectName={getProjectName(selectedTask.projectId)}
             project={getProject(selectedTask.projectId) ?? null}
-            onSave={async (input) => { await handleSaveTask(input as Record<string, unknown>); setTaskModalOpen(false); }}
+            onSave={async (input) => {
+              await handleSaveTask(input as Record<string, unknown>);
+              closeTaskModal();
+            }}
             onDelete={undefined}
           />
         )}

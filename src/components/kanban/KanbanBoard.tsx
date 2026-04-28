@@ -47,6 +47,7 @@ import type { PresencePeer } from '@/hooks/usePresence';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { openCommandPalette } from '@/components/layout/AppHeader';
+import { clearTaskLockUnlockedInSession } from '@/lib/taskLockPin';
 import {
   Dialog,
   DialogContent,
@@ -911,11 +912,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   );
 
   const handleCloseModal = useCallback(() => {
+    const t = selectedTask;
+    if (t?.taskId && t.isLocked && t.hasLockPin) {
+      clearTaskLockUnlockedInSession(t.taskId);
+    }
     setIsModalOpen(false);
     setSelectedTask(null);
     setNewTaskStatus('undefined');
     onAfterCloseTaskModal?.();
-  }, [onAfterCloseTaskModal]);
+  }, [selectedTask, onAfterCloseTaskModal]);
 
   // ── Bulk action helpers ────────────────────────────────────
   const ids = useMemo(() => Array.from(selectedIds), [selectedIds]);
