@@ -761,6 +761,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         className="sm:max-w-[1024px] max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 [&>button]:top-3.5"
         aria-describedby={undefined}
       >
+        <DialogTitle className="sr-only">
+          {mustUnlockToView
+            ? 'Task locked — enter PIN'
+            : isEditing
+              ? task?.title
+                ? `Edit task: ${task.title}`
+                : 'Edit task'
+              : 'Create new task'}
+        </DialogTitle>
         {mustUnlockToView ? (
           <div className="flex flex-col items-center justify-center px-6 py-12 sm:py-16 gap-5 text-center min-h-[min(420px,70vh)]">
             <KeyRound className="w-14 h-14 text-muted-foreground" aria-hidden />
@@ -818,9 +827,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </button>
 
             <div className="flex-1 min-w-0">
-              <DialogTitle className="sr-only">
-                {isEditing ? task?.title : 'Create new task'}
-              </DialogTitle>
               <p className="text-xs text-muted-foreground truncate">
                 {organization?.name || 'Workspace'} <span className="opacity-60">›</span>{' '}
                 {projectName || 'Project'}

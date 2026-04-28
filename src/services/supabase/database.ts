@@ -445,7 +445,19 @@ export const verifyTaskLockPin = async (
     p_pin: pinPlain,
   });
   if (error) {
-    logger.error("verify_task_lock_pin failed:", error);
+    const code = (error as { code?: string }).code;
+    const msg = (error as { message?: string }).message ?? "";
+    const rpcMissing =
+      code === "PGRST202" ||
+      (/could not find/i.test(msg) && /verify_task_lock_pin/i.test(msg));
+    if (rpcMissing) {
+      logger.warn(
+        "verify_task_lock_pin is not available on the database (migration 021 not applied or stale PostgREST schema). Run migrations, then SQL: NOTIFY pgrst, 'reload schema';",
+        error,
+      );
+    } else {
+      logger.error("verify_task_lock_pin failed:", error);
+    }
     return false;
   }
   return data === true;
