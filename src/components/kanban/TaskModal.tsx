@@ -68,27 +68,10 @@ import { NotifyModal } from './NotifyModal';
 import { DayPickerPopover } from './DayPickerPopover';
 import { AssigneePicker } from './AssigneePicker';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
-import { cn, truncateFileName } from '@/lib/utils';
+import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
 import AttachmentPreview from '../ui/AttachmentPreview';
-import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
-
-/** Relative time for comments/activity; avoids "Invalid Date" when createdAt is missing or bad. */
-function formatDistanceSafe(
-  createdAt: Date | string | number | null | undefined,
-  fallback = 'Unknown',
-): string {
-  if (createdAt == null) return fallback;
-  const d =
-    createdAt instanceof Date ? createdAt : new Date(createdAt);
-  if (Number.isNaN(d.getTime())) return fallback;
-  try {
-    return formatDistanceToNow(d, { addSuffix: true });
-  } catch {
-    return fallback;
-  }
-}
 
 interface Subtask {
   id: string;

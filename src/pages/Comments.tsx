@@ -29,7 +29,6 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useUserComments } from '@/hooks/useComments';
 import { useProjects } from '@/hooks/useProjects';
-import { formatDistanceToNow } from 'date-fns';
 import AttachmentPreview from '@/components/ui/AttachmentPreview';
 import { toast } from 'sonner';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -43,7 +42,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { cn } from '@/lib/utils';
+import { cn, formatDistanceSafe } from '@/lib/utils';
 
 type CommentTab = 'all' | 'mentions' | 'mine';
 
@@ -301,9 +300,7 @@ export const Comments: React.FC = () => {
                                   <div className="mt-2 flex items-center justify-between">
                                     <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                                       <Clock className="w-3 h-3" />
-                                      {formatDistanceToNow(new Date(comment.createdAt), {
-                                        addSuffix: true,
-                                      })}
+                                      {formatDistanceSafe(comment.createdAt)}
                                       {comment.isEdited && (
                                         <>
                                           <span className="text-muted-foreground/60">·</span>
@@ -374,9 +371,7 @@ export const Comments: React.FC = () => {
                   )}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Clock className="w-3 h-3" />
-                    {formatDistanceToNow(new Date(selectedComment.createdAt), {
-                      addSuffix: true,
-                    })}
+                    {formatDistanceSafe(selectedComment.createdAt)}
                     {selectedComment.isEdited && (
                       <>
                         <span className="text-muted-foreground/60">·</span>

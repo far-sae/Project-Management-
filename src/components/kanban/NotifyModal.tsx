@@ -86,22 +86,36 @@ export const NotifyModal: React.FC<NotifyModalProps> = ({
     }
     setLoading(true);
     try {
-      const promises = recipientIds.map((userId) =>
-        createNotification({
-          userId,
-          type: 'task_updated',
-          title: 'Task update',
-          body: `${actorDisplayName} wants to notify you about "${taskTitle}" in ${projectName}`,
-          taskId,
-          projectId,
-          actorUserId,
-          actorDisplayName,
-        })
+      const results = await Promise.all(
+        recipientIds.map((userId) =>
+          createNotification({
+            userId,
+            type: 'task_updated',
+            title: 'Task update',
+            body: `${actorDisplayName} wants to notify you about "${taskTitle}" in ${projectName}`,
+            taskId,
+            projectId,
+            actorUserId,
+            actorDisplayName,
+          }),
+        ),
       );
-      await Promise.all(promises);
-      toast.success(`Notification sent to ${recipientIds.length} ${recipientIds.length === 1 ? 'person' : 'people'}`);
-      onClose();
-      setSelectedIds(new Set());
+      const saved = results.filter((r) => r != null).length;
+      if (saved === 0) {
+        toast.error(
+          'Notifications could not be saved. Check that the notifications table exists and RLS allows inserts (Supabase migrations).',
+        );
+      } else if (saved < recipientIds.length) {
+        toast.warning(
+          `Only ${saved} of ${recipientIds.length} notifications were saved.`,
+        );
+        onClose();
+        setSelectedIds(new Set());
+      } else {
+        toast.success(`Notification sent to ${saved} ${saved === 1 ? 'person' : 'people'}`);
+        onClose();
+        setSelectedIds(new Set());
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send notifications');
     } finally {

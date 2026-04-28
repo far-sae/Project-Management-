@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { formatDistanceToNow } from "date-fns";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,6 +15,22 @@ export function formatDate(date: Date | string | number) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/** Relative time for comments/activity; avoids "Invalid Date" when value is missing or bad. */
+export function formatDistanceSafe(
+  createdAt: Date | string | number | null | undefined,
+  fallback = "Unknown",
+): string {
+  if (createdAt == null) return fallback;
+  const d =
+    createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return fallback;
+  try {
+    return formatDistanceToNow(d, { addSuffix: true });
+  } catch {
+    return fallback;
+  }
 }
 
 export function formatNumber(num: number) {

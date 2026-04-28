@@ -33,6 +33,62 @@ const userEmailCache = new Map<
 >();
 const USER_EMAIL_CACHE_MS = 60_000;
 
+/** Log once when task PIN RPC is unavailable — avoids console spam in production builds. */
+let warnedTaskPinRpcFallbackUsed = false;
+async function verifyTaskPinClientSideFallback(
+  taskId: string,
+  trimmedPin: string,
+): Promise<boolean | null> {
+  try {
+    const { data: row, error: rowError } = await supabase
+      .from("tasks")
+      .select("lock_pin_hash, is_locked")
+      .eq("task_id", taskId)
+      .maybeSingle();
+    if (rowError || !row) return null;
+    const storedHash = (row as { lock_pin_hash?: string | null }).lock_pin_hash;
+    const isLocked = (row as { is_locked?: boolean | null }).is_locked;
+    if (!storedHash || isLocked === false) return false;
+
+    const enc = new TextEncoder();
+    const buf = await crypto.subtle.digest(
+      "SHA-256",
+      enc.encode(`${trimmedPin}\n${taskId}`),
+    );
+    const computed = Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return computed === storedHash;
+  } catch {
+    return null;
+  }
+}
+
+let warnedNotificationsInsertDenied = false;
+
+/** RLS denies insert or JWT lacks INSERT — migrations/policies not applied on this project. */
+function isNotificationsInsertForbidden(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as Record<string, unknown>;
+  const code = String(e.code ?? "");
+  const statusRaw = e.status ?? e.statusCode;
+  const status =
+    typeof statusRaw === "number"
+      ? statusRaw
+      : typeof statusRaw === "string"
+      ? Number.parseInt(statusRaw, 10)
+      : NaN;
+  const msg = `${e.message ?? ""} ${e.details ?? ""} ${JSON.stringify(error)}`.toLowerCase();
+  return (
+    (Number.isFinite(status) && status === 403) ||
+    code === "42501" ||
+    code === "PGRST301" ||
+    /permission denied|new row violates row-level security|\brls\b|violates .* policy|jwt expired|not authorized/i.test(
+      msg,
+    )
+  );
+}
+
 async function getUserEmailForNotification(
   userId: string,
 ): Promise<{ email: string; displayName: string } | null> {
@@ -460,53 +516,25 @@ export const verifyTaskLockPin = async (
     return data === true;
   }
 
-  const err = error as {
-    code?: string;
-    message?: string;
-    details?: string;
-    hint?: string;
-  };
-  const blob = [err.code, err.message, err.details, err.hint].filter(Boolean).join(" ");
-  const rpcMissingOrStaleSchema =
-    err.code === "PGRST202" ||
-    /verify_task_lock_pin/i.test(blob) ||
-    /verify_task_lock_pin/i.test(JSON.stringify(error)) ||
-    (/schema cache/i.test(blob) &&
-      (/function/i.test(blob) || /rpc/i.test(JSON.stringify(error))));
-
-  if (!rpcMissingOrStaleSchema) {
-    logger.error("verify_task_lock_pin failed:", error);
-    return false;
-  }
-
-  logger.warn(
-    "verify_task_lock_pin RPC unavailable — falling back to client-side compare. To use the secure server-side check apply migration 021_verify_task_lock_pin.sql, then NOTIFY pgrst, 'reload schema'; in the SQL editor.",
-  );
-
-  try {
-    const { data: row, error: rowError } = await supabase
-      .from("tasks")
-      .select("lock_pin_hash, is_locked")
-      .eq("task_id", taskId)
-      .maybeSingle();
-    if (rowError || !row) return false;
-    const storedHash = (row as { lock_pin_hash?: string | null }).lock_pin_hash;
-    const isLocked = (row as { is_locked?: boolean | null }).is_locked;
-    if (!storedHash || isLocked === false) return false;
-
-    const enc = new TextEncoder();
-    const buf = await crypto.subtle.digest(
-      "SHA-256",
-      enc.encode(`${trimmedPin}\n${taskId}`),
+  /**
+   * Supabase/PostgREST often returns a minimal error for missing RPCs (HTTP 404) where
+   * `code`/`message` do not mention the function name. Wrong PIN is returned as
+   * `{ data: false, error: null }` when the RPC exists — so any `error` here is
+   * treated as “RPC did not answer decisively” and we verify locally when RLS allows
+   * reading `tasks.lock_pin_hash`.
+   */
+  if (!warnedTaskPinRpcFallbackUsed) {
+    warnedTaskPinRpcFallbackUsed = true;
+    logger.warn(
+      "verify_task_lock_pin RPC did not complete; verifying PIN locally. For server-side checks only, apply migration 021_verify_task_lock_pin.sql and run NOTIFY pgrst, 'reload schema'; in the SQL editor.",
     );
-    const computed = Array.from(new Uint8Array(buf))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    return computed === storedHash;
-  } catch (fallbackErr) {
-    logger.warn("verify_task_lock_pin fallback failed:", fallbackErr);
-    return false;
   }
+
+  const local = await verifyTaskPinClientSideFallback(taskId, trimmedPin);
+  if (local !== null) return local;
+
+  logger.warn("verify_task_lock_pin: could not verify PIN (RPC error and no local hash).", error);
+  return false;
 };
 
 export const getProject = async (
@@ -1437,6 +1465,16 @@ export const createNotification = async (
     .single();
 
   if (error) {
+    if (isNotificationsInsertForbidden(error)) {
+      if (!warnedNotificationsInsertDenied) {
+        warnedNotificationsInsertDenied = true;
+        logger.warn(
+          "Skipping notification inserts until RLS allows them (got 403/permission denied). Apply the notifications migrations and policies on Supabase.",
+          error,
+        );
+      }
+      return null;
+    }
     logger.error("Failed to create notification:", error);
     throw error;
   }

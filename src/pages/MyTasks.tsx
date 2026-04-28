@@ -55,6 +55,31 @@ function startOfDayFromYmd(ymd: string): Date | null {
   return dt;
 }
 
+/** Local midnight timestamp for the due calendar day (handles YYYY-MM-DD and Date values). */
+function getDueCalendarDayStartMs(task: {
+  dueDate?: Date | string | null;
+}): number | null {
+  if (task.dueDate == null) return null;
+  const raw = task.dueDate;
+  if (raw instanceof Date) {
+    const d = new Date(raw.getTime());
+    if (Number.isNaN(d.getTime())) return null;
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) {
+    const [y, m, d] = raw.trim().split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    if (Number.isNaN(dt.getTime())) return null;
+    dt.setHours(0, 0, 0, 0);
+    return dt.getTime();
+  }
+  const d = new Date(raw as string | number);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin } = useOrganization();
@@ -455,12 +480,27 @@ export const MyTasks: React.FC = () => {
     return allTasks.filter(t => t.parentTaskId === selectedTask.taskId);
   }, [selectedTask, allTasks]);
 
-  const dueTodayCount = taskGroups.find((g) => g.label === 'Today')?.tasks.length || 0;
-  const overdueCount = useMemo(() => {
-    const now = new Date();
+  const dueTodayCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayMs = today.getTime();
     return tasksAssignedToMe.filter((t) => {
-      if (!t.dueDate || t.status === 'done') return false;
-      return new Date(t.dueDate) < now;
+      if (t.status === 'done') return false;
+      const dueMs = getDueCalendarDayStartMs(t);
+      if (dueMs === null) return false;
+      return dueMs === todayMs;
+    }).length;
+  }, [tasksAssignedToMe]);
+
+  const overdueCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayMs = today.getTime();
+    return tasksAssignedToMe.filter((t) => {
+      if (t.status === 'done') return false;
+      const dueMs = getDueCalendarDayStartMs(t);
+      if (dueMs === null) return false;
+      return dueMs < todayMs;
     }).length;
   }, [tasksAssignedToMe]);
 
