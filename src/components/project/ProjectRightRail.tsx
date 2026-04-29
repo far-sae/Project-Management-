@@ -195,6 +195,9 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [reactionMenuForId, setReactionMenuForId] = useState<string | null>(null);
+  /** Goes true once we discover the reactions table doesn't exist on this deployment so we
+   *  can stop showing the smiley trigger and stop emitting fresh error toasts every click. */
+  const [reactionsUnavailable, setReactionsUnavailable] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   /** When true, new messages keep the viewport pinned to the bottom */
   const stickToBottomRef = useRef(true);
@@ -342,7 +345,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       setChatMessages(list);
       setChatLoading(false);
     });
-    const unsubReactions = subscribeToProjectChatReactions(project.projectId, setReactionRows);
+    const unsubReactions = subscribeToProjectChatReactions(
+      project.projectId,
+      setReactionRows,
+      () => setReactionsUnavailable(true),
+    );
     return () => {
       unsubChat();
       unsubReactions();
@@ -413,7 +420,34 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           emoji,
         });
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Could not update reaction');
+        const raw = e instanceof Error ? e.message : '';
+        const code = (e as { code?: string } | null)?.code ?? '';
+        const lower = `${raw} ${code}`.toLowerCase();
+        // Translate the common, actionable failure modes into messages the user can fix
+        // instead of a raw Postgres error.
+        if (
+          lower.includes('does not exist') ||
+          lower.includes('relation') ||
+          code === '42p01' ||
+          code === 'pgrst205' // PostgREST: table not found in schema cache
+        ) {
+          setReactionsUnavailable(true);
+          toast.error(
+            'Reactions aren’t enabled on this workspace yet. Apply migration 031_project_chat_message_reactions.sql in Supabase.',
+          );
+          return;
+        }
+        if (
+          lower.includes('row-level security') ||
+          lower.includes('permission denied') ||
+          code === '42501'
+        ) {
+          toast.error(
+            'You need to be a project member to react. Ask the project owner to add you, then try again.',
+          );
+          return;
+        }
+        toast.error(raw || 'Could not update reaction');
       }
     },
     [user],
@@ -797,9 +831,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               <PopoverTrigger asChild>
                                 <button
                                   type="button"
+                                  hidden={reactionsUnavailable}
                                   className={cn(
                                     'rounded-md p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/90',
                                     'opacity-70 group-hover/msg:opacity-100 focus:opacity-100 transition-opacity',
+                                    reactionsUnavailable && 'hidden',
                                   )}
                                   aria-label="Add reaction"
                                 >

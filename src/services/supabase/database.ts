@@ -2120,9 +2120,11 @@ const mapProjectChatReactionRow = (d: Record<string, unknown>): ProjectChatReact
   createdAt: new Date(d.created_at as string),
 });
 
-export const fetchProjectChatReactions = async (
+/** Returns the structured error along with rows so callers can disable the UI when the
+ *  reactions table doesn't exist on this deployment instead of silently rendering nothing. */
+export const fetchProjectChatReactionsWithStatus = async (
   projectId: string,
-): Promise<ProjectChatReaction[]> => {
+): Promise<{ rows: ProjectChatReaction[]; error: { code?: string; message: string } | null }> => {
   const { data, error } = await supabase
     .from("project_chat_message_reactions")
     .select("*")
@@ -2130,9 +2132,20 @@ export const fetchProjectChatReactions = async (
 
   if (error) {
     logger.warn("fetchProjectChatReactions:", error.message);
-    return [];
+    const code = (error as { code?: string }).code;
+    return { rows: [], error: { code, message: error.message } };
   }
-  return (data || []).map((row) => mapProjectChatReactionRow(row as Record<string, unknown>));
+  return {
+    rows: (data || []).map((row) => mapProjectChatReactionRow(row as Record<string, unknown>)),
+    error: null,
+  };
+};
+
+export const fetchProjectChatReactions = async (
+  projectId: string,
+): Promise<ProjectChatReaction[]> => {
+  const { rows } = await fetchProjectChatReactionsWithStatus(projectId);
+  return rows;
 };
 
 /** Toggle emoji reaction on a chat message (same emoji again removes). */
@@ -2185,9 +2198,22 @@ export const toggleProjectChatReaction = async (params: {
 export const subscribeToProjectChatReactions = (
   projectId: string,
   callback: (rows: ProjectChatReaction[]) => void,
+  onUnavailable?: (reason: { code?: string; message: string }) => void,
 ) => {
   const load = () => {
-    fetchProjectChatReactions(projectId).then(callback);
+    fetchProjectChatReactionsWithStatus(projectId).then(({ rows, error }) => {
+      if (error) {
+        const code = (error.code || "").toLowerCase();
+        const lower = error.message.toLowerCase();
+        const tableMissing =
+          code === "42p01" ||
+          code === "pgrst205" ||
+          lower.includes("does not exist") ||
+          lower.includes("relation");
+        if (tableMissing) onUnavailable?.(error);
+      }
+      callback(rows);
+    });
   };
 
   load();

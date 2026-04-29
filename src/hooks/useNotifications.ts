@@ -7,12 +7,18 @@ import {
 } from "@/services/supabase/database";
 import { supabase } from "@/services/supabase/config";
 import { onNotificationsRefresh } from "@/lib/notificationEvents";
+import { playNotificationChime } from "@/lib/notificationSound";
 
 export const useNotifications = (userId: string | null, limit = 30) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const fetchErrorToastShown = useRef(false);
   const [effectiveUserId, setEffectiveUserId] = useState<string | null>(userId);
+
+  /** Tracks notifications the bell has already shown so we only chime on truly new arrivals. */
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  /** Skip the chime on the very first sync (so opening the app doesn't blast a sound for old rows). */
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     setEffectiveUserId(userId);
@@ -60,10 +66,32 @@ export const useNotifications = (userId: string | null, limit = 30) => {
       }
 
       fetchErrorToastShown.current = false;
+      seenNotificationIdsRef.current = new Set();
+      initializedRef.current = false;
       setLoading(true);
       unsub = subscribeToUserNotifications(
         uid,
         (data) => {
+          // Detect freshly arrived notifications so we can chime on each new one.
+          const seen = seenNotificationIdsRef.current;
+          if (!initializedRef.current) {
+            // First sync: prime the seen set without chiming for already-existing rows.
+            for (const n of data) seen.add(n.notificationId);
+            initializedRef.current = true;
+          } else {
+            let hasNew = false;
+            for (const n of data) {
+              if (!seen.has(n.notificationId)) {
+                hasNew = true;
+                seen.add(n.notificationId);
+              }
+            }
+            // Only chime when there's at least one truly new row AND it's unread (otherwise
+            // we'd ding on bookkeeping refetches like marking-as-read elsewhere).
+            if (hasNew && data.some((n) => !n.read)) {
+              playNotificationChime();
+            }
+          }
           setNotifications(data);
           setLoading(false);
         },
@@ -99,6 +127,24 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     try {
       const { fetchUserNotifications } = await import("@/services/supabase/database");
       const data = await fetchUserNotifications(uid, limit);
+      // Mirror the chime logic from the realtime subscriber so the safety-net poller and
+      // any explicit refresh also play on truly new arrivals.
+      const seen = seenNotificationIdsRef.current;
+      if (!initializedRef.current) {
+        for (const n of data) seen.add(n.notificationId);
+        initializedRef.current = true;
+      } else {
+        let hasNew = false;
+        for (const n of data) {
+          if (!seen.has(n.notificationId)) {
+            hasNew = true;
+            seen.add(n.notificationId);
+          }
+        }
+        if (hasNew && data.some((n) => !n.read)) {
+          playNotificationChime();
+        }
+      }
       setNotifications(data);
     } catch (error) {
       console.error("Error fetching notifications:", error);
