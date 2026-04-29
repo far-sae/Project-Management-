@@ -42,6 +42,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { resolveTaskDisplayColumnId } from '@/lib/kanbanTaskColumn';
 import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import {
   isProjectLockUnlockedInSession,
@@ -127,7 +128,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (columns && columns.length > 0) {
       columns.forEach((c) => { counts[c.id] = 0; });
       tasks.forEach((t) => {
-        if (counts[t.status] !== undefined) counts[t.status]++;
+        const col = resolveTaskDisplayColumnId(t.status, columns);
+        if (counts[col] !== undefined) counts[col]++;
       });
     } else {
       const defaults = { undefined: 0, todo: 0, inprogress: 0, done: 0, needreview: 0 };

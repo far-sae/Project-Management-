@@ -33,7 +33,19 @@ import {
   clearTaskLockUnlockedInSession,
 } from '@/lib/taskLockPin';
 import { useAuth } from '@/context/AuthContext';
-import { Task, TaskComment, TaskSubtask, UpdateTaskInput } from '@/types';
+import {
+  Task,
+  TaskComment,
+  TaskSubtask,
+  UpdateTaskInput,
+  DEFAULT_COLUMNS,
+  KanbanColumn,
+} from '@/types';
+import {
+  isCompletedTaskStatus,
+  resolveDoneColumnId,
+  resolveReopenColumnId,
+} from '@/lib/kanbanTaskColumn';
 import { TaskModal } from '@/components/kanban/TaskModal';
 import {
   updateTask,
@@ -91,6 +103,13 @@ export const MyTasks: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const { projects } = useProjects();
+  const columnsByProjectId = useMemo(() => {
+    const m = new Map<string, KanbanColumn[]>();
+    for (const p of projects) {
+      m.set(p.projectId, p.columns?.length ? p.columns : DEFAULT_COLUMNS);
+    }
+    return m;
+  }, [projects]);
   const { tasksAssignedToMe, loading, tasks: allTasks, refresh } = useAllTasks();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -294,21 +313,25 @@ export const MyTasks: React.FC = () => {
     e.stopPropagation();
     if (!user) return;
     const taskOrgId = task.organizationId || orgId;
+    const cols = columnsByProjectId.get(task.projectId) ?? DEFAULT_COLUMNS;
+    const completed = isCompletedTaskStatus(task.status, cols);
+    const newStatus = completed
+      ? resolveReopenColumnId(cols)
+      : resolveDoneColumnId(cols);
     setUpdatingTaskId(task.taskId);
     try {
-      const newStatus = task.status === 'done' ? 'todo' : 'done';
       await updateTask(task.taskId, { status: newStatus }, taskOrgId);
       await refresh();
       if (selectedTask?.taskId === task.taskId) {
         setSelectedTask({ ...selectedTask, status: newStatus });
       }
-      toast.success(newStatus === 'done' ? 'Task completed!' : 'Task reopened');
+      toast.success(completed ? 'Task reopened' : 'Task completed!');
     } catch {
       toast.error('Failed to update task');
     } finally {
       setUpdatingTaskId(null);
     }
-  }, [user, orgId, refresh, selectedTask]);
+  }, [user, orgId, refresh, selectedTask, columnsByProjectId]);
 
   // Save task (tags, description, etc.)
   const handleSaveTask = useCallback(async (input: Record<string, unknown>) => {
@@ -454,14 +477,36 @@ export const MyTasks: React.FC = () => {
   // Subtask counts
   const getSubtaskCount = useCallback((task: Task) => {
     const subtasks = allTasks.filter(t => t.parentTaskId === task.taskId);
-    return { total: subtasks.length, completed: subtasks.filter(t => t.status === 'done').length };
-  }, [allTasks]);
+    return {
+      total: subtasks.length,
+      completed: subtasks.filter((t) =>
+        isCompletedTaskStatus(
+          t.status,
+          columnsByProjectId.get(t.projectId) ?? DEFAULT_COLUMNS,
+        ),
+      ).length,
+    };
+  }, [allTasks, columnsByProjectId]);
 
   // Filter and group tasks
   const taskGroups = useMemo(() => {
     let filteredTasks = tasksForList;
-    if (filterStatus === 'active') filteredTasks = tasksForList.filter(t => t.status !== 'done');
-    else if (filterStatus === 'completed') filteredTasks = tasksForList.filter(t => t.status === 'done');
+    if (filterStatus === 'active') {
+      filteredTasks = tasksForList.filter(
+        (t) =>
+          !isCompletedTaskStatus(
+            t.status,
+            columnsByProjectId.get(t.projectId) ?? DEFAULT_COLUMNS,
+          ),
+      );
+    } else if (filterStatus === 'completed') {
+      filteredTasks = tasksForList.filter((t) =>
+        isCompletedTaskStatus(
+          t.status,
+          columnsByProjectId.get(t.projectId) ?? DEFAULT_COLUMNS,
+        ),
+      );
+    }
 
     const groups: { label: string; tasks: Task[]; }[] = [];
 
@@ -513,7 +558,7 @@ export const MyTasks: React.FC = () => {
     }
 
     return groups;
-  }, [tasksForList, groupBy, filterStatus, getProjectName]);
+  }, [tasksForList, groupBy, filterStatus, getProjectName, columnsByProjectId]);
 
   const getDueDateLabel = (task: Task) => {
     if (!task.dueDate) return '';
@@ -536,24 +581,34 @@ export const MyTasks: React.FC = () => {
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
     return tasksAssignedToMe.filter((t) => {
-      if (t.status === 'done') return false;
+      const cols = columnsByProjectId.get(t.projectId) ?? DEFAULT_COLUMNS;
+      if (isCompletedTaskStatus(t.status, cols)) return false;
       const dueMs = getDueCalendarDayStartMs(t);
       if (dueMs === null) return false;
       return dueMs === todayMs;
     }).length;
-  }, [tasksAssignedToMe]);
+  }, [tasksAssignedToMe, columnsByProjectId]);
 
   const overdueCount = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
     return tasksAssignedToMe.filter((t) => {
-      if (t.status === 'done') return false;
+      const cols = columnsByProjectId.get(t.projectId) ?? DEFAULT_COLUMNS;
+      if (isCompletedTaskStatus(t.status, cols)) return false;
       const dueMs = getDueCalendarDayStartMs(t);
       if (dueMs === null) return false;
       return dueMs < todayMs;
     }).length;
-  }, [tasksAssignedToMe]);
+  }, [tasksAssignedToMe, columnsByProjectId]);
+
+  const selectedIsComplete = Boolean(
+    selectedTask &&
+      isCompletedTaskStatus(
+        selectedTask.status,
+        columnsByProjectId.get(selectedTask.projectId) ?? DEFAULT_COLUMNS,
+      ),
+  );
 
   return (
     <div className="flex h-screen bg-background">
@@ -756,7 +811,8 @@ export const MyTasks: React.FC = () => {
                       <div className="divide-y divide-border/40">
                       {group.tasks.map((task) => {
                         const isSelected = selectedTask?.taskId === task.taskId;
-                        const isDone = task.status === 'done';
+                        const cols = columnsByProjectId.get(task.projectId) ?? DEFAULT_COLUMNS;
+                        const isDone = isCompletedTaskStatus(task.status, cols);
                         const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isDone;
                         const { total: subtaskTotal, completed: subtaskCompleted } = getSubtaskCount(task);
                         const priorityDot =
@@ -915,7 +971,7 @@ export const MyTasks: React.FC = () => {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">{task.title}</p>
                             <p className="text-xs text-muted-foreground">
-                              {task.status === 'done' ? 'Completed' : 'Updated'} · {formatDistanceToNow(new Date(task.updatedAt), { addSuffix: true })}
+                              {isCompletedTaskStatus(task.status, columnsByProjectId.get(task.projectId) ?? DEFAULT_COLUMNS) ? 'Completed' : 'Updated'} · {formatDistanceToNow(new Date(task.updatedAt), { addSuffix: true })}
                             </p>
                             <p className="text-xs text-muted-foreground/80 mt-1">
                               {getWorkspaceName(task.projectId)} » {getProjectName(task.projectId)}
@@ -980,10 +1036,10 @@ export const MyTasks: React.FC = () => {
                     disabled={updatingTaskId === selectedTask.taskId}
                     className={cn(
                       'w-6 h-6 rounded border-2 flex items-center justify-center mt-0.5 shrink-0',
-                      selectedTask.status === 'done' ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-border hover:border-primary/60'
+                      selectedIsComplete ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-border hover:border-primary/60'
                     )}
                   >
-                    {updatingTaskId === selectedTask.taskId ? <Loader2 className="w-4 h-4 animate-spin" /> : selectedTask.status === 'done' && <Check className="w-4 h-4" />}
+                    {updatingTaskId === selectedTask.taskId ? <Loader2 className="w-4 h-4 animate-spin" /> : selectedIsComplete && <Check className="w-4 h-4" />}
                   </button>
                   <div className="flex-1 min-w-0">
                     <h2 className="text-xl font-semibold text-foreground">{selectedTask.title}</h2>

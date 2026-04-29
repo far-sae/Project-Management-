@@ -34,6 +34,7 @@ import {
   bulkReorderTasks,
 } from '@/services/supabase/database';
 import { logger } from '@/lib/logger';
+import { resolveTaskDisplayColumnId } from '@/lib/kanbanTaskColumn';
 import { SortableBoardColumn } from './SortableBoardColumn';
 import {
   boardColumnSortId,
@@ -394,8 +395,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const map = new Map<string, Task[]>();
     for (const col of columns) map.set(col.id, []);
     for (const t of filteredTasks) {
-      if (!map.has(t.status)) map.set(t.status, []);
-      map.get(t.status)!.push(t);
+      const bucket = resolveTaskDisplayColumnId(t.status, columns);
+      const list = map.get(bucket) ?? [];
+      list.push(t);
+      map.set(bucket, list);
     }
     const sorter = (a: Task, b: Task): number => {
       switch (sort) {
