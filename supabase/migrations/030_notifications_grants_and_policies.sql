@@ -6,7 +6,10 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on table public.notifications to authenticated;
 
 -- Default Supabase templates sometimes grant anon broad table access; notifications should be login-only.
+-- PostgREST still needs anon to hold SELECT on this table for ACL checks before JWT elevation.
+-- Revoke broad access, then grant only SELECT; row access for anon is denied by RLS (see 029 / anon_no_notifications).
 revoke all on table public.notifications from anon;
+grant select on table public.notifications to anon;
 
 -- Replace policies with authenticated-only rules and stable auth.uid() evaluation (Supabase RLS guidance).
 drop policy if exists "Users can read own notifications" on public.notifications;
