@@ -34,6 +34,7 @@ const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').t
 const AboutPage = React.lazy(() => import('@/pages/legal/AboutPage'));
 const ContractsInfoPage = React.lazy(() => import('@/pages/legal/ContractsInfoPage'));
 const PrivacyPolicyPage = React.lazy(() => import('@/pages/legal/PrivacyPolicyPage'));
+const CookiePolicyPage = React.lazy(() => import('@/pages/legal/CookiePolicyPage'));
 const TermsPage = React.lazy(() => import('@/pages/legal/TermsPage'));
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -91,6 +92,7 @@ export default function App() {
           { path: '/about', element: lazyRoute(<AboutPage />) },
           { path: '/contracts-info', element: lazyRoute(<ContractsInfoPage />) },
           { path: '/privacy', element: lazyRoute(<PrivacyPolicyPage />) },
+          { path: '/cookies', element: lazyRoute(<CookiePolicyPage />) },
           { path: '/terms', element: lazyRoute(<TermsPage />) },
           { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
           { path: '/', element: <LandingPage /> },

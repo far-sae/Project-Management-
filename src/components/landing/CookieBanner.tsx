@@ -5,6 +5,7 @@ import {
   TASKCALENDAR_ANALYTICS_REJECT_EVENT,
   TASKCALENDAR_COOKIE_CONSENT_STORAGE_KEY,
 } from "@/lib/cookieConsent";
+import { LEGAL_PRODUCT_NAME } from "@/lib/legalBrand";
 
 const STORAGE_KEY = TASKCALENDAR_COOKIE_CONSENT_STORAGE_KEY;
 
@@ -47,16 +48,21 @@ const CookieBanner: React.FC = () => {
     <div className="fixed inset-x-0 bottom-0 z-[60] px-4 pb-4 sm:px-6 sm:pb-6">
       <div className="max-w-4xl mx-auto rounded-2xl border border-border bg-background/95 backdrop-blur shadow-lg p-4 sm:p-5 flex flex-col sm:flex-row gap-3 sm:items-center">
         <div className="flex-1 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground mb-1">We use cookies</p>
+          <p className="font-medium text-foreground mb-1">Cookies and similar technologies</p>
           <p>
-            TaskCalendar uses essential cookies to keep you signed in and to improve the product.
-            For details, see our{" "}
+            {LEGAL_PRODUCT_NAME} uses essential cookies and similar storage to keep you signed in and
+            to remember your choices. If you accept, we also use analytics to improve the product. See
+            our{' '}
+            <a href="/cookies" className="underline text-primary">
+              Cookie Policy
+            </a>
+            ,{' '}
             <a href="/privacy" className="underline text-primary">
               Privacy Policy
-            </a>{" "}
-            and{" "}
+            </a>
+            , and{' '}
             <a href="/terms" className="underline text-primary">
-              Terms &amp; Conditions
+              Terms of Service
             </a>
             .
           </p>

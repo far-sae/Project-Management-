@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { TaskCalendarLogo } from "@/components/brand/TaskCalendarLogo";
-
-const BRAND_CONTACT_EMAIL = "info@securovix.com";
+import { LEGAL_CONTACT_EMAIL } from "@/lib/legalBrand";
 
 const Footer = () => {
   return (
@@ -36,7 +35,7 @@ const Footer = () => {
               </li>
               <li>
                 <a
-                  href={`mailto:${BRAND_CONTACT_EMAIL}`}
+                  href={`mailto:${LEGAL_CONTACT_EMAIL}`}
                   className="hover:text-foreground transition-colors"
                 >
                   Contact
@@ -59,8 +58,13 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
+                <Link to="/cookies" className="hover:text-foreground transition-colors">
+                  Cookie Policy
+                </Link>
+              </li>
+              <li>
                 <Link to="/terms" className="hover:text-foreground transition-colors">
-                  Terms &amp; Conditions
+                  Terms of Service
                 </Link>
               </li>
             </ul>

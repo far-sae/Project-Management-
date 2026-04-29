@@ -920,11 +920,8 @@ export const Settings: React.FC = () => {
 export default Settings;
 
 /**
- * Surfaces *why* notifications or email aren't arriving so the user has a clear, actionable
- * answer instead of silent failures. Three checks:
- *   1. EmailJS notification template configured?
- *   2. Notifications RLS allows insert? (probed by sending a real notification to self.)
- *   3. Recipient profile row reachable? (read your own user_profiles row.)
+ * Surfaces *why* notifications or email aren't arriving. Checks EmailJS setup (without exposing
+ * env var names in the UI) and lets the user send a self-test for the in-app bell.
  */
 const DeliveryDiagnostics: React.FC<{
   userId: string | undefined;
@@ -1002,20 +999,20 @@ const DeliveryDiagnostics: React.FC<{
       </p>
       <div className="rounded-xl border border-border/70 divide-y divide-border/60 overflow-hidden bg-card text-sm">
         <DiagRow
-          label="EmailJS service & public key"
+          label="Email delivery (EmailJS)"
           ok={inviteEmailConfigured}
           okText="Configured"
-          missingText="Missing — set VITE_EMAILJS_SERVICE_ID and VITE_EMAILJS_PUBLIC_KEY in your .env"
+          missingText="Not configured — whoever runs this app must add EmailJS in the server or build environment."
         />
         <DiagRow
           label="EmailJS notification template"
           ok={emailConfigured}
-          okText="Configured — assignment, due-soon, overdue, and comment emails will fire"
-          missingText="Missing — set VITE_EMAILJS_NOTIFICATION_TEMPLATE_ID. Without it, no notification emails are sent."
+          okText="Configured — assignment, due-soon, overdue, and comment emails can be sent"
+          missingText="Missing — notification emails won’t send until the template is configured in the environment."
         />
         <div className="flex items-start justify-between gap-3 px-4 py-3">
           <div className="min-w-0 pr-4">
-            <p className="font-medium">In-app bell (RLS probe)</p>
+            <p className="font-medium">In-app notification test</p>
             <p className="text-xs text-muted-foreground">
               {bellState === 'idle' &&
                 'Send a test notification to yourself to check the database insert is allowed.'}
