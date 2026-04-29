@@ -46,7 +46,6 @@ import { BulkActionBar } from './BulkActionBar';
 import type { PresencePeer } from '@/hooks/usePresence';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { openCommandPalette } from '@/components/layout/AppHeader';
 import { clearTaskLockUnlockedInSession } from '@/lib/taskLockPin';
 import {
   Dialog,
@@ -712,8 +711,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         });
         if (!newTask) {
           toast.error('Could not create task. Please try again.');
-        } else {
-          queueMicrotask(() => openCommandPalette());
         }
       } catch (err) {
         toast.error(
@@ -809,7 +806,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         if (!newTask) {
           throw new Error('Failed to create task. Please try again.');
         }
-        queueMicrotask(() => openCommandPalette());
 
         if (user) {
           const assignees = parentPayload.assignees ?? [];
