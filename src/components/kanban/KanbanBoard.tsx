@@ -770,6 +770,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             newAssignees: Array.isArray(newAssignees) ? newAssignees : [],
             previousStatus: selectedTask.status,
             newStatus: updatePayload.status ?? selectedTask.status,
+            previousUrgent: !!selectedTask.urgent,
+            newUrgent: typeof updatePayload.urgent === 'boolean'
+              ? updatePayload.urgent
+              : !!selectedTask.urgent,
             actorUserId: user.userId,
             actorDisplayName: user.displayName || 'User',
             getAssigneeEmail,
@@ -821,6 +825,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   newAssignees: assignees,
                   previousStatus: undefined,
                   newStatus: parentPayload.status,
+                  previousUrgent: false,
+                  newUrgent: !!parentPayload.urgent,
                   actorUserId: user.userId,
                   actorDisplayName: user.displayName || 'User',
                   getAssigneeEmail,

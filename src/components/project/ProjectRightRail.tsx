@@ -170,24 +170,23 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     );
   }, [dedupedMembers, presenceByUserId]);
 
-  const mentionMembers = useMemo(
-    () =>
-      (organization?.members?.length
-        ? organization.members
-        : dedupedMembers.map((m) => ({
-            userId: m.userId,
-            displayName: m.displayName,
-            email: m.email || '',
-            photoURL: m.photoURL,
-          }))
-      ).map((m) => ({
+  /** @-mentions: project team only (not whole org — avoids stale or unrelated users). */
+  const mentionMembers = useMemo(() => {
+    const orgById = new Map(
+      (organization?.members ?? [])
+        .filter((m) => m.userId)
+        .map((m) => [m.userId as string, m] as const),
+    );
+    return dedupedMembers.map((m) => {
+      const org = m.userId ? orgById.get(m.userId) : undefined;
+      return {
         userId: m.userId,
-        displayName: m.displayName,
-        email: m.email || '',
-        photoURL: (m as { photoURL?: string }).photoURL,
-      })),
-    [organization?.members, dedupedMembers],
-  );
+        displayName: m.displayName || org?.displayName || '',
+        email: m.email || org?.email || '',
+        photoURL: m.photoURL ?? (org as { photoURL?: string } | undefined)?.photoURL,
+      };
+    });
+  }, [dedupedMembers, organization?.members]);
 
   const [chatMessages, setChatMessages] = useState<ProjectChatMessage[]>([]);
   const [reactionRows, setReactionRows] = useState<ProjectChatReaction[]>([]);

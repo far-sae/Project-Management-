@@ -1708,6 +1708,10 @@ export const createNotificationsForTaskUpdate = async (params: {
   newAssignees: { userId: string; displayName?: string }[];
   previousStatus?: string;
   newStatus?: string;
+  /** Was the task urgent before this edit? (Optional — default false.) */
+  previousUrgent?: boolean;
+  /** Is the task urgent after this edit? (Optional — default false.) */
+  newUrgent?: boolean;
   actorUserId: string;
   actorDisplayName: string;
   /** When set (e.g. org members), sends optional EmailJS assignee email if env is configured. */
@@ -1727,6 +1731,8 @@ export const createNotificationsForTaskUpdate = async (params: {
     newAssignees,
     previousStatus,
     newStatus,
+    previousUrgent = false,
+    newUrgent = false,
     actorUserId,
     actorDisplayName,
     includeActor = false,
@@ -1734,6 +1740,8 @@ export const createNotificationsForTaskUpdate = async (params: {
 
   const previousIds = new Set(previousAssignees.map((a) => a.userId));
   const newIds = new Set(newAssignees.map((a) => a.userId));
+  /** True the moment a task transitions from non-urgent → urgent (a "🚨" event). */
+  const urgentFlipped = newUrgent === true && previousUrgent !== true;
 
   try {
     // New assignees: task_assigned
@@ -1778,12 +1786,39 @@ export const createNotificationsForTaskUpdate = async (params: {
       }
     }
 
+    // Urgent flip: a dedicated, high-visibility alert whenever a task is escalated to urgent.
+    // Notifies every current assignee (including the actor when includeActor is set, e.g.
+    // creation flow) and travels through the same email pipeline as task_updated, so the
+    // user feels the difference instead of silently flipping a flag in the DB.
+    if (urgentFlipped) {
+      for (const a of newAssignees) {
+        if (a.userId !== actorUserId || includeActor) {
+          await createNotification({
+            userId: a.userId,
+            type: "task_updated",
+            title: "🚨 Task marked urgent",
+            body:
+              a.userId === actorUserId
+                ? `You marked "${taskTitle}" as urgent in ${projectName}`
+                : `${actorDisplayName} marked "${taskTitle}" as urgent in ${projectName}`,
+            taskId,
+            projectId,
+            actorUserId,
+            actorDisplayName,
+          }).catch((e) => logger.warn("createNotification urgent flip:", e));
+        }
+      }
+    }
+
     // Any other update: task_updated (notify assignees who didn't trigger it)
     const hadChange =
       newStatus !== previousStatus ||
+      urgentFlipped ||
       [...newIds].some((id) => !previousIds.has(id)) ||
       [...previousIds].some((id) => !newIds.has(id));
-    if (hadChange && newStatus !== "done") {
+    // Skip the generic "Task updated" when an urgent flip already fired — otherwise the same
+    // assignee gets two notifications back-to-back ("urgent" + "updated") for one click.
+    if (hadChange && newStatus !== "done" && !urgentFlipped) {
       for (const a of newAssignees) {
         if (a.userId !== actorUserId && previousIds.has(a.userId)) {
           await createNotification({
