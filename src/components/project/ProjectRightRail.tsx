@@ -188,6 +188,28 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     });
   }, [dedupedMembers, organization?.members]);
 
+  /** Map userId → label from project team (+ org enrichment). Overrides stale/wrong chat.display_name (e.g. org name from auth profile, or "Owner"). */
+  const teamDisplayNameByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of mentionMembers) {
+      const n = m.displayName?.trim();
+      if (m.userId && n) map.set(m.userId, n);
+    }
+    return map;
+  }, [mentionMembers]);
+
+  const displayNameForChatUser = useCallback(
+    (uid: string, stored: string) => {
+      const fromTeam = teamDisplayNameByUserId.get(uid);
+      if (fromTeam) return fromTeam;
+      const s = (stored || '').trim();
+      if (!s) return 'Member';
+      if (s.toLowerCase() === 'owner') return 'Member';
+      return s;
+    },
+    [teamDisplayNameByUserId],
+  );
+
   const [chatMessages, setChatMessages] = useState<ProjectChatMessage[]>([]);
   const [reactionRows, setReactionRows] = useState<ProjectChatReaction[]>([]);
   const [chatLoading, setChatLoading] = useState(true);
@@ -236,12 +258,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       seen.add(m.userId);
       result.push({
         userId: m.userId,
-        displayName: m.displayName || 'User',
+        displayName: displayNameForChatUser(m.userId, m.displayName),
         photoURL: m.photoURL,
       });
     }
     return result;
-  }, [chatMessages, user]);
+  }, [chatMessages, user, displayNameForChatUser]);
 
   const chatRows = useMemo(
     () =>
@@ -458,11 +480,15 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     stickToBottomRef.current = true;
     setChatSending(true);
     try {
+      const senderLabel = displayNameForChatUser(
+        user.userId,
+        user.displayName || user.email || 'User',
+      );
       await insertProjectChatMessage({
         projectId: project.projectId,
         organizationId: project.organizationId,
         userId: user.userId,
-        displayName: user.displayName || user.email || 'User',
+        displayName: senderLabel,
         photoURL: user.photoURL || undefined,
         body,
         taskId: null,
@@ -471,7 +497,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         text: body,
         members: mentionMembers,
         actorUserId: user.userId,
-        actorDisplayName: user.displayName || user.email || 'User',
+        actorDisplayName: senderLabel,
         projectId: project.projectId,
         projectName: project.name,
       });
@@ -485,7 +511,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         projectId: project.projectId,
         projectName: project.name,
         actorUserId: user.userId,
-        actorDisplayName: user.displayName || user.email || 'User',
+        actorDisplayName: senderLabel,
         body,
         memberUserIds: memberIds,
         skipUserIds: [user.userId, ...mentionedIds],
@@ -505,6 +531,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     project.name,
     mentionMembers,
     dedupedMembers,
+    displayNameForChatUser,
   ]);
 
   const membersSection = (
@@ -662,16 +689,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 <span className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-primary animate-pulse" />
               )}
             </div>
-            {lastMessagePreview ? (
-              <p className="truncate text-[11.5px] text-muted-foreground mt-0.5">
-                {lastMessagePreview.slice(0, 80)}
-                {lastMessagePreview.length > 80 ? '…' : ''}
-              </p>
-            ) : (
-              <p className="truncate text-[11.5px] text-muted-foreground mt-0.5">
-                {dedupedMembers.length} members · Start the conversation
-              </p>
-            )}
+            <p className="truncate text-[11.5px] text-muted-foreground mt-0.5">
+              {dedupedMembers.length} members
+              {chatMessages.length > 0 ? ' · Open chat' : ' · Start the conversation'}
+            </p>
           </div>
           {recentSenders.length > 0 ? (
             <div className="flex -space-x-1.5 shrink-0 mr-1">
@@ -784,6 +805,9 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               <div className="space-y-4">
                 {chatRows.map(({ msg, createdAt, showDay }) => {
                   const mine = msg.userId === user?.userId;
+                  const authorLabel = mine
+                    ? 'You'
+                    : displayNameForChatUser(msg.userId, msg.displayName);
                   const reactionsForMsg = reactionsByMessageId[msg.messageId];
                   return (
                     <div key={msg.messageId}>
@@ -797,9 +821,9 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                       <div className={cn('flex gap-2 group/msg', mine && 'justify-end')}>
                         {!mine && (
                           <Avatar className="w-7 h-7 shrink-0 mt-5">
-                            <AvatarImage src={msg.photoURL} alt={msg.displayName} />
+                            <AvatarImage src={msg.photoURL} alt={authorLabel} />
                             <AvatarFallback className="text-[11px] bg-primary-soft text-primary-soft-foreground">
-                              {(msg.displayName || '?').charAt(0).toUpperCase()}
+                              {(authorLabel || '?').charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                         )}
@@ -810,9 +834,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               mine && 'justify-end',
                             )}
                           >
-                            <span className="font-medium text-foreground">
-                              {mine ? 'You' : msg.displayName}
-                            </span>
+                            <span className="font-medium text-foreground">{authorLabel}</span>
                             {!mine && (
                               <PresenceStatusInline
                                 peer={presenceByUserId?.get(msg.userId)}
