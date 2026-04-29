@@ -131,6 +131,24 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     };
   }, [fetchNotifications]);
 
+  /**
+   * Safety-net poller. Postgres realtime delivers a new-notification event the instant a row
+   * is inserted — but only when the `notifications` table is part of the `supabase_realtime`
+   * publication. Many deployments forget that step (or have it disabled), and the bell then
+   * looks "broken" because cross-user notifications only arrive when the tab regains focus.
+   * Polling every 25s (only while the tab is visible) guarantees the bell stays close to
+   * real-time without hammering the DB.
+   */
+  useEffect(() => {
+    if (!effectiveUserId) return;
+    const POLL_MS = 25_000;
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void fetchNotifications({ silent: true });
+    }, POLL_MS);
+    return () => window.clearInterval(id);
+  }, [effectiveUserId, fetchNotifications]);
+
   const markAsRead = async (notificationId: string) => {
     const uid = effectiveUserId;
     if (!uid) return;

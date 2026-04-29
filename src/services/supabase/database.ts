@@ -2340,24 +2340,46 @@ export const subscribeToUserNotifications = (
 
   fetchNotifications();
 
-  const channel = supabase
-    .channel(
-      `notifications-${userId}-${Math.random().toString(36).slice(2, 9)}`,
-    )
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "notifications",
-        filter: `user_id=eq.${userId}`,
-      },
-      fetchNotifications,
-    )
-    .subscribe();
+  // Re-subscribable realtime channel: if Supabase realtime ends or errors (e.g. WebSocket
+  // dropped while the laptop was asleep), tear down and re-open instead of going silent.
+  let cancelled = false;
+  let channel: ReturnType<typeof supabase.channel> | null = null;
+
+  const open = () => {
+    if (cancelled) return;
+    channel = supabase
+      .channel(
+        `notifications-${userId}-${Math.random().toString(36).slice(2, 9)}`,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        fetchNotifications,
+      )
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          if (cancelled) return;
+          logger.warn("notifications realtime channel ended:", status, err);
+          // Drop the dead channel and reopen after a short backoff. Also pull the latest rows
+          // immediately so the user isn't stuck on stale data while the channel reconnects.
+          try { channel?.unsubscribe(); } catch { /* noop */ }
+          channel = null;
+          fetchNotifications();
+          window.setTimeout(open, 1500);
+        }
+      });
+  };
+
+  open();
 
   return () => {
-    channel.unsubscribe();
+    cancelled = true;
+    try { channel?.unsubscribe(); } catch { /* noop */ }
   };
 };
 

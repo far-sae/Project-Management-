@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  TASKCALENDAR_ANALYTICS_CONSENT_EVENT,
+  TASKCALENDAR_ANALYTICS_REJECT_EVENT,
+  TASKCALENDAR_COOKIE_CONSENT_STORAGE_KEY,
+} from "@/lib/cookieConsent";
 
-const STORAGE_KEY = "taskcalendar_cookie_consent";
+const STORAGE_KEY = TASKCALENDAR_COOKIE_CONSENT_STORAGE_KEY;
 
 const CookieBanner: React.FC = () => {
   const [visible, setVisible] = useState(false);
@@ -24,6 +29,7 @@ const CookieBanner: React.FC = () => {
     } catch {
       // ignore
     }
+    window.dispatchEvent(new Event(TASKCALENDAR_ANALYTICS_CONSENT_EVENT));
     setVisible(false);
   };
 
@@ -33,6 +39,7 @@ const CookieBanner: React.FC = () => {
     } catch {
       // ignore
     }
+    window.dispatchEvent(new Event(TASKCALENDAR_ANALYTICS_REJECT_EVENT));
     setVisible(false);
   };
 

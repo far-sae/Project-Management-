@@ -8,6 +8,87 @@
     <meta name="description" content="TaskCalendar - Plan tasks, track progress, and get things done with your team." />
     <meta name="keywords" content="task management, calendar, project management, team collaboration" />
     <title>TaskCalendar</title>
+    <!-- GA4: load gtag only after cookie consent (taskcalendar_cookie_consent === accepted). Keep key in sync with src/lib/cookieConsent.ts -->
+    <script>
+      (function () {
+        var MEASUREMENT_ID = 'G-H7RFZZCK4W';
+        var CONSENT_KEY = 'taskcalendar_cookie_consent';
+        var CONSENT_EVENT = 'taskcalendar:analytics-consent';
+        var REJECT_EVENT = 'taskcalendar:analytics-reject';
+
+        window.dataLayer = window.dataLayer || [];
+        var loaded = false;
+        var loading = false;
+        if (!window.__gaPending) window.__gaPending = [];
+
+        function consentAccepted() {
+          try {
+            return window.localStorage.getItem(CONSENT_KEY) === 'accepted';
+          } catch (e) {
+            return false;
+          }
+        }
+
+        function runRealGtag() {
+          function gtag() {
+            window.dataLayer.push(arguments);
+          }
+          window.gtag = gtag;
+          gtag('js', new Date());
+          gtag('config', MEASUREMENT_ID);
+          var pending = window.__gaPending || [];
+          window.__gaPending = [];
+          for (var i = 0; i < pending.length; i++) {
+            gtag.apply(null, pending[i]);
+          }
+        }
+
+        function inject() {
+          if (loaded || loading) return;
+          loading = true;
+          var s = document.createElement('script');
+          s.async = true;
+          s.src =
+            'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(MEASUREMENT_ID);
+          s.onload = function () {
+            loaded = true;
+            loading = false;
+            runRealGtag();
+          };
+          s.onerror = function () {
+            loading = false;
+          };
+          document.head.appendChild(s);
+        }
+
+        window.gtag = function gtagStub() {
+          var args = Array.prototype.slice.call(arguments);
+          if (!consentAccepted()) {
+            window.__gaPending.push(args);
+            return;
+          }
+          if (!loaded) {
+            if (!loading) inject();
+            window.__gaPending.push(args);
+            return;
+          }
+          window.dataLayer.push(arguments);
+        };
+
+        if (consentAccepted()) {
+          inject();
+        }
+
+        window.addEventListener(CONSENT_EVENT, function () {
+          if (!consentAccepted()) return;
+          if (!loaded && !loading) inject();
+        });
+
+        window.addEventListener(REJECT_EVENT, function () {
+          window.__gaPending = [];
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

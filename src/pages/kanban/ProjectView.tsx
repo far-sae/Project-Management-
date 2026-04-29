@@ -202,7 +202,15 @@ export const ProjectView: React.FC = () => {
   }, [setSearchParams]);
 
   const [project, setProject] = useState<Project | null>(null);
+  /**
+   * Only shown on the very first load (or when the project id changes). Subsequent re-fetches
+   * — e.g. when the tab regains focus and the organization context refreshes — must NOT flip
+   * this back to true, otherwise the entire `<KanbanBoard>` (and any open task modal) unmounts
+   * and the user loses their place mid-edit.
+   */
   const [loading, setLoading] = useState(true);
+  /** True until the project has been successfully fetched once for this projectId. */
+  const initialFetchDoneRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus | 'all'>('all');
@@ -457,6 +465,13 @@ export const ProjectView: React.FC = () => {
     toast.success(`Applied "${view.name}"`);
   }, []);
 
+  // Reset the "first load" guard when the projectId changes — moving between projects should
+  // show the full-page loader for the new project.
+  useEffect(() => {
+    initialFetchDoneRef.current = false;
+    setLoading(true);
+  }, [projectId]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -466,8 +481,12 @@ export const ProjectView: React.FC = () => {
         return;
       }
 
+      const isInitial = !initialFetchDoneRef.current;
       try {
-        setLoading(true);
+        // Only the very first fetch toggles the page-level loader. Subsequent fetches (tab
+        // regains focus, user/org context refreshes) refetch silently so the open task modal
+        // and current view state survive.
+        if (isInitial) setLoading(true);
 
         const effectiveOrgId = (user.organizationId || user.userId || '').replace('local-', '');
         let projectData: Project | null = null;
@@ -501,17 +520,27 @@ export const ProjectView: React.FC = () => {
 
           setProject(projectData);
           setError(null);
-        } else {
-          setError('Project is still being shared. Please wait a moment and retry.');
+          initialFetchDoneRef.current = true;
+        } else if (isInitial) {
+          const message =
+            'This project could not be loaded yet. Redirecting to your dashboard…';
+          setError(message);
+          toast.error(message);
+          setTimeout(() => navigate('/dashboard'), 2000);
         }
       } catch (err) {
         if (cancelled) return;
+        if (!isInitial) {
+          // Silent background refetch failed — keep the existing project rendered and just log.
+          console.warn('ProjectView: silent refetch failed:', err);
+          return;
+        }
         const message = err instanceof Error ? err.message : 'Failed to load project';
         setError(message);
         toast.error(message);
         setTimeout(() => navigate('/dashboard'), 2000);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && isInitial) setLoading(false);
       }
     };
 
