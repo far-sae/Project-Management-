@@ -128,7 +128,10 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
 
   return (
     <div
-      className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-start pointer-events-none sm:inset-x-auto sm:left-5"
+      // Sit immediately to the LEFT of the project chat dock (which lives at sm:right-5 with
+      // width ≈ 23rem). On phones the rail collapses to a single full-width column so we just
+      // dock at the bottom edge.
+      className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-[26rem]"
       role="complementary"
       aria-label={`Direct message with ${recipient.displayName}`}
     >

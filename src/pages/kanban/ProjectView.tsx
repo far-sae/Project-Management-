@@ -333,6 +333,9 @@ export const ProjectView: React.FC = () => {
     [peers, user?.userId],
   );
 
+  /** Chat dock only on the main Kanban board — not list/timeline/mind map or due-day deep links. */
+  const showProjectChatRail = viewMode === 'kanban' && !dueDayParam;
+
   // If user switches sidebar workspace to one that does not contain this project,
   // the board would look "unchanged" while the filter updates — redirect to dashboard.
   useEffect(() => {
@@ -1036,12 +1039,14 @@ export const ProjectView: React.FC = () => {
           </div>
         </div>
 
+        {showProjectChatRail ? (
         <ProjectRightRail
           project={project}
           open={rightRailOpen}
           onOpenChange={setRightRailOpen}
           presenceByUserId={presenceByUserId}
         />
+        ) : null}
       </main>
 
       <LimitReachedModal
