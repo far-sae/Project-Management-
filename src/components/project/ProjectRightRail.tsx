@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DirectMessageDock, type DirectMessageRecipient } from '@/components/messaging/DirectMessageDock';
 import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 import { useActivity } from '@/hooks/useActivity';
@@ -115,6 +116,12 @@ const messageDayLabel = (date: Date) => {
   return format(date, 'MMM d, yyyy');
 };
 
+/** Invite / legacy project JSON sometimes stores role words or "Member" instead of a person's name. */
+const GENERIC_MEMBER_DISPLAY = new Set(['', 'owner', 'member', 'user', 'unknown']);
+function isGenericMemberDisplayName(name: string): boolean {
+  return GENERIC_MEMBER_DISPLAY.has(name.trim().toLowerCase());
+}
+
 export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   project,
   open,
@@ -157,21 +164,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     return Array.from(map.values());
   }, [project.members]);
 
-  /** Members currently in realtime presence for this project (excludes explicit offline). */
-  const chatOnlinePeers = useMemo(() => {
-    if (!presenceByUserId?.size) return [];
-    const list: PresencePeer[] = [];
-    for (const m of dedupedMembers) {
-      if (!m.userId) continue;
-      const p = presenceByUserId.get(m.userId);
-      if (!p || p.availability === 'offline') continue;
-      list.push(p);
-    }
-    return list.sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }),
-    );
-  }, [dedupedMembers, presenceByUserId]);
-
   /** @-mentions: project team only (not whole org — avoids stale or unrelated users). */
   const mentionMembers = useMemo(() => {
     const orgById = new Map(
@@ -183,13 +175,23 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       const org = m.userId ? orgById.get(m.userId) : undefined;
       const email = m.email || org?.email || '';
       const emailLocal = email.split('@')[0] || '';
-      // Prefer the user's real name; fall back through org name → email handle. Treat the
-      // synthetic "Owner" label saved on legacy projects as no-name (don't surface it as a username).
+      const peer = m.userId ? presenceByUserId?.get(m.userId) : undefined;
+      const selfForRow =
+        m.userId && user?.userId === m.userId
+          ? (user.displayName?.trim() || user.email?.split('@')[0] || '')
+          : '';
       const stored = (m.displayName || '').trim();
-      const isPlaceholder = !stored || stored.toLowerCase() === 'owner';
-      const displayName = isPlaceholder
-        ? (org?.displayName || emailLocal || 'Member')
-        : stored;
+
+      const candidates = [
+        !isGenericMemberDisplayName(stored) ? stored : '',
+        (org?.displayName || '').trim(),
+        (peer?.displayName || '').trim(),
+        selfForRow,
+        emailLocal,
+      ];
+      const displayName =
+        candidates.find((c) => c && !isGenericMemberDisplayName(c)) || emailLocal || 'Member';
+
       return {
         userId: m.userId,
         displayName,
@@ -197,14 +199,21 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         photoURL: m.photoURL ?? (org as { photoURL?: string } | undefined)?.photoURL,
       };
     });
-  }, [dedupedMembers, organization?.members]);
+  }, [
+    dedupedMembers,
+    organization?.members,
+    presenceByUserId,
+    user?.userId,
+    user?.displayName,
+    user?.email,
+  ]);
 
-  /** Map userId → label from project team (+ org enrichment). Overrides stale/wrong chat.display_name (e.g. org name from auth profile, or "Owner"). */
+  /** Map userId → label from project team (+ org / presence / self enrichment). Skip generic placeholders so chat resolution can fall through to presence/email. */
   const teamDisplayNameByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of mentionMembers) {
       const n = m.displayName?.trim();
-      if (m.userId && n && n.toLowerCase() !== 'owner') map.set(m.userId, n);
+      if (m.userId && n && !isGenericMemberDisplayName(n)) map.set(m.userId, n);
     }
     return map;
   }, [mentionMembers]);
@@ -224,13 +233,35 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       const fromTeam = teamDisplayNameByUserId.get(uid);
       if (fromTeam) return fromTeam;
       const s = (stored || '').trim();
-      if (s && s.toLowerCase() !== 'owner') return s;
+      if (s && !isGenericMemberDisplayName(s)) return s;
+      const peer = presenceByUserId?.get(uid);
+      const pn = (peer?.displayName || '').trim();
+      if (pn && !isGenericMemberDisplayName(pn)) return pn;
+      if (user?.userId === uid) {
+        const self = (user.displayName || user.email?.split('@')[0] || '').trim();
+        if (self && !isGenericMemberDisplayName(self)) return self;
+      }
       const fromEmail = teamEmailLocalByUserId.get(uid);
       if (fromEmail) return fromEmail;
       return 'Member';
     },
-    [teamDisplayNameByUserId, teamEmailLocalByUserId],
+    [teamDisplayNameByUserId, teamEmailLocalByUserId, presenceByUserId, user],
   );
+
+  /** Members currently in realtime presence for this project (excludes explicit offline). */
+  const chatOnlinePeers = useMemo(() => {
+    if (!presenceByUserId?.size) return [];
+    const list: PresencePeer[] = [];
+    for (const m of dedupedMembers) {
+      if (!m.userId) continue;
+      const p = presenceByUserId.get(m.userId);
+      if (!p || p.availability === 'offline') continue;
+      list.push(p);
+    }
+    return list.sort((a, b) =>
+      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }),
+    );
+  }, [dedupedMembers, presenceByUserId]);
 
   const [chatMessages, setChatMessages] = useState<ProjectChatMessage[]>([]);
   const [reactionRows, setReactionRows] = useState<ProjectChatReaction[]>([]);
@@ -238,6 +269,23 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [reactionMenuForId, setReactionMenuForId] = useState<string | null>(null);
+  /** When a teammate's row in the Team tab is clicked, this recipient drives the
+   *  bottom-left DirectMessageDock. Null = no DM open. */
+  const [dmRecipient, setDmRecipient] = useState<DirectMessageRecipient | null>(null);
+
+  const openDirectMessage = useCallback(
+    (m: { userId?: string; displayName?: string; email?: string; photoURL?: string }) => {
+      if (!user?.userId) return;
+      if (!m.userId || m.userId === user.userId) return;
+      setDmRecipient({
+        userId: m.userId,
+        displayName: m.displayName || m.email || 'Member',
+        email: m.email,
+        photoURL: m.photoURL,
+      });
+    },
+    [user?.userId],
+  );
   /** Goes true once we discover the reactions table doesn't exist on this deployment so we
    *  can stop showing the smiley trigger and stop emitting fresh error toasts every click. */
   const [reactionsUnavailable, setReactionsUnavailable] = useState(false);
@@ -598,10 +646,21 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           const memberLabel = m.userId
             ? displayNameForChatUser(m.userId, m.displayName)
             : (m.displayName || m.email || 'Member');
+          const isSelf = !!user?.userId && m.userId === user.userId;
+          const canDm = !!m.userId && !isSelf;
           return (
-            <div
+            <button
+              type="button"
               key={m.userId || m.email}
-              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-secondary"
+              onClick={canDm ? () => openDirectMessage({ ...m, displayName: memberLabel }) : undefined}
+              disabled={!canDm}
+              title={canDm ? `Message ${memberLabel}` : undefined}
+              className={cn(
+                'flex w-full items-center gap-2 p-1.5 rounded-lg text-left',
+                canDm
+                  ? 'hover:bg-secondary cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                  : 'cursor-default',
+              )}
             >
               <Avatar className="w-9 h-9">
                 <AvatarImage src={m.photoURL} alt={memberLabel} />
@@ -613,6 +672,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-sm font-medium text-foreground truncate">
                     {memberLabel}
+                    {isSelf && (
+                      <span className="ml-1 text-[10px] text-muted-foreground font-normal">
+                        (you)
+                      </span>
+                    )}
                   </p>
                   <PresenceStatusInline
                     peer={m.userId ? presenceByUserId?.get(m.userId) : undefined}
@@ -628,7 +692,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               >
                 {role.label}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -744,6 +808,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5"
           />
         </button>
+        <DirectMessageDock
+          recipient={dmRecipient}
+          organizationId={project.organizationId}
+          onClose={() => setDmRecipient(null)}
+        />
       </div>
     );
   }
@@ -1062,6 +1131,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         </TabsContent>
       </Tabs>
     </aside>
+    <DirectMessageDock
+      recipient={dmRecipient}
+      organizationId={project.organizationId}
+      onClose={() => setDmRecipient(null)}
+    />
     </div>
   );
 };

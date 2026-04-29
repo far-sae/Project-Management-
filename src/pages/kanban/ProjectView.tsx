@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload, KeyRound, Lock } from 'lucide-react';
+import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload, KeyRound, Lock, Network } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -54,6 +54,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import LimitReachedModal from '@/components/ui/LimitReachedModal';
+import { ProjectMindMap } from '@/components/mindmap/ProjectMindMap';
 
 // ── Timeline view constants ────────────────────────────────
 const DAYS_WIDTH = 40;
@@ -221,7 +222,7 @@ export const ProjectView: React.FC = () => {
    *  leaked into the still-mounted search input (e.g., PIN typed before the dialog grabbed
    *  focus) get cleaned up automatically. */
   const searchQuerySnapshotRef = useRef<string | null>(null);
-  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline' | 'mindmap'>('kanban');
   const [sortOption, setSortOption] = useState<TaskSortOption>(() => {
     try {
       return (window.localStorage.getItem('project_sort_v1') as TaskSortOption) || 'manual';
@@ -870,6 +871,15 @@ export const ProjectView: React.FC = () => {
                 >
                   <GanttChartSquare className="w-4 h-4" />
                 </Button>
+                <Button
+                  variant={viewMode === 'mindmap' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-8 rounded-md px-3"
+                  onClick={() => setViewMode('mindmap')}
+                  title="Mind map"
+                >
+                  <Network className="w-4 h-4" />
+                </Button>
               </div>
 
               <Button
@@ -941,6 +951,22 @@ export const ProjectView: React.FC = () => {
                 selectedStatus={selectedStatus}
                 navigate={navigate}
               />
+            ) : viewMode === 'mindmap' ? (
+              <div className="h-[calc(100vh-12rem)] min-h-[480px]">
+                <ProjectMindMap
+                  project={project}
+                  tasks={boardTasks}
+                  columns={boardColumns}
+                  onOpenTask={(taskId) => {
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.set('taskId', taskId);
+                      return next;
+                    }, { replace: true });
+                    setViewMode('kanban');
+                  }}
+                />
+              </div>
             ) : (
               <div className="bg-card rounded-lg border border-border overflow-hidden">
                 <table className="w-full text-left">

@@ -202,7 +202,7 @@ export const Files: React.FC = () => {
       case 'audio':
         return <Music className="w-8 h-8 text-pink-500" />;
       default:
-        return <FileIcon className="w-8 h-8 text-gray-500" />;
+        return <FileIcon className="w-8 h-8 text-muted-foreground" />;
     }
   };
 
@@ -218,8 +218,8 @@ export const Files: React.FC = () => {
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Files</h1>
-            <p className="text-gray-500">Manage your project files and documents</p>
+            <h1 className="text-3xl font-bold text-foreground">Files</h1>
+            <p className="text-muted-foreground">Manage your project files and documents</p>
           </div>
           <div className="flex items-center gap-4">
             <Select
@@ -280,7 +280,7 @@ export const Files: React.FC = () => {
           <CardContent className="py-4">
             <div className="flex items-center gap-4">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search files..."
                   value={searchQuery}
@@ -315,7 +315,7 @@ export const Files: React.FC = () => {
             <CardTitle>
               All Files
               {files.length > 0 && (
-                <span className="ml-2 text-sm font-normal text-gray-500">
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
                   ({filteredFiles.length} files)
                 </span>
               )}
@@ -323,19 +323,19 @@ export const Files: React.FC = () => {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-16 text-gray-500">
-                <Loader2 className="w-12 h-12 mx-auto mb-4 text-gray-300 animate-spin" />
+              <div className="text-center py-16 text-muted-foreground">
+                <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/60 animate-spin" />
                 <p>Loading files...</p>
               </div>
             ) : !selectedProject ? (
-              <div className="text-center py-16 text-gray-500">
-                <Folder className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+              <div className="text-center py-16 text-muted-foreground">
+                <Folder className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
                 <p className="text-lg font-medium">Select a project</p>
                 <p className="text-sm">Choose a project to view its files</p>
               </div>
             ) : filteredFiles.length === 0 ? (
-              <div className="text-center py-16 text-gray-500">
-                <Folder className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+              <div className="text-center py-16 text-muted-foreground">
+                <Folder className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
                 <p className="text-lg font-medium">No files yet</p>
                 <p className="text-sm">Upload files to get started</p>
                 <Button
@@ -352,7 +352,7 @@ export const Files: React.FC = () => {
                 {filteredFiles.map((file) => (
                   <div
                     key={file.fileId}
-                    className="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer text-center group relative"
+                    className="p-4 border rounded-lg hover:bg-secondary/60 cursor-pointer text-center group relative"
                   >
                     {getFileTypeCategory(file.fileType) === 'image' &&
                       file.fileUrl.startsWith('http') ? (
@@ -370,7 +370,7 @@ export const Files: React.FC = () => {
                     >
                       {file.fileName}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       {formatFileSize(file.fileSize)}
                     </p>
 
@@ -407,12 +407,12 @@ export const Files: React.FC = () => {
                 {filteredFiles.map((file) => (
                   <div
                     key={file.fileId}
-                    className="flex items-center gap-4 p-3 border rounded-lg hover:bg-gray-50 group"
+                    className="flex items-center gap-4 p-3 border rounded-lg hover:bg-secondary/60 group"
                   >
                     {getFileIcon(file.fileType)}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{file.fileName}</p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-muted-foreground">
                         {formatFileSize(file.fileSize)} • Uploaded by{' '}
                         {file.uploadedByName} •{' '}
                         {new Date(file.uploadedAt).toLocaleDateString()}

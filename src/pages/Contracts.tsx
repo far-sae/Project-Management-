@@ -293,27 +293,27 @@ export const Contracts: React.FC = () => {
   const getStatusBadge = (status: string, respondedByName?: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge>;
+        return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge>;
       case 'pending':
-        return <Badge className="bg-yellow-100 text-yellow-800"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
+        return <Badge className="bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
       case 'accepted':
         return (
-          <Badge className="bg-blue-100 text-blue-800">
+          <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             Accepted {respondedByName ? `by ${respondedByName}` : ''}
           </Badge>
         );
       case 'rejected':
         return (
-          <Badge className="bg-red-100 text-red-800">
+          <Badge className="bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30">
             <XCircle className="w-3 h-3 mr-1" />
             Rejected {respondedByName ? `by ${respondedByName}` : ''}
           </Badge>
         );
       case 'expired':
-        return <Badge className="bg-gray-100 text-gray-800"><AlertCircle className="w-3 h-3 mr-1" />Expired</Badge>;
+        return <Badge className="bg-secondary text-secondary-foreground"><AlertCircle className="w-3 h-3 mr-1" />Expired</Badge>;
       default:
-        return <Badge className="bg-gray-100 text-gray-800">Draft</Badge>;
+        return <Badge className="bg-secondary text-secondary-foreground">Draft</Badge>;
     }
   };
 
@@ -324,18 +324,18 @@ export const Contracts: React.FC = () => {
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Contracts</h1>
-            <p className="text-gray-500">Manage your contracts and agreements</p>
+            <h1 className="text-3xl font-bold text-foreground">Contracts</h1>
+            <p className="text-muted-foreground">Manage your contracts and agreements</p>
           </div>
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-gray-200 rounded-xl text-center">
-            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
+          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center">
+            <div className="w-16 h-16 bg-orange-500/15 rounded-full flex items-center justify-center mb-4">
               <Lock className="w-8 h-8 text-orange-500" />
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Contracts</h2>
-            <p className="text-gray-500 mb-2 max-w-md">
+            <h2 className="text-xl font-bold text-foreground mb-2">Contracts</h2>
+            <p className="text-muted-foreground mb-2 max-w-md">
               Create and manage contracts and client agreements with status tracking, multi-currency values, and date ranges.
             </p>
-            <p className="text-sm text-orange-600 font-medium mb-6">
+            <p className="text-sm text-orange-500 font-medium mb-6">
               Available on Advanced plan and above
             </p>
             <Button
@@ -356,8 +356,8 @@ export const Contracts: React.FC = () => {
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Contracts</h1>
-            <p className="text-gray-500">Manage your contracts and agreements</p>
+            <h1 className="text-3xl font-bold text-foreground">Contracts</h1>
+            <p className="text-muted-foreground">Manage your contracts and agreements</p>
           </div>
           <Button
             className="bg-gradient-to-r from-orange-500 to-red-500"
@@ -371,46 +371,46 @@ export const Contracts: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Total</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total</CardTitle>
             </CardHeader>
-            <CardContent><div className="text-2xl font-bold">{contracts.length}</div></CardContent>
+            <CardContent><div className="text-2xl font-bold text-foreground">{contracts.length}</div></CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Draft</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Draft</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-600">
+              <div className="text-2xl font-bold text-muted-foreground">
                 {contracts.filter((c) => c.status === 'draft').length}
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Pending</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Pending</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">
+              <div className="text-2xl font-bold text-yellow-500 dark:text-yellow-400">
                 {contracts.filter((c) => c.status === 'pending').length}
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Accepted</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Accepted</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-2xl font-bold text-emerald-500 dark:text-emerald-400">
                 {contracts.filter((c) => c.status === 'accepted').length}
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">Rejected</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Rejected</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">
+              <div className="text-2xl font-bold text-red-500 dark:text-red-400">
                 {contracts.filter((c) => c.status === 'rejected').length}
               </div>
             </CardContent>
@@ -437,14 +437,14 @@ export const Contracts: React.FC = () => {
               <CardHeader><CardTitle>All Contracts</CardTitle></CardHeader>
               <CardContent>
                 {loading ? (
-                  <div className="text-center py-16 text-gray-500">
-                    <Loader2 className="w-12 h-12 mx-auto mb-4 text-gray-300 animate-spin" />
+                  <div className="text-center py-16 text-muted-foreground">
+                    <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/60 animate-spin" />
                     <p>Loading contracts...</p>
                   </div>
                 ) : contracts.length === 0 ? (
-                  <div className="text-center py-16 text-gray-500">
-                    <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                    <p className="text-lg font-medium">No contracts yet</p>
+                  <div className="text-center py-16 text-muted-foreground">
+                    <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
+                    <p className="text-lg font-medium text-foreground">No contracts yet</p>
                     <p className="text-sm">Create your first contract to get started</p>
                     <Button className="mt-4 bg-gradient-to-r from-orange-500 to-red-500" onClick={() => setShowCreateModal(true)}>
                       <Plus className="w-4 h-4 mr-2" />Create Contract
@@ -458,22 +458,22 @@ export const Contracts: React.FC = () => {
                       );
 
                       return (
-                        <div key={contract.contractId} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 group">
+                        <div key={contract.contractId} className="flex items-center justify-between p-4 bg-secondary/40 border border-border rounded-lg hover:bg-secondary/70 group">
                           <div className="flex items-center gap-4 flex-1">
                             <FileText className="w-10 h-10 text-blue-500 shrink-0" />
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <p className="font-medium">{contract.title}</p>
+                                <p className="font-medium text-foreground">{contract.title}</p>
                                 {contract.assignedTo && (
-                                  <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                                  <Badge variant="outline" className="bg-purple-500/10 text-purple-600 dark:text-purple-300 border-purple-500/30">
                                     <Users className="w-3 h-3 mr-1" />
                                     Assigned to: {assignedUser?.displayName || assignedUser?.email || 'Team member'}
                                   </Badge>
                                 )}
                               </div>
-                              <p className="text-sm text-gray-500">{contract.client}</p>
+                              <p className="text-sm text-muted-foreground">{contract.client}</p>
                               {contract.respondedByName && (
-                                <p className="text-xs text-gray-400 mt-1">
+                                <p className="text-xs text-muted-foreground/80 mt-1">
                                   Responded by: {contract.respondedByName}
                                 </p>
                               )}
@@ -481,12 +481,12 @@ export const Contracts: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <p className="font-medium">
+                              <p className="font-medium text-foreground">
                                 {contract.value != null
                                   ? `${CURRENCY_SYMBOLS[contract.currency || 'USD']}${contract.value.toLocaleString()}`
                                   : '—'}
                               </p>
-                              <p className="text-sm text-gray-500">
+                              <p className="text-sm text-muted-foreground">
                                 {contract.startDate
                                   ? format(new Date(contract.startDate), 'MMM d, yyyy')
                                   : 'No start'}
@@ -539,18 +539,18 @@ export const Contracts: React.FC = () => {
             <Card>
               <CardHeader>
                 <CardTitle>Contracts Assigned to Me</CardTitle>
-                <p className="text-sm text-gray-500">Review and respond to contracts assigned to you</p>
+                <p className="text-sm text-muted-foreground">Review and respond to contracts assigned to you</p>
               </CardHeader>
               <CardContent>
                 {assignedLoading ? (
-                  <div className="text-center py-16 text-gray-500">
-                    <Loader2 className="w-12 h-12 mx-auto mb-4 text-gray-300 animate-spin" />
+                  <div className="text-center py-16 text-muted-foreground">
+                    <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/60 animate-spin" />
                     <p>Loading assigned contracts...</p>
                   </div>
                 ) : assignedContracts.length === 0 ? (
-                  <div className="text-center py-16 text-gray-500">
-                    <UserCheck className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                    <p className="text-lg font-medium">No contracts assigned to you</p>
+                  <div className="text-center py-16 text-muted-foreground">
+                    <UserCheck className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
+                    <p className="text-lg font-medium text-foreground">No contracts assigned to you</p>
                     <p className="text-sm">When someone assigns a contract to you, it will appear here</p>
                   </div>
                 ) : (
@@ -561,26 +561,26 @@ export const Contracts: React.FC = () => {
                       );
 
                       return (
-                        <div key={contract.contractId} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <div key={contract.contractId} className="flex items-center justify-between p-4 bg-secondary/40 border border-border rounded-lg">
                           <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900">{contract.title}</h3>
-                            <p className="text-sm text-gray-600 mt-1">
+                            <h3 className="font-semibold text-foreground">{contract.title}</h3>
+                            <p className="text-sm text-muted-foreground mt-1">
                               <span className="font-medium">Client:</span> {contract.client}
                             </p>
-                            <p className="text-sm text-gray-600">
+                            <p className="text-sm text-muted-foreground">
                               <span className="font-medium">Created by:</span> {contract.createdByName || creator?.displayName || creator?.email || 'Unknown'}
                             </p>
                             {contract.value != null && (
-                              <p className="text-sm text-gray-600 mt-1">
+                              <p className="text-sm text-muted-foreground mt-1">
                                 <span className="font-medium">Value:</span>{' '}
-                                <span className="text-green-600 font-semibold">
+                                <span className="text-emerald-500 dark:text-emerald-400 font-semibold">
                                   {CURRENCY_SYMBOLS[contract.currency || 'USD']}
                                   {contract.value.toLocaleString()}
                                 </span>
                               </p>
                             )}
                             {(contract.startDate || contract.endDate) && (
-                              <p className="text-sm text-gray-600">
+                              <p className="text-sm text-muted-foreground">
                                 <span className="font-medium">Duration:</span>{' '}
                                 {contract.startDate ? format(new Date(contract.startDate), 'MMM d, yyyy') : 'No start'}
                                 {' → '}
@@ -591,7 +591,7 @@ export const Contracts: React.FC = () => {
                           <div className="flex gap-2 ml-4">
                             <Button
                               size="sm"
-                              className="bg-green-600 hover:bg-green-700"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
                               onClick={() => openResponseModal(contract, 'accept')}
                             >
                               <CheckCircle2 className="w-4 h-4 mr-1" />
@@ -600,7 +600,7 @@ export const Contracts: React.FC = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="border-red-200 text-red-600 hover:bg-red-50"
+                              className="border-red-500/40 text-red-500 dark:text-red-400 hover:bg-red-500/10"
                               onClick={() => openResponseModal(contract, 'reject')}
                             >
                               <XCircle className="w-4 h-4 mr-1" />

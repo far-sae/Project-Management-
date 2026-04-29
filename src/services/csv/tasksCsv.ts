@@ -13,15 +13,31 @@ export const TASK_CSV_HEADERS = [
   'Subtasks',
   'Urgent',
   'Locked',
+  'Comments',
+  'Attachments',
   'Created At',
   'Updated At',
+  'Completed At',
 ] as const;
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Human-friendly local date+time (`YYYY-MM-DD HH:mm`). Spreadsheets parse this cleanly and
+ *  unlike a bare ISO string it doesn't render as a single timestamp blob in Excel. */
+const formatDateTime = (d: Date | string | null | undefined): string => {
+  if (!d) return '';
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+};
+
+/** Date-only variant for fields that don't carry a meaningful time (e.g. due date set via
+ *  date picker). */
 const formatDate = (d: Date | string | null | undefined): string => {
   if (!d) return '';
   const date = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 };
 
 /** Neutralize CSV/formula injection when a cell starts with =, +, -, @, or tab. */
@@ -56,8 +72,18 @@ export const tasksToCsv = (tasks: Task[]): string => {
     ),
     Urgent: t.urgent ? 'true' : 'false',
     Locked: t.isLocked ? 'true' : 'false',
-    'Created At': formatDate(t.createdAt),
-    'Updated At': formatDate(t.updatedAt),
+    Comments: typeof t.commentsCount === 'number' ? String(t.commentsCount) : '0',
+    // Each attachment is exported as `name (url)` so the recipient can both identify and
+    // download the file. URLs are signed/public; we don't try to inline binary content.
+    Attachments: escapeCsvFormula(
+      (t.attachments || [])
+        .map((a) => (a.fileName ? `${a.fileName} (${a.fileUrl})` : a.fileUrl))
+        .filter(Boolean)
+        .join(' | '),
+    ),
+    'Created At': formatDateTime(t.createdAt),
+    'Updated At': formatDateTime(t.updatedAt),
+    'Completed At': formatDateTime(t.completedAt ?? null),
   }));
   return Papa.unparse(rows, { columns: TASK_CSV_HEADERS as unknown as string[] });
 };

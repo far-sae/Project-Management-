@@ -2965,3 +2965,137 @@ export const subscribeToTaskActivity = (
     channel.unsubscribe();
   };
 };
+
+// ============================================
+// DIRECT MESSAGES (1-on-1)
+// ============================================
+
+export interface DirectMessage {
+  messageId: string;
+  threadKey: string;
+  senderId: string;
+  recipientId: string;
+  organizationId: string | null;
+  body: string;
+  createdAt: Date;
+  readAt: Date | null;
+}
+
+const mapDirectMessageRow = (d: Record<string, unknown>): DirectMessage => ({
+  messageId: d.message_id as string,
+  threadKey: d.thread_key as string,
+  senderId: d.sender_id as string,
+  recipientId: d.recipient_id as string,
+  organizationId: (d.organization_id as string) ?? null,
+  body: d.body as string,
+  createdAt: new Date(d.created_at as string),
+  readAt: d.read_at ? new Date(d.read_at as string) : null,
+});
+
+/** Deterministic thread identifier so the two participants share one conversation
+ *  regardless of which side opens it first. */
+export const directMessageThreadKey = (a: string, b: string): string => {
+  if (!a || !b) return "";
+  return [a, b].sort().join("__");
+};
+
+export const fetchDirectMessages = async (
+  selfUserId: string,
+  otherUserId: string,
+  limit = 200,
+): Promise<DirectMessage[]> => {
+  const threadKey = directMessageThreadKey(selfUserId, otherUserId);
+  if (!threadKey) return [];
+  const { data, error } = await supabase
+    .from("direct_messages")
+    .select("*")
+    .eq("thread_key", threadKey)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    logger.warn("fetchDirectMessages:", error.message);
+    return [];
+  }
+  return (data || [])
+    .map((d) => mapDirectMessageRow(d as Record<string, unknown>))
+    .reverse();
+};
+
+export const insertDirectMessage = async (params: {
+  senderId: string;
+  recipientId: string;
+  organizationId?: string | null;
+  body: string;
+}): Promise<DirectMessage> => {
+  const body = params.body.trim();
+  if (!body) throw new Error("empty message");
+  const threadKey = directMessageThreadKey(params.senderId, params.recipientId);
+  const { data, error } = await supabase
+    .from("direct_messages")
+    .insert({
+      thread_key: threadKey,
+      sender_id: params.senderId,
+      recipient_id: params.recipientId,
+      organization_id: params.organizationId ?? null,
+      body,
+    })
+    .select()
+    .single();
+  if (error) {
+    logger.error("insertDirectMessage:", error);
+    throw error;
+  }
+  return mapDirectMessageRow(data as Record<string, unknown>);
+};
+
+/** Mark every unread message the recipient has received in this thread as read. */
+export const markDirectMessagesRead = async (
+  selfUserId: string,
+  otherUserId: string,
+): Promise<void> => {
+  const threadKey = directMessageThreadKey(selfUserId, otherUserId);
+  if (!threadKey) return;
+  const { error } = await supabase
+    .from("direct_messages")
+    .update({ read_at: new Date().toISOString() })
+    .eq("thread_key", threadKey)
+    .eq("recipient_id", selfUserId)
+    .is("read_at", null);
+  if (error) logger.warn("markDirectMessagesRead:", error.message);
+};
+
+export const subscribeToDirectMessages = (
+  selfUserId: string,
+  otherUserId: string,
+  callback: (messages: DirectMessage[]) => void,
+  limit = 200,
+) => {
+  const threadKey = directMessageThreadKey(selfUserId, otherUserId);
+  if (!threadKey) {
+    callback([]);
+    return () => {};
+  }
+  const load = () => {
+    void fetchDirectMessages(selfUserId, otherUserId, limit).then(callback);
+  };
+
+  load();
+
+  const channel = supabase
+    .channel(`dm-${threadKey}-${Math.random().toString(36).slice(2, 9)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "direct_messages",
+        filter: `thread_key=eq.${threadKey}`,
+      },
+      load,
+    )
+    .subscribe();
+
+  return () => {
+    try { channel.unsubscribe(); } catch { /* noop */ }
+  };
+};

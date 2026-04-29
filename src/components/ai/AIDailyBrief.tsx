@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Sparkles, Loader2, ShieldAlert, Trophy, RefreshCw, AlertCircle, Sunrise } from 'lucide-react';
+import { Sparkles, Loader2, ShieldAlert, Trophy, RefreshCw, AlertCircle, Sunrise, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   generateDailyBrief,
@@ -97,6 +97,8 @@ function buildSnapshot(
   };
 }
 
+const COLLAPSE_STORAGE_KEY = (userId: string) => `ai_daily_brief_collapsed:${userId}`;
+
 export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
   userId,
   userDisplayName,
@@ -108,6 +110,35 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
   const [brief, setBrief] = useState<DailyBriefResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Persist the collapsed/expanded preference per-user so the long brief doesn't keep
+   *  pushing the task list off-screen on every page load. */
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(COLLAPSE_STORAGE_KEY(userId)) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      setCollapsed(window.localStorage.getItem(COLLAPSE_STORAGE_KEY(userId)) === '1');
+    } catch {
+      setCollapsed(false);
+    }
+  }, [userId]);
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(COLLAPSE_STORAGE_KEY(userId), next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
 
   const snapshot = useMemo(
     () => buildSnapshot(tasks, projectNames, userDisplayName),
@@ -193,34 +224,50 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
             </p>
           </div>
         </div>
-        <Button
-          size="sm"
-          variant={brief ? 'outline' : 'default'}
-          disabled={!aiAvailable || loading || tasks.length === 0}
-          onClick={handleGenerate}
-          className={
-            brief
-              ? ''
-              : 'bg-gradient-to-r from-violet-500 to-blue-500 text-white border-0 hover:opacity-90'
-          }
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              Thinking…
-            </>
-          ) : brief ? (
-            <>
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-              Regenerate
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-              Generate
-            </>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={brief ? 'outline' : 'default'}
+            disabled={!aiAvailable || loading || tasks.length === 0}
+            onClick={handleGenerate}
+            className={
+              brief
+                ? ''
+                : 'bg-gradient-to-r from-violet-500 to-blue-500 text-white border-0 hover:opacity-90'
+            }
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Thinking…
+              </>
+            ) : brief ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Regenerate
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                Generate
+              </>
+            )}
+          </Button>
+          {brief && (
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              onClick={toggleCollapsed}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? 'Expand AI brief' : 'Collapse AI brief to see your tasks'}
+              title={collapsed ? 'Expand brief' : 'Collapse so the task list shows above the fold'}
+              className="h-9 w-9 p-0"
+            >
+              {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            </Button>
           )}
-        </Button>
+        </div>
       </div>
 
       {!aiAvailable && (
@@ -263,7 +310,21 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
         </div>
       )}
 
-      {brief && (
+      {brief && collapsed && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Brief collapsed —{' '}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="underline hover:no-underline font-medium text-foreground"
+          >
+            expand to read it
+          </button>
+          . Your task list is just below.
+        </p>
+      )}
+
+      {brief && !collapsed && (
         <div className="mt-4 space-y-4">
           {(brief.greeting || brief.summary) && (
             <div className="rounded-lg bg-card/70 border border-border/60 p-3">
