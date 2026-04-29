@@ -32,9 +32,11 @@ import {
   notifyProjectChatMentions,
   notifyProjectChatMessageToMembers,
   toggleProjectChatReaction,
+  markNotificationsReadByProject,
   type ProjectChatMessage,
   type ProjectChatReaction,
 } from '@/services/supabase/database';
+import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
@@ -179,10 +181,19 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     );
     return dedupedMembers.map((m) => {
       const org = m.userId ? orgById.get(m.userId) : undefined;
+      const email = m.email || org?.email || '';
+      const emailLocal = email.split('@')[0] || '';
+      // Prefer the user's real name; fall back through org name → email handle. Treat the
+      // synthetic "Owner" label saved on legacy projects as no-name (don't surface it as a username).
+      const stored = (m.displayName || '').trim();
+      const isPlaceholder = !stored || stored.toLowerCase() === 'owner';
+      const displayName = isPlaceholder
+        ? (org?.displayName || emailLocal || 'Member')
+        : stored;
       return {
         userId: m.userId,
-        displayName: m.displayName || org?.displayName || '',
-        email: m.email || org?.email || '',
+        displayName,
+        email,
         photoURL: m.photoURL ?? (org as { photoURL?: string } | undefined)?.photoURL,
       };
     });
@@ -193,7 +204,17 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     const map = new Map<string, string>();
     for (const m of mentionMembers) {
       const n = m.displayName?.trim();
-      if (m.userId && n) map.set(m.userId, n);
+      if (m.userId && n && n.toLowerCase() !== 'owner') map.set(m.userId, n);
+    }
+    return map;
+  }, [mentionMembers]);
+
+  /** Map userId → email handle, used as a friendlier fallback than the literal "Member". */
+  const teamEmailLocalByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of mentionMembers) {
+      const local = (m.email || '').split('@')[0]?.trim();
+      if (m.userId && local) map.set(m.userId, local);
     }
     return map;
   }, [mentionMembers]);
@@ -203,11 +224,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       const fromTeam = teamDisplayNameByUserId.get(uid);
       if (fromTeam) return fromTeam;
       const s = (stored || '').trim();
-      if (!s) return 'Member';
-      if (s.toLowerCase() === 'owner') return 'Member';
-      return s;
+      if (s && s.toLowerCase() !== 'owner') return s;
+      const fromEmail = teamEmailLocalByUserId.get(uid);
+      if (fromEmail) return fromEmail;
+      return 'Member';
     },
-    [teamDisplayNameByUserId],
+    [teamDisplayNameByUserId, teamEmailLocalByUserId],
   );
 
   const [chatMessages, setChatMessages] = useState<ProjectChatMessage[]>([]);
@@ -377,7 +399,9 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     };
   }, [project.projectId]);
 
-  /** When the dock opens — or new messages arrive while open — bump the last-seen marker. */
+  /** When the dock opens — or new messages arrive while open — bump the last-seen marker
+   *  and clear any unread `project_chat_message` notifications for this project so the
+   *  bell doesn't keep showing chats the user has already read. */
   useEffect(() => {
     if (!open) return;
     const now = Date.now();
@@ -387,7 +411,20 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     } catch {
       /* ignore */
     }
-  }, [open, chatMessages.length, lastSeenStorageKey]);
+    if (user?.userId && project.projectId) {
+      void markNotificationsReadByProject(
+        user.userId,
+        project.projectId,
+        'project_chat_message',
+      )
+        .then(() => dispatchNotificationsRefresh())
+        .catch((e) => {
+          // Silent — failing to clear chat notifications is a soft error; the badge
+          // will simply stay until the user opens the inbox or clicks the row.
+          console.warn('Failed to clear chat notifications:', e);
+        });
+    }
+  }, [open, chatMessages.length, lastSeenStorageKey, user?.userId, project.projectId]);
 
   /** Pin viewport to bottom when new content arrives (unless user scrolled up to read). */
   useLayoutEffect(() => {
@@ -558,21 +595,24 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         )}
         {dedupedMembers.map((m) => {
           const role = ROLE_BADGES[m.role] || ROLE_BADGES.member;
+          const memberLabel = m.userId
+            ? displayNameForChatUser(m.userId, m.displayName)
+            : (m.displayName || m.email || 'Member');
           return (
             <div
               key={m.userId || m.email}
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-secondary"
             >
               <Avatar className="w-9 h-9">
-                <AvatarImage src={m.photoURL} alt={m.displayName} />
+                <AvatarImage src={m.photoURL} alt={memberLabel} />
                 <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
-                  {m.displayName.charAt(0).toUpperCase()}
+                  {memberLabel.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-sm font-medium text-foreground truncate">
-                    {m.displayName}
+                    {memberLabel}
                   </p>
                   <PresenceStatusInline
                     peer={m.userId ? presenceByUserId?.get(m.userId) : undefined}

@@ -492,7 +492,7 @@ const convertToProject = (data: any): Project => {
     members.unshift({
       userId: data.owner_id,
       email: "",
-      displayName: "Owner",
+      displayName: "",
       photoURL: "",
       role: "owner",
       addedAt: new Date(data.created_at),
@@ -1677,6 +1677,45 @@ export const markAllNotificationsRead = async (
   if (error) {
     throw new Error(
       `markAllNotificationsRead failed for userId=${userId}: ${error.message}`,
+    );
+  }
+};
+
+/** Mark unread notifications for a single project (optionally filtered by type) as read. */
+export const markNotificationsReadByProject = async (
+  userId: string,
+  projectId: string,
+  type?: string,
+): Promise<void> => {
+  let query = supabase
+    .from("notifications")
+    .update({ read: true })
+    .eq("user_id", userId)
+    .eq("project_id", projectId)
+    .eq("read", false);
+  if (type) query = query.eq("type", type);
+  const { error } = await query;
+  if (error) {
+    throw new Error(
+      `markNotificationsReadByProject failed for projectId=${projectId}: ${error.message}`,
+    );
+  }
+};
+
+/** Mark unread notifications for a single task as read (e.g. comment mentions, assignments). */
+export const markNotificationsReadByTask = async (
+  userId: string,
+  taskId: string,
+): Promise<void> => {
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read: true })
+    .eq("user_id", userId)
+    .eq("task_id", taskId)
+    .eq("read", false);
+  if (error) {
+    throw new Error(
+      `markNotificationsReadByTask failed for taskId=${taskId}: ${error.message}`,
     );
   }
 };

@@ -57,10 +57,12 @@ import {
   addCommentWithGlobalSync,
   deleteComment,
   getTaskComments,
+  markNotificationsReadByTask,
   notifyTaskCommentMentions,
   subscribeToComments,
   verifyTaskLockPin,
 } from '@/services/supabase/database';
+import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
 import { markOnboardingAi } from '@/components/onboarding/OnboardingChecklist';
 import { useTaskActivity } from '@/hooks/useActivity';
 import { ActivityEvent } from '@/types/activity';
@@ -303,6 +305,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return () => unsub();
   }, [open, task?.taskId, orgId, mustUnlockToView]);
 
+  // Opening a task should clear any unread notifications tied to it (mentions, assignments,
+  // due-soon, etc.) so the bell doesn't keep surfacing notifications the user already opened.
+  useEffect(() => {
+    if (!open || !task?.taskId || !user?.userId || mustUnlockToView) return;
+    void markNotificationsReadByTask(user.userId, task.taskId)
+      .then(() => dispatchNotificationsRefresh())
+      .catch((e) => console.warn('Failed to clear task notifications:', e));
+  }, [open, task?.taskId, user?.userId, mustUnlockToView]);
+
   useEffect(() => {
     if (!open) {
       setAiError(null);
@@ -381,10 +392,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             .eq('id', ownerId)
             .maybeSingle();
 
+          const ownerEmail =
+            ownerProfile?.email || (ownerId === user?.userId ? user?.email || '' : '');
+          const ownerEmailLocal = ownerEmail.split('@')[0] || '';
+          const ownerName =
+            ownerProfile?.display_name ||
+            (ownerId === user?.userId ? user?.displayName : '') ||
+            ownerEmailLocal ||
+            'Member';
+
           memberMap.set(ownerId, {
             userId: ownerId,
-            displayName: ownerProfile?.display_name || (ownerId === user?.userId ? (user?.displayName || 'Owner') : 'Owner'),
-            email: ownerProfile?.email || (ownerId === user?.userId ? user?.email || '' : ''),
+            displayName: ownerName,
+            email: ownerEmail,
             photoURL: ownerProfile?.photo_url || (ownerId === user?.userId ? user?.photoURL || '' : ''),
           });
         }
@@ -1245,13 +1265,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   value={activeTab}
                   onValueChange={(v) => setActiveTab(v as 'comments' | 'activity')}
                 >
-                  <TabsList className="grid w-full grid-cols-2 h-9">
-                    <TabsTrigger value="comments" className="text-sm">
-                      <MessageSquare className="w-4 h-4 mr-1.5" />
+                  <TabsList className="grid w-full grid-cols-2 h-10 p-1">
+                    <TabsTrigger
+                      value="comments"
+                      className="h-8 px-3 py-0 text-sm gap-1.5"
+                    >
+                      <MessageSquare className="w-4 h-4" />
                       Comments
                     </TabsTrigger>
-                    <TabsTrigger value="activity" className="text-sm">
-                      <Activity className="w-4 h-4 mr-1.5" />
+                    <TabsTrigger
+                      value="activity"
+                      className="h-8 px-3 py-0 text-sm gap-1.5"
+                    >
+                      <Activity className="w-4 h-4" />
                       Activity
                     </TabsTrigger>
                   </TabsList>

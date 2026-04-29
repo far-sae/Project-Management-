@@ -135,7 +135,7 @@ export const Inbox: React.FC = () => {
   const [muted, setMuted] = useState<MutedProjectsMap>(() =>
     readJson<MutedProjectsMap>(MUTED_PROJECTS_KEY, {}),
   );
-  const { notifications, loading, unreadCount, markAsRead, refresh } =
+  const { notifications, loading, unreadCount, markAsRead, markAllAsReadLocally, refresh } =
     useNotifications(user?.userId ?? null, 200);
 
   // Persist on change
@@ -223,6 +223,9 @@ export const Inbox: React.FC = () => {
 
   const handleMarkAllRead = useCallback(async () => {
     if (!user) return;
+    // Update locally first so the UI reflects the read state immediately and survives a reload
+    // even if the DB write below fails.
+    markAllAsReadLocally();
     try {
       await markAllNotificationsRead(user.userId);
       toast.success('All marked as read');
@@ -230,7 +233,7 @@ export const Inbox: React.FC = () => {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to mark all');
     }
-  }, [user, refresh]);
+  }, [user, refresh, markAllAsReadLocally]);
 
   const counts = useMemo(() => {
     const all = notifications.length;

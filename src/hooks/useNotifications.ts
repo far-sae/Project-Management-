@@ -9,6 +9,49 @@ import { supabase } from "@/services/supabase/config";
 import { onNotificationsRefresh } from "@/lib/notificationEvents";
 import { playNotificationChime } from "@/lib/notificationSound";
 
+/** localStorage key for the per-user "locally read" set. Defensive layer so the bell never
+ *  re-surfaces a notification the user already opened, even if the Supabase UPDATE failed
+ *  (e.g. transient network hiccup or RLS role mismatch) and the row is still `read=false`. */
+const localReadKey = (uid: string) => `notifications_locally_read:${uid}`;
+
+const readLocalReadIds = (uid: string): Set<string> => {
+  try {
+    const raw = window.localStorage.getItem(localReadKey(uid));
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) return new Set(parsed.filter((v) => typeof v === "string"));
+    return new Set();
+  } catch {
+    return new Set();
+  }
+};
+
+const writeLocalReadIds = (uid: string, ids: Set<string>) => {
+  try {
+    // Cap to the most recent 500 IDs so this never grows unboundedly.
+    const arr = Array.from(ids).slice(-500);
+    window.localStorage.setItem(localReadKey(uid), JSON.stringify(arr));
+  } catch {
+    /* storage full or disabled; nothing actionable */
+  }
+};
+
+const applyLocalRead = (
+  list: AppNotification[],
+  localRead: Set<string>,
+): AppNotification[] => {
+  if (localRead.size === 0) return list;
+  let mutated = false;
+  const next = list.map((n) => {
+    if (!n.read && localRead.has(n.notificationId)) {
+      mutated = true;
+      return { ...n, read: true };
+    }
+    return n;
+  });
+  return mutated ? next : list;
+};
+
 export const useNotifications = (userId: string | null, limit = 30) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +62,8 @@ export const useNotifications = (userId: string | null, limit = 30) => {
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   /** Skip the chime on the very first sync (so opening the app doesn't blast a sound for old rows). */
   const initializedRef = useRef(false);
+  /** Mirror of the locally-read IDs for the current user. Hydrated from localStorage on user change. */
+  const localReadIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setEffectiveUserId(userId);
@@ -68,19 +113,23 @@ export const useNotifications = (userId: string | null, limit = 30) => {
       fetchErrorToastShown.current = false;
       seenNotificationIdsRef.current = new Set();
       initializedRef.current = false;
+      localReadIdsRef.current = readLocalReadIds(uid);
       setLoading(true);
       unsub = subscribeToUserNotifications(
         uid,
         (data) => {
+          // Apply the locally-known read set so notifications the user already opened in a
+          // previous session don't re-surface as unread when the DB row is still read=false.
+          const merged = applyLocalRead(data, localReadIdsRef.current);
           // Detect freshly arrived notifications so we can chime on each new one.
           const seen = seenNotificationIdsRef.current;
           if (!initializedRef.current) {
             // First sync: prime the seen set without chiming for already-existing rows.
-            for (const n of data) seen.add(n.notificationId);
+            for (const n of merged) seen.add(n.notificationId);
             initializedRef.current = true;
           } else {
             let hasNew = false;
-            for (const n of data) {
+            for (const n of merged) {
               if (!seen.has(n.notificationId)) {
                 hasNew = true;
                 seen.add(n.notificationId);
@@ -88,11 +137,11 @@ export const useNotifications = (userId: string | null, limit = 30) => {
             }
             // Only chime when there's at least one truly new row AND it's unread (otherwise
             // we'd ding on bookkeeping refetches like marking-as-read elsewhere).
-            if (hasNew && data.some((n) => !n.read)) {
+            if (hasNew && merged.some((n) => !n.read)) {
               playNotificationChime();
             }
           }
-          setNotifications(data);
+          setNotifications(merged);
           setLoading(false);
         },
         limit,
@@ -127,25 +176,26 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     try {
       const { fetchUserNotifications } = await import("@/services/supabase/database");
       const data = await fetchUserNotifications(uid, limit);
+      const merged = applyLocalRead(data, localReadIdsRef.current);
       // Mirror the chime logic from the realtime subscriber so the safety-net poller and
       // any explicit refresh also play on truly new arrivals.
       const seen = seenNotificationIdsRef.current;
       if (!initializedRef.current) {
-        for (const n of data) seen.add(n.notificationId);
+        for (const n of merged) seen.add(n.notificationId);
         initializedRef.current = true;
       } else {
         let hasNew = false;
-        for (const n of data) {
+        for (const n of merged) {
           if (!seen.has(n.notificationId)) {
             hasNew = true;
             seen.add(n.notificationId);
           }
         }
-        if (hasNew && data.some((n) => !n.read)) {
+        if (hasNew && merged.some((n) => !n.read)) {
           playNotificationChime();
         }
       }
-      setNotifications(data);
+      setNotifications(merged);
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
@@ -198,18 +248,32 @@ export const useNotifications = (userId: string | null, limit = 30) => {
   const markAsRead = async (notificationId: string) => {
     const uid = effectiveUserId;
     if (!uid) return;
+    // Optimistic local update + persistent localStorage fallback. The DB write happens in the
+    // background; if it fails (transient network, RLS policy mismatch), the locally-read set
+    // still survives a reload so the user doesn't see the same notification re-surface as unread.
+    localReadIdsRef.current.add(notificationId);
+    writeLocalReadIds(uid, localReadIdsRef.current);
+    setNotifications((prev) =>
+      prev.map((n) =>
+        n.notificationId === notificationId ? { ...n, read: true } : n,
+      ),
+    );
     try {
       await markRead(uid, notificationId);
-      // Update local state
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.notificationId === notificationId ? { ...n, read: true } : n,
-        ),
-      );
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
   };
+
+  const markAllAsReadLocally = useCallback(() => {
+    const uid = effectiveUserId;
+    if (!uid) return;
+    for (const n of notifications) {
+      if (!n.read) localReadIdsRef.current.add(n.notificationId);
+    }
+    writeLocalReadIds(uid, localReadIdsRef.current);
+    setNotifications((prev) => prev.map((n) => (n.read ? n : { ...n, read: true })));
+  }, [effectiveUserId, notifications]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -218,6 +282,7 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     loading,
     unreadCount,
     markAsRead,
+    markAllAsReadLocally,
     refresh: fetchNotifications,
   };
 };
