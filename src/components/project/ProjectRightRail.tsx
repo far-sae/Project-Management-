@@ -640,12 +640,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   );
 
   const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(23rem,calc(100vw-2.5rem))]';
-  const lastMessage = chatMessages[chatMessages.length - 1];
-  const lastMessagePreview = lastMessage
-    ? `${lastMessage.userId === user?.userId ? 'You' : lastMessage.displayName?.split(' ')[0] || ''}${
-        lastMessage.userId === user?.userId || !lastMessage.displayName ? '' : ':'
-      } ${lastMessage.body || ''}`
-    : null;
 
   if (!open) {
     return (
