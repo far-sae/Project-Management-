@@ -14,6 +14,20 @@ export interface MindMapExtras {
     /** Visual style for this placeholder — task / column / project header,
      *  or undefined for a pill-shaped brainstorm idea. Cosmetic only. */
     kind?: 'task' | 'column' | 'project';
+    /** Notes / description shown when the user opens the placeholder. */
+    description?: string;
+    /** Subtasks list — mind-map-only, never reaches kanban. */
+    subtasks?: Array<{ id: string; title: string; completed: boolean }>;
+    /** Files uploaded for this placeholder. Stored in `project-files` bucket. */
+    attachments?: Array<{
+      fileId: string;
+      fileName: string;
+      fileUrl: string;
+      fileType: string;
+      fileSize: number;
+      storagePath: string;
+      uploadedAt?: string;
+    }>;
   }>;
   edges: Array<{
     id: string;

@@ -83,6 +83,7 @@ import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { AIMindMap, type AIMapImportPayload } from './AIMindMap';
 import { MindMapTaskPanel } from './MindMapTaskPanel';
+import { MindMapPlaceholderPanel } from './MindMapPlaceholderPanel';
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants
@@ -130,6 +131,29 @@ const IDEA_PALETTE: Array<{ name: string; ring: string; bg: string; dot: string 
 // ─────────────────────────────────────────────────────────────
 // Persistence (localStorage — per project)
 // ─────────────────────────────────────────────────────────────
+/** File metadata for a placeholder's attachments. The binary lives in
+ *  Supabase storage (uploaded via uploadFileWithProgress with scope='project'
+ *  and NO taskId, so it's a project file rather than tied to a kanban task);
+ *  this struct is what we keep inside the placeholder so we can render a
+ *  preview and a delete button without re-querying the files table. */
+export interface PlaceholderAttachment {
+  fileId: string;
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+  storagePath: string;
+  uploadedAt?: string;
+}
+
+/** Subtasks for a placeholder. Same shape the real Task uses so we can
+ *  reuse the existing MentionTextarea-style UI primitives later. */
+export interface PlaceholderSubtask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
 interface ExtraIdea {
   id: string;
   label: string;
@@ -142,6 +166,15 @@ interface ExtraIdea {
    *  echoes a real task/column/project header — purely cosmetic, the data
    *  lives in extras either way and never reaches the kanban. */
   kind?: 'task' | 'column' | 'project';
+  /** Free-form notes shown when the placeholder panel is open. Task-shape
+   *  placeholders use this as their description; other kinds can use it too. */
+  description?: string;
+  /** Subtasks attached to this placeholder. Mind-map-only — never written
+   *  to the kanban tasks.subtasks column. */
+  subtasks?: PlaceholderSubtask[];
+  /** Files the user uploaded for this placeholder. Stored in Supabase
+   *  storage as project files so they're also reachable from the Files page. */
+  attachments?: PlaceholderAttachment[];
 }
 
 interface ExtraEdge {
@@ -468,6 +501,13 @@ interface IdeaNodeData extends Record<string, unknown> {
   kind?: 'task' | 'column' | 'project';
   /** Project name displayed under the header on kind='project' shells. */
   projectDescription?: string;
+  /** Number of attachments — shown as a 📎 N badge on task placeholders. */
+  attachmentCount?: number;
+  /** Subtask progress shown as N/M on task placeholders. */
+  subtaskProgress?: { completed: number; total: number };
+  /** When set, an "Open" button appears on task-shape placeholders so the
+   *  user can edit notes / subtasks / attach files in a side panel. */
+  onOpen?: () => void;
   onChange: (label: string) => void;
   onDelete: () => void;
   onColorChange: (color: string) => void;
@@ -600,7 +640,11 @@ const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({ data, 
 
   // Task card: status-dot + label + a "PLACEHOLDER" tag where the priority
   // chip would live on a real task. Same width as TaskNode for visual parity.
+  // Click the title row to open the side panel — same affordance real
+  // TaskNode uses, so muscle memory transfers. Double-click still renames.
   if (kind === 'task') {
+    const subtaskProgress = data.subtaskProgress;
+    const attachmentCount = data.attachmentCount ?? 0;
     return (
       <div
         className={cn(
@@ -613,24 +657,45 @@ const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({ data, 
         }}
       >
         <ConnectionHandles />
-        <div className="flex items-start gap-2">
-          <span
-            className={cn('mt-1 inline-block w-2 h-2 rounded-full shrink-0', palette.dot)}
-            aria-hidden
-          />
-          <div className="flex-1 min-w-0">{labelBlock}</div>
-        </div>
-        <div className="mt-1.5 flex items-center gap-1 flex-wrap">
-          <span
-            className={cn(
-              'text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border',
-              palette.bg,
-              palette.ring.replace('border-', 'border-'),
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!editing && data.onOpen) data.onOpen();
+          }}
+          className="w-full text-left disabled:cursor-default"
+          disabled={editing}
+        >
+          <div className="flex items-start gap-2">
+            <span
+              className={cn('mt-1 inline-block w-2 h-2 rounded-full shrink-0', palette.dot)}
+              aria-hidden
+            />
+            <div className="flex-1 min-w-0">{labelBlock}</div>
+          </div>
+          <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+            <span
+              className={cn(
+                'text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border',
+                palette.bg,
+                palette.ring,
+              )}
+            >
+              placeholder
+            </span>
+            {subtaskProgress && subtaskProgress.total > 0 && (
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                {subtaskProgress.completed}/{subtaskProgress.total} subtasks
+              </span>
             )}
-          >
-            placeholder
-          </span>
-        </div>
+            {attachmentCount > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground tabular-nums">
+                <Paperclip className="w-3 h-3" />
+                {attachmentCount}
+              </span>
+            )}
+          </div>
+        </button>
         {renderHoverToolbar()}
       </div>
     );
@@ -1239,31 +1304,68 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     [updateExtras],
   );
 
+  // ── Placeholder task panel ─────────────────────────────────
+  // Clicking a task-shape placeholder opens this panel so the user can
+  // edit notes / subtasks / attach files. Everything saves into extras —
+  // never touches the kanban tasks table.
+  const [openPlaceholderId, setOpenPlaceholderId] = useState<string | null>(null);
+  const openPlaceholder = useMemo(
+    () =>
+      openPlaceholderId
+        ? extras.ideas.find((i) => i.id === openPlaceholderId) ?? null
+        : null,
+    [openPlaceholderId, extras.ideas],
+  );
+  const handleOpenPlaceholder = useCallback((id: string) => {
+    setOpenPlaceholderId(id);
+  }, []);
+
   // Compose final node/edge arrays: base graph + position overrides + user ideas + user edges.
   const composedNodes = useMemo<Node[]>(() => {
     const base = baseGraph.nodes.map((n) => {
       const override = extras.positions[n.id];
       return override ? { ...n, position: override } : n;
     });
-    const ideaNodes: Node[] = extras.ideas.map((i) => ({
-      id: i.id,
-      type: 'idea',
-      position: extras.positions[i.id] || { x: i.x, y: i.y },
-      data: {
-        label: i.label,
-        color: i.color,
-        kind: i.kind,
-        // For project-header placeholders, surface the live project
-        // description as a subtitle. Real ProjectNode does the same, so the
-        // placeholder visually echoes the actual project root.
-        projectDescription: i.kind === 'project' ? project.description : undefined,
-        onChange: (label: string) => handleIdeaChange(i.id, { label }),
-        onDelete: () => handleIdeaDelete(i.id),
-        onColorChange: (color: string) => handleIdeaChange(i.id, { color }),
-      } satisfies IdeaNodeData,
-    }));
+    const ideaNodes: Node[] = extras.ideas.map((i) => {
+      const subs = i.subtasks ?? [];
+      return {
+        id: i.id,
+        type: 'idea',
+        position: extras.positions[i.id] || { x: i.x, y: i.y },
+        data: {
+          label: i.label,
+          color: i.color,
+          kind: i.kind,
+          // For project-header placeholders, surface the live project
+          // description as a subtitle. Real ProjectNode does the same, so the
+          // placeholder visually echoes the actual project root.
+          projectDescription: i.kind === 'project' ? project.description : undefined,
+          // Surface attachment + subtask counts on task placeholders so the
+          // node shows the same micro-stats as a real task card.
+          attachmentCount: i.kind === 'task' ? (i.attachments?.length ?? 0) : 0,
+          subtaskProgress:
+            i.kind === 'task'
+              ? {
+                  completed: subs.filter((s) => s.completed).length,
+                  total: subs.length,
+                }
+              : undefined,
+          onOpen: i.kind === 'task' ? () => handleOpenPlaceholder(i.id) : undefined,
+          onChange: (label: string) => handleIdeaChange(i.id, { label }),
+          onDelete: () => handleIdeaDelete(i.id),
+          onColorChange: (color: string) => handleIdeaChange(i.id, { color }),
+        } satisfies IdeaNodeData,
+      };
+    });
     return [...base, ...ideaNodes];
-  }, [baseGraph.nodes, extras, handleIdeaChange, handleIdeaDelete, project.description]);
+  }, [
+    baseGraph.nodes,
+    extras,
+    handleIdeaChange,
+    handleIdeaDelete,
+    handleOpenPlaceholder,
+    project.description,
+  ]);
 
   /** One-click delete fired from the X button on each edge. We don't touch
    *  the React Flow `edges` state here; the composedEdges memo re-derives
@@ -2124,6 +2226,25 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
             next.set(taskId, Math.max(0, (next.get(taskId) ?? 0) + delta));
             return next;
           });
+        }}
+      />
+
+      {/* Placeholder task panel — opens when a task-shape PLACEHOLDER is
+          clicked. Same UX as the real task panel but every change writes
+          to extras (mind-map only) rather than the tasks table. */}
+      <MindMapPlaceholderPanel
+        open={!!openPlaceholderId}
+        placeholder={openPlaceholder}
+        organizationId={project.organizationId || ''}
+        projectId={project.projectId}
+        userId={user?.userId || ''}
+        userDisplayName={user?.displayName || user?.email || 'User'}
+        onOpenChange={(v) => {
+          if (!v) setOpenPlaceholderId(null);
+        }}
+        onPatch={async (patch) => {
+          if (!openPlaceholderId) return;
+          handleIdeaChange(openPlaceholderId, patch);
         }}
       />
 
