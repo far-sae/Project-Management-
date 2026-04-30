@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Minimize2, Maximize2, PhoneOff } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { GripVertical, Minimize2, Maximize2, PhoneOff } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { CallControls } from './CallControls';
@@ -75,6 +75,93 @@ function useOutgoingRingtone(active: boolean) {
   }, [active]);
 }
 
+// ── Draggable window (PiP) ──────────────────────────────────
+
+interface DragPosition {
+  x: number;
+  y: number;
+}
+
+/**
+ * Pointer-based drag for a fixed-position element. Returns the current top/left
+ * style and a `bind` object to spread onto the drag handle. The element clamps
+ * itself within the viewport on drag and on window resize, so it stays
+ * accessible even if the user shrinks the window after positioning.
+ */
+function useDraggable(initial: () => DragPosition) {
+  const [pos, setPos] = useState<DragPosition>(initial);
+  const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+  const elementRef = useRef<HTMLDivElement | null>(null);
+
+  const clamp = useCallback((next: DragPosition): DragPosition => {
+    const el = elementRef.current;
+    const w = el?.offsetWidth ?? 240;
+    const h = el?.offsetHeight ?? 200;
+    const margin = 8;
+    const maxX = Math.max(margin, window.innerWidth - w - margin);
+    const maxY = Math.max(margin, window.innerHeight - h - margin);
+    return {
+      x: Math.min(Math.max(next.x, margin), maxX),
+      y: Math.min(Math.max(next.y, margin), maxY),
+    };
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setPos((p) => clamp(p));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [clamp]);
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      // Don't start drag from interactive controls (buttons, links, inputs).
+      const target = e.target as HTMLElement;
+      if (target.closest('button, a, input, textarea, select, [role="button"]')) {
+        return;
+      }
+      const el = elementRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      dragRef.current = {
+        pointerId: e.pointerId,
+        offsetX: e.clientX - rect.left,
+        offsetY: e.clientY - rect.top,
+      };
+      el.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    },
+    [],
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      setPos(clamp({ x: e.clientX - drag.offsetX, y: e.clientY - drag.offsetY }));
+    },
+    [clamp],
+  );
+
+  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    elementRef.current?.releasePointerCapture(e.pointerId);
+  }, []);
+
+  return {
+    ref: elementRef,
+    style: { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } as React.CSSProperties,
+    handlers: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp: endDrag,
+      onPointerCancel: endDrag,
+    },
+    setPos,
+  };
+}
+
 // ── Call duration timer ──────────────────────────────────────
 
 function useCallTimer(connected: boolean) {
@@ -127,12 +214,34 @@ function attachStream(
   }
 }
 
+// Default PiP anchor: bottom-right of the viewport with a small inset.
+const DEFAULT_PIP_WIDTH = 240;
+const DEFAULT_PIP_HEIGHT = 200;
+const PIP_INSET = 20;
+
+const initialPipPosition = (): DragPosition => {
+  if (typeof window === 'undefined') return { x: 0, y: 0 };
+  return {
+    x: Math.max(PIP_INSET, window.innerWidth - DEFAULT_PIP_WIDTH - PIP_INSET),
+    y: Math.max(PIP_INSET, window.innerHeight - DEFAULT_PIP_HEIGHT - PIP_INSET * 4),
+  };
+};
+
 export const CallOverlay: React.FC = () => {
   const { state, actions } = useCall();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [pip, setPip] = useState(false);
+  const pipDrag = useDraggable(initialPipPosition);
+
+  // Re-anchor the PiP to its default spot every time the user enters PiP
+  // mode, so it doesn't reappear off-screen if the window has been resized.
+  useEffect(() => {
+    if (pip) pipDrag.setPos(initialPipPosition());
+    // pipDrag.setPos is stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pip]);
 
   const isOutgoingRinging = state.status === 'ringing' && state.direction === 'outgoing';
   const isConnected = state.status === 'connected';
@@ -253,14 +362,22 @@ export const CallOverlay: React.FC = () => {
   if (pip) {
     return (
       <div
+        ref={pipDrag.ref}
+        style={pipDrag.style}
+        {...pipDrag.handlers}
         className={cn(
-          'fixed bottom-20 right-5 z-[250] flex flex-col items-center',
+          'fixed z-[250] flex flex-col items-center select-none touch-none',
           'rounded-2xl border border-border bg-card/95 shadow-2xl backdrop-blur-xl overflow-hidden',
+          'cursor-grab active:cursor-grabbing',
           isVideo ? 'w-[240px]' : 'w-[220px]',
         )}
         role="dialog"
-        aria-label="Active call"
+        aria-label="Active call (drag to move)"
       >
+        {/* Drag affordance strip */}
+        <div className="flex w-full items-center justify-center py-1 text-muted-foreground/60">
+          <GripVertical className="h-3 w-3 rotate-90" aria-hidden="true" />
+        </div>
         {remoteAudioSink}
         {isVideo && state.remoteStream && (
           <div className="relative w-full aspect-video bg-black">
@@ -359,14 +476,14 @@ export const CallOverlay: React.FC = () => {
       </div>
 
       {/* Video area */}
-      <div className="flex-1 relative flex items-center justify-center">
+      <div className="flex-1 relative flex items-center justify-center overflow-hidden">
         {isVideo && state.remoteStream ? (
           <>
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              className="max-w-full max-h-full object-contain"
+              className="absolute inset-0 w-full h-full object-cover"
             />
             {state.localStream && !state.isCameraOff && (
               <video
@@ -374,7 +491,7 @@ export const CallOverlay: React.FC = () => {
                 autoPlay
                 playsInline
                 muted
-                className="absolute bottom-4 right-4 w-40 h-28 rounded-lg object-cover border-2 border-white/20 shadow-xl"
+                className="absolute bottom-4 right-4 w-40 h-28 rounded-lg object-cover border-2 border-white/20 shadow-xl z-10"
               />
             )}
           </>

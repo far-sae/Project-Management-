@@ -258,8 +258,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           break;
         case 'connection-state':
           if (payload === 'connected') {
-            setState((prev) => ({ ...prev, status: 'connected' }));
-          } else if (payload === 'disconnected') {
+            // Connection recovered — clear stale "reconnecting" state and any
+            // transient error banner from a previous blip.
+            setState((prev) => ({ ...prev, status: 'connected', error: null }));
+          } else if (payload === 'disconnected' || payload === 'failed') {
+            // WebRTCService now auto-attempts ICE restart in the background.
+            // Show "Reconnecting…" instead of tearing down the call so brief
+            // network hiccups (e.g. Snipping Tool overlay) don't end it.
             setState((prev) => ({ ...prev, status: 'reconnecting' }));
           }
           break;

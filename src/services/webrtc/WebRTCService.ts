@@ -53,6 +53,10 @@ export class WebRTCService {
    */
   private peerReachable = false;
   private bufferedCandidates: RTCIceCandidateInit[] = [];
+  /** Number of ICE-restart attempts already made for the current connection. */
+  private iceRestartAttempts = 0;
+  /** Pending timer for an ICE restart so we can debounce/cancel on recovery. */
+  private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private callId: string,
@@ -249,6 +253,10 @@ export class WebRTCService {
   destroy(): void {
     if (this._destroyed) return;
     this._destroyed = true;
+    if (this.iceRestartTimer) {
+      clearTimeout(this.iceRestartTimer);
+      this.iceRestartTimer = null;
+    }
     stopAllTracks(this.localStream);
     stopAllTracks(this.screenStream);
     this.localStream = null;
@@ -270,6 +278,34 @@ export class WebRTCService {
 
   private emit(type: RTCEventType, payload?: unknown): void {
     this.eventHandler?.(type, payload);
+  }
+
+  /**
+   * Attempt to recover from a `disconnected` / `failed` connection state by
+   * triggering an ICE restart. The browser regathers candidates and
+   * `onnegotiationneeded` fires, which our existing `runNegotiationNeeded`
+   * handler turns into a fresh offer to the peer.
+   *
+   * Capped at a few attempts so we don't flood signaling on a permanently
+   * broken network.
+   */
+  private scheduleIceRestart(): void {
+    if (this._destroyed || this.iceRestartTimer) return;
+    if (this.iceRestartAttempts >= 3) return;
+    const delayMs = 1500 * (this.iceRestartAttempts + 1);
+    this.iceRestartTimer = setTimeout(() => {
+      this.iceRestartTimer = null;
+      if (this._destroyed) return;
+      // If we recovered while waiting, do nothing.
+      const cs = this.pc.connectionState;
+      if (cs === 'connected' || cs === 'closed') return;
+      this.iceRestartAttempts += 1;
+      try {
+        this.pc.restartIce();
+      } catch {
+        /* older browsers without restartIce — fall back to onnegotiationneeded */
+      }
+    }, delayMs);
   }
 
   /**
@@ -327,16 +363,29 @@ export class WebRTCService {
 
     this.pc.onconnectionstatechange = () => {
       this.emit('connection-state', this.pc.connectionState);
-      if (
-        this.pc.connectionState === 'failed' ||
-        this.pc.connectionState === 'disconnected'
+      if (this.pc.connectionState === 'connected') {
+        // Healthy again — clear any pending recovery work.
+        this.iceRestartAttempts = 0;
+        if (this.iceRestartTimer) {
+          clearTimeout(this.iceRestartTimer);
+          this.iceRestartTimer = null;
+        }
+      } else if (
+        this.pc.connectionState === 'disconnected' ||
+        this.pc.connectionState === 'failed'
       ) {
-        this.emit('error', `Connection ${this.pc.connectionState}`);
+        // Transient blips (Snipping Tool overlay, brief Wi-Fi loss, etc.) often
+        // resolve on their own. Wait briefly, then trigger ICE restart so the
+        // call self-heals instead of leaving the user staring at a frozen frame.
+        this.scheduleIceRestart();
       }
     };
 
     this.pc.oniceconnectionstatechange = () => {
       this.emit('ice-state', this.pc.iceConnectionState);
+      if (this.pc.iceConnectionState === 'failed') {
+        this.scheduleIceRestart();
+      }
     };
 
     this.pc.onnegotiationneeded = () => {
