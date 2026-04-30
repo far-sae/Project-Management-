@@ -47,6 +47,9 @@ import {
   Paperclip,
   Loader2,
   Link2,
+  CheckSquare,
+  Columns,
+  ChevronDown,
 } from 'lucide-react';
 import type { Project, Task, KanbanColumn } from '@/types';
 import { cn } from '@/lib/utils';
@@ -56,7 +59,25 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   saveMindMapState as saveToCloud,
   migrateLocalStorageToCloud,
@@ -65,6 +86,10 @@ import {
   uploadFileWithProgress,
   getProjectFiles,
 } from '@/services/supabase/storage';
+import {
+  createTask,
+  updateProject,
+} from '@/services/supabase/database';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { AIMindMap, type AIMapImportPayload } from './AIMindMap';
@@ -1338,6 +1363,110 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     });
   }, [flow, updateExtras]);
 
+  // ── Add task / column dialogs ────────────────────────────────
+  // The "+ Add" button now opens a dropdown with three options. Picking
+  // Task or Column opens a tiny modal so the user can name the item (and
+  // for tasks, pick a column). Picking Idea fires `addIdea` directly.
+  const [addDialog, setAddDialog] = useState<{
+    open: boolean;
+    type: 'task' | 'column';
+  }>({ open: false, type: 'task' });
+  const [addTitle, setAddTitle] = useState('');
+  const [addStatusId, setAddStatusId] = useState<string>('');
+  const [addSubmitting, setAddSubmitting] = useState(false);
+
+  const openAddDialog = useCallback(
+    (type: 'task' | 'column') => {
+      setAddTitle('');
+      // Default the new task into the first column so the form is usable
+      // in a single click-and-type flow.
+      setAddStatusId(columns[0]?.id ?? 'todo');
+      setAddDialog({ open: true, type });
+    },
+    [columns],
+  );
+
+  const closeAddDialog = useCallback(() => {
+    if (addSubmitting) return;
+    setAddDialog((s) => ({ ...s, open: false }));
+  }, [addSubmitting]);
+
+  const submitAddDialog = useCallback(async () => {
+    const title = addTitle.trim();
+    if (!title) {
+      toast.error('Give it a title first.');
+      return;
+    }
+    const orgId = project.organizationId;
+    if (!orgId) {
+      toast.error('This project doesn’t have an organisation set up.');
+      return;
+    }
+    if (!user?.userId) {
+      toast.error('Sign in to add to this project.');
+      return;
+    }
+
+    setAddSubmitting(true);
+    try {
+      if (addDialog.type === 'task') {
+        await createTask(
+          user.userId,
+          {
+            projectId: project.projectId,
+            title,
+            status: addStatusId || columns[0]?.id || 'todo',
+            priority: 'medium',
+            projectName: project.name,
+            createdByDisplayName: user.displayName || user.email || 'User',
+            createdByPhotoURL: user.photoURL,
+          },
+          orgId,
+        );
+        toast.success('Task added — it will appear here and on the kanban.');
+      } else {
+        // Add a column to the project. Pick a colour by rotating through a
+        // small set so consecutive new columns don't all look the same.
+        const colourPalette = [
+          '#94a3b8', // slate
+          '#0ea5e9', // sky
+          '#10b981', // emerald
+          '#f59e0b', // amber
+          '#f43f5e', // rose
+          '#8b5cf6', // violet
+        ];
+        const newColumn: KanbanColumn = {
+          id: `col-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          title,
+          color: colourPalette[columns.length % colourPalette.length],
+          order: (columns[columns.length - 1]?.order ?? columns.length - 1) + 1,
+        };
+        await updateProject(
+          project.projectId,
+          { columns: [...columns, newColumn] },
+          orgId,
+        );
+        toast.success('Column added.');
+      }
+      setAddDialog((s) => ({ ...s, open: false }));
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'Could not add — please try again.';
+      toast.error(msg);
+    } finally {
+      setAddSubmitting(false);
+    }
+  }, [
+    addTitle,
+    addDialog.type,
+    addStatusId,
+    project.projectId,
+    project.organizationId,
+    project.name,
+    user,
+    columns,
+  ]);
+
   const deleteSelection = useCallback(() => {
     const selectedNodeIds = nodes
       .filter((n) => n.selected && n.id.startsWith(IDEA_NODE_PREFIX))
@@ -1563,10 +1692,45 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     >
       {/* Floating toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-lg border border-border bg-card/95 backdrop-blur px-1.5 py-1 shadow-md">
-        <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={addIdea} title="Add idea (N)">
-          <Plus className="w-3.5 h-3.5" />
-          Add idea
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" title="Add to mind map">
+              <Plus className="w-3.5 h-3.5" />
+              Add
+              <ChevronDown className="w-3 h-3 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[200px]">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Add to project
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => openAddDialog('task')}>
+              <CheckSquare className="w-3.5 h-3.5 mr-2 text-primary" />
+              <div className="flex flex-col">
+                <span>Task</span>
+                <span className="text-[10px] text-muted-foreground">Real task — also appears on the kanban</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openAddDialog('column')}>
+              <Columns className="w-3.5 h-3.5 mr-2 text-primary" />
+              <div className="flex flex-col">
+                <span>Column</span>
+                <span className="text-[10px] text-muted-foreground">Adds a new lane to the kanban</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Brainstorm
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={addIdea}>
+              <Lightbulb className="w-3.5 h-3.5 mr-2 text-amber-500" />
+              <div className="flex flex-col">
+                <span>Idea</span>
+                <span className="text-[10px] text-muted-foreground">Floating note — only on this map</span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           size="sm"
           variant={connectMode ? 'default' : 'ghost'}
@@ -1851,6 +2015,91 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
           });
         }}
       />
+
+      {/* Lightweight modal for adding a Task or Column from the mind map. */}
+      <Dialog open={addDialog.open} onOpenChange={(o) => !o && closeAddDialog()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {addDialog.type === 'task' ? (
+                <>
+                  <CheckSquare className="w-4 h-4 text-primary" /> Add task
+                </>
+              ) : (
+                <>
+                  <Columns className="w-4 h-4 text-primary" /> Add column
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {addDialog.type === 'task'
+                ? 'Adds a real task to the project. It will show up here on the mind map and on the kanban board.'
+                : 'Adds a new lane to the kanban board. Existing tasks aren’t moved.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                Title
+              </label>
+              <Input
+                autoFocus
+                value={addTitle}
+                onChange={(e) => setAddTitle(e.target.value)}
+                placeholder={
+                  addDialog.type === 'task'
+                    ? 'e.g. Draft launch announcement'
+                    : 'e.g. Review'
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void submitAddDialog();
+                  }
+                }}
+              />
+            </div>
+            {addDialog.type === 'task' && columns.length > 0 && (
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                  Column
+                </label>
+                <Select value={addStatusId} onValueChange={setAddStatusId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick a column" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {columns.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="w-2 h-2 rounded-full"
+                            style={{ backgroundColor: c.color || '#94a3b8' }}
+                          />
+                          {c.title}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={closeAddDialog} disabled={addSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitAddDialog()} disabled={addSubmitting || !addTitle.trim()}>
+              {addSubmitting ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 mr-2" />
+              )}
+              {addDialog.type === 'task' ? 'Add task' : 'Add column'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
