@@ -394,9 +394,18 @@ export const CallOverlay: React.FC = () => {
         role="dialog"
         aria-label="Active call (drag to move)"
       >
-        {/* Drag affordance strip */}
-        <div className="flex w-full items-center justify-center py-1 text-muted-foreground/60">
+        {/* Drag affordance strip + expand button */}
+        <div className="flex w-full items-center justify-between px-2 py-1 text-muted-foreground/60">
           <GripVertical className="h-3 w-3 rotate-90" aria-hidden="true" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+            onClick={() => setPip(false)}
+            aria-label="Expand call"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
         {remoteAudioSink}
         {isVideo && state.remoteStream && (
@@ -438,7 +447,7 @@ export const CallOverlay: React.FC = () => {
           </div>
         )}
 
-        <div className="flex items-center justify-between w-full px-1 pb-1">
+        <div className="w-full px-1 pb-1">
           <CallControls
             isMuted={state.isMuted}
             isCameraOff={state.isCameraOff}
@@ -456,15 +465,6 @@ export const CallOverlay: React.FC = () => {
             }
             onHangUp={actions.hangUp}
           />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-full text-muted-foreground mr-1"
-            onClick={() => setPip(false)}
-            aria-label="Expand call"
-          >
-            <Maximize2 className="h-4 w-4" />
-          </Button>
         </div>
       </div>
     );

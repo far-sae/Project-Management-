@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Injected by Vite `define` (see vite.config.ts) from package.json @mediapipe/tasks-vision. */
+declare const __MEDIAPIPE_TASKS_VISION_VERSION__: string
+
 interface ImportMetaEnv {
   readonly VITE_FIREBASE_API_KEY: string
   readonly VITE_FIREBASE_AUTH_DOMAIN: string

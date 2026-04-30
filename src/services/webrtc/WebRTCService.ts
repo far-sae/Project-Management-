@@ -226,7 +226,17 @@ export class WebRTCService {
   async setVideoEffect(effect: VideoEffect): Promise<void> {
     if (this._destroyed) return;
     if (!this.cameraTrack) return; // audio-only call — nothing to process
-    if (effect === this.currentVideoEffect && this.bgProcessor) return;
+
+    // `currentVideoEffect` must stay in sync with `bgProcessor`. If the
+    // processor was torn down elsewhere (e.g. destroy()) but the flag was not
+    // reset, we must not short-circuit — rebuild when blur is requested.
+    const blurPipelineReady = this.bgProcessor !== null;
+    if (effect === 'none' && this.currentVideoEffect === 'none' && !blurPipelineReady) {
+      return;
+    }
+    if (effect === 'blur' && this.currentVideoEffect === 'blur' && blurPipelineReady) {
+      return;
+    }
 
     const sender = this.pc
       .getSenders()
@@ -347,6 +357,7 @@ export class WebRTCService {
       this.bgProcessor.destroy();
       this.bgProcessor = null;
     }
+    this.currentVideoEffect = 'none';
     stopAllTracks(this.localStream);
     stopAllTracks(this.screenStream);
     this.localStream = null;

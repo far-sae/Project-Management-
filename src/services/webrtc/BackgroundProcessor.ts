@@ -11,11 +11,20 @@ import {
 export type VideoEffect = 'none' | 'blur';
 
 /**
- * Where to load the MediaPipe WASM and segmentation model from. Loaded from
- * the public CDN so the app does not need to bundle / host them itself.
+ * Semver for `@mediapipe/tasks-vision` — must match `package.json` and the
+ * WASM bundle loaded from the CDN. Vite injects `__MEDIAPIPE_TASKS_VISION_VERSION__`
+ * at build/dev time from package.json (see vite.config.ts).
  */
-const VISION_WASM_URL =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.20/wasm';
+export const MEDIAPIPE_TASKS_VISION_VERSION: string =
+  __MEDIAPIPE_TASKS_VISION_VERSION__;
+
+const VISION_WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_TASKS_VISION_VERSION}/wasm`;
+
+/**
+ * Selfie segmenter weights from Google Storage (`latest` tracks the current
+ * recommended checkpoint for this model family; WASM above is locked to the
+ * npm package semver).
+ */
 const SEGMENTER_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite';
 
@@ -57,6 +66,11 @@ export class BackgroundProcessor {
   private destroyed = false;
   private readonly readyPromise: Promise<void>;
   private readyError: Error | null = null;
+  /** Reused offscreen buffer for sharp + mask pass (avoids per-frame canvas alloc). */
+  private sharpCanvas: HTMLCanvasElement | null = null;
+  private sharpCtx: CanvasRenderingContext2D | null = null;
+  private sharpBufferW = 0;
+  private sharpBufferH = 0;
 
   constructor(inputStream: MediaStream) {
     const videoTrack = inputStream.getVideoTracks()[0];
@@ -135,9 +149,45 @@ export class BackgroundProcessor {
       /* segmenter may already be closed */
     }
     this.segmenter = null;
+    this.sharpCanvas = null;
+    this.sharpCtx = null;
+    this.sharpBufferW = 0;
+    this.sharpBufferH = 0;
   }
 
   // ── Private ───────────────────────────────────────────────
+
+  /**
+   * Lazily allocates / resizes the offscreen sharp layer used in compositeBlur.
+   * Canvas resize clears the backing store; always re-fetch 2D context after resize.
+   */
+  private ensureSharpLayer(
+    w: number,
+    h: number,
+  ): CanvasRenderingContext2D | null {
+    if (!this.sharpCanvas) {
+      this.sharpCanvas = document.createElement('canvas');
+      this.sharpCtx = this.sharpCanvas.getContext('2d', {
+        willReadFrequently: true,
+      });
+    }
+    if (!this.sharpCanvas) return null;
+    if (this.sharpBufferW !== w || this.sharpBufferH !== h) {
+      this.sharpCanvas.width = w;
+      this.sharpCanvas.height = h;
+      this.sharpBufferW = w;
+      this.sharpBufferH = h;
+      this.sharpCtx = this.sharpCanvas.getContext('2d', {
+        willReadFrequently: true,
+      });
+    }
+    if (!this.sharpCtx && this.sharpCanvas) {
+      this.sharpCtx = this.sharpCanvas.getContext('2d', {
+        willReadFrequently: true,
+      });
+    }
+    return this.sharpCtx;
+  }
 
   private async initialize(): Promise<void> {
     try {
@@ -242,10 +292,7 @@ export class BackgroundProcessor {
     // 2. Render the un-blurred frame onto an offscreen buffer, then punch out
     //    background pixels using the mask. The remaining pixels are just the
     //    user, which we stamp on top of the blurred backdrop.
-    const sharpCanvas = document.createElement('canvas');
-    sharpCanvas.width = w;
-    sharpCanvas.height = h;
-    const sharpCtx = sharpCanvas.getContext('2d');
+    const sharpCtx = this.ensureSharpLayer(w, h);
     if (!sharpCtx) return;
     sharpCtx.drawImage(inputVideo, 0, 0, w, h);
 
@@ -266,7 +313,9 @@ export class BackgroundProcessor {
       }
       sharpCtx.putImageData(sharpImage, 0, 0);
       ctx.filter = 'none';
-      ctx.drawImage(sharpCanvas, 0, 0);
+      if (this.sharpCanvas) {
+        ctx.drawImage(this.sharpCanvas, 0, 0);
+      }
     }
   }
 }
