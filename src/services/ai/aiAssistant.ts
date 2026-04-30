@@ -777,3 +777,118 @@ export async function summarizeMeetingTranscript(
     maxTokens: 900,
   });
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * 7. AI mind map — turn freeform text into a hierarchical tree the UI
+ *    can lay out as a radial / horizontal mind map.
+ *    Root = topic. Branches = main themes. Leaves = sub-points.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export interface MindMapNode {
+  id: string;
+  label: string;
+  children: MindMapNode[];
+}
+
+const MIND_MAP_PROMPT = (text: string) => `
+You are an expert at structuring information into mind maps.
+Read the input below and produce a clean hierarchical mind map.
+
+Return STRICT JSON with this exact shape:
+{
+  "root": {
+    "label": "<central topic, <=80 chars>",
+    "children": [
+      {
+        "label": "<branch label>",
+        "children": [
+          {
+            "label": "<sub-point>",
+            "children": [
+              { "label": "<leaf>", "children": [] }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
+Rules:
+- Pick a single concise root topic that captures the input.
+- 3 to 8 main branches. Group related ideas under the same branch.
+- Each branch may have 0-6 sub-points. Sub-points may have 0-6 leaves.
+- Maximum tree depth is 4 (root + 3 levels). Trim deeper structures.
+- Labels must be short and scannable (ideally <= 60 chars). Drop filler words.
+- Do not invent facts that are not implied by the input.
+- Output JSON only — no prose, no markdown fences.
+
+Input:
+${text}
+`.trim();
+
+const MAX_MIND_MAP_NODES = 120;
+const MAX_MIND_MAP_DEPTH = 4;
+
+function parseMindMap(content: string): MindMapNode {
+  const json = extractJsonBlock(content);
+  let parsed: { root?: unknown };
+  try {
+    parsed = JSON.parse(json) as { root?: unknown };
+  } catch (err) {
+    throwParseError(err, json);
+    return { id: 'root', label: 'Untitled', children: [] };
+  }
+  let counter = 0;
+  let total = 0;
+
+  const visit = (raw: unknown, depth: number): MindMapNode | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    if (depth > MAX_MIND_MAP_DEPTH) return null;
+    if (total >= MAX_MIND_MAP_NODES) return null;
+    const r = raw as { label?: unknown; children?: unknown };
+    const label = typeof r.label === 'string' ? r.label.trim() : '';
+    if (!label) return null;
+    counter += 1;
+    total += 1;
+    const node: MindMapNode = {
+      id: `n${counter}`,
+      label: label.length > 120 ? `${label.slice(0, 117)}…` : label,
+      children: [],
+    };
+    if (Array.isArray(r.children)) {
+      for (const child of r.children) {
+        if (total >= MAX_MIND_MAP_NODES) break;
+        const built = visit(child, depth + 1);
+        if (built) node.children.push(built);
+      }
+    }
+    return node;
+  };
+
+  const root = visit((parsed as { root?: unknown }).root, 0);
+  if (!root) {
+    throw {
+      code: 'INVALID_INPUT',
+      message: 'AI returned an empty mind map.',
+    } as AIError;
+  }
+  return root;
+}
+
+export async function generateMindMapFromText(
+  userId: string,
+  text: string,
+): Promise<MindMapNode> {
+  const trimmed = sanitizeFreeformUserInput(text, 8000);
+  if (!trimmed) {
+    throw {
+      code: 'INVALID_INPUT',
+      message: 'Add some text to turn into a mind map.',
+    } as AIError;
+  }
+  return invokeAI(userId, MIND_MAP_PROMPT(trimmed), parseMindMap, {
+    maxTokens: 1400,
+    temperature: 0.5,
+  });
+}

@@ -20,9 +20,16 @@ export interface MindMapExtras {
     targetHandle?: string | null;
   }>;
   positions: Record<string, { x: number; y: number }>;
+  /** Auto-derived structural edge ids the user has hidden from the canvas. */
+  removedAutoEdges: string[];
 }
 
-const EMPTY_EXTRAS: MindMapExtras = { ideas: [], edges: [], positions: {} };
+const EMPTY_EXTRAS: MindMapExtras = {
+  ideas: [],
+  edges: [],
+  positions: {},
+  removedAutoEdges: [],
+};
 
 // ── Read ─────────────────────────────────────────────────────
 
@@ -49,6 +56,11 @@ export async function loadMindMapState(
         parsed.positions && typeof parsed.positions === 'object'
           ? parsed.positions
           : {},
+      removedAutoEdges: Array.isArray(parsed.removedAutoEdges)
+        ? parsed.removedAutoEdges.filter(
+            (v): v is string => typeof v === 'string',
+          )
+        : [],
     };
   } catch {
     // Table may not exist yet — fall back to empty
@@ -113,18 +125,25 @@ export async function migrateLocalStorageToCloud(
           local.positions && typeof local.positions === 'object'
             ? local.positions
             : {},
+        removedAutoEdges: Array.isArray(local.removedAutoEdges)
+          ? local.removedAutoEdges.filter(
+              (v): v is string => typeof v === 'string',
+            )
+          : [],
       };
 
       // If cloud is empty but local has data, push local → cloud
       const cloudEmpty =
         cloudState.ideas.length === 0 &&
         cloudState.edges.length === 0 &&
-        Object.keys(cloudState.positions).length === 0;
+        Object.keys(cloudState.positions).length === 0 &&
+        cloudState.removedAutoEdges.length === 0;
 
       const localHasData =
         localExtras.ideas.length > 0 ||
         localExtras.edges.length > 0 ||
-        Object.keys(localExtras.positions).length > 0;
+        Object.keys(localExtras.positions).length > 0 ||
+        localExtras.removedAutoEdges.length > 0;
 
       if (cloudEmpty && localHasData) {
         await saveMindMapState(projectId, userId, localExtras);

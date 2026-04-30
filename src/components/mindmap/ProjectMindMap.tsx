@@ -42,6 +42,8 @@ import {
   ZoomIn,
   ZoomOut,
   Keyboard,
+  Paperclip,
+  Loader2,
 } from 'lucide-react';
 import type { Project, Task, KanbanColumn } from '@/types';
 import { cn } from '@/lib/utils';
@@ -56,7 +58,13 @@ import {
   saveMindMapState as saveToCloud,
   migrateLocalStorageToCloud,
 } from '@/services/supabase/mindmapState';
+import {
+  uploadFileWithProgress,
+  getProjectFiles,
+} from '@/services/supabase/storage';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
+import { AIMindMap } from './AIMindMap';
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants
@@ -68,9 +76,12 @@ const TASK_GAP_Y = 110;
 const SUBTASK_OFFSET_X = 290;
 const SUBTASK_GAP_Y = 56;
 
-// Edge IDs that start with this prefix are user-drawn — only those can be deleted
-// from the canvas (auto-derived edges reflect the project's real structure).
+// Edge IDs starting with USER_EDGE_PREFIX are drawn by the user (reconnection
+// overrides). AUTO_EDGE_PREFIX edges are derived from the project structure;
+// the user can hide them from the canvas (we track the hidden ids in extras)
+// but they always come back if the user chooses "Restore connections".
 const USER_EDGE_PREFIX = 'extra-edge-';
+const AUTO_EDGE_PREFIX = 'auto-edge-';
 const IDEA_NODE_PREFIX = 'idea-';
 
 // ─────────────────────────────────────────────────────────────
@@ -123,9 +134,20 @@ interface MindMapExtras {
   edges: ExtraEdge[];
   /** node id → manual position override (covers task-derived nodes too). */
   positions: Record<string, { x: number; y: number }>;
+  /** Auto-edge ids the user has explicitly hidden from the canvas. The
+   *  auto-derived structural edges (project→column→task→subtask) cannot be
+   *  truly "deleted" — they reflect data — but the user can hide them and
+   *  draw their own connections instead, just like Miro/Whimsical let you
+   *  override the default linkage of an imported diagram. */
+  removedAutoEdges: string[];
 }
 
-const EMPTY_EXTRAS: MindMapExtras = { ideas: [], edges: [], positions: {} };
+const EMPTY_EXTRAS: MindMapExtras = {
+  ideas: [],
+  edges: [],
+  positions: {},
+  removedAutoEdges: [],
+};
 
 const storageKey = (projectId: string) => `mindmap_extras_v1:${projectId}`;
 
@@ -140,6 +162,9 @@ const loadExtras = (projectId: string): MindMapExtras => {
       edges: Array.isArray(parsed.edges) ? parsed.edges : [],
       positions:
         parsed.positions && typeof parsed.positions === 'object' ? parsed.positions : {},
+      removedAutoEdges: Array.isArray(parsed.removedAutoEdges)
+        ? parsed.removedAutoEdges.filter((v): v is string => typeof v === 'string')
+        : [],
     };
   } catch {
     return EMPTY_EXTRAS;
@@ -249,68 +274,126 @@ interface TaskNodeData extends Record<string, unknown> {
   assignees: string[];
   subtaskTotal: number;
   subtaskDone: number;
+  attachmentCount: number;
   onOpen?: () => void;
+  onAttachFiles?: (files: FileList) => void;
+  isUploading?: boolean;
 }
 
-const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({ data, selected }) => (
-  <div
-    className={cn(
-      'group relative w-[260px] rounded-xl border bg-card px-3 py-2.5 shadow-sm transition-all',
-      selected
-        ? 'border-primary ring-2 ring-primary/30 shadow-md'
-        : 'border-border hover:border-primary/40 hover:shadow-md',
-    )}
-  >
-    <ConnectionHandles />
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        data.onOpen?.();
-      }}
-      className="w-full text-left"
+const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({ data, selected }) => {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <div
+      className={cn(
+        'group relative w-[260px] rounded-xl border bg-card px-3 py-2.5 shadow-sm transition-all',
+        selected
+          ? 'border-primary ring-2 ring-primary/30 shadow-md'
+          : 'border-border hover:border-primary/40 hover:shadow-md',
+      )}
     >
-      <div className="flex items-start gap-2">
-        <span
-          className={cn(
-            'mt-1 inline-block w-2 h-2 rounded-full shrink-0',
-            STATUS_DOT[data.status] || 'bg-slate-400',
-          )}
-          aria-hidden
-        />
-        <p className="text-sm font-medium text-foreground leading-snug truncate flex-1">
-          {data.label}
-        </p>
-      </div>
-      <div className="mt-1.5 flex items-center gap-1 flex-wrap">
-        {data.priority && (
+      <ConnectionHandles />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          data.onOpen?.();
+        }}
+        className="w-full text-left"
+      >
+        <div className="flex items-start gap-2">
           <span
             className={cn(
-              'text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border',
-              PRIORITY_CLASSES[data.priority] ||
-                'bg-secondary text-secondary-foreground border-border',
+              'mt-1 inline-block w-2 h-2 rounded-full shrink-0',
+              STATUS_DOT[data.status] || 'bg-slate-400',
+            )}
+            aria-hidden
+          />
+          <p className="text-sm font-medium text-foreground leading-snug truncate flex-1">
+            {data.label}
+          </p>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+          {data.priority && (
+            <span
+              className={cn(
+                'text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border',
+                PRIORITY_CLASSES[data.priority] ||
+                  'bg-secondary text-secondary-foreground border-border',
+              )}
+            >
+              {data.priority}
+            </span>
+          )}
+          {data.dueDate && (
+            <span className="text-[10px] text-muted-foreground">due {data.dueDate}</span>
+          )}
+          {data.subtaskTotal > 0 && (
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              {data.subtaskDone}/{data.subtaskTotal} subtasks
+            </span>
+          )}
+          {data.attachmentCount > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground tabular-nums">
+              <Paperclip className="w-3 h-3" />
+              {data.attachmentCount}
+            </span>
+          )}
+        </div>
+        {data.assignees.length > 0 && (
+          <p className="mt-1 text-[10px] text-muted-foreground truncate">
+            {data.assignees.join(', ')}
+          </p>
+        )}
+      </button>
+
+      {/* Hidden picker — attaches the files to this task. Upload progress is
+          surfaced via toast in the parent so the small node UI doesn't need
+          its own progress bar. */}
+      {data.onAttachFiles && (
+        <>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = e.target.files;
+              if (files && files.length > 0) data.onAttachFiles?.(files);
+              e.target.value = '';
+            }}
+          />
+          <div
+            className={cn(
+              'nodrag absolute -top-2.5 right-2 flex items-center gap-0.5 rounded-md border border-border bg-card px-0.5 py-0.5 shadow-md transition-opacity',
+              selected
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
             )}
           >
-            {data.priority}
-          </span>
-        )}
-        {data.dueDate && (
-          <span className="text-[10px] text-muted-foreground">due {data.dueDate}</span>
-        )}
-        {data.subtaskTotal > 0 && (
-          <span className="text-[10px] text-muted-foreground tabular-nums">
-            {data.subtaskDone}/{data.subtaskTotal} subtasks
-          </span>
-        )}
-      </div>
-      {data.assignees.length > 0 && (
-        <p className="mt-1 text-[10px] text-muted-foreground truncate">
-          {data.assignees.join(', ')}
-        </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              disabled={data.isUploading}
+              title={data.isUploading ? 'Uploading…' : 'Attach files to this task'}
+              aria-label="Attach files to this task"
+              className="px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1 disabled:opacity-50"
+            >
+              {data.isUploading ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Paperclip className="w-3 h-3" />
+              )}
+              Attach
+            </button>
+          </div>
+        </>
       )}
-    </button>
-  </div>
-);
+    </div>
+  );
+};
 
 interface SubtaskNodeData extends Record<string, unknown> {
   label: string;
@@ -497,11 +580,21 @@ const formatDueShort = (d: Date | string | null | undefined): string | undefined
   return format(date, 'MMM d');
 };
 
+interface BuildGraphHooks {
+  onOpenTask?: (taskId: string) => void;
+  /** Called when the user picks files to attach to this task node. */
+  onAttachFilesToTask?: (taskId: string, files: FileList) => void;
+  /** Map of taskId → number of attached files (mirrors task.commentAttachments etc.). */
+  attachmentCounts?: Map<string, number>;
+  /** Set of task ids currently uploading attachments (for spinner state). */
+  uploadingTaskIds?: Set<string>;
+}
+
 const buildBaseGraph = (
   project: Project,
   tasks: Task[],
   columns: KanbanColumn[],
-  onOpenTask?: (taskId: string) => void,
+  hooks: BuildGraphHooks = {},
 ): { nodes: Node[]; edges: Edge[] } => {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -570,6 +663,8 @@ const buildBaseGraph = (
       const subtasks = t.subtasks ?? [];
       const subtaskDone = subtasks.filter((s) => s.completed).length;
 
+      const attachmentCount = hooks.attachmentCounts?.get(t.taskId) ?? 0;
+      const isUploading = hooks.uploadingTaskIds?.has(t.taskId) ?? false;
       nodes.push({
         id: taskNodeId,
         type: 'task',
@@ -584,7 +679,12 @@ const buildBaseGraph = (
             .slice(0, 3),
           subtaskTotal: subtasks.length,
           subtaskDone,
-          onOpen: () => onOpenTask?.(t.taskId),
+          attachmentCount,
+          isUploading,
+          onOpen: () => hooks.onOpenTask?.(t.taskId),
+          onAttachFiles: hooks.onAttachFilesToTask
+            ? (files: FileList) => hooks.onAttachFilesToTask?.(t.taskId, files)
+            : undefined,
         } satisfies TaskNodeData,
       });
       // Tint column→task edges with the lane color so each column visibly "owns"
@@ -705,10 +805,129 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     [project.projectId, user?.userId],
   );
 
+  // ── Per-task attachment state ───────────────────────────────
+  // Counts how many files are attached to each task so we can show a 📎
+  // badge on the node, plus tracks which tasks are mid-upload for the
+  // spinner UI. We seed counts from the existing `files` table on mount,
+  // and bump them locally on a successful upload (instead of refetching).
+  const [attachmentCounts, setAttachmentCounts] = useState<Map<string, number>>(
+    new Map(),
+  );
+  const [uploadingTaskIds, setUploadingTaskIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  useEffect(() => {
+    const orgId = project.organizationId;
+    if (!orgId) {
+      setAttachmentCounts(new Map());
+      return;
+    }
+    let cancelled = false;
+    void getProjectFiles(project.projectId, orgId, 'project').then((files) => {
+      if (cancelled) return;
+      const m = new Map<string, number>();
+      for (const f of files) {
+        if (f.taskId) m.set(f.taskId, (m.get(f.taskId) ?? 0) + 1);
+      }
+      setAttachmentCounts(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.projectId, project.organizationId]);
+
+  const handleAttachFilesToTask = useCallback(
+    async (taskId: string, files: FileList) => {
+      const orgId = project.organizationId;
+      if (!orgId) {
+        toast.error('Workspace storage isn’t configured for this project.');
+        return;
+      }
+      if (!user?.userId) {
+        toast.error('Sign in to attach files.');
+        return;
+      }
+      const list = Array.from(files);
+      if (list.length === 0) return;
+
+      setUploadingTaskIds((prev) => {
+        const next = new Set(prev);
+        next.add(taskId);
+        return next;
+      });
+
+      const toastId = toast.loading(
+        list.length === 1
+          ? `Uploading ${list[0].name}…`
+          : `Uploading ${list.length} files…`,
+      );
+
+      let success = 0;
+      let failed = 0;
+      for (const file of list) {
+        try {
+          await uploadFileWithProgress(
+            user.userId,
+            user.displayName || user.email || 'User',
+            orgId,
+            { projectId: project.projectId, taskId, file, scope: 'task' },
+          );
+          success += 1;
+        } catch (err) {
+          failed += 1;
+          // Continue uploading the rest — better partial than silently aborting
+          // the entire batch on the first network blip.
+        }
+      }
+
+      if (success > 0) {
+        setAttachmentCounts((prev) => {
+          const next = new Map(prev);
+          next.set(taskId, (next.get(taskId) ?? 0) + success);
+          return next;
+        });
+      }
+      setUploadingTaskIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+
+      if (failed === 0) {
+        toast.success(
+          success === 1 ? 'File attached' : `${success} files attached`,
+          { id: toastId },
+        );
+      } else if (success === 0) {
+        toast.error('Upload failed. Check your connection and try again.', {
+          id: toastId,
+        });
+      } else {
+        toast.warning(`Attached ${success}, ${failed} failed`, { id: toastId });
+      }
+    },
+    [project.projectId, project.organizationId, user?.userId, user?.displayName, user?.email],
+  );
+
   // Auto-derived structure from the project + tasks.
   const baseGraph = useMemo(
-    () => buildBaseGraph(project, tasks, columns, onOpenTask),
-    [project, tasks, columns, onOpenTask],
+    () =>
+      buildBaseGraph(project, tasks, columns, {
+        onOpenTask,
+        onAttachFilesToTask: handleAttachFilesToTask,
+        attachmentCounts,
+        uploadingTaskIds,
+      }),
+    [
+      project,
+      tasks,
+      columns,
+      onOpenTask,
+      handleAttachFilesToTask,
+      attachmentCounts,
+      uploadingTaskIds,
+    ],
   );
 
   // Idea-node mutators (passed into IdeaNode data so the user can edit/delete inline).
@@ -758,6 +977,8 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
   }, [baseGraph.nodes, extras, handleIdeaChange, handleIdeaDelete]);
 
   const composedEdges = useMemo<Edge[]>(() => {
+    const removed = new Set(extras.removedAutoEdges);
+    const baseVisible = baseGraph.edges.filter((e) => !removed.has(e.id));
     const userEdges: Edge[] = extras.edges.map((e) => ({
       id: e.id,
       source: e.source,
@@ -769,8 +990,8 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
       markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(99,102,241)' },
       style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
     }));
-    return [...baseGraph.edges, ...userEdges];
-  }, [baseGraph.edges, extras.edges]);
+    return [...baseVisible, ...userEdges];
+  }, [baseGraph.edges, extras.edges, extras.removedAutoEdges]);
 
   // React Flow controlled state. We seed from composedNodes/Edges and re-seed when the
   // composition changes (e.g. tasks updated, idea added). Drag-in-flight changes go
@@ -844,12 +1065,20 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     [updateExtras],
   );
 
-  // React Flow calls these *before* applying the delete, so we can both filter what
-  // the user is allowed to remove and keep our extras store in sync.
+  // React Flow calls these *before* applying the delete, so we can both filter
+  // what the user is allowed to remove and keep our extras store in sync.
+  // Idea nodes and *both* edge kinds (user-drawn + auto/structural) are now
+  // deletable — for auto edges the deletion is a "hide" (tracked separately
+  // so we can restore later). Structural nodes (project / columns / tasks /
+  // subtasks) cannot be deleted from the canvas because they reflect data.
   const onBeforeDelete = useCallback(
     async ({ nodes: nDel, edges: eDel }: { nodes: Node[]; edges: Edge[] }) => {
       const deletableNodes = nDel.filter((n) => n.id.startsWith(IDEA_NODE_PREFIX));
-      const deletableEdges = eDel.filter((e) => e.id.startsWith(USER_EDGE_PREFIX));
+      const deletableEdges = eDel.filter(
+        (e) =>
+          e.id.startsWith(USER_EDGE_PREFIX) ||
+          e.id.startsWith(AUTO_EDGE_PREFIX),
+      );
       if (deletableNodes.length === 0 && deletableEdges.length === 0) {
         return false;
       }
@@ -876,11 +1105,22 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
 
   const onEdgesDelete = useCallback(
     (deleted: Edge[]) => {
-      const ids = deleted.map((e) => e.id).filter((id) => id.startsWith(USER_EDGE_PREFIX));
-      if (ids.length === 0) return;
+      const userIds: string[] = [];
+      const autoIds: string[] = [];
+      for (const e of deleted) {
+        if (e.id.startsWith(USER_EDGE_PREFIX)) userIds.push(e.id);
+        else if (e.id.startsWith(AUTO_EDGE_PREFIX)) autoIds.push(e.id);
+      }
+      if (userIds.length === 0 && autoIds.length === 0) return;
       updateExtras((prev) => ({
         ...prev,
-        edges: prev.edges.filter((e) => !ids.includes(e.id)),
+        edges: prev.edges.filter((e) => !userIds.includes(e.id)),
+        // Track hidden auto-edges so they don't reappear on the next render
+        // (composedEdges filters them out). Use a Set to dedupe across runs.
+        removedAutoEdges:
+          autoIds.length > 0
+            ? Array.from(new Set([...prev.removedAutoEdges, ...autoIds]))
+            : prev.removedAutoEdges,
       }));
     },
     [updateExtras],
@@ -1151,6 +1391,20 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
           </DropdownMenuContent>
         </DropdownMenu>
         <span className="w-px h-5 bg-border" aria-hidden />
+        {extras.removedAutoEdges.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1.5 text-xs text-amber-600 dark:text-amber-300 hover:bg-amber-500/10"
+            onClick={() =>
+              updateExtras((prev) => ({ ...prev, removedAutoEdges: [] }))
+            }
+            title={`Restore ${extras.removedAutoEdges.length} hidden connection${extras.removedAutoEdges.length === 1 ? '' : 's'}`}
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Restore links ({extras.removedAutoEdges.length})
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"
@@ -1318,7 +1572,9 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
 // Public component (wraps with ReactFlowProvider so useReactFlow works in MindMapInner)
 // ─────────────────────────────────────────────────────────────
 
-export const ProjectMindMap: React.FC<ProjectMindMapProps> = (props) => {
+type MindMapMode = 'project' | 'ai';
+
+const ProjectStructuralMap: React.FC<ProjectMindMapProps> = (props) => {
   if (props.tasks.length === 0 && (loadExtras(props.project.projectId).ideas.length === 0)) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground bg-background rounded-lg border border-border">
@@ -1331,11 +1587,60 @@ export const ProjectMindMap: React.FC<ProjectMindMapProps> = (props) => {
       </div>
     );
   }
-
   return (
     <ReactFlowProvider>
       <MindMapInner {...props} />
     </ReactFlowProvider>
+  );
+};
+
+export const ProjectMindMap: React.FC<ProjectMindMapProps> = (props) => {
+  const [mode, setMode] = useState<MindMapMode>('project');
+
+  return (
+    <div className="h-full flex flex-col gap-2">
+      {/* Mode switcher — sits above the canvas so the existing toolbar inside
+          ProjectStructuralMap stays untouched. The AI map is a separate
+          self-contained surface; switching modes is purely visual. */}
+      <div className="flex items-center gap-1 rounded-lg border border-border bg-card/80 backdrop-blur p-0.5 self-start shadow-sm">
+        <button
+          type="button"
+          onClick={() => setMode('project')}
+          className={cn(
+            'px-3 py-1.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1.5',
+            mode === 'project'
+              ? 'bg-primary text-primary-foreground shadow'
+              : 'text-muted-foreground hover:text-foreground hover:bg-secondary',
+          )}
+          aria-pressed={mode === 'project'}
+        >
+          <Sparkles className="w-3 h-3" />
+          Project map
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('ai')}
+          className={cn(
+            'px-3 py-1.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1.5',
+            mode === 'ai'
+              ? 'bg-primary text-primary-foreground shadow'
+              : 'text-muted-foreground hover:text-foreground hover:bg-secondary',
+          )}
+          aria-pressed={mode === 'ai'}
+        >
+          <Lightbulb className="w-3 h-3" />
+          AI mind map
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0">
+        {mode === 'project' ? (
+          <ProjectStructuralMap {...props} />
+        ) : (
+          <AIMindMap />
+        )}
+      </div>
+    </div>
   );
 };
 
