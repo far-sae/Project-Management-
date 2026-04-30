@@ -266,10 +266,11 @@ export const CallOverlay: React.FC = () => {
 
   // The dedicated <audio> element is the single source of truth for remote
   // sound, since the visible <video> elements are muted to prevent the
-  // backdrop+foreground duplication from echoing.
+  // backdrop+foreground duplication from echoing. Include `pip` so we
+  // re-attach when the DOM element is re-created by the PiP toggle.
   useEffect(() => {
     attachStream(remoteAudioRef.current, state.remoteStream);
-  }, [state.remoteStream]);
+  }, [state.remoteStream, pip]);
 
   // Nothing to render when idle
   if (state.status === 'idle') return null;
@@ -290,8 +291,8 @@ export const CallOverlay: React.FC = () => {
       aria-hidden="true"
       style={{
         position: 'fixed',
-        width: 0,
-        height: 0,
+        width: 1,
+        height: 1,
         left: -9999,
         top: -9999,
         opacity: 0,
