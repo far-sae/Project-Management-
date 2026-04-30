@@ -11,6 +11,9 @@ export interface MindMapExtras {
     x: number;
     y: number;
     color?: string;
+    /** Visual style for this placeholder — task / column / project header,
+     *  or undefined for a pill-shaped brainstorm idea. Cosmetic only. */
+    kind?: 'task' | 'column' | 'project';
   }>;
   edges: Array<{
     id: string;

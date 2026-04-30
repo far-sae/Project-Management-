@@ -136,6 +136,12 @@ interface ExtraIdea {
   x: number;
   y: number;
   color?: string;
+  /** Optional visual style for this placeholder. Undefined = pill-shaped
+   *  brainstorm idea (legacy). 'task' / 'column' / 'project' make the node
+   *  render in the matching kanban-derived shape so a placeholder visually
+   *  echoes a real task/column/project header — purely cosmetic, the data
+   *  lives in extras either way and never reaches the kanban. */
+  kind?: 'task' | 'column' | 'project';
 }
 
 interface ExtraEdge {
@@ -458,6 +464,10 @@ const SubtaskNode: React.FC<{ data: SubtaskNodeData; selected?: boolean }> = ({ 
 interface IdeaNodeData extends Record<string, unknown> {
   label: string;
   color?: string;
+  /** Visual style — undefined falls back to the legacy idea pill. */
+  kind?: 'task' | 'column' | 'project';
+  /** Project name displayed under the header on kind='project' shells. */
+  projectDescription?: string;
   onChange: (label: string) => void;
   onDelete: () => void;
   onColorChange: (color: string) => void;
@@ -468,6 +478,7 @@ const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({ data, 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(data.label);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const kind = data.kind;
 
   // Keep draft in sync if the underlying label changes externally (e.g. undo, palette swap).
   useEffect(() => {
@@ -488,6 +499,144 @@ const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({ data, 
     else if (!trimmed) setDraft(data.label);
   };
 
+  // The label area swaps between a static <p> and an editable <textarea>.
+  // Shared across every kind so the inline rename UX is uniform.
+  const labelBlock = editing ? (
+    <textarea
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setDraft(data.label);
+          setEditing(false);
+        }
+      }}
+      rows={kind === 'project' ? 1 : 2}
+      className={cn(
+        'nodrag flex-1 leading-snug bg-background/60 border border-border/60 rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-primary/30 resize-none min-w-0',
+        kind === 'project' ? 'text-sm font-semibold' : 'text-sm font-medium',
+      )}
+    />
+  ) : (
+    <p
+      className={cn(
+        'flex-1 leading-snug whitespace-pre-wrap break-words',
+        kind === 'project'
+          ? 'text-sm font-semibold text-foreground'
+          : 'text-sm font-medium text-foreground',
+      )}
+    >
+      {data.label || (kind === 'project' ? 'Untitled project' : kind === 'column' ? 'Untitled column' : kind === 'task' ? 'Untitled task' : 'Untitled idea')}
+    </p>
+  );
+
+  // ── Kind-specific shells ──────────────────────────────────────
+  // Project header: gradient card with a "PROJECT" tag, mirrors the real
+  // ProjectNode shape so a placeholder visually reads as the project root.
+  if (kind === 'project') {
+    return (
+      <div
+        className={cn(
+          'group relative rounded-2xl border bg-gradient-to-br from-primary/15 to-primary/[0.04] px-4 py-3 shadow-lg min-w-[240px] max-w-[300px] backdrop-blur-sm transition-all',
+          selected ? 'border-primary ring-2 ring-primary/30' : 'border-primary/40',
+        )}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        <ConnectionHandles />
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3 text-primary" />
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
+            Project
+          </p>
+        </div>
+        <div className="mt-0.5 flex items-start gap-2">
+          {labelBlock}
+        </div>
+        {data.projectDescription && !editing && (
+          <p className="mt-1 text-[11px] text-muted-foreground leading-snug line-clamp-2">
+            {data.projectDescription}
+          </p>
+        )}
+        {renderHoverToolbar()}
+      </div>
+    );
+  }
+
+  // Column pill: dot + bold title, matches the real ColumnNode shape.
+  if (kind === 'column') {
+    return (
+      <div
+        className={cn(
+          'group relative rounded-xl border bg-card px-3.5 py-2.5 shadow-sm min-w-[200px] max-w-[260px] backdrop-blur-sm transition-all',
+          selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
+        )}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        <ConnectionHandles />
+        <div className="flex items-center gap-2">
+          <span
+            className={cn('inline-block w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-card', palette.dot)}
+            aria-hidden
+          />
+          <div className="flex-1 min-w-0">{labelBlock}</div>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-0.5 ml-4.5">Placeholder column</p>
+        {renderHoverToolbar()}
+      </div>
+    );
+  }
+
+  // Task card: status-dot + label + a "PLACEHOLDER" tag where the priority
+  // chip would live on a real task. Same width as TaskNode for visual parity.
+  if (kind === 'task') {
+    return (
+      <div
+        className={cn(
+          'group relative w-[260px] rounded-xl border bg-card px-3 py-2.5 shadow-sm transition-all',
+          selected ? 'border-primary ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/40 hover:shadow-md',
+        )}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        <ConnectionHandles />
+        <div className="flex items-start gap-2">
+          <span
+            className={cn('mt-1 inline-block w-2 h-2 rounded-full shrink-0', palette.dot)}
+            aria-hidden
+          />
+          <div className="flex-1 min-w-0">{labelBlock}</div>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+          <span
+            className={cn(
+              'text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border',
+              palette.bg,
+              palette.ring.replace('border-', 'border-'),
+            )}
+          >
+            placeholder
+          </span>
+        </div>
+        {renderHoverToolbar()}
+      </div>
+    );
+  }
+
+  // Default: legacy idea pill — unchanged.
   return (
     <div
       className={cn(
@@ -504,33 +653,18 @@ const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({ data, 
       <ConnectionHandles />
       <div className="flex items-start gap-2">
         <span className={cn('mt-1.5 inline-block w-2 h-2 rounded-full shrink-0', palette.dot)} aria-hidden />
-        {editing ? (
-          <textarea
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                commit();
-              } else if (e.key === 'Escape') {
-                e.preventDefault();
-                setDraft(data.label);
-                setEditing(false);
-              }
-            }}
-            rows={2}
-            className="nodrag flex-1 text-sm font-medium text-foreground leading-snug bg-background/60 border border-border/60 rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-primary/30 resize-none min-w-0"
-          />
-        ) : (
-          <p className="flex-1 text-sm font-medium text-foreground leading-snug whitespace-pre-wrap break-words">
-            {data.label || 'Untitled idea'}
-          </p>
-        )}
+        {labelBlock}
       </div>
 
-      {/* Hover/selected toolbar */}
+      {renderHoverToolbar()}
+    </div>
+  );
+
+  // ── Shared hover toolbar ────────────────────────────────────
+  // Hoisted as a closure so the 4 shape branches stay flat. Captures
+  // `data`, `palette`, `selected`, `setEditing` from the outer scope.
+  function renderHoverToolbar() {
+    return (
       <div
         className={cn(
           'nodrag absolute -top-3 right-2 flex items-center gap-0.5 rounded-md border border-border bg-card shadow-md px-0.5 py-0.5 transition-opacity',
@@ -580,8 +714,8 @@ const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({ data, 
           <Trash2 className="w-3 h-3" />
         </button>
       </div>
-    </div>
-  );
+    );
+  }
 };
 
 const NODE_TYPES: NodeTypes = {
@@ -1118,13 +1252,18 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       data: {
         label: i.label,
         color: i.color,
+        kind: i.kind,
+        // For project-header placeholders, surface the live project
+        // description as a subtitle. Real ProjectNode does the same, so the
+        // placeholder visually echoes the actual project root.
+        projectDescription: i.kind === 'project' ? project.description : undefined,
         onChange: (label: string) => handleIdeaChange(i.id, { label }),
         onDelete: () => handleIdeaDelete(i.id),
         onColorChange: (color: string) => handleIdeaChange(i.id, { color }),
       } satisfies IdeaNodeData,
     }));
     return [...base, ...ideaNodes];
-  }, [baseGraph.nodes, extras, handleIdeaChange, handleIdeaDelete]);
+  }, [baseGraph.nodes, extras, handleIdeaChange, handleIdeaDelete, project.description]);
 
   /** One-click delete fired from the X button on each edge. We don't touch
    *  the React Flow `edges` state here; the composedEdges memo re-derives
@@ -1352,24 +1491,28 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     });
   }, [flow, updateExtras]);
 
-  // ── Add task / column / idea dialog (mind-map only) ──────────
+  // ── Add placeholder dialog (mind-map only) ───────────────────
   // Hard rule: NOTHING the user does on the mind map writes to the kanban.
-  // All three "Add" options drop a node into the mind map's local extras
-  // (the same per-user JSONB blob in `mind_map_state` that ideas use). The
-  // three kinds differ only in default colour so the user can tell them
-  // apart at a glance — they're all idea nodes underneath, with the same
-  // rename / recolour / drag / delete UX.
+  // The three "Add" options drop a node into the mind map's local extras.
+  // Each kind renders in a different visual shell so it visually echoes the
+  // matching real node — task-card, column pill, or project header — but
+  // the data lives entirely in extras and never reaches the kanban.
   const [addDialog, setAddDialog] = useState<{
     open: boolean;
-    type: 'task' | 'column';
+    type: 'task' | 'column' | 'project';
   }>({ open: false, type: 'task' });
   const [addTitle, setAddTitle] = useState('');
   const [addSubmitting, setAddSubmitting] = useState(false);
 
-  const openAddDialog = useCallback((type: 'task' | 'column') => {
-    setAddTitle('');
-    setAddDialog({ open: true, type });
-  }, []);
+  const openAddDialog = useCallback(
+    (type: 'task' | 'column' | 'project') => {
+      // Project headers default to the real project name so the user gets
+      // a one-tap experience: open dialog, hit Enter, header is on the canvas.
+      setAddTitle(type === 'project' ? project.name : '');
+      setAddDialog({ open: true, type });
+    },
+    [project.name],
+  );
 
   const closeAddDialog = useCallback(() => {
     if (addSubmitting) return;
@@ -1394,11 +1537,12 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       const flowPos = flow.screenToFlowPosition({ x: cx, y: cy });
       const id = `${IDEA_NODE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-      // Pick a colour per type so the three kinds are visually distinct.
-      // 'emerald' / 'sky' / 'violet' all exist in IDEA_PALETTE.
-      const colorByType: Record<'task' | 'column', string> = {
+      // Default colour per kind. All three names exist in IDEA_PALETTE so
+      // the per-node palette swap (hover toolbar) keeps working.
+      const colorByType: Record<'task' | 'column' | 'project', string> = {
         task: 'emerald',
         column: 'sky',
+        project: 'violet',
       };
 
       const idea: ExtraIdea = {
@@ -1407,15 +1551,19 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         x: flowPos.x - 100,
         y: flowPos.y - 24,
         color: colorByType[addDialog.type],
+        kind: addDialog.type,
       };
       updateExtras((prev) => ({ ...prev, ideas: [...prev.ideas, idea] }));
       requestAnimationFrame(() => {
         setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === id })));
       });
 
-      toast.success(
-        addDialog.type === 'task' ? 'Task added to mind map' : 'Column added to mind map',
-      );
+      const successByKind: Record<'task' | 'column' | 'project', string> = {
+        task: 'Task added to mind map',
+        column: 'Column added to mind map',
+        project: 'Project header added to mind map',
+      };
+      toast.success(successByKind[addDialog.type]);
       setAddDialog((s) => ({ ...s, open: false }));
     } catch (err) {
       const msg =
@@ -1659,7 +1807,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               <ChevronDown className="w-3 h-3 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[240px]">
+          <DropdownMenuContent align="start" className="min-w-[260px]">
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Add to mind map only — kanban is never changed
             </DropdownMenuLabel>
@@ -1667,14 +1815,21 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               <CheckSquare className="w-3.5 h-3.5 mr-2 text-emerald-500" />
               <div className="flex flex-col">
                 <span>Task</span>
-                <span className="text-[10px] text-muted-foreground">Task-shaped note for this map</span>
+                <span className="text-[10px] text-muted-foreground">Task-card shape — like a real task</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => openAddDialog('column')}>
               <Columns className="w-3.5 h-3.5 mr-2 text-sky-500" />
               <div className="flex flex-col">
                 <span>Column</span>
-                <span className="text-[10px] text-muted-foreground">Column-shaped note for this map</span>
+                <span className="text-[10px] text-muted-foreground">Column-pill shape — like a real lane</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openAddDialog('project')}>
+              <Sparkles className="w-3.5 h-3.5 mr-2 text-primary" />
+              <div className="flex flex-col">
+                <span>Project header</span>
+                <span className="text-[10px] text-muted-foreground">Header card with the project name</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -1972,9 +2127,10 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         }}
       />
 
-      {/* Modal for naming a Task / Column note that lives on the mind map
-          only. Everything submitted here goes into per-user mind-map state.
-          The kanban board / project columns / tasks table are never touched. */}
+      {/* Modal for naming a Task / Column / Project note that lives on the
+          mind map only. Everything submitted here goes into per-user
+          mind-map state — the kanban board / project columns / tasks table
+          are never touched. */}
       <Dialog open={addDialog.open} onOpenChange={(o) => !o && closeAddDialog()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1983,9 +2139,13 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
                 <>
                   <CheckSquare className="w-4 h-4 text-emerald-500" /> Add task note
                 </>
-              ) : (
+              ) : addDialog.type === 'column' ? (
                 <>
                   <Columns className="w-4 h-4 text-sky-500" /> Add column note
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-primary" /> Add project header
                 </>
               )}
             </DialogTitle>
@@ -1997,7 +2157,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
           <div className="space-y-3">
             <div>
               <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
-                Title
+                {addDialog.type === 'project' ? 'Header label' : 'Title'}
               </label>
               <Input
                 autoFocus
@@ -2006,7 +2166,9 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
                 placeholder={
                   addDialog.type === 'task'
                     ? 'e.g. Draft launch announcement'
-                    : 'e.g. Review'
+                    : addDialog.type === 'column'
+                      ? 'e.g. Review'
+                      : project.name
                 }
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -2015,6 +2177,11 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
                   }
                 }}
               />
+              {addDialog.type === 'project' && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Pre-filled with this project's name — change it if you want a different label.
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>
