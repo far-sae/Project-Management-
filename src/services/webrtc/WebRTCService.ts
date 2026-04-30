@@ -14,7 +14,13 @@ export type RTCEventType =
   | 'ice-state'
   | 'error'
   | 'hangup'
-  | 'reject';
+  | 'reject'
+  /**
+   * Fires the moment we have proof the remote side is engaged with the call:
+   * the caller has received the SDP answer, or the callee has sent theirs.
+   * Lets the UI cancel "didn't answer" timers before ICE has even finished.
+   */
+  | 'answered';
 
 type RTCEventHandler = (type: RTCEventType, payload?: unknown) => void;
 
@@ -148,6 +154,7 @@ export class WebRTCService {
       // candidates we emit from here on can flow live; flush anything that was
       // gathered between setLocalDescription and now.
       this.markPeerReachable();
+      this.emit('answered');
     } finally {
       this.suppressNegotiation = false;
     }
@@ -455,6 +462,7 @@ export class WebRTCService {
           // Receiving an answer proves the callee is subscribed; flush any
           // ICE candidates that were buffered during the ringing phase.
           this.markPeerReachable();
+          this.emit('answered');
           break;
 
         case 'ice-candidate':

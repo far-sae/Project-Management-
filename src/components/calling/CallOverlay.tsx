@@ -231,6 +231,9 @@ export const CallOverlay: React.FC = () => {
   const { state, actions } = useCall();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  /** Blurred backdrop video that fills the screen behind the crisp remote feed. */
+  const remoteBackdropRef = useRef<HTMLVideoElement>(null);
+  /** Dedicated audio sink — single source of truth for remote sound. */
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [pip, setPip] = useState(false);
   const pipDrag = useDraggable(initialPipPosition);
@@ -255,10 +258,12 @@ export const CallOverlay: React.FC = () => {
 
   useEffect(() => {
     attachStream(remoteVideoRef.current, state.remoteStream);
+    attachStream(remoteBackdropRef.current, state.remoteStream);
   }, [state.remoteStream, pip]);
 
-  // Audio-only calls have no <video> rendering the remote stream, so without a
-  // dedicated <audio> element the remote audio track would never play.
+  // The dedicated <audio> element is the single source of truth for remote
+  // sound, since the visible <video> elements are muted to prevent the
+  // backdrop+foreground duplication from echoing.
   useEffect(() => {
     attachStream(remoteAudioRef.current, state.remoteStream);
   }, [state.remoteStream]);
@@ -266,14 +271,14 @@ export const CallOverlay: React.FC = () => {
   // Nothing to render when idle
   if (state.status === 'idle') return null;
 
-  // Always-mounted hidden audio sink for the remote stream. For video calls
-  // the <video> element plays audio, so we mute this sink to avoid echo; for
-  // audio-only calls this is the only thing that produces sound.
+  // Always-mounted hidden audio sink for the remote stream. The visible
+  // <video> elements (foreground + blurred backdrop) are all muted, so this
+  // sink is the only thing that actually emits sound for both video and
+  // audio-only calls — guaranteeing no echo and no missing audio.
   const remoteAudioSink = (
     <audio
       ref={remoteAudioRef}
       autoPlay
-      muted={state.mediaType === 'video'}
       className="hidden"
       aria-hidden="true"
     />
@@ -385,6 +390,7 @@ export const CallOverlay: React.FC = () => {
               ref={remoteVideoRef}
               autoPlay
               playsInline
+              muted
               className="w-full h-full object-cover"
             />
             {state.localStream && !state.isCameraOff && (
@@ -479,11 +485,23 @@ export const CallOverlay: React.FC = () => {
       <div className="flex-1 relative flex items-center justify-center overflow-hidden">
         {isVideo && state.remoteStream ? (
           <>
+            {/* Blurred backdrop — fills the screen so portrait phone video
+                doesn't leave black bars, without zooming the actual frame. */}
+            <video
+              ref={remoteBackdropRef}
+              autoPlay
+              playsInline
+              muted
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-60 pointer-events-none"
+            />
+            {/* Crisp, un-zoomed remote video centered on top of the backdrop. */}
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              className="absolute inset-0 w-full h-full object-cover"
+              muted
+              className="relative max-w-full max-h-full object-contain z-[1]"
             />
             {state.localStream && !state.isCameraOff && (
               <video

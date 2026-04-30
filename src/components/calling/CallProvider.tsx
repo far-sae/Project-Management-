@@ -249,7 +249,43 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   const setupRTCEvents = useCallback((rtc: WebRTCService) => {
     rtc.onEvent((type, payload) => {
       switch (type) {
+        case 'answered':
+          // The peer has explicitly accepted the call (caller received answer
+          // or callee just sent theirs). Cancel the "didn't answer" / offer
+          // resend timers immediately, even if ICE hasn't finished, so a slow
+          // network can't tear down a real, accepted call after 30 s.
+          if (ringTimeoutRef.current) {
+            clearTimeout(ringTimeoutRef.current);
+            ringTimeoutRef.current = null;
+          }
+          if (offerResendRef.current) {
+            clearInterval(offerResendRef.current);
+            offerResendRef.current = null;
+          }
+          if (inboxChannelRef.current) {
+            void supabase.removeChannel(inboxChannelRef.current);
+            inboxChannelRef.current = null;
+          }
+          setState((prev) =>
+            prev.status === 'ringing' ? { ...prev, status: 'connecting' } : prev,
+          );
+          break;
         case 'remote-stream':
+          // The call has actually connected — cancel any pending "didn't
+          // answer" / offer-resend timers so they don't tear down the call
+          // 30 s after start even though the other side already picked up.
+          if (ringTimeoutRef.current) {
+            clearTimeout(ringTimeoutRef.current);
+            ringTimeoutRef.current = null;
+          }
+          if (offerResendRef.current) {
+            clearInterval(offerResendRef.current);
+            offerResendRef.current = null;
+          }
+          if (inboxChannelRef.current) {
+            void supabase.removeChannel(inboxChannelRef.current);
+            inboxChannelRef.current = null;
+          }
           setState((prev) => ({
             ...prev,
             status: 'connected',
@@ -258,6 +294,20 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           break;
         case 'connection-state':
           if (payload === 'connected') {
+            // Same defensive cleanup: once the peer connection is up, kill
+            // any ringing-phase timers that could otherwise still fire.
+            if (ringTimeoutRef.current) {
+              clearTimeout(ringTimeoutRef.current);
+              ringTimeoutRef.current = null;
+            }
+            if (offerResendRef.current) {
+              clearInterval(offerResendRef.current);
+              offerResendRef.current = null;
+            }
+            if (inboxChannelRef.current) {
+              void supabase.removeChannel(inboxChannelRef.current);
+              inboxChannelRef.current = null;
+            }
             // Connection recovered — clear stale "reconnecting" state and any
             // transient error banner from a previous blip.
             setState((prev) => ({ ...prev, status: 'connected', error: null }));
