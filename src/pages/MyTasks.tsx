@@ -611,7 +611,7 @@ export const MyTasks: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
       <main className="flex-1 overflow-hidden flex flex-col">
         {/* Header */}
@@ -695,8 +695,15 @@ export const MyTasks: React.FC = () => {
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel */}
-          <div className="w-1/2 border-r overflow-y-auto bg-card">
+          {/* Left Panel — full width on mobile, half-split on >=md.
+              When a task is selected on mobile, the list collapses so the
+              detail panel takes the full screen with a Back button to return. */}
+          <div
+            className={cn(
+              'w-full md:w-1/2 md:border-r overflow-y-auto bg-card',
+              selectedTask && 'hidden md:block',
+            )}
+          >
             <div className="sticky top-0 bg-card border-b z-10">
               <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'mytasks' | 'updates')}>
                 <div className="px-4 pt-2">
@@ -991,8 +998,33 @@ export const MyTasks: React.FC = () => {
             )}
           </div>
 
-          {/* Right Panel - Task Detail */}
-          <div className="w-1/2 overflow-y-auto bg-card border-l border-border">
+          {/* Right Panel - Task Detail. Full-width mobile drawer when a task
+              is selected; vanishes when nothing is selected so the list can
+              breathe on small screens. */}
+          <div
+            className={cn(
+              'w-full md:w-1/2 overflow-y-auto bg-card md:border-l md:border-border',
+              !selectedTask && 'hidden md:block',
+            )}
+          >
+            {selectedTask && (
+              <div className="md:hidden sticky top-0 z-10 bg-card border-b border-border px-3 py-2 flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedTask(null)}
+                  className="h-8 gap-1.5 -ml-2"
+                  aria-label="Back to task list"
+                >
+                  <ChevronDown className="w-4 h-4 rotate-90" />
+                  Back
+                </Button>
+                <span className="text-sm font-medium text-foreground truncate flex-1">
+                  {selectedTask.title}
+                </span>
+              </div>
+            )}
             {selectedTask ? (
               taskNeedsPinToView(selectedTask) ? (
                 <div className="p-8 flex flex-col items-center justify-center min-h-[320px] gap-4 text-center max-w-md mx-auto">

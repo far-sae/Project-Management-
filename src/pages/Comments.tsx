@@ -113,7 +113,7 @@ export const Comments: React.FC = () => {
 
   if (!user) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-background pt-12 md:pt-0">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <h1 className="text-3xl font-bold text-foreground mb-2">Comments</h1>
@@ -124,7 +124,7 @@ export const Comments: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
         <AppHeader
@@ -342,12 +342,12 @@ export const Comments: React.FC = () => {
                     {selectedComment.photoURL ? (
                       <img
                         src={selectedComment.photoURL}
-                        alt={selectedComment.displayName}
+                        alt={selectedComment.displayName || 'Comment author'}
                         className="w-8 h-8 rounded-full object-cover ring-1 ring-border"
                       />
                     ) : (
                       <div className="w-8 h-8 rounded-full bg-primary-soft text-primary-soft-foreground font-semibold text-xs flex items-center justify-center">
-                        {selectedComment.displayName.charAt(0).toUpperCase()}
+                        {(selectedComment.displayName || '?').charAt(0).toUpperCase()}
                       </div>
                     )}
                     <div className="text-sm">

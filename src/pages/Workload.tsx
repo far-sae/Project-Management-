@@ -187,7 +187,7 @@ export const Workload: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
         <AppHeader

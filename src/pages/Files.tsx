@@ -184,7 +184,7 @@ export const Files: React.FC = () => {
     }
   };
 
-  const handleDownload = useCallback(async (file: ProjectFile) => {
+  const handleDownload = useCallback(async (file: ProjectFile): Promise<boolean> => {
     // Try to fetch as a blob first so we can trigger a real "Save As…" with the
     // original filename. Fall back to opening the public URL when the storage
     // layer disallows CORS-fetch (e.g. signed-URL hosts that omit CORS headers).
@@ -200,8 +200,10 @@ export const Files: React.FC = () => {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      return true;
     } catch {
       window.open(file.fileUrl, '_blank');
+      return false;
     }
   }, []);
 
@@ -237,15 +239,21 @@ export const Files: React.FC = () => {
     setDownloadingAll(true);
     const toastId = toast.loading(`Downloading ${snapshot.length} files…`);
     try {
+      let failed = 0;
       // Trigger downloads one-by-one with a small delay so the browser doesn't
       // collapse them into a single prompt and doesn't cancel earlier transfers.
       for (let i = 0; i < snapshot.length; i++) {
-        await handleDownload(snapshot[i]);
+        const ok = await handleDownload(snapshot[i]);
+        if (!ok) failed += 1;
         if (i < snapshot.length - 1) {
           await new Promise((r) => setTimeout(r, 350));
         }
       }
-      toast.success(`Downloaded ${snapshot.length} files`, { id: toastId });
+      if (failed > 0) {
+        toast.error('Some files could not be downloaded', { id: toastId });
+      } else {
+        toast.success(`Downloaded ${snapshot.length} files`, { id: toastId });
+      }
     } catch {
       toast.error('Some files could not be downloaded', { id: toastId });
     } finally {
@@ -256,21 +264,21 @@ export const Files: React.FC = () => {
   const uploadProgressItems = Object.values(uploadProgress);
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="flex items-center justify-between mb-8">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div className="flex flex-col gap-3 mb-6 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Files</h1>
-            <p className="text-muted-foreground">Manage your project files and documents</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Files</h1>
+            <p className="text-sm text-muted-foreground">Manage your project files and documents</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <Select
               value={selectedProject}
               onValueChange={setSelectedProject}
               disabled={projects.length === 0}
             >
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full sm:w-48 min-w-[10rem]">
                 <SelectValue placeholder={projects.length ? 'Select project' : 'No projects'} />
               </SelectTrigger>
               <SelectContent>
@@ -404,7 +412,7 @@ export const Files: React.FC = () => {
                 </Button>
               </div>
             ) : viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
                 {filteredFiles.map((file) => (
                   <div
                     key={file.fileId}

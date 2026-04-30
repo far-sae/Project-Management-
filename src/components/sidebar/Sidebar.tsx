@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -21,6 +21,8 @@ import {
   Activity,
   ChevronUp,
   ChevronDown,
+  Menu,
+  X,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -114,6 +116,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Auto-close the mobile drawer on route change so a tap on a nav link doesn't
+  // leave the overlay obscuring the page they just navigated to.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Lock body scroll while the mobile drawer is open so the page underneath
+  // doesn't scroll behind the overlay.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
 
   const bottomMenuItems = [
     { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
@@ -148,8 +168,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const isAdmin = user?.role === 'admin' || isAppOwner(user?.userId);
 
-  return (
-    <aside className="w-64 bg-card border-r border-border h-screen flex flex-col">
+  // The body of the sidebar is rendered once and reused inside both the
+  // desktop static aside and the mobile slide-in drawer. Each wrapper supplies
+  // its own width / position classes; everything inside is layout-agnostic.
+  const body = (
+    <>
       {/* Brand + workspace switcher */}
       <div className="p-3 border-b border-border space-y-2">
         <div className="flex items-center justify-between gap-2">
@@ -467,7 +490,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </AnimatePresence>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile-only top bar: keeps the hamburger reachable from anywhere on
+          the page without each page having to opt in. The bar is sticky-fixed
+          at the top so it stays visible while content underneath scrolls. */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center gap-2 px-3 h-12 bg-card/95 backdrop-blur border-b border-border">
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          className="p-2 -ml-2 rounded-md text-foreground hover:bg-secondary"
+          aria-label="Open menu"
+          aria-expanded={mobileOpen}
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <Link to="/dashboard" className="flex items-center gap-2 min-w-0 flex-1">
+          <TaskCalendarLogo sizeClass="h-6 w-6" />
+          <span className="font-semibold text-sm text-foreground truncate">TaskCalendar</span>
+        </Link>
+        <NotificationBell />
+      </div>
+      {/* Spacer so page content below the fixed mobile top bar isn't covered. */}
+      <div className="md:hidden h-12 shrink-0" aria-hidden="true" />
+
+      {/* Desktop sidebar — unchanged width and behaviour for >= md screens. */}
+      <aside className="w-64 bg-card border-r border-border h-screen hidden md:flex flex-col shrink-0">
+        {body}
+      </aside>
+
+      {/* Mobile drawer — off-canvas slide-in. Renders only when open so the
+          DOM stays light on mobile. The backdrop dismisses the drawer; the
+          panel itself caps at 85vw so a sliver of page is visible behind it
+          (a familiar drawer UX pattern). */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-[1px] animate-in fade-in duration-150"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="relative w-72 max-w-[85vw] h-full bg-card border-r border-border flex flex-col animate-in slide-in-from-left-2 duration-200">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="absolute top-2 right-2 z-10 p-2 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+              aria-label="Close menu"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            {body}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };
 

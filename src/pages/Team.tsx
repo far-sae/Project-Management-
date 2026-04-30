@@ -374,8 +374,13 @@ export const Team: React.FC = () => {
     const projectOrgId = (currentProject?.organizationId || '').replace('local-', '');
     if (!projectOrgId) return;
 
-    // ✅ Check team member limit BEFORE sending invite
-    const limitCheck = await checkTeamMemberLimit(user.userId, allMembers.length, organization?.organizationId);
+    // ✅ Check team member limit BEFORE sending invite (members + pending invites)
+    const totalCount = allMembers.length + pendingInvitations.length;
+    const limitCheck = await checkTeamMemberLimit(
+      user.userId,
+      totalCount,
+      organization?.organizationId,
+    );
     if (!limitCheck.allowed) {
       setLimitModal({ open: true, message: limitCheck.message, max: limitCheck.max ?? null });
       return;
@@ -450,15 +455,22 @@ export const Team: React.FC = () => {
 
   const copyInviteLink = async (token: string, invitationId: string) => {
     const link = `${window.location.origin}/accept-invite/${token}`;
-    await navigator.clipboard.writeText(link);
-    setCopiedLink(invitationId);
-    setTimeout(() => setCopiedLink(null), 3000);
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(invitationId);
+      setTimeout(() => setCopiedLink(null), 3000);
+    } catch (err) {
+      console.error('copyInviteLink: clipboard write failed', err);
+      toast.error(
+        'Could not copy the invite link. Copy it manually or check browser permissions.',
+      );
+    }
   };
 
   // ✅ FEATURE GATE — shown if trial or basic plan
   if (!canUseTeam) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-background pt-12 md:pt-0">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
@@ -489,7 +501,7 @@ export const Team: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">

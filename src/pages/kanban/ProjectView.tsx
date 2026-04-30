@@ -615,7 +615,7 @@ export const ProjectView: React.FC = () => {
 
   if (needsProjectLockGate) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-background pt-12 md:pt-0">
         <Sidebar
           project={null}
           tasks={[]}
@@ -664,7 +664,7 @@ export const ProjectView: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar
         project={project}
         tasks={tasks}

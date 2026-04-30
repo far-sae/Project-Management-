@@ -320,7 +320,7 @@ export const Contracts: React.FC = () => {
   // FEATURE GATE
   if (!hasFeature('contracts')) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-background pt-12 md:pt-0">
         <Sidebar />
         <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
@@ -351,7 +351,7 @@ export const Contracts: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="flex items-center justify-between mb-8">

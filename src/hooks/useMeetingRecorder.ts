@@ -84,9 +84,14 @@ function buildMixedAudioStream(streams: Array<MediaStream | null | undefined>): 
       | typeof AudioContext
       | undefined);
 
-  if (!AudioCtx || valid.length === 0) {
-    if (valid[0]) return { stream: valid[0], cleanup: () => {} };
+  // No streams with audio — nothing to mix or pass through.
+  if (valid.length === 0) {
     return { stream: new MediaStream(), cleanup: () => {} };
+  }
+
+  // No Web Audio API — passthrough the first stream with audio (valid[0] is safe here).
+  if (!AudioCtx) {
+    return { stream: valid[0], cleanup: () => {} };
   }
 
   const ctx = new AudioCtx();

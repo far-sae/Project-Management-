@@ -192,7 +192,7 @@ export const Settings: React.FC = () => {
   // Show loading state
   if (subscriptionLoading && !subscription) {
     return (
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-background pt-12 md:pt-0">
         <Sidebar />
         <main className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -451,7 +451,7 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="mb-8">

@@ -252,7 +252,7 @@ export const Calendar: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
       <main className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))] p-4 sm:p-6 lg:p-8">
         <div className="mb-6 rounded-lg border border-border/70 bg-card/80 p-5 shadow-sm shadow-black/5 backdrop-blur-xl">

@@ -647,7 +647,7 @@ export const Dashboard: React.FC = () => {
   }, [workspaces]);
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0">
       <Sidebar />
 
       <main className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))]">
