@@ -23,23 +23,16 @@ import type {
 // ── Context types ────────────────────────────────────────────
 
 interface CallActions {
-  /** Start an outgoing call */
   startCall: (
     context: CallContext,
     mediaType: CallMediaType,
     remoteParticipant: CallParticipant,
   ) => Promise<void>;
-  /** Accept an incoming call */
   acceptCall: () => Promise<void>;
-  /** Reject / decline an incoming call */
   rejectCall: () => void;
-  /** End the current call */
   hangUp: () => void;
-  /** Toggle microphone mute */
   toggleMute: () => void;
-  /** Toggle camera on/off */
   toggleCamera: () => void;
-  /** Start / stop screen sharing */
   toggleScreenShare: () => Promise<void>;
 }
 
@@ -50,7 +43,10 @@ interface CallContextValue {
 
 const CallCtx = createContext<CallContextValue | null>(null);
 
-// ── Helper ───────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────
+
+const RING_TIMEOUT_MS = 30_000;
+const OFFER_RESEND_INTERVAL_MS = 3_000;
 
 const generateCallId = () =>
   `call-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -79,12 +75,19 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { user } = useAuth();
   const [state, setState] = useState<CallState>(IDLE_STATE);
+  const latestCallStateRef = useRef(state);
+  latestCallStateRef.current = state;
+
   const rtcRef = useRef<WebRTCService | null>(null);
   const signalingRef = useRef<SignalingChannel | null>(null);
   const pendingOfferRef = useRef<SignalOffer | null>(null);
-  const inboxRemoveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+
+  // Timers
+  const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const offerResendRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inboxChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  /** Clears delayed transition from "ended" → idle so it cannot race with a new call. */
+  const endStateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const localParticipant: CallParticipant | null = user
     ? {
@@ -94,8 +97,37 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     : null;
 
+  // ── Cleanup helpers ────────────────────────────────────────
+
+  const clearTimers = useCallback(() => {
+    if (ringTimeoutRef.current) {
+      clearTimeout(ringTimeoutRef.current);
+      ringTimeoutRef.current = null;
+    }
+    if (endStateTimeoutRef.current) {
+      clearTimeout(endStateTimeoutRef.current);
+      endStateTimeoutRef.current = null;
+    }
+    if (offerResendRef.current) {
+      clearInterval(offerResendRef.current);
+      offerResendRef.current = null;
+    }
+    if (inboxChannelRef.current) {
+      void supabase.removeChannel(inboxChannelRef.current);
+      inboxChannelRef.current = null;
+    }
+  }, []);
+
+  const resetCall = useCallback(() => {
+    clearTimers();
+    rtcRef.current?.destroy();
+    rtcRef.current = null;
+    signalingRef.current = null;
+    pendingOfferRef.current = null;
+    setState(IDLE_STATE);
+  }, [clearTimers]);
+
   // ── Global incoming-call listener ──────────────────────────
-  // We listen on a user-scoped channel so anyone can ring us.
 
   useEffect(() => {
     if (!user?.userId) return;
@@ -108,7 +140,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       .on('broadcast', { event: 'signal' }, ({ payload }) => {
         const msg = payload as SignalMessage;
         if (msg.type !== 'offer') return;
-        // Ignore if we're already in a call
         setState((prev) => {
           if (prev.status !== 'idle') return prev;
           pendingOfferRef.current = msg as SignalOffer;
@@ -131,20 +162,81 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [user?.userId, localParticipant?.userId]);
 
+  // ── 30-second ring timeout (incoming) ──────────────────────
+
+  useEffect(() => {
+    if (state.status === 'ringing' && state.direction === 'incoming') {
+      const callId = state.callId;
+      const participant = localParticipant;
+      ringTimeoutRef.current = setTimeout(() => {
+        void (async () => {
+          const stillIncomingRingForThisCall = () => {
+            const s = latestCallStateRef.current;
+            return (
+              s.callId === callId &&
+              s.status === 'ringing' &&
+              s.direction === 'incoming'
+            );
+          };
+
+          let created: SignalingChannel | null = null;
+          try {
+            if (!callId || !participant) return;
+            if (!stillIncomingRingForThisCall()) return;
+
+            created = new SignalingChannel(
+              `call:${callId}`,
+              participant.userId,
+            );
+            await created.subscribe();
+            if (!stillIncomingRingForThisCall()) {
+              created.destroy();
+              created = null;
+              return;
+            }
+            created.send({
+              type: 'reject',
+              callId,
+              from: participant,
+            });
+            const chForDelayedDestroy = created;
+            created = null;
+            setTimeout(() => chForDelayedDestroy.destroy(), 1000);
+          } catch {
+            if (created) {
+              created.destroy();
+              created = null;
+            }
+          } finally {
+            if (stillIncomingRingForThisCall()) {
+              resetCall();
+            } else if (created) {
+              created.destroy();
+            }
+          }
+        })();
+      }, RING_TIMEOUT_MS);
+
+      return () => {
+        if (ringTimeoutRef.current) {
+          clearTimeout(ringTimeoutRef.current);
+          ringTimeoutRef.current = null;
+        }
+      };
+    }
+  }, [state.status, state.direction, state.callId, localParticipant, resetCall]);
+
   // ── Cleanup on unmount ─────────────────────────────────────
 
   useEffect(
     () => () => {
-      if (inboxRemoveTimeoutRef.current) {
-        clearTimeout(inboxRemoveTimeoutRef.current);
-        inboxRemoveTimeoutRef.current = null;
-      }
+      clearTimers();
       rtcRef.current?.destroy();
     },
-    [],
+    [clearTimers],
   );
 
-  // ── Helpers ────────────────────────────────────────────────
+  // ── RTC event wiring ───────────────────────────────────────
 
   const setupRTCEvents = useCallback((rtc: WebRTCService) => {
     rtc.onEvent((type, payload) => {
@@ -165,6 +257,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           break;
         case 'hangup':
         case 'reject':
+          clearTimers();
           rtcRef.current = null;
           signalingRef.current = null;
           setState(IDLE_STATE);
@@ -177,19 +270,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           break;
       }
     });
-  }, []);
-
-  const resetCall = useCallback(() => {
-    if (inboxRemoveTimeoutRef.current) {
-      clearTimeout(inboxRemoveTimeoutRef.current);
-      inboxRemoveTimeoutRef.current = null;
-    }
-    rtcRef.current?.destroy();
-    rtcRef.current = null;
-    signalingRef.current = null;
-    pendingOfferRef.current = null;
-    setState(IDLE_STATE);
-  }, []);
+  }, [clearTimers]);
 
   // ── Actions ────────────────────────────────────────────────
 
@@ -202,9 +283,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!localParticipant || !isMediaSupported()) return;
       if (state.status !== 'idle') return;
 
+      clearTimers();
+
       const callId = generateCallId();
 
-      // Set up signaling on the call channel
+      // Set up the call signaling channel (both caller and callee join this)
       const signaling = new SignalingChannel(
         `call:${callId}`,
         localParticipant.userId,
@@ -219,9 +302,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       rtcRef.current = rtc;
       setupRTCEvents(rtc);
 
+      // Show ringing state for outgoing call (not "connecting" — that comes after accept)
       setState({
         ...IDLE_STATE,
-        status: 'connecting',
+        status: 'ringing',
         callId,
         direction: 'outgoing',
         mediaType,
@@ -239,35 +323,78 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           throw new Error('Missing local SDP after createOffer');
         }
 
-        // Ring the callee via inbox with the real offer + context (call channel is used after accept).
-        if (inboxRemoveTimeoutRef.current) {
-          clearTimeout(inboxRemoveTimeoutRef.current);
-          inboxRemoveTimeoutRef.current = null;
-        }
-        const inboxChannel = supabase.channel(
-          `call-inbox:${remoteParticipant.userId}`,
-        );
-        inboxChannel.subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            inboxChannel.send({
-              type: 'broadcast',
-              event: 'signal',
-              payload: {
-                type: 'offer',
-                sdp: localDesc,
-                callId,
-                from: localParticipant,
-                mediaType,
-                context,
-              } satisfies SignalOffer,
-            });
-            inboxRemoveTimeoutRef.current = setTimeout(() => {
-              void supabase.removeChannel(inboxChannel);
-              inboxRemoveTimeoutRef.current = null;
-            }, 2000);
+        const offerPayload: SignalOffer = {
+          type: 'offer',
+          sdp: localDesc,
+          callId,
+          from: localParticipant,
+          mediaType,
+          context,
+        };
+
+        // Send offer to callee's inbox channel, and resend every 3s to handle timing races.
+        // The callee ignores duplicate offers if already ringing.
+        const sendOfferViaInbox = () => {
+          const ch = supabase.channel(
+            `call-inbox:${remoteParticipant.userId}`,
+            { config: { broadcast: { self: false } } },
+          );
+          inboxChannelRef.current = ch;
+          ch.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              ch.send({
+                type: 'broadcast',
+                event: 'signal',
+                payload: offerPayload,
+              });
+            }
+          });
+        };
+
+        sendOfferViaInbox();
+
+        // Resend every 3s in case the first broadcast was missed
+        offerResendRef.current = setInterval(() => {
+          // Stop resending if we're no longer ringing
+          if (rtcRef.current?.destroyed) {
+            if (offerResendRef.current) clearInterval(offerResendRef.current);
+            return;
           }
-        });
+          // Clean up old channel and resend
+          if (inboxChannelRef.current) {
+            void supabase.removeChannel(inboxChannelRef.current);
+            inboxChannelRef.current = null;
+          }
+          sendOfferViaInbox();
+        }, OFFER_RESEND_INTERVAL_MS);
+
+        // Also listen on the call channel for the callee's answer/reject
+        // (the signaling channel is already subscribed by WebRTCService)
+
+        // 30-second outgoing ring timeout — auto-cancel if no answer
+        ringTimeoutRef.current = setTimeout(() => {
+          clearTimers();
+          rtcRef.current?.hangUp();
+          rtcRef.current = null;
+          signalingRef.current = null;
+          setState({
+            ...IDLE_STATE,
+            status: 'ended',
+            error: `${remoteParticipant.displayName} didn't answer`,
+          });
+          if (endStateTimeoutRef.current) {
+            clearTimeout(endStateTimeoutRef.current);
+            endStateTimeoutRef.current = null;
+          }
+          endStateTimeoutRef.current = setTimeout(() => {
+            endStateTimeoutRef.current = null;
+            setState((prev) =>
+              prev.status === 'ended' ? IDLE_STATE : prev,
+            );
+          }, 3000);
+        }, RING_TIMEOUT_MS);
       } catch (err) {
+        clearTimers();
         setState((prev) => ({
           ...prev,
           status: 'ended',
@@ -278,13 +405,15 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         }));
       }
     },
-    [localParticipant, state.status, setupRTCEvents],
+    [localParticipant, state.status, setupRTCEvents, clearTimers],
   );
 
   const acceptCall = useCallback(async () => {
     if (!localParticipant) return;
     const offer = pendingOfferRef.current;
     if (!offer || !state.callId) return;
+
+    clearTimers();
 
     const signaling = new SignalingChannel(
       `call:${state.callId}`,
@@ -320,32 +449,48 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       }));
     }
     pendingOfferRef.current = null;
-  }, [localParticipant, state.callId, setupRTCEvents]);
+  }, [localParticipant, state.callId, setupRTCEvents, clearTimers]);
 
   const rejectCall = useCallback(() => {
     if (rtcRef.current) {
       rtcRef.current.reject();
-    } else if (state.callId && localParticipant && state.remoteParticipant) {
-      // No RTC yet (we haven't accepted), send reject via a throwaway channel
+      resetCall();
+      return;
+    }
+    if (state.callId && localParticipant) {
+      const callId = state.callId;
       const sig = new SignalingChannel(
-        `call:${state.callId}`,
+        `call:${callId}`,
         localParticipant.userId,
       );
-      sig.subscribe();
-      sig.send({
-        type: 'reject',
-        callId: state.callId,
-        from: localParticipant,
-      });
-      setTimeout(() => sig.destroy(), 1000);
+      void (async () => {
+        try {
+          await sig.subscribe();
+          sig.send({
+            type: 'reject',
+            callId,
+            from: localParticipant,
+          });
+        } catch {
+          /* ignore */
+        } finally {
+          setTimeout(() => sig.destroy(), 1000);
+          resetCall();
+        }
+      })();
+      return;
     }
     resetCall();
-  }, [state.callId, localParticipant, state.remoteParticipant, resetCall]);
+  }, [state.callId, localParticipant, resetCall]);
 
   const hangUp = useCallback(() => {
+    clearTimers();
     rtcRef.current?.hangUp();
-    resetCall();
-  }, [resetCall]);
+    rtcRef.current = null;
+    signalingRef.current = null;
+    pendingOfferRef.current = null;
+    setState(IDLE_STATE);
+  }, [clearTimers]);
 
   const toggleMute = useCallback(() => {
     const next = !state.isMuted;
@@ -376,7 +521,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           isScreenSharing: true,
           screenStream: screen,
         }));
-        // Listen for native "stop sharing"
         screen.getVideoTracks()[0]?.addEventListener('ended', () => {
           setState((prev) => ({
             ...prev,
@@ -386,7 +530,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
     } catch {
-      // User cancelled the screen picker — not an error
+      // User cancelled the screen picker
     }
   }, [state.isScreenSharing]);
 

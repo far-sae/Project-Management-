@@ -40,6 +40,7 @@ export class WebRTCService {
   private eventHandler: RTCEventHandler | null = null;
   private unsubSignaling: (() => void) | null = null;
   private _destroyed = false;
+  private readonly signalingReady: Promise<void>;
 
   constructor(
     private callId: string,
@@ -50,7 +51,15 @@ export class WebRTCService {
     this.pc = new RTCPeerConnection({ iceServers });
     this.setupPCListeners();
     this.setupSignalingListener();
-    this.signaling.subscribe();
+    this.signalingReady = this.signaling.subscribe().catch((err) => {
+      if (!this._destroyed) {
+        this.emit(
+          'error',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+      throw err;
+    });
   }
 
   // ── Public API ─────────────────────────────────────────────
@@ -112,7 +121,7 @@ export class WebRTCService {
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
 
-      this.signaling.send({
+      await this.signalingSend({
         type: 'answer',
         sdp: this.pc.localDescription!,
         callId: this.callId,
@@ -186,23 +195,37 @@ export class WebRTCService {
   /** End the call, release all resources. */
   hangUp(): void {
     if (this._destroyed) return;
-    this.signaling.send({
-      type: 'hangup',
-      callId: this.callId,
-      from: this.localParticipant,
-    });
-    this.destroy();
+    void (async () => {
+      try {
+        await this.signalingSend({
+          type: 'hangup',
+          callId: this.callId,
+          from: this.localParticipant,
+        });
+      } catch {
+        /* channel unavailable */
+      } finally {
+        if (!this._destroyed) this.destroy();
+      }
+    })();
   }
 
   /** Reject an incoming call. */
   reject(): void {
     if (this._destroyed) return;
-    this.signaling.send({
-      type: 'reject',
-      callId: this.callId,
-      from: this.localParticipant,
-    });
-    this.destroy();
+    void (async () => {
+      try {
+        await this.signalingSend({
+          type: 'reject',
+          callId: this.callId,
+          from: this.localParticipant,
+        });
+      } catch {
+        /* channel unavailable */
+      } finally {
+        if (!this._destroyed) this.destroy();
+      }
+    })();
   }
 
   /** Release everything without sending a hangup signal (used internally). */
@@ -230,10 +253,23 @@ export class WebRTCService {
     this.eventHandler?.(type, payload);
   }
 
+  /** Await Realtime subscription before sending (PostgREST broadcast requires SUBSCRIBED). */
+  private async signalingSend(msg: SignalMessage): Promise<void> {
+    if (this._destroyed) return;
+    try {
+      await this.signalingReady;
+    } catch {
+      if (this._destroyed) return;
+      return;
+    }
+    if (this._destroyed) return;
+    this.signaling.send(msg);
+  }
+
   private setupPCListeners(): void {
     this.pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        this.signaling.send({
+      if (e.candidate && !this._destroyed) {
+        void this.signalingSend({
           type: 'ice-candidate',
           candidate: e.candidate.toJSON(),
           callId: this.callId,
@@ -272,7 +308,7 @@ export class WebRTCService {
     try {
       const offer = await this.pc.createOffer();
       await this.pc.setLocalDescription(offer);
-      this.signaling.send({
+      await this.signalingSend({
         type: 'offer',
         sdp: this.pc.localDescription!,
         callId: this.callId,
@@ -308,7 +344,7 @@ export class WebRTCService {
             );
             const answer = await this.pc.createAnswer();
             await this.pc.setLocalDescription(answer);
-            this.signaling.send({
+            await this.signalingSend({
               type: 'answer',
               sdp: this.pc.localDescription!,
               callId: this.callId,
