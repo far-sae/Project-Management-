@@ -556,7 +556,9 @@ const buildBaseGraph = (
     edges.push({
       id: `auto-edge-project-${columnId}`,
       source: 'project',
+      sourceHandle: 'r-src',
       target: columnId,
+      targetHandle: 'l-tgt',
       type: 'smoothstep',
       markerEnd: { type: MarkerType.ArrowClosed },
       style: { stroke: lane.color || 'var(--border)', strokeWidth: 2 },
@@ -588,7 +590,9 @@ const buildBaseGraph = (
       edges.push({
         id: `auto-edge-${columnId}-${taskNodeId}`,
         source: columnId,
+        sourceHandle: 'r-src',
         target: taskNodeId,
+        targetHandle: 'l-tgt',
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
         style: { stroke: 'var(--border)', strokeWidth: 1.5 },
@@ -609,7 +613,9 @@ const buildBaseGraph = (
         edges.push({
           id: `auto-edge-${taskNodeId}-${subNodeId}`,
           source: taskNodeId,
+          sourceHandle: 'r-src',
           target: subNodeId,
+          targetHandle: 'l-tgt',
           type: 'smoothstep',
           style: {
             stroke: s.completed ? 'rgb(16,185,129)' : 'var(--border)',

@@ -10,6 +10,7 @@ import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import {
   insertDirectMessage,
   markDirectMessagesRead,
+  deleteOldDirectMessages,
   subscribeToDirectMessages,
   type DirectMessage,
 } from '@/services/supabase/database';
@@ -59,6 +60,8 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
     if (!recipient || !user?.userId) return;
     setLoading(true);
     setMessages([]);
+    // Clean up messages older than 30 days
+    void deleteOldDirectMessages(user.userId, recipient.userId);
     const unsub = subscribeToDirectMessages(user.userId, recipient.userId, (list) => {
       setMessages(list);
       setLoading(false);

@@ -521,13 +521,13 @@ export const CallOverlay: React.FC = () => {
               aria-hidden="true"
               className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-60 pointer-events-none"
             />
-            {/* Crisp, un-zoomed remote video centered on top of the backdrop. */}
+            {/* Remote video — fills the entire screen area. */}
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
               muted
-              className="relative max-w-full max-h-full object-contain z-[1]"
+              className="absolute inset-0 w-full h-full object-cover z-[1]"
             />
             {state.localStream && !state.isCameraOff && (
               <video

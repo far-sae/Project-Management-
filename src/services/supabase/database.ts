@@ -3064,6 +3064,23 @@ export const markDirectMessagesRead = async (
   if (error) logger.warn("markDirectMessagesRead:", error.message);
 };
 
+/** Delete direct messages older than 30 days for a given thread. */
+export const deleteOldDirectMessages = async (
+  selfUserId: string,
+  otherUserId: string,
+): Promise<void> => {
+  const threadKey = directMessageThreadKey(selfUserId, otherUserId);
+  if (!threadKey) return;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  const { error } = await supabase
+    .from("direct_messages")
+    .delete()
+    .eq("thread_key", threadKey)
+    .lt("created_at", cutoff.toISOString());
+  if (error) logger.warn("deleteOldDirectMessages:", error.message);
+};
+
 export const subscribeToDirectMessages = (
   selfUserId: string,
   otherUserId: string,
