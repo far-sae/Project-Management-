@@ -587,6 +587,9 @@ const buildBaseGraph = (
           onOpen: () => onOpenTask?.(t.taskId),
         } satisfies TaskNodeData,
       });
+      // Tint column→task edges with the lane color so each column visibly "owns"
+      // its tasks even after the user drags nodes around.
+      const laneStroke = lane.color || '#94a3b8';
       edges.push({
         id: `auto-edge-${columnId}-${taskNodeId}`,
         source: columnId,
@@ -594,8 +597,8 @@ const buildBaseGraph = (
         target: taskNodeId,
         targetHandle: 'l-tgt',
         type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: { stroke: 'var(--border)', strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: laneStroke },
+        style: { stroke: laneStroke, strokeWidth: 1.5, strokeOpacity: 0.6 },
       });
 
       const subtaskBaseY = taskY - ((subtasks.length - 1) * SUBTASK_GAP_Y) / 2;
@@ -618,8 +621,9 @@ const buildBaseGraph = (
           targetHandle: 'l-tgt',
           type: 'smoothstep',
           style: {
-            stroke: s.completed ? 'rgb(16,185,129)' : 'var(--border)',
+            stroke: s.completed ? 'rgb(16,185,129)' : 'rgb(148,163,184)',
             strokeWidth: 1.25,
+            strokeOpacity: s.completed ? 1 : 0.5,
             strokeDasharray: s.completed ? '0' : '4 4',
           },
         });
