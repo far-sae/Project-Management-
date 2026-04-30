@@ -37,6 +37,19 @@ function parseEmailJsSendError(error: unknown): { status?: number; text?: string
   return {};
 }
 
+/** Status-specific hint appended to EmailJS `console.error` lines (prod-visible). */
+function emailJsSendFailureHint(status?: number): string {
+  return status === 412
+    ? " — EmailJS 412: reconnect your mail service (Email Services → Edit → Reconnect)."
+    : status === 400
+      ? " — EmailJS 400: check the template ID matches AND every {{variable}} the template uses is supplied."
+      : status === 401 || status === 403
+        ? " — EmailJS 401/403: wrong public key, or this template is restricted to a different domain."
+        : status === 426
+          ? " — EmailJS 426: monthly send limit hit. Upgrade your EmailJS plan."
+          : "";
+}
+
 export const sendInvitationEmail = async (
   params: InvitationEmailParams,
 ): Promise<InvitationEmailResult> => {
@@ -52,7 +65,13 @@ export const sendInvitationEmail = async (
     !EMAILJS_TEMPLATE_ID ||
     !EMAILJS_PUBLIC_KEY
   ) {
-    logger.warn("EmailJS not configured; skipping invitation email");
+    const missing = getMissingEmailEnvKeys("invitation");
+    console.error(
+      "[EmailJS] Invitation email skipped — missing env: " +
+        (missing.length ? missing.join(", ") : "(unknown)") +
+        ". " +
+        HINT_VERCEL,
+    );
     return { ok: false };
   }
 
@@ -108,14 +127,12 @@ export const sendInvitationEmail = async (
     return { ok: true };
   } catch (error: unknown) {
     const { status, text } = parseEmailJsSendError(error);
-    logger.error("Invitation email request failed:", error, status, text);
-    if (status === 412) {
-      logger.warn(
-        "EmailJS 412: often Gmail / OAuth — reconnect the email service in EmailJS (Services → " +
-          "Edit → Reconnect) and allow “Send email on your behalf”. Also verify template variable names. " +
-          (text ? `Server said: ${text}` : ""),
-      );
-    }
+    const hint = emailJsSendFailureHint(status);
+    console.error(
+      `[EmailJS] Invitation email send failed (status=${status ?? "?"}): ${
+        text ?? (error instanceof Error ? error.message : "unknown error")
+      }${hint}`,
+    );
     return { ok: false, status, text };
   }
 };
@@ -147,6 +164,40 @@ export const isEmailServiceConfigured = (): boolean => {
   );
 };
 
+/** Build-time snapshot of which EmailJS env vars resolved to truthy values.
+ *  We surface this in production console errors so a deploy with missing
+ *  Vercel envs tells you exactly which variable is missing — Vite inlines
+ *  these at build time, so they're either present or empty for the entire
+ *  bundle's lifetime. */
+const getMissingEmailEnvKeys = (
+  templateKind: "invitation" | "notification",
+): string[] => {
+  const isMissing = (v: string | undefined) =>
+    !v || v === "undefined" || !v.trim();
+  const missing: string[] = [];
+  if (isMissing(EMAILJS_SERVICE_ID)) missing.push("VITE_EMAILJS_SERVICE_ID");
+  if (isMissing(EMAILJS_PUBLIC_KEY)) missing.push("VITE_EMAILJS_PUBLIC_KEY");
+  if (templateKind === "invitation" && isMissing(EMAILJS_TEMPLATE_ID)) {
+    missing.push("VITE_EMAILJS_TEMPLATE_ID");
+  }
+  if (
+    templateKind === "notification" &&
+    isMissing(EMAILJS_NOTIFICATION_TEMPLATE_ID)
+  ) {
+    // We list the canonical name; the code still accepts two fallbacks.
+    missing.push(
+      "VITE_EMAILJS_NOTIFICATION_TEMPLATE_ID (or VITE_EMAILJS_TEMPLATE_ID as a fallback)",
+    );
+  }
+  return missing;
+};
+
+/** One-line nudge that survives `logger.warn` being a no-op in production. */
+const HINT_VERCEL =
+  "Vite inlines VITE_* env vars at BUILD time — set them in Vercel " +
+  "(Project → Settings → Environment Variables → Production), then redeploy with a FRESH build " +
+  "(not a cached redeploy) so the new values get baked into the bundle.";
+
 export const isNotificationEmailConfigured = (): boolean => {
   return Boolean(
     EMAILJS_SERVICE_ID &&
@@ -171,7 +222,16 @@ export const sendNotificationEmail = async (params: {
   const cleanedEmail = params.toEmail.trim();
   if (!cleanedEmail || !cleanedEmail.includes("@")) return { ok: false };
   if (!isNotificationEmailConfigured()) {
-    logger.warn("EmailJS notification template not configured; skipping notification email");
+    // Promote to console.error so it's visible in production. The dev-only
+    // logger.warn was hiding this from anyone debugging on Vercel — which is
+    // exactly when the env vars typically go missing.
+    const missing = getMissingEmailEnvKeys("notification");
+    console.error(
+      "[EmailJS] Notification email skipped — missing env: " +
+        (missing.length ? missing.join(", ") : "(unknown)") +
+        ". " +
+        HINT_VERCEL,
+    );
     return { ok: false };
   }
 
@@ -207,7 +267,13 @@ export const sendNotificationEmail = async (params: {
     return { ok: true };
   } catch (error: unknown) {
     const { status, text } = parseEmailJsSendError(error);
-    logger.warn("Notification email request failed:", error, status, text);
+    // console.error so prod deployments actually report EmailJS failures.
+    const hint = emailJsSendFailureHint(status);
+    console.error(
+      `[EmailJS] Notification email send failed (status=${status ?? "?"}): ${
+        text ?? (error instanceof Error ? error.message : "unknown error")
+      }${hint}`,
+    );
     return { ok: false, status, text };
   }
 };
