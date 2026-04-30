@@ -6,10 +6,12 @@ import { CallControls } from './CallControls';
 import { IncomingCallModal } from './IncomingCallModal';
 import { MeetingNotesReviewModal } from './MeetingNotesReviewModal';
 import { useCall } from '@/hooks/useCall';
-import { useMeetingRecorder } from '@/hooks/useMeetingRecorder';
+import { useMeetingRecorder, type MeetingRecording } from '@/hooks/useMeetingRecorder';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { uploadFileWithProgress } from '@/services/supabase/storage';
+import { insertProjectChatMessage } from '@/services/supabase/database';
 
 // ── Outgoing ringtone (Teams-style) ──────────────────────────
 
@@ -252,6 +254,77 @@ export const CallOverlay: React.FC = () => {
 
   const recorder = useMeetingRecorder(state.localStream, state.remoteStream);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // Guard so a single recording is never persisted twice — both the manual
+  // stop and the auto-stop-on-call-end paths can settle in close succession.
+  const persistedIdsRef = useRef<Set<string>>(new Set());
+
+  /** Save the audio blob to Supabase Storage and post a "call recording"
+   *  message into the project chat so teammates can replay or skim the
+   *  transcript without leaving their inbox. Failures are non-fatal — the
+   *  user still has the local audio in the review modal regardless. */
+  const persistRecordingToChat = useCallback(
+    async (rec: MeetingRecording) => {
+      if (!rec.audioBlob || !user?.userId) return;
+      const ctx = state.context;
+      // We currently only have a chat surface for project-context calls. DM
+      // calls just stay in the review modal; that's a separate ticket if
+      // direct-message chats want call cards too.
+      if (!ctx || ctx.type !== 'project') return;
+      const orgId = user.organizationId;
+      if (!orgId) return;
+
+      // De-dupe across the manual + auto-stop effects.
+      const dedupeKey = `${rec.startedAt ?? ''}-${rec.durationSec}`;
+      if (persistedIdsRef.current.has(dedupeKey)) return;
+      persistedIdsRef.current.add(dedupeKey);
+
+      try {
+        const stamp = (rec.startedAt || new Date().toISOString())
+          .replace(/[:T.]/g, '-')
+          .slice(0, 19);
+        const fileName = `call-${stamp}.webm`;
+        const file = new File([rec.audioBlob], fileName, {
+          type: rec.audioBlob.type || 'audio/webm',
+        });
+        // Upload via the same path tasks/files use so the recording also
+        // surfaces on the Files page automatically.
+        const uploaded = await uploadFileWithProgress(
+          user.userId,
+          user.displayName || user.email || 'User',
+          orgId,
+          { projectId: ctx.targetId, file, scope: 'project' },
+        );
+
+        // Embed structured data in the chat body so the message renderer
+        // can show a play/download card instead of dumping the URL as text.
+        const card = {
+          _kind: 'call_recording' as const,
+          url: uploaded.fileUrl,
+          fileId: uploaded.fileId,
+          fileName,
+          durationSec: rec.durationSec,
+          startedAt: rec.startedAt,
+          transcript: rec.transcript || '',
+        };
+        await insertProjectChatMessage({
+          projectId: ctx.targetId,
+          organizationId: orgId,
+          userId: user.userId,
+          displayName: user.displayName || user.email || 'User',
+          photoURL: user.photoURL,
+          body: JSON.stringify(card),
+        });
+        toast.success('Recording saved to project chat');
+      } catch {
+        // Soft-fail: the local audio is still in the review modal, so the
+        // user can download it manually if persistence flaked.
+        toast.warning(
+          'Recording stayed local — could not upload to project storage.',
+        );
+      }
+    },
+    [user, state.context],
+  );
 
   const handleToggleRecording = useCallback(() => {
     if (recorder.isRecording) {
@@ -259,6 +332,7 @@ export const CallOverlay: React.FC = () => {
         if (rec && (rec.audioBlob || rec.transcript)) {
           setReviewOpen(true);
         }
+        if (rec) void persistRecordingToChat(rec);
       });
     } else {
       void recorder.start().then((res) => {
@@ -269,7 +343,7 @@ export const CallOverlay: React.FC = () => {
         }
       });
     }
-  }, [recorder]);
+  }, [recorder, persistRecordingToChat]);
 
   // If the call ends while we're still recording, finalise the file so the
   // user gets the audio + transcript instead of losing it on hangup.
@@ -283,9 +357,10 @@ export const CallOverlay: React.FC = () => {
         if (rec && (rec.audioBlob || rec.transcript)) {
           setReviewOpen(true);
         }
+        if (rec) void persistRecordingToChat(rec);
       });
     }
-  }, [state.status, recorder]);
+  }, [state.status, recorder, persistRecordingToChat]);
 
   // Re-anchor the PiP to its default spot every time the user enters PiP
   // mode, so it doesn't reappear off-screen if the window has been resized.
@@ -518,7 +593,7 @@ export const CallOverlay: React.FC = () => {
                   autoPlay
                   playsInline
                   muted
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
                 />
                 {state.localStream && !state.isCameraOff && (
                   <video
@@ -668,13 +743,17 @@ export const CallOverlay: React.FC = () => {
               aria-hidden="true"
               className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-60 pointer-events-none"
             />
-            {/* Remote video — fills the entire screen area. */}
+            {/* Remote video — uses object-contain so a desktop screen-share
+                arriving on a phone (or any aspect mismatch) fits fully
+                without cropping the sides. The blurred backdrop above fills
+                whatever dead space the contain leaves with an ambient tint
+                — same trick Meet/Zoom use to avoid letterbox black bars. */}
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-cover z-[1]"
+              className="absolute inset-0 w-full h-full object-contain z-[1]"
             />
             {state.localStream && !state.isCameraOff && (
               <video

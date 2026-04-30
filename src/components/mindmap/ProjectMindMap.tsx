@@ -1352,12 +1352,13 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     });
   }, [flow, updateExtras]);
 
-  // ── Add task / column dialogs (mind-map only) ────────────────
-  // The "+ Add" button opens a dropdown with three options. Every option
-  // creates a node that lives ONLY in this mind map — nothing is written
-  // back to the kanban board, the project's columns, or the tasks table.
-  // The three "kinds" differ only in default colour so the user can see
-  // them at a glance, but functionally they're all idea nodes.
+  // ── Add task / column / idea dialog (mind-map only) ──────────
+  // Hard rule: NOTHING the user does on the mind map writes to the kanban.
+  // All three "Add" options drop a node into the mind map's local extras
+  // (the same per-user JSONB blob in `mind_map_state` that ideas use). The
+  // three kinds differ only in default colour so the user can tell them
+  // apart at a glance — they're all idea nodes underneath, with the same
+  // rename / recolour / drag / delete UX.
   const [addDialog, setAddDialog] = useState<{
     open: boolean;
     type: 'task' | 'column';
@@ -1384,8 +1385,8 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
 
     setAddSubmitting(true);
     try {
-      // Drop the new node near the centre of the current viewport so the
-      // user actually sees it land. Mirrors `addIdea` exactly.
+      // Drop the new node near the centre of the current viewport — same
+      // placement the existing `addIdea` uses.
       const containerEl = document.querySelector('.react-flow') as HTMLElement | null;
       const rect = containerEl?.getBoundingClientRect();
       const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
@@ -1393,8 +1394,8 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       const flowPos = flow.screenToFlowPosition({ x: cx, y: cy });
       const id = `${IDEA_NODE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-      // Different colour per type so the three kinds are visually distinct
-      // even though they're all just idea nodes underneath.
+      // Pick a colour per type so the three kinds are visually distinct.
+      // 'emerald' / 'sky' / 'violet' all exist in IDEA_PALETTE.
       const colorByType: Record<'task' | 'column', string> = {
         task: 'emerald',
         column: 'sky',
@@ -1413,7 +1414,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       });
 
       toast.success(
-        addDialog.type === 'task' ? 'Task placeholder added' : 'Column placeholder added',
+        addDialog.type === 'task' ? 'Task added to mind map' : 'Column added to mind map',
       );
       setAddDialog((s) => ({ ...s, open: false }));
     } catch (err) {
@@ -1658,22 +1659,22 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               <ChevronDown className="w-3 h-3 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[220px]">
+          <DropdownMenuContent align="start" className="min-w-[240px]">
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Add to mind map only
+              Add to mind map only — kanban is never changed
             </DropdownMenuLabel>
             <DropdownMenuItem onClick={() => openAddDialog('task')}>
               <CheckSquare className="w-3.5 h-3.5 mr-2 text-emerald-500" />
               <div className="flex flex-col">
                 <span>Task</span>
-                <span className="text-[10px] text-muted-foreground">A task placeholder — kanban not changed</span>
+                <span className="text-[10px] text-muted-foreground">Task-shaped note for this map</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => openAddDialog('column')}>
               <Columns className="w-3.5 h-3.5 mr-2 text-sky-500" />
               <div className="flex flex-col">
                 <span>Column</span>
-                <span className="text-[10px] text-muted-foreground">A column placeholder — kanban not changed</span>
+                <span className="text-[10px] text-muted-foreground">Column-shaped note for this map</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
@@ -1681,7 +1682,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               <Lightbulb className="w-3.5 h-3.5 mr-2 text-amber-500" />
               <div className="flex flex-col">
                 <span>Idea</span>
-                <span className="text-[10px] text-muted-foreground">Floating note for brainstorming</span>
+                <span className="text-[10px] text-muted-foreground">Free-form brainstorm note</span>
               </div>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -1971,27 +1972,26 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         }}
       />
 
-      {/* Lightweight modal for adding a Task / Column placeholder to the
-          mind map. These are mind-map-only — they never write to the
-          project's tasks table or columns config, so the kanban board
-          stays exactly as it was. */}
+      {/* Modal for naming a Task / Column note that lives on the mind map
+          only. Everything submitted here goes into per-user mind-map state.
+          The kanban board / project columns / tasks table are never touched. */}
       <Dialog open={addDialog.open} onOpenChange={(o) => !o && closeAddDialog()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {addDialog.type === 'task' ? (
                 <>
-                  <CheckSquare className="w-4 h-4 text-emerald-500" /> Add task
+                  <CheckSquare className="w-4 h-4 text-emerald-500" /> Add task note
                 </>
               ) : (
                 <>
-                  <Columns className="w-4 h-4 text-sky-500" /> Add column
+                  <Columns className="w-4 h-4 text-sky-500" /> Add column note
                 </>
               )}
             </DialogTitle>
             <DialogDescription>
-              This adds a placeholder to the mind map only. The kanban board
-              and project columns are not changed.
+              This adds a note to the mind map only. Nothing is added to the
+              kanban board or project columns.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -2027,7 +2027,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               ) : (
                 <Plus className="w-4 h-4 mr-2" />
               )}
-              Add
+              Add to mind map
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -14,6 +14,9 @@ import {
   Smile,
   Phone,
   Video,
+  Mic,
+  Download,
+  FileText,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -125,6 +128,110 @@ const GENERIC_MEMBER_DISPLAY = new Set(['', 'owner', 'member', 'user', 'unknown'
 function isGenericMemberDisplayName(name: string): boolean {
   return GENERIC_MEMBER_DISPLAY.has(name.trim().toLowerCase());
 }
+
+/** Structured chat-message payload posted by the call recorder when a
+ *  recording finishes. We sniff the body and render a play/download card
+ *  instead of dumping JSON into the message bubble. */
+interface CallRecordingChatPayload {
+  _kind: 'call_recording';
+  url: string;
+  fileId?: string;
+  fileName?: string;
+  durationSec?: number;
+  startedAt?: string;
+  transcript?: string;
+}
+
+function parseCallRecordingBody(body: string): CallRecordingChatPayload | null {
+  if (!body || !body.startsWith('{') || !body.includes('"_kind"')) return null;
+  try {
+    const parsed = JSON.parse(body) as Partial<CallRecordingChatPayload>;
+    if (parsed && parsed._kind === 'call_recording' && typeof parsed.url === 'string') {
+      return {
+        _kind: 'call_recording',
+        url: parsed.url,
+        fileId: typeof parsed.fileId === 'string' ? parsed.fileId : undefined,
+        fileName: typeof parsed.fileName === 'string' ? parsed.fileName : undefined,
+        durationSec: typeof parsed.durationSec === 'number' ? parsed.durationSec : undefined,
+        startedAt: typeof parsed.startedAt === 'string' ? parsed.startedAt : undefined,
+        transcript: typeof parsed.transcript === 'string' ? parsed.transcript : undefined,
+      };
+    }
+  } catch {
+    /* not a structured card — fall back to plain text rendering */
+  }
+  return null;
+}
+
+function formatCallDuration(sec: number | undefined): string {
+  if (!sec || sec <= 0) return '';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+const CallRecordingCard: React.FC<{
+  payload: CallRecordingChatPayload;
+  mine: boolean;
+}> = ({ payload, mine }) => {
+  const [showTranscript, setShowTranscript] = React.useState(false);
+  const duration = formatCallDuration(payload.durationSec);
+  return (
+    <div
+      className={cn(
+        'rounded-lg p-3 text-[13px] leading-relaxed border min-w-[240px] max-w-[340px]',
+        mine
+          ? 'rounded-br-sm bg-primary/10 border-primary/30 text-foreground'
+          : 'rounded-bl-sm bg-muted text-foreground border-border/60',
+      )}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500/15 text-red-500">
+          <Mic className="w-3.5 h-3.5" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-semibold text-foreground">Recorded call</p>
+          {duration && (
+            <p className="text-[11px] text-muted-foreground">Duration {duration}</p>
+          )}
+        </div>
+      </div>
+      <audio
+        controls
+        src={payload.url}
+        className="w-full h-9"
+        preload="none"
+      />
+      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+        <a
+          href={payload.url}
+          download={payload.fileName || 'call.webm'}
+          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          title="Download audio"
+        >
+          <Download className="w-3 h-3" />
+          Audio
+        </a>
+        {payload.transcript && payload.transcript.trim() && (
+          <button
+            type="button"
+            onClick={() => setShowTranscript((v) => !v)}
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            title={showTranscript ? 'Hide transcript' : 'Show transcript'}
+          >
+            <FileText className="w-3 h-3" />
+            {showTranscript ? 'Hide transcript' : 'Show transcript'}
+          </button>
+        )}
+      </div>
+      {showTranscript && payload.transcript && (
+        <p className="mt-2 max-h-40 overflow-y-auto rounded-md bg-background/60 border border-border/60 px-2 py-1.5 text-[12px] whitespace-pre-wrap text-foreground/90">
+          {payload.transcript}
+        </p>
+      )}
+    </div>
+  );
+};
 
 export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   project,
@@ -1073,16 +1180,26 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               </PopoverContent>
                             </Popover>
                           </div>
-                          <div
-                            className={cn(
-                              'rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
-                              mine
-                                ? 'rounded-br-sm bg-primary text-primary-foreground shadow-sm'
-                                : 'rounded-bl-sm bg-muted text-foreground border border-border/60',
-                            )}
-                          >
-                            {msg.body}
-                          </div>
+                          {(() => {
+                            const callPayload = parseCallRecordingBody(msg.body);
+                            if (callPayload) {
+                              return (
+                                <CallRecordingCard payload={callPayload} mine={mine} />
+                              );
+                            }
+                            return (
+                              <div
+                                className={cn(
+                                  'rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
+                                  mine
+                                    ? 'rounded-br-sm bg-primary text-primary-foreground shadow-sm'
+                                    : 'rounded-bl-sm bg-muted text-foreground border border-border/60',
+                                )}
+                              >
+                                {msg.body}
+                              </div>
+                            );
+                          })()}
                           {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
                             <div
                               className={cn(
