@@ -4,8 +4,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { CallControls } from './CallControls';
 import { IncomingCallModal } from './IncomingCallModal';
+import { MeetingNotesReviewModal } from './MeetingNotesReviewModal';
 import { useCall } from '@/hooks/useCall';
+import { useMeetingRecorder } from '@/hooks/useMeetingRecorder';
+import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 // ── Outgoing ringtone (Teams-style) ──────────────────────────
 
@@ -232,14 +236,56 @@ const initialPipPosition = (): DragPosition => {
 
 export const CallOverlay: React.FC = () => {
   const { state, actions } = useCall();
+  const { user } = useAuth();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  /** Local screen-share preview shown to the sharer themselves, Meet-style:
+   *  the screen takes the main stage and the camera faces shrink into a
+   *  thumbnail strip on the right. */
+  const screenVideoRef = useRef<HTMLVideoElement>(null);
   /** Blurred backdrop video that fills the screen behind the crisp remote feed. */
   const remoteBackdropRef = useRef<HTMLVideoElement>(null);
   /** Dedicated audio sink — single source of truth for remote sound. */
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [pip, setPip] = useState(false);
   const pipDrag = useDraggable(initialPipPosition);
+
+  const recorder = useMeetingRecorder(state.localStream, state.remoteStream);
+  const [reviewOpen, setReviewOpen] = useState(false);
+
+  const handleToggleRecording = useCallback(() => {
+    if (recorder.isRecording) {
+      void recorder.stop().then((rec) => {
+        if (rec && (rec.audioBlob || rec.transcript)) {
+          setReviewOpen(true);
+        }
+      });
+    } else {
+      void recorder.start().then((res) => {
+        if (res.outcome === 'failed') {
+          toast.error(res.error);
+        } else if (res.outcome === 'started') {
+          toast.success('Recording started');
+        }
+      });
+    }
+  }, [recorder]);
+
+  // If the call ends while we're still recording, finalise the file so the
+  // user gets the audio + transcript instead of losing it on hangup.
+  const wasRecordingRef = useRef(false);
+  useEffect(() => {
+    wasRecordingRef.current = recorder.isRecording;
+  }, [recorder.isRecording]);
+  useEffect(() => {
+    if (state.status === 'ended' && wasRecordingRef.current) {
+      void recorder.stop().then((rec) => {
+        if (rec && (rec.audioBlob || rec.transcript)) {
+          setReviewOpen(true);
+        }
+      });
+    }
+  }, [state.status, recorder]);
 
   // Re-anchor the PiP to its default spot every time the user enters PiP
   // mode, so it doesn't reappear off-screen if the window has been resized.
@@ -264,6 +310,14 @@ export const CallOverlay: React.FC = () => {
     attachStream(remoteBackdropRef.current, state.remoteStream);
   }, [state.remoteStream, pip]);
 
+  // Attach the local screen-capture stream to the dedicated <video>. We use
+  // `state.screenStream` (not the peer-side video sender) so the sharer sees
+  // the same screen they're presenting — without it, the local screen-share
+  // surface is invisible to the user themselves.
+  useEffect(() => {
+    attachStream(screenVideoRef.current, state.screenStream);
+  }, [state.screenStream, pip]);
+
   // The dedicated <audio> element is the single source of truth for remote
   // sound, since the visible <video> elements are muted to prevent the
   // backdrop+foreground duplication from echoing. Include `pip` so we
@@ -272,8 +326,27 @@ export const CallOverlay: React.FC = () => {
     attachStream(remoteAudioRef.current, state.remoteStream);
   }, [state.remoteStream, pip]);
 
-  // Nothing to render when idle
-  if (state.status === 'idle') return null;
+  // The recording-review modal must outlive the call itself: when status hits
+  // 'ended' the user still needs to see/save their recording. So render it
+  // alongside whatever we'd otherwise return — including a bare modal-only
+  // tree when the call has fully gone idle.
+  const reviewModal = (
+    <MeetingNotesReviewModal
+      open={reviewOpen}
+      onOpenChange={(next) => {
+        setReviewOpen(next);
+        if (!next) recorder.reset();
+      }}
+      recording={recorder.lastRecording}
+      userId={user?.userId}
+      meetingLabel={state.context?.label || 'meeting'}
+    />
+  );
+
+  // Nothing to render when idle, except a still-open recording review.
+  if (state.status === 'idle') {
+    return reviewOpen ? reviewModal : null;
+  }
 
   // Always-mounted audio sink for the remote stream. The visible <video>
   // elements (foreground + blurred backdrop) are all muted, so this sink is
@@ -305,14 +378,17 @@ export const CallOverlay: React.FC = () => {
 
   if (state.status === 'ended') {
     return (
-      <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 text-white">
-        <div className="flex flex-col items-center gap-3 animate-in fade-in duration-200">
-          <p className="text-lg font-semibold">Call ended</p>
-          {state.error && (
-            <p className="text-sm text-white/60">{state.error}</p>
-          )}
+      <>
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 text-white">
+          <div className="flex flex-col items-center gap-3 animate-in fade-in duration-200">
+            <p className="text-lg font-semibold">Call ended</p>
+            {state.error && (
+              <p className="text-sm text-white/60">{state.error}</p>
+            )}
+          </div>
         </div>
-      </div>
+        {reviewModal}
+      </>
     );
   }
 
@@ -409,26 +485,51 @@ export const CallOverlay: React.FC = () => {
           </Button>
         </div>
         {remoteAudioSink}
-        {isVideo && state.remoteStream && (
+        {isVideo && (state.remoteStream || state.screenStream) && (
           <div
             className="relative w-full bg-black overflow-hidden"
             style={{ height: PIP_VIDEO_HEIGHT }}
           >
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            {state.localStream && !state.isCameraOff && (
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="absolute bottom-2 right-2 w-16 h-12 rounded-md object-cover border border-white/30 shadow z-10"
-              />
+            {state.isScreenSharing && state.screenStream ? (
+              // Local screen-share priority layout: screen fills the stage,
+              // remote face goes to the corner — matches Google Meet's PiP.
+              <>
+                <video
+                  ref={screenVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                />
+                {state.remoteStream && (
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute bottom-2 right-2 w-16 h-12 rounded-md object-cover border border-white/30 shadow z-10"
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+                {state.localStream && !state.isCameraOff && (
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute bottom-2 right-2 w-16 h-12 rounded-md object-cover border border-white/30 shadow z-10"
+                  />
+                )}
+              </>
             )}
           </div>
         )}
@@ -465,8 +566,16 @@ export const CallOverlay: React.FC = () => {
               )
             }
             onHangUp={actions.hangUp}
+            compact
           />
         </div>
+        {recorder.isRecording && (
+          <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-medium text-white shadow">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-pulse" aria-hidden="true" />
+            REC
+          </div>
+        )}
+        {reviewModal}
       </div>
     );
   }
@@ -509,7 +618,45 @@ export const CallOverlay: React.FC = () => {
 
       {/* Video area */}
       <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-        {isVideo && state.remoteStream ? (
+        {isVideo && state.isScreenSharing && state.screenStream ? (
+          // ── Local screen-share is primary ──
+          // The shared screen takes the main stage, and the people's faces
+          // (remote in front, your own camera below) move to a thumbnail
+          // strip on the right — same shape as Google Meet's screen-share.
+          <>
+            <video
+              ref={screenVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-contain bg-black z-[1]"
+            />
+            <div className="absolute top-4 right-4 z-10 flex flex-col gap-3">
+              {state.remoteStream && (
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-48 h-32 rounded-lg object-cover border-2 border-white/20 shadow-xl"
+                />
+              )}
+              {state.localStream && !state.isCameraOff && (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-32 h-20 rounded-lg object-cover border-2 border-white/20 shadow-xl"
+                />
+              )}
+            </div>
+            <div className="absolute top-4 left-4 z-10 inline-flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs text-white/90 shadow-lg ring-1 ring-white/10">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
+              You're presenting
+            </div>
+          </>
+        ) : isVideo && state.remoteStream ? (
           <>
             {/* Blurred backdrop — fills the screen so portrait phone video
                 doesn't leave black bars, without zooming the actual frame. */}
@@ -577,8 +724,19 @@ export const CallOverlay: React.FC = () => {
             )
           }
           onHangUp={actions.hangUp}
+          isRecording={recorder.isRecording}
+          onToggleRecording={handleToggleRecording}
         />
       </div>
+
+      {recorder.isRecording && (
+        <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-red-600/90 px-3 py-1 text-xs font-medium text-white shadow-lg">
+          <span className="inline-block h-2 w-2 rounded-full bg-white animate-pulse" aria-hidden="true" />
+          Recording
+        </div>
+      )}
+
+      {reviewModal}
     </div>
   );
 };

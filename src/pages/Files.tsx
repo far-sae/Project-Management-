@@ -184,9 +184,28 @@ export const Files: React.FC = () => {
     }
   };
 
-  const handleDownload = (file: ProjectFile) => {
-    window.open(file.fileUrl, '_blank');
-  };
+  const handleDownload = useCallback(async (file: ProjectFile) => {
+    // Try to fetch as a blob first so we can trigger a real "Save As…" with the
+    // original filename. Fall back to opening the public URL when the storage
+    // layer disallows CORS-fetch (e.g. signed-URL hosts that omit CORS headers).
+    try {
+      const res = await fetch(file.fileUrl, { mode: 'cors' });
+      if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(file.fileUrl, '_blank');
+    }
+  }, []);
+
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   const getFileIcon = (fileType: string) => {
     const category = getFileTypeCategory(fileType);
@@ -209,6 +228,30 @@ export const Files: React.FC = () => {
   const filteredFiles = files.filter((file) =>
     file.fileName.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleDownloadAll = useCallback(async () => {
+    const snapshot = files.filter((file) =>
+      file.fileName.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+    if (snapshot.length === 0 || downloadingAll) return;
+    setDownloadingAll(true);
+    const toastId = toast.loading(`Downloading ${snapshot.length} files…`);
+    try {
+      // Trigger downloads one-by-one with a small delay so the browser doesn't
+      // collapse them into a single prompt and doesn't cancel earlier transfers.
+      for (let i = 0; i < snapshot.length; i++) {
+        await handleDownload(snapshot[i]);
+        if (i < snapshot.length - 1) {
+          await new Promise((r) => setTimeout(r, 350));
+        }
+      }
+      toast.success(`Downloaded ${snapshot.length} files`, { id: toastId });
+    } catch {
+      toast.error('Some files could not be downloaded', { id: toastId });
+    } finally {
+      setDownloadingAll(false);
+    }
+  }, [files, searchQuery, downloadingAll, handleDownload]);
 
   const uploadProgressItems = Object.values(uploadProgress);
 
@@ -238,6 +281,19 @@ export const Files: React.FC = () => {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant="outline"
+              onClick={handleDownloadAll}
+              disabled={!selectedProject || filteredFiles.length === 0 || downloadingAll}
+              title={filteredFiles.length ? `Download all ${filteredFiles.length} files` : 'No files to download'}
+            >
+              {downloadingAll ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
+              Download all
+            </Button>
             <Button
               className="bg-gradient-to-r from-orange-500 to-red-500"
               onClick={() => setShowUploadZone(!showUploadZone)}

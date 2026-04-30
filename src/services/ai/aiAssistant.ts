@@ -676,3 +676,104 @@ export async function assessProjectHealth(
     maxTokens: 800,
   });
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * 6. Meeting transcript → structured notes
+ *    Used by the in-call recorder to turn a raw transcript into a tidy
+ *    summary + decisions + action items the user can paste anywhere.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export interface MeetingNotes {
+  summary: string;
+  decisions: string[];
+  actionItems: Array<{
+    title: string;
+    owner?: string;
+    dueDate?: string | null;
+  }>;
+  openQuestions: string[];
+}
+
+const MEETING_NOTES_PROMPT = (transcript: string) => `
+You are turning a meeting transcript into clean, shareable notes.
+Use ONLY the transcript. Do not invent participants, tasks, or dates.
+
+Return STRICT JSON with this exact shape:
+{
+  "summary": "<2-4 sentence overview of what was discussed>",
+  "decisions": ["<concrete decision 1>", "..."],
+  "actionItems": [
+    { "title": "<imperative, <=80 chars>", "owner": "<name from transcript or omit>", "dueDate": "<YYYY-MM-DD or null>" }
+  ],
+  "openQuestions": ["<question or unresolved point>", "..."]
+}
+
+Rules:
+- Skip filler ("um", "you know") and repeated phrases when summarising.
+- Action items must be clearly actionable. Do not promote casual mentions.
+- Owners only if a specific person was named in the transcript.
+- 0-12 action items, 0-8 decisions, 0-8 open questions. Quality over quantity.
+
+Transcript:
+${transcript}
+`.trim();
+
+function parseMeetingNotes(content: string): MeetingNotes {
+  const json = extractJsonBlock(content);
+  let parsed: Partial<MeetingNotes> & {
+    actionItems?: unknown;
+    decisions?: unknown;
+    openQuestions?: unknown;
+  };
+  try {
+    parsed = JSON.parse(json) as typeof parsed;
+  } catch (err) {
+    throwParseError(err, json);
+    return { summary: '', decisions: [], actionItems: [], openQuestions: [] };
+  }
+  const asStringArray = (v: unknown): string[] =>
+    Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : [];
+  type ActionItem = { title: string; owner?: string; dueDate?: string | null };
+  const actionItems: ActionItem[] = Array.isArray(parsed.actionItems)
+    ? (parsed.actionItems
+        .map((it): ActionItem | null => {
+          if (!it || typeof it !== 'object') return null;
+          const r = it as { title?: unknown; owner?: unknown; dueDate?: unknown };
+          const title = typeof r.title === 'string' ? r.title.trim() : '';
+          if (!title) return null;
+          const item: ActionItem = { title: title.slice(0, 200) };
+          if (typeof r.owner === 'string' && r.owner.trim()) {
+            item.owner = r.owner.trim().slice(0, 120);
+          }
+          item.dueDate =
+            typeof r.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate)
+              ? r.dueDate
+              : null;
+          return item;
+        })
+        .filter((x): x is ActionItem => x !== null))
+    : [];
+
+  return {
+    summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
+    decisions: asStringArray(parsed.decisions),
+    actionItems,
+    openQuestions: asStringArray(parsed.openQuestions),
+  };
+}
+
+export async function summarizeMeetingTranscript(
+  userId: string,
+  transcript: string,
+): Promise<MeetingNotes> {
+  const trimmed = sanitizeFreeformUserInput(transcript, 12000);
+  if (!trimmed) {
+    throw {
+      code: 'INVALID_INPUT',
+      message: 'Transcript is empty.',
+    } as AIError;
+  }
+  return invokeAI(userId, MEETING_NOTES_PROMPT(trimmed), parseMeetingNotes, {
+    maxTokens: 900,
+  });
+}

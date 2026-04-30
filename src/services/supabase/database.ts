@@ -2467,13 +2467,13 @@ export const subscribeToUserNotifications = (
 
   const open = () => {
     if (cancelled) return;
-    // Replace any prior channel cleanly. unsubscribe() does NOT happen inside the
-    // status callback — calling it from there causes the realtime client to re-emit
-    // CLOSED, which would re-enter this callback (the original infinite-recursion bug).
+    // Replace any prior channel cleanly. Use removeChannel() instead of unsubscribe()
+    // to fully deregister from the realtime client's internal map — unsubscribe() alone
+    // can trigger re-entrant _trigger() calls that cause infinite recursion.
     const prev = channel;
     channel = null;
     if (prev) {
-      try { prev.unsubscribe(); } catch { /* noop */ }
+      try { supabase.removeChannel(prev); } catch { /* noop */ }
     }
 
     const next = supabase
@@ -2511,7 +2511,9 @@ export const subscribeToUserNotifications = (
 
   return () => {
     cancelled = true;
-    try { channel?.unsubscribe(); } catch { /* noop */ }
+    if (channel) {
+      try { supabase.removeChannel(channel); } catch { /* noop */ }
+    }
     channel = null;
   };
 };

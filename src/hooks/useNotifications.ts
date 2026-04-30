@@ -66,20 +66,22 @@ export const useNotifications = (userId: string | null, limit = 30) => {
   const localReadIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setEffectiveUserId(userId);
+    setEffectiveUserId((prev) => (prev === userId ? prev : userId));
   }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
+    const resolve = (id: string | null) =>
+      setEffectiveUserId((prev) => (prev === id ? prev : id));
+
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (cancelled) return;
-      const authId = session?.user?.id ?? null;
-      setEffectiveUserId(authId ?? userId);
+      resolve(session?.user?.id ?? userId);
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      const authId = session?.user?.id ?? null;
-      setEffectiveUserId(authId ?? userId);
+      if (cancelled) return;
+      resolve(session?.user?.id ?? userId);
     });
     return () => {
       cancelled = true;
