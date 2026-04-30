@@ -1004,12 +1004,24 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     try {
       const root = document.documentElement;
       const rawBg = getComputedStyle(root).getPropertyValue('--background').trim();
-      const backgroundColor =
-        rawBg.length > 0
-          ? (rawBg.startsWith('#') ? rawBg : `hsl(${rawBg})`)
-          : window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? '#171717'
-            : '#ffffff';
+      let backgroundColor: string;
+      if (rawBg.length === 0) {
+        backgroundColor = window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? '#171717'
+          : '#ffffff';
+      } else if (rawBg.startsWith('#')) {
+        backgroundColor = rawBg;
+      } else {
+        const lower = rawBg.toLowerCase();
+        const isCompleteColorString =
+          lower.startsWith('hsl(') ||
+          lower.startsWith('hsla(') ||
+          lower.startsWith('rgb(') ||
+          lower.startsWith('rgba(') ||
+          lower.startsWith('var(') ||
+          rawBg.includes('(');
+        backgroundColor = isCompleteColorString ? rawBg : `hsl(${rawBg})`;
+      }
 
       const { toPng } = await import('html-to-image') as {
         toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string>;
