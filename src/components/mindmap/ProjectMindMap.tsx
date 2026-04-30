@@ -36,10 +36,27 @@ import {
   Maximize2,
   Lightbulb,
   Sparkles,
+  Download,
+  FileJson,
+  Image,
+  ZoomIn,
+  ZoomOut,
+  Keyboard,
 } from 'lucide-react';
 import type { Project, Task, KanbanColumn } from '@/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  saveMindMapState as saveToCloud,
+  migrateLocalStorageToCloud,
+} from '@/services/supabase/mindmapState';
+import { useAuth } from '@/context/AuthContext';
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants
@@ -629,12 +646,33 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
   onOpenTask,
 }) => {
   const flow = useReactFlow();
+  const { user } = useAuth();
   const [extras, setExtrasState] = useState<MindMapExtras>(() => loadExtras(project.projectId));
 
-  // Reload extras when the project switches.
+  // On mount / project switch, try to migrate localStorage → cloud and load cloud state.
   useEffect(() => {
-    setExtrasState(loadExtras(project.projectId));
-  }, [project.projectId]);
+    const userId = user?.userId;
+    if (!userId) {
+      setExtrasState(loadExtras(project.projectId));
+      return;
+    }
+    let cancelled = false;
+    void migrateLocalStorageToCloud(project.projectId, userId).then((cloud) => {
+      if (!cancelled) {
+        // If cloud has data, prefer it; otherwise keep localStorage version
+        const hasCloud =
+          cloud.ideas.length > 0 ||
+          cloud.edges.length > 0 ||
+          Object.keys(cloud.positions).length > 0;
+        if (hasCloud) setExtrasState(cloud);
+        else setExtrasState(loadExtras(project.projectId));
+      }
+    });
+    return () => { cancelled = true; };
+  }, [project.projectId, user?.userId]);
+
+  // Debounced cloud save ref
+  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // All extras mutations go through this writer so persistence stays in lock-step
   // with the in-memory state — no chance of "saved but not displayed" or vice versa.
@@ -642,11 +680,19 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     (mutator: (prev: MindMapExtras) => MindMapExtras) => {
       setExtrasState((prev) => {
         const next = mutator(prev);
+        // Save to localStorage immediately (fast, offline-capable)
         saveExtras(project.projectId, next);
+        // Debounce save to cloud (avoid hammering Supabase)
+        if (user?.userId) {
+          if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+          cloudSaveTimer.current = setTimeout(() => {
+            void saveToCloud(project.projectId, user.userId, next);
+          }, 2000);
+        }
         return next;
       });
     },
-    [project.projectId],
+    [project.projectId, user?.userId],
   );
 
   // Auto-derived structure from the project + tasks.
@@ -900,11 +946,116 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     [nodes, edges],
   );
 
+  // ── Keyboard shortcuts ──────────────────────────────────────
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      // Skip when user is typing in an input/textarea
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable
+      )
+        return;
+
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        flow.zoomIn({ duration: 200 });
+      } else if (mod && e.key === '-') {
+        e.preventDefault();
+        flow.zoomOut({ duration: 200 });
+      } else if (mod && e.key === '0') {
+        e.preventDefault();
+        flow.fitView({ padding: 0.2, duration: 300 });
+      } else if (e.key === 'n' && !mod && !e.altKey) {
+        e.preventDefault();
+        addIdea();
+      } else if (e.key === '?' && !mod) {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [flow, addIdea]);
+
+  // ── Export functions ─────────────────────────────────────────
+
+  const exportAsJson = useCallback(() => {
+    const data = flow.toObject();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mindmap-${project.name.replace(/\s+/g, '-').toLowerCase()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [flow, project.name]);
+
+  const exportAsPng = useCallback(async () => {
+    const el = document.querySelector('.react-flow__viewport') as HTMLElement | null;
+    if (!el) return;
+    try {
+      // Dynamic import to keep the bundle lean — html-to-image is optional
+      // @ts-expect-error html-to-image may not be installed
+      const { toPng } = await import('html-to-image') as { toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string> };
+      const dataUrl = await toPng(el, {
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+        filter: (node: Element) => {
+          const cls = (node as HTMLElement).className;
+          if (typeof cls === 'string' && (cls.includes('react-flow__minimap') || cls.includes('react-flow__controls')))
+            return false;
+          return true;
+        },
+      });
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `mindmap-${project.name.replace(/\s+/g, '-').toLowerCase()}.png`;
+      a.click();
+    } catch {
+      // html-to-image not installed — fall back to JSON
+      exportAsJson();
+    }
+  }, [project.name, exportAsJson]);
+
+  // ── Context menu state ──────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId?: string;
+  } | null>(null);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      // Check if we right-clicked on a node
+      const target = e.target as HTMLElement;
+      const nodeEl = target.closest('[data-id]');
+      const nodeId = nodeEl?.getAttribute('data-id') || undefined;
+      setContextMenu({ x: e.clientX, y: e.clientY, nodeId });
+    },
+    [],
+  );
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
   return (
-    <div className="relative h-full w-full bg-background rounded-lg border border-border overflow-hidden">
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className="relative h-full w-full bg-background rounded-lg border border-border overflow-hidden"
+      onContextMenu={handleContextMenu}
+      onClick={closeContextMenu}
+    >
       {/* Floating toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-lg border border-border bg-card/95 backdrop-blur px-1.5 py-1 shadow-md">
-        <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={addIdea}>
+        <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={addIdea} title="Add idea (N)">
           <Plus className="w-3.5 h-3.5" />
           Add idea
         </Button>
@@ -924,12 +1075,51 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
           size="sm"
           variant="ghost"
           className="h-8 gap-1.5 text-xs"
+          onClick={() => flow.zoomIn({ duration: 200 })}
+          title="Zoom in (Ctrl+=)"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 gap-1.5 text-xs"
+          onClick={() => flow.zoomOut({ duration: 200 })}
+          title="Zoom out (Ctrl+-)"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 gap-1.5 text-xs"
           onClick={fitView}
-          title="Fit to screen"
+          title="Fit to screen (Ctrl+0)"
         >
           <Maximize2 className="w-3.5 h-3.5" />
           Fit
         </Button>
+        <span className="w-px h-5 bg-border" aria-hidden />
+        {/* Export dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" title="Export mind map">
+              <Download className="w-3.5 h-3.5" />
+              Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-[160px]">
+            <DropdownMenuItem onClick={() => void exportAsPng()}>
+              <Image className="w-3.5 h-3.5 mr-2" />
+              Export as PNG
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={exportAsJson}>
+              <FileJson className="w-3.5 h-3.5 mr-2" />
+              Export as JSON
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="w-px h-5 bg-border" aria-hidden />
         <Button
           size="sm"
           variant="ghost"
@@ -940,12 +1130,97 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
           <RotateCcw className="w-3.5 h-3.5" />
           Reset
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 text-xs text-muted-foreground"
+          onClick={() => setShowShortcuts((v) => !v)}
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard className="w-3.5 h-3.5" />
+        </Button>
       </div>
+
+      {/* Keyboard shortcuts panel */}
+      {showShortcuts && (
+        <div className="absolute top-14 left-3 z-20 rounded-lg border border-border bg-card/95 backdrop-blur shadow-lg p-3 w-[220px]">
+          <p className="text-xs font-semibold text-foreground mb-2">Keyboard Shortcuts</p>
+          <div className="space-y-1.5 text-[11px] text-muted-foreground">
+            {[
+              ['Ctrl/Cmd + =', 'Zoom in'],
+              ['Ctrl/Cmd + -', 'Zoom out'],
+              ['Ctrl/Cmd + 0', 'Fit view'],
+              ['N', 'Add idea node'],
+              ['Del / Backspace', 'Delete selected'],
+              ['?', 'Toggle shortcuts'],
+            ].map(([key, desc]) => (
+              <div key={key} className="flex justify-between gap-2">
+                <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-[10px]">
+                  {key}
+                </kbd>
+                <span>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[160px] rounded-lg border border-border bg-card shadow-xl py-1 animate-in fade-in zoom-in-95 duration-100"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
+            onClick={() => { addIdea(); closeContextMenu(); }}
+          >
+            <Plus className="w-3.5 h-3.5" /> Add idea here
+          </button>
+          {contextMenu.nodeId?.startsWith(IDEA_NODE_PREFIX) && (
+            <>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted"
+                onClick={() => {
+                  handleIdeaDelete(contextMenu.nodeId!);
+                  closeContextMenu();
+                }}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete idea
+              </button>
+            </>
+          )}
+          <div className="h-px bg-border my-1" />
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
+            onClick={() => { fitView(); closeContextMenu(); }}
+          >
+            <Maximize2 className="w-3.5 h-3.5" /> Fit to screen
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
+            onClick={() => { void exportAsPng(); closeContextMenu(); }}
+          >
+            <Image className="w-3.5 h-3.5" /> Export as PNG
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
+            onClick={() => { exportAsJson(); closeContextMenu(); }}
+          >
+            <FileJson className="w-3.5 h-3.5" /> Export as JSON
+          </button>
+        </div>
+      )}
 
       {/* Hint pill */}
       <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-full border border-border bg-card/90 backdrop-blur px-2.5 py-1 shadow-sm text-[10.5px] text-muted-foreground">
         <Lightbulb className="w-3 h-3 text-amber-500" />
-        Drag a node's edge to draw a connection · Double-click ideas to edit · Delete key removes selection
+        N to add idea · Ctrl+=/- to zoom · Right-click for menu · ? for shortcuts
       </div>
 
       <ReactFlow

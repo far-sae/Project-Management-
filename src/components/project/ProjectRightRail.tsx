@@ -12,6 +12,8 @@ import {
   ChevronUp,
   Minus,
   Smile,
+  Phone,
+  Video,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -20,6 +22,8 @@ import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DirectMessageDock, type DirectMessageRecipient } from '@/components/messaging/DirectMessageDock';
+import { useCall } from '@/hooks/useCall';
+import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 import { useActivity } from '@/hooks/useActivity';
@@ -130,6 +134,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   presenceByUserId,
 }) => {
   const { user } = useAuth();
+  const { actions: callActions, state: callState } = useCall();
   const { organization } = useOrganization();
   const orgId =
     organization?.organizationId ||
@@ -845,15 +850,59 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-            onClick={() => onOpenChange(false)}
-            aria-label="Minimize project messages"
-          >
-            <Minus className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            {isMediaSupported() && callState.status === 'idle' && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-emerald-600"
+                  aria-label="Start audio call"
+                  onClick={() => {
+                    const firstOther = dedupedMembers.find(
+                      (m) => m.userId && m.userId !== user?.userId,
+                    );
+                    if (!firstOther?.userId) return;
+                    void callActions.startCall(
+                      { type: 'project', targetId: project.projectId, label: project.name },
+                      'audio',
+                      { userId: firstOther.userId, displayName: displayNameForChatUser(firstOther.userId, firstOther.displayName), photoURL: firstOther.photoURL },
+                    );
+                  }}
+                >
+                  <Phone className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
+                  aria-label="Start video call"
+                  onClick={() => {
+                    const firstOther = dedupedMembers.find(
+                      (m) => m.userId && m.userId !== user?.userId,
+                    );
+                    if (!firstOther?.userId) return;
+                    void callActions.startCall(
+                      { type: 'project', targetId: project.projectId, label: project.name },
+                      'video',
+                      { userId: firstOther.userId, displayName: displayNameForChatUser(firstOther.userId, firstOther.displayName), photoURL: firstOther.photoURL },
+                    );
+                  }}
+                >
+                  <Video className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+              onClick={() => onOpenChange(false)}
+              aria-label="Minimize project messages"
+            >
+              <Minus className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">

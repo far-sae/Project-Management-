@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Loader2, MessageSquare, Minus, Send } from 'lucide-react';
+import { Loader2, MessageSquare, Minus, Phone, Send, Video } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
+import { useCall } from '@/hooks/useCall';
+import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import {
   insertDirectMessage,
   markDirectMessagesRead,
@@ -45,6 +47,7 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   onClose,
 }) => {
   const { user } = useAuth();
+  const { actions: callActions, state: callState } = useCall();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
@@ -162,15 +165,51 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
               )}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-            onClick={onClose}
-            aria-label="Close direct message"
-          >
-            <Minus className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            {isMediaSupported() && callState.status === 'idle' && recipient && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-emerald-600"
+                  aria-label="Start audio call"
+                  onClick={() =>
+                    void callActions.startCall(
+                      { type: 'dm', targetId: recipient.userId, label: recipient.displayName },
+                      'audio',
+                      { userId: recipient.userId, displayName: recipient.displayName, photoURL: recipient.photoURL },
+                    )
+                  }
+                >
+                  <Phone className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
+                  aria-label="Start video call"
+                  onClick={() =>
+                    void callActions.startCall(
+                      { type: 'dm', targetId: recipient.userId, label: recipient.displayName },
+                      'video',
+                      { userId: recipient.userId, displayName: recipient.displayName, photoURL: recipient.photoURL },
+                    )
+                  }
+                >
+                  <Video className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+              onClick={onClose}
+              aria-label="Close direct message"
+            >
+              <Minus className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         <div

@@ -42,6 +42,8 @@ import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
 import CookieBanner from '@/components/landing/CookieBanner';
 import { CommandPalette } from '@/components/command/CommandPalette';
+import { CallProvider } from '@/components/calling/CallProvider';
+import { CallOverlay } from '@/components/calling/CallOverlay';
 
 const RouteFallback: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -225,9 +227,12 @@ export default function App() {
         <AuthProvider>
           <OrganizationProvider>
             <SubscriptionProvider>
-              <RouterProvider router={router} future={{ v7_startTransition: true }} />
-              <Toaster position='bottom-right' />
-              <CookieBanner />
+              <CallProvider>
+                <RouterProvider router={router} future={{ v7_startTransition: true }} />
+                <CallOverlay />
+                <Toaster position='bottom-right' />
+                <CookieBanner />
+              </CallProvider>
             </SubscriptionProvider>
           </OrganizationProvider>
         </AuthProvider>
