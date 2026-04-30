@@ -21,6 +21,62 @@ function isValidIceServer(obj: unknown): obj is RTCIceServer {
   );
 }
 
+/**
+ * Chromium rejects some ICE URL shapes (e.g. `turns:...?transport=tcp` — TLS relay does not
+ * use the same transport query as `turn:`). Normalize `transport` to lowercase udp|tcp,
+ * drop invalid values, strip transport on `stun:` / `turns:` where it breaks parsing.
+ */
+function sanitizeSingleIceUrl(url: string): string {
+  const trimmed = url.trim();
+  const q = trimmed.indexOf('?');
+  if (q < 0) return trimmed;
+
+  const base = trimmed.slice(0, q);
+  const search = trimmed.slice(q + 1);
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(search);
+  } catch {
+    return trimmed;
+  }
+  if (!params.has('transport')) return trimmed;
+
+  const isStun = /^stun:/i.test(base);
+  const isTurns = /^turns:/i.test(base);
+  const raw = (params.get('transport') || '').trim().toLowerCase();
+
+  if (isStun || isTurns) {
+    params.delete('transport');
+  } else if (raw !== 'udp' && raw !== 'tcp') {
+    params.delete('transport');
+  } else {
+    params.set('transport', raw);
+  }
+
+  const rest = params.toString();
+  return rest ? `${base}?${rest}` : base;
+}
+
+function sanitizeUrlsField(urls: string | string[]): string | string[] {
+  const list = typeof urls === 'string' ? [urls] : urls;
+  const out = list.map(sanitizeSingleIceUrl).filter((u) => u.length > 0);
+  if (out.length === 0) return typeof urls === 'string' ? '' : [];
+  return out.length === 1 ? out[0]! : out;
+}
+
+function sanitizeIceServersList(list: RTCIceServer[]): RTCIceServer[] {
+  return list
+    .map((entry) => ({
+      ...entry,
+      urls: sanitizeUrlsField(
+        typeof entry.urls === 'string' ? entry.urls : [...entry.urls],
+      ) as string | string[],
+    }))
+    .filter((e) =>
+      typeof e.urls === 'string' ? e.urls.length > 0 : e.urls.length > 0,
+    );
+}
+
 export function getIceServers(): RTCIceServer[] {
   const servers: RTCIceServer[] = [...DEFAULT_STUN];
 
@@ -33,7 +89,7 @@ export function getIceServers(): RTCIceServer[] {
         parsed.length > 0 &&
         parsed.every(isValidIceServer)
       ) {
-        return parsed as RTCIceServer[];
+        return sanitizeIceServersList(parsed as RTCIceServer[]);
       }
       throw new Error('Expected a non-empty RTCIceServer[] with valid urls');
     } catch {
@@ -48,12 +104,12 @@ export function getIceServers(): RTCIceServer[] {
   if (turnUrls && username && credential) {
     const urls = turnUrls
       .split(',')
-      .map((s: string) => s.trim())
+      .map((s: string) => sanitizeSingleIceUrl(s.trim()))
       .filter(Boolean);
     if (urls.length) {
       servers.push({ urls, username, credential });
     }
   }
 
-  return servers;
+  return sanitizeIceServersList(servers);
 }
