@@ -2440,14 +2440,43 @@ export const subscribeToUserNotifications = (
 
   fetchNotifications();
 
-  // Re-subscribable realtime channel: if Supabase realtime ends or errors (e.g. WebSocket
-  // dropped while the laptop was asleep), tear down and re-open instead of going silent.
+  // Re-subscribable realtime channel: if Supabase realtime errors (e.g. WebSocket dropped
+  // while the laptop was asleep), tear down and re-open instead of going silent.
   let cancelled = false;
   let channel: ReturnType<typeof supabase.channel> | null = null;
+  let reconnectScheduled = false;
+  let backoffMs = 1500;
+
+  const scheduleReconnect = () => {
+    // Guard against scheduling many reconnects in parallel — the realtime client can
+    // fire CHANNEL_ERROR multiple times in quick succession after a network blip, and
+    // each one would otherwise queue another REST refetch + channel open.
+    if (cancelled || reconnectScheduled) return;
+    reconnectScheduled = true;
+    const delay = backoffMs;
+    backoffMs = Math.min(backoffMs * 2, 30_000);
+    window.setTimeout(() => {
+      reconnectScheduled = false;
+      if (cancelled) return;
+      // Pull the latest rows immediately so the user isn't stuck on stale data while
+      // the channel reconnects.
+      fetchNotifications();
+      open();
+    }, delay);
+  };
 
   const open = () => {
     if (cancelled) return;
-    channel = supabase
+    // Replace any prior channel cleanly. unsubscribe() does NOT happen inside the
+    // status callback — calling it from there causes the realtime client to re-emit
+    // CLOSED, which would re-enter this callback (the original infinite-recursion bug).
+    const prev = channel;
+    channel = null;
+    if (prev) {
+      try { prev.unsubscribe(); } catch { /* noop */ }
+    }
+
+    const next = supabase
       .channel(
         `notifications-${userId}-${Math.random().toString(36).slice(2, 9)}`,
       )
@@ -2462,17 +2491,20 @@ export const subscribeToUserNotifications = (
         fetchNotifications,
       )
       .subscribe((status, err) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          if (cancelled) return;
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          // Successful (re)connection — reset backoff so the next blip starts fresh.
+          backoffMs = 1500;
+          return;
+        }
+        // Only treat hard failures as reconnect triggers. CLOSED can be emitted as a
+        // side-effect of our own unsubscribe() and must NOT loop back into a reopen.
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           logger.warn("notifications realtime channel ended:", status, err);
-          // Drop the dead channel and reopen after a short backoff. Also pull the latest rows
-          // immediately so the user isn't stuck on stale data while the channel reconnects.
-          try { channel?.unsubscribe(); } catch { /* noop */ }
-          channel = null;
-          fetchNotifications();
-          window.setTimeout(open, 1500);
+          scheduleReconnect();
         }
       });
+    channel = next;
   };
 
   open();
@@ -2480,6 +2512,7 @@ export const subscribeToUserNotifications = (
   return () => {
     cancelled = true;
     try { channel?.unsubscribe(); } catch { /* noop */ }
+    channel = null;
   };
 };
 
