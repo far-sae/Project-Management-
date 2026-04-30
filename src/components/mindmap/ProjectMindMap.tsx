@@ -72,13 +72,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   saveMindMapState as saveToCloud,
   migrateLocalStorageToCloud,
 } from '@/services/supabase/mindmapState';
@@ -86,10 +79,6 @@ import {
   uploadFileWithProgress,
   getProjectFiles,
 } from '@/services/supabase/storage';
-import {
-  createTask,
-  updateProject,
-} from '@/services/supabase/database';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { AIMindMap, type AIMapImportPayload } from './AIMindMap';
@@ -1363,28 +1352,23 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     });
   }, [flow, updateExtras]);
 
-  // ── Add task / column dialogs ────────────────────────────────
-  // The "+ Add" button now opens a dropdown with three options. Picking
-  // Task or Column opens a tiny modal so the user can name the item (and
-  // for tasks, pick a column). Picking Idea fires `addIdea` directly.
+  // ── Add task / column dialogs (mind-map only) ────────────────
+  // The "+ Add" button opens a dropdown with three options. Every option
+  // creates a node that lives ONLY in this mind map — nothing is written
+  // back to the kanban board, the project's columns, or the tasks table.
+  // The three "kinds" differ only in default colour so the user can see
+  // them at a glance, but functionally they're all idea nodes.
   const [addDialog, setAddDialog] = useState<{
     open: boolean;
     type: 'task' | 'column';
   }>({ open: false, type: 'task' });
   const [addTitle, setAddTitle] = useState('');
-  const [addStatusId, setAddStatusId] = useState<string>('');
   const [addSubmitting, setAddSubmitting] = useState(false);
 
-  const openAddDialog = useCallback(
-    (type: 'task' | 'column') => {
-      setAddTitle('');
-      // Default the new task into the first column so the form is usable
-      // in a single click-and-type flow.
-      setAddStatusId(columns[0]?.id ?? 'todo');
-      setAddDialog({ open: true, type });
-    },
-    [columns],
-  );
+  const openAddDialog = useCallback((type: 'task' | 'column') => {
+    setAddTitle('');
+    setAddDialog({ open: true, type });
+  }, []);
 
   const closeAddDialog = useCallback(() => {
     if (addSubmitting) return;
@@ -1397,57 +1381,40 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       toast.error('Give it a title first.');
       return;
     }
-    const orgId = project.organizationId;
-    if (!orgId) {
-      toast.error('This project doesn’t have an organisation set up.');
-      return;
-    }
-    if (!user?.userId) {
-      toast.error('Sign in to add to this project.');
-      return;
-    }
 
     setAddSubmitting(true);
     try {
-      if (addDialog.type === 'task') {
-        await createTask(
-          user.userId,
-          {
-            projectId: project.projectId,
-            title,
-            status: addStatusId || columns[0]?.id || 'todo',
-            priority: 'medium',
-            projectName: project.name,
-            createdByDisplayName: user.displayName || user.email || 'User',
-            createdByPhotoURL: user.photoURL,
-          },
-          orgId,
-        );
-        toast.success('Task added — it will appear here and on the kanban.');
-      } else {
-        // Add a column to the project. Pick a colour by rotating through a
-        // small set so consecutive new columns don't all look the same.
-        const colourPalette = [
-          '#94a3b8', // slate
-          '#0ea5e9', // sky
-          '#10b981', // emerald
-          '#f59e0b', // amber
-          '#f43f5e', // rose
-          '#8b5cf6', // violet
-        ];
-        const newColumn: KanbanColumn = {
-          id: `col-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-          title,
-          color: colourPalette[columns.length % colourPalette.length],
-          order: (columns[columns.length - 1]?.order ?? columns.length - 1) + 1,
-        };
-        await updateProject(
-          project.projectId,
-          { columns: [...columns, newColumn] },
-          orgId,
-        );
-        toast.success('Column added.');
-      }
+      // Drop the new node near the centre of the current viewport so the
+      // user actually sees it land. Mirrors `addIdea` exactly.
+      const containerEl = document.querySelector('.react-flow') as HTMLElement | null;
+      const rect = containerEl?.getBoundingClientRect();
+      const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+      const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+      const flowPos = flow.screenToFlowPosition({ x: cx, y: cy });
+      const id = `${IDEA_NODE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      // Different colour per type so the three kinds are visually distinct
+      // even though they're all just idea nodes underneath.
+      const colorByType: Record<'task' | 'column', string> = {
+        task: 'emerald',
+        column: 'sky',
+      };
+
+      const idea: ExtraIdea = {
+        id,
+        label: title,
+        x: flowPos.x - 100,
+        y: flowPos.y - 24,
+        color: colorByType[addDialog.type],
+      };
+      updateExtras((prev) => ({ ...prev, ideas: [...prev.ideas, idea] }));
+      requestAnimationFrame(() => {
+        setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === id })));
+      });
+
+      toast.success(
+        addDialog.type === 'task' ? 'Task placeholder added' : 'Column placeholder added',
+      );
       setAddDialog((s) => ({ ...s, open: false }));
     } catch (err) {
       const msg =
@@ -1456,16 +1423,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     } finally {
       setAddSubmitting(false);
     }
-  }, [
-    addTitle,
-    addDialog.type,
-    addStatusId,
-    project.projectId,
-    project.organizationId,
-    project.name,
-    user,
-    columns,
-  ]);
+  }, [addTitle, addDialog.type, flow, updateExtras]);
 
   const deleteSelection = useCallback(() => {
     const selectedNodeIds = nodes
@@ -1700,33 +1658,30 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               <ChevronDown className="w-3 h-3 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[200px]">
+          <DropdownMenuContent align="start" className="min-w-[220px]">
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Add to project
+              Add to mind map only
             </DropdownMenuLabel>
             <DropdownMenuItem onClick={() => openAddDialog('task')}>
-              <CheckSquare className="w-3.5 h-3.5 mr-2 text-primary" />
+              <CheckSquare className="w-3.5 h-3.5 mr-2 text-emerald-500" />
               <div className="flex flex-col">
                 <span>Task</span>
-                <span className="text-[10px] text-muted-foreground">Real task — also appears on the kanban</span>
+                <span className="text-[10px] text-muted-foreground">A task placeholder — kanban not changed</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => openAddDialog('column')}>
-              <Columns className="w-3.5 h-3.5 mr-2 text-primary" />
+              <Columns className="w-3.5 h-3.5 mr-2 text-sky-500" />
               <div className="flex flex-col">
                 <span>Column</span>
-                <span className="text-[10px] text-muted-foreground">Adds a new lane to the kanban</span>
+                <span className="text-[10px] text-muted-foreground">A column placeholder — kanban not changed</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Brainstorm
-            </DropdownMenuLabel>
             <DropdownMenuItem onClick={addIdea}>
               <Lightbulb className="w-3.5 h-3.5 mr-2 text-amber-500" />
               <div className="flex flex-col">
                 <span>Idea</span>
-                <span className="text-[10px] text-muted-foreground">Floating note — only on this map</span>
+                <span className="text-[10px] text-muted-foreground">Floating note for brainstorming</span>
               </div>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -2016,25 +1971,27 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         }}
       />
 
-      {/* Lightweight modal for adding a Task or Column from the mind map. */}
+      {/* Lightweight modal for adding a Task / Column placeholder to the
+          mind map. These are mind-map-only — they never write to the
+          project's tasks table or columns config, so the kanban board
+          stays exactly as it was. */}
       <Dialog open={addDialog.open} onOpenChange={(o) => !o && closeAddDialog()}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {addDialog.type === 'task' ? (
                 <>
-                  <CheckSquare className="w-4 h-4 text-primary" /> Add task
+                  <CheckSquare className="w-4 h-4 text-emerald-500" /> Add task
                 </>
               ) : (
                 <>
-                  <Columns className="w-4 h-4 text-primary" /> Add column
+                  <Columns className="w-4 h-4 text-sky-500" /> Add column
                 </>
               )}
             </DialogTitle>
             <DialogDescription>
-              {addDialog.type === 'task'
-                ? 'Adds a real task to the project. It will show up here on the mind map and on the kanban board.'
-                : 'Adds a new lane to the kanban board. Existing tasks aren’t moved.'}
+              This adds a placeholder to the mind map only. The kanban board
+              and project columns are not changed.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -2059,31 +2016,6 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
                 }}
               />
             </div>
-            {addDialog.type === 'task' && columns.length > 0 && (
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
-                  Column
-                </label>
-                <Select value={addStatusId} onValueChange={setAddStatusId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pick a column" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {columns.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        <span className="inline-flex items-center gap-2">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{ backgroundColor: c.color || '#94a3b8' }}
-                          />
-                          {c.title}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={closeAddDialog} disabled={addSubmitting}>
@@ -2095,7 +2027,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               ) : (
                 <Plus className="w-4 h-4 mr-2" />
               )}
-              {addDialog.type === 'task' ? 'Add task' : 'Add column'}
+              Add
             </Button>
           </DialogFooter>
         </DialogContent>
