@@ -101,10 +101,37 @@ function useCallTimer(connected: boolean) {
 
 // ── Component ────────────────────────────────────────────────
 
+/**
+ * Attach a MediaStream to a media element and explicitly start playback.
+ *
+ * iOS Safari (and some Android browsers) will not auto-play a freshly assigned
+ * `srcObject` without an explicit `.play()` call, even when the assignment
+ * happened during a user gesture (e.g. tapping Accept). Calling `.play()` here
+ * surfaces the playback promise so we can swallow benign autoplay rejections
+ * without breaking the call.
+ */
+function attachStream(
+  el: HTMLMediaElement | null,
+  stream: MediaStream | null,
+): void {
+  if (!el) return;
+  if (el.srcObject !== stream) {
+    el.srcObject = stream;
+  }
+  if (!stream) return;
+  const playResult = el.play();
+  if (playResult && typeof playResult.then === 'function') {
+    playResult.catch(() => {
+      /* Autoplay blocked — user can tap to retry; harmless. */
+    });
+  }
+}
+
 export const CallOverlay: React.FC = () => {
   const { state, actions } = useCall();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [pip, setPip] = useState(false);
 
   const isOutgoingRinging = state.status === 'ringing' && state.direction === 'outgoing';
@@ -113,22 +140,35 @@ export const CallOverlay: React.FC = () => {
   useOutgoingRingtone(isOutgoingRinging);
   const callDuration = useCallTimer(isConnected);
 
-  // Attach local stream
   useEffect(() => {
-    if (localVideoRef.current && state.localStream) {
-      localVideoRef.current.srcObject = state.localStream;
-    }
+    attachStream(localVideoRef.current, state.localStream);
   }, [state.localStream, pip]);
 
-  // Attach remote stream
   useEffect(() => {
-    if (remoteVideoRef.current && state.remoteStream) {
-      remoteVideoRef.current.srcObject = state.remoteStream;
-    }
+    attachStream(remoteVideoRef.current, state.remoteStream);
   }, [state.remoteStream, pip]);
+
+  // Audio-only calls have no <video> rendering the remote stream, so without a
+  // dedicated <audio> element the remote audio track would never play.
+  useEffect(() => {
+    attachStream(remoteAudioRef.current, state.remoteStream);
+  }, [state.remoteStream]);
 
   // Nothing to render when idle
   if (state.status === 'idle') return null;
+
+  // Always-mounted hidden audio sink for the remote stream. For video calls
+  // the <video> element plays audio, so we mute this sink to avoid echo; for
+  // audio-only calls this is the only thing that produces sound.
+  const remoteAudioSink = (
+    <audio
+      ref={remoteAudioRef}
+      autoPlay
+      muted={state.mediaType === 'video'}
+      className="hidden"
+      aria-hidden="true"
+    />
+  );
 
   // ── "No answer" / error end screen ─────────────────────────
 
@@ -221,6 +261,7 @@ export const CallOverlay: React.FC = () => {
         role="dialog"
         aria-label="Active call"
       >
+        {remoteAudioSink}
         {isVideo && state.remoteStream && (
           <div className="relative w-full aspect-video bg-black">
             <video
@@ -288,6 +329,7 @@ export const CallOverlay: React.FC = () => {
       role="dialog"
       aria-label="Active call"
     >
+      {remoteAudioSink}
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 bg-black/60">
         <div className="flex items-center gap-3">

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { isScreenShareSupported } from '@/services/webrtc/mediaUtils';
 
 interface CallControlsProps {
   isMuted: boolean;
@@ -21,6 +22,11 @@ interface CallControlsProps {
   onToggleScreenShare: () => void;
   onHangUp: () => void;
 }
+
+// Most mobile browsers (iOS Safari, mobile Chrome on Android) do not implement
+// navigator.mediaDevices.getDisplayMedia. Showing the button there leads to
+// silent failures or, worse, broken renegotiation that drops the call.
+const screenShareAvailable = isScreenShareSupported();
 
 export const CallControls: React.FC<CallControlsProps> = ({
   isMuted,
@@ -75,25 +81,27 @@ export const CallControls: React.FC<CallControlsProps> = ({
       </Button>
     )}
 
-    {/* Screen share */}
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={onToggleScreenShare}
-      aria-label={isScreenSharing ? 'Stop screen sharing' : 'Share screen'}
-      className={cn(
-        'h-11 w-11 rounded-full transition-colors',
-        isScreenSharing
-          ? 'bg-primary/15 text-primary hover:bg-primary/25'
-          : 'bg-muted hover:bg-muted/80 text-foreground',
-      )}
-    >
-      {isScreenSharing ? (
-        <MonitorOff className="h-5 w-5" />
-      ) : (
-        <MonitorUp className="h-5 w-5" />
-      )}
-    </Button>
+    {/* Screen share — only on devices that actually support getDisplayMedia */}
+    {screenShareAvailable && (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onToggleScreenShare}
+        aria-label={isScreenSharing ? 'Stop screen sharing' : 'Share screen'}
+        className={cn(
+          'h-11 w-11 rounded-full transition-colors',
+          isScreenSharing
+            ? 'bg-primary/15 text-primary hover:bg-primary/25'
+            : 'bg-muted hover:bg-muted/80 text-foreground',
+        )}
+      >
+        {isScreenSharing ? (
+          <MonitorOff className="h-5 w-5" />
+        ) : (
+          <MonitorUp className="h-5 w-5" />
+        )}
+      </Button>
+    )}
 
     {/* Hang up */}
     <Button

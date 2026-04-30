@@ -122,6 +122,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     clearTimers();
     rtcRef.current?.destroy();
     rtcRef.current = null;
+    // Tear down signaling explicitly: WebRTCService.destroy already calls
+    // signaling.destroy on its own SignalingChannel, but signalingRef may
+    // hold a channel even when rtcRef is null (e.g. before WebRTCService
+    // construction or after rtcRef was cleared elsewhere).
+    signalingRef.current?.destroy();
     signalingRef.current = null;
     pendingOfferRef.current = null;
     setState(IDLE_STATE);
@@ -224,7 +229,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       };
     }
-  }, [state.status, state.direction, state.callId, localParticipant, resetCall]);
+    // localParticipant itself is a fresh object every render; depend on its
+    // stable userId so the effect doesn't reschedule the timeout on every
+    // re-render. The closure still reads the up-to-date object from outer scope.
+  }, [state.status, state.direction, state.callId, localParticipant?.userId, resetCall]);
 
   // ── Cleanup on unmount ─────────────────────────────────────
 
@@ -355,9 +363,20 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Resend every 3s in case the first broadcast was missed
         offerResendRef.current = setInterval(() => {
-          // Stop resending if we're no longer ringing
-          if (rtcRef.current?.destroyed) {
-            if (offerResendRef.current) clearInterval(offerResendRef.current);
+          // Stop resending once the RTC service is gone OR the call has
+          // moved past ringing (e.g. callee answered → connecting/connected,
+          // or the call ended/was rejected). Otherwise we'd keep paging an
+          // already-accepted call.
+          const currentStatus = latestCallStateRef.current.status;
+          if (rtcRef.current?.destroyed || currentStatus !== 'ringing') {
+            if (offerResendRef.current) {
+              clearInterval(offerResendRef.current);
+              offerResendRef.current = null;
+            }
+            if (inboxChannelRef.current) {
+              void supabase.removeChannel(inboxChannelRef.current);
+              inboxChannelRef.current = null;
+            }
             return;
           }
           // Clean up old channel and resend
@@ -487,6 +506,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     clearTimers();
     rtcRef.current?.hangUp();
     rtcRef.current = null;
+    // Mirror resetCall: explicitly tear down signaling so the channel
+    // can't leak when rtcRef.current was already null (no WebRTCService
+    // to call signaling.destroy() through its own destroy()).
+    signalingRef.current?.destroy();
     signalingRef.current = null;
     pendingOfferRef.current = null;
     setState(IDLE_STATE);
@@ -520,6 +543,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           ...prev,
           isScreenSharing: true,
           screenStream: screen,
+          error: null,
         }));
         screen.getVideoTracks()[0]?.addEventListener('ended', () => {
           setState((prev) => ({
@@ -529,8 +553,24 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           }));
         });
       }
-    } catch {
-      // User cancelled the screen picker
+    } catch (err) {
+      // Distinguish "user cancelled the picker" (silent) from real failures
+      // (NotSupportedError on mobile, NotAllowedError due to policy, etc.)
+      // — those should surface to the user without ending the call.
+      const isUserAbort =
+        err instanceof DOMException &&
+        (err.name === 'AbortError' || err.name === 'NotAllowedError');
+      if (isUserAbort) return;
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Screen sharing is not available on this device';
+      setState((prev) => ({
+        ...prev,
+        isScreenSharing: false,
+        screenStream: null,
+        error: message,
+      }));
     }
   }, [state.isScreenSharing]);
 

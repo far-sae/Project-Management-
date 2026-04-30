@@ -41,6 +41,18 @@ export class WebRTCService {
   private unsubSignaling: (() => void) | null = null;
   private _destroyed = false;
   private readonly signalingReady: Promise<void>;
+  /**
+   * True once we know the remote peer is subscribed to the call channel and
+   * therefore able to receive our broadcasts. Until then, ICE candidates are
+   * buffered locally and flushed once the peer is reachable.
+   *
+   * Why this matters: Supabase Realtime broadcasts are fire-and-forget — any
+   * ICE candidate the caller emits before the callee taps "Accept" (and thus
+   * subscribes to `call:{callId}`) is silently dropped, which prevents the
+   * peer connection from ever completing. Buffering closes that race.
+   */
+  private peerReachable = false;
+  private bufferedCandidates: RTCIceCandidateInit[] = [];
 
   constructor(
     private callId: string,
@@ -127,6 +139,11 @@ export class WebRTCService {
         callId: this.callId,
         from: this.localParticipant,
       });
+
+      // Caller has been subscribed to the call channel since startCall, so any
+      // candidates we emit from here on can flow live; flush anything that was
+      // gathered between setLocalDescription and now.
+      this.markPeerReachable();
     } finally {
       this.suppressNegotiation = false;
     }
@@ -238,6 +255,8 @@ export class WebRTCService {
     this.screenStream = null;
     this.cameraTrack = null;
     this.callContext = null;
+    this.bufferedCandidates = [];
+    this.peerReachable = false;
     this.pc.close();
     this.unsubSignaling?.();
     this.signaling.destroy();
@@ -251,6 +270,25 @@ export class WebRTCService {
 
   private emit(type: RTCEventType, payload?: unknown): void {
     this.eventHandler?.(type, payload);
+  }
+
+  /**
+   * Mark the remote peer as subscribed to our call channel and flush every
+   * ICE candidate gathered while we were waiting. Idempotent.
+   */
+  private markPeerReachable(): void {
+    if (this.peerReachable || this._destroyed) return;
+    this.peerReachable = true;
+    if (this.bufferedCandidates.length === 0) return;
+    const pending = this.bufferedCandidates;
+    this.bufferedCandidates = [];
+    for (const candidate of pending) {
+      void this.signalingSend({
+        type: 'ice-candidate',
+        candidate,
+        callId: this.callId,
+      });
+    }
   }
 
   /** Await Realtime subscription before sending (PostgREST broadcast requires SUBSCRIBED). */
@@ -268,12 +306,17 @@ export class WebRTCService {
 
   private setupPCListeners(): void {
     this.pc.onicecandidate = (e) => {
-      if (e.candidate && !this._destroyed) {
+      if (!e.candidate || this._destroyed) return;
+      const candidate = e.candidate.toJSON();
+      if (this.peerReachable) {
         void this.signalingSend({
           type: 'ice-candidate',
-          candidate: e.candidate.toJSON(),
+          candidate,
           callId: this.callId,
         });
+      } else {
+        // Buffer until the remote peer subscribes; otherwise the broadcast is dropped.
+        this.bufferedCandidates.push(candidate);
       }
     };
 
@@ -360,9 +403,15 @@ export class WebRTCService {
           await this.pc.setRemoteDescription(
             new RTCSessionDescription(msg.sdp),
           );
+          // Receiving an answer proves the callee is subscribed; flush any
+          // ICE candidates that were buffered during the ringing phase.
+          this.markPeerReachable();
           break;
 
         case 'ice-candidate':
+          // Receiving a candidate from the peer also implies they are
+          // subscribed and can hear us — useful for renegotiation flows.
+          this.markPeerReachable();
           if (msg.candidate) {
             await this.pc.addIceCandidate(
               new RTCIceCandidate(msg.candidate),
