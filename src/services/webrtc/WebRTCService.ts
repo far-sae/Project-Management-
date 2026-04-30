@@ -1,6 +1,8 @@
 import { SignalingChannel } from './SignalingChannel';
+import { getIceServers } from './iceServers';
 import { acquireUserMedia, acquireScreenMedia, stopAllTracks } from './mediaUtils';
 import type {
+  CallContext,
   CallMediaType,
   CallParticipant,
   SignalMessage,
@@ -15,11 +17,6 @@ export type RTCEventType =
   | 'reject';
 
 type RTCEventHandler = (type: RTCEventType, payload?: unknown) => void;
-
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-];
 
 /**
  * Manages a single WebRTC peer connection for 1:1 calls.
@@ -36,6 +33,8 @@ export class WebRTCService {
   private screenStream: MediaStream | null = null;
   private cameraTrack: MediaStreamTrack | null = null;
   private callMediaType: CallMediaType = 'audio';
+  /** Call UI context from the initial offer/answer; reused for renegotiation offers. */
+  private callContext: CallContext | null = null;
   /** Suppress onnegotiationneeded while applying initial offer/answer locally. */
   private suppressNegotiation = false;
   private eventHandler: RTCEventHandler | null = null;
@@ -46,7 +45,7 @@ export class WebRTCService {
     private callId: string,
     private localParticipant: CallParticipant,
     private signaling: SignalingChannel,
-    iceServers: RTCIceServer[] = ICE_SERVERS,
+    iceServers: RTCIceServer[] = getIceServers(),
   ) {
     this.pc = new RTCPeerConnection({ iceServers });
     this.setupPCListeners();
@@ -67,8 +66,12 @@ export class WebRTCService {
   }
 
   /** Caller: acquire local media, add tracks, create local SDP offer. Signaling send is done by CallProvider (inbox + channel). */
-  async createOffer(mediaType: CallMediaType): Promise<MediaStream> {
+  async createOffer(
+    mediaType: CallMediaType,
+    context: CallContext,
+  ): Promise<MediaStream> {
     this.callMediaType = mediaType;
+    this.callContext = context;
     this.suppressNegotiation = true;
     try {
       this.localStream = await acquireUserMedia(mediaType);
@@ -91,8 +94,10 @@ export class WebRTCService {
   async answerOffer(
     offerSdp: RTCSessionDescriptionInit,
     mediaType: CallMediaType,
+    context: CallContext,
   ): Promise<MediaStream> {
     this.callMediaType = mediaType;
+    this.callContext = context;
     this.suppressNegotiation = true;
     try {
       await this.pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
@@ -209,6 +214,7 @@ export class WebRTCService {
     this.localStream = null;
     this.screenStream = null;
     this.cameraTrack = null;
+    this.callContext = null;
     this.pc.close();
     this.unsubSignaling?.();
     this.signaling.destroy();
@@ -272,7 +278,8 @@ export class WebRTCService {
         callId: this.callId,
         from: this.localParticipant,
         mediaType: this.callMediaType,
-        context: { type: 'dm', targetId: '', label: '' },
+        context:
+          this.callContext ?? { type: 'dm', targetId: '', label: '' },
       });
     } catch (err) {
       this.emit(
@@ -293,6 +300,7 @@ export class WebRTCService {
     try {
       switch (msg.type) {
         case 'offer': {
+          this.callContext = msg.context;
           this.suppressNegotiation = true;
           try {
             await this.pc.setRemoteDescription(

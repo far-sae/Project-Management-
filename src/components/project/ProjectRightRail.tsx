@@ -169,6 +169,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     return Array.from(map.values());
   }, [project.members]);
 
+  const hasOtherMemberToCall = useMemo(
+    () =>
+      dedupedMembers.some(
+        (m) => Boolean(m.userId) && m.userId !== user?.userId,
+      ),
+    [dedupedMembers, user?.userId],
+  );
+
   /** @-mentions: project team only (not whole org — avoids stale or unrelated users). */
   const mentionMembers = useMemo(() => {
     const orgById = new Map(
@@ -858,6 +866,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   size="icon"
                   className="h-8 w-8 rounded-full text-muted-foreground hover:text-emerald-600"
                   aria-label="Start audio call"
+                  disabled={!hasOtherMemberToCall}
+                  title={
+                    hasOtherMemberToCall
+                      ? undefined
+                      : 'No other members to call — invite someone to this project first.'
+                  }
                   onClick={() => {
                     const firstOther = dedupedMembers.find(
                       (m) => m.userId && m.userId !== user?.userId,
@@ -877,6 +891,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   size="icon"
                   className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
                   aria-label="Start video call"
+                  disabled={!hasOtherMemberToCall}
+                  title={
+                    hasOtherMemberToCall
+                      ? undefined
+                      : 'No other members to call — invite someone to this project first.'
+                  }
                   onClick={() => {
                     const firstOther = dedupedMembers.find(
                       (m) => m.userId && m.userId !== user?.userId,

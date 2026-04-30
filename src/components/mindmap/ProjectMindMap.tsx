@@ -1002,11 +1002,20 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     const el = document.querySelector('.react-flow__viewport') as HTMLElement | null;
     if (!el) return;
     try {
-      // Dynamic import to keep the bundle lean — html-to-image is optional
-      // @ts-expect-error html-to-image may not be installed
-      const { toPng } = await import('html-to-image') as { toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string> };
+      const root = document.documentElement;
+      const rawBg = getComputedStyle(root).getPropertyValue('--background').trim();
+      const backgroundColor =
+        rawBg.length > 0
+          ? (rawBg.startsWith('#') ? rawBg : `hsl(${rawBg})`)
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? '#171717'
+            : '#ffffff';
+
+      const { toPng } = await import('html-to-image') as {
+        toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string>;
+      };
       const dataUrl = await toPng(el, {
-        backgroundColor: '#ffffff',
+        backgroundColor,
         pixelRatio: 2,
         filter: (node: Element) => {
           const cls = (node as HTMLElement).className;

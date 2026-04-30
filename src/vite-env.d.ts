@@ -21,6 +21,12 @@ interface ImportMetaEnv {
   readonly VITE_EMAILJS_TASK_ASSIGNED_TEMPLATE_ID?: string
   /** Set to "true" after migration 021 is deployed to use verify_task_lock_pin RPC; default is client-only PIN check (no RPC). */
   readonly VITE_VERIFY_TASK_LOCK_PIN_RPC?: string
+  /** Comma-separated TURN URIs (e.g. turn:host:3478?transport=udp). With username + credential enables relay. */
+  readonly VITE_WEBRTC_TURN_URLS?: string
+  readonly VITE_WEBRTC_TURN_USERNAME?: string
+  readonly VITE_WEBRTC_TURN_CREDENTIAL?: string
+  /** Optional full RTCIceServer[] JSON; when valid, replaces default STUN+TURN env merge. */
+  readonly VITE_WEBRTC_ICE_SERVERS_JSON?: string
 }
 
 interface ImportMeta {

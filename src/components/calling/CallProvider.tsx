@@ -231,7 +231,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       try {
-        const localStream = await rtc.createOffer(mediaType);
+        const localStream = await rtc.createOffer(mediaType, context);
         setState((prev) => ({ ...prev, localStream }));
 
         const localDesc = rtc.localDescription;
@@ -306,6 +306,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       const localStream = await rtc.answerOffer(
         offer.sdp,
         offer.mediaType,
+        offer.context,
       );
       setState((prev) => ({ ...prev, localStream }));
     } catch (err) {
