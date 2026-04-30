@@ -1,4 +1,11 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -8,12 +15,27 @@ import {
   Handle,
   Position,
   MarkerType,
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   type Node,
   type Edge,
   type NodeTypes,
+  type Connection,
+  type EdgeChange,
+  type NodeChange,
+  type OnConnect,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Loader2, Sparkles, Wand2, Eraser, Lightbulb } from 'lucide-react';
+import {
+  Loader2,
+  Sparkles,
+  Wand2,
+  Eraser,
+  Lightbulb,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -44,14 +66,12 @@ interface PositionedNode {
   x: number;
   y: number;
   parentId: string | null;
-  /** Height in row-units (1 = leaf, larger for nodes with descendants). */
-  rowSpan: number;
 }
 
 function layoutTree(root: MindMapNode): PositionedNode[] {
   const nodes: PositionedNode[] = [];
-
-  // First pass — compute the leaf-row span of each subtree.
+  // First pass — compute the leaf-row span of each subtree so siblings stack
+  // without overlapping their grandchildren.
   const span = new Map<string, number>();
   const computeSpan = (n: MindMapNode): number => {
     if (!n.children || n.children.length === 0) {
@@ -65,8 +85,6 @@ function layoutTree(root: MindMapNode): PositionedNode[] {
   };
   computeSpan(root);
 
-  // Second pass — recursively place children.
-  // `top` is the top row index allocated to this subtree.
   const place = (
     n: MindMapNode,
     depth: number,
@@ -82,7 +100,6 @@ function layoutTree(root: MindMapNode): PositionedNode[] {
       x: ROOT_X + depth * COL_GAP,
       y: ROOT_Y + centerRow * ROW_GAP,
       parentId,
-      rowSpan: rs,
     });
     let cursor = top;
     for (const c of n.children || []) {
@@ -95,8 +112,7 @@ function layoutTree(root: MindMapNode): PositionedNode[] {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Per-branch palette — colors radiate from the root, mirroring
-// the screenshot the user referenced.
+// Per-branch palette — colors radiate from the root.
 // ─────────────────────────────────────────────────────────────
 
 const BRANCH_PALETTE = [
@@ -110,8 +126,6 @@ const BRANCH_PALETTE = [
   { name: 'fuchsia', stroke: 'rgb(217,70,239)', text: 'text-fuchsia-600 dark:text-fuchsia-300', soft: 'bg-fuchsia-500/10 border-fuchsia-500/30' },
 ];
 
-// Walk the tree to assign each node a branch index (the top-level child
-// it descends from). The root itself gets index -1 and a neutral colour.
 function buildBranchColorMap(tree: MindMapNode): Map<string, number> {
   const m = new Map<string, number>();
   m.set(tree.id, -1);
@@ -124,114 +138,212 @@ function buildBranchColorMap(tree: MindMapNode): Map<string, number> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Node renderers
+// Editable node — used for every node in the AI map (root + branches).
+// Double-click to edit the label, drag to move, four-handle support so
+// the user can re-wire the diagram any way they want.
 // ─────────────────────────────────────────────────────────────
 
-interface AIRootNodeData extends Record<string, unknown> {
+interface AINodeData extends Record<string, unknown> {
   label: string;
-}
-
-const AIRootNode: React.FC<{ data: AIRootNodeData }> = memo(({ data }) => (
-  <div className="rounded-2xl border-2 border-primary/40 bg-card px-4 py-3 shadow-md min-w-[220px] max-w-[320px]">
-    <Handle id="r-src" type="source" position={Position.Right} className="!bg-primary !w-2 !h-2 !border-card" />
-    <Handle id="l-tgt" type="target" position={Position.Left} className="!bg-primary !w-2 !h-2 !border-card opacity-0" />
-    <div className="flex items-center gap-2">
-      <Sparkles className="w-3.5 h-3.5 text-primary" />
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">Topic</p>
-    </div>
-    <p className="mt-0.5 text-base font-semibold text-foreground leading-snug">
-      {data.label}
-    </p>
-  </div>
-));
-AIRootNode.displayName = 'AIRootNode';
-
-interface AIBranchNodeData extends Record<string, unknown> {
-  label: string;
+  /** -1 = root, 0..n = branch index. Drives the colour. */
   branchIndex: number;
-  /** depth >= 1; visual weight tapers with depth. */
+  /** 0 = root, 1 = main branch, 2+ = sub-points. Drives visual weight. */
   depth: number;
-  isLeaf: boolean;
+  onChange: (label: string) => void;
+  onDelete: () => void;
 }
 
-const AIBranchNode: React.FC<{ data: AIBranchNodeData }> = memo(({ data }) => {
-  const palette =
-    data.branchIndex >= 0
-      ? BRANCH_PALETTE[data.branchIndex % BRANCH_PALETTE.length]
-      : BRANCH_PALETTE[0];
-  // Depth 1 = main branch (pill, coloured). Depth 2+ = sub-points (lighter,
-  // smaller). Leaves at the deepest level are rendered as plain text bullets
-  // so the diagram doesn't drown in boxes — same look as the reference image.
-  const isMainBranch = data.depth === 1;
-  const isPureLeaf = data.isLeaf && data.depth >= 2;
-
+const ConnectionHandles: React.FC = memo(() => {
+  // All four sides expose source AND target so users can drag from any side
+  // to any other. Hidden until hover/select to keep the canvas tidy.
+  const base =
+    '!w-2 !h-2 !bg-primary !border !border-card opacity-0 group-hover:opacity-100 transition-opacity nodrag';
+  const tgt = cn(base, '!bg-muted');
   return (
-    <div
-      className={cn(
-        'relative px-3 py-1.5 transition-colors',
-        isMainBranch
-          ? cn(
-              'rounded-full border font-semibold text-sm shadow-sm min-w-[160px] max-w-[260px]',
-              palette.soft,
-              palette.text,
-            )
-          : isPureLeaf
-            ? 'text-sm text-foreground/90'
-            : cn(
-                'rounded-md border bg-card text-sm font-medium text-foreground/90 max-w-[260px]',
-                'border-border',
-              ),
-      )}
-    >
-      <Handle id="l-tgt" type="target" position={Position.Left} className="!w-1.5 !h-1.5 !border-0 opacity-0" />
-      <Handle id="r-src" type="source" position={Position.Right} className="!w-1.5 !h-1.5 !border-0 opacity-0" />
-      <span className="block leading-snug">{data.label}</span>
-    </div>
+    <>
+      <Handle id="t-src" type="source" position={Position.Top} className={base} />
+      <Handle id="t-tgt" type="target" position={Position.Top} className={tgt} />
+      <Handle id="r-src" type="source" position={Position.Right} className={base} />
+      <Handle id="r-tgt" type="target" position={Position.Right} className={tgt} />
+      <Handle id="b-src" type="source" position={Position.Bottom} className={base} />
+      <Handle id="b-tgt" type="target" position={Position.Bottom} className={tgt} />
+      <Handle id="l-src" type="source" position={Position.Left} className={base} />
+      <Handle id="l-tgt" type="target" position={Position.Left} className={tgt} />
+    </>
   );
 });
-AIBranchNode.displayName = 'AIBranchNode';
+ConnectionHandles.displayName = 'AIConnectionHandles';
+
+const AINode: React.FC<{ data: AINodeData; selected?: boolean }> = memo(
+  ({ data, selected }) => {
+    const palette =
+      data.branchIndex >= 0
+        ? BRANCH_PALETTE[data.branchIndex % BRANCH_PALETTE.length]
+        : BRANCH_PALETTE[0];
+    const isRoot = data.depth === 0;
+    const isMainBranch = data.depth === 1;
+
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(data.label);
+    const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+    useEffect(() => {
+      if (!editing) setDraft(data.label);
+    }, [data.label, editing]);
+    useEffect(() => {
+      if (editing) {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    }, [editing]);
+
+    const commit = () => {
+      setEditing(false);
+      const trimmed = draft.trim();
+      if (trimmed && trimmed !== data.label) data.onChange(trimmed);
+      else if (!trimmed) setDraft(data.label);
+    };
+
+    const wrapperClass = isRoot
+      ? 'rounded-2xl border-2 border-primary/40 bg-card px-4 py-3 shadow-md min-w-[220px] max-w-[320px]'
+      : isMainBranch
+        ? cn(
+            'rounded-full border font-semibold text-sm shadow-sm min-w-[160px] max-w-[260px] px-3 py-1.5',
+            palette.soft,
+            palette.text,
+          )
+        : 'rounded-md border border-border bg-card text-sm font-medium text-foreground/90 max-w-[260px] px-3 py-1.5';
+
+    return (
+      <div
+        className={cn(
+          'group relative transition-all',
+          wrapperClass,
+          selected && 'ring-2 ring-primary/40 shadow-md',
+        )}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        <ConnectionHandles />
+
+        {isRoot && !editing && (
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <Sparkles className="w-3 h-3 text-primary" />
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
+              Topic
+            </p>
+          </div>
+        )}
+
+        {editing ? (
+          <textarea
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                commit();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setDraft(data.label);
+                setEditing(false);
+              }
+            }}
+            rows={isRoot ? 2 : 1}
+            className={cn(
+              'nodrag w-full bg-background/60 border border-border/60 rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-primary/30 resize-none min-w-0',
+              isRoot ? 'text-base font-semibold' : 'text-sm font-medium',
+            )}
+          />
+        ) : (
+          <p
+            className={cn(
+              'leading-snug whitespace-pre-wrap break-words',
+              isRoot ? 'text-base font-semibold text-foreground' : '',
+            )}
+          >
+            {data.label || 'Untitled'}
+          </p>
+        )}
+
+        {/* Hover toolbar — edit / delete. The root cannot be deleted (the tree
+            needs a centre); all other nodes can be removed at any time. */}
+        <div
+          className={cn(
+            'nodrag absolute -top-3 right-2 flex items-center gap-0.5 rounded-md border border-border bg-card shadow-md px-0.5 py-0.5 transition-opacity',
+            selected
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+          )}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
+            title="Edit label"
+            aria-label="Edit label"
+            className="px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            Edit
+          </button>
+          {!isRoot && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onDelete();
+              }}
+              title="Delete node"
+              aria-label="Delete node"
+              className="px-1 py-0.5 text-destructive hover:bg-destructive/10 rounded"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  },
+);
+AINode.displayName = 'AINode';
 
 const NODE_TYPES: NodeTypes = {
-  aiRoot: AIRootNode as unknown as NodeTypes[string],
-  aiBranch: AIBranchNode as unknown as NodeTypes[string],
+  ai: AINode as unknown as NodeTypes[string],
 };
 
 // ─────────────────────────────────────────────────────────────
-// Build React Flow nodes/edges from the parsed tree.
+// Tree → React Flow nodes/edges (initial layout from a generation).
+// All resulting nodes are the editable `ai` type, and edges are styled
+// with the branch colour but otherwise behave like ordinary edges (the
+// user can delete and reconnect them freely).
 // ─────────────────────────────────────────────────────────────
 
-function buildFlowGraph(tree: MindMapNode): { nodes: Node[]; edges: Edge[] } {
+function buildFlowGraph(
+  tree: MindMapNode,
+  cb: { onChange: (id: string, label: string) => void; onDelete: (id: string) => void },
+): { nodes: Node[]; edges: Edge[] } {
   const positioned = layoutTree(tree);
   const colorMap = buildBranchColorMap(tree);
 
-  // Quick child lookup so we know which positioned items are leaves.
-  const childCount = new Map<string, number>();
-  const walk = (n: MindMapNode) => {
-    childCount.set(n.id, n.children?.length ?? 0);
-    n.children?.forEach(walk);
-  };
-  walk(tree);
-
   const nodes: Node[] = positioned.map((p) => {
-    if (p.depth === 0) {
-      return {
-        id: p.id,
-        type: 'aiRoot',
-        position: { x: p.x, y: p.y },
-        data: { label: p.label } satisfies AIRootNodeData,
-      };
-    }
     const bi = colorMap.get(p.id) ?? 0;
     return {
       id: p.id,
-      type: 'aiBranch',
+      type: 'ai',
       position: { x: p.x, y: p.y },
       data: {
         label: p.label,
         branchIndex: bi,
         depth: p.depth,
-        isLeaf: (childCount.get(p.id) ?? 0) === 0,
-      } satisfies AIBranchNodeData,
+        onChange: (label: string) => cb.onChange(p.id, label),
+        onDelete: () => cb.onDelete(p.id),
+      } satisfies AINodeData,
     };
   });
 
@@ -241,7 +353,7 @@ function buildFlowGraph(tree: MindMapNode): { nodes: Node[]; edges: Edge[] } {
     const bi = colorMap.get(p.id) ?? 0;
     const palette = bi >= 0 ? BRANCH_PALETTE[bi % BRANCH_PALETTE.length] : BRANCH_PALETTE[0];
     edges.push({
-      id: `e-${p.parentId}-${p.id}`,
+      id: `ai-edge-${p.parentId}-${p.id}`,
       source: p.parentId,
       sourceHandle: 'r-src',
       target: p.id,
@@ -276,12 +388,81 @@ const SAMPLES = [
 const AIMindMapInner: React.FC = () => {
   const { user } = useAuth();
   const [text, setText] = useState('');
-  const [tree, setTree] = useState<MindMapNode | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasGenerated, setHasGenerated] = useState(false);
   const aiAvailable = isAIEnabled();
 
-  const flowGraph = useMemo(() => (tree ? buildFlowGraph(tree) : null), [tree]);
+  // Controlled React Flow state. Once we generate the first map the user can
+  // drag, edit labels, delete nodes, delete edges, and draw new connections —
+  // exactly like the project map. Re-generating starts fresh; clearing wipes
+  // the canvas. The state lives entirely in this component (not persisted)
+  // because AI mind maps are intended as scratch boards.
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+
+  // Bumped each time a generation completes so React Flow re-fits the view.
+  const [generationCount, setGenerationCount] = useState(0);
+
+  const updateNodeLabel = useCallback((id: string, label: string) => {
+    setNodes((ns) =>
+      ns.map((n) =>
+        n.id === id
+          ? { ...n, data: { ...(n.data as AINodeData), label } }
+          : n,
+      ),
+    );
+  }, []);
+
+  const deleteNode = useCallback((id: string) => {
+    setNodes((ns) => ns.filter((n) => n.id !== id));
+    setEdges((es) => es.filter((e) => e.source !== id && e.target !== id));
+  }, []);
+
+  // Re-bind the latest callbacks to every node's data on each render so the
+  // closures inside AINode always call the up-to-date setters. Without this,
+  // a node generated earlier would be calling a stale `setNodes`/`setEdges`.
+  const liveNodes = useMemo<Node[]>(
+    () =>
+      nodes.map((n) => {
+        if (n.type !== 'ai') return n;
+        const data = n.data as AINodeData;
+        return {
+          ...n,
+          data: {
+            ...data,
+            onChange: (label: string) => updateNodeLabel(n.id, label),
+            onDelete: () => deleteNode(n.id),
+          } satisfies AINodeData,
+        };
+      }),
+    [nodes, updateNodeLabel, deleteNode],
+  );
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes((nds) => applyNodeChanges(changes, nds));
+  }, []);
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges((eds) => applyEdgeChanges(changes, eds));
+  }, []);
+
+  const onConnect: OnConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target) return;
+    if (connection.source === connection.target) return;
+    const newEdge: Edge = {
+      id: `ai-edge-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      source: connection.source,
+      target: connection.target,
+      sourceHandle: connection.sourceHandle ?? undefined,
+      targetHandle: connection.targetHandle ?? undefined,
+      type: 'smoothstep',
+      animated: true,
+      markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(99,102,241)' },
+      style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
+    };
+    setEdges((eds) => addEdge(newEdge, eds));
+  }, []);
 
   const handleGenerate = useCallback(async () => {
     if (!user?.userId) {
@@ -298,7 +479,14 @@ const AIMindMapInner: React.FC = () => {
     setError(null);
     try {
       const result = await generateMindMapFromText(user.userId, text);
-      setTree(result);
+      const { nodes: nextNodes, edges: nextEdges } = buildFlowGraph(result, {
+        onChange: updateNodeLabel,
+        onDelete: deleteNode,
+      });
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      setHasGenerated(true);
+      setGenerationCount((c) => c + 1);
     } catch (err) {
       const msg =
         (err as AIError)?.message ||
@@ -308,12 +496,39 @@ const AIMindMapInner: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.userId, text]);
+  }, [user?.userId, text, updateNodeLabel, deleteNode]);
 
   const handleClear = useCallback(() => {
-    setTree(null);
+    setNodes([]);
+    setEdges([]);
     setError(null);
+    setHasGenerated(false);
   }, []);
+
+  // Add a free-floating idea node near the centre of the viewport so users
+  // can grow the map manually after generation (or even with no generation).
+  const handleAddIdea = useCallback(() => {
+    const id = `ai-node-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const containerEl = document.querySelector('.ai-mindmap-flow') as HTMLElement | null;
+    const rect = containerEl?.getBoundingClientRect();
+    const x = rect ? rect.width / 2 - 80 : 200;
+    const y = rect ? rect.height / 2 - 24 : 200;
+    setNodes((ns) => [
+      ...ns,
+      {
+        id,
+        type: 'ai',
+        position: { x, y },
+        data: {
+          label: 'New idea',
+          branchIndex: ns.length % BRANCH_PALETTE.length,
+          depth: 1,
+          onChange: (label: string) => updateNodeLabel(id, label),
+          onDelete: () => deleteNode(id),
+        } satisfies AINodeData,
+      },
+    ]);
+  }, [updateNodeLabel, deleteNode]);
 
   return (
     <div className="h-full flex flex-col gap-3">
@@ -324,7 +539,7 @@ const AIMindMapInner: React.FC = () => {
             <Wand2 className="w-4 h-4 text-primary" />
             <p className="text-sm font-semibold text-foreground">AI mind map</p>
             <span className="text-xs text-muted-foreground hidden sm:inline">
-              Describe a topic and let AI structure it for you
+              Generate a starting tree, then drag, edit, delete and reconnect anywhere
             </span>
           </div>
           <Textarea
@@ -354,9 +569,20 @@ const AIMindMapInner: React.FC = () => {
               ) : (
                 <Sparkles className="w-3.5 h-3.5" />
               )}
-              {loading ? 'Generating…' : 'Generate'}
+              {loading ? 'Generating…' : hasGenerated ? 'Regenerate' : 'Generate'}
             </Button>
-            {tree && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleAddIdea}
+              className="gap-1.5"
+              title="Add a blank node — drag a connector to attach it"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add node
+            </Button>
+            {hasGenerated && (
               <Button
                 type="button"
                 size="sm"
@@ -369,7 +595,7 @@ const AIMindMapInner: React.FC = () => {
               </Button>
             )}
             <span className="ml-auto text-[10px] text-muted-foreground hidden sm:inline">
-              ⌘/Ctrl + ↵ to generate
+              ⌘/Ctrl + ↵ to generate · Double-click a node to rename · Del to remove
             </span>
           </div>
           {!aiAvailable && (
@@ -378,7 +604,7 @@ const AIMindMapInner: React.FC = () => {
             </p>
           )}
           {error && <p className="text-xs text-destructive">{error}</p>}
-          {!tree && !loading && !error && (
+          {!hasGenerated && !loading && !error && (
             <div className="flex flex-wrap gap-1.5 pt-1">
               <span className="text-[11px] text-muted-foreground mr-1">Try:</span>
               {SAMPLES.map((s) => (
@@ -398,19 +624,24 @@ const AIMindMapInner: React.FC = () => {
 
       {/* Map area */}
       <div className="flex-1 min-h-0 relative rounded-lg border border-border bg-background overflow-hidden">
-        {flowGraph ? (
+        {nodes.length > 0 ? (
           <ReactFlow
-            nodes={flowGraph.nodes}
-            edges={flowGraph.edges}
+            key={generationCount}
+            nodes={liveNodes}
+            edges={edges}
             nodeTypes={NODE_TYPES}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            deleteKeyCode={['Delete', 'Backspace']}
+            multiSelectionKeyCode={['Meta', 'Control', 'Shift']}
+            connectionRadius={28}
             fitView
             fitViewOptions={{ padding: 0.2 }}
             minZoom={0.2}
             maxZoom={1.6}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            elementsSelectable={false}
             proOptions={{ hideAttribution: true }}
+            className="ai-mindmap-flow"
           >
             <Background gap={20} size={1} className="opacity-50" />
             <MiniMap
@@ -418,15 +649,13 @@ const AIMindMapInner: React.FC = () => {
               zoomable
               className="!bg-card !border !border-border"
               nodeColor={(n) => {
-                const data = n.data as AIBranchNodeData | AIRootNodeData | undefined;
-                if (n.type === 'aiRoot') return 'rgb(99,102,241)';
-                const bi = (data as AIBranchNodeData | undefined)?.branchIndex ?? 0;
-                return bi >= 0
-                  ? BRANCH_PALETTE[bi % BRANCH_PALETTE.length].stroke
-                  : 'rgb(148,163,184)';
+                const data = n.data as AINodeData | undefined;
+                const bi = data?.branchIndex ?? 0;
+                if (bi < 0) return 'rgb(99,102,241)';
+                return BRANCH_PALETTE[bi % BRANCH_PALETTE.length].stroke;
               }}
             />
-            <Controls className="!bg-card !border !border-border" showInteractive={false} />
+            <Controls className="!bg-card !border !border-border" />
           </ReactFlow>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 text-muted-foreground">
@@ -436,12 +665,12 @@ const AIMindMapInner: React.FC = () => {
             </p>
             <p className="text-xs max-w-md">
               Describe what you're thinking about above — a project plan, a strategy, an
-              architecture, a research topic — and we'll turn it into a clean tree of branches and
-              sub-points.
+              architecture — and we'll turn it into a starting tree of branches and sub-points.
+              Once it's there, drag, edit, delete, and reconnect anywhere.
             </p>
           </div>
         )}
-        {loading && flowGraph && (
+        {loading && nodes.length > 0 && (
           <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] flex items-center justify-center">
             <div className="flex items-center gap-2 text-sm text-foreground rounded-md border border-border bg-card px-3 py-2 shadow">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />

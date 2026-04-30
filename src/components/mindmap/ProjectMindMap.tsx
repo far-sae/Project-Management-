@@ -65,6 +65,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { AIMindMap } from './AIMindMap';
+import { MindMapTaskPanel } from './MindMapTaskPanel';
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants
@@ -753,7 +754,10 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
   project,
   tasks,
   columns,
-  onOpenTask,
+  // `onOpenTask` is intentionally ignored — clicking a task in the mind map
+  // now opens an inline editing panel rather than navigating the user back
+  // to the kanban view. The prop stays in the component's type so existing
+  // call sites keep compiling without changes.
 }) => {
   const flow = useReactFlow();
   const { user } = useAuth();
@@ -910,11 +914,27 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     [project.projectId, project.organizationId, user?.userId, user?.displayName, user?.email],
   );
 
-  // Auto-derived structure from the project + tasks.
+  // ── Inline task panel state ─────────────────────────────────
+  // Clicking a task node opens this panel instead of switching to the kanban
+  // view, so brainstorming and editing happen on the same surface. The panel
+  // edits the live Task object in Supabase but never moves the task between
+  // columns — the mind map's reconnections stay purely visual.
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const openTask = useMemo(
+    () => (openTaskId ? tasks.find((t) => t.taskId === openTaskId) ?? null : null),
+    [openTaskId, tasks],
+  );
+  const handleOpenTaskInline = useCallback((taskId: string) => {
+    setOpenTaskId(taskId);
+  }, []);
+
+  // Auto-derived structure from the project + tasks. We intercept the open
+  // callback here: the prop `onOpenTask` (used to switch to kanban) is no
+  // longer wired into the node — instead we open the inline panel.
   const baseGraph = useMemo(
     () =>
       buildBaseGraph(project, tasks, columns, {
-        onOpenTask,
+        onOpenTask: handleOpenTaskInline,
         onAttachFilesToTask: handleAttachFilesToTask,
         attachmentCounts,
         uploadingTaskIds,
@@ -923,7 +943,7 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
       project,
       tasks,
       columns,
-      onOpenTask,
+      handleOpenTaskInline,
       handleAttachFilesToTask,
       attachmentCounts,
       uploadingTaskIds,
@@ -1564,6 +1584,26 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
         />
         <Controls className="!bg-card !border !border-border" />
       </ReactFlow>
+
+      {/* Inline task editor — opens on task-node click. The mind map never
+          navigates to the kanban now; everything happens here. */}
+      <MindMapTaskPanel
+        open={!!openTaskId}
+        task={openTask}
+        organizationId={project.organizationId || ''}
+        userId={user?.userId || ''}
+        userDisplayName={user?.displayName || user?.email || 'User'}
+        onOpenChange={(v) => {
+          if (!v) setOpenTaskId(null);
+        }}
+        onAttachmentsChanged={(taskId, delta) => {
+          setAttachmentCounts((prev) => {
+            const next = new Map(prev);
+            next.set(taskId, Math.max(0, (next.get(taskId) ?? 0) + delta));
+            return next;
+          });
+        }}
+      />
     </div>
   );
 };
