@@ -7,19 +7,26 @@ import {
   MonitorUp,
   PhoneOff,
   MonitorOff,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isScreenShareSupported } from '@/services/webrtc/mediaUtils';
+import { isBackgroundEffectSupported } from '@/services/webrtc/BackgroundProcessor';
+import type { CallVideoEffect } from '@/services/webrtc/types';
 
 interface CallControlsProps {
   isMuted: boolean;
   isCameraOff: boolean;
   isScreenSharing: boolean;
+  videoEffect: CallVideoEffect;
+  isApplyingEffect: boolean;
   mediaType: 'audio' | 'video';
   onToggleMute: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
+  onToggleBackgroundEffect: () => void;
   onHangUp: () => void;
 }
 
@@ -27,15 +34,21 @@ interface CallControlsProps {
 // navigator.mediaDevices.getDisplayMedia. Showing the button there leads to
 // silent failures or, worse, broken renegotiation that drops the call.
 const screenShareAvailable = isScreenShareSupported();
+// Background-effect (segmentation + blur) needs canvas.captureStream and the
+// MediaPipe runtime; older browsers lack one or both.
+const backgroundEffectAvailable = isBackgroundEffectSupported();
 
 export const CallControls: React.FC<CallControlsProps> = ({
   isMuted,
   isCameraOff,
   isScreenSharing,
+  videoEffect,
+  isApplyingEffect,
   mediaType,
   onToggleMute,
   onToggleCamera,
   onToggleScreenShare,
+  onToggleBackgroundEffect,
   onHangUp,
 }) => (
   <div
@@ -77,6 +90,35 @@ export const CallControls: React.FC<CallControlsProps> = ({
           <VideoOff className="h-5 w-5" />
         ) : (
           <Video className="h-5 w-5" />
+        )}
+      </Button>
+    )}
+
+    {/* Background blur (Teams-style) — video calls only, on supported browsers */}
+    {mediaType === 'video' && backgroundEffectAvailable && (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onToggleBackgroundEffect}
+        disabled={isApplyingEffect}
+        aria-label={
+          videoEffect === 'blur'
+            ? 'Turn off background blur'
+            : 'Blur background'
+        }
+        aria-pressed={videoEffect === 'blur'}
+        className={cn(
+          'h-11 w-11 rounded-full transition-colors',
+          videoEffect === 'blur'
+            ? 'bg-primary/15 text-primary hover:bg-primary/25'
+            : 'bg-muted hover:bg-muted/80 text-foreground',
+          isApplyingEffect && 'opacity-70 cursor-progress',
+        )}
+      >
+        {isApplyingEffect ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <Sparkles className="h-5 w-5" />
         )}
       </Button>
     )}

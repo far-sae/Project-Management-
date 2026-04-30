@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { SignalingChannel } from '@/services/webrtc/SignalingChannel';
 import { WebRTCService } from '@/services/webrtc/WebRTCService';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
+import type { VideoEffect } from '@/services/webrtc/BackgroundProcessor';
 import type {
   CallContext,
   CallMediaType,
@@ -34,6 +35,12 @@ interface CallActions {
   toggleMute: () => void;
   toggleCamera: () => void;
   toggleScreenShare: () => Promise<void>;
+  /**
+   * Apply (or remove) a Microsoft Teams-style background effect to the local
+   * camera. The processed track replaces the raw camera track in the active
+   * peer connection so the remote side sees the effect.
+   */
+  setVideoEffect: (effect: VideoEffect) => Promise<void>;
 }
 
 interface CallContextValue {
@@ -62,6 +69,8 @@ const IDLE_STATE: CallState = {
   isMuted: false,
   isCameraOff: false,
   isScreenSharing: false,
+  videoEffect: 'none',
+  isApplyingEffect: false,
   localParticipant: null,
   remoteParticipant: null,
   context: null,
@@ -629,6 +638,30 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [state.isScreenSharing]);
 
+  const setVideoEffect = useCallback(async (effect: VideoEffect) => {
+    if (!rtcRef.current) return;
+    setState((prev) => ({ ...prev, isApplyingEffect: true, error: null }));
+    try {
+      await rtcRef.current.setVideoEffect(effect);
+      setState((prev) => ({
+        ...prev,
+        videoEffect: effect,
+        isApplyingEffect: false,
+      }));
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Could not apply the background effect';
+      setState((prev) => ({
+        ...prev,
+        videoEffect: 'none',
+        isApplyingEffect: false,
+        error: message,
+      }));
+    }
+  }, []);
+
   const actions: CallActions = {
     startCall,
     acceptCall,
@@ -637,6 +670,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     toggleMute,
     toggleCamera,
     toggleScreenShare,
+    setVideoEffect,
   };
 
   return (

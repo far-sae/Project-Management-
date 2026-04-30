@@ -1,6 +1,11 @@
 import { SignalingChannel } from './SignalingChannel';
 import { getIceServers } from './iceServers';
 import { acquireUserMedia, acquireScreenMedia, stopAllTracks } from './mediaUtils';
+import {
+  BackgroundProcessor,
+  isBackgroundEffectSupported,
+  type VideoEffect,
+} from './BackgroundProcessor';
 import type {
   CallContext,
   CallMediaType,
@@ -63,6 +68,12 @@ export class WebRTCService {
   private iceRestartAttempts = 0;
   /** Pending timer for an ICE restart so we can debounce/cancel on recovery. */
   private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Active background-effect pipeline (segmentation + blur composite). When
+   * set, the track on the wire is the processor's output, NOT the raw camera.
+   */
+  private bgProcessor: BackgroundProcessor | null = null;
+  private currentVideoEffect: VideoEffect = 'none';
 
   constructor(
     private callId: string,
@@ -204,6 +215,74 @@ export class WebRTCService {
     return this.screenStream;
   }
 
+  /**
+   * Apply a Microsoft Teams-style visual effect to the local camera. The
+   * processed stream replaces the raw camera track on the peer connection
+   * via `RTCRtpSender.replaceTrack`, so the remote side sees the effect.
+   *
+   * Setting effect to `'none'` tears the processor down and restores the raw
+   * camera track. No-op for audio-only calls (no camera track exists).
+   */
+  async setVideoEffect(effect: VideoEffect): Promise<void> {
+    if (this._destroyed) return;
+    if (!this.cameraTrack) return; // audio-only call — nothing to process
+    if (effect === this.currentVideoEffect && this.bgProcessor) return;
+
+    const sender = this.pc
+      .getSenders()
+      .find((s) => s.track?.kind === 'video');
+
+    // Turn the effect off entirely.
+    if (effect === 'none') {
+      this.currentVideoEffect = 'none';
+      if (this.bgProcessor) {
+        if (sender) {
+          try {
+            await sender.replaceTrack(this.cameraTrack);
+          } catch {
+            /* sender may be in a transient state during renegotiation */
+          }
+        }
+        this.bgProcessor.destroy();
+        this.bgProcessor = null;
+      }
+      return;
+    }
+
+    // Bail out gracefully on browsers that don't support canvas.captureStream.
+    if (!isBackgroundEffectSupported()) {
+      throw new Error(
+        'Background effects are not supported on this browser.',
+      );
+    }
+
+    // First-time activation — build the processor and swap the track.
+    if (!this.bgProcessor) {
+      const sourceStream = this.localStream ?? new MediaStream([this.cameraTrack]);
+      const processor = new BackgroundProcessor(sourceStream);
+      processor.setEffect(effect);
+      try {
+        await processor.ready();
+      } catch (err) {
+        processor.destroy();
+        throw err;
+      }
+      const processedTrack = processor.outputStream.getVideoTracks()[0];
+      if (!processedTrack) {
+        processor.destroy();
+        throw new Error('Background processor produced no video track');
+      }
+      if (sender) {
+        await sender.replaceTrack(processedTrack);
+      }
+      this.bgProcessor = processor;
+    } else {
+      this.bgProcessor.setEffect(effect);
+    }
+
+    this.currentVideoEffect = effect;
+  }
+
   /** Stop screen sharing and restore the camera track. */
   async stopScreenShare(): Promise<void> {
     stopAllTracks(this.screenStream);
@@ -263,6 +342,10 @@ export class WebRTCService {
     if (this.iceRestartTimer) {
       clearTimeout(this.iceRestartTimer);
       this.iceRestartTimer = null;
+    }
+    if (this.bgProcessor) {
+      this.bgProcessor.destroy();
+      this.bgProcessor = null;
     }
     stopAllTracks(this.localStream);
     stopAllTracks(this.screenStream);

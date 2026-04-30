@@ -214,16 +214,19 @@ function attachStream(
   }
 }
 
-// Default PiP anchor: bottom-right of the viewport with a small inset.
-const DEFAULT_PIP_WIDTH = 240;
-const DEFAULT_PIP_HEIGHT = 200;
+// Fixed PiP dimensions — explicit numbers so portrait/landscape source video
+// never stretches the window vertically.
+const PIP_WIDTH = 280;
+const PIP_VIDEO_HEIGHT = 180;
 const PIP_INSET = 20;
 
 const initialPipPosition = (): DragPosition => {
   if (typeof window === 'undefined') return { x: 0, y: 0 };
+  // Approximate full PiP height (drag strip + video/avatar + controls).
+  const approxHeight = PIP_VIDEO_HEIGHT + 80;
   return {
-    x: Math.max(PIP_INSET, window.innerWidth - DEFAULT_PIP_WIDTH - PIP_INSET),
-    y: Math.max(PIP_INSET, window.innerHeight - DEFAULT_PIP_HEIGHT - PIP_INSET * 4),
+    x: Math.max(PIP_INSET, window.innerWidth - PIP_WIDTH - PIP_INSET),
+    y: Math.max(PIP_INSET, window.innerHeight - approxHeight - PIP_INSET * 4),
   };
 };
 
@@ -271,16 +274,29 @@ export const CallOverlay: React.FC = () => {
   // Nothing to render when idle
   if (state.status === 'idle') return null;
 
-  // Always-mounted hidden audio sink for the remote stream. The visible
-  // <video> elements (foreground + blurred backdrop) are all muted, so this
-  // sink is the only thing that actually emits sound for both video and
-  // audio-only calls — guaranteeing no echo and no missing audio.
+  // Always-mounted audio sink for the remote stream. The visible <video>
+  // elements (foreground + blurred backdrop) are all muted, so this sink is
+  // the only thing that actually emits sound for both video and audio-only
+  // calls — guaranteeing no echo and no missing audio.
+  //
+  // We deliberately *do not* use `display: none` (Tailwind's `hidden`),
+  // because some browser configurations refuse to play media from a
+  // display:none element. Pinning it off-screen with zero size keeps the
+  // element visually invisible while still allowing reliable playback.
   const remoteAudioSink = (
     <audio
       ref={remoteAudioRef}
       autoPlay
-      className="hidden"
       aria-hidden="true"
+      style={{
+        position: 'fixed',
+        width: 0,
+        height: 0,
+        left: -9999,
+        top: -9999,
+        opacity: 0,
+        pointerEvents: 'none',
+      }}
     />
   );
 
@@ -368,13 +384,12 @@ export const CallOverlay: React.FC = () => {
     return (
       <div
         ref={pipDrag.ref}
-        style={pipDrag.style}
+        style={{ ...pipDrag.style, width: PIP_WIDTH }}
         {...pipDrag.handlers}
         className={cn(
-          'fixed z-[250] flex flex-col items-center select-none touch-none',
+          'fixed z-[250] flex flex-col items-stretch select-none touch-none',
           'rounded-2xl border border-border bg-card/95 shadow-2xl backdrop-blur-xl overflow-hidden',
           'cursor-grab active:cursor-grabbing',
-          isVideo ? 'w-[240px]' : 'w-[220px]',
         )}
         role="dialog"
         aria-label="Active call (drag to move)"
@@ -385,13 +400,16 @@ export const CallOverlay: React.FC = () => {
         </div>
         {remoteAudioSink}
         {isVideo && state.remoteStream && (
-          <div className="relative w-full aspect-video bg-black">
+          <div
+            className="relative w-full bg-black overflow-hidden"
+            style={{ height: PIP_VIDEO_HEIGHT }}
+          >
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover"
             />
             {state.localStream && !state.isCameraOff && (
               <video
@@ -399,7 +417,7 @@ export const CallOverlay: React.FC = () => {
                 autoPlay
                 playsInline
                 muted
-                className="absolute bottom-2 right-2 w-16 h-12 rounded-md object-cover border border-white/30 shadow"
+                className="absolute bottom-2 right-2 w-16 h-12 rounded-md object-cover border border-white/30 shadow z-10"
               />
             )}
           </div>
@@ -425,10 +443,17 @@ export const CallOverlay: React.FC = () => {
             isMuted={state.isMuted}
             isCameraOff={state.isCameraOff}
             isScreenSharing={state.isScreenSharing}
+            videoEffect={state.videoEffect}
+            isApplyingEffect={state.isApplyingEffect}
             mediaType={state.mediaType}
             onToggleMute={actions.toggleMute}
             onToggleCamera={actions.toggleCamera}
             onToggleScreenShare={() => void actions.toggleScreenShare()}
+            onToggleBackgroundEffect={() =>
+              void actions.setVideoEffect(
+                state.videoEffect === 'blur' ? 'none' : 'blur',
+              )
+            }
             onHangUp={actions.hangUp}
           />
           <Button
@@ -539,10 +564,17 @@ export const CallOverlay: React.FC = () => {
           isMuted={state.isMuted}
           isCameraOff={state.isCameraOff}
           isScreenSharing={state.isScreenSharing}
+          videoEffect={state.videoEffect}
+          isApplyingEffect={state.isApplyingEffect}
           mediaType={state.mediaType}
           onToggleMute={actions.toggleMute}
           onToggleCamera={actions.toggleCamera}
           onToggleScreenShare={() => void actions.toggleScreenShare()}
+          onToggleBackgroundEffect={() =>
+            void actions.setVideoEffect(
+              state.videoEffect === 'blur' ? 'none' : 'blur',
+            )
+          }
           onHangUp={actions.hangUp}
         />
       </div>

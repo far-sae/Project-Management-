@@ -7,6 +7,8 @@ export type CallStatus =
   | 'connected'
   | 'reconnecting'
   | 'ended';
+/** Re-exported from BackgroundProcessor so consumers don't need a deeper import. */
+export type CallVideoEffect = 'none' | 'blur';
 
 export interface CallParticipant {
   userId: string;
@@ -25,6 +27,10 @@ export interface CallState {
   isMuted: boolean;
   isCameraOff: boolean;
   isScreenSharing: boolean;
+  /** Currently active visual effect on the local camera (Teams-style blur). */
+  videoEffect: CallVideoEffect;
+  /** True while the background-effect pipeline is loading MediaPipe assets. */
+  isApplyingEffect: boolean;
   localParticipant: CallParticipant | null;
   remoteParticipant: CallParticipant | null;
   /** Project or DM context so we know which channel to signal on. */
@@ -96,6 +102,8 @@ export const INITIAL_CALL_STATE: CallState = {
   isMuted: false,
   isCameraOff: false,
   isScreenSharing: false,
+  videoEffect: 'none',
+  isApplyingEffect: false,
   localParticipant: null,
   remoteParticipant: null,
   context: null,
