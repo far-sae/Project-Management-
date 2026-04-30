@@ -87,6 +87,11 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
         if (cancelled) return;
         setFiles(all.filter((f) => f.taskId === task.taskId));
       })
+      .catch(() => {
+        if (cancelled) return;
+        setFiles([]);
+        toast.error('Could not load attachments — try again.');
+      })
       .finally(() => {
         if (!cancelled) setFilesLoading(false);
       });

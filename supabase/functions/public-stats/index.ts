@@ -6,13 +6,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-};
+const allowedOriginsRaw = Deno.env.get("ALLOWED_ORIGINS") ?? "";
+const allowedOrigins = allowedOriginsRaw
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+function buildCorsHeaders(origin: string | null): Record<string, string> {
+  const allow =
+    origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))
+      ? origin
+      : (allowedOrigins[0] ?? "null");
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Vary": "Origin",
+  };
+}
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req.headers.get("Origin"));
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

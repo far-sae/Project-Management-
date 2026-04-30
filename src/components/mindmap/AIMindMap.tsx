@@ -21,11 +21,13 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
+  type EdgeTypes,
   type Connection,
   type EdgeChange,
   type NodeChange,
   type OnConnect,
 } from '@xyflow/react';
+import { DeletableEdge, type DeletableEdgeData } from './DeletableEdge';
 import '@xyflow/react/dist/style.css';
 import {
   Loader2,
@@ -35,6 +37,8 @@ import {
   Lightbulb,
   Plus,
   Trash2,
+  Send,
+  Link2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -155,10 +159,13 @@ interface AINodeData extends Record<string, unknown> {
 
 const ConnectionHandles: React.FC = memo(() => {
   // All four sides expose source AND target so users can drag from any side
-  // to any other. Hidden until hover/select to keep the canvas tidy.
+  // to any other. We keep handles subtly visible at rest (30%) so the user
+  // sees where to grab without having to discover them by hovering, then
+  // brighten + grow them on hover so the affordance is obvious during a
+  // drag attempt — important on touch where there's no hover-then-aim.
   const base =
-    '!w-2 !h-2 !bg-primary !border !border-card opacity-0 group-hover:opacity-100 transition-opacity nodrag';
-  const tgt = cn(base, '!bg-muted');
+    '!w-2.5 !h-2.5 !bg-primary !border !border-card opacity-30 group-hover:opacity-100 group-hover:!w-3 group-hover:!h-3 transition-all duration-150 nodrag';
+  const tgt = cn(base, '!bg-muted-foreground/70');
   return (
     <>
       <Handle id="t-src" type="source" position={Position.Top} className={base} />
@@ -317,6 +324,10 @@ const NODE_TYPES: NodeTypes = {
   ai: AINode as unknown as NodeTypes[string],
 };
 
+const EDGE_TYPES: EdgeTypes = {
+  deletable: DeletableEdge as unknown as EdgeTypes[string],
+};
+
 // ─────────────────────────────────────────────────────────────
 // Tree → React Flow nodes/edges (initial layout from a generation).
 // All resulting nodes are the editable `ai` type, and edges are styled
@@ -326,7 +337,11 @@ const NODE_TYPES: NodeTypes = {
 
 function buildFlowGraph(
   tree: MindMapNode,
-  cb: { onChange: (id: string, label: string) => void; onDelete: (id: string) => void },
+  cb: {
+    onChange: (id: string, label: string) => void;
+    onDelete: (id: string) => void;
+    onEdgeDelete: (edgeId: string) => void;
+  },
 ): { nodes: Node[]; edges: Edge[] } {
   const positioned = layoutTree(tree);
   const colorMap = buildBranchColorMap(tree);
@@ -358,7 +373,7 @@ function buildFlowGraph(
       sourceHandle: 'r-src',
       target: p.id,
       targetHandle: 'l-tgt',
-      type: 'smoothstep',
+      type: 'deletable',
       style: {
         stroke: palette.stroke,
         strokeWidth: p.depth === 1 ? 2.25 : 1.5,
@@ -370,9 +385,34 @@ function buildFlowGraph(
         width: 14,
         height: 14,
       },
+      data: { onDelete: cb.onEdgeDelete } satisfies DeletableEdgeData,
     });
   }
   return { nodes, edges };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Cross-map "send" payload — the shape ProjectMindMap consumes when
+// the user clicks "Send to Project map". Decoupled from React Flow
+// types so the wrapper doesn't need a Flow dependency.
+// ─────────────────────────────────────────────────────────────
+
+export interface AIMapImportPayload {
+  nodes: Array<{
+    /** Stable id — the receiver remaps it to a fresh id to avoid collisions. */
+    id: string;
+    label: string;
+    /** -1 = root, 0..n = branch index (drives palette colour). */
+    branchIndex: number;
+    x: number;
+    y: number;
+  }>;
+  edges: Array<{
+    source: string;
+    target: string;
+    /** Branch index that owns this edge — used to colour-match the connector. */
+    branchIndex: number;
+  }>;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -385,7 +425,15 @@ const SAMPLES = [
   'Q3 product roadmap covering platform, growth, and infra workstreams',
 ];
 
-const AIMindMapInner: React.FC = () => {
+interface AIMindMapInnerProps {
+  /** When provided, shows a "Send to Project map" button that ships the
+   *  current canvas (nodes + edges + positions) to the project map's
+   *  ideas/user-edges layer. The receiver remaps ids and offsets positions
+   *  so the imported subgraph lands cleanly next to existing content. */
+  onSendToProjectMap?: (payload: AIMapImportPayload) => void;
+}
+
+const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap }) => {
   const { user } = useAuth();
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -447,22 +495,72 @@ const AIMindMapInner: React.FC = () => {
     setEdges((eds) => applyEdgeChanges(changes, eds));
   }, []);
 
-  const onConnect: OnConnect = useCallback((connection: Connection) => {
-    if (!connection.source || !connection.target) return;
-    if (connection.source === connection.target) return;
-    const newEdge: Edge = {
-      id: `ai-edge-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      source: connection.source,
-      target: connection.target,
-      sourceHandle: connection.sourceHandle ?? undefined,
-      targetHandle: connection.targetHandle ?? undefined,
-      type: 'smoothstep',
-      animated: true,
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(99,102,241)' },
-      style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
-    };
-    setEdges((eds) => addEdge(newEdge, eds));
+  /** Removes an edge by id. Used by the X button on each edge — same primitive
+   *  the keyboard delete path uses, so click and key produce identical state. */
+  const deleteEdge = useCallback((edgeId: string) => {
+    setEdges((eds) => eds.filter((e) => e.id !== edgeId));
   }, []);
+
+  // Re-bind onDelete on every edge each render so an edge created with a
+  // stale closure (e.g. before deleteEdge existed) still calls the latest
+  // setter. The pattern mirrors `liveNodes` above.
+  const liveEdges = useMemo<Edge[]>(
+    () =>
+      edges.map((e) => ({
+        ...e,
+        type: 'deletable',
+        data: {
+          ...(e.data as Record<string, unknown> | undefined),
+          onDelete: deleteEdge,
+        } satisfies DeletableEdgeData,
+      })),
+    [edges, deleteEdge],
+  );
+
+  // ── Click-to-connect tool ────────────────────────────────────
+  // Same simplification the project map offers: click one node, click another,
+  // we wire them. No precision drag required — accessible on touch devices
+  // and friendlier for non-technical users.
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectFirstId, setConnectFirstId] = useState<string | null>(null);
+  const exitConnectMode = useCallback(() => {
+    setConnectMode(false);
+    setConnectFirstId(null);
+  }, []);
+  useEffect(() => {
+    if (!connectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitConnectMode();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [connectMode, exitConnectMode]);
+
+  const onConnect: OnConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+      if (connection.source === connection.target) return;
+      const newEdge: Edge = {
+        id: `ai-edge-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
+        type: 'deletable',
+        animated: true,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: 'rgb(99,102,241)',
+          width: 14,
+          height: 14,
+        },
+        style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
+        data: { onDelete: deleteEdge } satisfies DeletableEdgeData,
+      };
+      setEdges((eds) => addEdge(newEdge, eds));
+    },
+    [deleteEdge],
+  );
 
   const handleGenerate = useCallback(async () => {
     if (!user?.userId) {
@@ -482,6 +580,7 @@ const AIMindMapInner: React.FC = () => {
       const { nodes: nextNodes, edges: nextEdges } = buildFlowGraph(result, {
         onChange: updateNodeLabel,
         onDelete: deleteNode,
+        onEdgeDelete: deleteEdge,
       });
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -496,7 +595,7 @@ const AIMindMapInner: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.userId, text, updateNodeLabel, deleteNode]);
+  }, [user?.userId, text, updateNodeLabel, deleteNode, deleteEdge]);
 
   const handleClear = useCallback(() => {
     setNodes([]);
@@ -504,6 +603,52 @@ const AIMindMapInner: React.FC = () => {
     setError(null);
     setHasGenerated(false);
   }, []);
+
+  // Serialise the current canvas into a payload the project map can ingest.
+  // We only forward ai-typed nodes (drop accidental other types) and edges
+  // whose endpoints both still exist (so a half-deleted edge can't poison
+  // the import). Branch index is taken straight from each node's data.
+  const handleSendToProjectMap = useCallback(() => {
+    if (!onSendToProjectMap) return;
+    if (nodes.length === 0) {
+      toast.message('Generate or add nodes first.');
+      return;
+    }
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const payloadNodes: AIMapImportPayload['nodes'] = nodes
+      .filter((n) => n.type === 'ai')
+      .map((n) => {
+        const data = n.data as AINodeData;
+        return {
+          id: n.id,
+          label: data.label,
+          branchIndex: data.branchIndex,
+          x: n.position.x,
+          y: n.position.y,
+        };
+      });
+    const payloadEdges: AIMapImportPayload['edges'] = edges
+      .filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target))
+      .map((e) => {
+        const targetNode = nodes.find((n) => n.id === e.target);
+        const bi =
+          targetNode && targetNode.type === 'ai'
+            ? (targetNode.data as AINodeData).branchIndex
+            : 0;
+        return {
+          source: e.source,
+          target: e.target,
+          branchIndex: bi >= 0 ? bi : 0,
+        };
+      });
+
+    onSendToProjectMap({ nodes: payloadNodes, edges: payloadEdges });
+    toast.success(
+      payloadNodes.length === 1
+        ? '1 node sent to Project map'
+        : `${payloadNodes.length} nodes sent to Project map`,
+    );
+  }, [nodes, edges, onSendToProjectMap]);
 
   // Add a free-floating idea node near the centre of the viewport so users
   // can grow the map manually after generation (or even with no generation).
@@ -582,6 +727,20 @@ const AIMindMapInner: React.FC = () => {
               <Plus className="w-3.5 h-3.5" />
               Add node
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={connectMode ? 'default' : 'outline'}
+              onClick={() =>
+                connectMode ? exitConnectMode() : setConnectMode(true)
+              }
+              className="gap-1.5"
+              aria-pressed={connectMode}
+              title="Click two nodes to connect them — no drag required"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              {connectMode ? 'Cancel' : 'Connect'}
+            </Button>
             {hasGenerated && (
               <Button
                 type="button"
@@ -592,6 +751,19 @@ const AIMindMapInner: React.FC = () => {
               >
                 <Eraser className="w-3.5 h-3.5" />
                 Clear
+              </Button>
+            )}
+            {onSendToProjectMap && nodes.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={handleSendToProjectMap}
+                className="gap-1.5"
+                title="Copy this mind map into the Project map as ideas + connections"
+              >
+                <Send className="w-3.5 h-3.5" />
+                Send to Project map
               </Button>
             )}
             <span className="ml-auto text-[10px] text-muted-foreground hidden sm:inline">
@@ -624,15 +796,48 @@ const AIMindMapInner: React.FC = () => {
 
       {/* Map area */}
       <div className="flex-1 min-h-0 relative rounded-lg border border-border bg-background overflow-hidden">
+        {connectMode && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium shadow-lg">
+            <Link2 className="w-3.5 h-3.5" />
+            {connectFirstId ? 'Now click the second node' : 'Click the first node to connect'}
+            <span className="text-primary-foreground/60 ml-1">· Esc to cancel</span>
+          </div>
+        )}
         {nodes.length > 0 ? (
           <ReactFlow
             key={generationCount}
-            nodes={liveNodes}
-            edges={edges}
+            nodes={
+              connectMode && connectFirstId
+                ? liveNodes.map((n) =>
+                    n.id === connectFirstId ? { ...n, selected: true } : n,
+                  )
+                : liveNodes
+            }
+            edges={liveEdges}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onNodeClick={(_e, node) => {
+              if (!connectMode) return;
+              if (!connectFirstId) {
+                setConnectFirstId(node.id);
+                return;
+              }
+              if (connectFirstId === node.id) {
+                setConnectFirstId(null);
+                return;
+              }
+              onConnect({
+                source: connectFirstId,
+                target: node.id,
+                sourceHandle: null,
+                targetHandle: null,
+              });
+              exitConnectMode();
+              toast.success('Connected');
+            }}
             deleteKeyCode={['Delete', 'Backspace']}
             multiSelectionKeyCode={['Meta', 'Control', 'Shift']}
             connectionRadius={28}
@@ -683,9 +888,13 @@ const AIMindMapInner: React.FC = () => {
   );
 };
 
-export const AIMindMap: React.FC = () => (
+interface AIMindMapProps {
+  onSendToProjectMap?: (payload: AIMapImportPayload) => void;
+}
+
+export const AIMindMap: React.FC<AIMindMapProps> = ({ onSendToProjectMap }) => (
   <ReactFlowProvider>
-    <AIMindMapInner />
+    <AIMindMapInner onSendToProjectMap={onSendToProjectMap} />
   </ReactFlowProvider>
 );
 

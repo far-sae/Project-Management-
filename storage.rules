@@ -1,13 +1,50 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Project files: allow authenticated users in the same org to read/write
+    // Project files: signed-in users only, capped at 50 MB and a known content-type
+    // family. Note: Firebase Storage cannot consult Supabase membership at evaluate
+    // time — project-level isolation must additionally be enforced by the app issuing
+    // signed download URLs, and by the upload paths refusing requests for projects
+    // the caller is not a member of (see services/supabase/storage.ts).
     match /projects/{projectId}/files/{fileName} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 50 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('video/.*') ||
+          request.resource.contentType.matches('audio/.*') ||
+          request.resource.contentType.matches('application/pdf') ||
+          request.resource.contentType.matches('application/zip') ||
+          request.resource.contentType.matches('application/x-zip-compressed') ||
+          request.resource.contentType.matches('application/msword') ||
+          request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*') ||
+          request.resource.contentType.matches('application/vnd.ms-excel') ||
+          request.resource.contentType.matches('text/.*')
+        );
     }
-    // Task attachments
+
     match /projects/{projectId}/tasks/{taskId}/{fileName} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 50 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('video/.*') ||
+          request.resource.contentType.matches('audio/.*') ||
+          request.resource.contentType.matches('application/pdf') ||
+          request.resource.contentType.matches('application/zip') ||
+          request.resource.contentType.matches('application/x-zip-compressed') ||
+          request.resource.contentType.matches('application/msword') ||
+          request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*') ||
+          request.resource.contentType.matches('application/vnd.ms-excel') ||
+          request.resource.contentType.matches('text/.*')
+        );
+    }
+
+    // Reject anything outside the explicit paths above.
+    match /{anyPath=**} {
+      allow read, write: if false;
     }
   }
 }

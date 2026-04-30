@@ -28,7 +28,9 @@ export const SignupForm: React.FC = () => {
   const redirectParam = new URLSearchParams(location.search).get('redirect');
 
   const getPostAuthRedirect = () => {
-    const pendingInviteToken = localStorage.getItem('pendingInviteToken');
+    const pendingInviteToken =
+      sessionStorage.getItem('pendingInviteToken') ||
+      localStorage.getItem('pendingInviteToken');
     if (redirectParam) return redirectParam;
     if (pendingInviteToken) return `/accept-invite/${pendingInviteToken}`;
     return '/dashboard';

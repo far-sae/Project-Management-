@@ -22,11 +22,13 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
+  type EdgeTypes,
   type Connection,
   type NodeChange,
   type EdgeChange,
   type OnConnect,
 } from '@xyflow/react';
+import { DeletableEdge, type DeletableEdgeData } from './DeletableEdge';
 import '@xyflow/react/dist/style.css';
 import { format } from 'date-fns';
 import {
@@ -44,6 +46,7 @@ import {
   Keyboard,
   Paperclip,
   Loader2,
+  Link2,
 } from 'lucide-react';
 import type { Project, Task, KanbanColumn } from '@/types';
 import { cn } from '@/lib/utils';
@@ -64,7 +67,7 @@ import {
 } from '@/services/supabase/storage';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
-import { AIMindMap } from './AIMindMap';
+import { AIMindMap, type AIMapImportPayload } from './AIMindMap';
 import { MindMapTaskPanel } from './MindMapTaskPanel';
 
 // ─────────────────────────────────────────────────────────────
@@ -185,22 +188,27 @@ const saveExtras = (projectId: string, extras: MindMapExtras) => {
 // Reusable node bits
 // ─────────────────────────────────────────────────────────────
 
-/** All four sides expose both source and target handles so users can drag a connection
- *  out from any side and into any side of another node. Handles fade in on hover/select
- *  so they don't clutter the canvas at rest. */
+/** All four sides expose both source and target handles so users can drag a
+ *  connection out from any side and into any side of another node.
+ *
+ *  The handles are now subtly visible at rest (30%) so users can SEE where
+ *  to grab without having to hover-discover them. They brighten + grow on
+ *  hover. Target handles use a muted colour so the user reads "drag from
+ *  the bright dot, drop on the muted one" without thinking about it. */
 const ConnectionHandles: React.FC = memo(() => {
   const baseClass =
-    '!w-2.5 !h-2.5 !bg-primary !border-2 !border-card opacity-0 group-hover:opacity-100 nodrag transition-opacity';
+    '!w-3 !h-3 !bg-primary !border-2 !border-card opacity-30 group-hover:opacity-100 group-hover:!w-3.5 group-hover:!h-3.5 nodrag transition-all duration-150';
+  const targetClass = cn(baseClass, '!bg-muted-foreground/70');
   return (
     <>
       <Handle id="t-src" type="source" position={Position.Top} className={baseClass} />
-      <Handle id="t-tgt" type="target" position={Position.Top} className={cn(baseClass, '!bg-muted')} />
+      <Handle id="t-tgt" type="target" position={Position.Top} className={targetClass} />
       <Handle id="r-src" type="source" position={Position.Right} className={baseClass} />
-      <Handle id="r-tgt" type="target" position={Position.Right} className={cn(baseClass, '!bg-muted')} />
+      <Handle id="r-tgt" type="target" position={Position.Right} className={targetClass} />
       <Handle id="b-src" type="source" position={Position.Bottom} className={baseClass} />
-      <Handle id="b-tgt" type="target" position={Position.Bottom} className={cn(baseClass, '!bg-muted')} />
+      <Handle id="b-tgt" type="target" position={Position.Bottom} className={targetClass} />
       <Handle id="l-src" type="source" position={Position.Left} className={baseClass} />
-      <Handle id="l-tgt" type="target" position={Position.Left} className={cn(baseClass, '!bg-muted')} />
+      <Handle id="l-tgt" type="target" position={Position.Left} className={targetClass} />
     </>
   );
 });
@@ -570,6 +578,10 @@ const NODE_TYPES: NodeTypes = {
   idea: IdeaNode as unknown as NodeTypes[string],
 };
 
+const EDGE_TYPES: EdgeTypes = {
+  deletable: DeletableEdge as unknown as EdgeTypes[string],
+};
+
 // ─────────────────────────────────────────────────────────────
 // Layout (auto-graph from tasks)
 // ─────────────────────────────────────────────────────────────
@@ -654,8 +666,16 @@ const buildBaseGraph = (
       target: columnId,
       targetHandle: 'l-tgt',
       type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed },
-      style: { stroke: lane.color || 'var(--border)', strokeWidth: 2 },
+      // Same bold coloured arrow language as the AI map — visually unifies
+      // both views so the user instantly recognises what's connected to
+      // what without reading colours.
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: lane.color || '#94a3b8',
+        width: 14,
+        height: 14,
+      },
+      style: { stroke: lane.color || 'var(--border)', strokeWidth: 2.25 },
     });
 
     let taskY = cursorY;
@@ -689,7 +709,8 @@ const buildBaseGraph = (
         } satisfies TaskNodeData,
       });
       // Tint column→task edges with the lane color so each column visibly "owns"
-      // its tasks even after the user drags nodes around.
+      // its tasks even after the user drags nodes around. Width + opacity match
+      // the AI map so both surfaces feel like the same diagram language.
       const laneStroke = lane.color || '#94a3b8';
       edges.push({
         id: `auto-edge-${columnId}-${taskNodeId}`,
@@ -698,8 +719,13 @@ const buildBaseGraph = (
         target: taskNodeId,
         targetHandle: 'l-tgt',
         type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed, color: laneStroke },
-        style: { stroke: laneStroke, strokeWidth: 1.5, strokeOpacity: 0.6 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: laneStroke,
+          width: 14,
+          height: 14,
+        },
+        style: { stroke: laneStroke, strokeWidth: 1.75, strokeOpacity: 0.85 },
       });
 
       const subtaskBaseY = taskY - ((subtasks.length - 1) * SUBTASK_GAP_Y) / 2;
@@ -750,10 +776,12 @@ interface ProjectMindMapProps {
   onOpenTask?: (taskId: string) => void;
 }
 
-const MindMapInner: React.FC<ProjectMindMapProps> = ({
+const MindMapInner: React.FC<StructuralMapProps> = ({
   project,
   tasks,
   columns,
+  pendingImport,
+  onPendingImportApplied,
   // `onOpenTask` is intentionally ignored — clicking a task in the mind map
   // now opens an inline editing panel rather than navigating the user back
   // to the kanban view. The prop stays in the component's type so existing
@@ -763,11 +791,18 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
   const { user } = useAuth();
   const [extras, setExtrasState] = useState<MindMapExtras>(() => loadExtras(project.projectId));
 
+  // Cloud-load gate: until this is true we don't apply a pendingImport, so
+  // the import doesn't get clobbered by the cloud snapshot that arrives a
+  // moment later. After it flips, the import effect drains the payload.
+  const [cloudLoaded, setCloudLoaded] = useState(false);
+
   // On mount / project switch, try to migrate localStorage → cloud and load cloud state.
   useEffect(() => {
     const userId = user?.userId;
+    setCloudLoaded(false);
     if (!userId) {
       setExtrasState(loadExtras(project.projectId));
+      setCloudLoaded(true);
       return;
     }
     let cancelled = false;
@@ -780,6 +815,7 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
           Object.keys(cloud.positions).length > 0;
         if (hasCloud) setExtrasState(cloud);
         else setExtrasState(loadExtras(project.projectId));
+        setCloudLoaded(true);
       }
     });
     return () => { cancelled = true; };
@@ -808,6 +844,86 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     },
     [project.projectId, user?.userId],
   );
+
+  // ── Import payload from the AI mind map ─────────────────────
+  // Drains a single AIMapImportPayload (sent via the wrapper) into our
+  // ideas + user-edges layer. The whole subgraph lands offset to the
+  // right of the existing structural content so it doesn't overlap.
+  // Each node converts to an ExtraIdea so it inherits all the existing
+  // editing affordances (rename, recolour, drag, delete). Each edge
+  // becomes a user edge so it's deletable + reconnectable just like a
+  // freshly drawn one.
+  const importedAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!pendingImport) {
+      importedAppliedRef.current = false;
+      return;
+    }
+    if (!cloudLoaded || importedAppliedRef.current) return;
+    importedAppliedRef.current = true;
+
+    const stamp = Date.now().toString(36);
+    const remap = new Map<string, string>();
+    for (const n of pendingImport.nodes) {
+      remap.set(n.id, `${IDEA_NODE_PREFIX}${stamp}-${n.id}`);
+    }
+
+    // Offset so the imported subtree appears to the right of the typical
+    // project content (project node ~0, columns ~380, tasks ~760, subtasks
+    // ~1050). 1500 lands clear of all of those at default zoom.
+    const X_OFFSET = 1500;
+    const Y_OFFSET = 0;
+
+    // Project map's IDEA_PALETTE only has 5 entries; AI uses 8. Round-robin.
+    const colorFor = (branchIndex: number): string => {
+      if (branchIndex < 0) return IDEA_PALETTE[0].name;
+      return IDEA_PALETTE[branchIndex % IDEA_PALETTE.length].name;
+    };
+
+    const newIdeas: ExtraIdea[] = pendingImport.nodes.map((n) => ({
+      id: remap.get(n.id) || `${IDEA_NODE_PREFIX}${stamp}-${n.id}`,
+      label: n.label,
+      x: n.x + X_OFFSET,
+      y: n.y + Y_OFFSET,
+      color: colorFor(n.branchIndex),
+    }));
+
+    const newEdges: ExtraEdge[] = [];
+    pendingImport.edges.forEach((e, i) => {
+      const src = remap.get(e.source);
+      const tgt = remap.get(e.target);
+      if (!src || !tgt) return;
+      newEdges.push({
+        id: `${USER_EDGE_PREFIX}imported-${stamp}-${i}`,
+        source: src,
+        target: tgt,
+        sourceHandle: 'r-src',
+        targetHandle: 'l-tgt',
+      });
+    });
+
+    updateExtras((prev) => ({
+      ...prev,
+      ideas: [...prev.ideas, ...newIdeas],
+      edges: [...prev.edges, ...newEdges],
+    }));
+
+    // Pan/zoom to the new content so the user sees what was just imported.
+    requestAnimationFrame(() => {
+      try {
+        flow.fitView({ padding: 0.2, duration: 400 });
+      } catch {
+        /* fit ok to fail before the canvas mounts */
+      }
+    });
+
+    onPendingImportApplied?.();
+    toast.success(
+      newIdeas.length === 1
+        ? '1 node added from AI map'
+        : `${newIdeas.length} nodes added from AI map`,
+    );
+  }, [pendingImport, cloudLoaded, updateExtras, flow, onPendingImportApplied]);
 
   // ── Per-task attachment state ───────────────────────────────
   // Counts how many files are attached to each task so we can show a 📎
@@ -996,22 +1112,67 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     return [...base, ...ideaNodes];
   }, [baseGraph.nodes, extras, handleIdeaChange, handleIdeaDelete]);
 
+  /** One-click delete fired from the X button on each edge. We don't touch
+   *  the React Flow `edges` state here; the composedEdges memo re-derives
+   *  from extras and the seeding useEffect resyncs the canvas, so the click
+   *  feels instant without us having to dual-write. Same classification as
+   *  the keyboard delete path so auto-edges hide and user-edges remove. */
+  const handleDeleteEdgeById = useCallback(
+    (edgeId: string) => {
+      if (edgeId.startsWith(USER_EDGE_PREFIX)) {
+        updateExtras((prev) => ({
+          ...prev,
+          edges: prev.edges.filter((e) => e.id !== edgeId),
+        }));
+      } else if (edgeId.startsWith(AUTO_EDGE_PREFIX)) {
+        updateExtras((prev) => ({
+          ...prev,
+          removedAutoEdges: prev.removedAutoEdges.includes(edgeId)
+            ? prev.removedAutoEdges
+            : [...prev.removedAutoEdges, edgeId],
+        }));
+      }
+    },
+    [updateExtras],
+  );
+
   const composedEdges = useMemo<Edge[]>(() => {
     const removed = new Set(extras.removedAutoEdges);
-    const baseVisible = baseGraph.edges.filter((e) => !removed.has(e.id));
-    const userEdges: Edge[] = extras.edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle ?? undefined,
-      targetHandle: e.targetHandle ?? undefined,
-      type: 'smoothstep',
-      animated: true,
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(99,102,241)' },
-      style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
-    }));
+    // Every visible edge — auto or user-drawn — is rendered through the
+    // `deletable` custom edge so it gets a one-click X button. The original
+    // smoothstep visuals come from the styles we set in buildBaseGraph;
+    // DeletableEdge re-uses smoothstep paths via getSmoothStepPath, so the
+    // shape stays identical to before — only the click affordance is new.
+    const stampDeletable = (edge: Edge): Edge => ({
+      ...edge,
+      type: 'deletable',
+      data: {
+        ...(edge.data as Record<string, unknown> | undefined),
+        onDelete: handleDeleteEdgeById,
+      } satisfies DeletableEdgeData,
+    });
+    const baseVisible = baseGraph.edges
+      .filter((e) => !removed.has(e.id))
+      .map(stampDeletable);
+    const userEdges: Edge[] = extras.edges.map((e) =>
+      stampDeletable({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
+        animated: true,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: 'rgb(99,102,241)',
+          width: 14,
+          height: 14,
+        },
+        style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
+      }),
+    );
     return [...baseVisible, ...userEdges];
-  }, [baseGraph.edges, extras.edges, extras.removedAutoEdges]);
+  }, [baseGraph.edges, extras.edges, extras.removedAutoEdges, handleDeleteEdgeById]);
 
   // React Flow controlled state. We seed from composedNodes/Edges and re-seed when the
   // composition changes (e.g. tasks updated, idea added). Drag-in-flight changes go
@@ -1062,10 +1223,16 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
         target: connection.target,
         sourceHandle: connection.sourceHandle ?? undefined,
         targetHandle: connection.targetHandle ?? undefined,
-        type: 'smoothstep',
+        type: 'deletable',
         animated: true,
-        markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(99,102,241)' },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: 'rgb(99,102,241)',
+          width: 14,
+          height: 14,
+        },
         style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
+        data: { onDelete: handleDeleteEdgeById } satisfies DeletableEdgeData,
       };
       setEdges((eds) => addEdge(newEdge, eds));
       updateExtras((prev) => ({
@@ -1082,7 +1249,7 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
         ],
       }));
     },
-    [updateExtras],
+    [updateExtras, handleDeleteEdgeById],
   );
 
   // React Flow calls these *before* applying the delete, so we can both filter
@@ -1145,6 +1312,7 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
     },
     [updateExtras],
   );
+
 
   // Toolbar actions
   const addIdea = useCallback(() => {
@@ -1337,6 +1505,55 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
+  // ── "Connect" tool: click-two-nodes to wire instead of drag ────────
+  // Some users (especially on touch devices) struggle with the drag-from-
+  // handle gesture. Connect mode lets them tap one node, tap a second, and
+  // we wire them up — no precision required.
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectFirstNodeId, setConnectFirstNodeId] = useState<string | null>(null);
+
+  const exitConnectMode = useCallback(() => {
+    setConnectMode(false);
+    setConnectFirstNodeId(null);
+  }, []);
+
+  // Esc cancels connect mode mid-gesture.
+  useEffect(() => {
+    if (!connectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitConnectMode();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [connectMode, exitConnectMode]);
+
+  const handleNodeClickForConnect = useCallback(
+    (_e: React.MouseEvent, node: Node) => {
+      if (!connectMode) return;
+      if (!connectFirstNodeId) {
+        setConnectFirstNodeId(node.id);
+        return;
+      }
+      if (connectFirstNodeId === node.id) {
+        // Click same node twice = cancel selection
+        setConnectFirstNodeId(null);
+        return;
+      }
+      // Wire it up via the same path drag-connect uses, so persistence and
+      // edge styling are identical. Pass null handles so React Flow picks
+      // sensible defaults based on node positions.
+      onConnect({
+        source: connectFirstNodeId,
+        target: node.id,
+        sourceHandle: null,
+        targetHandle: null,
+      });
+      exitConnectMode();
+      toast.success('Connected');
+    },
+    [connectMode, connectFirstNodeId, onConnect, exitConnectMode],
+  );
+
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
@@ -1349,6 +1566,19 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
         <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" onClick={addIdea} title="Add idea (N)">
           <Plus className="w-3.5 h-3.5" />
           Add idea
+        </Button>
+        <Button
+          size="sm"
+          variant={connectMode ? 'default' : 'ghost'}
+          className={cn('h-8 gap-1.5 text-xs', connectMode && 'shadow-sm')}
+          onClick={() =>
+            connectMode ? exitConnectMode() : setConnectMode(true)
+          }
+          title="Click a node, then another, to connect them — no drag needed"
+          aria-pressed={connectMode}
+        >
+          <Link2 className="w-3.5 h-3.5" />
+          {connectMode ? 'Cancel' : 'Connect'}
         </Button>
         <span className="w-px h-5 bg-border" aria-hidden />
         <Button
@@ -1528,13 +1758,30 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
         N to add idea · Ctrl+=/- to zoom · Right-click for menu · ? for shortcuts
       </div>
 
+      {/* Connect-mode hint banner */}
+      {connectMode && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium shadow-lg">
+          <Link2 className="w-3.5 h-3.5" />
+          {connectFirstNodeId ? 'Now click the second node' : 'Click the first node to connect'}
+          <span className="text-primary-foreground/60 ml-1">· Esc to cancel</span>
+        </div>
+      )}
+
       <ReactFlow
-        nodes={nodes}
+        nodes={
+          connectMode && connectFirstNodeId
+            ? nodes.map((n) =>
+                n.id === connectFirstNodeId ? { ...n, selected: true } : n,
+              )
+            : nodes
+        }
         edges={edges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeClick={handleNodeClickForConnect}
         onBeforeDelete={onBeforeDelete}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
@@ -1543,7 +1790,7 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
         connectionRadius={28}
         connectOnClick={false}
         defaultEdgeOptions={{
-          type: 'smoothstep',
+          type: 'deletable',
           markerEnd: { type: MarkerType.ArrowClosed },
         }}
         fitView
@@ -1614,8 +1861,15 @@ const MindMapInner: React.FC<ProjectMindMapProps> = ({
 
 type MindMapMode = 'project' | 'ai';
 
-const ProjectStructuralMap: React.FC<ProjectMindMapProps> = (props) => {
-  if (props.tasks.length === 0 && (loadExtras(props.project.projectId).ideas.length === 0)) {
+interface StructuralMapProps extends ProjectMindMapProps {
+  /** Set by the wrapper when the user clicks "Send to Project map" in AI mode.
+   *  Consumed once on mount via a useEffect, then cleared via onPendingImportApplied. */
+  pendingImport?: AIMapImportPayload | null;
+  onPendingImportApplied?: () => void;
+}
+
+const ProjectStructuralMap: React.FC<StructuralMapProps> = (props) => {
+  if (props.tasks.length === 0 && (loadExtras(props.project.projectId).ideas.length === 0) && !props.pendingImport) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground bg-background rounded-lg border border-border">
         <Lightbulb className="w-10 h-10 mb-3 text-amber-500/70" />
@@ -1636,6 +1890,24 @@ const ProjectStructuralMap: React.FC<ProjectMindMapProps> = (props) => {
 
 export const ProjectMindMap: React.FC<ProjectMindMapProps> = (props) => {
   const [mode, setMode] = useState<MindMapMode>('project');
+  // Hand-off slot for content sent from the AI map. The structural map drains
+  // it on mount via a useEffect, then calls back to clear it. Stored at the
+  // wrapper so it survives the ProjectStructuralMap remount that happens
+  // when modes flip.
+  const [pendingImport, setPendingImport] = useState<AIMapImportPayload | null>(null);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production' && props.onOpenTask != null) {
+      console.warn(
+        '[ProjectMindMap] The `onOpenTask` prop is ignored. Task nodes open the inline mind map task panel instead of invoking this callback. Remove `onOpenTask` or rely on task data updates from your existing queries.',
+      );
+    }
+  }, [props.onOpenTask]);
+
+  const handleSendToProjectMap = useCallback((payload: AIMapImportPayload) => {
+    setPendingImport(payload);
+    setMode('project');
+  }, []);
 
   return (
     <div className="h-full flex flex-col gap-2">
@@ -1675,9 +1947,13 @@ export const ProjectMindMap: React.FC<ProjectMindMapProps> = (props) => {
 
       <div className="flex-1 min-h-0">
         {mode === 'project' ? (
-          <ProjectStructuralMap {...props} />
+          <ProjectStructuralMap
+            {...props}
+            pendingImport={pendingImport}
+            onPendingImportApplied={() => setPendingImport(null)}
+          />
         ) : (
-          <AIMindMap />
+          <AIMindMap onSendToProjectMap={handleSendToProjectMap} />
         )}
       </div>
     </div>

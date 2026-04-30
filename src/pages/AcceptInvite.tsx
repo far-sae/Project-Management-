@@ -53,7 +53,7 @@ export const AcceptInvite: React.FC = () => {
   const [awaitingEmailConfirm, setAwaitingEmailConfirm] = useState(false);
 
   useEffect(() => {
-    if (token) localStorage.setItem("pendingInviteToken", token);
+    if (token) sessionStorage.setItem("pendingInviteToken", token);
   }, [token]);
 
   // ✅ True if a different account is logged in than the one invited
@@ -65,6 +65,7 @@ export const AcceptInvite: React.FC = () => {
 
   // ─── Redirect to dashboard when invite is invalid (e.g. first-time login with no invite)
   const redirectToDashboard = useCallback(() => {
+    sessionStorage.removeItem("pendingInviteToken");
     localStorage.removeItem("pendingInviteToken");
     navigate("/dashboard", { replace: true });
   }, [navigate]);
@@ -131,7 +132,8 @@ export const AcceptInvite: React.FC = () => {
         invitation.invitationId,
         invitation.organizationId || "",
       );
-      localStorage.removeItem("pendingInviteToken");
+      sessionStorage.removeItem("pendingInviteToken");
+    localStorage.removeItem("pendingInviteToken");
       toast.success("Invitation declined", {
         description: "You can always ask to be invited again later.",
       });
@@ -148,7 +150,7 @@ export const AcceptInvite: React.FC = () => {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    localStorage.setItem("pendingInviteToken", token || "");
+    sessionStorage.setItem("pendingInviteToken", token || "");
     navigate(`/login?redirect=/accept-invite/${token}`);
   };
 
@@ -177,7 +179,7 @@ export const AcceptInvite: React.FC = () => {
       });
       if (error) throw error;
       if (data.user) {
-        localStorage.setItem("pendingInviteToken", token || "");
+        sessionStorage.setItem("pendingInviteToken", token || "");
         if (data.session && token) {
           toast.success("Account created! Accepting invitation...");
           setShowSignupForm(false);
@@ -206,7 +208,7 @@ export const AcceptInvite: React.FC = () => {
     // Not logged in → trigger Google sign-in and save token for after redirect
     if (!user) {
       try {
-        localStorage.setItem("pendingInviteToken", token || "");
+        sessionStorage.setItem("pendingInviteToken", token || "");
         await signInGoogle();
         return;
       } catch {
@@ -256,7 +258,8 @@ export const AcceptInvite: React.FC = () => {
       );
 
       setSuccess(true);
-      localStorage.removeItem("pendingInviteToken");
+      sessionStorage.removeItem("pendingInviteToken");
+    localStorage.removeItem("pendingInviteToken");
       setTimeout(() => {
         navigate(`/project/${invitation.projectId}`, { replace: true });
       }, 800);

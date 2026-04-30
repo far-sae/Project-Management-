@@ -11,26 +11,59 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import OpenAI from "https://esm.sh/openai@4.104.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const allowedOriginsRaw = Deno.env.get("ALLOWED_ORIGINS") ?? "";
+const allowedOrigins = allowedOriginsRaw
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 
-function json(body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+function buildCorsHeaders(origin: string | null): Record<string, string> {
+  const allow =
+    origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))
+      ? origin
+      : (allowedOrigins[0] ?? "null");
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req.headers.get("Origin"));
+  function json(body: Record<string, unknown>, status = 200) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
+  }
+
+  // Require an authenticated user — prevents anonymous abuse of OPENAI_API_KEY billing.
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (supabaseUrl && supabaseAnonKey) {
+    const authClient = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: { user }, error: authError } = await authClient.auth.getUser(
+      authHeader.slice(7),
+    );
+    if (authError || !user) {
+      return json({ error: "Unauthorized" }, 401);
+    }
   }
 
   const apiKeyRaw = Deno.env.get("OPENAI_API_KEY");

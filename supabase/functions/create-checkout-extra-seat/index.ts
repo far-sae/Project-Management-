@@ -1,16 +1,51 @@
 // Create Stripe Checkout for one extra team seat (Advanced plan).
 // Deploy: supabase functions deploy create-checkout-extra-seat
 // Set secret: STRIPE_SECRET_KEY
+// Optional: STRIPE_ALLOWED_PRICE_IDS (comma-separated) — restrict checkout to known prices.
+// Optional: ALLOWED_ORIGINS (comma-separated) for CORS allowlist.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.10.0?target=deno";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const allowedOriginsRaw = Deno.env.get("ALLOWED_ORIGINS") ?? "";
+const allowedOrigins = allowedOriginsRaw
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+function buildCorsHeaders(origin: string | null): Record<string, string> {
+  const allow =
+    origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))
+      ? origin
+      : (allowedOrigins[0] ?? "null");
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+}
+
+const allowedPriceIdsRaw = Deno.env.get("STRIPE_ALLOWED_PRICE_IDS") ?? "";
+const allowedPriceIds = allowedPriceIdsRaw
+  .split(",")
+  .map((p) => p.trim())
+  .filter(Boolean);
+
+function isSafeRedirect(url: string): boolean {
+  if (typeof url !== "string" || url.length === 0 || url.length > 2048) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req.headers.get("Origin"));
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -21,26 +56,67 @@ serve(async (req) => {
     });
   }
 
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const token = authHeader.slice(7);
+
   const secret = Deno.env.get("STRIPE_SECRET_KEY");
-  if (!secret) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!secret || !supabaseUrl || !supabaseServiceKey) {
     return new Response(JSON.stringify({ error: "Server configuration error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const body = (await req.json()) as {
-      extraUserPriceId: string;
-      userId: string;
-      successUrl: string;
-      cancelUrl: string;
+      extraUserPriceId?: unknown;
+      successUrl?: unknown;
+      cancelUrl?: unknown;
     };
-    const { extraUserPriceId, userId, successUrl, cancelUrl } = body;
 
-    if (!extraUserPriceId || !userId || !successUrl || !cancelUrl) {
+    const extraUserPriceId =
+      typeof body.extraUserPriceId === "string" ? body.extraUserPriceId.trim() : "";
+    const successUrl = typeof body.successUrl === "string" ? body.successUrl : "";
+    const cancelUrl = typeof body.cancelUrl === "string" ? body.cancelUrl : "";
+
+    if (!extraUserPriceId || !successUrl || !cancelUrl) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: extraUserPriceId, userId, successUrl, cancelUrl" }),
+        JSON.stringify({ error: "Missing required fields: extraUserPriceId, successUrl, cancelUrl" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (!isSafeRedirect(successUrl) || !isSafeRedirect(cancelUrl)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid redirect URL" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (!/^price_[A-Za-z0-9_]+$/.test(extraUserPriceId)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid extraUserPriceId" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (allowedPriceIds.length > 0 && !allowedPriceIds.includes(extraUserPriceId)) {
+      return new Response(
+        JSON.stringify({ error: "Price not permitted" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -52,10 +128,11 @@ serve(async (req) => {
       line_items: [{ price: extraUserPriceId, quantity: 1 }],
       success_url: successUrl,
       cancel_url: cancelUrl,
-      client_reference_id: userId,
+      customer_email: user.email || undefined,
+      client_reference_id: user.id,
       subscription_data: {
         metadata: {
-          userId,
+          userId: user.id,
           extraSeat: "true",
         },
       },
@@ -67,8 +144,7 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error("create-checkout-extra-seat error:", err);
-    const message = err instanceof Error ? err.message : "Checkout failed";
-    return new Response(JSON.stringify({ error: message }), {
+    return new Response(JSON.stringify({ error: "Checkout failed" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
