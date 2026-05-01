@@ -101,8 +101,8 @@ grant execute on function public.get_invitation_by_token(text) to anon, authenti
 -- skipped so re-running this RPC is safe.
 --
 -- Returns: jsonb { ok: true } on success or { ok: false, error: '<msg>' } on
--- known failure modes (so the client can surface a useful message rather than
--- a cryptic "function returned null").
+-- known failure modes. Unexpected DB failures return error 'internal_error';
+-- details are written to server logs (RAISE LOG) only.
 -- ---------------------------------------------------------------------------
 create or replace function public.accept_invitation(
   p_invitation_id  uuid,
@@ -228,9 +228,9 @@ begin
 
   return jsonb_build_object('ok', true, 'projectId', v_project_id);
 exception when others then
-  -- Surface DB errors as a structured failure rather than a 500 — the
-  -- AcceptInvite UI can show them to the user.
-  return jsonb_build_object('ok', false, 'error', sqlerrm);
+  -- Log full detail for operators; return a generic code to the client (no sqlerrm).
+  raise log 'accept_invitation failed: sqlstate=% sqlerrm=%', sqlstate, sqlerrm;
+  return jsonb_build_object('ok', false, 'error', 'internal_error');
 end;
 $$;
 
@@ -267,7 +267,10 @@ begin
     v_obj := jsonb_build_object(
       'userId',      v_uid,
       'email',       lower(inv.email),
-      'displayName', '',
+      'displayName', coalesce(
+        nullif(trim(coalesce((row_to_json(inv)::jsonb)->>'display_name', '')), ''),
+        lower(coalesce(inv.email, ''))
+      ),
       'photoURL',    '',
       'role',        coalesce(inv.role, 'member'),
       'addedAt',     coalesce(inv.accepted_at, now()),
