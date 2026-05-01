@@ -83,18 +83,33 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
   const [loading, setLoading] = useState(true);
 
   const userIdRef = useRef<string | null>(null);
+  const ownerIdRef = useRef<string | null>(null);
+  const isOrgOwnerRef = useRef<boolean>(false);
   const channelRef = useRef<any>(null);
+
+  // Keep the latest owner / role flags inside refs so fetchSub can read them
+  // without becoming a moving callback (and tearing down the realtime channel
+  // on every render).
+  useEffect(() => {
+    ownerIdRef.current = organization?.ownerId ?? null;
+    isOrgOwnerRef.current = isOrgOwner;
+  }, [organization?.ownerId, isOrgOwner]);
 
   // ── Main fetch + expiry check ────────────────────────────────────────
   const fetchSub = useCallback(async () => {
     const uid = userIdRef.current;
     if (!uid) return;
 
+    // Effective subscription holder: invited members ride on the OWNER's plan
+    // so the owner pays once. Falls back to self until the org loads.
+    const subscriptionHolderId = ownerIdRef.current || uid;
+    const isHolderSelf = subscriptionHolderId === uid;
+
     try {
       const { data: fetched, error } = await supabase
         .from("subscriptions")
         .select("*")
-        .eq("user_id", uid)
+        .eq("user_id", subscriptionHolderId)
         .maybeSingle();
 
       if (error) {
@@ -104,8 +119,11 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
 
       let row = fetched;
 
-      // ── No row exists: first-time login → start 28-day free trial (Advanced access) ─────────
-      if (!row) {
+      // ── No row exists: only create one for the SUBSCRIPTION HOLDER (org owner
+      //    or solo user). Members must never insert their own row — RLS would
+      //    block it anyway, and we don't want to start an extra trial clock per
+      //    invited teammate. ─────
+      if (!row && isHolderSelf) {
         const now = new Date();
         const trialEnd = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000); // 28 days from now
         const { error: insertError } = await supabase
@@ -137,11 +155,31 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
         }
       }
 
+      // Member of an org whose owner has no subscription row yet → treat as
+      // trial so we don't lock the team out while the owner finishes setup.
+      if (!row && !isHolderSelf) {
+        setSubscription({
+          status: "trial",
+          tier: "advanced",
+          billingCycle: null,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          currentPeriodStart: null,
+          currentPeriodEnd: null,
+          trialStartDate: new Date(),
+          trialEndDate: new Date(Date.now() + 28 * 86_400_000),
+          cancelAtPeriodEnd: false,
+        });
+        return;
+      }
+
       let effectiveStatus = row.status;
       let effectivePlan = row.plan;
 
       // ── After 28 days: if not subscribed, auto-downgrade to Starter ─
-      if (row.status === "trial" && row.trial_ends_at) {
+      // Only the OWNER (subscription holder) can update their own row; members
+      // must skip this branch or RLS will reject the update.
+      if (row.status === "trial" && row.trial_ends_at && isHolderSelf) {
         const trialEnd = new Date(row.trial_ends_at);
         if (trialEnd < new Date()) {
           console.log("⏰ 28-day trial ended — auto-moving to Starter in DB...");
@@ -162,6 +200,14 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
             effectivePlan = "starter";
           }
         }
+      } else if (
+        row.status === "trial" &&
+        row.trial_ends_at &&
+        new Date(row.trial_ends_at) < new Date()
+      ) {
+        // Member view of an expired-trial owner: surface as starter without writing.
+        effectiveStatus = "starter";
+        effectivePlan = "starter";
       }
 
       // ── Set subscription state (trial / starter / active from paid plan) ─
@@ -189,9 +235,13 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
     }
   }, []); // zero deps — reads uid from ref
 
-  // ── Re-run only when userId changes ─────────────────────────────────
+  // ── Re-fetch when user OR organization owner changes (so invited members
+  //    pick up the owner's plan as soon as the org loads). The realtime
+  //    channel is keyed on the SUBSCRIPTION HOLDER (owner) so changes the
+  //    owner makes immediately reach every member. ─────────────────────────
   useEffect(() => {
     const uid = user?.userId ?? null;
+    const holderId = organization?.ownerId ?? uid;
 
     if (!uid) {
       userIdRef.current = null;
@@ -199,8 +249,6 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
       setLoading(false);
       return;
     }
-
-    if (userIdRef.current === uid) return; // same user, skip
 
     userIdRef.current = uid;
     setLoading(true);
@@ -212,12 +260,14 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
       channelRef.current = null;
     }
 
-    // Realtime listener — re-fetch whenever subscription row changes
+    if (!holderId) return;
+
+    // Realtime listener — re-fetch whenever the holder's subscription row changes
     const channel = supabase
-      .channel(`sub-${uid}`)
+      .channel(`sub-${holderId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "subscriptions", filter: `user_id=eq.${uid}` },
+        { event: "*", schema: "public", table: "subscriptions", filter: `user_id=eq.${holderId}` },
         () => {
           console.log("🔄 Subscription row changed — refetching...");
           fetchSub();
@@ -233,7 +283,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
         channelRef.current = null;
       }
     };
-  }, [user?.userId, fetchSub]);
+  }, [user?.userId, organization?.ownerId, fetchSub]);
 
   // ── Geo-based pricing ────────────────────────────────────────────────
   const fetchPricingByLocation = useCallback(async () => {

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/services/supabase/config';
+import { logger } from '@/lib/logger';
 import {
   signUpWithEmail,
   signInWithEmail,
@@ -73,11 +74,61 @@ const ensureOrganizationExists = async (
 
     const existingOrgId = existingOrgs?.[0]?.organization_id ?? null;
     if (existingOrgId) {
-      await supabase
+      const { data: linkedRow, error: linkExistingError } = await supabase
         .from('user_profiles')
         .update({ organization_id: existingOrgId })
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id')
+        .maybeSingle();
+      if (linkExistingError) {
+        logger.error('Failed to link existing organization to user profile:', linkExistingError);
+        return null;
+      }
+      if (!linkedRow) {
+        logger.error('Failed to link existing organization: user_profiles row not found or not updated', {
+          userId,
+          existingOrgId,
+        });
+        return null;
+      }
       return existingOrgId;
+    }
+
+    // 2b. Already a MEMBER (not owner) of an existing org — invited from elsewhere.
+    // Without this branch, step 3 creates a brand-new org with this user as owner,
+    // which (a) makes them bypass the clock-in gate and (b) starts a fresh
+    // subscription trial for them instead of inheriting the inviting org's plan.
+    const { data: memberOrgs, error: memberLookupError } = await supabase
+      .from('organizations')
+      .select('organization_id')
+      .filter('members', 'cs', JSON.stringify([{ userId }]))
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (memberLookupError) {
+      console.warn('⚠️ Failed to lookup membership organization:', memberLookupError);
+    }
+
+    const membershipOrgId = memberOrgs?.[0]?.organization_id ?? null;
+    if (membershipOrgId) {
+      const { data: linkedRow, error: linkMemberError } = await supabase
+        .from('user_profiles')
+        .update({ organization_id: membershipOrgId })
+        .eq('id', userId)
+        .select('id')
+        .maybeSingle();
+      if (linkMemberError) {
+        logger.error('Failed to link membership organization to user profile:', linkMemberError);
+        return null;
+      }
+      if (!linkedRow) {
+        logger.error(
+          'Failed to link membership organization: user_profiles row not found or not updated',
+          { userId, membershipOrgId },
+        );
+        return null;
+      }
+      return membershipOrgId;
     }
 
     // 3. Create new org

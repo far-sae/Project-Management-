@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useOrganization } from '@/context/OrganizationContext';
 import { useTimeTracking } from '@/hooks/useTimeTracking';
+import { isAppOwner } from '@/lib/app-owner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,25 +12,29 @@ import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import { toast } from 'sonner';
 
 /**
- * Workforce gate: members + admins must clock in before they can use the app.
- * The org owner is exempt (they manage the schedule). Once an open time entry
- * exists for the user, the wrapped children render; otherwise we show a
- * full-screen "Clock in to start your shift" card.
+ * Workforce gate: every signed-in user (owner, admin, member) must clock in
+ * before the app loads. The only escape hatch is the build/support team
+ * configured via VITE_APP_OWNER_USER_IDS — they can always sign in to help.
+ *
+ * When the user is on the clock, children render and the regular UI shows.
+ * When they aren't, we show a full-screen "Clock in to start your shift" card.
  */
 export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user, signOut } = useAuth();
-  const { isOwner, loading: orgLoading } = useOrganization();
   const { openEntry, loading, clockIn } = useTimeTracking();
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Owner is always allowed in. Also wait for org+entry data so we don't flash
-  // the gate when the user actually IS clocked in but data is still loading.
   if (!user) return <>{children}</>;
-  if (isOwner) return <>{children}</>;
-  if (orgLoading || loading) {
+  // Build/support team only — never apply the gate to the workspace owner;
+  // they need to clock in like everyone else.
+  if (isAppOwner(user.userId)) return <>{children}</>;
+  // The hook is fast (one query) but on a slow connection we must NOT
+  // optimistically render children — that's the bug that let admins bypass.
+  // Show a loading screen until we know the entry state.
+  if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background p-4">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-label="Loading" />
