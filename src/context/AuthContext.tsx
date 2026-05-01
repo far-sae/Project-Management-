@@ -131,6 +131,49 @@ const ensureOrganizationExists = async (
       return membershipOrgId;
     }
 
+    // 2c. Pending-invite guard. If we get here it means the user has no
+    // existing org as owner or member yet. But they might be in the middle
+    // of an invite flow — they clicked an invite link and signed in/up, and
+    // AcceptInvite is *about* to call accept_invitation which will add them
+    // to the inviter's org. If we proceed to step 3 right now we create a
+    // fresh tenant with this user as owner, link it to user_profiles, and
+    // by the time accept_invitation runs there's already a "ghost" workspace
+    // and the inviter's org loses out to it on the next sign-in. That was
+    // the bug — invitees were silently turning into owners of a brand-new
+    // tenant on first login. Skip auto-create when an invite is pending and
+    // let the AcceptInvite page link them to the right org.
+    const pendingInviteTokenInStorage =
+      typeof window !== 'undefined'
+        ? (sessionStorage.getItem('pendingInviteToken') ||
+            localStorage.getItem('pendingInviteToken'))
+        : null;
+
+    let invitePending = !!pendingInviteTokenInStorage;
+    if (!invitePending && email) {
+      const { data: pendingInvites, error: pendingInviteError } = await supabase
+        .from('invitations')
+        .select('invitation_id')
+        .eq('email', email.toLowerCase().trim())
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .limit(1);
+      if (pendingInviteError) {
+        // Non-fatal: if the lookup fails we'd rather create a tenant than
+        // strand the user with no org. Log and proceed.
+        console.warn('⚠️ Pending-invite lookup failed:', pendingInviteError);
+      } else if (pendingInvites && pendingInvites.length > 0) {
+        invitePending = true;
+      }
+    }
+
+    if (invitePending) {
+      console.log(
+        '⏸️ Skipping org auto-create — pending invite detected for',
+        email,
+      );
+      return null;
+    }
+
     // 3. Create new org
     const orgId = crypto.randomUUID();
     const now = new Date().toISOString();

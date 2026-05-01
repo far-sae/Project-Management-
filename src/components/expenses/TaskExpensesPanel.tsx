@@ -33,6 +33,8 @@ interface Props {
   taskTitle: string;
   projectId?: string | null;
   projectName?: string | null;
+  /** When true, hide add-expense affordances (e.g. task modal read-only / viewer). */
+  readOnly?: boolean;
 }
 
 /**
@@ -46,6 +48,7 @@ export const TaskExpensesPanel: React.FC<Props> = ({
   taskTitle,
   projectId,
   projectName,
+  readOnly = false,
 }) => {
   const { expenses, loading, reload, canManage } = useTaskExpenses(taskId);
   const { update } = useExpenses();
@@ -83,15 +86,17 @@ export const TaskExpensesPanel: React.FC<Props> = ({
             </span>
           )}
         </h4>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-7"
-          onClick={() => setShowAdd(true)}
-        >
-          <Plus className="w-3.5 h-3.5 mr-1" /> Add
-        </Button>
+        {!readOnly && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7"
+            onClick={() => setShowAdd(true)}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" /> Add
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -166,15 +171,17 @@ export const TaskExpensesPanel: React.FC<Props> = ({
         </ul>
       )}
 
-      <AddExpenseDialog
-        open={showAdd}
-        onOpenChange={setShowAdd}
-        taskId={taskId}
-        taskTitle={taskTitle}
-        projectId={projectId}
-        projectName={projectName}
-        onCreated={() => reload()}
-      />
+      {!readOnly && (
+        <AddExpenseDialog
+          open={showAdd}
+          onOpenChange={setShowAdd}
+          taskId={taskId}
+          taskTitle={taskTitle}
+          projectId={projectId}
+          projectName={projectName}
+          onCreated={() => reload()}
+        />
+      )}
     </div>
   );
 };

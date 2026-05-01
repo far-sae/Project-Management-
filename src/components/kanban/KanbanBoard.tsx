@@ -259,6 +259,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         setTaskSwapMode(false);
       };
 
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        finish();
+        return;
+      }
+
       if (!a || !b) {
         finish();
         return;
@@ -314,7 +320,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       finish();
       await onTasksRefresh?.();
     },
-    [tasks, editTask, canMoveTask, isProjectOwnerOrAdmin, onTasksRefresh],
+    [tasks, editTask, canMoveTask, isProjectOwnerOrAdmin, onTasksRefresh, isViewer],
   );
 
   // ── Column-edit modal state ────────────────────────────────
@@ -345,12 +351,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const target = tasks.find((t) => t.taskId === openTaskId);
     if (target) {
       handledDeepLinkTaskIdRef.current = openTaskId;
-      onBeforeOpenTaskModal?.();
-      setSelectedTask(target);
-      setIsModalOpen(true);
+      if (!isViewer) {
+        onBeforeOpenTaskModal?.();
+        setSelectedTask(target);
+        setIsModalOpen(true);
+      }
       onOpenedTask?.();
     }
-  }, [openTaskId, tasks, onOpenedTask, onBeforeOpenTaskModal]);
+  }, [openTaskId, tasks, onOpenedTask, onBeforeOpenTaskModal, isViewer]);
 
   /** Merge realtime task list into the open modal so refetches/tab focus never strand or close it */
   useEffect(() => {
@@ -476,6 +484,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       setActiveColumn(null);
 
       if (!over) return;
+
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        return;
+      }
 
       // Horizontal column reorder (grip in header; ids use board-col: prefix)
       if (active.data.current?.type === 'column') {
@@ -608,6 +621,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       sortedColumns,
       columns,
       onColumnsChange,
+      isViewer,
     ],
   );
 
@@ -647,6 +661,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const handleTaskClick = useCallback(
     (task: Task, event?: React.MouseEvent) => {
       if (taskSwapMode) {
+        if (isViewer) {
+          toast.error('Viewers have read-only access.');
+          event?.preventDefault();
+          event?.stopPropagation();
+          return;
+        }
         event?.preventDefault();
         event?.stopPropagation();
         if (!canMoveTask(task)) {
@@ -680,6 +700,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         handleTaskSelect(task.taskId, event);
         return;
       }
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        return;
+      }
       onBeforeOpenTaskModal?.();
       setSelectedTask(task);
       setIsModalOpen(true);
@@ -693,6 +717,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       selectionMode,
       handleTaskSelect,
       onBeforeOpenTaskModal,
+      isViewer,
     ],
   );
 
@@ -905,6 +930,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const handleDeleteTask = useCallback(
     async (taskId: string) => {
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        return;
+      }
       const t = tasks.find((x) => x.taskId === taskId);
       if (t && !canMoveTask(t)) {
         toast.error(
@@ -916,11 +945,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       }
       await removeTask(taskId);
     },
-    [removeTask, tasks, canMoveTask],
+    [removeTask, tasks, canMoveTask, isViewer],
   );
 
   const handleCreateSubtasks = useCallback(
     async (subtasks: CreateTaskInput[]) => {
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        return;
+      }
       if (selectedTask && !canMoveTask(selectedTask)) {
         toast.error('This task is locked. Unlock it before adding subtasks.');
         return;
@@ -934,7 +967,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           throw new Error('Failed to create subtask. Please try again.');
       }
     },
-    [addTask, selectedTask, canMoveTask],
+    [addTask, selectedTask, canMoveTask, isViewer],
   );
 
   const handleCloseModal = useCallback(() => {
@@ -966,6 +999,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const runBulk = useCallback(
     async (patch: UpdateTaskInput, successMessage: string) => {
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        return;
+      }
       if (!orgId || ids.length === 0) return;
       if (lockedSelection()) {
         toast.error(lockedSelectionToast);
@@ -979,10 +1016,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         toast.error(err instanceof Error ? err.message : 'Bulk update failed');
       }
     },
-    [orgId, ids, onTasksRefresh, lockedSelection, lockedSelectionToast],
+    [orgId, ids, onTasksRefresh, lockedSelection, lockedSelectionToast, isViewer],
   );
 
   const handleBulkDelete = useCallback(async () => {
+    if (isViewer) {
+      toast.error('Viewers have read-only access.');
+      return;
+    }
     if (!orgId || ids.length === 0) return;
     if (lockedSelection()) {
       toast.error(lockedSelectionToast);
@@ -996,10 +1037,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Bulk delete failed');
     }
-  }, [orgId, ids, clearSelection, onTasksRefresh, lockedSelection, lockedSelectionToast]);
+  }, [orgId, ids, clearSelection, onTasksRefresh, lockedSelection, lockedSelectionToast, isViewer]);
 
   // ── Column CRUD handlers (unchanged) ──────────────────────
   const handleAddColumn = useCallback(() => {
+    if (isViewer) {
+      toast.error('Viewers have read-only access.');
+      return;
+    }
     if (!newColumnTitle.trim()) return;
 
     const newColumn: KanbanColumn = {
@@ -1016,16 +1061,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setNewColumnTitle('');
     setNewColumnColor(COLUMN_COLORS[0]);
     setShowAddColumnModal(false);
-  }, [newColumnTitle, newColumnColor, columns, onColumnsChange]);
+  }, [newColumnTitle, newColumnColor, columns, onColumnsChange, isViewer]);
 
   const handleEditColumn = useCallback((column: KanbanColumn) => {
+    if (isViewer) {
+      toast.error('Viewers have read-only access.');
+      return;
+    }
     setEditingColumn(column);
     setNewColumnTitle(column.title);
     setNewColumnColor(column.color);
     setShowEditColumnModal(true);
-  }, []);
+  }, [isViewer]);
 
   const handleSaveColumnEdit = useCallback(() => {
+    if (isViewer) {
+      toast.error('Viewers have read-only access.');
+      return;
+    }
     if (!editingColumn || !newColumnTitle.trim()) return;
 
     const updatedColumns = columns.map((col) =>
@@ -1040,10 +1093,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setEditingColumn(null);
     setNewColumnTitle('');
     setShowEditColumnModal(false);
-  }, [editingColumn, newColumnTitle, newColumnColor, columns, onColumnsChange]);
+  }, [editingColumn, newColumnTitle, newColumnColor, columns, onColumnsChange, isViewer]);
 
   const handleDeleteColumn = useCallback(
     async (columnId: string) => {
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        return;
+      }
       if (columns.length <= 1) {
         alert('Cannot delete the last column');
         return;
@@ -1073,7 +1130,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       onColumnsChange?.(updatedColumns);
       setShowEditColumnModal(false);
     },
-    [columns, tasks, editTask, onColumnsChange],
+    [columns, tasks, editTask, onColumnsChange, isViewer],
   );
 
   return (
@@ -1137,7 +1194,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               type="button"
               variant="outline"
               className="h-10 w-full justify-start rounded-lg border-violet-500/35 bg-violet-500/[0.08] text-violet-700 shadow-sm hover:bg-violet-500/[0.13] hover:text-violet-800 dark:text-violet-300 dark:hover:text-violet-200"
-              onClick={() => setShowAIQuickAdd(true)}
+              onClick={() => {
+                if (isViewer) {
+                  toast.error('Viewers have read-only access.');
+                  return;
+                }
+                setShowAIQuickAdd(true);
+              }}
             >
               <Wand2 className="w-4 h-4 mr-2" />
               AI Quick Add
@@ -1146,7 +1209,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               type="button"
               variant="outline"
               className="h-10 w-full justify-start rounded-lg border-blue-500/35 bg-blue-500/[0.08] text-blue-700 shadow-sm hover:bg-blue-500/[0.13] hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
-              onClick={() => setShowAIMeetingNotes(true)}
+              onClick={() => {
+                if (isViewer) {
+                  toast.error('Viewers have read-only access.');
+                  return;
+                }
+                setShowAIMeetingNotes(true);
+              }}
             >
               <FileText className="w-4 h-4 mr-2" />
               Notes → Tasks
@@ -1160,6 +1229,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   setTaskSwapMode(false);
                   setSwapPickId(null);
                 } else {
+                  if (isViewer) {
+                    toast.error('Viewers have read-only access.');
+                    return;
+                  }
                   clearSelection();
                   setTaskSwapMode(true);
                 }

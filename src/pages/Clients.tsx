@@ -15,6 +15,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GitBranch, ListTodo } from 'lucide-react';
+import { DealsKanban } from '@/components/clients/DealsKanban';
+import { ClientTasksList } from '@/components/clients/ClientTasksList';
+import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
 import { useClients } from '@/hooks/useClients';
 import {
   Client, ClientStatus, ClientType,
@@ -109,15 +114,25 @@ export const Clients: React.FC = () => {
   }, [clients, search, typeFilter, statusFilter]);
 
   const handleCreate = async (input: CreateClientInput) => {
-    const created = await create(input);
-    toast.success(`Created "${created.name}"`);
+    try {
+      const created = await create(input);
+      toast.success(`Created "${created.name}"`);
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : 'Failed to create client');
+    }
   };
 
   const handleUpdate = async (input: CreateClientInput) => {
     if (!editing) return;
-    const updated = await update(editing.clientId, input);
-    toast.success(`Updated "${updated.name}"`);
-    setEditing(null);
+    try {
+      const updated = await update(editing.clientId, input);
+      toast.success(`Updated "${updated.name}"`);
+      setEditing(null);
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : 'Failed to update client');
+    }
   };
 
   const handleDelete = async () => {
@@ -178,6 +193,20 @@ export const Clients: React.FC = () => {
             </div>
           </div>
 
+          <Tabs defaultValue="accounts">
+            <TabsList>
+              <TabsTrigger value="accounts">
+                <Building2 className="w-4 h-4 mr-1.5" /> Accounts
+              </TabsTrigger>
+              <TabsTrigger value="pipeline">
+                <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
+              </TabsTrigger>
+              <TabsTrigger value="tasks">
+                <ListTodo className="w-4 h-4 mr-1.5" /> Tasks
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="accounts" className="mt-4 space-y-6">
           {/* Filters */}
           <Card>
             <CardContent className="pt-4 flex flex-wrap items-center gap-3">
@@ -313,6 +342,17 @@ export const Clients: React.FC = () => {
               ))}
             </div>
           )}
+            </TabsContent>
+
+            <TabsContent value="pipeline" className="mt-4 space-y-4">
+              <PipelineAnalyticsCard />
+              <DealsKanban clients={clients} />
+            </TabsContent>
+
+            <TabsContent value="tasks" className="mt-4">
+              <ClientTasksList clients={clients} />
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
 

@@ -434,6 +434,12 @@ export const updateClient = async (
   if (input.website && !isValidWebsite(input.website)) {
     throw new Error("Invalid client website");
   }
+  if (input.annualRevenue !== undefined && input.annualRevenue != null && input.annualRevenue < 0) {
+    throw new Error("Invalid client annualRevenue");
+  }
+  if (input.employeeCount !== undefined && input.employeeCount != null && input.employeeCount < 0) {
+    throw new Error("Invalid client employeeCount");
+  }
 
   if (isLocalOrg(organizationId)) {
     const all = readLocal<Client>(STORE.clients(organizationId), reviveClient);
@@ -765,24 +771,47 @@ export const updateContact = async (
   if (input.notes !== undefined) update.notes = sanitizeText(input.notes);
 
   if (input.isPrimary === true) {
-    // Read the row to know which client to demote primaries on.
-    const { data: existing } = await supabase
+    const { data: promoted, error: promErr } = await supabase
+      .rpc("promote_client_contact_primary", {
+        p_organization_id: organizationId,
+        p_contact_id: contactId,
+      })
+      .single();
+
+    if (promErr) {
+      logger.error("Failed to promote client contact primary:", promErr);
+      const code = (promErr as { code?: string }).code;
+      const msg = String((promErr as { message?: string }).message ?? "");
+      if (
+        code === "23505" ||
+        msg.includes("ux_client_contacts_primary") ||
+        msg.toLowerCase().includes("duplicate key")
+      ) {
+        throw new Error(
+          "This client already has a primary contact. Remove primary from the other contact or try again.",
+        );
+      }
+      throw promErr;
+    }
+
+    if (Object.keys(update).length === 0) {
+      return mapContact(promoted as Record<string, unknown>);
+    }
+
+    const { data: afterFields, error: fieldErr } = await supabase
       .from("client_contacts")
-      .select("client_id")
+      .update(update)
       .eq("organization_id", organizationId)
       .eq("contact_id", contactId)
+      .select()
       .single();
-    if (existing?.client_id) {
-      await supabase
-        .from("client_contacts")
-        .update({ is_primary: false })
-        .eq("organization_id", organizationId)
-        .eq("client_id", existing.client_id)
-        .eq("is_primary", true)
-        .neq("contact_id", contactId);
+    if (fieldErr) {
+      logger.error("Failed to update contact after primary promotion:", fieldErr);
+      throw fieldErr;
     }
-    update.is_primary = true;
-  } else if (input.isPrimary === false) {
+    return mapContact(afterFields);
+  }
+  if (input.isPrimary === false) {
     update.is_primary = false;
   }
 

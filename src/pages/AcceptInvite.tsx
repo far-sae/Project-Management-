@@ -35,7 +35,7 @@ import {
 export const AcceptInvite: React.FC = () => {
   const { token } = useParams<{ token: string; }>();
   const navigate = useNavigate();
-  const { user, signInGoogle } = useAuth();
+  const { user, signInGoogle, refreshUser } = useAuth();
 
   const [invitation, setInvitation] = useState<ProjectInvitation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -257,9 +257,35 @@ export const AcceptInvite: React.FC = () => {
         user.photoURL || "",
       );
 
+      // accept_invitation RPC is supposed to update user_profiles.organization_id
+      // to the inviting org. Different deployments may have older versions of
+      // the function, so we write the link defensively too — idempotent if
+      // the RPC already did it. Wrapped in try/catch so any RLS edge case
+      // doesn't break the success path; the membership row is already in
+      // place at this point so the user can use the org either way.
+      try {
+        await supabase
+          .from("user_profiles")
+          .update({ organization_id: inviteOrgId })
+          .eq("id", user.userId);
+      } catch (linkErr) {
+        console.warn("Post-accept profile link failed (non-fatal):", linkErr);
+      }
+
+      // Refresh AuthContext so OrganizationContext re-fetches the right org
+      // instead of any stale one (e.g. from a prior session where auto-create
+      // had silently made this user owner of a fresh tenant). Without this
+      // the user lands on /project but the sidebar still shows the wrong
+      // workspace until a hard reload.
+      try {
+        await refreshUser();
+      } catch (refreshErr) {
+        console.warn("Post-accept refreshUser failed (non-fatal):", refreshErr);
+      }
+
       setSuccess(true);
       sessionStorage.removeItem("pendingInviteToken");
-    localStorage.removeItem("pendingInviteToken");
+      localStorage.removeItem("pendingInviteToken");
       setTimeout(() => {
         navigate(`/project/${invitation.projectId}`, { replace: true });
       }, 800);
@@ -271,7 +297,7 @@ export const AcceptInvite: React.FC = () => {
     } finally {
       setProcessing(false);
     }
-  }, [invitation, user, signInGoogle, isEmailMismatch, token, navigate]);
+  }, [invitation, user, signInGoogle, isEmailMismatch, token, navigate, refreshUser]);
 
   // ✅ Auto-accept ONLY when emails match and user just signed in
   useEffect(() => {

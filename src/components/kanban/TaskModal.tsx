@@ -1290,6 +1290,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 taskTitle={task.title}
                 projectId={task.projectId}
                 projectName={project?.name ?? null}
+                readOnly={readOnlyTask}
               />
             )}
 

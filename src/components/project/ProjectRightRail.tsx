@@ -1062,13 +1062,17 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   size="icon"
                   className="h-8 w-8 rounded-full text-muted-foreground hover:text-emerald-600"
                   aria-label="Start audio call"
-                  disabled={!hasOtherMemberToCall}
+                  disabled={!hasOtherMemberToCall || isViewerOrg}
+                  aria-disabled={!hasOtherMemberToCall || isViewerOrg}
                   title={
-                    hasOtherMemberToCall
-                      ? undefined
-                      : 'No other members to call — invite someone to this project first.'
+                    isViewerOrg
+                      ? 'View-only — calls are disabled for your role.'
+                      : hasOtherMemberToCall
+                        ? undefined
+                        : 'No other members to call — invite someone to this project first.'
                   }
                   onClick={() => {
+                    if (isViewerOrg || !hasOtherMemberToCall) return;
                     const firstOther = dedupedMembers.find(
                       (m) => m.userId && m.userId !== user?.userId,
                     );
@@ -1087,13 +1091,17 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   size="icon"
                   className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
                   aria-label="Start video call"
-                  disabled={!hasOtherMemberToCall}
+                  disabled={!hasOtherMemberToCall || isViewerOrg}
+                  aria-disabled={!hasOtherMemberToCall || isViewerOrg}
                   title={
-                    hasOtherMemberToCall
-                      ? undefined
-                      : 'No other members to call — invite someone to this project first.'
+                    isViewerOrg
+                      ? 'View-only — calls are disabled for your role.'
+                      : hasOtherMemberToCall
+                        ? undefined
+                        : 'No other members to call — invite someone to this project first.'
                   }
                   onClick={() => {
+                    if (isViewerOrg || !hasOtherMemberToCall) return;
                     const firstOther = dedupedMembers.find(
                       (m) => m.userId && m.userId !== user?.userId,
                     );

@@ -88,7 +88,7 @@ export const AddExpenseDialog: React.FC<Props> = ({
       return;
     }
     if (!Number.isFinite(amount) || amount < 0) {
-      toast.error('Amount must be a positive number');
+      toast.error('Amount must be a non-negative number');
       return;
     }
     setSubmitting(true);

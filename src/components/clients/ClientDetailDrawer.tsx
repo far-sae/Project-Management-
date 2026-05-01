@@ -101,9 +101,8 @@ export const ClientDetailDrawer: React.FC<Props> = ({
     setAttachments(await getClientAttachments(organizationId, client.clientId));
   };
 
-  if (!client || !organizationId) return null;
-
   const fullAddress = useMemo(() => {
+    if (!client) return '';
     return [
       client.addressLine1,
       [client.city, client.state].filter(Boolean).join(', '),
@@ -111,7 +110,9 @@ export const ClientDetailDrawer: React.FC<Props> = ({
     ]
       .filter((s) => !!(s && s.trim()))
       .join(', ');
-  }, [client]);
+  }, [client, organizationId]);
+
+  if (!client || !organizationId) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
