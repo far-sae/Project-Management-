@@ -12,6 +12,8 @@ interface OrganizationContextType {
   refreshOrganization: (opts?: { silent?: boolean }) => Promise<void>;
   isOwner: boolean;
   isAdmin: boolean;
+  /** Org-level role is "viewer" — read-only access; never gets clock/expense/edit. */
+  isViewer: boolean;
   canInviteMembers: boolean;
   canManageBilling: boolean;
   canManageSettings: boolean;
@@ -195,6 +197,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const role = getUserRole();
   const isOwner = role === 'owner';
   const isAdmin = role === 'admin' || isOwner;
+  const isViewer = role === 'viewer';
   const canInviteMembers = isAdmin;
   const canManageBilling = isOwner;
   const canManageSettings = isAdmin;
@@ -274,6 +277,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     refreshOrganization: fetchOrganization,
     isOwner,
     isAdmin,
+    isViewer,
     canInviteMembers,
     canManageBilling,
     canManageSettings,

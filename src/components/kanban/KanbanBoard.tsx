@@ -150,7 +150,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const orgId =
     project?.organizationId || user?.organizationId || (user ? `local-${user.userId}` : '');
 
-  const { organization, isAdmin } = useOrganization();
+  const { organization, isAdmin, isViewer } = useOrganization();
 
   /** Match TaskModal: project owner, org admin, or task creator bypass PIN/move restrictions. */
   const canBypassTaskLock = useCallback(
@@ -184,7 +184,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     [canBypassTaskLock],
   );
 
-  const isTaskDragDisabled = useCallback((t: Task) => !canMoveTask(t), [canMoveTask]);
+  const isTaskDragDisabled = useCallback(
+    (t: Task) => isViewer || !canMoveTask(t),
+    [canMoveTask, isViewer],
+  );
 
   const getAssigneeEmail = useCallback(
     (userId: string) => organization?.members.find((m) => m.userId === userId)?.email,
@@ -694,15 +697,23 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   );
 
   const handleAddTask = useCallback((status: string) => {
+    if (isViewer) {
+      toast.error('Viewers have read-only access.');
+      return;
+    }
     onBeforeOpenTaskModal?.();
     setSelectedTask(null);
     setNewTaskStatus(status);
     setIsModalOpen(true);
-  }, [onBeforeOpenTaskModal]);
+  }, [isViewer, onBeforeOpenTaskModal]);
 
   // ── Inline add ────────────────────────────────────────────
   const handleInlineAdd = useCallback(
     async (status: string, title: string) => {
+      if (isViewer) {
+        toast.error('Viewers have read-only access.');
+        return;
+      }
       try {
         const newTask = await addTask({
           projectId,
@@ -721,7 +732,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         );
       }
     },
-    [addTask, projectId, projName, user],
+    [addTask, isViewer, projectId, projName, user],
   );
 
   // ── Modal save / delete (unchanged behavior) ──────────────
@@ -1157,14 +1168,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               <ArrowLeftRight className="w-4 h-4 mr-2" />
               {taskSwapMode ? 'Cancel swap' : 'Swap two tasks'}
             </Button>
-            <Button
-              variant="outline"
-              className="h-10 w-full justify-start rounded-lg border-dashed text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-              onClick={() => setShowAddColumnModal(true)}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Column
-            </Button>
+            {!isViewer && (
+              <Button
+                variant="outline"
+                className="h-10 w-full justify-start rounded-lg border-dashed text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                onClick={() => setShowAddColumnModal(true)}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Column
+              </Button>
+            )}
           </div>
         </div>
 

@@ -12,18 +12,17 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import {
   FileText, Plus, Clock, CheckCircle, AlertCircle, Loader2, Edit,
-  Trash2, Lock, UserCheck, XCircle, CheckCircle2, Users
+  Trash2, Lock, XCircle, CheckCircle2, Users,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
 import {
-  createContract, updateContract, deleteContract, respondToContract,
-  subscribeToContracts, getContractsAssignedToUser, Contract, ContractStatus,
+  createContract, updateContract, deleteContract,
+  subscribeToContracts, Contract, ContractStatus,
 } from '@/services/supabase/contracts';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -34,10 +33,6 @@ import { format } from 'date-fns';
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$', GBP: '£', EUR: '€', INR: '₹', AED: 'د.إ',
 };
-
-function contractHasAssignee(assignedTo: string) {
-  return assignedTo !== '' && assignedTo !== 'unassigned';
-}
 
 const ValueField = ({
   currency, value, onCurrencyChange, onValueChange, idPrefix,
@@ -80,26 +75,22 @@ export const Contracts: React.FC = () => {
   const { hasFeature } = useSubscription();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<'all' | 'assigned'>('all');
+  // Records-only mode: contracts page is now a register of agreements; the
+  // "assign-to-teammate-and-have-them-accept-by-email" workflow is gone, so
+  // the Tabs split (All vs. Assigned to Me) collapses to a single list.
+  const [activeTab] = useState<'all'>('all');
   const [contracts, setContracts] = useState<Contract[]>([]);
-  const [assignedContracts, setAssignedContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
-  const [assignedLoading, setAssignedLoading] = useState(false);
 
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showResponseModal, setShowResponseModal] = useState(false);
-  const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
-  const [responseType, setResponseType] = useState<'accept' | 'reject' | null>(null);
 
   // Form states
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [responding, setResponding] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [rejectionReason, setRejectionReason] = useState('');
 
   const [form, setForm] = useState({
     title: '',
@@ -129,29 +120,6 @@ export const Contracts: React.FC = () => {
     return () => unsubscribe();
   }, [orgId]);
 
-  // Fetch contracts assigned to current user
-  useEffect(() => {
-    if (activeTab === 'assigned' && user?.userId && orgId) {
-      fetchAssignedContracts();
-    }
-  }, [activeTab, user?.userId, orgId]);
-
-  const fetchAssignedContracts = async () => {
-
-    // console.log("Current auth user:", user?.userId);
-    if (!user?.userId || !orgId) return;
-    setAssignedLoading(true);
-    try {
-      const list = await getContractsAssignedToUser(user.userId, orgId);
-      setAssignedContracts(list);
-    } catch (error) {
-      console.error('Error fetching assigned contracts:', error);
-      toast.error('Failed to load assigned contracts');
-    } finally {
-      setAssignedLoading(false);
-    }
-  };
-
   const resetForm = () => {
     setForm({
       title: '',
@@ -180,13 +148,6 @@ export const Contracts: React.FC = () => {
     });
     setShowEditModal(true);
     setCreateError(null);
-  };
-
-  const openResponseModal = (contract: Contract, type: 'accept' | 'reject') => {
-    setSelectedContract(contract);
-    setResponseType(type);
-    setRejectionReason('');
-    setShowResponseModal(true);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -250,31 +211,6 @@ export const Contracts: React.FC = () => {
       setCreateError(err instanceof Error ? err.message : 'Failed to update contract');
     } finally {
       setUpdating(false);
-    }
-  };
-
-  const handleResponse = async () => {
-    if (!selectedContract || !responseType || !user || !orgId) return;
-
-    setResponding(true);
-    try {
-      await respondToContract(
-        selectedContract.contractId,
-        orgId,
-        user.userId,
-        user.displayName || user.email || 'User',
-        responseType === 'accept' ? 'accepted' : 'rejected',
-        responseType === 'reject' ? rejectionReason : undefined
-      );
-
-      toast.success(`Contract ${responseType === 'accept' ? 'accepted' : 'rejected'} successfully`);
-      setShowResponseModal(false);
-      setSelectedContract(null);
-      fetchAssignedContracts(); // Refresh assigned contracts
-    } catch (error) {
-      toast.error(`Failed to ${responseType} contract`);
-    } finally {
-      setResponding(false);
     }
   };
 
@@ -417,21 +353,8 @@ export const Contracts: React.FC = () => {
           </Card>
         </div>
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'all' | 'assigned')}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="all">All Contracts</TabsTrigger>
-            <TabsTrigger value="assigned">
-              <UserCheck className="w-4 h-4 mr-2" />
-              Assigned to Me
-              {assignedContracts.length > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 text-xs bg-orange-500 text-white rounded-full">
-                  {assignedContracts.length}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
-
+        {/* Records list — single panel; "Assigned to Me" tab removed in records-only mode */}
+        <Tabs value={activeTab}>
           <TabsContent value="all">
             <Card>
               <CardHeader><CardTitle>All Contracts</CardTitle></CardHeader>
@@ -535,86 +458,6 @@ export const Contracts: React.FC = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="assigned">
-            <Card>
-              <CardHeader>
-                <CardTitle>Contracts Assigned to Me</CardTitle>
-                <p className="text-sm text-muted-foreground">Review and respond to contracts assigned to you</p>
-              </CardHeader>
-              <CardContent>
-                {assignedLoading ? (
-                  <div className="text-center py-16 text-muted-foreground">
-                    <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/60 animate-spin" />
-                    <p>Loading assigned contracts...</p>
-                  </div>
-                ) : assignedContracts.length === 0 ? (
-                  <div className="text-center py-16 text-muted-foreground">
-                    <UserCheck className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
-                    <p className="text-lg font-medium text-foreground">No contracts assigned to you</p>
-                    <p className="text-sm">When someone assigns a contract to you, it will appear here</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {assignedContracts.map((contract) => {
-                      const creator = organization?.members?.find(
-                        (m: any) => m.userId === contract.createdBy
-                      );
-
-                      return (
-                        <div key={contract.contractId} className="flex items-center justify-between p-4 bg-secondary/40 border border-border rounded-lg">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-foreground">{contract.title}</h3>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              <span className="font-medium">Client:</span> {contract.client}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              <span className="font-medium">Created by:</span> {contract.createdByName || creator?.displayName || creator?.email || 'Unknown'}
-                            </p>
-                            {contract.value != null && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                <span className="font-medium">Value:</span>{' '}
-                                <span className="text-emerald-500 dark:text-emerald-400 font-semibold">
-                                  {CURRENCY_SYMBOLS[contract.currency || 'USD']}
-                                  {contract.value.toLocaleString()}
-                                </span>
-                              </p>
-                            )}
-                            {(contract.startDate || contract.endDate) && (
-                              <p className="text-sm text-muted-foreground">
-                                <span className="font-medium">Duration:</span>{' '}
-                                {contract.startDate ? format(new Date(contract.startDate), 'MMM d, yyyy') : 'No start'}
-                                {' → '}
-                                {contract.endDate ? format(new Date(contract.endDate), 'MMM d, yyyy') : 'No end'}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex gap-2 ml-4">
-                            <Button
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              onClick={() => openResponseModal(contract, 'accept')}
-                            >
-                              <CheckCircle2 className="w-4 h-4 mr-1" />
-                              Accept
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-red-500/40 text-red-500 dark:text-red-400 hover:bg-red-500/10"
-                              onClick={() => openResponseModal(contract, 'reject')}
-                            >
-                              <XCircle className="w-4 h-4 mr-1" />
-                              Reject
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
 
         {/* Create Modal */}
@@ -653,53 +496,6 @@ export const Contracts: React.FC = () => {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Assign to Team Member</Label>
-                <Select
-                  value={form.assignedTo}
-                  onValueChange={(v) => setForm(f => ({ ...f, assignedTo: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select team member (optional)" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    <SelectItem value="unassigned">Not assigned</SelectItem>
-
-                    {organization?.members?.map((member: any) => (
-                      <SelectItem key={member.userId} value={member.userId}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full overflow-hidden bg-gray-200">
-                            {member.photoURL ? (
-                              <img
-                                src={member.photoURL}
-                                alt={member.displayName || member.email}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-xs font-medium">
-                                {(member.displayName || member.email || "?")
-                                  .charAt(0)
-                                  .toUpperCase()}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex flex-col leading-tight">
-                            <span className="text-sm font-medium">
-                              {member.displayName || "No name"}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              {member.email}
-                            </span>
-                          </div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <ValueField
                 idPrefix="create"
                 currency={form.currency}
@@ -713,23 +509,16 @@ export const Contracts: React.FC = () => {
                 <Select
                   value={form.status}
                   onValueChange={(v) => setForm((f) => ({ ...f, status: v as ContractStatus }))}
-                  disabled={contractHasAssignee(form.assignedTo)}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="expired">Expired</SelectItem>
                   </SelectContent>
                 </Select>
-                {contractHasAssignee(form.assignedTo) && (
-                  <p className="text-xs text-amber-600">
-                    Status will be set to &quot;Pending&quot; when assigned to a team member
-                  </p>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -803,31 +592,6 @@ export const Contracts: React.FC = () => {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Assign to Team Member</Label>
-                <Select
-                  value={form.assignedTo}
-                  onValueChange={(v) => setForm(f => ({ ...f, assignedTo: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select team member (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassigned">Not assigned</SelectItem>
-                    {organization?.members?.map((member: any) => (
-                      <SelectItem key={member.userId} value={member.userId}>
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs">
-                            {(member.displayName || member.email || '?').charAt(0).toUpperCase()}
-                          </div>
-                          <span>{member.displayName || member.email}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <ValueField
                 idPrefix="edit"
                 currency={form.currency}
@@ -841,14 +605,12 @@ export const Contracts: React.FC = () => {
                 <Select
                   value={form.status}
                   onValueChange={(v) => setForm((f) => ({ ...f, status: v as ContractStatus }))}
-                  disabled={contractHasAssignee(form.assignedTo)}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="expired">Expired</SelectItem>
                   </SelectContent>
@@ -893,69 +655,6 @@ export const Contracts: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Response Modal (Accept/Reject) */}
-        <Dialog open={showResponseModal} onOpenChange={setShowResponseModal}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {responseType === 'accept' ? 'Accept Contract' : 'Reject Contract'}
-              </DialogTitle>
-              <DialogDescription>
-                {responseType === 'accept'
-                  ? 'Confirm you accept the terms and value of this contract.'
-                  : 'You can add an optional reason when rejecting a contract.'}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-4">
-              {selectedContract && (
-                <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                  <p className="font-medium text-gray-900">{selectedContract.title}</p>
-                  <p className="text-sm text-gray-600">Client: {selectedContract.client}</p>
-                  {selectedContract.value != null && (
-                    <p className="text-sm font-medium text-green-600">
-                      Value: {CURRENCY_SYMBOLS[selectedContract.currency || 'USD']}
-                      {selectedContract.value.toLocaleString()}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {responseType === 'reject' && (
-                <div className="space-y-2">
-                  <Label htmlFor="rejectionReason">Reason for rejection (optional)</Label>
-                  <Textarea
-                    id="rejectionReason"
-                    value={rejectionReason}
-                    onChange={(e) => setRejectionReason(e.target.value)}
-                    placeholder="Please provide a reason..."
-                    rows={3}
-                  />
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-4">
-                <Button
-                  className={responseType === 'accept' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
-                  onClick={handleResponse}
-                  disabled={responding}
-                >
-                  {responding ? (
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  ) : null}
-                  Confirm {responseType === 'accept' ? 'Accept' : 'Reject'}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowResponseModal(false)}
-                  disabled={responding}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
       </main>
     </div>
   );

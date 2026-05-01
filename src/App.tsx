@@ -32,6 +32,7 @@ const TimeTracking = React.lazy(() => import('@/pages/TimeTracking').then((m) =>
 const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ default: m.Expenses })));
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
+const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
@@ -105,7 +106,7 @@ export default function App() {
           {
             path: '/dashboard',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<Dashboard />)}
               </ProtectedRoute>
             ),
@@ -129,7 +130,7 @@ export default function App() {
           {
             path: '/inbox',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<Inbox />)}
               </ProtectedRoute>
             ),
@@ -145,7 +146,7 @@ export default function App() {
           {
             path: '/team',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<Team />)}
               </ProtectedRoute>
             ),
@@ -161,7 +162,7 @@ export default function App() {
           {
             path: '/files',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<Files />)}
               </ProtectedRoute>
             ),
@@ -169,7 +170,7 @@ export default function App() {
           {
             path: '/comments',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<Comments />)}
               </ProtectedRoute>
             ),
@@ -177,7 +178,7 @@ export default function App() {
           {
             path: '/contracts',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<Contracts />)}
               </ProtectedRoute>
             ),
@@ -185,7 +186,7 @@ export default function App() {
           {
             path: '/time',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<TimeTracking />)}
               </ProtectedRoute>
             ),
@@ -193,7 +194,7 @@ export default function App() {
           {
             path: '/expenses',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<ExpensesPage />)}
               </ProtectedRoute>
             ),
@@ -201,7 +202,7 @@ export default function App() {
           {
             path: '/hr',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<HRPage />)}
               </ProtectedRoute>
             ),
@@ -209,15 +210,25 @@ export default function App() {
           {
             path: '/payroll',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<PayrollPage />)}
+              </ProtectedRoute>
+            ),
+          },
+          {
+            // CRM clients — any subscribed member can view; mutation is gated
+            // at the RLS level (owner+admin only) and in the UI via canManage.
+            path: '/clients',
+            element: (
+              <ProtectedRoute requireSubscription>
+                {lazyRoute(<ClientsPage />)}
               </ProtectedRoute>
             ),
           },
           {
             path: '/reports',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<Reports />)}
               </ProtectedRoute>
             ),

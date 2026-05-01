@@ -247,7 +247,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
 }) => {
   const { user } = useAuth();
   const { actions: callActions, state: callState } = useCall();
-  const { organization } = useOrganization();
+  const { organization, isViewer: isViewerOrg } = useOrganization();
   const orgId =
     organization?.organizationId ||
     user?.organizationId ||
@@ -645,7 +645,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
 
   const handleToggleReaction = useCallback(
     async (messageId: string, emoji: string) => {
-      if (!user) return;
+      if (!user || isViewerOrg) return;
       try {
         await toggleProjectChatReaction({
           messageId,
@@ -683,12 +683,16 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         toast.error(raw || 'Could not update reaction');
       }
     },
-    [user],
+    [user, isViewerOrg],
   );
 
   const handleSendChat = useCallback(async () => {
     const body = chatInput.trim();
     if ((!body && chatPendingFiles.length === 0) || !user) return;
+    if (isViewerOrg) {
+      toast.error('Viewers have read-only access — cannot post.');
+      return;
+    }
     stickToBottomRef.current = true;
     setChatSending(true);
     try {
@@ -793,6 +797,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   }, [
     chatInput,
     chatPendingFiles,
+    isViewerOrg,
     user,
     project.projectId,
     project.organizationId,
@@ -1215,13 +1220,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               <PopoverTrigger asChild>
                                 <button
                                   type="button"
-                                  hidden={reactionsUnavailable}
+                                  hidden={reactionsUnavailable || isViewerOrg}
                                   className={cn(
                                     'rounded-md p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/90',
                                     'opacity-70 group-hover/msg:opacity-100 focus:opacity-100 transition-opacity',
-                                    reactionsUnavailable && 'hidden',
+                                    (reactionsUnavailable || isViewerOrg) && 'hidden',
                                   )}
                                   aria-label="Add reaction"
+                                  disabled={isViewerOrg}
                                 >
                                   <Smile className="w-3.5 h-3.5" />
                                 </button>
@@ -1258,7 +1264,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                                       void handleToggleReaction(msg.messageId, emoji);
                                       setReactionMenuForId(null);
                                     }}
-                                    disabled={!user}
+                                    disabled={!user || isViewerOrg}
                                   />
                                 </div>
                               </PopoverContent>
@@ -1292,25 +1298,43 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                                 mine && 'justify-end',
                               )}
                             >
-                              {Object.entries(reactionsForMsg).map(([emoji, userIds]) => (
-                                <button
-                                  key={emoji}
-                                  type="button"
-                                  className={cn(
-                                    'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
-                                    'bg-background/90 hover:bg-muted/90 shadow-sm',
-                                    userIds.includes(user?.userId ?? '') &&
-                                      'border-primary/50 bg-primary/15',
-                                  )}
-                                  onClick={() => void handleToggleReaction(msg.messageId, emoji)}
-                                  title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
-                                >
-                                  <span className="leading-none">{emoji}</span>
-                                  <span className="tabular-nums text-muted-foreground">
-                                    {userIds.length}
+                              {Object.entries(reactionsForMsg).map(([emoji, userIds]) =>
+                                isViewerOrg ? (
+                                  <span
+                                    key={emoji}
+                                    className={cn(
+                                      'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
+                                      'bg-background/90 shadow-sm cursor-default',
+                                      userIds.includes(user?.userId ?? '') &&
+                                        'border-primary/50 bg-primary/15',
+                                    )}
+                                    title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
+                                  >
+                                    <span className="leading-none">{emoji}</span>
+                                    <span className="tabular-nums text-muted-foreground">
+                                      {userIds.length}
+                                    </span>
                                   </span>
-                                </button>
-                              ))}
+                                ) : (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    className={cn(
+                                      'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
+                                      'bg-background/90 hover:bg-muted/90 shadow-sm',
+                                      userIds.includes(user?.userId ?? '') &&
+                                        'border-primary/50 bg-primary/15',
+                                    )}
+                                    onClick={() => void handleToggleReaction(msg.messageId, emoji)}
+                                    title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
+                                  >
+                                    <span className="leading-none">{emoji}</span>
+                                    <span className="tabular-nums text-muted-foreground">
+                                      {userIds.length}
+                                    </span>
+                                  </button>
+                                ),
+                              )}
                             </div>
                           )}
                         </div>
@@ -1359,6 +1383,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 ))}
               </div>
             )}
+            {isViewerOrg ? (
+              <div className="rounded-lg border border-dashed border-border/60 bg-background/40 p-3 text-center text-[12px] text-muted-foreground">
+                You have view-only access to this workspace.
+              </div>
+            ) : (
             <div className="rounded-lg border border-border/60 bg-background/90 p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
               <MentionTextarea
                 value={chatInput}
@@ -1427,6 +1456,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 </Button>
               </div>
             </div>
+            )}
           </div>
         </TabsContent>
 

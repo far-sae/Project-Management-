@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
+import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Loader2 } from 'lucide-react';
 import { ClockGate } from './ClockGate';
@@ -10,15 +11,19 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   requireSubscription?: boolean;
   requireAdmin?: boolean;
+  /** Restrict to organization owner + admin (not regular members). */
+  requireOrgAdmin?: boolean;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requireSubscription = false,
   requireAdmin = false,
+  requireOrgAdmin = false,
 }) => {
   const { user, loading: authLoading } = useAuth();
   const { canAccessFeatures, loading: subLoading } = useSubscription();
+  const { isAdmin: isOrgAdminOrOwner, loading: orgLoading } = useOrganization();
   const location = useLocation();
 
   // ── Loading state ──────────────────────────────────
@@ -49,7 +54,15 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/pricing" state={{ from: location }} replace />;
   }
 
-  // ── Clock-in gate (members + admins only; owner exempt) ────────────
+  // ── Org-admin required (Dashboard / HR / Payroll / Time / Expenses /
+  //    Reports / Contracts / Team / Files / Comments / Inbox) ─────────
+  // Wait for org info before deciding so we don't redirect during the
+  // initial fetch race. Members land on /tasks (their personal home).
+  if (requireOrgAdmin && !orgLoading && !isOrgAdminOrOwner && !isAppOwner(user.userId)) {
+    return <Navigate to="/tasks" replace />;
+  }
+
+  // ── Clock-in gate ──────────────────────────────────
   return <ClockGate>{children}</ClockGate>;
 };
 

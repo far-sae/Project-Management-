@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { useTimeTracking } from '@/hooks/useTimeTracking';
 import { isAppOwner } from '@/lib/app-owner';
 import { Button } from '@/components/ui/button';
@@ -23,14 +24,17 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user, signOut } = useAuth();
+  const { isViewer } = useOrganization();
   const { openEntry, loading, clockIn } = useTimeTracking();
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (!user) return <>{children}</>;
-  // Build/support team only — never apply the gate to the workspace owner;
-  // they need to clock in like everyone else.
+  // Build/support team — bypass.
   if (isAppOwner(user.userId)) return <>{children}</>;
+  // Viewers don't have shifts to log; they're observers (clients, auditors).
+  // Forcing them to clock in would be confusing and pollute timesheets.
+  if (isViewer) return <>{children}</>;
   // The hook is fast (one query) but on a slow connection we must NOT
   // optimistically render children — that's the bug that let admins bypass.
   // Show a loading screen until we know the entry state.

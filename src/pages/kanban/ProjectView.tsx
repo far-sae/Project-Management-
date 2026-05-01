@@ -19,6 +19,7 @@ import { AppHeader } from '@/components/layout/AppHeader';
 import { AIProjectHealth } from '@/components/ai/AIProjectHealth';
 import { ProjectRightRail } from '@/components/project/ProjectRightRail';
 import { ClockButton } from '@/components/time/ClockButton';
+import { useOrganization } from '@/context/OrganizationContext';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
 import { PresenceStatusAvatarMenu } from '@/components/presence/PresenceStatusMenu';
 import { usePresence } from '@/hooks/usePresence';
@@ -188,6 +189,7 @@ export const ProjectView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string; }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isViewer } = useOrganization();
   const { selectedId: selectedWorkspaceId, isAll, isUnassigned } =
     useSelectedWorkspace();
   const { preference: presencePreference, setPreference: setPresencePreference } =
@@ -751,10 +753,12 @@ export const ProjectView: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <ClockButton
-                projectId={project.projectId}
-                projectName={project.name}
-              />
+              {!isViewer && (
+                <ClockButton
+                  projectId={project.projectId}
+                  projectName={project.name}
+                />
+              )}
 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

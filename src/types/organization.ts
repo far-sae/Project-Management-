@@ -35,7 +35,7 @@ export interface OrganizationMember {
   email: string;
   displayName: string;
   photoURL?: string;
-  role: "owner" | "admin" | "member";
+  role: "owner" | "admin" | "member" | "viewer";
   joinedAt: Date;
   status: "active" | "invited" | "removed";
   addedAt?: Date | string;

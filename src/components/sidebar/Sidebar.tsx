@@ -27,9 +27,11 @@ import {
   Receipt,
   UserCircle,
   Wallet,
+  Building2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
+import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Project, Task, TaskStatus } from '@/types';
 import type { KanbanColumn } from '@/types';
@@ -43,6 +45,7 @@ import { QuickMenu } from './QuickMenu';
 import { StatusFilters } from './StatusFilters';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ThemeQuickToggle } from './ThemeQuickToggle';
+import { ClockButton } from '@/components/time/ClockButton';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -65,13 +68,28 @@ interface SidebarProps {
   columns?: KanbanColumn[];
 }
 
-const QUICK_ITEMS = [
+const QUICK_ITEMS_FULL = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks' },
   { icon: Inbox, label: 'Inbox', href: '/inbox' },
   { icon: Calendar, label: 'Calendar', href: '/calendar' },
   { icon: Activity, label: 'Workload', href: '/workload' },
   { icon: BarChart3, label: 'Reports', href: '/reports' },
+];
+
+// Members get a deliberately small surface: just the personal-productivity
+// pages. No Dashboard / Inbox / Reports — those are admin/owner views.
+const QUICK_ITEMS_MEMBER = [
+  { icon: CheckSquare, label: 'My Tasks', href: '/tasks' },
+  { icon: Calendar, label: 'Calendar', href: '/calendar' },
+  { icon: Activity, label: 'Workload', href: '/workload' },
+];
+
+// Viewers are read-only observers (clients, auditors). They don't get tasks
+// assigned, don't clock in, don't have a workload. Just Calendar to see what's
+// scheduled — the project list in the sidebar handles browsing.
+const QUICK_ITEMS_VIEWER = [
+  { icon: Calendar, label: 'Calendar', href: '/calendar' },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -83,8 +101,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
+  const { isAdmin: isOrgAdminOrOwner, isViewer } = useOrganization();
   const navigate = useNavigate();
   const location = useLocation();
+  // Owner + admin see HR / Payroll / Time / Expenses; members must use the
+  // task-level "Add expense" dialog instead.
+  const canSeePeopleOps = isOrgAdminOrOwner || isAppOwner(user?.userId);
 
   const { projects } = useProjects();
   const { selectedId: selectedWorkspaceId, isAll, isUnassigned } =
@@ -139,17 +161,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, [mobileOpen]);
 
-  const bottomMenuItems = [
-    { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
-    { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
-    { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
-    { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },
-    { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null },
-    { icon: Clock, label: 'Time Tracking', href: '/time', feature: null },
-    { icon: Receipt, label: 'Expenses', href: '/expenses', feature: null },
-    { icon: UserCircle, label: 'HR', href: '/hr', feature: null },
-    { icon: Wallet, label: 'Payroll', href: '/payroll', feature: null },
-  ] as const;
+  const bottomMenuItems = canSeePeopleOps
+    ? ([
+        { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
+        { icon: Building2, label: 'Clients', href: '/clients', feature: null },
+        { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
+        { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
+        { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },
+        { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null },
+        { icon: Clock, label: 'Time Tracking', href: '/time', feature: null },
+        { icon: Receipt, label: 'Expenses', href: '/expenses', feature: null },
+        { icon: UserCircle, label: 'HR', href: '/hr', feature: null },
+        { icon: Wallet, label: 'Payroll', href: '/payroll', feature: null },
+      ] as const)
+    : isViewer
+      ? ([
+          // Viewers get Timeline only; no Clients (read-only access there is
+          // still subject to other product decisions). Project list in the
+          // sidebar above is enough to navigate the projects they were given.
+          { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
+        ] as const)
+      : ([
+          // Members see Timeline + Clients (CRM is read-mostly for reps); the
+          // rest (Team, Contracts, Files, Comments, etc.) stays admin/owner.
+          { icon: Building2, label: 'Clients', href: '/clients', feature: null },
+          { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
+        ] as const);
 
   const taskCounts = useMemo(() => {
     const counts: Record<string, number> = { all: tasks.length };
@@ -196,7 +233,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <WorkspaceSwitcher />
       </div>
 
-      {trialInfo && trialInfo.isInTrial && (
+      {trialInfo && trialInfo.isInTrial && canSeePeopleOps && (
         <div className="mx-3 mt-3 p-3 bg-primary-soft border border-primary/20 rounded-lg">
           <p className="text-sm font-medium text-primary-soft-foreground">
             Trial: {trialInfo.daysRemaining} days left
@@ -213,8 +250,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
-        {/* Quick navigation */}
-        <QuickMenu items={QUICK_ITEMS} />
+        {/* Quick navigation — full / member / viewer surfaces */}
+        <QuickMenu
+          items={
+            canSeePeopleOps
+              ? QUICK_ITEMS_FULL
+              : isViewer
+                ? QUICK_ITEMS_VIEWER
+                : QUICK_ITEMS_MEMBER
+          }
+        />
 
         {/* Project context: status filters + members live here when in a project */}
         {project && onStatusChange && (
@@ -368,6 +413,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const locked = item.feature ? !hasFeature(item.feature as any) : false;
             const active = location.pathname === item.href;
 
+            // Hide locked items entirely for members — they have no path to
+            // upgrade and the "click to upgrade" CTA shouldn't reach them.
+            if (locked && !canSeePeopleOps) return null;
+
             return locked ? (
               <button
                 key={item.href}
@@ -445,6 +494,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <ChevronDown className="w-4 h-4" aria-hidden />
               </button>
               <ThemeQuickToggle />
+
+              {/* Anywhere-clock-out: members can't reach /time, so they need
+                  this control here to end their shift from any page. Hidden
+                  for viewers, who don't have shifts at all. */}
+              {!isViewer && (
+                <div className="px-1">
+                  <ClockButton className="w-full justify-center" size="sm" />
+                </div>
+              )}
 
               {isAdmin && (
                 <Link

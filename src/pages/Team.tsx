@@ -7,7 +7,7 @@ import { useSubscription } from '@/context/SubscriptionContext';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -363,19 +363,44 @@ export const Team: React.FC = () => {
       toast.error('Only the project owner can invite members.');
       return;
     }
-    if (inviteEmail.toLowerCase().trim() === user.email?.toLowerCase().trim()) {
+
+    // Allow comma- / newline- / semicolon-separated emails so the inviter can
+    // bulk-invite the whole crew in one go.
+    const rawList = inviteEmail
+      .split(/[\s,;]+/)
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    // Dedupe + basic email-shape filter
+    const emails = Array.from(new Set(rawList)).filter((e) =>
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e),
+    );
+
+    if (emails.length === 0) {
       setInfoDialog({
         open: true,
-        title: "Invalid Action",
-        message: "You cannot invite yourself.",
+        title: 'No valid emails',
+        message:
+          'Enter one or more email addresses separated by spaces, commas, or new lines.',
       });
       return;
     }
+
+    const selfEmail = user.email?.toLowerCase().trim() ?? '';
+    const filtered = emails.filter((e) => e !== selfEmail);
+    if (filtered.length === 0) {
+      setInfoDialog({
+        open: true,
+        title: 'Invalid Action',
+        message: 'You cannot invite yourself.',
+      });
+      return;
+    }
+
     const projectOrgId = (currentProject?.organizationId || '').replace('local-', '');
     if (!projectOrgId) return;
 
-    // ✅ Check team member limit BEFORE sending invite (members + pending invites)
-    const totalCount = allMembers.length + pendingInvitations.length;
+    // ✅ Check team member limit BEFORE sending invites — count the entire batch
+    const totalCount = allMembers.length + pendingInvitations.length + filtered.length;
     const limitCheck = await checkTeamMemberLimit(
       user.userId,
       totalCount,
@@ -387,48 +412,80 @@ export const Team: React.FC = () => {
     }
 
     setSending(true);
+    const sentTo: string[] = [];
+    const failed: { email: string; reason: string }[] = [];
+    const manualLinks: { email: string; link: string; reason: string }[] = [];
+
     try {
-      const invitation = await createInvitation(
-        selectedProject, currentProject.name, user.userId,
-        user.displayName, user.email, projectOrgId,
-        { projectId: selectedProject, inviteeEmail: inviteEmail.trim(), role: inviteRole }
-      );
-      setInvitations((prev) => [invitation, ...prev]);
-      const inviteLink = `${window.location.origin}/accept-invite/${invitation.token}`;
-      const emailResult = await sendInvitationEmail({
-        toEmail: inviteEmail.trim(), inviterName: user.displayName,
-        projectName: currentProject.name, inviteLink, role: inviteRole,
-      });
+      // Sequential — gives each createInvitation a clean turn for RLS / DB writes.
+      for (const email of filtered) {
+        try {
+          const invitation = await createInvitation(
+            selectedProject, currentProject.name, user.userId,
+            user.displayName, user.email, projectOrgId,
+            { projectId: selectedProject, inviteeEmail: email, role: inviteRole },
+          );
+          setInvitations((prev) => [invitation, ...prev]);
+          const inviteLink = `${window.location.origin}/accept-invite/${invitation.token}`;
+          const emailResult = await sendInvitationEmail({
+            toEmail: email, inviterName: user.displayName,
+            projectName: currentProject.name, inviteLink, role: inviteRole,
+          });
+          if (emailResult.ok) {
+            sentTo.push(email);
+          } else {
+            const oAuthHint =
+              emailResult.status === 412
+                ? `\n${getInvitationEmailFailureHint(emailResult)}`
+                : '';
+            const serverHint = emailResult.text ? `\nServer: ${emailResult.text}` : '';
+            manualLinks.push({
+              email,
+              link: inviteLink,
+              reason: `${oAuthHint}${serverHint}`.trim() || 'Email send failed',
+            });
+          }
+        } catch (perEmailErr) {
+          failed.push({
+            email,
+            reason: perEmailErr instanceof Error ? perEmailErr.message : 'unknown error',
+          });
+        }
+      }
+
       setInviteEmail('');
       setShowInviteModal(false);
-      if (emailResult.ok) {
-        setInfoDialog({
-          open: true,
-          title: "Invitation Sent",
-          message: `Email successfully delivered to ${inviteEmail.trim()}.`,
-        });
-      } else {
-        const linkBlock = `Share this link manually:\n\n${inviteLink}`;
-        const oAuthHint =
-          emailResult.status === 412
-            ? `\n\n${getInvitationEmailFailureHint(emailResult)}`
-            : "";
-        const serverHint =
-          emailResult.text && emailResult.text.length > 0
-            ? `\n\nServer message: ${emailResult.text}`
-            : "";
-        setInfoDialog({
-          open: true,
-          title: "Invitation Created",
-          message: `We couldn’t send the email automatically.${oAuthHint}${serverHint}\n\n${linkBlock}`,
-        });
+
+      // Summarize the batch in one dialog
+      const lines: string[] = [];
+      if (sentTo.length > 0) {
+        lines.push(`✅ Sent to ${sentTo.length}: ${sentTo.join(', ')}`);
       }
+      if (manualLinks.length > 0) {
+        lines.push(
+          `⚠️ ${manualLinks.length} invite(s) created but email didn't send. Share these links manually:`,
+        );
+        manualLinks.forEach((m) => lines.push(`• ${m.email}\n  ${m.link}`));
+      }
+      if (failed.length > 0) {
+        lines.push(`❌ ${failed.length} failed:`);
+        failed.forEach((f) => lines.push(`• ${f.email} — ${f.reason}`));
+      }
+
+      setInfoDialog({
+        open: true,
+        title:
+          failed.length === 0 && manualLinks.length === 0
+            ? 'Invitations Sent'
+            : 'Invitations Processed',
+        message: lines.join('\n\n'),
+      });
     } catch (error) {
       console.error('Error sending invitation:', error);
       setInfoDialog({
         open: true,
-        title: "Invitation Failed",
-        message: "Failed to send invitation. Please try again.",
+        title: 'Invitation Failed',
+        message: 'Failed to send invitations. Please try again.',
       });
     } finally {
       setSending(false);
@@ -683,14 +740,21 @@ export const Team: React.FC = () => {
 
         <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
           <DialogContent aria-describedby={undefined}>
-            <DialogHeader><DialogTitle>Invite Team Member</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Invite Team Member(s)</DialogTitle></DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email" type="email" placeholder="colleague@example.com"
-                  value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                <Label htmlFor="email">Email address(es)</Label>
+                <Textarea
+                  id="email"
+                  placeholder={"alice@example.com\nbob@example.com, carol@example.com"}
+                  rows={3}
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="font-mono text-sm"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Separate multiple invitees with commas, spaces, or new lines. Everyone gets the role you pick below.
+                </p>
                 {inviteEmail.trim() && inviteEmail.toLowerCase().trim() === user?.email?.toLowerCase().trim() && (
                   <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                     <XCircle className="w-3 h-3" />You cannot invite yourself

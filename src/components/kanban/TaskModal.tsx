@@ -114,7 +114,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   typingPeers,
 }) => {
   const { user } = useAuth();
-  const { organization, isAdmin } = useOrganization();
+  const { organization, isAdmin, isViewer } = useOrganization();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -182,17 +182,31 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const hasLockPin = Boolean(task?.hasLockPin);
   const lockedWithPin = Boolean(isEditing && task?.isLocked && hasLockPin);
   /**
-   * Edit gate.
-   *  - PIN-locked: PIN is the only way through, even for the owner / admin / creator.
-   *    The PIN was set explicitly to enforce a stronger gate; bypassing it for owners would
-   *    defeat the feature.
-   *  - No-PIN locked: owner / admin / creator can edit (no PIN exists to enter).
+   * PIN vs no-PIN lock: with PIN, only session unlock allows edit; without PIN,
+   * owner/admin/creator may edit (see canOverrideTaskLock).
+   * Member gate: org admin / project owner can edit any task; others only creator or assignee.
    */
-  const readOnlyTask = Boolean(
+  const isAssignedToTask = Boolean(
+    user && task?.assignees?.some((a) => a.userId === user.userId),
+  );
+  const memberLockedTask = Boolean(
+    isEditing &&
+      task &&
+      !isAdmin &&
+      project?.ownerId !== user?.userId &&
+      task.createdBy !== user?.userId &&
+      !isAssignedToTask,
+  );
+
+  /** PIN / no-PIN lock only (not member role or viewer). */
+  const lockReadOnly = Boolean(
     isEditing &&
       task?.isLocked &&
       (lockedWithPin ? !pinUnlockedSession : !canOverrideTaskLock),
   );
+  /** Role / assignment restrictions (excludes lock mechanics). */
+  const permissionReadOnly = Boolean(memberLockedTask || isViewer);
+  const readOnlyTask = Boolean(lockReadOnly || permissionReadOnly);
 
   /** Until PIN is entered, hide title, description, comments, activity. Strictly enforced —
    *  owners can rotate or remove the PIN, but cannot peek without entering it. */
@@ -1058,7 +1072,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
         )}
 
-        {readOnlyTask && (
+        {lockReadOnly && (
           <div className="mx-5 mt-3 p-2.5 rounded-md text-sm flex flex-wrap items-center gap-2 bg-secondary border border-border text-foreground">
             <Lock className="w-4 h-4 shrink-0 text-warning" />
             {hasLockPin ? (
@@ -1082,6 +1096,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 This task is locked. Only the project owner or a workspace admin can make changes.
               </span>
             )}
+          </div>
+        )}
+        {permissionReadOnly && !lockReadOnly && (
+          <div className="mx-5 mt-3 p-2.5 rounded-md text-sm flex flex-wrap items-center gap-2 bg-muted border border-border text-foreground">
+            <Lock className="w-4 h-4 shrink-0 text-muted-foreground" />
+            <span>
+              {isViewer
+                ? 'You have view-only access to this workspace — you cannot edit tasks.'
+                : 'You can view this task, but only the creator, assignees, project owner, or a workspace admin can change it.'}
+            </span>
           </div>
         )}
 

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSubscription } from '@/context/SubscriptionContext';
+import { useOrganization } from '@/context/OrganizationContext';
+import { useAuth } from '@/context/AuthContext';
+import { isAppOwner } from '@/lib/app-owner';
 import { Clock, CreditCard, X, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -17,6 +20,8 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
   className,
 }) => {
   const { trialInfo, isSubscribed, loading, subscription } = useSubscription();
+  const { isAdmin: isOrgAdminOrOwner } = useOrganization();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -33,6 +38,10 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
   if (!subscription) return null;  // no subscription row yet
   if (!trialInfo?.isInTrial && trialInfo?.daysRemaining !== 0) return null;
   if (dismissed) return null;
+  // Hide subscription nudges from regular members — only the owner pays for
+  // the workspace, so showing them an "Upgrade" CTA is confusing and pushes
+  // them toward paying separately.
+  if (!isOrgAdminOrOwner && !isAppOwner(user?.userId)) return null;
 
   const daysRemaining = trialInfo?.daysRemaining ?? 0;
   const isExpired = daysRemaining <= 0;

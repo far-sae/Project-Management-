@@ -9,8 +9,8 @@ import {
   formatExpenseAmount,
 } from '@/services/supabase/expenses';
 import { format } from 'date-fns';
-import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import { AddExpenseDialog } from './AddExpenseDialog';
 
 const statusBadge = (s: ExpenseStatus) => {
   const map: Record<ExpenseStatus, string> = {
@@ -50,6 +50,7 @@ export const TaskExpensesPanel: React.FC<Props> = ({
   const { expenses, loading, reload, canManage } = useTaskExpenses(taskId);
   const { update } = useExpenses();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
 
   const setStatus = async (expense: Expense, status: ExpenseStatus) => {
     setBusyId(expense.expenseId);
@@ -70,12 +71,6 @@ export const TaskExpensesPanel: React.FC<Props> = ({
     }
   };
 
-  const newExpenseHref =
-    `/expenses?new=1&taskId=${encodeURIComponent(taskId)}` +
-    `&taskTitle=${encodeURIComponent(taskTitle)}` +
-    (projectId ? `&projectId=${encodeURIComponent(projectId)}` : '') +
-    (projectName ? `&projectName=${encodeURIComponent(projectName)}` : '');
-
   return (
     <div className="rounded-lg border border-border bg-card/50 p-3 space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -88,10 +83,14 @@ export const TaskExpensesPanel: React.FC<Props> = ({
             </span>
           )}
         </h4>
-        <Button asChild size="sm" variant="ghost" className="h-7">
-          <Link to={newExpenseHref}>
-            <Plus className="w-3.5 h-3.5 mr-1" /> Add
-          </Link>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7"
+          onClick={() => setShowAdd(true)}
+        >
+          <Plus className="w-3.5 h-3.5 mr-1" /> Add
         </Button>
       </div>
 
@@ -166,6 +165,16 @@ export const TaskExpensesPanel: React.FC<Props> = ({
           ))}
         </ul>
       )}
+
+      <AddExpenseDialog
+        open={showAdd}
+        onOpenChange={setShowAdd}
+        taskId={taskId}
+        taskTitle={taskTitle}
+        projectId={projectId}
+        projectName={projectName}
+        onCreated={() => reload()}
+      />
     </div>
   );
 };
