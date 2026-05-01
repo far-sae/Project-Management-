@@ -72,6 +72,19 @@ const RootRedirect: React.FC = () => {
     );
   }
 
+  // After OAuth roundtrip Supabase drops the user back at "/" — if they were
+  // mid-invite-accept we need to send them to the accept page instead of the
+  // dashboard, otherwise the token gets stranded and the project never links.
+  const pendingInviteToken =
+    typeof window !== 'undefined'
+      ? sessionStorage.getItem('pendingInviteToken') ||
+        localStorage.getItem('pendingInviteToken')
+      : null;
+
+  if (pendingInviteToken) {
+    return <Navigate to={`/accept-invite/${pendingInviteToken}`} replace />;
+  }
+
   return <Navigate to={user ? '/dashboard' : '/login'} replace />;
 };
 

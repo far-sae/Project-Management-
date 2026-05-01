@@ -316,10 +316,22 @@ export const signInWithEmail = async (
 };
 
 export const signInWithGoogle = async (): Promise<void> => {
+  // If the user is mid-invite-accept, keep the OAuth round-trip pointed at the
+  // accept page so they don't get dumped on the dashboard and lose the token.
+  const pendingInviteToken =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("pendingInviteToken") ||
+        localStorage.getItem("pendingInviteToken")
+      : null;
+
+  const redirectTo = pendingInviteToken
+    ? `${window.location.origin}/accept-invite/${pendingInviteToken}`
+    : `${window.location.origin}/`;
+
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${window.location.origin}/`,
+      redirectTo,
     },
   });
 

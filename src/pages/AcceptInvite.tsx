@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useOrganization } from "@/context/OrganizationContext";
 import {
   getInvitationByToken,
   declineInvitation,
@@ -36,6 +37,7 @@ export const AcceptInvite: React.FC = () => {
   const { token } = useParams<{ token: string; }>();
   const navigate = useNavigate();
   const { user, signInGoogle, refreshUser } = useAuth();
+  const { refreshOrganization } = useOrganization();
 
   const [invitation, setInvitation] = useState<ProjectInvitation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -283,6 +285,16 @@ export const AcceptInvite: React.FC = () => {
         console.warn("Post-accept refreshUser failed (non-fatal):", refreshErr);
       }
 
+      // Force OrganizationContext to refetch the inviting org now — refreshUser
+      // changes user.organizationId which would normally trigger this via the
+      // org useEffect, but in practice the navigate() below happens before that
+      // effect resolves, leaving the new sidebar empty until a hard reload.
+      try {
+        await refreshOrganization({ silent: true });
+      } catch (orgRefreshErr) {
+        console.warn("Post-accept refreshOrganization failed (non-fatal):", orgRefreshErr);
+      }
+
       setSuccess(true);
       sessionStorage.removeItem("pendingInviteToken");
       localStorage.removeItem("pendingInviteToken");
@@ -297,7 +309,7 @@ export const AcceptInvite: React.FC = () => {
     } finally {
       setProcessing(false);
     }
-  }, [invitation, user, signInGoogle, isEmailMismatch, token, navigate, refreshUser]);
+  }, [invitation, user, signInGoogle, isEmailMismatch, token, navigate, refreshUser, refreshOrganization]);
 
   // ✅ Auto-accept ONLY when emails match and user just signed in
   useEffect(() => {
@@ -318,11 +330,11 @@ export const AcceptInvite: React.FC = () => {
   // ─── Render: Loading ───────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Card className="w-full max-w-md">
           <CardContent className="py-12 text-center">
             <Loader2 className="w-12 h-12 mx-auto animate-spin text-orange-500" />
-            <p className="mt-4 text-gray-600">Loading invitation...</p>
+            <p className="mt-4 text-muted-foreground">Loading invitation...</p>
           </CardContent>
         </Card>
       </div>
@@ -332,14 +344,14 @@ export const AcceptInvite: React.FC = () => {
   // ─── Render: Invalid invitation ────────────────────────────────────────────
   if (error && !invitation) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="py-12 text-center">
             <XCircle className="w-16 h-16 mx-auto text-red-500" />
-            <h2 className="mt-4 text-xl font-semibold text-gray-900">
+            <h2 className="mt-4 text-xl font-semibold text-foreground">
               Invalid Invitation
             </h2>
-            <p className="mt-2 text-gray-600">{error}</p>
+            <p className="mt-2 text-muted-foreground">{error}</p>
             <Button
               className="mt-6"
               variant="outline"
@@ -356,14 +368,14 @@ export const AcceptInvite: React.FC = () => {
   // ─── Render: Success ───────────────────────────────────────────────────────
   if (success) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="py-12 text-center">
             <CheckCircle className="w-16 h-16 mx-auto text-green-500" />
-            <h2 className="mt-4 text-xl font-semibold text-gray-900">
+            <h2 className="mt-4 text-xl font-semibold text-foreground">
               Welcome to the team!
             </h2>
-            <p className="mt-2 text-gray-600">
+            <p className="mt-2 text-muted-foreground">
               You've joined <strong>{invitation?.projectName}</strong>.
               Redirecting...
             </p>
@@ -375,7 +387,7 @@ export const AcceptInvite: React.FC = () => {
 
   // ─── Render: Main ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center">
@@ -389,40 +401,40 @@ export const AcceptInvite: React.FC = () => {
             <>
               {/* Invitation summary */}
               <div className="text-center">
-                <p className="text-gray-600">
-                  <span className="font-semibold">
+                <p className="text-muted-foreground">
+                  <span className="font-semibold text-foreground">
                     {invitation.inviterName}
                   </span>{" "}
                   has invited you to join
                 </p>
-                <p className="text-2xl font-bold text-gray-900 mt-2">
+                <p className="text-2xl font-bold text-foreground mt-2">
                   {invitation.projectName}
                 </p>
               </div>
 
               {/* Details card */}
-              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+              <div className="bg-muted/50 border border-border rounded-lg p-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Invited email:</span>
-                  <span className="font-medium text-orange-600">
+                  <span className="text-muted-foreground">Invited email:</span>
+                  <span className="font-medium text-orange-600 dark:text-orange-400">
                     {invitation.inviteeEmail}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Your role:</span>
-                  <span className="font-medium capitalize">
+                  <span className="text-muted-foreground">Your role:</span>
+                  <span className="font-medium capitalize text-foreground">
                     {invitation.role}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Invited by:</span>
-                  <span className="font-medium">{invitation.inviterEmail}</span>
+                  <span className="text-muted-foreground">Invited by:</span>
+                  <span className="font-medium text-foreground">{invitation.inviterEmail}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500 flex items-center gap-1">
+                  <span className="text-muted-foreground flex items-center gap-1">
                     <Clock className="w-3 h-3" /> Expires:
                   </span>
-                  <span className="font-medium">
+                  <span className="font-medium text-foreground">
                     {new Date(invitation.expiresAt).toLocaleDateString()}
                   </span>
                 </div>
@@ -430,17 +442,17 @@ export const AcceptInvite: React.FC = () => {
 
               {/* ✅ Wrong account warning */}
               {isEmailMismatch && (
-                <Alert className="bg-yellow-50 border-yellow-200 text-yellow-900">
-                  <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                <Alert className="bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-200">
+                  <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
                   <AlertTitle>Wrong account</AlertTitle>
-                  <AlertDescription className="text-yellow-800">
+                  <AlertDescription className="text-yellow-800 dark:text-yellow-200/90">
                     This invite was sent to{" "}
                     <strong>{invitation.inviteeEmail}</strong>, but you're
                     signed in as <strong>{user?.email}</strong>.
                     <Button
                       variant="outline"
                       size="sm"
-                      className="mt-3 border-yellow-400 text-yellow-800 hover:bg-yellow-100"
+                      className="mt-3 border-yellow-400 text-yellow-800 hover:bg-yellow-100 dark:border-yellow-500/40 dark:text-yellow-100 dark:hover:bg-yellow-500/20 dark:bg-transparent"
                       onClick={handleSignOut}
                     >
                       Switch to correct account
@@ -460,8 +472,8 @@ export const AcceptInvite: React.FC = () => {
 
               {/* Awaiting email confirmation */}
               {awaitingEmailConfirm ? (
-                <Alert className="bg-blue-50 border-blue-200">
-                  <Mail className="h-5 w-5 text-blue-600" />
+                <Alert className="bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-200">
+                  <Mail className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   <AlertTitle>Confirm your email</AlertTitle>
                   <AlertDescription>
                     We sent a confirmation link to <strong>{signupEmail}</strong>.
@@ -502,7 +514,7 @@ export const AcceptInvite: React.FC = () => {
                       {signupEmail &&
                         signupEmail.toLowerCase() !==
                         invitation.inviteeEmail.toLowerCase() && (
-                          <p className="text-xs text-red-600">
+                          <p className="text-xs text-red-600 dark:text-red-400">
                             ⚠️ Use the invited email: {invitation.inviteeEmail}
                           </p>
                         )}
@@ -607,7 +619,7 @@ export const AcceptInvite: React.FC = () => {
                     </Button>
                   </div>
                   {processing && (
-                    <p className="text-xs text-gray-500 text-center">
+                    <p className="text-xs text-muted-foreground text-center">
                       Sharing in progress. This can take a few seconds.
                     </p>
                   )}
