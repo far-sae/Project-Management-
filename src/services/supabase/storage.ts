@@ -406,6 +406,45 @@ export const uploadCommentAttachment = async (
   };
 };
 
+// Upload a chat attachment (project chat or direct message). Returns just the
+// public URL + metadata — chat messages embed a small attachment array rather
+// than registering rows in the files table (those are scoped to projects/tasks).
+export const uploadChatAttachment = async (
+  file: File,
+  scope: { kind: "project"; projectId: string } | { kind: "dm"; threadKey: string },
+): Promise<{
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+  storagePath: string;
+}> => {
+  const safe = `${Date.now()}-${sanitizeFileName(file.name)}`;
+  const dir =
+    scope.kind === "project"
+      ? `chat/projects/${scope.projectId}`
+      : `chat/dm/${scope.threadKey}`;
+  const path = `${dir}/${safe}`;
+  const bucket = "attachments";
+
+  const { error } = await supabase.storage
+    .from(bucket)
+    .upload(path, file, { cacheControl: "3600", upsert: false });
+  if (error) {
+    logger.error("Failed to upload chat attachment:", error);
+    throw error;
+  }
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return {
+    fileName: file.name,
+    fileUrl: data.publicUrl,
+    fileType: file.type,
+    fileSize: file.size,
+    storagePath: path,
+  };
+};
+
 const sanitizeFileName = (name: string): string => {
   // Decode any URL-encoded characters first
   let decoded = name;

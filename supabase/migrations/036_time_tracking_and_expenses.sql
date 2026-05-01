@@ -140,7 +140,7 @@ create policy "members_clock_in_own"
 -- A member can clock OUT (set clocked_out_at) on their OWN open entry —
 -- but cannot otherwise edit the row. Owner-only edit policy covers everything else.
 -- Column-level enforcement for this path lives in trigger enforce_clock_out_only_update
--- (migration 038_time_entries_enforce_clock_out_only.sql).
+-- (migration 039_time_entries_enforce_clock_out_only.sql).
 create policy "members_clock_out_own_open"
   on public.time_entries for update to authenticated
   using (

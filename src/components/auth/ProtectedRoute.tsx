@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Loader2 } from 'lucide-react';
+import { ClockGate } from './ClockGate';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -48,7 +49,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/pricing" state={{ from: location }} replace />;
   }
 
-  return <>{children}</>;
+  // ── Clock-in gate (members + admins only; owner exempt) ────────────
+  return <ClockGate>{children}</ClockGate>;
 };
 
 export default ProtectedRoute;

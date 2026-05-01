@@ -13,7 +13,8 @@ begin
   end if;
 
   -- Organization owner edits are unrestricted (separate RLS policy).
-  if public.is_org_owner(new.organization_id) then
+  -- Use OLD.organization_id so a member cannot bypass by changing organization_id in the payload.
+  if public.is_org_owner(old.organization_id) then
     return new;
   end if;
 

@@ -17,6 +17,8 @@ import {
   Mic,
   Download,
   FileText,
+  Paperclip,
+  X as XIcon,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -41,9 +43,12 @@ import {
   notifyProjectChatMessageToMembers,
   toggleProjectChatReaction,
   markNotificationsReadByProject,
+  type ChatAttachment,
   type ProjectChatMessage,
   type ProjectChatReaction,
 } from '@/services/supabase/database';
+import { deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
+import { ChatAttachmentList } from '@/components/messaging/ChatAttachmentList';
 import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
@@ -388,6 +393,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   const [chatLoading, setChatLoading] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
+  const [chatPendingFiles, setChatPendingFiles] = useState<File[]>([]);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
   const [reactionMenuForId, setReactionMenuForId] = useState<string | null>(null);
   /** When a teammate's row in the Team tab is clicked, this recipient drives the
    *  bottom-left DirectMessageDock. Null = no DM open. */
@@ -681,7 +688,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
 
   const handleSendChat = useCallback(async () => {
     const body = chatInput.trim();
-    if (!body || !user) return;
+    if ((!body && chatPendingFiles.length === 0) || !user) return;
     stickToBottomRef.current = true;
     setChatSending(true);
     try {
@@ -689,15 +696,69 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         user.userId,
         user.displayName || user.email || 'User',
       );
-      await insertProjectChatMessage({
-        projectId: project.projectId,
-        organizationId: project.organizationId,
-        userId: user.userId,
-        displayName: senderLabel,
-        photoURL: user.photoURL || undefined,
-        body,
-        taskId: null,
-      });
+      let attachments: ChatAttachment[] = [];
+      const uploadedPaths: string[] = [];
+      if (chatPendingFiles.length > 0) {
+        const settled = await Promise.allSettled(
+          chatPendingFiles.map((f) =>
+            uploadChatAttachment(f, {
+              kind: 'project',
+              projectId: project.projectId,
+            }),
+          ),
+        );
+        const failedNames: string[] = [];
+        settled.forEach((r, i) => {
+          const name = chatPendingFiles[i]?.name ?? `file ${i + 1}`;
+          if (r.status === 'fulfilled') {
+            const u = r.value;
+            uploadedPaths.push(u.storagePath);
+            attachments.push({
+              fileName: u.fileName,
+              fileUrl: u.fileUrl,
+              fileType: u.fileType,
+              fileSize: u.fileSize,
+            });
+          } else {
+            failedNames.push(name);
+          }
+        });
+        if (failedNames.length > 0) {
+          const sample = failedNames.slice(0, 3).join(', ');
+          toast.warning(
+            `${failedNames.length} attachment(s) failed to upload: ${sample}${failedNames.length > 3 ? '…' : ''}`,
+          );
+        }
+        if (!body && attachments.length === 0) {
+          if (chatPendingFiles.length > 0) {
+            toast.error(
+              failedNames.length === chatPendingFiles.length
+                ? 'All uploads failed. Message not sent.'
+                : 'Nothing to send.',
+            );
+          }
+          return;
+        }
+      }
+      try {
+        await insertProjectChatMessage({
+          projectId: project.projectId,
+          organizationId: project.organizationId,
+          userId: user.userId,
+          displayName: senderLabel,
+          photoURL: user.photoURL || undefined,
+          body,
+          taskId: null,
+          attachments,
+        });
+      } catch (insertErr) {
+        await Promise.allSettled(
+          uploadedPaths.map((p) =>
+            deleteFile('attachments', p).catch(() => undefined),
+          ),
+        );
+        throw insertErr;
+      }
       const mentionedIds = await notifyProjectChatMentions({
         text: body,
         members: mentionMembers,
@@ -722,6 +783,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         skipUserIds: [user.userId, ...mentionedIds],
       });
       setChatInput('');
+      setChatPendingFiles([]);
+      if (chatFileInputRef.current) chatFileInputRef.current.value = '';
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not send message');
     } finally {
@@ -729,6 +792,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     }
   }, [
     chatInput,
+    chatPendingFiles,
     user,
     project.projectId,
     project.organizationId,
@@ -738,6 +802,26 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     dedupedMembers,
     displayNameForChatUser,
   ]);
+
+  const onPickChatFiles = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const filtered = files.filter((f) => {
+      if (f.size > 25 * 1024 * 1024) {
+        toast.error(`${f.name} is larger than 25 MB`);
+        return false;
+      }
+      return true;
+    });
+    setChatPendingFiles((prev) => [...prev, ...filtered].slice(0, 5));
+    if (e.target) e.target.value = '';
+  }, []);
+
+  const removeChatPending = useCallback(
+    (idx: number) =>
+      setChatPendingFiles((prev) => prev.filter((_, i) => i !== idx)),
+    [],
+  );
 
   const membersSection = (
     <section className="p-3">
@@ -1187,7 +1271,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                                 <CallRecordingCard payload={callPayload} mine={mine} />
                               );
                             }
-                            return (
+                            return msg.body ? (
                               <div
                                 className={cn(
                                   'rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
@@ -1198,8 +1282,9 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               >
                                 {msg.body}
                               </div>
-                            );
+                            ) : null;
                           })()}
+                          <ChatAttachmentList attachments={msg.attachments} mine={mine} />
                           {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
                             <div
                               className={cn(
@@ -1253,6 +1338,27 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 </div>
               </div>
             ) : null}
+            {chatPendingFiles.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {chatPendingFiles.map((f, idx) => (
+                  <span
+                    key={`${f.name}-${idx}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px]"
+                  >
+                    <Paperclip className="w-3 h-3" />
+                    <span className="max-w-[10rem] truncate">{f.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeChatPending(idx)}
+                      aria-label={`Remove ${f.name}`}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <XIcon className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="rounded-lg border border-border/60 bg-background/90 p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
               <MentionTextarea
                 value={chatInput}
@@ -1277,6 +1383,25 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     onChange={setChatInput}
                     disabled={!user || chatSending}
                   />
+                  <input
+                    ref={chatFileInputRef}
+                    type="file"
+                    multiple
+                    hidden
+                    onChange={onPickChatFiles}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    onClick={() => chatFileInputRef.current?.click()}
+                    disabled={!user || chatSending}
+                    aria-label="Attach file"
+                    title="Attach file"
+                  >
+                    <Paperclip className="w-3.5 h-3.5" />
+                  </Button>
                   <p className="text-[10.5px] text-muted-foreground truncate">
                     Enter to send · Shift+Enter for newline
                   </p>
@@ -1285,7 +1410,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   type="button"
                   size="sm"
                   className="h-7 rounded-md px-3 text-xs"
-                  disabled={!user || !chatInput.trim() || chatSending}
+                  disabled={
+                    !user || chatSending ||
+                    (!chatInput.trim() && chatPendingFiles.length === 0)
+                  }
                   onClick={() => void handleSendChat()}
                 >
                   {chatSending ? (

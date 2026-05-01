@@ -2152,6 +2152,13 @@ export const notifyProjectChatMessageToMembers = async (params: {
   }
 };
 
+export interface ChatAttachment {
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+}
+
 export interface ProjectChatMessage {
   messageId: string;
   projectId: string;
@@ -2161,8 +2168,22 @@ export interface ProjectChatMessage {
   photoURL: string;
   body: string;
   taskId: string | null;
+  attachments: ChatAttachment[];
   createdAt: Date;
 }
+
+const sanitizeAttachments = (raw: unknown): ChatAttachment[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((a): a is Record<string, unknown> => !!a && typeof a === "object")
+    .map((a) => ({
+      fileName: String(a.fileName ?? a.name ?? ""),
+      fileUrl: String(a.fileUrl ?? a.url ?? ""),
+      fileType: String(a.fileType ?? a.type ?? ""),
+      fileSize: Number(a.fileSize ?? a.size ?? 0),
+    }))
+    .filter((a) => a.fileUrl);
+};
 
 const mapProjectChatRow = (d: Record<string, unknown>): ProjectChatMessage => ({
   messageId: d.message_id as string,
@@ -2171,8 +2192,9 @@ const mapProjectChatRow = (d: Record<string, unknown>): ProjectChatMessage => ({
   userId: d.user_id as string,
   displayName: (d.display_name as string) || "",
   photoURL: (d.user_photo as string) || "",
-  body: d.body as string,
+  body: (d.body as string) ?? "",
   taskId: (d.task_id as string) ?? null,
+  attachments: sanitizeAttachments(d.attachments),
   createdAt: new Date(d.created_at as string),
 });
 
@@ -2338,9 +2360,11 @@ export const insertProjectChatMessage = async (params: {
   photoURL?: string;
   body: string;
   taskId?: string | null;
+  attachments?: ChatAttachment[];
 }): Promise<ProjectChatMessage> => {
   const messageId = crypto.randomUUID();
   const now = new Date().toISOString();
+  const attachments = params.attachments ?? [];
   const row = {
     message_id: messageId,
     project_id: params.projectId,
@@ -2350,6 +2374,7 @@ export const insertProjectChatMessage = async (params: {
     user_photo: params.photoURL || null,
     body: params.body.trim(),
     task_id: params.taskId || null,
+    attachments,
     created_at: now,
   };
 
@@ -3012,6 +3037,7 @@ export interface DirectMessage {
   recipientId: string;
   organizationId: string | null;
   body: string;
+  attachments: ChatAttachment[];
   createdAt: Date;
   readAt: Date | null;
 }
@@ -3022,7 +3048,8 @@ const mapDirectMessageRow = (d: Record<string, unknown>): DirectMessage => ({
   senderId: d.sender_id as string,
   recipientId: d.recipient_id as string,
   organizationId: (d.organization_id as string) ?? null,
-  body: d.body as string,
+  body: (d.body as string) ?? "",
+  attachments: sanitizeAttachments(d.attachments),
   createdAt: new Date(d.created_at as string),
   readAt: d.read_at ? new Date(d.read_at as string) : null,
 });
@@ -3061,9 +3088,11 @@ export const insertDirectMessage = async (params: {
   recipientId: string;
   organizationId?: string | null;
   body: string;
+  attachments?: ChatAttachment[];
 }): Promise<DirectMessage> => {
   const body = params.body.trim();
-  if (!body) throw new Error("empty message");
+  const attachments = params.attachments ?? [];
+  if (!body && attachments.length === 0) throw new Error("empty message");
   const threadKey = directMessageThreadKey(params.senderId, params.recipientId);
   const { data, error } = await supabase
     .from("direct_messages")
@@ -3073,6 +3102,7 @@ export const insertDirectMessage = async (params: {
       recipient_id: params.recipientId,
       organization_id: params.organizationId ?? null,
       body,
+      attachments,
     })
     .select()
     .single();

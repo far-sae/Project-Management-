@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Loader2, MessageSquare, Minus, Phone, Send, Video } from 'lucide-react';
+import { Loader2, MessageSquare, Minus, Paperclip, Phone, Send, Video, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,8 +12,12 @@ import {
   markDirectMessagesRead,
   deleteOldDirectMessages,
   subscribeToDirectMessages,
+  directMessageThreadKey,
+  type ChatAttachment,
   type DirectMessage,
 } from '@/services/supabase/database';
+import { deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
+import { ChatAttachmentList } from './ChatAttachmentList';
 import { format, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
 
@@ -53,6 +57,8 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
@@ -91,17 +97,72 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   const handleSend = useCallback(async () => {
     if (!recipient || !user?.userId) return;
     const body = input.trim();
-    if (!body) return;
+    if (!body && pendingFiles.length === 0) return;
     setSending(true);
     stickToBottomRef.current = true;
     try {
-      await insertDirectMessage({
-        senderId: user.userId,
-        recipientId: recipient.userId,
-        organizationId: organizationId ?? null,
-        body,
-      });
+      // Upload any pending files first; surface upload failures clearly.
+      let attachments: ChatAttachment[] = [];
+      const uploadedPaths: string[] = [];
+      if (pendingFiles.length > 0) {
+        const threadKey = directMessageThreadKey(user.userId, recipient.userId);
+        const settled = await Promise.allSettled(
+          pendingFiles.map((f) =>
+            uploadChatAttachment(f, { kind: 'dm', threadKey }),
+          ),
+        );
+        const failedNames: string[] = [];
+        settled.forEach((r, i) => {
+          const name = pendingFiles[i]?.name ?? `file ${i + 1}`;
+          if (r.status === 'fulfilled') {
+            const u = r.value;
+            uploadedPaths.push(u.storagePath);
+            attachments.push({
+              fileName: u.fileName,
+              fileUrl: u.fileUrl,
+              fileType: u.fileType,
+              fileSize: u.fileSize,
+            });
+          } else {
+            failedNames.push(name);
+          }
+        });
+        if (failedNames.length > 0) {
+          const sample = failedNames.slice(0, 3).join(', ');
+          toast.warning(
+            `${failedNames.length} attachment(s) failed to upload: ${sample}${failedNames.length > 3 ? '…' : ''}`,
+          );
+        }
+        if (!body.trim() && attachments.length === 0) {
+          if (pendingFiles.length > 0) {
+            toast.error(
+              failedNames.length === pendingFiles.length
+                ? 'All uploads failed. Message not sent.'
+                : 'Nothing to send.',
+            );
+          }
+          return;
+        }
+      }
+      try {
+        await insertDirectMessage({
+          senderId: user.userId,
+          recipientId: recipient.userId,
+          organizationId: organizationId ?? null,
+          body,
+          attachments,
+        });
+      } catch (insertErr) {
+        await Promise.allSettled(
+          uploadedPaths.map((p) =>
+            deleteFile('attachments', p).catch(() => undefined),
+          ),
+        );
+        throw insertErr;
+      }
       setInput('');
+      setPendingFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (e) {
       const raw = e instanceof Error ? e.message : '';
       const lower = raw.toLowerCase();
@@ -119,7 +180,25 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
     } finally {
       setSending(false);
     }
-  }, [recipient, user?.userId, input, organizationId]);
+  }, [recipient, user?.userId, input, pendingFiles, organizationId]);
+
+  const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    // Cap at 5 files / 25 MB each to avoid blowing storage costs from chat.
+    const filtered = files.filter((f) => {
+      if (f.size > 25 * 1024 * 1024) {
+        toast.error(`${f.name} is larger than 25 MB`);
+        return false;
+      }
+      return true;
+    });
+    setPendingFiles((prev) => [...prev, ...filtered].slice(0, 5));
+    if (e.target) e.target.value = '';
+  };
+
+  const removePending = (idx: number) =>
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
 
   if (!recipient) return null;
 
@@ -253,16 +332,19 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
                           <span className="font-medium text-foreground">{mine ? 'You' : recipient.displayName}</span>
                           <span>{format(createdAt, 'p')}</span>
                         </div>
-                        <div
-                          className={cn(
-                            'rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
-                            mine
-                              ? 'rounded-br-sm bg-primary text-primary-foreground shadow-sm'
-                              : 'rounded-bl-sm bg-muted text-foreground border border-border/60',
-                          )}
-                        >
-                          {msg.body}
-                        </div>
+                        {msg.body && (
+                          <div
+                            className={cn(
+                              'rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
+                              mine
+                                ? 'rounded-br-sm bg-primary text-primary-foreground shadow-sm'
+                                : 'rounded-bl-sm bg-muted text-foreground border border-border/60',
+                            )}
+                          >
+                            {msg.body}
+                          </div>
+                        )}
+                        <ChatAttachmentList attachments={msg.attachments} mine={mine} />
                       </div>
                     </div>
                   </div>
@@ -273,6 +355,27 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
         </div>
 
         <div className="shrink-0 border-t border-border/70 bg-card/80 p-2.5">
+          {pendingFiles.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {pendingFiles.map((f, idx) => (
+                <span
+                  key={`${f.name}-${idx}`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px]"
+                >
+                  <Paperclip className="w-3 h-3" />
+                  <span className="max-w-[10rem] truncate">{f.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removePending(idx)}
+                    aria-label={`Remove ${f.name}`}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="rounded-lg border border-border/60 bg-background/90 p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
             <Textarea
               value={input}
@@ -289,14 +392,38 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
               }}
             />
             <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5 pt-1">
-              <p className="text-[10.5px] text-muted-foreground truncate">
-                Enter to send · Shift+Enter for newline
-              </p>
+              <div className="flex items-center gap-1 min-w-0">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={onPickFiles}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!user || sending}
+                  aria-label="Attach file"
+                  title="Attach file"
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                </Button>
+                <p className="text-[10.5px] text-muted-foreground truncate">
+                  Enter to send · Shift+Enter for newline
+                </p>
+              </div>
               <Button
                 type="button"
                 size="sm"
                 className="h-7 rounded-md px-3 text-xs"
-                disabled={!user || !input.trim() || sending}
+                disabled={
+                  !user || sending ||
+                  (!input.trim() && pendingFiles.length === 0)
+                }
                 onClick={() => void handleSend()}
               >
                 {sending ? (
