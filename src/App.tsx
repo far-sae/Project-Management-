@@ -28,6 +28,10 @@ const TimelineOverview = React.lazy(() => import('@/pages/TimelineOverview').the
 const Settings = React.lazy(() => import('@/pages/Settings').then((m) => ({ default: m.Settings })));
 const Inbox = React.lazy(() => import('@/pages/Inbox').then((m) => ({ default: m.Inbox })));
 const Workload = React.lazy(() => import('@/pages/Workload').then((m) => ({ default: m.Workload })));
+const TimeTracking = React.lazy(() => import('@/pages/TimeTracking').then((m) => ({ default: m.TimeTracking })));
+const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ default: m.Expenses })));
+const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
+const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
@@ -175,6 +179,38 @@ export default function App() {
             element: (
               <ProtectedRoute requireSubscription>
                 {lazyRoute(<Contracts />)}
+              </ProtectedRoute>
+            ),
+          },
+          {
+            path: '/time',
+            element: (
+              <ProtectedRoute requireSubscription>
+                {lazyRoute(<TimeTracking />)}
+              </ProtectedRoute>
+            ),
+          },
+          {
+            path: '/expenses',
+            element: (
+              <ProtectedRoute requireSubscription>
+                {lazyRoute(<ExpensesPage />)}
+              </ProtectedRoute>
+            ),
+          },
+          {
+            path: '/hr',
+            element: (
+              <ProtectedRoute requireSubscription>
+                {lazyRoute(<HRPage />)}
+              </ProtectedRoute>
+            ),
+          },
+          {
+            path: '/payroll',
+            element: (
+              <ProtectedRoute requireSubscription>
+                {lazyRoute(<PayrollPage />)}
               </ProtectedRoute>
             ),
           },

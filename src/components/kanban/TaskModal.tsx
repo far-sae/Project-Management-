@@ -75,6 +75,7 @@ import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
 import AttachmentPreview from '../ui/AttachmentPreview';
+import { TaskExpensesPanel } from '@/components/expenses/TaskExpensesPanel';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
 
@@ -1256,6 +1257,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   className="resize-none"
                 />
               </div>
+            )}
+
+            {/* Expenses tied to this task — visible to creator/assignee + owner/admin via RLS */}
+            {isEditing && task && (
+              <TaskExpensesPanel
+                taskId={task.taskId}
+                taskTitle={task.title}
+                projectId={task.projectId}
+                projectName={project?.name ?? null}
+              />
             )}
 
             {/* Comments / Activity (edit mode only) */}

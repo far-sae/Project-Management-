@@ -23,6 +23,10 @@ import {
   ChevronDown,
   Menu,
   X,
+  Clock,
+  Receipt,
+  UserCircle,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -141,6 +145,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
     { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },
     { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null },
+    { icon: Clock, label: 'Time Tracking', href: '/time', feature: null },
+    { icon: Receipt, label: 'Expenses', href: '/expenses', feature: null },
+    { icon: UserCircle, label: 'HR', href: '/hr', feature: null },
+    { icon: Wallet, label: 'Payroll', href: '/payroll', feature: null },
   ] as const;
 
   const taskCounts = useMemo(() => {
