@@ -14,6 +14,12 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+import {
+  DateRangeFilter,
+  DateRangeValue,
+  ALL_TIME,
+  inRange,
+} from '@/components/common/DateRangeFilter';
 
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -129,6 +135,8 @@ export const Inbox: React.FC = () => {
   const navigate = useNavigate();
   const [tab, setTab] = useState<FilterTab>('all');
   const [search, setSearch] = useState('');
+  // Filter notifications by their creation timestamp.
+  const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
   const [snoozes, setSnoozes] = useState<SnoozeMap>(() =>
     readJson<SnoozeMap>(SNOOZE_KEY, {}),
   );
@@ -182,10 +190,11 @@ export const Inbox: React.FC = () => {
         if (filterTab === 'assigned' && !isAssignment(n)) return false;
         if (filterTab === 'unread' && n.read) return false;
         if (q && !`${n.title} ${n.body}`.toLowerCase().includes(q)) return false;
+        if (!inRange(new Date(n.createdAt), dateRange)) return false;
         return true;
       });
     },
-    [notifications, snoozes, isMuted, search],
+    [notifications, snoozes, isMuted, search, dateRange],
   );
 
   const handleOpen = useCallback(
@@ -283,14 +292,17 @@ export const Inbox: React.FC = () => {
                     </Button>
                   )}
                 </div>
-                <div className="relative w-full max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    placeholder="Search notifications…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9 h-9"
-                  />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="relative w-full max-w-md">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Search notifications…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9 h-9"
+                    />
+                  </div>
+                  <DateRangeFilter value={dateRange} onChange={setDateRange} />
                 </div>
               </CardHeader>
               <CardContent className="pt-0 space-y-4">

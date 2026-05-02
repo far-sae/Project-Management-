@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, Users, Calendar as CalendarIcon, Settings as SettingsIcon } from 'lucide-react';
 import {
@@ -41,6 +41,10 @@ import type { OrganizationMember } from '@/types/organization';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { toast } from 'sonner';
+import {
+  DateRangeFilter,
+  DateRangeValue,
+} from '@/components/common/DateRangeFilter';
 
 interface WorkloadCell {
   date: Date;
@@ -82,6 +86,32 @@ export const Workload: React.FC = () => {
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
   );
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => {
+    const ws = startOfWeek(new Date(), { weekStartsOn: 1 });
+    return {
+      preset: 'custom',
+      start: ws,
+      end: endOfWeek(ws, { weekStartsOn: 1 }),
+    };
+  });
+
+  const navigateToWeek = useCallback((anchor: Date) => {
+    const ws = startOfWeek(anchor, { weekStartsOn: 1 });
+    const we = endOfWeek(ws, { weekStartsOn: 1 });
+    setWeekStart(ws);
+    setDateRange({ preset: 'custom', start: ws, end: we });
+  }, []);
+
+  // Presets / custom picks: align the heatmap week and the date-range label to
+  // the same Monday–Sunday window (avoids "Last 7 days" showing a mismatched week).
+  const onDateRangeChange = (next: DateRangeValue) => {
+    if (next.preset === 'all' || !next.start) {
+      setDateRange(next);
+      if (next.start) navigateToWeek(next.start);
+      return;
+    }
+    navigateToWeek(next.start);
+  };
   const [capacityMap, setCapacityMap] = useState<Map<string, number>>(new Map());
   const [hoursPerTask, setHoursPerTask] = useState<number>(HOURS_PER_TASK_DEFAULT);
   const [capacityLoading, setCapacityLoading] = useState(false);
@@ -179,10 +209,9 @@ export const Workload: React.FC = () => {
     });
   }, [members, tasks, weekDays, weekStart, weekEnd, capacityMap, hoursPerTask]);
 
-  const goPrevWeek = () => setWeekStart((d) => addDays(d, -7));
-  const goNextWeek = () => setWeekStart((d) => addDays(d, 7));
-  const goToday = () =>
-    setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const goPrevWeek = () => navigateToWeek(addDays(weekStart, -7));
+  const goNextWeek = () => navigateToWeek(addDays(weekStart, 7));
+  const goToday = () => navigateToWeek(new Date());
 
   const heatColor = (count: number, capacityPerDay: number) => {
     if (count === 0) return 'bg-secondary';
@@ -214,6 +243,11 @@ export const Workload: React.FC = () => {
           }
           right={
             <div className="flex items-center gap-2">
+              <DateRangeFilter
+                value={dateRange}
+                onChange={onDateRangeChange}
+                allowAllTime={false}
+              />
               <Button variant="ghost" size="sm" onClick={goPrevWeek} aria-label="Previous week">
                 ‹
               </Button>

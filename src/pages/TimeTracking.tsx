@@ -22,6 +22,12 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { TimeEntry, formatDurationSeconds, type UpdateTimeEntryInput } from '@/services/supabase/timeEntries';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import {
+  DateRangeFilter,
+  DateRangeValue,
+  ALL_TIME,
+  inRange,
+} from '@/components/common/DateRangeFilter';
 
 /** Live counter for the currently-open entry. */
 const LiveDuration: React.FC<{ start: Date }> = ({ start }) => {
@@ -51,6 +57,16 @@ export const TimeTracking: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState('');
   const [activeTab, setActiveTab] = useState<'me' | 'team'>('me');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
+
+  const filteredOwnEntries = useMemo(
+    () => ownEntries.filter((e) => inRange(e.clockedInAt, dateRange)),
+    [ownEntries, dateRange],
+  );
+  const filteredEntries = useMemo(
+    () => entries.filter((e) => inRange(e.clockedInAt, dateRange)),
+    [entries, dateRange],
+  );
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [editForm, setEditForm] = useState({
     clockedInAt: '',
@@ -136,13 +152,14 @@ export const TimeTracking: React.FC = () => {
     }
   };
 
-  // Per-user totals for the team view (owner + admin only)
+  // Per-user totals for the team view (owner + admin only). Reflects the
+  // active date range so totals match what's in the table below.
   const memberTotals = useMemo(() => {
     const map = new Map<
       string,
       { userId: string; userName: string; total: number; openCount: number }
     >();
-    entries.forEach((e) => {
+    filteredEntries.forEach((e) => {
       const cur = map.get(e.userId) ?? {
         userId: e.userId,
         userName: e.userName ?? e.userId,
@@ -154,7 +171,7 @@ export const TimeTracking: React.FC = () => {
       map.set(e.userId, cur);
     });
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [entries]);
+  }, [filteredEntries]);
 
   const memberPhoto = (uid: string) =>
     organization?.members?.find((m) => m.userId === uid)?.photoURL ?? '';
@@ -245,6 +262,7 @@ export const TimeTracking: React.FC = () => {
                 {!isOwner && ' Only the owner can edit time entries.'}
               </p>
             </div>
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
           </div>
 
           {/* Clock in/out card */}
@@ -324,9 +342,11 @@ export const TimeTracking: React.FC = () => {
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                     </div>
-                  ) : ownEntries.length === 0 ? (
+                  ) : filteredOwnEntries.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-6">
-                      No time entries yet — clock in above to start tracking.
+                      {ownEntries.length === 0
+                        ? 'No time entries yet — clock in above to start tracking.'
+                        : 'No time entries in this date range.'}
                     </p>
                   ) : (
                     <div className="overflow-x-auto">
@@ -340,7 +360,7 @@ export const TimeTracking: React.FC = () => {
                             <th className="py-2 text-right">Actions</th>
                           </tr>
                         </thead>
-                        <tbody>{ownEntries.map(renderEntryRow)}</tbody>
+                        <tbody>{filteredOwnEntries.map(renderEntryRow)}</tbody>
                       </table>
                     </div>
                   )}
@@ -400,9 +420,11 @@ export const TimeTracking: React.FC = () => {
                     )}
                   </CardHeader>
                   <CardContent>
-                    {entries.length === 0 ? (
+                    {filteredEntries.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-6">
-                        No entries yet.
+                        {entries.length === 0
+                          ? 'No entries yet.'
+                          : 'No entries in this date range.'}
                       </p>
                     ) : (
                       <div className="overflow-x-auto">
@@ -416,7 +438,7 @@ export const TimeTracking: React.FC = () => {
                               <th className="py-2 text-right">Actions</th>
                             </tr>
                           </thead>
-                          <tbody>{entries.map(renderEntryRow)}</tbody>
+                          <tbody>{filteredEntries.map(renderEntryRow)}</tbody>
                         </table>
                       </div>
                     )}

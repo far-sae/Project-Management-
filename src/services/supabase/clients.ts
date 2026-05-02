@@ -1152,7 +1152,12 @@ export const deleteAttachment = async (
 // the service layer so the import dialog stays thin.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const CLIENT_CSV_HEADERS = [
+// Core columns that map directly onto top-level Client fields. Anything outside
+// this set with a name in CLIENT_CUSTOM_FIELD_HEADERS is captured into
+// customFields instead — that way an importer can include common business
+// extras (tax id, billing contact, payment terms, …) without needing a DB
+// schema change per industry.
+export const CLIENT_CORE_HEADERS = [
   "name",
   "legal_name",
   "industry",
@@ -1176,59 +1181,165 @@ export const CLIENT_CSV_HEADERS = [
   "account_owner_name",
 ] as const;
 
+// Optional business-extra columns. They land in customFields verbatim (string
+// values), which the Clients UI already round-trips. Keeps the template
+// useful for SaaS, retail, manufacturing, services, agencies, etc. without
+// forcing a DB migration per role.
+export const CLIENT_CUSTOM_FIELD_HEADERS = [
+  "account_number",
+  "tax_id",                  // VAT / GST / EIN / TIN
+  "currency",                // ISO-4217: USD / GBP / EUR / INR / AED…
+  "payment_terms",           // NET15 / NET30 / DueOnReceipt
+  "billing_email",
+  "billing_phone",
+  "primary_contact_name",
+  "primary_contact_email",
+  "primary_contact_phone",
+  "secondary_contact_name",
+  "secondary_contact_email",
+  "secondary_contact_phone",
+  "lifecycle_stage",         // lead / mql / sql / opportunity / customer / churned
+  "linkedin_url",
+  "twitter_url",
+  "notes",
+] as const;
+
+// Backwards-compatible export: the dialog template includes core + extras.
+export const CLIENT_CSV_HEADERS = [
+  ...CLIENT_CORE_HEADERS,
+  ...CLIENT_CUSTOM_FIELD_HEADERS,
+] as const;
+
+const CUSTOM_HEADER_SET = new Set<string>(CLIENT_CUSTOM_FIELD_HEADERS);
+const ALLOWED_HEADER_SET = new Set<string>([
+  ...CLIENT_CORE_HEADERS,
+  ...CLIENT_CUSTOM_FIELD_HEADERS,
+]);
+
+const VALID_TYPES: ClientType[] = ["customer", "prospect", "partner", "vendor", "other"];
+const VALID_STATUSES: ClientStatus[] = ["active", "inactive", "archived"];
+
 export interface CsvRowError {
   row: number;
   message: string;
 }
 
-export interface ImportResult {
-  imported: Client[];
-  errors: CsvRowError[];
-}
+/**
+ * Parse one CSV row (already keyed by lowercased headers) into a
+ * CreateClientInput. Returns { ok:false } with a list of human-readable
+ * reasons if the row is unusable — the importer skips those rows and
+ * surfaces the reasons back to the UI so the user sees exactly what got
+ * rejected and why, instead of silently coercing bad data.
+ */
+type RowParseResult =
+  | { ok: true; input: CreateClientInput }
+  | { ok: false; reasons: string[] };
 
-/** Parse one CSV row (already keyed by lowercased headers) into CreateClientInput. */
-const csvRowToInput = (row: Record<string, string>): CreateClientInput => {
-  const num = (v: string | undefined): number | null => {
-    if (!v) return null;
-    const n = Number(String(v).replace(/[^\d.\-]/g, ""));
-    return Number.isFinite(n) ? n : null;
+const parseCsvRow = (row: Record<string, string>): RowParseResult => {
+  const reasons: string[] = [];
+
+  const trimmedOrNull = (v: string | undefined): string | null => {
+    const s = (v ?? "").trim();
+    return s.length > 0 ? s : null;
   };
+
+  const parseNumberStrict = (
+    v: string | undefined,
+    field: string,
+  ): { ok: true; value: number | null } | { ok: false } => {
+    const raw = (v ?? "").trim();
+    if (!raw) return { ok: true, value: null };
+    const cleaned = raw.replace(/[^\d.\-]/g, "");
+    const n = Number(cleaned);
+    if (!Number.isFinite(n)) {
+      reasons.push(`Column "${field}" is not a valid number ("${raw}")`);
+      return { ok: false };
+    }
+    return { ok: true, value: n };
+  };
+
   const tags = (row.tags || "")
     .split(/[,;|]/)
     .map((t) => t.trim())
     .filter(Boolean);
-  const type = ((row.type || "customer").toLowerCase()) as ClientType;
-  const status = ((row.status || "active").toLowerCase()) as ClientStatus;
 
-  return {
-    name: row.name,
-    legalName: row.legal_name || null,
-    industry: row.industry || null,
-    type: ["customer", "prospect", "partner", "vendor", "other"].includes(type)
-      ? type
-      : "customer",
-    status: ["active", "inactive", "archived"].includes(status) ? status : "active",
-    website: row.website || null,
-    email: row.email || null,
-    phone: row.phone || null,
-    addressLine1: row.address_line1 || null,
-    addressLine2: row.address_line2 || null,
-    city: row.city || null,
-    state: row.state || null,
-    postalCode: row.postal_code || null,
-    country: row.country || null,
-    annualRevenue: num(row.annual_revenue),
-    employeeCount: (() => {
-      const n = num(row.employee_count);
-      return n == null ? null : Math.round(n);
-    })(),
-    rating: row.rating || null,
-    source: row.source || null,
-    description: row.description || null,
+  const rawType = (row.type || "").trim().toLowerCase();
+  let type: ClientType = "customer";
+  if (rawType.length > 0) {
+    if ((VALID_TYPES as string[]).includes(rawType)) {
+      type = rawType as ClientType;
+    } else {
+      reasons.push(
+        `"type" must be one of ${VALID_TYPES.join(", ")} (got "${rawType}")`,
+      );
+    }
+  }
+
+  const rawStatus = (row.status || "").trim().toLowerCase();
+  let status: ClientStatus = "active";
+  if (rawStatus.length > 0) {
+    if ((VALID_STATUSES as string[]).includes(rawStatus)) {
+      status = rawStatus as ClientStatus;
+    } else {
+      reasons.push(
+        `"status" must be one of ${VALID_STATUSES.join(", ")} (got "${rawStatus}")`,
+      );
+    }
+  }
+
+  const revenue = parseNumberStrict(row.annual_revenue, "annual_revenue");
+  const employees = parseNumberStrict(row.employee_count, "employee_count");
+
+  // Capture extras into customFields (only those we explicitly accept). Any
+  // truly unrecognized column gets ignored — we do NOT fail the row for
+  // extra columns, since CSVs from CRMs often have a long tail.
+  const customFields: Record<string, string> = {};
+  for (const key of CUSTOM_HEADER_SET) {
+    const v = trimmedOrNull(row[key]);
+    if (v !== null) customFields[key] = v;
+  }
+
+  if (reasons.length > 0) return { ok: false, reasons };
+
+  const input: CreateClientInput = {
+    name: row.name?.trim() ?? "",
+    legalName: trimmedOrNull(row.legal_name),
+    industry: trimmedOrNull(row.industry),
+    type,
+    status,
+    website: trimmedOrNull(row.website),
+    email: trimmedOrNull(row.email),
+    phone: trimmedOrNull(row.phone),
+    addressLine1: trimmedOrNull(row.address_line1),
+    addressLine2: trimmedOrNull(row.address_line2),
+    city: trimmedOrNull(row.city),
+    state: trimmedOrNull(row.state),
+    postalCode: trimmedOrNull(row.postal_code),
+    country: trimmedOrNull(row.country),
+    annualRevenue: revenue.ok ? revenue.value : null,
+    employeeCount:
+      employees.ok && employees.value != null
+        ? Math.round(employees.value)
+        : null,
+    rating: trimmedOrNull(row.rating),
+    source: trimmedOrNull(row.source),
+    description: trimmedOrNull(row.description),
     tags,
-    accountOwnerName: row.account_owner_name || null,
+    accountOwnerName: trimmedOrNull(row.account_owner_name),
+    customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
   };
+
+  return { ok: true, input };
 };
+
+export interface ImportResult {
+  imported: Client[];
+  errors: CsvRowError[];
+  /** Headers the CSV included that aren't part of the canonical template. */
+  unknownHeaders: string[];
+  /** Canonical headers missing from the CSV (informational, not fatal). */
+  missingHeaders: string[];
+}
 
 export const importClientsFromCsv = async (
   organizationId: string,
@@ -1239,6 +1350,22 @@ export const importClientsFromCsv = async (
   const errors: CsvRowError[] = [];
   const imported: Client[] = [];
 
+  // Header diagnostics: tell the user which columns we ignored and which
+  // canonical ones were missing — same idea as Salesforce's "Field map"
+  // preview, just summarised after the fact.
+  const seenHeaders = new Set<string>();
+  if (rows.length > 0) {
+    for (const k of Object.keys(rows[0])) {
+      seenHeaders.add(k.toLowerCase().trim());
+    }
+  }
+  const unknownHeaders = Array.from(seenHeaders).filter(
+    (h) => !ALLOWED_HEADER_SET.has(h),
+  );
+  const missingHeaders = [...CLIENT_CORE_HEADERS].filter(
+    (h) => !seenHeaders.has(h),
+  );
+
   // Process serially: 50–500 row CSVs are realistic, parallel inserts blow up
   // the realtime channel and trigger duplicate names on retries.
   for (let i = 0; i < rows.length; i++) {
@@ -1247,13 +1374,30 @@ export const importClientsFromCsv = async (
     for (const k of Object.keys(raw)) {
       normalised[k.toLowerCase().trim()] = (raw[k] ?? "").toString();
     }
+
+    // Skip wholly-blank rows silently — Excel exports leave them at the end
+    // and they shouldn't show up as "Missing client name" noise.
+    const hasAnyValue = Object.values(normalised).some((v) => v.trim() !== "");
+    if (!hasAnyValue) continue;
+
+    const parsed = parseCsvRow(normalised);
+    if (!parsed.ok) {
+      errors.push({ row: i + 2, message: parsed.reasons.join("; ") });
+      continue;
+    }
+
+    if (!sanitizeText(parsed.input.name)) {
+      errors.push({ row: i + 2, message: "Missing client name" });
+      continue;
+    }
+
     try {
-      const input = csvRowToInput(normalised);
-      if (!sanitizeText(input.name)) {
-        errors.push({ row: i + 2, message: "Missing client name" });
-        continue;
-      }
-      const client = await createClient(organizationId, userId, userName, input);
+      const client = await createClient(
+        organizationId,
+        userId,
+        userName,
+        parsed.input,
+      );
       imported.push(client);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -1261,7 +1405,9 @@ export const importClientsFromCsv = async (
     }
   }
 
-  return { imported, errors };
+  // Suppress core-set marker for unused custom-field headers if they didn't
+  // appear (no need to ask for them).
+  return { imported, errors, unknownHeaders, missingHeaders };
 };
 
 /** Build a CSV string for export. Quotes fields containing commas/newlines/quotes. */

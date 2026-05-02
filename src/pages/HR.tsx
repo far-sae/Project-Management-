@@ -27,6 +27,12 @@ import {
 } from '@/services/supabase/employees';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import {
+  DateRangeFilter,
+  DateRangeValue,
+  ALL_TIME,
+  inRange,
+} from '@/components/common/DateRangeFilter';
 
 const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
 
@@ -122,6 +128,10 @@ export const HR: React.FC = () => {
   } | null>(null);
   const [form, setForm] = useState<FormState>(blankForm);
   const [saving, setSaving] = useState(false);
+  // Filters the directory by `hireDate`. "All time" shows everyone (including
+  // members without a profile yet); any preset/custom range only shows people
+  // whose hireDate falls inside it.
+  const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
 
   // Build the directory from organization members so people show up even
   // before a profile row is created.
@@ -144,6 +154,15 @@ export const HR: React.FC = () => {
     }
     return list;
   }, [organization?.members, profilesByUserId, canView, user?.userId]);
+
+  const visibleDirectory = useMemo(() => {
+    if (dateRange.preset === 'all') return directory;
+    return directory.filter((entry) =>
+      entry.profile?.hireDate
+        ? inRange(entry.profile.hireDate, dateRange)
+        : false,
+    );
+  }, [directory, dateRange]);
 
   const openEdit = (entry: typeof directory[number]) => {
     if (!canManage) {
@@ -215,21 +234,24 @@ export const HR: React.FC = () => {
                 )}
               </p>
             </div>
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
           </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-10">
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
-          ) : directory.length === 0 ? (
+          ) : visibleDirectory.length === 0 ? (
             <Card>
               <CardContent className="text-center py-10 text-sm text-muted-foreground">
-                No team members yet.
+                {directory.length === 0
+                  ? 'No team members yet.'
+                  : 'No employees with a hire date in this range.'}
               </CardContent>
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {directory.map((entry) => {
+              {visibleDirectory.map((entry) => {
                 const p = entry.profile;
                 return (
                   <Card key={entry.userId}>

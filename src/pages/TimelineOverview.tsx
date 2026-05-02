@@ -225,6 +225,10 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
           // (legacy rows, malformed JSON), not real teammates.
           .filter((m): m is NonNullable<typeof m> => !!m && !!m.userId);
 
+        const resolvedMembers = [owner, ...members].filter(
+          (m): m is NonNullable<typeof m> => !!m && !!m.userId,
+        );
+
         const projStart = project.effectiveStart;
         const projEnd = project.effectiveEnd;
 
@@ -293,23 +297,20 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
               {/* Member avatars */}
               <div className="flex -space-x-1.5 ml-2">
-                {[owner, ...members]
-                  .filter((m): m is NonNullable<typeof m> => !!m && !!m.userId)
-                  .slice(0, 4)
-                  .map((m) => (
-                    <Avatar key={m.userId} className="w-6 h-6 ring-2 ring-card shadow-sm">
-                      <AvatarImage src={m.photoURL} />
-                      <AvatarFallback
-                        className="text-[10px] font-bold text-white"
-                        style={{ backgroundColor: barColor }}
-                      >
-                        {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                  ))}
-                {[owner, ...members].filter(Boolean).length > 4 && (
+                {resolvedMembers.slice(0, 4).map((m) => (
+                  <Avatar key={m.userId} className="w-6 h-6 ring-2 ring-card shadow-sm">
+                    <AvatarImage src={m.photoURL} />
+                    <AvatarFallback
+                      className="text-[10px] font-bold text-white"
+                      style={{ backgroundColor: barColor }}
+                    >
+                      {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+                {resolvedMembers.length > 4 && (
                   <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[10px] text-muted-foreground font-bold">
-                    +{[owner, ...members].filter(Boolean).length - 4}
+                    +{resolvedMembers.length - 4}
                   </div>
                 )}
               </div>

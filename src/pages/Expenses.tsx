@@ -28,6 +28,12 @@ import {
 } from '@/services/supabase/expenses';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import {
+  DateRangeFilter,
+  DateRangeValue,
+  ALL_TIME,
+  inRange,
+} from '@/components/common/DateRangeFilter';
 
 const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
 const CATEGORIES = ['Materials', 'Tools', 'Fuel', 'Travel', 'Subcontractor', 'Other'];
@@ -90,6 +96,7 @@ export const Expenses: React.FC = () => {
 
   const [tab, setTab] = useState<'me' | 'all'>('me');
   const [statusFilter, setStatusFilter] = useState<'all' | ExpenseStatus>('all');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm);
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
@@ -135,8 +142,9 @@ export const Expenses: React.FC = () => {
     if (statusFilter !== 'all') {
       list = list.filter((e) => e.status === statusFilter);
     }
+    list = list.filter((e) => inRange(e.incurredOn, dateRange));
     return list;
-  }, [expenses, tab, statusFilter, user?.userId]);
+  }, [expenses, tab, statusFilter, user?.userId, dateRange]);
 
   const totals = useMemo(() => {
     const byCurrency = new Map<string, number>();
@@ -410,7 +418,8 @@ export const Expenses: React.FC = () => {
               </TabsList>
             </Tabs>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <DateRangeFilter value={dateRange} onChange={setDateRange} />
               <Filter className="w-4 h-4 text-muted-foreground" />
               <Select
                 value={statusFilter}

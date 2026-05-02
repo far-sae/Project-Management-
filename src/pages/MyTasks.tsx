@@ -34,6 +34,12 @@ import {
 } from '@/lib/taskLockPin';
 import { useAuth } from '@/context/AuthContext';
 import {
+  DateRangeFilter,
+  DateRangeValue,
+  ALL_TIME,
+  inRange,
+} from '@/components/common/DateRangeFilter';
+import {
   Task,
   TaskComment,
   TaskSubtask,
@@ -136,6 +142,10 @@ export const MyTasks: React.FC = () => {
   const commentFileInputRef = useRef<HTMLInputElement>(null);
   const [groupBy, setGroupBy] = useState<'dueDate' | 'project' | 'status' | 'priority'>('dueDate');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed'>('all');
+  // Filter tasks by their due date when set. "All time" keeps tasks without a
+  // due date visible; any preset/custom window only shows tasks whose dueDate
+  // falls inside it.
+  const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
 
   const [myTasksPin, setMyTasksPin] = useState('');
   const [myTasksPinError, setMyTasksPinError] = useState(false);
@@ -249,10 +259,9 @@ export const MyTasks: React.FC = () => {
     if (!targetDay) return base;
 
     return base.filter((t) => {
-      if (!t.dueDate) return false;
-      const d = new Date(t.dueDate);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime() === targetDay.getTime();
+      const ms = getDueCalendarDayStartMs(t);
+      if (ms == null || !targetDay) return false;
+      return ms === targetDay.getTime();
     });
   }, [workloadDueDay, workloadAssigneeId, allTasks, tasksAssignedToMe, user?.userId]);
 
@@ -508,17 +517,34 @@ export const MyTasks: React.FC = () => {
       );
     }
 
+    // Date-range filter on dueDate (local calendar day). ALL_TIME passes everything through.
+    if (dateRange.preset !== 'all') {
+      filteredTasks = filteredTasks.filter((t) => {
+        const ms = getDueCalendarDayStartMs(t);
+        return ms != null && inRange(new Date(ms), dateRange);
+      });
+    }
+
     const groups: { label: string; tasks: Task[]; }[] = [];
 
     if (groupBy === 'dueDate') {
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
       const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
+      const todayMs = today.getTime();
+      const tomorrowMs = tomorrow.getTime();
+      const nextWeekMs = nextWeek.getTime();
 
-      const todayTasks = filteredTasks.filter(t => { if (!t.dueDate) return false; const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0); return d.getTime() === today.getTime(); });
-      const tomorrowTasks = filteredTasks.filter(t => { if (!t.dueDate) return false; const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0); return d.getTime() === tomorrow.getTime(); });
-      const thisWeekTasks = filteredTasks.filter(t => { if (!t.dueDate) return false; const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0); return d > tomorrow && d <= nextWeek; });
-      const laterTasks = filteredTasks.filter(t => { if (!t.dueDate) return false; const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0); return d > nextWeek; });
+      const todayTasks = filteredTasks.filter((t) => getDueCalendarDayStartMs(t) === todayMs);
+      const tomorrowTasks = filteredTasks.filter((t) => getDueCalendarDayStartMs(t) === tomorrowMs);
+      const thisWeekTasks = filteredTasks.filter((t) => {
+        const ms = getDueCalendarDayStartMs(t);
+        return ms != null && ms > tomorrowMs && ms <= nextWeekMs;
+      });
+      const laterTasks = filteredTasks.filter((t) => {
+        const ms = getDueCalendarDayStartMs(t);
+        return ms != null && ms > nextWeekMs;
+      });
       const noDueTasks = filteredTasks.filter(t => !t.dueDate);
 
       if (todayTasks.length) groups.push({ label: 'Today', tasks: todayTasks });
@@ -558,7 +584,7 @@ export const MyTasks: React.FC = () => {
     }
 
     return groups;
-  }, [tasksForList, groupBy, filterStatus, getProjectName, columnsByProjectId]);
+  }, [tasksForList, groupBy, filterStatus, getProjectName, columnsByProjectId, dateRange]);
 
   const getDueDateLabel = (task: Task) => {
     if (!task.dueDate) return '';
@@ -786,6 +812,7 @@ export const MyTasks: React.FC = () => {
                         })}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    <DateRangeFilter value={dateRange} onChange={setDateRange} />
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
                     <span>{taskGroups.reduce((acc, g) => acc + g.tasks.length, 0)}</span>
@@ -936,7 +963,7 @@ export const MyTasks: React.FC = () => {
                       </div>
                     </div>
                   ))}
-                  {tasksForList.length === 0 && (
+                  {taskGroups.reduce((n, g) => n + g.tasks.length, 0) === 0 && (
                     <div className="text-center py-16 text-muted-foreground">
                       <CheckSquare className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
                       {workloadDeepLink ? (

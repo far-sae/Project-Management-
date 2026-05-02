@@ -46,6 +46,12 @@ import {
 } from '@/services/ai';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import {
+  DateRangeFilter,
+  DateRangeValue,
+  ALL_TIME,
+  inRange,
+} from '@/components/common/DateRangeFilter';
 
 const ALL_WORKSPACES_ID = '__all__';
 
@@ -73,6 +79,11 @@ export const Reports: React.FC = () => {
   // Tab state
   const [activeTab, setActiveTab] = useState<'projects' | 'business'>('projects');
   const [reportWorkspaceId, setReportWorkspaceId] = useState<string>(ALL_WORKSPACES_ID);
+  // Filters tasks/contracts by their creation date. AI snapshot windows
+  // (7d/14d) keep their absolute meaning — they're computed off `now`, not
+  // off this filter — so insights still show "what happened in the last 7
+  // days" even when the user is looking at a custom range above.
+  const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
 
   // Business reports state
   const [businessContracts, setBusinessContracts] = useState<Contract[]>([]);
@@ -173,11 +184,24 @@ export const Reports: React.FC = () => {
 
   const filteredProjectIds = useMemo(() => new Set(filteredProjects.map((p) => p.projectId)), [filteredProjects]);
   const filteredTasks = useMemo(
-    () => tasks.filter((t) => filteredProjectIds.has(t.projectId)),
-    [tasks, filteredProjectIds]
+    () =>
+      tasks
+        .filter((t) => filteredProjectIds.has(t.projectId))
+        .filter((t) => inRange(new Date(t.createdAt), dateRange)),
+    [tasks, filteredProjectIds, dateRange]
   );
 
-  // Project metrics
+  /** Per-project task counts within the same dateRange + workspace as `filteredTasks`. */
+  const projectTaskStatsInRange = useMemo(() => {
+    const map = new Map<string, { totalTasks: number; completedTasks: number }>();
+    for (const t of filteredTasks) {
+      const cur = map.get(t.projectId) ?? { totalTasks: 0, completedTasks: 0 };
+      cur.totalTasks += 1;
+      if (t.status === 'done') cur.completedTasks += 1;
+      map.set(t.projectId, cur);
+    }
+    return map;
+  }, [filteredTasks]);
   const totalProjects = filteredProjects.length;
   const totalTasks = filteredTasks.length;
   const completedTasks = filteredTasks.filter((t) => t.status === 'done').length;
@@ -228,7 +252,9 @@ export const Reports: React.FC = () => {
           (!(p as { workspaceId?: string; }).workspaceId && ws.workspaceId === DEFAULT_WORKSPACE_ID)
       );
       const wsProjectIds = new Set(wsProjects.map((p) => p.projectId));
-      const wsTasks = tasks.filter((t) => wsProjectIds.has(t.projectId));
+      const wsTasks = tasks
+        .filter((t) => wsProjectIds.has(t.projectId))
+        .filter((t) => inRange(new Date(t.createdAt), dateRange));
       return {
         workspaceId: ws.workspaceId,
         name: getWorkspaceDisplayName(ws),
@@ -237,7 +263,7 @@ export const Reports: React.FC = () => {
         completedCount: wsTasks.filter((t) => t.status === 'done').length,
       };
     });
-  }, [workspaces, projects, tasks]);
+  }, [workspaces, projects, tasks, dateRange, DEFAULT_WORKSPACE_ID]);
 
   // Recent tasks
   const recentTasks = useMemo(
@@ -294,8 +320,12 @@ export const Reports: React.FC = () => {
 
     const topProjects = filteredProjects
       .map((p) => {
-        const total = p.stats.totalTasks;
-        const done = p.stats.completedTasks;
+        const scoped = projectTaskStatsInRange.get(p.projectId) ?? {
+          totalTasks: 0,
+          completedTasks: 0,
+        };
+        const total = scoped.totalTasks;
+        const done = scoped.completedTasks;
         return {
           name: p.name,
           total,
@@ -332,6 +362,7 @@ export const Reports: React.FC = () => {
   }, [
     filteredTasks,
     filteredProjects,
+    projectTaskStatsInRange,
     tasksByUser,
     totalProjects,
     totalTasks,
@@ -508,9 +539,10 @@ export const Reports: React.FC = () => {
             </p>
           </div>
 
-          {/* Workspace filter (only for projects tab) */}
+          {/* Workspace + date filters (only for projects tab) */}
           {activeTab === 'projects' && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <DateRangeFilter value={dateRange} onChange={setDateRange} />
               <span className="text-sm font-medium text-foreground">Workspace</span>
               <Select value={reportWorkspaceId} onValueChange={setReportWorkspaceId}>
                 <SelectTrigger className="w-[220px] bg-background">
@@ -1017,8 +1049,12 @@ export const Reports: React.FC = () => {
                       ) : (
                         <div className="space-y-4">
                           {filteredProjects.map((project) => {
-                            const progress = project.stats.totalTasks > 0
-                              ? Math.round((project.stats.completedTasks / project.stats.totalTasks) * 100) : 0;
+                            const scoped = projectTaskStatsInRange.get(project.projectId) ?? {
+                              totalTasks: 0,
+                              completedTasks: 0,
+                            };
+                            const progress = scoped.totalTasks > 0
+                              ? Math.round((scoped.completedTasks / scoped.totalTasks) * 100) : 0;
                             return (
                               <div key={project.projectId} onClick={() => navigate(`/project/${project.projectId}`)} className="cursor-pointer hover:bg-muted/50 rounded-lg p-2 -mx-2 transition-colors">
                                 <div className="flex items-center justify-between mb-2">
@@ -1028,7 +1064,7 @@ export const Reports: React.FC = () => {
                                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                                   <div className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-1">{project.stats.completedTasks} of {project.stats.totalTasks} tasks completed</p>
+                                <p className="text-xs text-muted-foreground mt-1">{scoped.completedTasks} of {scoped.totalTasks} tasks completed</p>
                               </div>
                             );
                           })}

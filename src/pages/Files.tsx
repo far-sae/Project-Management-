@@ -16,6 +16,9 @@ import {
   Loader2,
   Music,
   Video,
+  CheckSquare,
+  Square,
+  X,
 } from 'lucide-react';
 
 import { Sidebar } from '@/components/sidebar/Sidebar';
@@ -41,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 export const Files: React.FC = () => {
   const { user } = useAuth();
@@ -55,6 +59,9 @@ export const Files: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<Record<string, FileUploadProgress>>({});
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [showUploadZone, setShowUploadZone] = useState(false);
+  // Multi-select state for bulk download. We keep a Set of fileIds and toggle
+  // entries via the per-row checkbox. Cleared when project switches.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
 
   // Load files when project is selected
@@ -85,6 +92,8 @@ export const Files: React.FC = () => {
     };
 
     loadFiles();
+    // Switching projects invalidates any in-flight selection.
+    setSelectedIds(new Set());
   }, [selectedProject, organization?.organizationId]);
 
   // Auto-select first project
@@ -231,35 +240,61 @@ export const Files: React.FC = () => {
     file.fileName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleDownloadAll = useCallback(async () => {
-    const snapshot = files.filter((file) =>
-      file.fileName.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-    if (snapshot.length === 0 || downloadingAll) return;
-    setDownloadingAll(true);
-    const toastId = toast.loading(`Downloading ${snapshot.length} files…`);
-    try {
-      let failed = 0;
-      // Trigger downloads one-by-one with a small delay so the browser doesn't
-      // collapse them into a single prompt and doesn't cancel earlier transfers.
-      for (let i = 0; i < snapshot.length; i++) {
-        const ok = await handleDownload(snapshot[i]);
-        if (!ok) failed += 1;
-        if (i < snapshot.length - 1) {
-          await new Promise((r) => setTimeout(r, 350));
+  const toggleSelected = useCallback((fileId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  /**
+   * Bulk download. If the user has explicitly selected files, only those go;
+   * otherwise we fall back to downloading every file currently visible (the
+   * old "Download all" behavior). Sequential trigger with a short delay so
+   * the browser doesn't collapse the prompts or cancel earlier transfers.
+   */
+  const handleBulkDownload = useCallback(
+    async (override?: ProjectFile[]) => {
+      const visible = files.filter((file) =>
+        file.fileName.toLowerCase().includes(searchQuery.toLowerCase()),
+      );
+      const snapshot =
+        override ??
+        (selectedIds.size > 0
+          ? visible.filter((f) => selectedIds.has(f.fileId))
+          : visible);
+      if (snapshot.length === 0 || downloadingAll) return;
+      setDownloadingAll(true);
+      const toastId = toast.loading(`Downloading ${snapshot.length} file${snapshot.length === 1 ? '' : 's'}…`);
+      try {
+        let failed = 0;
+        for (let i = 0; i < snapshot.length; i++) {
+          const ok = await handleDownload(snapshot[i]);
+          if (!ok) failed += 1;
+          if (i < snapshot.length - 1) {
+            await new Promise((r) => setTimeout(r, 350));
+          }
         }
-      }
-      if (failed > 0) {
+        if (failed > 0) {
+          toast.error('Some files could not be downloaded', { id: toastId });
+        } else {
+          toast.success(
+            `Downloaded ${snapshot.length} file${snapshot.length === 1 ? '' : 's'}`,
+            { id: toastId },
+          );
+        }
+      } catch {
         toast.error('Some files could not be downloaded', { id: toastId });
-      } else {
-        toast.success(`Downloaded ${snapshot.length} files`, { id: toastId });
+      } finally {
+        setDownloadingAll(false);
       }
-    } catch {
-      toast.error('Some files could not be downloaded', { id: toastId });
-    } finally {
-      setDownloadingAll(false);
-    }
-  }, [files, searchQuery, downloadingAll, handleDownload]);
+    },
+    [files, searchQuery, downloadingAll, handleDownload, selectedIds],
+  );
 
   const uploadProgressItems = Object.values(uploadProgress);
 
@@ -291,16 +326,24 @@ export const Files: React.FC = () => {
             </Select>
             <Button
               variant="outline"
-              onClick={handleDownloadAll}
+              onClick={() => handleBulkDownload()}
               disabled={!selectedProject || filteredFiles.length === 0 || downloadingAll}
-              title={filteredFiles.length ? `Download all ${filteredFiles.length} files` : 'No files to download'}
+              title={
+                selectedIds.size > 0
+                  ? `Download ${selectedIds.size} selected file${selectedIds.size === 1 ? '' : 's'}`
+                  : filteredFiles.length
+                    ? `Download all ${filteredFiles.length} files`
+                    : 'No files to download'
+              }
             >
               {downloadingAll ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
                 <Download className="w-4 h-4 mr-2" />
               )}
-              Download all
+              {selectedIds.size > 0
+                ? `Download (${selectedIds.size})`
+                : 'Download all'}
             </Button>
             <Button
               className="bg-gradient-to-r from-orange-500 to-red-500"
@@ -352,6 +395,27 @@ export const Files: React.FC = () => {
                   className="pl-10"
                 />
               </div>
+              {filteredFiles.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const allVisible = new Set(filteredFiles.map((f) => f.fileId));
+                    const allSelected = filteredFiles.every((f) =>
+                      selectedIds.has(f.fileId),
+                    );
+                    setSelectedIds(allSelected ? new Set() : allVisible);
+                  }}
+                  title="Select / deselect all visible files"
+                >
+                  {filteredFiles.every((f) => selectedIds.has(f.fileId)) ? (
+                    <CheckSquare className="w-4 h-4 mr-1.5" />
+                  ) : (
+                    <Square className="w-4 h-4 mr-1.5" />
+                  )}
+                  Select all
+                </Button>
+              )}
               <div className="flex border rounded-lg overflow-hidden">
                 <Button
                   variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
@@ -371,6 +435,31 @@ export const Files: React.FC = () => {
                 </Button>
               </div>
             </div>
+            {selectedIds.size > 0 && (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
+                <span className="font-medium text-foreground">
+                  {selectedIds.size} file{selectedIds.size === 1 ? '' : 's'} selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleBulkDownload()}
+                    disabled={downloadingAll}
+                  >
+                    {downloadingAll ? (
+                      <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-1.5" />
+                    )}
+                    Download selected
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={clearSelection}>
+                    <X className="w-4 h-4 mr-1" />
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -413,95 +502,138 @@ export const Files: React.FC = () => {
               </div>
             ) : viewMode === 'grid' ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-                {filteredFiles.map((file) => (
-                  <div
-                    key={file.fileId}
-                    className="p-4 border rounded-lg hover:bg-secondary/60 cursor-pointer text-center group relative"
-                  >
-                    {getFileTypeCategory(file.fileType) === 'image' &&
-                      file.fileUrl.startsWith('http') ? (
-                      <img
-                        src={file.fileUrl}
-                        alt={file.fileName}
-                        className="w-16 h-16 mx-auto object-cover rounded"
-                      />
-                    ) : (
-                      getFileIcon(file.fileType)
-                    )}
-                    <p
-                      className="mt-2 text-sm font-medium truncate"
-                      title={file.fileName}
+                {filteredFiles.map((file) => {
+                  const checked = selectedIds.has(file.fileId);
+                  return (
+                    <div
+                      key={file.fileId}
+                      className={cn(
+                        'p-4 border rounded-lg hover:bg-secondary/60 cursor-pointer text-center group relative',
+                        checked && 'ring-2 ring-primary border-primary bg-primary/5',
+                      )}
+                      onClick={() => toggleSelected(file.fileId)}
                     >
-                      {file.fileName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatFileSize(file.fileSize)}
-                    </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelected(file.fileId);
+                        }}
+                        className={cn(
+                          'absolute top-2 left-2 transition-opacity',
+                          checked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                        )}
+                        aria-label={checked ? 'Deselect file' : 'Select file'}
+                      >
+                        {checked ? (
+                          <CheckSquare className="w-4 h-4 text-primary" />
+                        ) : (
+                          <Square className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </button>
+                      {getFileTypeCategory(file.fileType) === 'image' &&
+                        file.fileUrl.startsWith('http') ? (
+                        <img
+                          src={file.fileUrl}
+                          alt={file.fileName}
+                          className="w-16 h-16 mx-auto object-cover rounded"
+                        />
+                      ) : (
+                        getFileIcon(file.fileType)
+                      )}
+                      <p
+                        className="mt-2 text-sm font-medium truncate"
+                        title={file.fileName}
+                      >
+                        {file.fileName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatFileSize(file.fileSize)}
+                      </p>
 
-                    {/* Hover actions */}
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownload(file);
-                        }}
-                      >
-                        <Download className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteFile(file.fileId);
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {/* Hover actions */}
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(file);
+                          }}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFile(file.fileId);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="space-y-2">
-                {filteredFiles.map((file) => (
-                  <div
-                    key={file.fileId}
-                    className="flex items-center gap-4 p-3 border rounded-lg hover:bg-secondary/60 group"
-                  >
-                    {getFileIcon(file.fileType)}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{file.fileName}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatFileSize(file.fileSize)} • Uploaded by{' '}
-                        {file.uploadedByName} •{' '}
-                        {new Date(file.uploadedAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDownload(file)}
+                {filteredFiles.map((file) => {
+                  const checked = selectedIds.has(file.fileId);
+                  return (
+                    <div
+                      key={file.fileId}
+                      className={cn(
+                        'flex items-center gap-4 p-3 border rounded-lg hover:bg-secondary/60 group',
+                        checked && 'ring-2 ring-primary border-primary bg-primary/5',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSelected(file.fileId)}
+                        aria-label={checked ? 'Deselect file' : 'Select file'}
+                        className="shrink-0"
                       >
-                        <Download className="w-4 h-4 mr-1" />
-                        Download
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => handleDeleteFile(file.fileId)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                        {checked ? (
+                          <CheckSquare className="w-4 h-4 text-primary" />
+                        ) : (
+                          <Square className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                        )}
+                      </button>
+                      {getFileIcon(file.fileType)}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{file.fileName}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatFileSize(file.fileSize)} • Uploaded by{' '}
+                          {file.uploadedByName} •{' '}
+                          {new Date(file.uploadedAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownload(file)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => handleDeleteFile(file.fileId)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
