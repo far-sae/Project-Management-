@@ -66,6 +66,10 @@ export const useEmployees = () => {
         throw new Error("Only the organization owner can delete employee profiles.");
       }
       await deleteEmployeeProfile(orgId, userId);
+      // Drop locally so the UI reflects the delete immediately. The realtime
+      // subscription will eventually fire and reconcile, but we don't make the
+      // user sit on stale state in the meantime.
+      setProfiles((prev) => prev.filter((p) => p.userId !== userId));
     },
     [orgId, isOwner],
   );

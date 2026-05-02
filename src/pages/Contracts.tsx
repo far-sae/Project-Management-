@@ -20,6 +20,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import {
   createContract, updateContract, deleteContract,
   subscribeToContracts, Contract, ContractStatus,
@@ -74,6 +75,7 @@ export const Contracts: React.FC = () => {
   const { organization } = useOrganization();
   const { hasFeature } = useSubscription();
   const navigate = useNavigate();
+  const orgCurrency = useOrgCurrency();
 
   // Records-only mode: contracts page is now a register of agreements; the
   // "assign-to-teammate-and-have-them-accept-by-email" workflow is gone, so
@@ -97,7 +99,7 @@ export const Contracts: React.FC = () => {
     client: '',
     assignedTo: 'unassigned',
     status: 'draft' as ContractStatus,
-    currency: 'USD',
+    currency: orgCurrency,
     value: '',
     startDate: '',
     endDate: '',
@@ -126,7 +128,10 @@ export const Contracts: React.FC = () => {
       client: '',
       assignedTo: 'unassigned',
       status: 'draft',
-      currency: 'USD',
+      // New contracts pick up the org's preferred currency. Editing an
+      // existing contract overwrites this in openEdit() with whatever was
+      // recorded on the row, so historical entries don't get repriced.
+      currency: orgCurrency,
       value: '',
       startDate: '',
       endDate: '',
@@ -219,6 +224,9 @@ export const Contracts: React.FC = () => {
     if (!orgId) return;
     try {
       await deleteContract(contractId, orgId);
+      // Drop locally so the row disappears immediately rather than waiting on
+      // the realtime subscription.
+      setContracts((prev) => prev.filter((c) => c.contractId !== contractId));
       toast.success('Contract deleted');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to delete contract';

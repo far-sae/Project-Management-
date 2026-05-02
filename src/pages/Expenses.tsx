@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/context/AuthContext';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import { useProjects } from '@/hooks/useProjects';
 import { useAllTasks } from '@/hooks/useAllTasks';
 import {
@@ -97,6 +98,7 @@ export const Expenses: React.FC = () => {
   const [tab, setTab] = useState<'me' | 'all'>('me');
   const [statusFilter, setStatusFilter] = useState<'all' | ExpenseStatus>('all');
   const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
+  const orgCurrency = useOrgCurrency();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm);
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
@@ -156,7 +158,10 @@ export const Expenses: React.FC = () => {
   }, [visible]);
 
   const resetForm = () => {
-    setForm(blankForm);
+    // New expenses pre-fill the org's preferred currency. Editing an existing
+    // expense overwrites this in openEdit() — historical entries keep their
+    // original currency.
+    setForm({ ...blankForm, currency: orgCurrency });
     setInvoiceFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };

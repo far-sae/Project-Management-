@@ -164,7 +164,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
 }) => {
   const {
     run, items, loading, reload, updateItem,
-    canEdit, canFinalize, canMarkPaid, isOwner,
+    canEdit, canFinalize, canMarkPaid, canUnmarkPaid, isOwner,
   } = usePayrollRunDetail(runId);
   const { updateRun, remove } = usePayrollRuns();
   const [busy, setBusy] = useState<string | null>(null);
@@ -240,10 +240,13 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
     setBusy(status);
     try {
       await updateRun(runId, { status });
+      const wasUnmark = run?.status === 'paid' && status === 'finalized';
       toast.success(
-        status === 'finalized' ? 'Run finalized'
-        : status === 'paid' ? 'Run marked as paid'
-        : 'Status updated'
+        wasUnmark
+          ? 'Reverted to finalized — run is editable again'
+          : status === 'finalized' ? 'Run finalized'
+          : status === 'paid' ? 'Run marked as paid'
+          : 'Status updated',
       );
       reload();
     } catch (e) {
@@ -252,6 +255,8 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
       setBusy(null);
     }
   };
+
+  const [confirmUnmark, setConfirmUnmark] = useState(false);
 
   const handleDelete = async () => {
     try {
@@ -297,6 +302,18 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
             <Button onClick={() => setStatus('paid')} disabled={busy === 'paid'}>
               {busy === 'paid' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as paid
+            </Button>
+          )}
+          {canUnmarkPaid && (
+            <Button
+              variant="outline"
+              onClick={() => setConfirmUnmark(true)}
+              disabled={busy === 'finalized'}
+            >
+              {busy === 'finalized' && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Unmark as paid
             </Button>
           )}
           {(run.status === 'draft' || isOwner) && (
@@ -398,7 +415,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
                             Edit
                           </Button>
                         ) : (
-                          <span title="Run has been paid — payslips are locked for accounting integrity">
+                          <span title="Editing is restricted to owner + admin">
                             <Lock className="w-3.5 h-3.5 text-muted-foreground inline" />
                           </span>
                         )}
@@ -432,6 +449,18 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
                     corrections — totals will recalculate and the run will keep
                     its finalized status. Save only after you've reviewed the
                     new amounts.
+                  </span>
+                </div>
+              )}
+              {run.status === 'paid' && (
+                <div className="rounded-md border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
+                  <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    This run is <strong>paid</strong>. Editing now records a
+                    correction against an already-disbursed payslip — the run
+                    stays marked paid and totals recompute. If money needs to
+                    be adjusted on the books, prefer "Unmark as paid" first,
+                    edit, then re-mark.
                   </span>
                 </div>
               )}
@@ -544,6 +573,38 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
             </Button>
             <Button variant="destructive" onClick={handleDelete}>
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmUnmark} onOpenChange={setConfirmUnmark}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unmark as paid?</DialogTitle>
+            <DialogDescription>
+              Reverts this run from <strong>paid</strong> back to{' '}
+              <strong>finalized</strong> so payslips become editable again.
+              Use this when payment was reversed, the wrong run was marked
+              paid, or amounts need recalculating before payment ledgers
+              close. Payslip values aren't changed by this action.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmUnmark(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                setConfirmUnmark(false);
+                await setStatus('finalized');
+              }}
+              disabled={busy === 'finalized'}
+            >
+              {busy === 'finalized' && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Unmark as paid
             </Button>
           </DialogFooter>
         </DialogContent>

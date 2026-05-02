@@ -17,11 +17,22 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Users, Edit, Loader2, ShieldAlert, Lock,
+  Users, Edit, Loader2, ShieldAlert, Lock, Trash2,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useEmployees } from '@/hooks/useEmployees';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import {
   EmployeeProfile, EmployeeStatus, EmploymentType, PayPeriod, PayType,
 } from '@/services/supabase/employees';
@@ -117,8 +128,9 @@ const fromProfile = (p: EmployeeProfile): FormState => ({
 export const HR: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
-  const { profilesByUserId, loading, upsert, canManage, canView } =
+  const { profilesByUserId, loading, upsert, remove, canManage, canView } =
     useEmployees();
+  const orgCurrency = useOrgCurrency();
 
   const [editingMember, setEditingMember] = useState<{
     userId: string;
@@ -132,6 +144,26 @@ export const HR: React.FC = () => {
   // members without a profile yet); any preset/custom range only shows people
   // whose hireDate falls inside it.
   const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
+
+  const [deletingMember, setDeletingMember] = useState<{
+    userId: string;
+    displayName: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!deletingMember) return;
+    setDeleting(true);
+    try {
+      await remove(deletingMember.userId);
+      toast.success(`${deletingMember.displayName} removed from HR`);
+      setDeletingMember(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Build the directory from organization members so people show up even
   // before a profile row is created.
@@ -175,7 +207,12 @@ export const HR: React.FC = () => {
       email: entry.email,
       photoURL: entry.photoURL,
     });
-    setForm(entry.profile ? fromProfile(entry.profile) : blankForm);
+    // New profiles default to the org currency; existing profiles keep
+    // whatever was on the record so back pay history isn't accidentally
+    // re-denominated.
+    setForm(
+      entry.profile ? fromProfile(entry.profile) : { ...blankForm, currency: orgCurrency },
+    );
   };
 
   const handleSave = async () => {
@@ -289,19 +326,37 @@ export const HR: React.FC = () => {
                             </p>
                           )}
                         </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openEdit(entry)}
-                          disabled={!canManage}
-                          title={canManage ? 'Edit profile' : 'Owner only'}
-                        >
-                          {canManage ? (
-                            <Edit className="w-4 h-4" />
-                          ) : (
-                            <Lock className="w-4 h-4" />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEdit(entry)}
+                            disabled={!canManage}
+                            title={canManage ? 'Edit profile' : 'Owner only'}
+                          >
+                            {canManage ? (
+                              <Edit className="w-4 h-4" />
+                            ) : (
+                              <Lock className="w-4 h-4" />
+                            )}
+                          </Button>
+                          {canManage && p && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() =>
+                                setDeletingMember({
+                                  userId: entry.userId,
+                                  displayName: entry.displayName,
+                                })
+                              }
+                              title="Remove HR profile"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           )}
-                        </Button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -557,6 +612,36 @@ export const HR: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!deletingMember}
+        onOpenChange={(o) => !o && setDeletingMember(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove {deletingMember?.displayName} from HR?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Deletes the HR profile (job title, pay rate, hire date,
+              employment type). The teammate stays in the organization and on
+              your projects — only their HR record is removed. Past payroll
+              runs that already referenced this person are not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

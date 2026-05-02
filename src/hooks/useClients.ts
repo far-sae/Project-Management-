@@ -68,7 +68,11 @@ export const useClients = () => {
   const remove = useCallback(
     async (clientId: string) => {
       if (!orgId) throw new Error("No organization");
-      return deleteClientSvc(orgId, clientId);
+      const result = await deleteClientSvc(orgId, clientId);
+      // Drop locally so the row disappears immediately even if the realtime
+      // subscription is delayed.
+      setClients((prev) => prev.filter((c) => c.clientId !== clientId));
+      return result;
     },
     [orgId],
   );

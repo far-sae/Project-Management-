@@ -108,6 +108,7 @@ export const updateOrganization = async (
   if (input.settings) updateData.settings = input.settings;
   if (input.members) updateData.members = input.members;
   if (input.subscription) updateData.subscription = input.subscription;
+  if (input.country !== undefined) updateData.country = input.country;
 
   const { error } = await supabase
     .from("organizations")
@@ -300,5 +301,6 @@ const formatOrganization = (data: any): Organization => {
       storageUsed: 0,
       activeUsers: 1,
     },
+    country: data.country ?? undefined,
   };
 };

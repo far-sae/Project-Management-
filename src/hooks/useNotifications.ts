@@ -279,6 +279,14 @@ export const useNotifications = (userId: string | null, limit = 30) => {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  /** Drop a notification from local state — used after a successful server
+   * delete so the UI doesn't wait on a refresh round-trip. */
+  const removeLocal = useCallback((notificationId: string) => {
+    setNotifications((prev) =>
+      prev.filter((n) => n.notificationId !== notificationId),
+    );
+  }, []);
+
   return {
     notifications,
     loading,
@@ -286,6 +294,7 @@ export const useNotifications = (userId: string | null, limit = 30) => {
     markAsRead,
     markAllAsReadLocally,
     refresh: fetchNotifications,
+    removeLocal,
   };
 };
 

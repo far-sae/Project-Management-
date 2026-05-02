@@ -9,15 +9,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { useOrganization } from '@/context/OrganizationContext';
 import { updateOrganization } from '@/services/supabase/organizations';
 import { toast } from 'sonner';
+import { COUNTRIES, COMMON_CURRENCIES, currencyForCountry } from '@/lib/countries';
 
 export const OrganizationSettings: React.FC = () => {
   const { organization, loading, refreshOrganization, canManageSettings } = useOrganization();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
+    country: '',
     timezone: 'UTC',
     currency: 'USD',
     locale: 'en',
@@ -33,6 +38,7 @@ export const OrganizationSettings: React.FC = () => {
     if (organization) {
       setFormData({
         name: organization.name,
+        country: organization.country || '',
         timezone: organization.settings.timezone,
         currency: organization.settings.currency,
         locale: organization.settings.locale,
@@ -69,6 +75,7 @@ export const OrganizationSettings: React.FC = () => {
     try {
       await updateOrganization(organization.organizationId, {
         name: formData.name,
+        country: formData.country || undefined,
         settings: {
           timezone: formData.timezone,
           currency: formData.currency,
@@ -147,24 +154,69 @@ export const OrganizationSettings: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="country">Country</Label>
+                  <Select
+                    value={formData.country}
+                    onValueChange={(value) => {
+                      setFormData((prev) => {
+                        const next = { ...prev, country: value };
+                        // Auto-fill currency to match the picked country.
+                        // Owners can still override below if they bill in a
+                        // different currency than where they're based.
+                        const inferred = currencyForCountry(value);
+                        if (inferred) next.currency = inferred;
+                        return next;
+                      });
+                    }}
+                    disabled={!isEditing}
+                  >
+                    <SelectTrigger id="country">
+                      <SelectValue placeholder="Select country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>
+                          {c.name} ({c.currency})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Sets the default currency for new expenses, contracts, and
+                    payslips.
+                  </p>
+                </div>
+
+                <div>
+                  <Label htmlFor="currency">Currency</Label>
+                  <Select
+                    value={formData.currency}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({ ...prev, currency: value }))
+                    }
+                    disabled={!isEditing}
+                  >
+                    <SelectTrigger id="currency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {COMMON_CURRENCIES.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div>
                   <Label htmlFor="timezone">Timezone</Label>
                   <Input
                     id="timezone"
                     name="timezone"
                     value={formData.timezone}
-                    onChange={handleInputChange}
-                    disabled={!isEditing}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="currency">Currency</Label>
-                  <Input
-                    id="currency"
-                    name="currency"
-                    value={formData.currency}
                     onChange={handleInputChange}
                     disabled={!isEditing}
                   />
@@ -263,6 +315,7 @@ export const OrganizationSettings: React.FC = () => {
                       // Reset form to original values
                       setFormData({
                         name: organization.name,
+                        country: organization.country || '',
                         timezone: organization.settings.timezone,
                         currency: organization.settings.currency,
                         locale: organization.settings.locale,

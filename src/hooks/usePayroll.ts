@@ -62,16 +62,26 @@ export const usePayrollRuns = () => {
   const updateRun = useCallback(
     async (runId: string, input: UpdatePayrollRunInput) => {
       if (!orgId || !user) throw new Error("Not signed in");
-      // Status transitions to finalized/paid require owner — server enforces too
-      if ((input.status === "finalized" || input.status === "paid") && !isOwner) {
-        throw new Error("Only the owner can finalize or mark a payroll run as paid.");
+      // Status workflow:
+      //   draft → finalized:        owner OR admin
+      //   finalized → paid:         owner OR admin
+      //   paid    → finalized:      owner OR admin (the "Unmark as paid" path)
+      // Plain members can't reach this hook (the page itself is owner/admin
+      // gated), so this is belt-and-suspenders for direct callers.
+      if (
+        (input.status === "finalized" || input.status === "paid") &&
+        !(isOwner || isAdmin)
+      ) {
+        throw new Error(
+          "Only owner or admin can change payroll run status.",
+        );
       }
       return updatePayrollRun(orgId, runId, input, {
         userId: user.userId,
         displayName: user.displayName,
       });
     },
-    [orgId, user, isOwner],
+    [orgId, user, isOwner, isAdmin],
   );
 
   const remove = useCallback(
@@ -154,16 +164,17 @@ export const usePayrollRunDetail = (runId: string | null | undefined) => {
     updateItem,
     isOwner,
     isAdmin,
-    // Owner + admin can correct payslips on draft AND finalized runs — common
-    // case is somebody forgot to clock out, the run gets finalized with the
-    // wrong hours, and an admin needs to fix it before payment goes out. Once
-    // a run is `paid` the payslips lock for accounting integrity (the money
-    // has already been disbursed; corrections become a separate adjustment).
-    canEdit:
-      (isOwner || isAdmin) &&
-      run?.status !== undefined &&
-      run.status !== "paid",
+    // Owner + admin can correct payslips on any run — even a paid one. Common
+    // case is somebody forgot to clock out, the run gets paid with the wrong
+    // hours, and the admin needs to record the correction. Editing a paid run
+    // doesn't unmark it; for that, owners use the explicit "Unmark as paid"
+    // action which flips the status back to `finalized`.
+    canEdit: isOwner || isAdmin,
     canFinalize: isOwner && run?.status === "draft",
     canMarkPaid: isOwner && run?.status === "finalized",
+    // Owner + admin safety hatch: revert a paid run back to finalized (e.g. a
+    // payment was reversed, the wrong batch was marked, etc.). Doesn't touch
+    // payslips — just the run status.
+    canUnmarkPaid: (isOwner || isAdmin) && run?.status === "paid",
   };
 };

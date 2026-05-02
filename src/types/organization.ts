@@ -91,4 +91,6 @@ export interface UpdateOrganizationInput {
   settings?: Partial<OrganizationSettings>;
   members?: OrganizationMember[];
   subscription?: Partial<OrganizationSubscription>; // Add this
+  /** ISO-3166 alpha-2 country code (e.g. "GB"). Drives default currency. */
+  country?: string;
 }

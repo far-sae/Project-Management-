@@ -71,6 +71,9 @@ export const useExpenses = () => {
     async (expenseId: string) => {
       if (!orgId) return;
       await deleteExpenseSvc(orgId, expenseId);
+      // Filter locally so the row disappears immediately even if the realtime
+      // subscription is slow or misses the delete event.
+      setExpenses((prev) => prev.filter((e) => e.expenseId !== expenseId));
     },
     [orgId],
   );

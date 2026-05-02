@@ -143,7 +143,7 @@ export const Inbox: React.FC = () => {
   const [muted, setMuted] = useState<MutedProjectsMap>(() =>
     readJson<MutedProjectsMap>(MUTED_PROJECTS_KEY, {}),
   );
-  const { notifications, loading, unreadCount, markAsRead, markAllAsReadLocally, refresh } =
+  const { notifications, loading, unreadCount, markAsRead, markAllAsReadLocally, refresh, removeLocal } =
     useNotifications(user?.userId ?? null, 200);
 
   // Persist on change
@@ -221,13 +221,15 @@ export const Inbox: React.FC = () => {
       if (!user) return;
       try {
         await deleteNotificationApi(user.userId, n.notificationId);
+        // Drop from the list immediately; don't wait on the refresh.
+        removeLocal(n.notificationId);
         toast.success('Removed');
         refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to remove');
       }
     },
-    [user, refresh],
+    [user, refresh, removeLocal],
   );
 
   const handleMarkAllRead = useCallback(async () => {
