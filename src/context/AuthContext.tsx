@@ -272,36 +272,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
             session.user.user_metadata?.picture ||
             '';
 
-          // Set basic user immediately so UI doesn't block
-          setUser({
-            userId: session.user.id,
-            email: session.user.email || '',
-            displayName,
-            photoURL,
-            provider: normalizeProvider(session.user.app_metadata?.provider),
-            country: 'IN',
-            role: 'user',
-            organizationId: `local-${session.user.id}`,
-            organizationRole: null,
-            createdAt: new Date(),
-            lastLoginAt: new Date(),
-            subscription: {
-              status: 'trial',
-              tier: null,
-              billingCycle: null,
-              stripeCustomerId: null,
-              stripeSubscriptionId: null,
-              currentPeriodStart: null,
-              currentPeriodEnd: null,
-              trialStartDate: new Date(),
-              trialEndDate: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000),
-              cancelAtPeriodEnd: false,
-            },
-            metrics: {
-              projectsCreated: 0,
-              tasksCreated: 0,
-              lastActiveDate: new Date(),
-            },
+          // Set basic user immediately so UI doesn't block.
+          // Preserve a previously-resolved real organizationId across re-fires
+          // of the auth event (e.g. INITIAL_SESSION / USER_UPDATED on tab
+          // refocus) — otherwise it briefly snaps back to `local-…`, which
+          // makes OrganizationContext's effect kick off a non-silent refetch
+          // and ProtectedRoute(requireOrgAdmin) unmounts the current page.
+          setUser((prev) => {
+            const sameUser = prev?.userId === session.user.id;
+            const prevOrgId = sameUser ? prev?.organizationId : undefined;
+            const preservedOrgId =
+              prevOrgId && !prevOrgId.startsWith('local-')
+                ? prevOrgId
+                : `local-${session.user.id}`;
+            return {
+              userId: session.user.id,
+              email: session.user.email || '',
+              displayName: sameUser ? prev?.displayName || displayName : displayName,
+              photoURL: sameUser ? prev?.photoURL || photoURL : photoURL,
+              provider: normalizeProvider(session.user.app_metadata?.provider),
+              country: sameUser ? prev?.country || 'IN' : 'IN',
+              role: sameUser ? prev?.role || 'user' : 'user',
+              organizationId: preservedOrgId,
+              organizationRole: sameUser ? prev?.organizationRole ?? null : null,
+              createdAt: sameUser ? prev?.createdAt || new Date() : new Date(),
+              lastLoginAt: new Date(),
+              subscription: sameUser
+                ? prev?.subscription || {
+                    status: 'trial',
+                    tier: null,
+                    billingCycle: null,
+                    stripeCustomerId: null,
+                    stripeSubscriptionId: null,
+                    currentPeriodStart: null,
+                    currentPeriodEnd: null,
+                    trialStartDate: new Date(),
+                    trialEndDate: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000),
+                    cancelAtPeriodEnd: false,
+                  }
+                : {
+                    status: 'trial',
+                    tier: null,
+                    billingCycle: null,
+                    stripeCustomerId: null,
+                    stripeSubscriptionId: null,
+                    currentPeriodStart: null,
+                    currentPeriodEnd: null,
+                    trialStartDate: new Date(),
+                    trialEndDate: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000),
+                    cancelAtPeriodEnd: false,
+                  },
+              metrics: sameUser
+                ? prev?.metrics || {
+                    projectsCreated: 0,
+                    tasksCreated: 0,
+                    lastActiveDate: new Date(),
+                  }
+                : {
+                    projectsCreated: 0,
+                    tasksCreated: 0,
+                    lastActiveDate: new Date(),
+                  },
+            };
           });
           setLoading(false);
 

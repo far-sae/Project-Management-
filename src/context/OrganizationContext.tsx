@@ -47,8 +47,18 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     const silent = opts?.silent ?? false;
     if (authLoading || !user) return;
 
-    if (!silent) {
+    // Treat any refresh as silent once we already have an org loaded — flipping
+    // `loading: true` here causes ProtectedRoute (requireOrgAdmin) to unmount
+    // pages like /team mid-session and remount them from scratch every time
+    // user.organizationId churns (e.g. on tab refocus when the auth event
+    // briefly resets it to `local-…`). Keep showing the cached org while the
+    // network refetch happens in the background.
+    const showLoading = !silent && !organization;
+
+    if (showLoading) {
       setLoading(true);
+      setError(null);
+    } else if (!silent) {
       setError(null);
     }
 
@@ -184,7 +194,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
         // country: 'US',
       });
     } finally {
-      if (!silent) {
+      if (showLoading) {
         setLoading(false);
       }
     }
