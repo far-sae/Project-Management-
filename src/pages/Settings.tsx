@@ -40,6 +40,9 @@ import {
 import { toast } from "sonner";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { CapacitySettings } from "@/components/settings/CapacitySettings";
+import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
+import { useOrganization } from "@/context/OrganizationContext";
+import { Building2 } from "lucide-react";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   type UserNotificationPreferences,
@@ -60,6 +63,9 @@ export const Settings: React.FC = () => {
     refreshSubscription,
     loading: subscriptionLoading,
   } = useSubscription();
+  // Organization tab is owner/admin-only — regular members don't see workspace
+  // settings like country, currency, branding, or feature toggles.
+  const { canManageSettings } = useOrganization();
 
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelNowLoading, setCancelNowLoading] = useState(false);
@@ -493,6 +499,12 @@ export const Settings: React.FC = () => {
               <Activity className="w-4 h-4" />
               Capacity
             </TabsTrigger>
+            {canManageSettings && (
+              <TabsTrigger value="organization" className="gap-2">
+                <Building2 className="w-4 h-4" />
+                Organization
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* APPEARANCE TAB */}
@@ -504,6 +516,13 @@ export const Settings: React.FC = () => {
           <TabsContent value="capacity">
             <CapacitySettings />
           </TabsContent>
+
+          {/* ORGANIZATION TAB — owner/admin only */}
+          {canManageSettings && (
+            <TabsContent value="organization">
+              <OrganizationSettings />
+            </TabsContent>
+          )}
 
           {/* PROFILE TAB */}
           <TabsContent value="profile">
