@@ -99,6 +99,14 @@ export const Expenses: React.FC = () => {
   const [tab, setTab] = useState<'me' | 'all'>('me');
   const [statusFilter, setStatusFilter] = useState<'all' | ExpenseStatus>('all');
   const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
+  // IDs the current reviewer just approved/rejected. We keep them visible
+  // in the current filter even if their new status no longer matches the
+  // selected statusFilter — otherwise an admin filtering by "Pending"
+  // would see rows vanish the moment they click Approve, which feels like
+  // a bug. Cleared whenever the filter is changed manually.
+  const [recentlyActed, setRecentlyActed] = useState<Set<string>>(
+    () => new Set(),
+  );
   const orgCurrency = useOrgCurrency();
   const fmt = useFormatMoney();
   const [showCreate, setShowCreate] = useState(false);
@@ -144,11 +152,13 @@ export const Expenses: React.FC = () => {
       ? expenses.filter((e) => e.userId === user?.userId)
       : expenses;
     if (statusFilter !== 'all') {
-      list = list.filter((e) => e.status === statusFilter);
+      list = list.filter(
+        (e) => e.status === statusFilter || recentlyActed.has(e.expenseId),
+      );
     }
     list = list.filter((e) => inRange(e.incurredOn, dateRange));
     return list;
-  }, [expenses, tab, statusFilter, user?.userId, dateRange]);
+  }, [expenses, tab, statusFilter, user?.userId, dateRange, recentlyActed]);
 
   // Group totals by the *resolved display currency*, not the raw stored
   // currency. Expenses entered before the org's preferred currency was set
@@ -270,6 +280,13 @@ export const Expenses: React.FC = () => {
   ) => {
     try {
       await update(expense.expenseId, { status, statusReason: reason ?? null });
+      // Pin this row in the current view so it doesn't disappear from a
+      // "Pending"-filtered list the moment its status changes.
+      setRecentlyActed((prev) => {
+        const next = new Set(prev);
+        next.add(expense.expenseId);
+        return next;
+      });
       toast.success(
         status === 'approved' ? 'Expense approved'
         : status === 'rejected' ? 'Expense rejected'
@@ -441,7 +458,13 @@ export const Expenses: React.FC = () => {
               <Filter className="w-4 h-4 text-muted-foreground" />
               <Select
                 value={statusFilter}
-                onValueChange={(v) => setStatusFilter(v as 'all' | ExpenseStatus)}
+                onValueChange={(v) => {
+                  setStatusFilter(v as 'all' | ExpenseStatus);
+                  // Manual filter change implies the reviewer wants a clean
+                  // view by status — drop the "stay visible" pins so the
+                  // list matches the new filter exactly.
+                  setRecentlyActed(new Set());
+                }}
               >
                 <SelectTrigger className="w-40">
                   <SelectValue />

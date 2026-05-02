@@ -73,6 +73,13 @@ interface SidebarProps {
  * own <Sidebar/>, so without this the inner scroll position would reset to
  * the top every time the user clicks a nav link or project. We mirror the
  * scrollTop into sessionStorage and restore it on mount.
+ *
+ * Restoration is harder than it looks because the project list loads via
+ * an async hook — on first paint the content isn't tall enough to scroll
+ * to the saved offset, so a naive `scrollTop = saved` gets clamped to 0.
+ * We watch the container's size with a ResizeObserver and re-apply the
+ * target until the content has grown enough (or the user scrolls, or 3s
+ * pass, whichever comes first).
  */
 const SIDEBAR_SCROLL_KEY = 'pm_sidebar_scroll_v1';
 const ScrollPersistDiv: React.FC<
@@ -84,26 +91,67 @@ const ScrollPersistDiv: React.FC<
     const el = ref.current;
     if (!el) return;
 
+    let target = 0;
     try {
-      const saved = sessionStorage.getItem(SIDEBAR_SCROLL_KEY);
-      const n = saved ? Number(saved) : 0;
-      if (Number.isFinite(n) && n > 0) {
-        // Defer one frame so layout (project list, status filters) has
-        // a chance to render before we set scrollTop, otherwise the
-        // assignment can land before the content has its final height.
-        requestAnimationFrame(() => {
-          if (ref.current) ref.current.scrollTop = n;
-        });
-      }
+      const raw = sessionStorage.getItem(SIDEBAR_SCROLL_KEY);
+      if (raw) target = Math.max(0, Number(raw) || 0);
     } catch {
-      /* ignore quota / disabled storage */
+      /* storage disabled — no-op */
     }
 
-    let raf = 0;
+    // While `restoring` is true we ignore scroll events for the purpose of
+    // saving, so our own scrollTop assignments don't overwrite the target
+    // with 0 before the content has loaded.
+    let restoring = target > 0;
+    let ro: ResizeObserver | null = null;
+    let giveUp: number | null = null;
+
+    const stopRestoring = () => {
+      if (!restoring) return;
+      restoring = false;
+      if (ro) ro.disconnect();
+      ro = null;
+      if (giveUp !== null) {
+        window.clearTimeout(giveUp);
+        giveUp = null;
+      }
+    };
+
+    const tryRestore = () => {
+      if (!restoring) return;
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      if (maxScroll >= target) {
+        el.scrollTop = target;
+        // Defer two frames so the scroll event from this assignment has
+        // fired and been ignored before we re-enable saving.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(stopRestoring),
+        );
+      } else if (maxScroll > 0) {
+        // Pin to the furthest we can scroll right now; the next size
+        // change will bump us closer to `target`.
+        el.scrollTop = maxScroll;
+      }
+    };
+
+    if (restoring) {
+      tryRestore();
+      if (restoring && typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(tryRestore);
+        ro.observe(el);
+        // Children (project list, nav sections) are where the height
+        // actually grows when async data arrives.
+        Array.from(el.children).forEach((c) => ro?.observe(c as Element));
+      }
+      giveUp = window.setTimeout(stopRestoring, 3000);
+    }
+
+    let saveRaf = 0;
     const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
+      if (restoring) return; // our own assignment — don't clobber target
+      if (saveRaf) return;
+      saveRaf = requestAnimationFrame(() => {
+        saveRaf = 0;
         try {
           sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop));
         } catch {
@@ -112,9 +160,11 @@ const ScrollPersistDiv: React.FC<
       });
     };
     el.addEventListener('scroll', onScroll, { passive: true });
+
     return () => {
+      stopRestoring();
       el.removeEventListener('scroll', onScroll);
-      if (raf) cancelAnimationFrame(raf);
+      if (saveRaf) cancelAnimationFrame(saveRaf);
     };
   }, []);
 
