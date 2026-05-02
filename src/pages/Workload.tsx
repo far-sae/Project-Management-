@@ -71,9 +71,13 @@ const initialsOf = (name: string): string =>
 
 export const Workload: React.FC = () => {
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, isAdmin } = useOrganization();
   const { tasks, loading: tasksLoading } = useAllTasks();
   const navigate = useNavigate();
+  // Owner + admin see the whole team's workload (planning view).
+  // Plain members see only their own row — they shouldn't be able to peek at
+  // colleagues' load. `isAdmin` from the org context already includes owner.
+  const canSeeAllWorkloads = isAdmin;
 
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -84,8 +88,13 @@ export const Workload: React.FC = () => {
   const [capacityError, setCapacityError] = useState<string | null>(null);
 
   const members = useMemo<OrganizationMember[]>(
-    () => organization?.members ?? [],
-    [organization?.members],
+    () => {
+      const all = organization?.members ?? [];
+      if (canSeeAllWorkloads) return all;
+      // Member view: just their own row.
+      return all.filter((m) => m.userId === user?.userId);
+    },
+    [organization?.members, canSeeAllWorkloads, user?.userId],
   );
 
   useEffect(() => {

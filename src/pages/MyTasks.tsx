@@ -1167,7 +1167,7 @@ export const MyTasks: React.FC = () => {
                       ))}
                     </ul>
                     <p className="text-xs text-muted-foreground/80 mt-2">
-                      Added by {selectedTask.createdBy || 'Unknown'} · {selectedTask.createdAt ? formatDistanceToNow(new Date(selectedTask.createdAt), { addSuffix: true }) : ''}
+                      Added by {selectedTask.createdBy ? getAssigneeLabel(selectedTask.createdBy) : 'Unknown'} · {selectedTask.createdAt ? formatDistanceToNow(new Date(selectedTask.createdAt), { addSuffix: true }) : ''}
                     </p>
                   </div>
                 )}

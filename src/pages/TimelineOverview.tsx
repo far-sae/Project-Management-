@@ -46,6 +46,44 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Project.members can carry stale or partial entries (no displayName, no
+  // email) — that's where the "?" avatars came from. Resolve through the
+  // canonical org member list so we always get a real name + photo.
+  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const orgMemberById = useMemo(() => {
+    const map = new Map<string, { displayName?: string; email?: string; photoURL?: string }>();
+    for (const m of organization?.members ?? []) {
+      if (m.userId) map.set(m.userId, m);
+    }
+    return map;
+  }, [organization?.members]);
+
+  const resolveMember = (raw: any) => {
+    const id = raw?.userId || raw?.user_id;
+    if (!id) return null;
+    const orgEntry = orgMemberById.get(id);
+    const isSelf = id === user?.userId;
+    return {
+      userId: id,
+      displayName:
+        orgEntry?.displayName ||
+        raw?.displayName ||
+        raw?.display_name ||
+        orgEntry?.email ||
+        raw?.email ||
+        (isSelf ? user?.displayName : '') ||
+        '',
+      photoURL:
+        orgEntry?.photoURL ||
+        raw?.photoURL ||
+        raw?.photo_url ||
+        (isSelf ? user?.photoURL : '') ||
+        '',
+      email: orgEntry?.email || raw?.email || '',
+    };
+  };
+
   const DEFAULT_PROJECT_DAYS = 90;
 
   // Show all projects: use start/end when set, otherwise fallback to createdAt and +90 days
@@ -169,17 +207,23 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
       {/* Project rows */}
       {visibleProjects.map((project) => {
         const rawMembers = (project.members || []) as any[];
-        const owner =
-          rawMembers.find((m: any) => (m.userId || m.user_id) === project.ownerId) ||
-          {
-            userId: project.ownerId,
-            displayName: "Owner",
-            photoURL: "",
-            email: "",
-          };
-        const members = rawMembers.filter(
-          (m: any) => (m.userId || m.user_id) !== project.ownerId,
+        // Try the project.members owner row first; if it's missing or empty
+        // (the bug source), synthesize from the canonical org member list so
+        // we never render a "?" avatar for someone we know about.
+        const ownerFromMembers = rawMembers.find(
+          (m: any) => (m.userId || m.user_id) === project.ownerId,
         );
+        const owner =
+          resolveMember(ownerFromMembers) ||
+          (project.ownerId
+            ? resolveMember({ userId: project.ownerId })
+            : null);
+        const members = rawMembers
+          .filter((m: any) => (m.userId || m.user_id) !== project.ownerId)
+          .map(resolveMember)
+          // Drop entries that have no userId at all — those are pure ghosts
+          // (legacy rows, malformed JSON), not real teammates.
+          .filter((m): m is NonNullable<typeof m> => !!m && !!m.userId);
 
         const projStart = project.effectiveStart;
         const projEnd = project.effectiveEnd;
@@ -249,20 +293,23 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
               {/* Member avatars */}
               <div className="flex -space-x-1.5 ml-2">
-                {[owner, ...members].filter(Boolean).slice(0, 4).map((m: any) => (
-                  <Avatar key={m.userId} className="w-6 h-6 ring-2 ring-card shadow-sm">
-                    <AvatarImage src={m.photoURL} />
-                    <AvatarFallback
-                      className="text-[10px] font-bold text-white"
-                      style={{ backgroundColor: barColor }}
-                    >
-                      {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                ))}
-                {rawMembers.length > 4 && (
+                {[owner, ...members]
+                  .filter((m): m is NonNullable<typeof m> => !!m && !!m.userId)
+                  .slice(0, 4)
+                  .map((m) => (
+                    <Avatar key={m.userId} className="w-6 h-6 ring-2 ring-card shadow-sm">
+                      <AvatarImage src={m.photoURL} />
+                      <AvatarFallback
+                        className="text-[10px] font-bold text-white"
+                        style={{ backgroundColor: barColor }}
+                      >
+                        {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                  ))}
+                {[owner, ...members].filter(Boolean).length > 4 && (
                   <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[10px] text-muted-foreground font-bold">
-                    +{rawMembers.length - 4}
+                    +{[owner, ...members].filter(Boolean).length - 4}
                   </div>
                 )}
               </div>
@@ -317,15 +364,18 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                 {/* Members on bar */}
                 <div className="relative flex items-center gap-1 px-2 w-full">
                   <div className="flex -space-x-1">
-                    {[owner, ...members].filter(Boolean).slice(0, 4).map((m: any) => (
-                      <div
-                        key={m.userId}
-                        title={m.displayName || m.email}
-                        className="w-5 h-5 rounded-full ring-1 ring-white/70 flex items-center justify-center text-white text-[9px] font-bold bg-white/25 backdrop-blur-sm"
-                      >
-                        {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
-                      </div>
-                    ))}
+                    {[owner, ...members]
+                      .filter((m): m is NonNullable<typeof m> => !!m && !!m.userId)
+                      .slice(0, 4)
+                      .map((m) => (
+                        <div
+                          key={m.userId}
+                          title={m.displayName || m.email}
+                          className="w-5 h-5 rounded-full ring-1 ring-white/70 flex items-center justify-center text-white text-[9px] font-bold bg-white/25 backdrop-blur-sm"
+                        >
+                          {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
+                        </div>
+                      ))}
                   </div>
                   {showTaskLabels && widthPx > 100 && (
                     <span className="text-white text-xs font-semibold truncate ml-1 drop-shadow-sm">
