@@ -30,6 +30,10 @@ import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
+import { COMMON_CURRENCIES } from '@/lib/countries';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { useFxRates } from '@/lib/fxRates';
+import { Coins } from 'lucide-react';
 
 const TYPE_OPTIONS: { value: ClientType | 'all'; label: string }[] = [
   { value: 'all', label: 'All types' },
@@ -82,6 +86,34 @@ export const Clients: React.FC = () => {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
+
+  // Pipeline display currency. Persists per-browser so reps don't have to
+  // re-pick on every visit. Defaults to whatever the org is set to.
+  const orgCurrency = useOrgCurrency();
+  const [pipelineCurrency, setPipelineCurrency] = useState<string>(() => {
+    try {
+      return localStorage.getItem('pm_pipeline_display_currency') || '';
+    } catch {
+      return '';
+    }
+  });
+  const effectivePipelineCurrency = pipelineCurrency || orgCurrency;
+  // Make sure the org's currency is always selectable, even if it isn't in
+  // COMMON_CURRENCIES (e.g. THB, CZK from the country picker).
+  const currencyOptions = useMemo(() => {
+    const codes = new Set<string>([effectivePipelineCurrency, ...COMMON_CURRENCIES]);
+    return Array.from(codes);
+  }, [effectivePipelineCurrency]);
+  const { usingFallback: fxUsingFallback, fetchedAt: fxFetchedAt } =
+    useFxRates();
+  const handlePipelineCurrencyChange = (next: string) => {
+    setPipelineCurrency(next);
+    try {
+      localStorage.setItem('pm_pipeline_display_currency', next);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const [openCreate, setOpenCreate] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -345,8 +377,41 @@ export const Clients: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="pipeline" className="mt-4 space-y-4">
-              <PipelineAnalyticsCard />
-              <DealsKanban clients={clients} />
+              <Card>
+                <CardContent className="pt-4 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Display currency</span>
+                  </div>
+                  <Select
+                    value={effectivePipelineCurrency}
+                    onValueChange={handlePipelineCurrencyChange}
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {currencyOptions.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-muted-foreground">
+                    All deal values, column totals and KPIs convert from each
+                    deal's saved currency into this one.
+                  </span>
+                  <span className="text-[11px] text-muted-foreground ml-auto">
+                    {fxUsingFallback || !fxFetchedAt
+                      ? 'Rates: built-in fallback'
+                      : `Rates: live · updated ${new Date(fxFetchedAt).toLocaleDateString()}`}
+                  </span>
+                </CardContent>
+              </Card>
+              <PipelineAnalyticsCard currency={effectivePipelineCurrency} />
+              <DealsKanban
+                clients={clients}
+                displayCurrency={effectivePipelineCurrency}
+              />
             </TabsContent>
 
             <TabsContent value="tasks" className="mt-4">

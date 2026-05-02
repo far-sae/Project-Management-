@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   TrendingUp, Target, Trophy, Percent,
 } from 'lucide-react';
 import { useDeals } from '@/hooks/useDeals';
-import { formatDealMoney } from '@/services/supabase/deals';
+import {
+  computeAnalytics,
+  formatDealMoney,
+} from '@/services/supabase/deals';
+import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 const Stat: React.FC<{
   label: string;
@@ -40,12 +44,26 @@ const Stat: React.FC<{
 export const PipelineAnalyticsCard: React.FC<{ currency?: string }> = ({
   currency,
 }) => {
-  const { analytics, deals } = useDeals();
+  const { deals } = useDeals();
+  const { rates } = useFxRates();
+
   // Pick the most-used currency in the pipeline if not overridden, so totals
   // make sense for orgs that primarily price in EUR/INR/etc.
   const dominantCurrency =
-    currency ??
-    (deals.length > 0 ? deals[0].currency : 'USD');
+    currency ?? (deals.length > 0 ? deals[0].currency : 'USD');
+
+  // Recompute analytics with each deal's value converted to the display
+  // currency. computeAnalytics only inspects `value`/`stage`/dates, so a
+  // mapped copy is enough — we don't mutate the live list.
+  const analytics = useMemo(() => {
+    const converted = deals.map((d) => ({
+      ...d,
+      value: convertAmount(d.value, d.currency, dominantCurrency, rates),
+      currency: dominantCurrency,
+    }));
+    return computeAnalytics(converted);
+  }, [deals, dominantCurrency, rates]);
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <Stat

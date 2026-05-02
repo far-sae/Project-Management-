@@ -28,18 +28,24 @@ import {
 import { Client } from '@/services/supabase/clients';
 import { toast } from 'sonner';
 import { NewDealDialog } from './NewDealDialog';
+import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 interface Props {
   clients: Client[];
   /** When set, the kanban only shows deals for this client. */
   scopedClientId?: string | null;
   onSelectDeal?: (deal: Deal) => void;
+  /** Show every amount converted into this currency. When omitted, each
+   *  deal is shown in the currency it was entered in. */
+  displayCurrency?: string;
 }
 
-const DealCard: React.FC<{ deal: Deal; onSelect?: (d: Deal) => void }> = ({
-  deal,
-  onSelect,
-}) => {
+const DealCard: React.FC<{
+  deal: Deal;
+  onSelect?: (d: Deal) => void;
+  displayCurrency?: string;
+  rates: Record<string, number>;
+}> = ({ deal, onSelect, displayCurrency, rates }) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.dealId,
     data: { type: 'deal', deal },
@@ -64,7 +70,12 @@ const DealCard: React.FC<{ deal: Deal; onSelect?: (d: Deal) => void }> = ({
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium leading-tight line-clamp-2">{deal.title}</p>
         <span className="text-sm font-semibold text-foreground shrink-0">
-          {formatDealMoney(deal.value, deal.currency)}
+          {displayCurrency
+            ? formatDealMoney(
+                convertAmount(deal.value, deal.currency, displayCurrency, rates),
+                displayCurrency,
+              )
+            : formatDealMoney(deal.value, deal.currency)}
         </span>
       </div>
       {deal.clientName && (
@@ -113,15 +124,24 @@ const StageColumn: React.FC<{
   onAdd: (stage: DealStage) => void;
   onSelect?: (d: Deal) => void;
   canCreate: boolean;
-}> = ({ stage, deals, onAdd, onSelect, canCreate }) => {
+  displayCurrency?: string;
+  rates: Record<string, number>;
+}> = ({ stage, deals, onAdd, onSelect, canCreate, displayCurrency, rates }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: `stage:${stage.id}`,
     data: { type: 'stage', stage: stage.id },
   });
-  const total = useMemo(
-    () => deals.reduce((s, d) => s + d.value, 0),
-    [deals],
-  );
+  const total = useMemo(() => {
+    if (displayCurrency) {
+      return deals.reduce(
+        (s, d) =>
+          s + convertAmount(d.value, d.currency, displayCurrency, rates),
+        0,
+      );
+    }
+    return deals.reduce((s, d) => s + d.value, 0);
+  }, [deals, displayCurrency, rates]);
+  const totalCurrency = displayCurrency ?? deals[0]?.currency ?? 'USD';
   return (
     <div
       ref={setNodeRef}
@@ -142,7 +162,7 @@ const StageColumn: React.FC<{
           </Badge>
         </div>
         <span className="text-xs font-mono text-muted-foreground tabular-nums">
-          {formatDealMoney(total, deals[0]?.currency || 'USD')}
+          {formatDealMoney(total, totalCurrency)}
         </span>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[8rem] max-h-[calc(100vh-22rem)]">
@@ -151,7 +171,15 @@ const StageColumn: React.FC<{
             Drop deals here
           </p>
         ) : (
-          deals.map((d) => <DealCard key={d.dealId} deal={d} onSelect={onSelect} />)
+          deals.map((d) => (
+            <DealCard
+              key={d.dealId}
+              deal={d}
+              onSelect={onSelect}
+              displayCurrency={displayCurrency}
+              rates={rates}
+            />
+          ))
         )}
       </div>
       {canCreate && (
@@ -175,8 +203,10 @@ export const DealsKanban: React.FC<Props> = ({
   clients,
   scopedClientId,
   onSelectDeal,
+  displayCurrency,
 }) => {
   const { dealsByStage, loading, update, canManage } = useDeals();
+  const { rates } = useFxRates();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
@@ -263,13 +293,19 @@ export const DealsKanban: React.FC<Props> = ({
               onAdd={(s) => setShowNew({ stage: s })}
               onSelect={onSelectDeal}
               canCreate={canManage}
+              displayCurrency={displayCurrency}
+              rates={rates}
             />
           ))}
         </div>
         <DragOverlay>
           {draggingDeal ? (
             <div className="w-[18.5rem]">
-              <DealCard deal={draggingDeal} />
+              <DealCard
+                deal={draggingDeal}
+                displayCurrency={displayCurrency}
+                rates={rates}
+              />
             </div>
           ) : null}
         </DragOverlay>
