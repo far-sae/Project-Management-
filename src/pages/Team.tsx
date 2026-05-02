@@ -88,7 +88,10 @@ export const Team: React.FC = () => {
           filter: `project_id=eq.${selectedProject}`,
         },
         () => {
-          loadTeamData();
+          // Background refresh — don't blank the team list while the user is
+          // looking at it. Realtime can fire repeatedly when another tab/window
+          // is editing the same project.
+          loadTeamData({ silent: true });
         }
       )
       .on(
@@ -100,7 +103,7 @@ export const Team: React.FC = () => {
           filter: `project_id=eq.${selectedProject}`,
         },
         () => {
-          loadTeamData();
+          loadTeamData({ silent: true });
         }
       )
       .subscribe();
@@ -117,11 +120,12 @@ export const Team: React.FC = () => {
     }
   }, [projects, selectedProject]);
 
-  const loadTeamData = async () => {
+  const loadTeamData = async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     const selectedProjectData = projects.find((p) => p.projectId === selectedProject);
     const projectOrgId = selectedProjectData?.organizationId?.replace('local-', '') || '';
     if (!selectedProject) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       type ProjectTeamRow = { owner_id?: string; members?: Array<any>; };
       let projectRow: ProjectTeamRow | null = null;
@@ -217,13 +221,21 @@ export const Team: React.FC = () => {
     } catch (error) {
       console.error('Error loading team data:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
+  // Re-run only when the project being viewed (or org/user identity) changes.
+  // We intentionally do NOT depend on the `projects` array reference: the
+  // visibility-change handlers in useProjects and OrganizationContext silently
+  // refetch when a tab regains focus, which would replace the `projects`
+  // reference and otherwise loop this effect — flashing the team list back to
+  // a loading state every time you switch windows. In-tab project edits stay
+  // fresh via the realtime subscription effect above.
   useEffect(() => {
     loadTeamData();
-  }, [selectedProject, projects, organization?.organizationId, user?.organizationId, user?.userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProject, organization?.organizationId, user?.organizationId, user?.userId]);
 
   const currentProject = projects.find((p) => p.projectId === selectedProject);
   const organizationMemberMap = new Map(
