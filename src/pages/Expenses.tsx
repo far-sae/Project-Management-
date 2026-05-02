@@ -22,10 +22,11 @@ import {
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/context/AuthContext';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { useProjects } from '@/hooks/useProjects';
 import { useAllTasks } from '@/hooks/useAllTasks';
 import {
-  Expense, ExpenseStatus, formatExpenseAmount, uploadExpenseInvoice,
+  Expense, ExpenseStatus, uploadExpenseInvoice,
 } from '@/services/supabase/expenses';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -99,6 +100,7 @@ export const Expenses: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | ExpenseStatus>('all');
   const [dateRange, setDateRange] = useState<DateRangeValue>(ALL_TIME);
   const orgCurrency = useOrgCurrency();
+  const fmt = useFormatMoney();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<FormState>(blankForm);
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
@@ -319,7 +321,7 @@ export const Expenses: React.FC = () => {
             </div>
             <div className="text-right shrink-0">
               <p className="text-lg font-bold text-foreground">
-                {formatExpenseAmount(expense.amount, expense.currency)}
+                {fmt(expense.amount, expense.currency)}
               </p>
             </div>
           </div>
@@ -406,7 +408,7 @@ export const Expenses: React.FC = () => {
                     <DollarSign className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">{cur} total</span>
                     <span className="font-semibold">
-                      {formatExpenseAmount(total, cur)}
+                      {fmt(total, cur)}
                     </span>
                   </div>
                 ))}

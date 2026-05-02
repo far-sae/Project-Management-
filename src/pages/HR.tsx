@@ -33,6 +33,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useEmployees } from '@/hooks/useEmployees';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import {
   EmployeeProfile, EmployeeStatus, EmploymentType, PayPeriod, PayType,
 } from '@/services/supabase/employees';
@@ -131,6 +132,7 @@ export const HR: React.FC = () => {
   const { profilesByUserId, loading, upsert, remove, canManage, canView } =
     useEmployees();
   const orgCurrency = useOrgCurrency();
+  const fmt = useFormatMoney();
 
   const [editingMember, setEditingMember] = useState<{
     userId: string;
@@ -368,7 +370,7 @@ export const HR: React.FC = () => {
                             {p &&
                             typeof p.payRate === 'number' &&
                             Number.isFinite(p.payRate)
-                              ? `${p.currency} ${p.payRate.toFixed(2)} ${p.payType === 'hourly' ? '/hr' : `/${p.payPeriod}`}`
+                              ? `${fmt(p.payRate, p.currency)} ${p.payType === 'hourly' ? '/hr' : `/${p.payPeriod}`}`
                               : '—'}
                           </div>
                         </div>

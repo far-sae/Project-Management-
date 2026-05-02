@@ -16,8 +16,9 @@ import {
 } from 'lucide-react';
 import { usePayrollRuns, usePayrollRunDetail } from '@/hooks/usePayroll';
 import { useEmployees } from '@/hooks/useEmployees';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import {
-  PayrollItem, PayrollRun, PayrollStatus, formatMoney,
+  PayrollItem, PayrollRun, PayrollStatus,
 } from '@/services/supabase/payroll';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -167,6 +168,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
     canEdit, canFinalize, canMarkPaid, canUnmarkPaid, isOwner,
   } = usePayrollRunDetail(runId);
   const { updateRun, remove } = usePayrollRuns();
+  const fmt = useFormatMoney();
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<PayrollItem | null>(null);
   const [editForm, setEditForm] = useState({
@@ -333,25 +335,25 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Gross</p>
-            <p className="text-lg font-bold">{formatMoney(run.totalGross, totalsCurrency)}</p>
+            <p className="text-lg font-bold">{fmt(run.totalGross, totalsCurrency)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Reimbursements</p>
-            <p className="text-lg font-bold">{formatMoney(run.totalReimbursement, totalsCurrency)}</p>
+            <p className="text-lg font-bold">{fmt(run.totalReimbursement, totalsCurrency)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Deductions</p>
-            <p className="text-lg font-bold">{formatMoney(run.totalDeduction, totalsCurrency)}</p>
+            <p className="text-lg font-bold">{fmt(run.totalDeduction, totalsCurrency)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Net pay</p>
-            <p className="text-lg font-bold text-primary">{formatMoney(run.totalNet, totalsCurrency)}</p>
+            <p className="text-lg font-bold text-primary">{fmt(run.totalNet, totalsCurrency)}</p>
           </CardContent>
         </Card>
       </div>
@@ -394,20 +396,20 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {i.payType === 'hourly'
-                          ? formatMoney(i.hourlyRate, i.currency)
-                          : formatMoney(i.salaryAmount, i.currency)}
+                          ? fmt(i.hourlyRate, i.currency)
+                          : fmt(i.salaryAmount, i.currency)}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        {formatMoney(i.grossPay, i.currency)}
+                        {fmt(i.grossPay, i.currency)}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        {formatMoney(i.expenseReimbursementTotal, i.currency)}
+                        {fmt(i.expenseReimbursementTotal, i.currency)}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        {formatMoney(i.deduction + i.taxWithholding, i.currency)}
+                        {fmt(i.deduction + i.taxWithholding, i.currency)}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono font-semibold">
-                        {formatMoney(i.netPay, i.currency)}
+                        {fmt(i.netPay, i.currency)}
                       </td>
                       <td className="py-2 text-right">
                         {canEdit ? (
@@ -615,6 +617,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
 
 export const Payroll: React.FC = () => {
   const { runs, loading, canView, canCreate } = usePayrollRuns();
+  const fmt = useFormatMoney();
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -656,7 +659,7 @@ export const Payroll: React.FC = () => {
         <div className="text-right shrink-0">
           <div className="text-xs text-muted-foreground uppercase tracking-wide">Net</div>
           <div className="font-mono font-semibold">
-            {formatMoney(r.totalNet, r.currency)}
+            {fmt(r.totalNet, r.currency)}
           </div>
         </div>
       </button>

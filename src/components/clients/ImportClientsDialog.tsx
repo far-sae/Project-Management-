@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import Papa from 'papaparse';
-import { Loader2, Upload, Download, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import {
+  Loader2, Upload, Download, AlertTriangle, CheckCircle2,
+  Coins, RotateCcw, ArrowRight,
+} from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
@@ -64,6 +67,20 @@ const SAMPLE_TEMPLATE = [
   '',
 ].join('\n');
 
+interface CurrencyBucket {
+  currency: string;
+  rowCount: number;
+  totalRevenue: number;
+  sampleNames: string[];
+}
+
+interface ScanResult {
+  totalRows: number;
+  buckets: CurrencyBucket[];
+  unspecified: CurrencyBucket;
+  rawRows: Array<Record<string, string>>;
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -85,16 +102,102 @@ const downloadCsv = (filename: string, content: string) => {
   URL.revokeObjectURL(url);
 };
 
+const parseAmount = (v: string | undefined): number => {
+  const cleaned = (v ?? '').replace(/[^\d.\-]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const formatCurrencyTotal = (amount: number, currency: string): string => {
+  if (!currency) {
+    return new Intl.NumberFormat(undefined, {
+      maximumFractionDigits: 0,
+    }).format(amount);
+  }
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toLocaleString()}`;
+  }
+};
+
+/**
+ * Group parsed rows by their `currency` column value. Rows without a currency
+ * fall into the "unspecified" bucket so the importer can spot when their
+ * spreadsheet is missing the column entirely vs. having a mix.
+ */
+const scanRows = (rows: Array<Record<string, string>>): ScanResult => {
+  const map = new Map<string, CurrencyBucket>();
+  let unspecified: CurrencyBucket = {
+    currency: '',
+    rowCount: 0,
+    totalRevenue: 0,
+    sampleNames: [],
+  };
+
+  for (const raw of rows) {
+    const normalised: Record<string, string> = {};
+    for (const k of Object.keys(raw)) {
+      normalised[k.toLowerCase().trim()] = (raw[k] ?? '').toString();
+    }
+    const hasAnyValue = Object.values(normalised).some((v) => v.trim() !== '');
+    if (!hasAnyValue) continue;
+
+    const currency = (normalised.currency || '').trim().toUpperCase();
+    const revenue = parseAmount(normalised.annual_revenue);
+    const name = (normalised.name || '').trim() || '(unnamed)';
+
+    const bucket =
+      currency.length === 0
+        ? unspecified
+        : map.get(currency) ?? {
+            currency,
+            rowCount: 0,
+            totalRevenue: 0,
+            sampleNames: [],
+          };
+    bucket.rowCount += 1;
+    bucket.totalRevenue += revenue;
+    if (bucket.sampleNames.length < 3) bucket.sampleNames.push(name);
+    if (currency.length > 0) map.set(currency, bucket);
+    else unspecified = bucket;
+  }
+
+  // Sort: largest bucket first (most rows, then highest revenue).
+  const buckets = Array.from(map.values()).sort((a, b) =>
+    b.rowCount !== a.rowCount
+      ? b.rowCount - a.rowCount
+      : b.totalRevenue - a.totalRevenue,
+  );
+
+  return {
+    totalRows: buckets.reduce((acc, b) => acc + b.rowCount, 0) + unspecified.rowCount,
+    buckets,
+    unspecified,
+    rawRows: rows,
+  };
+};
+
+type Phase = 'pick' | 'preview' | 'imported';
+
 export const ImportClientsDialog: React.FC<Props> = ({
   open, onOpenChange, organizationId, userId, userName, onComplete,
 }) => {
+  const [phase, setPhase] = useState<Phase>('pick');
   const [file, setFile] = useState<File | null>(null);
+  const [scan, setScan] = useState<ScanResult | null>(null);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const reset = () => {
+    setPhase('pick');
     setFile(null);
+    setScan(null);
     setParseErrors([]);
     setResult(null);
   };
@@ -102,39 +205,29 @@ export const ImportClientsDialog: React.FC<Props> = ({
   const handleFile = (f: File | null) => {
     setResult(null);
     setParseErrors([]);
+    setScan(null);
     setFile(f);
-  };
-
-  const startImport = async () => {
-    if (!file || !organizationId || !userId || !userName) return;
+    if (!f) {
+      setPhase('pick');
+      return;
+    }
+    // Auto-parse the file the moment it lands so the user sees the currency
+    // breakdown without an extra click. The actual DB writes are deferred to
+    // the explicit "Confirm import" step.
     setBusy(true);
-    setResult(null);
-    setParseErrors([]);
-
-    Papa.parse<Record<string, string>>(file, {
+    Papa.parse<Record<string, string>>(f, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (h: string) => h.trim().toLowerCase(),
-      complete: async (parsed) => {
+      complete: (parsed) => {
         if (parsed.errors.length > 0) {
           setParseErrors(parsed.errors.map((e) => `Row ${e.row}: ${e.message}`));
           setBusy(false);
           return;
         }
-        try {
-          const imported = await importClientsFromCsv(
-            organizationId,
-            userId,
-            userName,
-            parsed.data,
-          );
-          setResult(imported);
-          if (imported.imported.length > 0) onComplete();
-        } catch (err) {
-          setParseErrors([err instanceof Error ? err.message : 'Import failed']);
-        } finally {
-          setBusy(false);
-        }
+        setScan(scanRows(parsed.data));
+        setPhase('preview');
+        setBusy(false);
       },
       error: (err: Error) => {
         setParseErrors([err.message || 'Failed to parse CSV']);
@@ -142,6 +235,31 @@ export const ImportClientsDialog: React.FC<Props> = ({
       },
     });
   };
+
+  const confirmImport = async () => {
+    if (!scan || !organizationId || !userId || !userName) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const imported = await importClientsFromCsv(
+        organizationId,
+        userId,
+        userName,
+        scan.rawRows,
+      );
+      setResult(imported);
+      setPhase('imported');
+      if (imported.imported.length > 0) onComplete();
+    } catch (err) {
+      setParseErrors([err instanceof Error ? err.message : 'Import failed']);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const distinctCurrencies =
+    (scan?.buckets.length ?? 0) + (scan?.unspecified.rowCount ? 1 : 0);
+  const isMixed = distinctCurrencies > 1;
 
   return (
     <Dialog
@@ -151,44 +269,53 @@ export const ImportClientsDialog: React.FC<Props> = ({
         if (!o) reset();
       }}
     >
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Import clients from CSV</DialogTitle>
           <DialogDescription>
-            Upload a spreadsheet of clients. We'll create one client per row.
-            Download the template to get the expected column names.
+            Upload a spreadsheet of clients. We'll scan it for currencies and
+            show you a breakdown before anything gets imported.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => downloadCsv('clients-template.csv', SAMPLE_TEMPLATE)}
-            >
-              <Download className="w-4 h-4 mr-2" /> Download template
-            </Button>
-          </div>
+          {phase !== 'imported' && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => downloadCsv('clients-template.csv', SAMPLE_TEMPLATE)}
+              >
+                <Download className="w-4 h-4 mr-2" /> Download template
+              </Button>
+              {phase === 'preview' && (
+                <Button type="button" variant="ghost" onClick={reset}>
+                  <RotateCcw className="w-4 h-4 mr-2" /> Pick a different file
+                </Button>
+              )}
+            </div>
+          )}
 
-          <label
-            htmlFor="csv-file"
-            className="block border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:bg-secondary/40 transition-colors"
-          >
-            <Upload className="w-6 h-6 mx-auto text-muted-foreground" />
-            <p className="text-sm font-medium mt-2">
-              {file ? file.name : 'Click to choose a CSV file'}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              .csv up to a few thousand rows
-            </p>
-            <input
-              id="csv-file" type="file" accept=".csv,text/csv" className="hidden"
-              onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-              // Reset value so picking the same file again still fires onChange
-              onClick={(e) => ((e.target as HTMLInputElement).value = '')}
-            />
-          </label>
+          {phase === 'pick' && (
+            <label
+              htmlFor="csv-file"
+              className="block border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:bg-secondary/40 transition-colors"
+            >
+              <Upload className="w-6 h-6 mx-auto text-muted-foreground" />
+              <p className="text-sm font-medium mt-2">
+                {file ? file.name : 'Click to choose a CSV file'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                .csv up to a few thousand rows
+              </p>
+              <input
+                id="csv-file" type="file" accept=".csv,text/csv" className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+                // Reset value so picking the same file again still fires onChange
+                onClick={(e) => ((e.target as HTMLInputElement).value = '')}
+              />
+            </label>
+          )}
 
           {parseErrors.length > 0 && (
             <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3 text-sm">
@@ -206,7 +333,98 @@ export const ImportClientsDialog: React.FC<Props> = ({
             </div>
           )}
 
-          {result && (
+          {phase === 'preview' && scan && (
+            <div className="rounded-md border border-border p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Coins className="w-4 h-4 text-primary" />
+                  <span className="font-medium text-foreground">
+                    Currency breakdown
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {scan.totalRows} row{scan.totalRows === 1 ? '' : 's'} ·{' '}
+                    {distinctCurrencies} currenc{distinctCurrencies === 1 ? 'y' : 'ies'} detected
+                  </span>
+                </div>
+                {isMixed && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                    Mixed currencies
+                  </span>
+                )}
+              </div>
+
+              {scan.buckets.length === 0 && scan.unspecified.rowCount === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No rows found in this file.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-xs uppercase text-muted-foreground border-b border-border">
+                      <tr>
+                        <th className="text-left py-2 pr-3">Currency</th>
+                        <th className="text-right py-2 pr-3">Rows</th>
+                        <th className="text-right py-2 pr-3">Total revenue</th>
+                        <th className="text-left py-2">Sample</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scan.buckets.map((b) => (
+                        <tr key={b.currency} className="border-b border-border last:border-0">
+                          <td className="py-2 pr-3 font-mono font-medium">
+                            {b.currency}
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">
+                            {b.rowCount}
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">
+                            {formatCurrencyTotal(b.totalRevenue, b.currency)}
+                          </td>
+                          <td className="py-2 text-muted-foreground truncate max-w-[18rem]">
+                            {b.sampleNames.join(', ')}
+                            {b.rowCount > b.sampleNames.length && '…'}
+                          </td>
+                        </tr>
+                      ))}
+                      {scan.unspecified.rowCount > 0 && (
+                        <tr className="border-b border-border last:border-0">
+                          <td className="py-2 pr-3 italic text-muted-foreground">
+                            Unspecified
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">
+                            {scan.unspecified.rowCount}
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
+                            {formatCurrencyTotal(scan.unspecified.totalRevenue, '')}
+                          </td>
+                          <td className="py-2 text-muted-foreground truncate max-w-[18rem]">
+                            {scan.unspecified.sampleNames.join(', ')}
+                            {scan.unspecified.rowCount > scan.unspecified.sampleNames.length && '…'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {scan.unspecified.rowCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Rows without a <code>currency</code> column will inherit the
+                  org default when the client's revenue is shown.
+                </p>
+              )}
+              {isMixed && (
+                <p className="text-xs text-muted-foreground">
+                  Heads up: multiple currencies were detected. Each client's
+                  values are stored in its own currency — the table above is
+                  intentionally not converted to a single number.
+                </p>
+              )}
+            </div>
+          )}
+
+          {phase === 'imported' && result && (
             <div className="rounded-md border p-3 text-sm space-y-2">
               <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
                 <CheckCircle2 className="w-4 h-4" />
@@ -249,12 +467,21 @@ export const ImportClientsDialog: React.FC<Props> = ({
             onClick={() => onOpenChange(false)}
             disabled={busy}
           >
-            Close
+            {phase === 'imported' ? 'Done' : 'Cancel'}
           </Button>
-          <Button onClick={startImport} disabled={!file || busy}>
-            {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            Import
-          </Button>
+          {phase === 'preview' && (
+            <Button
+              onClick={confirmImport}
+              disabled={!scan || scan.totalRows === 0 || busy}
+            >
+              {busy ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4 mr-2" />
+              )}
+              Import {scan ? `${scan.totalRows} row${scan.totalRows === 1 ? '' : 's'}` : ''}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

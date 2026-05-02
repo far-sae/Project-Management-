@@ -21,6 +21,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import {
   createContract, updateContract, deleteContract,
   subscribeToContracts, Contract, ContractStatus,
@@ -30,10 +31,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', GBP: '£', EUR: '€', INR: '₹', AED: 'د.إ',
-};
 
 const ValueField = ({
   currency, value, onCurrencyChange, onValueChange, idPrefix,
@@ -76,6 +73,7 @@ export const Contracts: React.FC = () => {
   const { hasFeature } = useSubscription();
   const navigate = useNavigate();
   const orgCurrency = useOrgCurrency();
+  const fmt = useFormatMoney();
 
   // Records-only mode: contracts page is now a register of agreements; the
   // "assign-to-teammate-and-have-them-accept-by-email" workflow is gone, so
@@ -414,7 +412,7 @@ export const Contracts: React.FC = () => {
                             <div className="text-right">
                               <p className="font-medium text-foreground">
                                 {contract.value != null
-                                  ? `${CURRENCY_SYMBOLS[contract.currency || 'USD']}${contract.value.toLocaleString()}`
+                                  ? fmt(contract.value, contract.currency)
                                   : '—'}
                               </p>
                               <p className="text-sm text-muted-foreground">
