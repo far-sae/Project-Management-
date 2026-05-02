@@ -150,14 +150,25 @@ export const Expenses: React.FC = () => {
     return list;
   }, [expenses, tab, statusFilter, user?.userId, dateRange]);
 
+  // Group totals by the *resolved display currency*, not the raw stored
+  // currency. Expenses entered before the org's preferred currency was set
+  // are stamped 'USD' (the legacy default) and our display formatter
+  // re-renders them in the org currency — so the totals strip needs to
+  // bucket them the same way, otherwise you'd see "USD total ₹24,444" which
+  // is the bug the user just hit.
   const totals = useMemo(() => {
+    const resolveDisplayCurrency = (rowCurrency: string | null | undefined): string => {
+      const trimmed = (rowCurrency ?? '').trim().toUpperCase();
+      return trimmed && trimmed !== 'USD' ? trimmed : orgCurrency;
+    };
     const byCurrency = new Map<string, number>();
     visible.forEach((e) => {
       if (e.status === 'rejected') return;
-      byCurrency.set(e.currency, (byCurrency.get(e.currency) ?? 0) + e.amount);
+      const cur = resolveDisplayCurrency(e.currency);
+      byCurrency.set(cur, (byCurrency.get(cur) ?? 0) + e.amount);
     });
     return Array.from(byCurrency.entries());
-  }, [visible]);
+  }, [visible, orgCurrency]);
 
   const resetForm = () => {
     // New expenses pre-fill the org's preferred currency. Editing an existing

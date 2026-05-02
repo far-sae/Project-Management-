@@ -184,6 +184,9 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
   });
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Hoisted above the early-return below so the hook order is stable across
+  // renders (React #310 fired when this lived after the loading guard).
+  const [confirmUnmark, setConfirmUnmark] = useState(false);
 
   if (loading || !run) {
     return (
@@ -257,8 +260,6 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
       setBusy(null);
     }
   };
-
-  const [confirmUnmark, setConfirmUnmark] = useState(false);
 
   const handleDelete = async () => {
     try {
