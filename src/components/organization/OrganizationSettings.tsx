@@ -95,14 +95,28 @@ export const OrganizationSettings: React.FC = () => {
 
       await refreshOrganization();
       setIsEditing(false);
-      toast.success('Success', {
-        description: 'Organization settings updated successfully',
+      toast.success('Saved', {
+        description: `Country: ${formData.country || '—'} · Currency: ${formData.currency}`,
       });
     } catch (error) {
       console.error('Error updating organization:', error);
-      toast.error('Error', {
-        description: 'Failed to update organization settings',
-      });
+      const message =
+        error instanceof Error ? error.message : 'Failed to update organization settings';
+      // The updateOrganization service throws a specifically-worded error when
+      // migration 051 hasn't been applied yet — surface it verbatim so the
+      // operator knows exactly what to do, and refresh anyway because the
+      // currency save succeeded in the fallback path.
+      const isCountryMigrationError = /country column|migration 051/i.test(message);
+      if (isCountryMigrationError) {
+        await refreshOrganization();
+        setIsEditing(false);
+        toast.warning('Currency saved, country pending migration', {
+          description: message,
+          duration: 8000,
+        });
+      } else {
+        toast.error('Failed to save', { description: message });
+      }
     } finally {
       setSaving(false);
     }

@@ -116,6 +116,39 @@ export const updateOrganization = async (
     .eq("organization_id", organizationId);
 
   if (error) {
+    // Migration 051 adds the `country` column. Until it's applied to the live
+    // DB the country write fails with PGRST204 / 42703 and rolls back the
+    // whole update, including the settings.currency change. Retry once
+    // without `country` so the rest of the save still goes through, and
+    // surface a clear hint for whoever applies migrations.
+    const message = String((error as { message?: string }).message ?? "");
+    const looksLikeMissingColumn =
+      "country" in updateData &&
+      (/column .*country.*does not exist/i.test(message) ||
+        /could not find the .*country.* column/i.test(message) ||
+        (error as { code?: string }).code === "42703" ||
+        (error as { code?: string }).code === "PGRST204");
+
+    if (looksLikeMissingColumn) {
+      logger.warn(
+        "organizations.country column missing — apply migration 051_org_country.sql. Retrying without country.",
+      );
+      const fallback = { ...updateData };
+      delete fallback.country;
+      const retry = await supabase
+        .from("organizations")
+        .update(fallback)
+        .eq("organization_id", organizationId);
+      if (retry.error) {
+        logger.error("Failed to update organization (fallback):", retry.error);
+        throw retry.error;
+      }
+      // Throw a typed-ish hint so the UI can show something actionable.
+      throw new Error(
+        "Country couldn't be saved: the database is missing the country column. Apply supabase/migrations/051_org_country.sql, then save again. Currency was saved.",
+      );
+    }
+
     logger.error("Failed to update organization:", error);
     throw error;
   }

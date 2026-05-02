@@ -14,6 +14,7 @@ import {
 import { useExpenses } from '@/hooks/useExpenses';
 import { uploadExpenseInvoice } from '@/services/supabase/expenses';
 import { toast } from 'sonner';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 
 const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
 const CATEGORIES = ['Materials', 'Tools', 'Fuel', 'Travel', 'Subcontractor', 'Other'];
@@ -51,6 +52,7 @@ export const AddExpenseDialog: React.FC<Props> = ({
   onCreated,
 }) => {
   const { create, organizationId } = useExpenses();
+  const orgCurrency = useOrgCurrency();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
@@ -59,7 +61,7 @@ export const AddExpenseDialog: React.FC<Props> = ({
     description: '',
     category: 'Materials',
     amount: '',
-    currency: 'USD',
+    currency: orgCurrency,
     vendor: '',
     incurredOn: todayIso(),
   });
@@ -71,14 +73,14 @@ export const AddExpenseDialog: React.FC<Props> = ({
       title: taskTitle ? `Expense for ${taskTitle}` : '',
       description: '',
       category: 'Materials',
+      currency: orgCurrency,
       amount: '',
-      currency: 'USD',
       vendor: '',
       incurredOn: todayIso(),
     });
     setInvoiceFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [open, taskTitle]);
+  }, [open, taskTitle, orgCurrency]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

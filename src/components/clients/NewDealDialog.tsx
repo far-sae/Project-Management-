@@ -15,6 +15,7 @@ import { useDeals } from '@/hooks/useDeals';
 import { Client } from '@/services/supabase/clients';
 import { DEAL_STAGES, DealStage } from '@/services/supabase/deals';
 import { toast } from 'sonner';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 
 const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
 const SOURCES = ['Inbound', 'Referral', 'Outbound', 'Event', 'Other'];
@@ -35,6 +36,7 @@ export const NewDealDialog: React.FC<Props> = ({
   clients,
 }) => {
   const { create } = useDeals();
+  const orgCurrency = useOrgCurrency();
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     title: '',
@@ -42,7 +44,7 @@ export const NewDealDialog: React.FC<Props> = ({
     clientId: defaultClientId ?? 'none',
     stage: defaultStage,
     value: '',
-    currency: 'USD',
+    currency: orgCurrency,
     expectedCloseDate: '',
     source: 'none',
   });
@@ -55,11 +57,11 @@ export const NewDealDialog: React.FC<Props> = ({
       clientId: defaultClientId ?? 'none',
       stage: defaultStage,
       value: '',
-      currency: 'USD',
+      currency: orgCurrency,
       expectedCloseDate: '',
       source: 'none',
     });
-  }, [open, defaultStage, defaultClientId]);
+  }, [open, defaultStage, defaultClientId, orgCurrency]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
