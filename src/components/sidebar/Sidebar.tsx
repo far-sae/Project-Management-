@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -67,6 +67,63 @@ interface SidebarProps {
   /** Board columns: when provided, sidebar shows same names and list as board (renames + new columns sync) */
   columns?: KanbanColumn[];
 }
+
+/**
+ * Scrollable region that survives Sidebar re-mounts. Each page renders its
+ * own <Sidebar/>, so without this the inner scroll position would reset to
+ * the top every time the user clicks a nav link or project. We mirror the
+ * scrollTop into sessionStorage and restore it on mount.
+ */
+const SIDEBAR_SCROLL_KEY = 'pm_sidebar_scroll_v1';
+const ScrollPersistDiv: React.FC<
+  React.PropsWithChildren<{ className?: string }>
+> = ({ children, className }) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    try {
+      const saved = sessionStorage.getItem(SIDEBAR_SCROLL_KEY);
+      const n = saved ? Number(saved) : 0;
+      if (Number.isFinite(n) && n > 0) {
+        // Defer one frame so layout (project list, status filters) has
+        // a chance to render before we set scrollTop, otherwise the
+        // assignment can land before the content has its final height.
+        requestAnimationFrame(() => {
+          if (ref.current) ref.current.scrollTop = n;
+        });
+      }
+    } catch {
+      /* ignore quota / disabled storage */
+    }
+
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        try {
+          sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop));
+        } catch {
+          /* ignore */
+        }
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className={className}>
+      {children}
+    </div>
+  );
+};
 
 const QUICK_ITEMS_FULL = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
@@ -255,7 +312,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
+      <ScrollPersistDiv className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
         {/* Quick navigation — full / member / viewer surfaces */}
         <QuickMenu
           items={
@@ -450,7 +507,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </nav>
-      </div>
+      </ScrollPersistDiv>
 
       {/* Bottom: account panel slides up from bottom on open */}
       <div className="p-3 border-t border-border shrink-0 overflow-hidden">
