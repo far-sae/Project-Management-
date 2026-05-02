@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { useProjects } from '@/hooks/useProjects';
 import { useSubscription } from '@/context/SubscriptionContext';
+import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 
@@ -385,6 +387,14 @@ export const TimelineOverview: React.FC = () => {
   const navigate = useNavigate();
   const { projects, loading: projectsLoading } = useProjects();
   const { hasFeature, loading: subscriptionLoading } = useSubscription();
+  const { user } = useAuth();
+  const { organization } = useOrganization();
+  // Only the org owner can change plans, so the "Upgrade to Advanced" upsell
+  // only makes sense for them. Invited members / admins / viewers see the
+  // timeline for the projects they were granted access to regardless of the
+  // owner's tier — Timeline is a project-info view here, not a paywalled
+  // premium tool.
+  const isOrgOwner = !!user?.userId && organization?.ownerId === user.userId;
   const [isReady, setIsReady] = useState(false);
 
   const [showTimelineSettings, setShowTimelineSettings] = useState(false);
@@ -418,8 +428,11 @@ export const TimelineOverview: React.FC = () => {
     );
   }
 
-  // ── Feature gate ──────────────────────────────────────────
-  if (!hasFeature('timeline_overview')) {
+  // ── Feature gate (owners only) ────────────────────────────
+  // Non-owners always render the timeline — they can't upgrade the plan and
+  // showing the upsell would just dead-end them on a page they were
+  // legitimately invited to use.
+  if (isOrgOwner && !hasFeature('timeline_overview')) {
     return (
       <div className="flex h-screen bg-background pt-12 md:pt-0">
         <Sidebar />

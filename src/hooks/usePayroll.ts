@@ -154,7 +154,15 @@ export const usePayrollRunDetail = (runId: string | null | undefined) => {
     updateItem,
     isOwner,
     isAdmin,
-    canEdit: (isOwner || isAdmin) && run?.status === "draft",
+    // Owner + admin can correct payslips on draft AND finalized runs — common
+    // case is somebody forgot to clock out, the run gets finalized with the
+    // wrong hours, and an admin needs to fix it before payment goes out. Once
+    // a run is `paid` the payslips lock for accounting integrity (the money
+    // has already been disbursed; corrections become a separate adjustment).
+    canEdit:
+      (isOwner || isAdmin) &&
+      run?.status !== undefined &&
+      run.status !== "paid",
     canFinalize: isOwner && run?.status === "draft",
     canMarkPaid: isOwner && run?.status === "finalized",
   };

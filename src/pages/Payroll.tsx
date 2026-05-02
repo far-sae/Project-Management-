@@ -398,7 +398,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
                             Edit
                           </Button>
                         ) : (
-                          <span title="Run is locked — owner can still edit">
+                          <span title="Run has been paid — payslips are locked for accounting integrity">
                             <Lock className="w-3.5 h-3.5 text-muted-foreground inline" />
                           </span>
                         )}
@@ -424,6 +424,17 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
           </DialogHeader>
           {editing && (
             <div className="space-y-3">
+              {run.status === 'finalized' && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                  <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    This run is finalized. Edits made here are post-finalization
+                    corrections — totals will recalculate and the run will keep
+                    its finalized status. Save only after you've reviewed the
+                    new amounts.
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 {editing.payType === 'hourly' ? (
                   <>

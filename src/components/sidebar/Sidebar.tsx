@@ -179,13 +179,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           // Viewers get Timeline only; no Clients (read-only access there is
           // still subject to other product decisions). Project list in the
           // sidebar above is enough to navigate the projects they were given.
-          { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
+          // Not subscription-gated — members inherit the owner's plan, and
+          // hiding Timeline behind the owner's tier means an invited viewer
+          // on a Basic-plan org has no link to view the projects they were
+          // granted access to. Timeline is essentially a project-info view
+          // for invitees, not a premium-tier feature here.
+          { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
         ] as const)
       : ([
           // Members see Timeline only — Clients/CRM is owner/admin-only per
           // product call. Team, Contracts, Files, Comments, etc. stay
-          // admin/owner as well.
-          { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
+          // admin/owner as well. See viewer branch above for why Timeline
+          // isn't subscription-gated for non-owners.
+          { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
         ] as const);
 
   const taskCounts = useMemo(() => {
