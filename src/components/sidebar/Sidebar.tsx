@@ -182,9 +182,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         ] as const)
       : ([
-          // Members see Timeline + Clients (CRM is read-mostly for reps); the
-          // rest (Team, Contracts, Files, Comments, etc.) stays admin/owner.
-          { icon: Building2, label: 'Clients', href: '/clients', feature: null },
+          // Members see Timeline only — Clients/CRM is owner/admin-only per
+          // product call. Team, Contracts, Files, Comments, etc. stay
+          // admin/owner as well.
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         ] as const);
 

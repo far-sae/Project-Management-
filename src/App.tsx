@@ -229,11 +229,12 @@ export default function App() {
             ),
           },
           {
-            // CRM clients — any subscribed member can view; mutation is gated
-            // at the RLS level (owner+admin only) and in the UI via canManage.
+            // CRM clients — owner/admin only. Members were briefly granted
+            // read access for rep workflows, but per product call the page is
+            // now hidden from members entirely (matches the sidebar).
             path: '/clients',
             element: (
-              <ProtectedRoute requireSubscription>
+              <ProtectedRoute requireSubscription requireOrgAdmin>
                 {lazyRoute(<ClientsPage />)}
               </ProtectedRoute>
             ),
