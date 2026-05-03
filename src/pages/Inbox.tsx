@@ -21,7 +21,6 @@ import {
   inRange,
 } from '@/components/common/DateRangeFilter';
 
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -255,9 +254,7 @@ export const Inbox: React.FC = () => {
   }, [notifications]);
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+    <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader
           left={
             <Breadcrumb>
@@ -481,7 +478,6 @@ export const Inbox: React.FC = () => {
           </div>
         </div>
       </main>
-    </div>
   );
 };
 

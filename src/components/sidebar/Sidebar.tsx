@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -33,8 +33,7 @@ import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
-import { Project, Task, TaskStatus } from '@/types';
-import type { KanbanColumn } from '@/types';
+import { useProjectChrome } from '@/context/ProjectChromeContext';
 import { useProjects } from '@/hooks/useProjects';
 import {
   ALL_WORKSPACES_ID,
@@ -58,20 +57,6 @@ import {
   clearProjectLockUnlockedInSession,
 } from '@/lib/projectLockPin';
 import { toast } from 'sonner';
-
-// Module-level scroll position store — persists across Sidebar remounts
-// (which happen on every route change since each page renders its own Sidebar).
-let _savedScrollTop = 0;
-
-interface SidebarProps {
-  project?: Project | null;
-  tasks?: Task[];
-  selectedStatus?: TaskStatus | 'all';
-  onStatusChange?: (status: TaskStatus | 'all') => void;
-  /** Board columns: when provided, sidebar shows same names and list as board (renames + new columns sync) */
-  columns?: KanbanColumn[];
-}
-
 
 const QUICK_ITEMS_FULL = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
@@ -97,13 +82,9 @@ const QUICK_ITEMS_VIEWER = [
   { icon: Calendar, label: 'Calendar', href: '/calendar' },
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({
-  project,
-  tasks = [],
-  selectedStatus = 'all',
-  onStatusChange,
-  columns,
-}) => {
+export const Sidebar: React.FC = () => {
+  const { project, tasks, selectedStatus, onStatusChange, columns } =
+    useProjectChrome();
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
   const { isAdmin: isOrgAdminOrOwner, isViewer } = useOrganization();
@@ -148,28 +129,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  // ── Scroll persistence ────────────────────────────────────────────────
-  // Each page renders its own <Sidebar />, so on navigation the old instance
-  // unmounts and a new one mounts. Save scroll position to a module-level
-  // variable on every scroll event and restore it when the component mounts.
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  const handleScroll = useCallback(() => {
-    if (scrollRef.current) {
-      _savedScrollTop = scrollRef.current.scrollTop;
-    }
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && _savedScrollTop > 0) {
-      // Use rAF to ensure the DOM has rendered before restoring scroll
-      requestAnimationFrame(() => {
-        el.scrollTop = _savedScrollTop;
-      });
-    }
-  }, []);
 
   // Auto-close the mobile drawer on route change so a tap on a nav link doesn't
   // leave the overlay obscuring the page they just navigated to.
@@ -282,7 +241,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
         {/* Quick navigation — full / member / viewer surfaces */}
         <QuickMenu
           items={

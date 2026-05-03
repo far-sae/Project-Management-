@@ -12,7 +12,7 @@ import { Project, Task, TaskStatus } from '@/types';
 import { DEFAULT_COLUMNS } from '@/types/task';
 import type { KanbanColumn } from '@/types';
 
-import { Sidebar } from '@/components/sidebar/Sidebar';
+import { usePublishProjectChrome } from '@/context/ProjectChromeContext';
 import { KanbanBoard, TaskSortOption } from '@/components/kanban/KanbanBoard';
 import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -472,6 +472,19 @@ export const ProjectView: React.FC = () => {
     toast.success(`Applied "${view.name}"`);
   }, []);
 
+  // Publish project chrome (status filters + per-project columns + task counts)
+  // up to the layout-mounted sidebar. While locked we publish project=null so
+  // the sidebar shows its no-project view rather than leaking task counts.
+  const sidebarProject = needsProjectLockGate ? null : project;
+  const sidebarTasks = needsProjectLockGate ? [] : tasks;
+  usePublishProjectChrome({
+    project: sidebarProject,
+    tasks: sidebarTasks,
+    selectedStatus,
+    onStatusChange: setSelectedStatus,
+    columns: boardColumns,
+  });
+
   // Reset the "first load" guard when the projectId changes — moving between projects should
   // show the full-page loader for the new project.
   useEffect(() => {
@@ -588,7 +601,7 @@ export const ProjectView: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex-1 min-w-0 flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
           <p className="mt-4 text-muted-foreground">Loading project...</p>
@@ -599,7 +612,7 @@ export const ProjectView: React.FC = () => {
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex-1 min-w-0 flex items-center justify-center bg-background">
         <div className="text-center">
           <p className="text-destructive font-medium">{error}</p>
           <p className="text-muted-foreground mt-2">Redirecting to dashboard...</p>
@@ -610,7 +623,7 @@ export const ProjectView: React.FC = () => {
 
   if (!project) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex-1 min-w-0 flex items-center justify-center bg-background">
         <p className="text-muted-foreground">Project not found</p>
       </div>
     );
@@ -618,64 +631,47 @@ export const ProjectView: React.FC = () => {
 
   if (needsProjectLockGate) {
     return (
-      <div className="flex h-screen bg-background pt-12 md:pt-0">
-        <Sidebar
-          project={null}
-          tasks={[]}
-          selectedStatus={selectedStatus}
-          onStatusChange={setSelectedStatus}
-          columns={boardColumns}
+      <div className="flex-1 min-w-0 flex flex-col items-center justify-center p-6">
+        <Lock className="w-12 h-12 text-muted-foreground mb-4" aria-hidden />
+        <h1 className="text-xl font-semibold text-foreground text-center">This project is locked</h1>
+        <p className="text-sm text-muted-foreground text-center max-w-md mt-2">
+          Enter the project PIN to open the board, tasks, and chat. Everyone with access—including the
+          owner—needs the PIN each session. Only the owner can set or change this PIN in project
+          settings.
+        </p>
+        <Input
+          type="password"
+          name="project-unlock-pin"
+          autoComplete="new-password"
+          data-1p-ignore
+          data-lpignore="true"
+          data-form-type="other"
+          placeholder="PIN"
+          value={projectPin}
+          onChange={(e) => {
+            setProjectPin(e.target.value);
+            setProjectPinError(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void handleProjectUnlock();
+          }}
+          className={cn('mt-6 max-w-xs bg-background', projectPinError && 'border-destructive')}
         />
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <Lock className="w-12 h-12 text-muted-foreground mb-4" aria-hidden />
-          <h1 className="text-xl font-semibold text-foreground text-center">This project is locked</h1>
-          <p className="text-sm text-muted-foreground text-center max-w-md mt-2">
-            Enter the project PIN to open the board, tasks, and chat. Everyone with access—including the
-            owner—needs the PIN each session. Only the owner can set or change this PIN in project
-            settings.
-          </p>
-          <Input
-            type="password"
-            name="project-unlock-pin"
-            autoComplete="new-password"
-            data-1p-ignore
-            data-lpignore="true"
-            data-form-type="other"
-            placeholder="PIN"
-            value={projectPin}
-            onChange={(e) => {
-              setProjectPin(e.target.value);
-              setProjectPinError(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleProjectUnlock();
-            }}
-            className={cn('mt-6 max-w-xs bg-background', projectPinError && 'border-destructive')}
-          />
-          <div className="flex flex-wrap gap-2 mt-4 justify-center">
-            <Button type="button" onClick={() => void handleProjectUnlock()} className="gap-2">
-              <KeyRound className="w-4 h-4" />
-              Unlock
-            </Button>
-            <Button type="button" variant="outline" onClick={() => navigate('/dashboard')}>
-              Back to projects
-            </Button>
-          </div>
+        <div className="flex flex-wrap gap-2 mt-4 justify-center">
+          <Button type="button" onClick={() => void handleProjectUnlock()} className="gap-2">
+            <KeyRound className="w-4 h-4" />
+            Unlock
+          </Button>
+          <Button type="button" variant="outline" onClick={() => navigate('/dashboard')}>
+            Back to projects
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar
-        project={project}
-        tasks={tasks}
-        selectedStatus={selectedStatus}
-        onStatusChange={setSelectedStatus}
-        columns={boardColumns}
-      />
-
+    <>
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_38rem,hsl(var(--background)))]">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
@@ -1074,7 +1070,7 @@ export const ProjectView: React.FC = () => {
         columns={boardColumns}
         addTask={addTask}
       />
-    </div>
+    </>
   );
 };
 

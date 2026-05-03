@@ -49,7 +49,11 @@ import CookieBanner from '@/components/landing/CookieBanner';
 import { CommandPalette } from '@/components/command/CommandPalette';
 import { CallProvider } from '@/components/calling/CallProvider';
 import { CallOverlay } from '@/components/calling/CallOverlay';
+import { AppLayout } from '@/components/layout/AppLayout';
 
+// Used for non-app routes (auth, landing, legal). Authenticated routes get
+// their own scoped fallback inside <AppLayout> so the sidebar stays visible
+// while the page area lazy-loads.
 const RouteFallback: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
     <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
@@ -59,6 +63,10 @@ const RouteFallback: React.FC = () => (
 const lazyRoute = (node: React.ReactNode) => (
   <Suspense fallback={<RouteFallback />}>{node}</Suspense>
 );
+
+// Inside <AppLayout>, the layout owns a single <Suspense> wrapping <Outlet>,
+// so each authenticated route just needs the lazy component itself.
+const lazyAppRoute = (node: React.ReactNode) => node;
 
 
 const RootRedirect: React.FC = () => {
@@ -119,151 +127,162 @@ const router = createBrowserRouter(
         { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
         { path: '/', element: <LandingPage /> },
         {
-          path: '/dashboard',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<Dashboard />)}
-            </ProtectedRoute>
-          ),
+          // All authenticated app routes share a single layout — the sidebar
+          // mounts once here and stays mounted across navigation. Without
+          // this, every page imported its own <Sidebar /> and the projects
+          // list re-fetched / flashed on every click.
+          element: <AppLayout />,
+          children: [
+            {
+              path: '/dashboard',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<Dashboard />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/project/:projectId',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<ProjectView />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/tasks',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<MyTasks />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/inbox',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<Inbox />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/workload',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<Workload />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/team',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<Team />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/calendar',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<CalendarPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/files',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<Files />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/comments',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<Comments />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/contracts',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<Contracts />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/time',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<TimeTracking />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/expenses',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<ExpensesPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/hr',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<HRPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/payroll',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<PayrollPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              // CRM clients — owner/admin only.
+              path: '/clients',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<ClientsPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/reports',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<Reports />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/timeline',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<TimelineOverview />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/settings',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<Settings />)}
+                </ProtectedRoute>
+              ),
+            },
+          ],
         },
         {
-          path: '/project/:projectId',
-          element: (
-            <ProtectedRoute requireSubscription>
-              {lazyRoute(<ProjectView />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/tasks',
-          element: (
-            <ProtectedRoute requireSubscription>
-              {lazyRoute(<MyTasks />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/inbox',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<Inbox />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/workload',
-          element: (
-            <ProtectedRoute requireSubscription>
-              {lazyRoute(<Workload />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/team',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<Team />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/calendar',
-          element: (
-            <ProtectedRoute requireSubscription>
-              {lazyRoute(<CalendarPage />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/files',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<Files />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/comments',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<Comments />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/contracts',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<Contracts />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/time',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<TimeTracking />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/expenses',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<ExpensesPage />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/hr',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<HRPage />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/payroll',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<PayrollPage />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          // CRM clients — owner/admin only.
-          path: '/clients',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<ClientsPage />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/reports',
-          element: (
-            <ProtectedRoute requireSubscription requireOrgAdmin>
-              {lazyRoute(<Reports />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/timeline',
-          element: (
-            <ProtectedRoute requireSubscription>
-              {lazyRoute(<TimelineOverview />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
-          path: '/settings',
-          element: (
-            <ProtectedRoute requireSubscription>
-              {lazyRoute(<Settings />)}
-            </ProtectedRoute>
-          ),
-        },
-        {
+          // Admin dashboard is its own self-contained shell — keep it outside
+          // the app layout so it is not double-wrapped in the sidebar.
           path: '/admin',
           element: (
             <ProtectedRoute requireAdmin>

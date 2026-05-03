@@ -11,7 +11,6 @@ import {
   endOfWeek,
 } from 'date-fns';
 
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { AppHeader } from '@/components/layout/AppHeader';
 import {
   Breadcrumb,
@@ -225,9 +224,7 @@ export const Workload: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+    <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader
           left={
             <Breadcrumb>
@@ -465,7 +462,6 @@ export const Workload: React.FC = () => {
           </div>
         </div>
       </main>
-    </div>
   );
 };
 

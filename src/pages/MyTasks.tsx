@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -637,8 +636,7 @@ export const MyTasks: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
+    <>
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="border-b border-border/70 bg-card/60 backdrop-blur-sm px-6 py-5">
@@ -1450,7 +1448,7 @@ export const MyTasks: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 };
 

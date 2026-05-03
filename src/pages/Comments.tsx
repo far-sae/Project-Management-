@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -113,19 +112,15 @@ export const Comments: React.FC = () => {
 
   if (!user) {
     return (
-      <div className="flex h-screen bg-background pt-12 md:pt-0">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto p-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Comments</h1>
-          <p className="text-muted-foreground">Sign in to view your task comments.</p>
-        </main>
-      </div>
+      <main className="flex-1 overflow-y-auto p-8">
+        <h1 className="text-3xl font-bold text-foreground mb-2">Comments</h1>
+        <p className="text-muted-foreground">Sign in to view your task comments.</p>
+      </main>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
+    <>
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader
           left={
@@ -394,7 +389,7 @@ export const Comments: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 };
 

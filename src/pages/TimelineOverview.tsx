@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -469,13 +468,10 @@ export const TimelineOverview: React.FC = () => {
   // ── Show loading state while subscription is loading ──
   if (subscriptionLoading || !isReady) {
     return (
-      <div className="flex h-screen bg-background pt-12 md:pt-0">
-        <Sidebar />
-        <main className="flex-1 overflow-hidden flex flex-col items-center justify-center">
-          <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
-          <p className="text-muted-foreground">Loading timeline features...</p>
-        </main>
-      </div>
+      <main className="flex-1 overflow-hidden flex flex-col items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading timeline features...</p>
+      </main>
     );
   }
 
@@ -485,9 +481,7 @@ export const TimelineOverview: React.FC = () => {
   // legitimately invited to use.
   if (isOrgOwner && !hasFeature('timeline_overview')) {
     return (
-      <div className="flex h-screen bg-background pt-12 md:pt-0">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto p-8">
+      <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-foreground tracking-tight">Timeline Overview</h1>
             <p className="text-muted-foreground">Visual timeline of all your projects</p>
@@ -511,13 +505,11 @@ export const TimelineOverview: React.FC = () => {
             </Button>
           </div>
         </main>
-      </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
+    <>
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
 
         {/* ── Top header ── */}
@@ -689,7 +681,7 @@ export const TimelineOverview: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 };
 

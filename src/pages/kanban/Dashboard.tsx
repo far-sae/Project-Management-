@@ -17,7 +17,6 @@ import {
 import { ActivityEvent } from '@/types/activity';
 import { Project } from '@/types';
 
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { WorkspacesModal } from '@/components/workspace/WorkspacesModal';
 
@@ -647,9 +646,7 @@ export const Dashboard: React.FC = () => {
   }, [workspaces]);
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
-
+    <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))]">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
@@ -1867,7 +1864,7 @@ export const Dashboard: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 };
 

@@ -21,7 +21,6 @@ import {
   X,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -299,9 +298,7 @@ export const Files: React.FC = () => {
   const uploadProgressItems = Object.values(uploadProgress);
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
+    <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-3 mb-6 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Files</h1>
@@ -639,7 +636,6 @@ export const Files: React.FC = () => {
           </CardContent>
         </Card>
       </main>
-    </div>
   );
 };
 

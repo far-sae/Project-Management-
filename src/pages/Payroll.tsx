@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -668,8 +667,7 @@ export const Payroll: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
+    <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <div className="max-w-6xl mx-auto space-y-6">
           {!canView ? (
@@ -726,7 +724,7 @@ export const Payroll: React.FC = () => {
         onOpenChange={setShowCreate}
         onCreated={(runId) => setOpenRunId(runId)}
       />
-    </div>
+    </>
   );
 };
 

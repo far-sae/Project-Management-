@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -494,9 +493,7 @@ export const Reports: React.FC = () => {
   // Feature gate
   if (!hasFeature('reports')) {
     return (
-      <div className="flex h-screen bg-background pt-12 md:pt-0">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto p-8">
+      <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-foreground">Reports</h1>
             <p className="text-muted-foreground">Productivity insights and analytics</p>
@@ -520,13 +517,11 @@ export const Reports: React.FC = () => {
             </Button>
           </div>
         </main>
-      </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
+    <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
@@ -1443,7 +1438,7 @@ export const Reports: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 };
 

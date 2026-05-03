@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/context/SubscriptionContext";
-import { Sidebar } from "@/components/sidebar/Sidebar";
 import {
   Card,
   CardContent,
@@ -198,15 +197,12 @@ export const Settings: React.FC = () => {
   // Show loading state
   if (subscriptionLoading && !subscription) {
     return (
-      <div className="flex h-screen bg-background pt-12 md:pt-0">
-        <Sidebar />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-            <p className="text-muted-foreground">Loading settings...</p>
-          </div>
-        </main>
-      </div>
+      <main className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading settings...</p>
+        </div>
+      </main>
     );
   }
 
@@ -457,9 +453,7 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
-      <Sidebar />
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
+    <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
         <div className="mb-6 md:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Settings</h1>
           <p className="text-muted-foreground">Manage your account and preferences</p>
@@ -922,7 +916,6 @@ export const Settings: React.FC = () => {
           </TabsContent>
         </Tabs>
       </main>
-    </div>
   );
 };
 
