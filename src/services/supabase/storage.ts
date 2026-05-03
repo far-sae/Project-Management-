@@ -144,6 +144,156 @@ export const getFileTypeCategory = (fileType: string): string => {
   return "other";
 };
 
+// Personal Files — owner / admin / member each see ONLY their own uploads.
+// Stored with scope='personal' and project_id=null so they're never returned
+// by getProjectFiles or any project-scoped query. Storage path is segmented
+// per-user under the org root so even storage URLs can't be guessed across
+// users.
+export const getPersonalFiles = async (
+  userId: string,
+  organizationId: string,
+) => {
+  const { data, error } = await supabase
+    .from("files")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("uploaded_by", userId)
+    .eq("scope", "personal")
+    .order("uploaded_at", { ascending: false });
+
+  if (error) {
+    logger.error("Failed to get personal files:", error);
+    return [];
+  }
+
+  return (data || []).map((file: any) => ({
+    fileId: file.file_id,
+    projectId: file.project_id,
+    organizationId: file.organization_id,
+    taskId: file.task_id,
+    fileName: file.file_name,
+    fileUrl: file.file_url,
+    storagePath: file.storage_path,
+    fileType: file.file_type,
+    fileSize: file.file_size,
+    scope: file.scope,
+    uploadedBy: file.uploaded_by,
+    uploadedByName: file.uploaded_by_name,
+    uploadedAt: new Date(file.uploaded_at),
+    thumbnailUrl: file.thumbnail_url,
+    metadata: file.metadata,
+  }));
+};
+
+export const uploadPersonalFileWithProgress = async (
+  userId: string,
+  userName: string,
+  organizationId: string,
+  file: File,
+  onProgress?: (progress: any) => void,
+) => {
+  const fileName = `${Date.now()}-${sanitizeFileName(file.name)}`;
+  const bucket = "project-files";
+  // Personal storage path is per-user under the org root; never collides with
+  // project paths and can't be enumerated across users.
+  const path = `${organizationId}/personal/${userId}/${fileName}`;
+
+  if (onProgress) {
+    onProgress({
+      fileId: fileName,
+      fileName: file.name,
+      progress: 0,
+      status: "uploading",
+    });
+  }
+
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    logger.error("Failed to upload personal file:", uploadError);
+    if (onProgress) {
+      onProgress({
+        fileId: fileName,
+        fileName: file.name,
+        progress: 0,
+        status: "error",
+        error: uploadError.message,
+      });
+    }
+    throw uploadError;
+  }
+
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
+
+  if (onProgress) {
+    onProgress({
+      fileId: fileName,
+      fileName: file.name,
+      progress: 50,
+      status: "uploading",
+    });
+  }
+
+  const fileRecord = {
+    file_id: crypto.randomUUID(),
+    project_id: null,
+    task_id: null,
+    organization_id: organizationId,
+    file_name: file.name,
+    file_url: urlData.publicUrl,
+    storage_path: path,
+    file_type: file.type,
+    file_size: file.size,
+    scope: "personal",
+    uploaded_by: userId,
+    uploaded_by_name: userName,
+    uploaded_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from("files")
+    .insert(fileRecord)
+    .select()
+    .single();
+
+  if (error) {
+    logger.error("Failed to save personal file record:", error);
+    // Roll back the storage upload so we don't leave orphans.
+    await supabase.storage.from(bucket).remove([path]);
+    throw error;
+  }
+
+  if (onProgress) {
+    onProgress({
+      fileId: data.file_id,
+      fileName: file.name,
+      progress: 100,
+      status: "completed",
+    });
+  }
+
+  return {
+    fileId: data.file_id,
+    projectId: data.project_id,
+    organizationId: data.organization_id,
+    taskId: data.task_id,
+    fileName: data.file_name,
+    fileUrl: data.file_url,
+    storagePath: data.storage_path,
+    fileType: data.file_type,
+    fileSize: data.file_size,
+    scope: data.scope,
+    uploadedBy: data.uploaded_by,
+    uploadedByName: data.uploaded_by_name,
+    uploadedAt: new Date(data.uploaded_at),
+  };
+};
+
 // Get project files from database (includes both project-level and task/comment files when scope is 'project')
 export const getProjectFiles = async (
   projectId: string,

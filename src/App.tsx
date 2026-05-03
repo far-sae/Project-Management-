@@ -190,9 +190,12 @@ const router = createBrowserRouter(
               ),
             },
             {
+              // Files is now per-user personal storage — owner, admin, and
+              // member each see only their own uploads. Viewers are blocked
+              // inside the page itself (they're redirected to /tasks).
               path: '/files',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription>
                   {lazyAppRoute(<Files />)}
                 </ProtectedRoute>
               ),

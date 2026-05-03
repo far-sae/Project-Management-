@@ -173,11 +173,14 @@ export const Sidebar: React.FC = () => {
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
         ] as const)
       : ([
-          // Members see Timeline only — Clients/CRM is owner/admin-only per
-          // product call. Team, Contracts, Files, Comments, etc. stay
-          // admin/owner as well. See viewer branch above for why Timeline
-          // isn't subscription-gated for non-owners.
+          // Members see Timeline + their personal Files page. Clients/CRM,
+          // Team, Contracts, Comments, etc. stay admin/owner-only. Files
+          // is per-user personal storage (no sharing). Gated by the same
+          // feature flag as the owner's entry so members inherit the
+          // owner's plan correctly — if the owner's plan doesn't include
+          // file_attachments, neither owner nor member sees Files.
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
+          { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },
         ] as const);
 
   const taskCounts = useMemo(() => {
