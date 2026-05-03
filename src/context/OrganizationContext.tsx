@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { Organization, OrganizationMember } from '@/types/organization';
 import { getOrganization } from '@/services/supabase/organizations';
@@ -280,7 +280,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   // Provider value
   // ============================================
 
-  const value = {
+  const value = useMemo(() => ({
     organization,
     loading,
     error,
@@ -291,7 +291,8 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     canInviteMembers,
     canManageBilling,
     canManageSettings,
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings]);
 
   return (
     <OrganizationContext.Provider value={value}>

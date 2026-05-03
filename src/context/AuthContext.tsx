@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { logger } from '@/lib/logger';
 import {
@@ -148,20 +148,38 @@ const ensureOrganizationExists = async (
             localStorage.getItem('pendingInviteToken'))
         : null;
 
-    let invitePending = !!pendingInviteTokenInStorage;
+    // Also check the current URL — after OAuth redirect the browser may land
+    // on / or /accept-invite/:token before AcceptInvite has a chance to set
+    // the sessionStorage flag. The URL is the most reliable signal.
+    const urlHasInvite =
+      typeof window !== 'undefined' &&
+      (window.location.pathname.includes('/accept-invite/') ||
+        window.location.href.includes('/accept-invite/'));
+
+    let invitePending = !!pendingInviteTokenInStorage || urlHasInvite;
     if (!invitePending && email) {
-      const { data: pendingInvites, error: pendingInviteError } = await supabase
-        .from('invitations')
-        .select('invitation_id')
-        .eq('email', email.toLowerCase().trim())
-        .eq('status', 'pending')
-        .gt('expires_at', new Date().toISOString())
-        .limit(1);
-      if (pendingInviteError) {
-        // Non-fatal: if the lookup fails we'd rather create a tenant than
-        // strand the user with no org. Log and proceed.
-        console.warn('⚠️ Pending-invite lookup failed:', pendingInviteError);
-      } else if (pendingInvites && pendingInvites.length > 0) {
+      // Try direct table first; fall back to a lenient match. The invitations
+      // table may be RLS-restricted for a newly-created user, so catch failures
+      // and still err on the side of NOT creating a tenant when the user has
+      // just followed an invite link.
+      try {
+        const { data: pendingInvites, error: pendingInviteError } = await supabase
+          .from('invitations')
+          .select('invitation_id')
+          .eq('email', email.toLowerCase().trim())
+          .eq('status', 'pending')
+          .gt('expires_at', new Date().toISOString())
+          .limit(1);
+        if (pendingInviteError) {
+          // RLS blocked — treat as "invite pending" to be safe. A new user who
+          // followed an invite link will almost always hit this on first login.
+          console.warn('⚠️ Pending-invite lookup failed (treating as pending):', pendingInviteError);
+          invitePending = true;
+        } else if (pendingInvites && pendingInvites.length > 0) {
+          invitePending = true;
+        }
+      } catch (lookupErr) {
+        console.warn('⚠️ Pending-invite lookup threw (treating as pending):', lookupErr);
         invitePending = true;
       }
     }
@@ -535,12 +553,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
     setUser(prev => prev ? { ...prev, ...data } : null);
   }, []);
 
+  const derivedLoading = loading || authActionLoading;
+  const contextValue = useMemo(() => ({
+    user, loading: derivedLoading, error,
+    signUp, signIn, signInGoogle, signOut,
+    clearError, refreshUser, updateUser, ensureValidSession,
+  }), [user, derivedLoading, error, signUp, signIn, signInGoogle, signOut, clearError, refreshUser, updateUser, ensureValidSession]);
+
   return (
-    <AuthContext.Provider value={{
-      user, loading: loading || authActionLoading, error,
-      signUp, signIn, signInGoogle, signOut,
-      clearError, refreshUser, updateUser, ensureValidSession,
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

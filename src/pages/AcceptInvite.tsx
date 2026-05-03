@@ -55,7 +55,10 @@ export const AcceptInvite: React.FC = () => {
   const [awaitingEmailConfirm, setAwaitingEmailConfirm] = useState(false);
 
   useEffect(() => {
-    if (token) sessionStorage.setItem("pendingInviteToken", token);
+    if (token) {
+      sessionStorage.setItem("pendingInviteToken", token);
+      localStorage.setItem("pendingInviteToken", token);
+    }
   }, [token]);
 
   // ✅ True if a different account is logged in than the one invited
@@ -211,6 +214,7 @@ export const AcceptInvite: React.FC = () => {
     if (!user) {
       try {
         sessionStorage.setItem("pendingInviteToken", token || "");
+        localStorage.setItem("pendingInviteToken", token || "");
         await signInGoogle();
         return;
       } catch {
