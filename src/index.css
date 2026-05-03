@@ -311,10 +311,19 @@
     font-feature-settings:
       "rlig" 1,
       "calt" 1;
+    overscroll-behavior-y: none;
   }
 
   html {
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Touch ergonomics: kill the iOS tap highlight (we use focus rings instead),
+     and stop any flash of underline on tappable navigation links. */
+  a, button, [role="button"], [role="link"], input, textarea, select {
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* Visible focus rings on all interactive elements */
@@ -428,6 +437,18 @@
 }
 
 @layer utilities {
+  /* Safe-area helpers for iOS notch / home indicator. Apply to fixed bars. */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-x {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
   .text-gradient {
     background: var(--hero-gradient);
     -webkit-background-clip: text;

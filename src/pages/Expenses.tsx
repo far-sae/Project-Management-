@@ -407,9 +407,9 @@ export const Expenses: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-4 md:p-8">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         <div className="max-w-5xl mx-auto space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between gap-4 flex-wrap">

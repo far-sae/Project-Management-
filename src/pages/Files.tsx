@@ -299,9 +299,9 @@ export const Files: React.FC = () => {
   const uploadProgressItems = Object.values(uploadProgress);
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0">
+    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-3 mb-6 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Files</h1>

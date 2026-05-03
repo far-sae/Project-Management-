@@ -293,10 +293,10 @@ export const Contracts: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0">
+    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="flex items-center justify-between mb-8">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 md:mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Contracts</h1>
             <p className="text-muted-foreground">Manage your contracts and agreements</p>

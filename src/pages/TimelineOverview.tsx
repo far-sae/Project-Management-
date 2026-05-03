@@ -516,9 +516,9 @@ export const TimelineOverview: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0">
+    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
 
         {/* ── Top header ── */}
         <div className="sticky top-0 z-30 border-b border-border/70 bg-card/80 backdrop-blur-xl shadow-sm shadow-black/5 px-6 py-3 flex flex-wrap items-center justify-between gap-3">

@@ -637,9 +637,9 @@ export const MyTasks: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0">
+    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="border-b border-border/70 bg-card/60 backdrop-blur-sm px-6 py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

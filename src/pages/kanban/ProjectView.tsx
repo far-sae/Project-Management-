@@ -667,7 +667,7 @@ export const ProjectView: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0">
+    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
       <Sidebar
         project={project}
         tasks={tasks}
@@ -676,7 +676,7 @@ export const ProjectView: React.FC = () => {
         columns={boardColumns}
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_38rem,hsl(var(--background)))]">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_38rem,hsl(var(--background)))]">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}

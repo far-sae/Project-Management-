@@ -647,20 +647,20 @@ export const Dashboard: React.FC = () => {
   }, [workspaces]);
 
   return (
-    <div className="flex h-screen bg-background pt-12 md:pt-0">
+    <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
       <Sidebar />
 
-      <main className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))]">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))]">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}
 
         <div className="animate-fade-in p-4 sm:p-6 lg:p-8">
-          <div className="mb-8 rounded-lg border border-border/70 bg-card/80 p-6 shadow-sm shadow-black/5 backdrop-blur-xl sm:p-8">
+          <div className="mb-6 sm:mb-8 rounded-lg border border-border/70 bg-card/80 p-4 sm:p-6 shadow-sm shadow-black/5 backdrop-blur-xl lg:p-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3 leading-none">
               <div className="min-w-0 pt-0.5">
-                <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
                   Welcome back, {user?.displayName?.split(' ')[0]}!
                 </h1>
                 <p className="mt-1 text-muted-foreground">
@@ -669,12 +669,12 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full sm:w-auto">
               {/* Workspace selector */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-foreground">Workspace</span>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-sm font-medium text-foreground hidden sm:inline">Workspace</span>
                 <Select value={selectedWorkspaceId} onValueChange={handleWorkspaceChange}>
-                  <SelectTrigger className="w-[200px] rounded-lg bg-background/80">
+                  <SelectTrigger className="w-full sm:w-[200px] rounded-lg bg-background/80">
                     <SelectValue placeholder="Select workspace" />
                   </SelectTrigger>
 
