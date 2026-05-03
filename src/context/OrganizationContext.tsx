@@ -75,7 +75,10 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       const profileOrgId = profile?.organization_id?.replace('local-', '');
       if (profileOrgId) {
         foundOrg = await getOrganization(profileOrgId);
-        if (foundOrg && foundOrg.ownerId === user.userId) {
+        if (foundOrg) {
+          // Accept this org whether user is owner OR member/admin/viewer.
+          // Previously this only returned for owners, causing invited members
+          // to fall through and get a local-only fallback org.
           setOrganization(foundOrg);
           return;
         }
