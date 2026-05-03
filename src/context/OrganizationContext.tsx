@@ -248,20 +248,20 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   // Initial fetch
   useEffect(() => {
     if (!authLoading && user) {
-      // Wait for the real organization ID to be set (not "local-" format)
-      // AuthContext creates the org asynchronously after initial login
       const orgId = user.organizationId;
       const hasValidOrgId = orgId && !orgId.startsWith('local-');
 
       if (hasValidOrgId) {
-        fetchOrganization();
+        // Real org ID available — fetch immediately. If we already have an org
+        // cached, treat as silent to avoid unmounting the current page.
+        fetchOrganization(organization ? { silent: true } : undefined);
       } else {
-        // Wait a bit for AuthContext to create the organization
-        // This handles the race condition where authLoading becomes false
-        // before the org is fully set up
+        // AuthContext is still resolving the org asynchronously. Use a short
+        // delay (was 2s, now 500ms) — the profile query in fetchOrganization
+        // will find the real org even without the auth-context ID.
         const timeout = setTimeout(() => {
           fetchOrganization();
-        }, 2000);
+        }, 500);
         return () => clearTimeout(timeout);
       }
     } else if (!user) {

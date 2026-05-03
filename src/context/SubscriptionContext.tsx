@@ -86,6 +86,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
   const ownerIdRef = useRef<string | null>(null);
   const isOrgOwnerRef = useRef<boolean>(false);
   const channelRef = useRef<any>(null);
+  const hasLoadedOnceRef = useRef(false);
 
   // Keep the latest owner / role flags inside refs so fetchSub can read them
   // without becoming a moving callback (and tearing down the realtime channel
@@ -232,6 +233,7 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
       console.error("fetchSub error:", err);
     } finally {
       setLoading(false);
+      hasLoadedOnceRef.current = true;
     }
   }, []); // zero deps — reads uid from ref
 
@@ -251,7 +253,10 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode; }> = ({
     }
 
     userIdRef.current = uid;
-    setLoading(true);
+    // Only show global loading on initial fetch — subsequent refetches (e.g.
+    // when organization.ownerId resolves) happen silently so the page doesn't
+    // unmount and remount causing visible "reload" flashes.
+    if (!hasLoadedOnceRef.current) setLoading(true);
     fetchSub();
 
     // Clean up old realtime channel

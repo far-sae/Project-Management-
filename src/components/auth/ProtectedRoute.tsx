@@ -27,7 +27,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const location = useLocation();
 
   // ── Loading state ──────────────────────────────────
-  if (authLoading || subLoading) {
+  // Only block on auth — subscription/org load in the background to avoid
+  // full-page unmount/remount flashes on every state transition.
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -50,7 +52,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }
 
   // ── Subscription required ──────────────────────────
-  if (requireSubscription && !canAccessFeatures && !subLoading) {
+  // Don't redirect while subscription is still loading — avoids flash to /pricing
+  if (requireSubscription && !canAccessFeatures && !subLoading && !orgLoading) {
     return <Navigate to="/pricing" state={{ from: location }} replace />;
   }
 

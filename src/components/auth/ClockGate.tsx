@@ -24,7 +24,7 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user, signOut } = useAuth();
-  const { isViewer } = useOrganization();
+  const { isViewer, isOwner } = useOrganization();
   const { openEntry, loading, clockIn } = useTimeTracking();
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,6 +32,8 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   if (!user) return <>{children}</>;
   // Build/support team — bypass.
   if (isAppOwner(user.userId)) return <>{children}</>;
+  // Org owner doesn't need to clock in — they manage the workspace.
+  if (isOwner) return <>{children}</>;
   // Viewers don't have shifts to log; they're observers (clients, auditors).
   // Forcing them to clock in would be confusing and pollute timesheets.
   if (isViewer) return <>{children}</>;

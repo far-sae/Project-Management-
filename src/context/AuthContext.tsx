@@ -74,21 +74,16 @@ const ensureOrganizationExists = async (
 
     const existingOrgId = existingOrgs?.[0]?.organization_id ?? null;
     if (existingOrgId) {
-      const { data: linkedRow, error: linkExistingError } = await supabase
+      const now = new Date().toISOString();
+      const { error: linkExistingError } = await supabase
         .from('user_profiles')
-        .update({ organization_id: existingOrgId })
-        .eq('id', userId)
-        .select('id')
-        .maybeSingle();
+        .upsert({
+          id: userId,
+          organization_id: existingOrgId,
+          updated_at: now,
+        }, { onConflict: 'id' });
       if (linkExistingError) {
         logger.error('Failed to link existing organization to user profile:', linkExistingError);
-        return null;
-      }
-      if (!linkedRow) {
-        logger.error('Failed to link existing organization: user_profiles row not found or not updated', {
-          userId,
-          existingOrgId,
-        });
         return null;
       }
       return existingOrgId;
@@ -111,21 +106,18 @@ const ensureOrganizationExists = async (
 
     const membershipOrgId = memberOrgs?.[0]?.organization_id ?? null;
     if (membershipOrgId) {
-      const { data: linkedRow, error: linkMemberError } = await supabase
+      // Use upsert — the user_profiles row may not exist yet for invited
+      // users on their first login (createUserProfile might not have run yet).
+      const now = new Date().toISOString();
+      const { error: linkMemberError } = await supabase
         .from('user_profiles')
-        .update({ organization_id: membershipOrgId })
-        .eq('id', userId)
-        .select('id')
-        .maybeSingle();
+        .upsert({
+          id: userId,
+          organization_id: membershipOrgId,
+          updated_at: now,
+        }, { onConflict: 'id' });
       if (linkMemberError) {
         logger.error('Failed to link membership organization to user profile:', linkMemberError);
-        return null;
-      }
-      if (!linkedRow) {
-        logger.error(
-          'Failed to link membership organization: user_profiles row not found or not updated',
-          { userId, membershipOrgId },
-        );
         return null;
       }
       return membershipOrgId;
@@ -385,10 +377,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
 
                 if (!isMounted) return;
 
-                if (orgId) {
-                  setUser(prev => prev ? { ...prev, organizationId: orgId } : null);
-                }
-
+                // Fetch profile and apply all updates in a single setUser call
+                // to avoid multiple state transitions that cascade into
+                // OrganizationContext / SubscriptionContext re-fetches.
                 const { data: profile } = await supabase
                   .from('user_profiles')
                   .select('organization_id, role, display_name, photo_url')
@@ -397,15 +388,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
 
                 if (!isMounted) return;
 
-                if (profile) {
-                  setUser(prev => prev ? {
+                const resolvedOrgId = profile?.organization_id || orgId || null;
+                setUser(prev => {
+                  if (!prev) return null;
+                  return {
                     ...prev,
-                    organizationId: profile.organization_id || orgId || prev.organizationId,
-                    role: profile.role || 'user',
-                    displayName: profile.display_name || prev.displayName,
-                    photoURL: profile.photo_url || prev.photoURL,
-                  } : null);
-                }
+                    organizationId: resolvedOrgId || prev.organizationId,
+                    role: profile?.role || prev.role,
+                    displayName: profile?.display_name || prev.displayName,
+                    photoURL: profile?.photo_url || prev.photoURL,
+                  };
+                });
               } catch (err) {
                 console.error('❌ Auth setup failed:', err);
               }
