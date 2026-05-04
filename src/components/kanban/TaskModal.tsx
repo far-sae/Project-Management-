@@ -401,6 +401,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     const pickName = (...candidates: Array<string | null | undefined>) =>
       candidates.find((c) => c && !isGenericName(c)) || '';
 
+    // Members + viewers can't read other users' rows in `user_profiles` due
+    // to RLS, so the Supabase query below comes back empty for the owner
+    // and other admins — leaving us with the literal "Member" placeholder
+    // stored on the project's members JSON. The OrganizationContext is
+    // already loaded with the org's authoritative `ownerName`, member
+    // displayNames, and emails (those tables are readable to all org
+    // members), so we use it as the most reliable name source.
+    const orgInfoByUserId = new Map<
+      string,
+      { displayName?: string; email?: string; photoURL?: string }
+    >();
+    if (organization?.ownerId) {
+      orgInfoByUserId.set(organization.ownerId, {
+        displayName: organization.ownerName,
+        email: organization.ownerEmail,
+      });
+    }
+    for (const m of organization?.members ?? []) {
+      if (!m.userId) continue;
+      orgInfoByUserId.set(m.userId, {
+        displayName: m.displayName,
+        email: m.email,
+        photoURL: m.photoURL,
+      });
+    }
+
     const loadAssignableMembers = async () => {
       if (!open || !projectId) {
         setProjectAssignableMembers([]);
@@ -428,12 +454,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             .eq('id', ownerId)
             .maybeSingle();
 
+          const orgOwnerInfo = orgInfoByUserId.get(ownerId);
           const ownerEmail =
-            ownerProfile?.email || (ownerId === user?.userId ? user?.email || '' : '');
+            ownerProfile?.email ||
+            orgOwnerInfo?.email ||
+            (ownerId === user?.userId ? user?.email || '' : '');
           const ownerEmailLocal = ownerEmail.split('@')[0] || '';
           const ownerName =
             pickName(
               ownerProfile?.display_name,
+              orgOwnerInfo?.displayName,
               ownerId === user?.userId ? user?.displayName : null,
             ) ||
             ownerEmailLocal ||
@@ -444,7 +474,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             userId: ownerId,
             displayName: ownerName,
             email: ownerEmail,
-            photoURL: ownerProfile?.photo_url || (ownerId === user?.userId ? user?.photoURL || '' : ''),
+            photoURL:
+              ownerProfile?.photo_url ||
+              orgOwnerInfo?.photoURL ||
+              (ownerId === user?.userId ? user?.photoURL || '' : ''),
           });
         }
 
@@ -459,10 +492,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             const uid = m.userId || m.user_id;
             if (!uid) continue;
             const profile = profileMap.get(uid);
-            const email = profile?.email || m.email || '';
+            const orgInfo = orgInfoByUserId.get(uid);
+            const email = profile?.email || orgInfo?.email || m.email || '';
             const emailLocal = email.split('@')[0] || '';
             const resolvedName =
-              pickName(profile?.display_name, m.displayName, m.display_name) ||
+              pickName(
+                profile?.display_name,
+                orgInfo?.displayName,
+                m.displayName,
+                m.display_name,
+              ) ||
               emailLocal ||
               email ||
               'Member';
@@ -470,7 +509,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               userId: uid,
               displayName: resolvedName,
               email,
-              photoURL: profile?.photo_url || m.photoURL || m.photo_url || '',
+              photoURL:
+                profile?.photo_url ||
+                orgInfo?.photoURL ||
+                m.photoURL ||
+                m.photo_url ||
+                '',
             });
           }
         }
@@ -500,7 +544,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       }
     };
     loadAssignableMembers();
-  }, [open, projectId, project?.ownerId, user?.userId, user?.email, user?.displayName, user?.photoURL]);
+    // organization fields are added so members + owner names refresh once
+    // the org context resolves (RLS hides other users' user_profiles rows
+    // from non-admins, so the org-context payload is the authoritative
+    // name source for owner / admin / fellow members).
+  }, [
+    open,
+    projectId,
+    project?.ownerId,
+    user?.userId,
+    user?.email,
+    user?.displayName,
+    user?.photoURL,
+    organization?.ownerId,
+    organization?.ownerName,
+    organization?.ownerEmail,
+    organization?.members,
+  ]);
 
   // ── AI Handlers ────────────────────────────────────────────
   const handleExpandDescription = async () => {
