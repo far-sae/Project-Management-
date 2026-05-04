@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import type { Project, Task, TaskStatus, KanbanColumn } from '@/types';
@@ -41,8 +42,30 @@ export const ProjectChromeProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [chrome, setChromeState] = useState<ProjectChrome>(EMPTY_CHROME);
 
+  // Field-equal short-circuit. Critical: ProjectView passes a fresh
+  // `{ project, tasks, ... }` object literal every render, so a naive
+  // `setChromeState(next)` always triggers a re-render even when nothing
+  // really changed. That re-render bumps the context value, which makes
+  // every `useContext` consumer (including `usePublishProjectChrome`
+  // itself) re-run — and because `ctx` is in that effect's deps, the
+  // effect fires and calls setChrome again. Result: infinite render loop,
+  // pinned main thread, the page goes unresponsive on slower devices.
+  // Comparing by reference per field keeps state identity stable when the
+  // payload is semantically unchanged, so the chain stops.
   const setChrome = useCallback((next: ProjectChrome | null) => {
-    setChromeState(next ?? EMPTY_CHROME);
+    setChromeState((prev) => {
+      const candidate = next ?? EMPTY_CHROME;
+      if (
+        prev.project === candidate.project &&
+        prev.tasks === candidate.tasks &&
+        prev.selectedStatus === candidate.selectedStatus &&
+        prev.onStatusChange === candidate.onStatusChange &&
+        prev.columns === candidate.columns
+      ) {
+        return prev;
+      }
+      return candidate;
+    });
   }, []);
 
   const value = useMemo(() => ({ chrome, setChrome }), [chrome, setChrome]);
@@ -61,21 +84,23 @@ export const useProjectChrome = (): ProjectChrome => {
 
 // ProjectView calls this with its current chrome on every render. Two
 // separate effects:
-//   1. Push the latest chrome on every meaningful change (project / tasks /
-//      filters / columns). Critically, this does NOT clear chrome on
-//      cleanup — that previously caused a visible flash on every tasks
-//      update, where the sidebar saw `null` chrome between cleanup and the
-//      next effect run.
+//   1. Push the latest chrome on every meaningful field change (project /
+//      tasks / filters / columns). Note: `ctx` is intentionally NOT in the
+//      deps. The setter is stable across renders (useCallback in the
+//      provider) and including `ctx` would re-fire this effect every time
+//      the provider's value object updates — which itself happens *because*
+//      we just called setChrome — feeding back into an infinite loop. We
+//      capture the setter via a ref instead.
 //   2. Reset chrome only when ProjectView itself unmounts (route leaves),
 //      so navigating away from /project/:id correctly clears the sidebar.
 export const usePublishProjectChrome = (chrome: ProjectChrome | null) => {
   const ctx = useContext(ProjectChromeContext);
+  const setChromeRef = useRef(ctx?.setChrome);
+  setChromeRef.current = ctx?.setChrome;
 
   useEffect(() => {
-    if (!ctx) return;
-    ctx.setChrome(chrome);
+    setChromeRef.current?.(chrome);
   }, [
-    ctx,
     chrome?.project,
     chrome?.tasks,
     chrome?.selectedStatus,
@@ -84,9 +109,8 @@ export const usePublishProjectChrome = (chrome: ProjectChrome | null) => {
   ]);
 
   useEffect(() => {
-    if (!ctx) return;
     return () => {
-      ctx.setChrome(null);
+      setChromeRef.current?.(null);
     };
-  }, [ctx]);
+  }, []);
 };
