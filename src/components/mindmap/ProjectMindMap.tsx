@@ -2338,18 +2338,13 @@ interface StructuralMapProps extends ProjectMindMapProps {
 }
 
 const ProjectStructuralMap: React.FC<StructuralMapProps> = (props) => {
-  if (props.tasks.length === 0 && (loadExtras(props.project.projectId).ideas.length === 0) && !props.pendingImport) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground bg-background rounded-lg border border-border">
-        <Lightbulb className="w-10 h-10 mb-3 text-amber-500/70" />
-        <p className="text-sm font-medium text-foreground mb-1">Mind map is empty</p>
-        <p className="text-xs max-w-xs">
-          Add tasks and subtasks to see them visualised here, or click the canvas after enabling
-          <span className="font-medium text-foreground"> Add idea</span> to brainstorm.
-        </p>
-      </div>
-    );
-  }
+  // Always mount the canvas so the toolbar's Add button (Task / Column /
+  // Project / Idea) is reachable even when the kanban has no tasks yet
+  // and no ideas have been saved. A static "empty" placeholder here would
+  // hide the canvas the empty-state hint itself tells the user to click,
+  // and would also briefly flash after a Send-to-Project-map import
+  // completes (between pendingImport clearing and the new ideas being
+  // observed via loadExtras).
   return (
     <ReactFlowProvider>
       <MindMapInner {...props} />
