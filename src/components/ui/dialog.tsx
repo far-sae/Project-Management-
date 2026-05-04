@@ -18,9 +18,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      // Sit above the project chat dock (z-100) so opening any modal covers
-      // it cleanly instead of leaving the dock floating on top of the form.
-      'fixed inset-0 z-[120] bg-background/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+      'fixed inset-0 z-50 bg-background/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       className
     )}
     {...props}
@@ -33,12 +31,12 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => (
   <DialogPortal>
-    <div className="fixed inset-0 z-[120] flex items-end justify-center p-0 sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:justify-center sm:p-4">
       <DialogOverlay className="absolute inset-0" />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          'relative z-[120] grid w-full max-w-lg overflow-y-auto gap-4 border border-border bg-card p-4 sm:p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+          'relative z-50 grid w-full max-w-lg overflow-y-auto gap-4 border border-border bg-card p-4 sm:p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
           // Mobile: full-width bottom sheet sliding up from the bottom. Cap
           // height with `100dvh` (dynamic viewport — accounts for the iOS
           // Safari URL bar) minus a top inset so the title is always

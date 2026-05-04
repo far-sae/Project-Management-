@@ -960,7 +960,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         // Mobile: anchor to the bottom-right corner only — full-width pill
         // would obscure the underlying kanban / task cards. Desktop keeps
         // the wider card.
-        className="fixed bottom-4 right-3 z-[100] flex flex-col items-end pointer-events-none sm:right-5"
+        // z-40 sits ABOVE normal page content but BELOW any modal layer
+        // (Dialog / AlertDialog / Popover / Select all use z-50). That way
+        // opening a task or settings dialog cleanly covers the dock without
+        // needing to bump the dialog z-index — which in turn would hide
+        // popovers (Status / Priority / Assign / Date) inside the dialog.
+        className="fixed bottom-4 right-3 z-40 flex flex-col items-end pointer-events-none sm:right-5"
         role="complementary"
         aria-label="Project messaging"
       >
@@ -1037,7 +1042,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
 
   return (
     <div
-      className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-5"
+      className="fixed inset-x-3 bottom-4 z-40 flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-5"
       role="complementary"
       aria-label="Project messages"
     >
