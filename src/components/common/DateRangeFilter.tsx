@@ -178,7 +178,11 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-auto p-0"
+        // Cap the popover width on mobile so the embedded calendar grid
+        // can't push past the right edge of the viewport. `collisionPadding`
+        // also nudges it inwards if it would otherwise clip.
+        className="w-[min(20rem,calc(100vw-1.5rem))] sm:w-auto p-0"
+        collisionPadding={12}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="grid grid-cols-2 gap-1 p-2 border-b border-border">

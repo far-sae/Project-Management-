@@ -706,21 +706,21 @@ export const Team: React.FC = () => {
                   {pendingInvitations.map((invitation) => (
                     <div
                       key={invitation.invitationId}
-                      className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/45"
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-4 transition-colors hover:bg-muted/45"
                     >
-                      <div className="flex items-center gap-4">
+                      <div className="flex min-w-0 flex-1 items-center gap-4">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500/15 ring-1 ring-amber-500/25">
                           <Mail className="h-5 w-5 text-amber-700 dark:text-amber-400" />
                         </div>
-                        <div>
-                          <p className="font-medium text-foreground">{invitation.inviteeEmail}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-foreground truncate">{invitation.inviteeEmail}</p>
                           <p className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            Expires {new Date(invitation.expiresAt).toLocaleDateString()}
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span className="truncate">Expires {new Date(invitation.expiresAt).toLocaleDateString()}</span>
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         {getRoleBadge(invitation.role)}
                         <Button variant="ghost" size="sm" onClick={() => copyInviteLink(invitation.token, invitation.invitationId)}>
                           {copiedLink === invitation.invitationId ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}

@@ -164,7 +164,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
       {/* Month header */}
       <div className="sticky top-0 z-20 bg-card/95 backdrop-blur-sm border-b border-border">
         <div className="flex">
-          <div className="w-96 shrink-0 border-r border-border bg-muted/40 px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+          <div className="w-56 sm:w-96 shrink-0 border-r border-border bg-muted/40 px-3 sm:px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
             Project
           </div>
           <div className="flex relative" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
@@ -182,7 +182,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
         {/* Day numbers */}
         <div className="flex">
-          <div className="w-96 shrink-0 border-r border-border bg-muted/40" />
+          <div className="w-56 sm:w-96 shrink-0 border-r border-border bg-muted/40" />
           <div className="flex relative" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
             {(showWeekends ? dayNumbers : filteredDayNumbers).map((d, i) => (
               <div
@@ -260,8 +260,10 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
 
         return (
           <div key={project.projectId} className="flex border-b border-border/60 hover:bg-muted/20 group transition-colors">
-            {/* Left: project info */}
-            <div className="w-96 shrink-0 border-r border-border/70 flex items-center px-4 py-3 sticky left-0 z-10 bg-card group-hover:bg-muted/30">
+            {/* Left: project info. On mobile we cap the column at 14rem so
+                bars stay visible without an aggressive horizontal scroll;
+                on sm+ we keep the original 24rem to fit avatars + dates. */}
+            <div className="w-56 sm:w-96 shrink-0 border-r border-border/70 flex items-center px-3 sm:px-4 py-3 sticky left-0 z-10 bg-card group-hover:bg-muted/30">
               <div
                 className="w-2.5 h-9 rounded-full mr-3 shrink-0"
                 style={{ backgroundColor: barColor }}

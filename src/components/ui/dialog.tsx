@@ -18,7 +18,9 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-background/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+      // Sit above the project chat dock (z-100) so opening any modal covers
+      // it cleanly instead of leaving the dock floating on top of the form.
+      'fixed inset-0 z-[120] bg-background/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       className
     )}
     {...props}
@@ -31,16 +33,19 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => (
   <DialogPortal>
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-[120] flex items-end justify-center p-0 sm:items-center sm:justify-center sm:p-4">
       <DialogOverlay className="absolute inset-0" />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          'relative z-50 grid w-full max-w-lg max-h-[90vh] overflow-y-auto gap-4 border border-border bg-card p-4 sm:p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          // Mobile: full-width bottom sheet that slides up from the bottom.
-          'rounded-t-2xl rounded-b-none data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom pb-[max(env(safe-area-inset-bottom),1rem)]',
+          'relative z-[120] grid w-full max-w-lg overflow-y-auto gap-4 border border-border bg-card p-4 sm:p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+          // Mobile: full-width bottom sheet sliding up from the bottom. Cap
+          // height with `100dvh` (dynamic viewport — accounts for the iOS
+          // Safari URL bar) minus a top inset so the title is always
+          // visible below the status bar instead of being clipped.
+          'max-h-[calc(100dvh-3rem)] rounded-t-2xl rounded-b-none data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom pt-[max(env(safe-area-inset-top),0.75rem)] pb-[max(env(safe-area-inset-bottom),1rem)]',
           // Desktop (>= sm): centred modal with zoom transition.
-          'sm:rounded-xl sm:pb-6 sm:max-w-lg sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0',
+          'sm:max-h-[90vh] sm:rounded-xl sm:pt-6 sm:pb-6 sm:max-w-lg sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0',
           className
         )}
         {...props}

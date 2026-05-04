@@ -468,7 +468,10 @@ export const Settings: React.FC = () => {
           }}
           className="space-y-6"
         >
-          <TabsList>
+          {/* On mobile we have 6–7 tabs but only ~360px of width — let the
+              row scroll horizontally instead of compressing every tab into
+              an icon-only sliver. */}
+          <TabsList className="w-full max-w-full overflow-x-auto justify-start sm:justify-center flex-nowrap whitespace-nowrap">
             <TabsTrigger value="profile" className="gap-2">
               <User className="w-4 h-4" />
               Profile

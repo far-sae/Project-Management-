@@ -586,9 +586,11 @@ export const Sidebar: React.FC = () => {
       {/* Mobile drawer — off-canvas slide-in. Renders only when open so the
           DOM stays light on mobile. The backdrop dismisses the drawer; the
           panel itself caps at 85vw so a sliver of page is visible behind it
-          (a familiar drawer UX pattern). */}
+          (a familiar drawer UX pattern). z-index sits above the project chat
+          dock (z-100) so opening the sidebar covers it instead of leaving
+          the dock floating on top. */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
+        <div className="md:hidden fixed inset-0 z-[110] flex" role="dialog" aria-modal="true">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-[1px] animate-in fade-in duration-150"
             onClick={() => setMobileOpen(false)}

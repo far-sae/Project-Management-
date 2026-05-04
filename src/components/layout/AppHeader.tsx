@@ -49,10 +49,17 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         className,
       )}
     >
-      <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
-        <div className="flex-1 min-w-0 flex items-center gap-3">{left}</div>
+      {/* On mobile the right-side actions (date pickers, view switchers,
+          range buttons …) are too wide to share a row with the title — we
+          let them wrap to a second line so they never collide with or
+          truncate the breadcrumb / page title on the left. From sm up the
+          original single-row layout is restored. */}
+      <div className="flex flex-wrap min-h-14 items-center gap-x-3 gap-y-2 px-4 py-2 sm:flex-nowrap sm:py-0 lg:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-3 basis-full sm:basis-0">
+          {left}
+        </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap min-w-0 max-w-full overflow-x-auto sm:overflow-visible">
           {showSearch && (
             <button
               type="button"

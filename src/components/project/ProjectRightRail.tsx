@@ -957,7 +957,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   if (!open) {
     return (
       <div
-        className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-5"
+        // Mobile: anchor to the bottom-right corner only — full-width pill
+        // would obscure the underlying kanban / task cards. Desktop keeps
+        // the wider card.
+        className="fixed bottom-4 right-3 z-[100] flex flex-col items-end pointer-events-none sm:right-5"
         role="complementary"
         aria-label="Project messaging"
       >
@@ -966,11 +969,15 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           onClick={() => onOpenChange(true)}
           aria-label="Open project messages and team"
           className={cn(
-            'pointer-events-auto group relative flex min-h-[3.75rem] items-center gap-3',
-            'rounded-lg border border-border/70 bg-card/95 pl-3 pr-3 text-left backdrop-blur-xl',
-            'shadow-[0_16px_46px_rgba(0,0,0,0.24)] transition-all duration-150',
+            'pointer-events-auto group relative inline-flex items-center justify-center backdrop-blur-xl',
+            // Mobile: compact 3rem circular FAB — icon + unread badge only.
+            'h-12 w-12 rounded-full border border-border/70 bg-card/95',
+            'shadow-[0_12px_36px_rgba(0,0,0,0.32)] transition-all duration-150',
             'hover:-translate-y-0.5 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-            railWidth,
+            // Desktop (>= sm): full pill with project name, member count and
+            // recent senders, just like before.
+            'sm:h-auto sm:w-[min(23rem,calc(100vw-2.5rem))] sm:rounded-lg sm:gap-3 sm:pl-3 sm:pr-3 sm:min-h-[3.75rem] sm:justify-start sm:text-left sm:shadow-[0_16px_46px_rgba(0,0,0,0.24)]',
+            'sm:flex',
           )}
         >
           <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
@@ -987,7 +994,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               </span>
             )}
           </div>
-          <div className="min-w-0 flex-1 py-2">
+          {/* Project name + member count: hidden on mobile FAB. */}
+          <div className="hidden sm:block min-w-0 flex-1 py-2">
             <div className="flex items-center gap-1.5">
               <p className="truncate text-[13px] font-semibold text-foreground leading-tight">
                 {project.name}
@@ -1001,8 +1009,9 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               {chatMessages.length > 0 ? ' · Open chat' : ' · Start the conversation'}
             </p>
           </div>
+          {/* Recent senders: hidden on mobile FAB. */}
           {recentSenders.length > 0 ? (
-            <div className="flex -space-x-1.5 shrink-0 mr-1">
+            <div className="hidden sm:flex -space-x-1.5 shrink-0 mr-1">
               {recentSenders.map((s) => (
                 <Avatar key={s.userId} className="w-6 h-6 ring-2 ring-card">
                   <AvatarImage src={s.photoURL} alt={s.displayName} />
@@ -1014,7 +1023,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             </div>
           ) : null}
           <ChevronUp
-            className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5"
+            className="hidden sm:block h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5"
           />
         </button>
         <DirectMessageDock
