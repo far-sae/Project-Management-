@@ -380,6 +380,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   // Load assignable members
   useEffect(() => {
+    // Legacy invite/migration code paths sometimes stored a literal role
+    // word ("Member", "Owner", "User", …) in `displayName` instead of an
+    // actual name. Treat those as missing so we fall through to the email
+    // local part or the user's real profile name.
+    const isGenericName = (name?: string | null) => {
+      if (!name) return true;
+      const n = name.trim().toLowerCase();
+      return (
+        n === '' ||
+        n === 'owner' ||
+        n === 'admin' ||
+        n === 'member' ||
+        n === 'user' ||
+        n === 'unknown' ||
+        n === 'you'
+      );
+    };
+    /** Pick the first non-generic, non-empty candidate. */
+    const pickName = (...candidates: Array<string | null | undefined>) =>
+      candidates.find((c) => c && !isGenericName(c)) || '';
+
     const loadAssignableMembers = async () => {
       if (!open || !projectId) {
         setProjectAssignableMembers([]);
@@ -411,9 +432,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             ownerProfile?.email || (ownerId === user?.userId ? user?.email || '' : '');
           const ownerEmailLocal = ownerEmail.split('@')[0] || '';
           const ownerName =
-            ownerProfile?.display_name ||
-            (ownerId === user?.userId ? user?.displayName : '') ||
+            pickName(
+              ownerProfile?.display_name,
+              ownerId === user?.userId ? user?.displayName : null,
+            ) ||
             ownerEmailLocal ||
+            ownerEmail ||
             'Member';
 
           memberMap.set(ownerId, {
@@ -435,10 +459,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             const uid = m.userId || m.user_id;
             if (!uid) continue;
             const profile = profileMap.get(uid);
+            const email = profile?.email || m.email || '';
+            const emailLocal = email.split('@')[0] || '';
+            const resolvedName =
+              pickName(profile?.display_name, m.displayName, m.display_name) ||
+              emailLocal ||
+              email ||
+              'Member';
             memberMap.set(uid, {
               userId: uid,
-              displayName: profile?.display_name || m.displayName || m.display_name || m.email || 'Member',
-              email: profile?.email || m.email || '',
+              displayName: resolvedName,
+              email,
               photoURL: profile?.photo_url || m.photoURL || m.photo_url || '',
             });
           }

@@ -63,22 +63,47 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
     }
   };
 
+  // Older invites/tasks sometimes stored placeholder text like "Member" or
+  // "Unknown" as the assignee's displayName. When rendering a chip, prefer
+  // the freshly-loaded name from `members` (resolved against user_profiles)
+  // and only fall back to the stored value if the user isn't in the project
+  // members list anymore (e.g., they were removed).
+  const resolveDisplay = (a: TaskAssignee) => {
+    const fresh = members.find((m) => m.userId === a.userId);
+    const stored = (a.displayName || '').trim();
+    const isGeneric =
+      !stored ||
+      ['owner', 'admin', 'member', 'user', 'unknown', 'you'].includes(
+        stored.toLowerCase(),
+      );
+    const display =
+      fresh?.displayName ||
+      (isGeneric
+        ? (a.email?.split('@')[0] || a.email || 'Member')
+        : stored) ||
+      'Member';
+    const photoURL = fresh?.photoURL || a.photoURL || '';
+    return { display, photoURL };
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        {value.map((a) => (
+        {value.map((a) => {
+          const { display, photoURL } = resolveDisplay(a);
+          return (
           <span
             key={a.userId}
             className="inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 bg-secondary rounded-full text-xs"
           >
             <Avatar className="w-5 h-5">
-              <AvatarImage src={a.photoURL} alt={a.displayName} />
+              <AvatarImage src={photoURL} alt={display} />
               <AvatarFallback className="text-[10px] bg-primary-soft text-primary-soft-foreground">
-                {(a.displayName || '?').charAt(0).toUpperCase()}
+                {display.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <span className="text-foreground max-w-[120px] truncate">
-              {a.displayName}
+              {display}
             </span>
             <button
               type="button"
@@ -87,12 +112,13 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
               }
               disabled={disabled}
               className="text-muted-foreground hover:text-destructive disabled:opacity-40"
-              aria-label={`Remove ${a.displayName}`}
+              aria-label={`Remove ${display}`}
             >
               <X className="w-3 h-3" />
             </button>
           </span>
-        ))}
+          );
+        })}
 
         <Popover open={disabled ? false : open} onOpenChange={disabled ? () => {} : setOpen}>
           <PopoverTrigger asChild>
