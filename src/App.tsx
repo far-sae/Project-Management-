@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, useParams } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { OrganizationProvider } from '@/context/OrganizationContext';
@@ -59,6 +59,17 @@ const RouteFallback: React.FC = () => (
     <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
   </div>
 );
+
+// Project view shares one route pattern (`/project/:projectId`) for every
+// project, so React Router reuses the same component instance when the user
+// switches between projects from the sidebar. That left old subscriptions
+// (tasks, presence, chat) racing with the new ones and produced the "stuck"
+// behaviour on mobile after the second click. Keying by `projectId` forces
+// a clean unmount/remount so every per-project hook resets cleanly.
+const KeyedProjectView: React.FC = () => {
+  const { projectId } = useParams<{ projectId: string }>();
+  return <ProjectView key={projectId ?? 'no-project'} />;
+};
 
 const lazyRoute = (node: React.ReactNode) => (
   <Suspense fallback={<RouteFallback />}>{node}</Suspense>
@@ -145,7 +156,7 @@ const router = createBrowserRouter(
               path: '/project/:projectId',
               element: (
                 <ProtectedRoute requireSubscription>
-                  {lazyAppRoute(<ProjectView />)}
+                  {lazyAppRoute(<KeyedProjectView />)}
                 </ProtectedRoute>
               ),
             },

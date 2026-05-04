@@ -59,15 +59,21 @@ export const useProjectChrome = (): ProjectChrome => {
   return ctx?.chrome ?? EMPTY_CHROME;
 };
 
-// ProjectView calls this with its current chrome on every render. The effect
-// publishes to context and the cleanup clears it when the page unmounts, so
-// other routes never see a stale project header / status filters.
+// ProjectView calls this with its current chrome on every render. Two
+// separate effects:
+//   1. Push the latest chrome on every meaningful change (project / tasks /
+//      filters / columns). Critically, this does NOT clear chrome on
+//      cleanup — that previously caused a visible flash on every tasks
+//      update, where the sidebar saw `null` chrome between cleanup and the
+//      next effect run.
+//   2. Reset chrome only when ProjectView itself unmounts (route leaves),
+//      so navigating away from /project/:id correctly clears the sidebar.
 export const usePublishProjectChrome = (chrome: ProjectChrome | null) => {
   const ctx = useContext(ProjectChromeContext);
+
   useEffect(() => {
     if (!ctx) return;
     ctx.setChrome(chrome);
-    return () => ctx.setChrome(null);
   }, [
     ctx,
     chrome?.project,
@@ -76,4 +82,11 @@ export const usePublishProjectChrome = (chrome: ProjectChrome | null) => {
     chrome?.onStatusChange,
     chrome?.columns,
   ]);
+
+  useEffect(() => {
+    if (!ctx) return;
+    return () => {
+      ctx.setChrome(null);
+    };
+  }, [ctx]);
 };

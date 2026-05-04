@@ -5,7 +5,6 @@ import { isAppOwner } from '@/lib/app-owner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Loader2 } from 'lucide-react';
-import { ClockGate } from './ClockGate';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -77,8 +76,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/tasks" replace />;
   }
 
-  // ── Clock-in gate ──────────────────────────────────
-  return <ClockGate>{children}</ClockGate>;
+  // The clock-in gate used to wrap children here, but ProtectedRoute is the
+  // per-route `element` so it (and the gate) re-mounted on every navigation.
+  // That made `useTimeTracking()` re-fetch and flash the full-screen
+  // "Loading your workspace…" spinner each time the user clicked a sidebar
+  // link. The gate is now hoisted into AppLayout so it mounts once for the
+  // whole authenticated session.
+  return <>{children}</>;
 };
 
 export default ProtectedRoute;
