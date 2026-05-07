@@ -556,7 +556,10 @@ export class WebRTCService {
           // Receiving an answer proves the callee is subscribed; flush any
           // ICE candidates that were buffered during the ringing phase.
           this.markPeerReachable();
-          this.emit('answered');
+          // Forward the answerer's identity so the caller's UI can show the
+          // right name on a "ring all" project call (where we didn't know
+          // who specifically would pick up).
+          this.emit('answered', msg.from);
           break;
 
         case 'ice-candidate':

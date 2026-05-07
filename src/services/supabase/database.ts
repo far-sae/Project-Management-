@@ -647,39 +647,46 @@ export const getProject = async (
 
 export const getUserProjects = async (
   userId: string,
-  _organizationId: string,
+  organizationId: string,
   _userEmail?: string,
 ): Promise<Project[]> => {
-  const { data: ownerProjects, error: ownerError } = await supabase
-    .from("projects")
-    .select(PROJECTS_SAFE_SELECT)
-    .eq("owner_id", userId);
-
-  if (ownerError) console.error("Failed to fetch owner projects:", ownerError);
-
   const memberContains = JSON.stringify([{ userId }]);
   const legacyMemberContains = JSON.stringify([{ user_id: userId }]);
 
-  const { data: memberProjects, error: memberError } = await supabase
-    .from("projects")
-    .select(PROJECTS_SAFE_SELECT)
-    .filter("members", "cs", memberContains);
+  // Run all queries in parallel for speed.
+  const [ownerResult, memberResult, legacyResult, orgResult] = await Promise.all([
+    supabase
+      .from("projects")
+      .select(PROJECTS_SAFE_SELECT)
+      .eq("owner_id", userId),
+    supabase
+      .from("projects")
+      .select(PROJECTS_SAFE_SELECT)
+      .filter("members", "cs", memberContains),
+    supabase
+      .from("projects")
+      .select(PROJECTS_SAFE_SELECT)
+      .filter("members", "cs", legacyMemberContains),
+    // Also fetch all projects in the user's org — catches newly-invited members
+    // whose userId may not yet appear in the members JSONB due to replication
+    // lag or edge-case timing after accept_invitation.
+    organizationId && !organizationId.startsWith("local-")
+      ? supabase
+          .from("projects")
+          .select(PROJECTS_SAFE_SELECT)
+          .eq("organization_id", organizationId)
+      : Promise.resolve({ data: null, error: null }),
+  ]);
 
-  if (memberError) console.error("Failed to fetch member projects:", memberError);
-
-  const { data: legacyMemberProjects, error: legacyMemberError } = await supabase
-    .from("projects")
-    .select(PROJECTS_SAFE_SELECT)
-    .filter("members", "cs", legacyMemberContains);
-
-  if (legacyMemberError) {
-    console.error("Failed to fetch legacy member projects:", legacyMemberError);
-  }
+  if (ownerResult.error) console.error("Failed to fetch owner projects:", ownerResult.error);
+  if (memberResult.error) console.error("Failed to fetch member projects:", memberResult.error);
+  if (legacyResult.error) console.error("Failed to fetch legacy member projects:", legacyResult.error);
 
   const mergedMap = new Map<string, any>();
-  for (const p of ownerProjects || []) mergedMap.set(p.project_id, p);
-  for (const p of memberProjects || []) mergedMap.set(p.project_id, p);
-  for (const p of legacyMemberProjects || []) mergedMap.set(p.project_id, p);
+  for (const p of ownerResult.data || []) mergedMap.set(p.project_id, p);
+  for (const p of memberResult.data || []) mergedMap.set(p.project_id, p);
+  for (const p of legacyResult.data || []) mergedMap.set(p.project_id, p);
+  for (const p of orgResult.data || []) mergedMap.set(p.project_id, p);
 
   return Array.from(mergedMap.values())
     .sort(

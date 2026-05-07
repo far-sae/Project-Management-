@@ -24,3 +24,8 @@ verify_jwt = false
 # Admin-only; validates JWT inside function (verify_jwt=false so OPTIONS preflight passes CORS)
 [functions.public-stats]
 verify_jwt = false
+
+# LiveKit token signing — validates Supabase JWT inside the function so we can
+# return clean 401 bodies; gateway-level verify is off to keep CORS preflight working.
+[functions.livekit-token]
+verify_jwt = false

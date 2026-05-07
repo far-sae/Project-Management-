@@ -1032,14 +1032,24 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   }
                   onClick={() => {
                     if (isViewerOrg || !hasOtherMemberToCall) return;
-                    const firstOther = dedupedMembers.find(
-                      (m) => m.userId && m.userId !== user?.userId,
-                    );
-                    if (!firstOther?.userId) return;
+                    // "Ring all" — fan out the offer to every other project
+                    // member so any of them can pick up. Without this, we'd
+                    // only ring the first user in the list (alphabetical
+                    // accident, not intent).
+                    const targets = dedupedMembers
+                      .filter((m): m is typeof m & { userId: string } =>
+                        Boolean(m.userId) && m.userId !== user?.userId,
+                      )
+                      .map((m) => ({
+                        userId: m.userId,
+                        displayName: displayNameForChatUser(m.userId, m.displayName),
+                        photoURL: m.photoURL,
+                      }));
+                    if (targets.length === 0) return;
                     void callActions.startCall(
                       { type: 'project', targetId: project.projectId, label: project.name },
                       'audio',
-                      { userId: firstOther.userId, displayName: displayNameForChatUser(firstOther.userId, firstOther.displayName), photoURL: firstOther.photoURL },
+                      targets,
                     );
                   }}
                 >
@@ -1061,14 +1071,22 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   }
                   onClick={() => {
                     if (isViewerOrg || !hasOtherMemberToCall) return;
-                    const firstOther = dedupedMembers.find(
-                      (m) => m.userId && m.userId !== user?.userId,
-                    );
-                    if (!firstOther?.userId) return;
+                    // Ring every other project member — see audio-call note
+                    // above for why we don't pick a single "first" member.
+                    const targets = dedupedMembers
+                      .filter((m): m is typeof m & { userId: string } =>
+                        Boolean(m.userId) && m.userId !== user?.userId,
+                      )
+                      .map((m) => ({
+                        userId: m.userId,
+                        displayName: displayNameForChatUser(m.userId, m.displayName),
+                        photoURL: m.photoURL,
+                      }));
+                    if (targets.length === 0) return;
                     void callActions.startCall(
                       { type: 'project', targetId: project.projectId, label: project.name },
                       'video',
-                      { userId: firstOther.userId, displayName: displayNameForChatUser(firstOther.userId, firstOther.displayName), photoURL: firstOther.photoURL },
+                      targets,
                     );
                   }}
                 >

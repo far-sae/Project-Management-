@@ -51,12 +51,17 @@ const ensureOrganizationExists = async (
     if (profile?.organization_id && !profile.organization_id.startsWith('local-')) {
       const { data: profileOrg } = await supabase
         .from('organizations')
-        .select('organization_id, owner_id')
+        .select('organization_id, owner_id, members')
         .eq('organization_id', profile.organization_id)
         .maybeSingle();
 
-      if (profileOrg?.owner_id === userId) {
-        return profile.organization_id;
+      if (profileOrg) {
+        const isOwner = profileOrg.owner_id === userId;
+        const isMember = Array.isArray(profileOrg.members) &&
+          profileOrg.members.some((m: any) => (m?.userId || m?.user_id) === userId);
+        if (isOwner || isMember) {
+          return profile.organization_id;
+        }
       }
     }
 
