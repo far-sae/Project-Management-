@@ -8,26 +8,35 @@ import React, {
 } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { useAuth } from '@/context/AuthContext';
-import { SignalingChannel } from '@/services/webrtc/SignalingChannel';
-import { WebRTCService } from '@/services/webrtc/WebRTCService';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import type { VideoEffect } from '@/services/webrtc/BackgroundProcessor';
-import type {
-  CallContext,
-  CallMediaType,
-  CallParticipant,
-  CallState,
-  SignalMessage,
-  SignalOffer,
+import {
+  ConnectionState,
+  LiveKitCallService,
+  type CallPeerSnapshot,
+} from '@/services/livekit/LiveKitCallService';
+import {
+  dmRoomName,
+  projectRoomName,
+} from '@/services/livekit/fetchLiveKitToken';
+import {
+  INITIAL_CALL_STATE,
+  type CallContext,
+  type CallMediaType,
+  type CallParticipant,
+  type CallState,
+  type RingMessage,
+  type RingOffer,
 } from '@/services/webrtc/types';
+import { toast } from 'sonner';
 
 // ── Context types ────────────────────────────────────────────
 
 interface CallActions {
   /**
-   * Start an outgoing call. Pass a single participant for a 1:1 (DM) call, or
-   * an array of participants for a project-wide "ring all" call — every
-   * teammate is rung simultaneously and the first to accept is connected.
+   * Start an outgoing call. Pass a single participant for a 1:1 (DM) call,
+   * or an array for a project-wide "ring all" — every teammate is rung
+   * simultaneously and the first to accept joins the same LiveKit room.
    */
   startCall: (
     context: CallContext,
@@ -41,9 +50,9 @@ interface CallActions {
   toggleCamera: () => void;
   toggleScreenShare: () => Promise<void>;
   /**
-   * Apply (or remove) a Microsoft Teams-style background effect to the local
-   * camera. The processed track replaces the raw camera track in the active
-   * peer connection so the remote side sees the effect.
+   * Background camera effect (Teams-style blur). Currently a no-op while we
+   * wire LiveKit track processors — kept on the action surface so UI
+   * doesn't have to branch.
    */
   setVideoEffect: (effect: VideoEffect) => Promise<void>;
 }
@@ -59,29 +68,36 @@ const CallCtx = createContext<CallContextValue | null>(null);
 
 const RING_TIMEOUT_MS = 30_000;
 const OFFER_RESEND_INTERVAL_MS = 3_000;
+const ENDED_DISMISS_MS = 3_000;
 
 const generateCallId = () =>
   `call-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-const IDLE_STATE: CallState = {
-  status: 'idle',
-  callId: null,
-  direction: null,
-  mediaType: 'audio',
-  localStream: null,
-  remoteStream: null,
-  screenStream: null,
-  isMuted: false,
-  isCameraOff: false,
-  isScreenSharing: false,
-  videoEffect: 'none',
-  isApplyingEffect: false,
-  localParticipant: null,
-  remoteParticipant: null,
-  remoteParticipants: [],
-  context: null,
-  error: null,
-};
+const IDLE_STATE: CallState = INITIAL_CALL_STATE;
+
+// ── Helpers ──────────────────────────────────────────────────
+
+/**
+ * Pick the local snapshot out of a LiveKit participants list. Returns null
+ * before we've connected to the room (snapshot hasn't been emitted yet).
+ */
+function findLocalSnapshot(snaps: CallPeerSnapshot[]): CallPeerSnapshot | null {
+  for (const s of snaps) if (s.isLocal) return s;
+  return null;
+}
+
+/**
+ * Pick a "primary" remote snapshot for the headline tile. For 1:1 (DM)
+ * calls there's only one. For multi-party, pick the active speaker if
+ * any, else the first remote — gives us something stable to show in the
+ * minimised PiP without forcing the full grid into that surface.
+ */
+function findHeadlineRemote(snaps: CallPeerSnapshot[]): CallPeerSnapshot | null {
+  const remotes = snaps.filter((s) => !s.isLocal);
+  if (remotes.length === 0) return null;
+  const speaking = remotes.find((s) => s.isSpeaking);
+  return speaking ?? remotes[0];
+}
 
 // ── Provider ─────────────────────────────────────────────────
 
@@ -93,28 +109,31 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   const latestCallStateRef = useRef(state);
   latestCallStateRef.current = state;
 
-  const rtcRef = useRef<WebRTCService | null>(null);
-  const signalingRef = useRef<SignalingChannel | null>(null);
-  const pendingOfferRef = useRef<SignalOffer | null>(null);
   /**
-   * Every teammate the local user dialed on this call (caller-side state).
-   * Used to (a) fan out the offer to all of them while ringing and (b) send
-   * a `cancel` to the rest once one of them answers, so their rings stop
-   * instead of timing out 30 s later.
+   * Active LiveKit room wrapper. Created when we initiate or accept a call,
+   * destroyed on hang-up / failure / disconnect. We ref it (not state) so
+   * callbacks always see the live instance even mid-render.
+   */
+  const liveKitRef = useRef<LiveKitCallService | null>(null);
+
+  /**
+   * Most recent RingOffer received in our inbox while ringing — needed by
+   * acceptCall so we can join the same room the caller put us in.
+   */
+  const pendingRingRef = useRef<RingOffer | null>(null);
+
+  /**
+   * The teammates we're ringing on an outgoing call. Used to fan out the
+   * RingOffer + send RingCancel to the rest once someone accepts.
    */
   const remoteParticipantsRef = useRef<CallParticipant[]>([]);
 
   // Timers
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const offerResendRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  /**
-   * Active inbox channels we're currently broadcasting offers on. For DM
-   * calls there's exactly one; for "ring all" project calls there's one per
-   * teammate. We tear them all down together when the call moves past
-   * ringing or hangs up.
-   */
+  /** Active inbox channels we're broadcasting RingOffers on (one per dialed teammate). */
   const inboxChannelsRef = useRef<ReturnType<typeof supabase.channel>[]>([]);
-  /** Clears delayed transition from "ended" → idle so it cannot race with a new call. */
+  /** Clears delayed transition from "ended" → idle so it cannot race a new call. */
   const endStateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const localParticipant: CallParticipant | null = user
@@ -148,20 +167,51 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const teardownLiveKit = useCallback(async () => {
+    const lk = liveKitRef.current;
+    liveKitRef.current = null;
+    if (lk) {
+      await lk.disconnect().catch(() => undefined);
+    }
+  }, []);
+
   const resetCall = useCallback(() => {
     clearTimers();
-    rtcRef.current?.destroy();
-    rtcRef.current = null;
-    // Tear down signaling explicitly: WebRTCService.destroy already calls
-    // signaling.destroy on its own SignalingChannel, but signalingRef may
-    // hold a channel even when rtcRef is null (e.g. before WebRTCService
-    // construction or after rtcRef was cleared elsewhere).
-    signalingRef.current?.destroy();
-    signalingRef.current = null;
-    pendingOfferRef.current = null;
+    void teardownLiveKit();
+    pendingRingRef.current = null;
     remoteParticipantsRef.current = [];
     setState(IDLE_STATE);
-  }, [clearTimers]);
+  }, [clearTimers, teardownLiveKit]);
+
+  /**
+   * Send a one-shot RingMessage to a specific user's inbox channel. We open
+   * a fresh channel per send because the inbox listener on the receiver's
+   * side is on a different channel — broadcasting on a shared channel would
+   * also self-broadcast, and we'd see our own ring.
+   */
+  const sendInboxMessage = useCallback(
+    (targetUserId: string, msg: RingMessage) => {
+      const ch = supabase.channel(`call-inbox:${targetUserId}`, {
+        config: { broadcast: { self: false } },
+      });
+      ch.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          ch.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload: msg,
+          });
+          // Tear down after a short delay so the broadcast lands. The Realtime
+          // server is fire-and-forget, but giving it a moment matches the
+          // pattern already used elsewhere in this provider.
+          setTimeout(() => {
+            void supabase.removeChannel(ch);
+          }, 1500);
+        }
+      });
+    },
+    [],
+  );
 
   // ── Global incoming-call listener ──────────────────────────
 
@@ -174,35 +224,35 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 
     inboxChannel
       .on('broadcast', { event: 'signal' }, ({ payload }) => {
-        const msg = payload as SignalMessage;
-        if (msg.type === 'offer') {
+        const msg = payload as RingMessage;
+        if (msg.type === 'ring') {
           setState((prev) => {
             if (prev.status !== 'idle') return prev;
-            pendingOfferRef.current = msg as SignalOffer;
+            pendingRingRef.current = msg;
             return {
               ...IDLE_STATE,
               status: 'ringing',
               direction: 'incoming',
               callId: msg.callId,
-              mediaType: (msg as SignalOffer).mediaType,
-              remoteParticipant: (msg as SignalOffer).from,
-              context: (msg as SignalOffer).context,
-              localParticipant: localParticipant,
+              roomName: msg.roomName,
+              mediaType: msg.mediaType,
+              remoteParticipant: msg.from,
+              context: msg.context,
+              localParticipant,
             };
           });
           return;
         }
-        if (msg.type === 'cancel') {
-          // Caller already connected with someone else (project "ring all"),
-          // or cancelled before anyone picked up. Drop our incoming ring if
-          // it matches this callId — otherwise we'd keep ringing for 30s.
+        if (msg.type === 'ring-cancel') {
+          // Either the caller bailed or someone else in the ring-all
+          // already picked up. Drop our incoming ring if it matches.
           setState((prev) => {
             if (
               prev.status === 'ringing' &&
               prev.direction === 'incoming' &&
               prev.callId === msg.callId
             ) {
-              pendingOfferRef.current = null;
+              pendingRingRef.current = null;
               return IDLE_STATE;
             }
             return prev;
@@ -217,59 +267,19 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [user?.userId, localParticipant?.userId]);
 
-  // ── 30-second ring timeout (incoming) ──────────────────────
+  // ── 30-second incoming ring timeout ────────────────────────
 
   useEffect(() => {
     if (state.status === 'ringing' && state.direction === 'incoming') {
       const callId = state.callId;
-      const participant = localParticipant;
       ringTimeoutRef.current = setTimeout(() => {
-        void (async () => {
-          const stillIncomingRingForThisCall = () => {
-            const s = latestCallStateRef.current;
-            return (
-              s.callId === callId &&
-              s.status === 'ringing' &&
-              s.direction === 'incoming'
-            );
-          };
-
-          let created: SignalingChannel | null = null;
-          try {
-            if (!callId || !participant) return;
-            if (!stillIncomingRingForThisCall()) return;
-
-            created = new SignalingChannel(
-              `call:${callId}`,
-              participant.userId,
-            );
-            await created.subscribe();
-            if (!stillIncomingRingForThisCall()) {
-              created.destroy();
-              created = null;
-              return;
-            }
-            created.send({
-              type: 'reject',
-              callId,
-              from: participant,
-            });
-            const chForDelayedDestroy = created;
-            created = null;
-            setTimeout(() => chForDelayedDestroy.destroy(), 1000);
-          } catch {
-            if (created) {
-              created.destroy();
-              created = null;
-            }
-          } finally {
-            if (stillIncomingRingForThisCall()) {
-              resetCall();
-            } else if (created) {
-              created.destroy();
-            }
-          }
-        })();
+        // If the user still hasn't picked up, treat it as "missed".
+        const stillIncoming =
+          latestCallStateRef.current.callId === callId &&
+          latestCallStateRef.current.status === 'ringing' &&
+          latestCallStateRef.current.direction === 'incoming';
+        if (!stillIncoming) return;
+        resetCall();
       }, RING_TIMEOUT_MS);
 
       return () => {
@@ -279,156 +289,132 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       };
     }
-    // localParticipant itself is a fresh object every render; depend on its
-    // stable userId so the effect doesn't reschedule the timeout on every
-    // re-render. The closure still reads the up-to-date object from outer scope.
-  }, [state.status, state.direction, state.callId, localParticipant?.userId, resetCall]);
+  }, [state.status, state.direction, state.callId, resetCall]);
 
   // ── Cleanup on unmount ─────────────────────────────────────
 
   useEffect(
     () => () => {
       clearTimers();
-      rtcRef.current?.destroy();
+      void teardownLiveKit();
     },
-    [clearTimers],
+    [clearTimers, teardownLiveKit],
   );
 
-  // ── RTC event wiring ───────────────────────────────────────
+  // ── LiveKit event wiring ───────────────────────────────────
 
-  const setupRTCEvents = useCallback((rtc: WebRTCService) => {
-    rtc.onEvent((type, payload) => {
-      switch (type) {
-        case 'answered': {
-          // The peer has explicitly accepted the call (caller received answer
-          // or callee just sent theirs). Cancel the "didn't answer" / offer
-          // resend timers immediately, even if ICE hasn't finished, so a slow
-          // network can't tear down a real, accepted call after 30 s.
-          if (ringTimeoutRef.current) {
-            clearTimeout(ringTimeoutRef.current);
-            ringTimeoutRef.current = null;
+  /**
+   * Build a fresh LiveKitCallService bound to our state-update handlers.
+   * The same instance handles both outgoing (caller) and accepted incoming
+   * (callee) calls — the only difference is who connected first.
+   */
+  const buildLiveKit = useCallback((): LiveKitCallService => {
+    return new LiveKitCallService({
+      onParticipantsChange: (peers) => {
+        setState((prev) => {
+          if (prev.status === 'idle' || prev.status === 'ended') return prev;
+          const localSnap = findLocalSnapshot(peers);
+          const remotes = peers.filter((p) => !p.isLocal);
+          // First remote arrival flips us from 'connecting' to 'connected'.
+          // After that we just refresh the participants list.
+          let status = prev.status;
+          if (
+            (prev.status === 'ringing' || prev.status === 'connecting') &&
+            remotes.length > 0
+          ) {
+            status = 'connected';
           }
-          if (offerResendRef.current) {
-            clearInterval(offerResendRef.current);
-            offerResendRef.current = null;
-          }
-          if (inboxChannelsRef.current.length > 0) {
-            for (const ch of inboxChannelsRef.current) {
-              void supabase.removeChannel(ch);
-            }
-            inboxChannelsRef.current = [];
-          }
-          // For "ring all" project calls the WebRTCService payload is the
-          // CallParticipant who actually picked up. Promote them into the
-          // visible remoteParticipant slot so the call UI shows the right
-          // name, and tell every OTHER teammate's inbox to stop ringing —
-          // otherwise their phone keeps ringing until the 30s timeout.
-          const answerer = payload as CallParticipant | undefined;
-          const dialed = remoteParticipantsRef.current;
-          if (answerer && dialed.length > 1 && localParticipant) {
-            const callIdAtAnswer = latestCallStateRef.current.callId;
-            const others = dialed.filter((p) => p.userId !== answerer.userId);
-            for (const p of others) {
-              const ch = supabase.channel(`call-inbox:${p.userId}`, {
-                config: { broadcast: { self: false } },
-              });
-              ch.subscribe((status) => {
-                if (status === 'SUBSCRIBED' && callIdAtAnswer) {
-                  ch.send({
-                    type: 'broadcast',
-                    event: 'signal',
-                    payload: {
-                      type: 'cancel',
-                      callId: callIdAtAnswer,
-                      from: localParticipant,
-                    },
-                  });
-                  setTimeout(() => {
-                    void supabase.removeChannel(ch);
-                  }, 1500);
-                }
-              });
-            }
-          }
-          setState((prev) =>
-            prev.status === 'ringing'
-              ? {
-                  ...prev,
-                  status: 'connecting',
-                  remoteParticipant: answerer ?? prev.remoteParticipant,
-                }
-              : prev,
-          );
-          break;
-        }
-        case 'remote-stream':
-          // The call has actually connected — cancel any pending "didn't
-          // answer" / offer-resend timers so they don't tear down the call
-          // 30 s after start even though the other side already picked up.
-          if (ringTimeoutRef.current) {
-            clearTimeout(ringTimeoutRef.current);
-            ringTimeoutRef.current = null;
-          }
-          if (offerResendRef.current) {
-            clearInterval(offerResendRef.current);
-            offerResendRef.current = null;
-          }
-          if (inboxChannelsRef.current.length > 0) {
-            for (const ch of inboxChannelsRef.current) {
-              void supabase.removeChannel(ch);
-            }
-            inboxChannelsRef.current = [];
-          }
-          setState((prev) => ({
-            ...prev,
-            status: 'connected',
-            remoteStream: payload as MediaStream,
-          }));
-          break;
-        case 'connection-state':
-          if (payload === 'connected') {
-            // Same defensive cleanup: once the peer connection is up, kill
-            // any ringing-phase timers that could otherwise still fire.
-            if (ringTimeoutRef.current) {
-              clearTimeout(ringTimeoutRef.current);
-              ringTimeoutRef.current = null;
-            }
-            if (offerResendRef.current) {
-              clearInterval(offerResendRef.current);
-              offerResendRef.current = null;
-            }
-            if (inboxChannelsRef.current.length > 0) {
-              for (const ch of inboxChannelsRef.current) {
-                void supabase.removeChannel(ch);
+          // Pick the headline remote for the ring/PiP UI. For multi-party
+          // we promote whichever remote is "primary" (active speaker or
+          // first joiner) over the project placeholder we showed while
+          // ringing — gives the user a real face/name asap.
+          const headline = findHeadlineRemote(peers);
+          const remoteParticipantUpdate: CallParticipant | null = headline
+            ? {
+                userId: headline.userId,
+                displayName: headline.displayName,
+                photoURL: undefined,
               }
-              inboxChannelsRef.current = [];
-            }
-            // Connection recovered — clear stale "reconnecting" state and any
-            // transient error banner from a previous blip.
-            setState((prev) => ({ ...prev, status: 'connected', error: null }));
-          } else if (payload === 'disconnected' || payload === 'failed') {
-            // WebRTCService now auto-attempts ICE restart in the background.
-            // Show "Reconnecting…" instead of tearing down the call so brief
-            // network hiccups (e.g. Snipping Tool overlay) don't end it.
-            setState((prev) => ({ ...prev, status: 'reconnecting' }));
-          }
-          break;
-        case 'hangup':
-        case 'reject':
-          clearTimers();
-          rtcRef.current = null;
-          signalingRef.current = null;
-          setState(IDLE_STATE);
-          break;
-        case 'error':
-          setState((prev) => ({
+            : prev.remoteParticipant;
+          return {
             ...prev,
-            error: String(payload || 'Connection error'),
-          }));
-          break;
-      }
+            status,
+            participants: peers,
+            isMuted: localSnap ? localSnap.isMicMuted : prev.isMuted,
+            isCameraOff: localSnap ? localSnap.isCameraOff : prev.isCameraOff,
+            isScreenSharing: localSnap
+              ? localSnap.isScreenSharing
+              : prev.isScreenSharing,
+            remoteParticipant: remoteParticipantUpdate,
+          };
+        });
+
+        // First time we see someone else in the room on an outgoing
+        // multi-party call, broadcast cancel to every other dialed
+        // teammate so they stop ringing.
+        const remotes = peers.filter((p) => !p.isLocal);
+        const dialed = remoteParticipantsRef.current;
+        if (
+          remotes.length === 1 &&
+          dialed.length > 1 &&
+          localParticipant &&
+          latestCallStateRef.current.direction === 'outgoing'
+        ) {
+          const answererId = remotes[0].userId;
+          const callId = latestCallStateRef.current.callId;
+          if (!callId) return;
+          for (const p of dialed) {
+            if (p.userId === answererId) continue;
+            sendInboxMessage(p.userId, {
+              type: 'ring-cancel',
+              callId,
+              from: localParticipant,
+              reason: 'taken',
+            });
+          }
+          // First connection — clean up the resend timers + inbox channels
+          // (cancel was already broadcast). The room is live now.
+          if (offerResendRef.current) {
+            clearInterval(offerResendRef.current);
+            offerResendRef.current = null;
+          }
+          if (inboxChannelsRef.current.length > 0) {
+            for (const ch of inboxChannelsRef.current) {
+              void supabase.removeChannel(ch);
+            }
+            inboxChannelsRef.current = [];
+          }
+          if (ringTimeoutRef.current) {
+            clearTimeout(ringTimeoutRef.current);
+            ringTimeoutRef.current = null;
+          }
+        }
+      },
+      onConnectionStateChange: (cs) => {
+        setState((prev) => {
+          if (prev.status === 'idle' || prev.status === 'ended') return prev;
+          if (cs === ConnectionState.Reconnecting) {
+            return { ...prev, status: 'reconnecting' };
+          }
+          if (cs === ConnectionState.Connected && prev.status === 'reconnecting') {
+            return { ...prev, status: 'connected', error: null };
+          }
+          return prev;
+        });
+      },
+      onDisconnected: () => {
+        // Server- or peer-initiated disconnect: tear down to idle. We don't
+        // show "ended" here because in practice that's almost always a hang
+        // up triggered by the local user — and they already see the UI go
+        // away. If it was unexpected, the next call will surface an error.
+        resetCall();
+      },
+      onError: (msg) => {
+        // Surface non-fatal errors as toasts so the call keeps running.
+        toast.error(msg);
+      },
     });
-  }, [clearTimers]);
+  }, [localParticipant, sendInboxMessage, resetCall]);
 
   // ── Actions ────────────────────────────────────────────────
 
@@ -441,10 +427,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!localParticipant || !isMediaSupported()) return;
       if (state.status !== 'idle') return;
 
-      // Normalise to a list so DM (single recipient) and project "ring all"
-      // (many recipients) share one path. De-dupe by userId in case the
-      // caller passed the same teammate twice — we'd otherwise open two
-      // inbox channels and double-ring them.
+      // Normalise to a deduped list of valid teammates (drop self + dupes).
       const requested = Array.isArray(remoteParticipant)
         ? remoteParticipant
         : [remoteParticipant];
@@ -458,10 +441,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       if (dedupedTargets.length === 0) return;
       const isMultiParty = dedupedTargets.length > 1;
-      // Until someone picks up we don't know who is on the other end. Show
-      // the project label (or the first dialed teammate for DM) in the
-      // ringing UI. Once we receive an SDP answer, this is replaced by the
-      // actual answerer.
       const ringingHeadline: CallParticipant = isMultiParty
         ? {
             userId: context.targetId,
@@ -474,334 +453,275 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       const callId = generateCallId();
       remoteParticipantsRef.current = dedupedTargets;
 
-      // Set up the call signaling channel (both caller and callee join this)
-      const signaling = new SignalingChannel(
-        `call:${callId}`,
-        localParticipant.userId,
-      );
-      signalingRef.current = signaling;
+      // Pick the canonical room name. Project calls reuse one room per
+      // project so a late joiner could in principle hop in (we don't
+      // surface that yet, but the room is reusable). DM calls use a
+      // sorted-pair name so both sides converge on the same room.
+      const roomName =
+        context.type === 'project'
+          ? projectRoomName(context.targetId)
+          : dmRoomName(localParticipant.userId, dedupedTargets[0].userId);
 
-      const rtc = new WebRTCService(
-        callId,
-        localParticipant,
-        signaling,
-      );
-      rtcRef.current = rtc;
-      setupRTCEvents(rtc);
-
-      // Show ringing state for outgoing call (not "connecting" — that comes after accept)
+      // Outgoing ring screen — local mic/cam haven't been published yet,
+      // we publish only when actually connecting to the room below.
       setState({
         ...IDLE_STATE,
         status: 'ringing',
         callId,
         direction: 'outgoing',
         mediaType,
+        roomName,
         localParticipant,
         remoteParticipant: ringingHeadline,
         remoteParticipants: dedupedTargets,
         context,
       });
 
+      // Connect to the LiveKit room straight away — this is what actually
+      // requests mic/camera permissions and makes the local user a
+      // publisher in the room. Once a callee accepts, they'll join the
+      // same room and our snapshot listener picks them up.
+      const lk = buildLiveKit();
+      liveKitRef.current = lk;
       try {
-        const localStream = await rtc.createOffer(mediaType, context);
-        setState((prev) => ({ ...prev, localStream }));
-
-        const localDesc = rtc.localDescription;
-        if (!localDesc) {
-          throw new Error('Missing local SDP after createOffer');
-        }
-
-        const offerPayload: SignalOffer = {
-          type: 'offer',
-          sdp: localDesc,
-          callId,
-          from: localParticipant,
+        await lk.connect({
+          roomName,
           mediaType,
-          context,
-          isMultiParty,
-        };
-
-        // Fan out: open one inbox channel per dialed teammate and broadcast
-        // the same SignalOffer on each. Resend every 3s in case the first
-        // broadcast was missed before the callee subscribed. Callees ignore
-        // duplicate offers if already ringing.
-        const sendOfferToAllInboxes = () => {
-          for (const target of dedupedTargets) {
-            const ch = supabase.channel(
-              `call-inbox:${target.userId}`,
-              { config: { broadcast: { self: false } } },
-            );
-            inboxChannelsRef.current.push(ch);
-            ch.subscribe((status) => {
-              if (status === 'SUBSCRIBED') {
-                ch.send({
-                  type: 'broadcast',
-                  event: 'signal',
-                  payload: offerPayload,
-                });
-              }
-            });
-          }
-        };
-
-        sendOfferToAllInboxes();
-
-        // Resend every 3s in case the first broadcast was missed
-        offerResendRef.current = setInterval(() => {
-          // Stop resending once the RTC service is gone OR the call has
-          // moved past ringing (e.g. callee answered → connecting/connected,
-          // or the call ended/was rejected). Otherwise we'd keep paging an
-          // already-accepted call.
-          const currentStatus = latestCallStateRef.current.status;
-          if (rtcRef.current?.destroyed || currentStatus !== 'ringing') {
-            if (offerResendRef.current) {
-              clearInterval(offerResendRef.current);
-              offerResendRef.current = null;
-            }
-            if (inboxChannelsRef.current.length > 0) {
-              for (const ch of inboxChannelsRef.current) {
-                void supabase.removeChannel(ch);
-              }
-              inboxChannelsRef.current = [];
-            }
-            return;
-          }
-          // Clean up old channels and resend
-          if (inboxChannelsRef.current.length > 0) {
-            for (const ch of inboxChannelsRef.current) {
-              void supabase.removeChannel(ch);
-            }
-            inboxChannelsRef.current = [];
-          }
-          sendOfferToAllInboxes();
-        }, OFFER_RESEND_INTERVAL_MS);
-
-        // Also listen on the call channel for the callee's answer/reject
-        // (the signaling channel is already subscribed by WebRTCService)
-
-        // 30-second outgoing ring timeout — auto-cancel if no answer
-        ringTimeoutRef.current = setTimeout(() => {
-          clearTimers();
-          rtcRef.current?.hangUp();
-          rtcRef.current = null;
-          signalingRef.current = null;
-          // "No one in <project> answered" reads better than naming whichever
-          // teammate happens to be first in the dialed list.
-          const noAnswerError = isMultiParty
-            ? `No one in ${context.label} answered`
-            : `${dedupedTargets[0].displayName} didn't answer`;
-          setState({
-            ...IDLE_STATE,
-            status: 'ended',
-            error: noAnswerError,
-          });
-          if (endStateTimeoutRef.current) {
-            clearTimeout(endStateTimeoutRef.current);
-            endStateTimeoutRef.current = null;
-          }
-          endStateTimeoutRef.current = setTimeout(() => {
-            endStateTimeoutRef.current = null;
-            setState((prev) =>
-              prev.status === 'ended' ? IDLE_STATE : prev,
-            );
-          }, 3000);
-        }, RING_TIMEOUT_MS);
+          participantName: localParticipant.displayName,
+        });
       } catch (err) {
         clearTimers();
+        await teardownLiveKit();
         setState((prev) => ({
           ...prev,
           status: 'ended',
           error:
             err instanceof Error
               ? err.message
-              : 'Could not access camera/microphone',
+              : 'Could not connect to the call server',
         }));
+        endStateTimeoutRef.current = setTimeout(() => {
+          endStateTimeoutRef.current = null;
+          setState((s) => (s.status === 'ended' ? IDLE_STATE : s));
+        }, ENDED_DISMISS_MS);
+        return;
       }
+
+      // Caller is in the room solo. Now ring every dialed teammate via
+      // their personal inbox so they see the incoming-call modal.
+      const offerPayload: RingOffer = {
+        type: 'ring',
+        callId,
+        roomName,
+        mediaType,
+        context,
+        from: localParticipant,
+        isMultiParty,
+      };
+
+      const sendOfferToAllInboxes = () => {
+        for (const target of dedupedTargets) {
+          const ch = supabase.channel(`call-inbox:${target.userId}`, {
+            config: { broadcast: { self: false } },
+          });
+          inboxChannelsRef.current.push(ch);
+          ch.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              ch.send({
+                type: 'broadcast',
+                event: 'signal',
+                payload: offerPayload,
+              });
+            }
+          });
+        }
+      };
+
+      sendOfferToAllInboxes();
+
+      // Resend every 3s in case the first broadcast was missed before the
+      // callee subscribed. Stops once someone joins or we time out.
+      offerResendRef.current = setInterval(() => {
+        const currentStatus = latestCallStateRef.current.status;
+        // Once we move past 'ringing', or LiveKit is gone, stop ringing.
+        if (!liveKitRef.current || currentStatus !== 'ringing') {
+          if (offerResendRef.current) {
+            clearInterval(offerResendRef.current);
+            offerResendRef.current = null;
+          }
+          if (inboxChannelsRef.current.length > 0) {
+            for (const ch of inboxChannelsRef.current) {
+              void supabase.removeChannel(ch);
+            }
+            inboxChannelsRef.current = [];
+          }
+          return;
+        }
+        // Tear down the previous round and broadcast again.
+        if (inboxChannelsRef.current.length > 0) {
+          for (const ch of inboxChannelsRef.current) {
+            void supabase.removeChannel(ch);
+          }
+          inboxChannelsRef.current = [];
+        }
+        sendOfferToAllInboxes();
+      }, OFFER_RESEND_INTERVAL_MS);
+
+      // 30s ring timeout — auto-cancel + show "didn't answer".
+      ringTimeoutRef.current = setTimeout(() => {
+        // If anyone has already joined, don't tear down.
+        if (latestCallStateRef.current.status !== 'ringing') return;
+        clearTimers();
+        // Tell anyone whose inbox is still receiving the resend that we're
+        // giving up so their ring stops cleanly.
+        for (const t of dedupedTargets) {
+          sendInboxMessage(t.userId, {
+            type: 'ring-cancel',
+            callId,
+            from: localParticipant,
+            reason: 'cancelled',
+          });
+        }
+        void teardownLiveKit();
+        const noAnswerError = isMultiParty
+          ? `No one in ${context.label} answered`
+          : `${dedupedTargets[0].displayName} didn't answer`;
+        setState({
+          ...IDLE_STATE,
+          status: 'ended',
+          error: noAnswerError,
+        });
+        if (endStateTimeoutRef.current) {
+          clearTimeout(endStateTimeoutRef.current);
+          endStateTimeoutRef.current = null;
+        }
+        endStateTimeoutRef.current = setTimeout(() => {
+          endStateTimeoutRef.current = null;
+          setState((prev) => (prev.status === 'ended' ? IDLE_STATE : prev));
+        }, ENDED_DISMISS_MS);
+      }, RING_TIMEOUT_MS);
     },
-    [localParticipant, state.status, setupRTCEvents, clearTimers],
+    [
+      localParticipant,
+      state.status,
+      buildLiveKit,
+      clearTimers,
+      teardownLiveKit,
+      sendInboxMessage,
+    ],
   );
 
   const acceptCall = useCallback(async () => {
-    if (!localParticipant) return;
-    const offer = pendingOfferRef.current;
-    if (!offer || !state.callId) return;
+    const ring = pendingRingRef.current;
+    if (!ring || !localParticipant) return;
+    if (state.status !== 'ringing' || state.direction !== 'incoming') return;
 
     clearTimers();
-
-    const signaling = new SignalingChannel(
-      `call:${state.callId}`,
-      localParticipant.userId,
-    );
-    signalingRef.current = signaling;
-
-    const rtc = new WebRTCService(
-      state.callId,
-      localParticipant,
-      signaling,
-    );
-    rtcRef.current = rtc;
-    setupRTCEvents(rtc);
-
     setState((prev) => ({ ...prev, status: 'connecting' }));
 
+    const lk = buildLiveKit();
+    liveKitRef.current = lk;
     try {
-      const localStream = await rtc.answerOffer(
-        offer.sdp,
-        offer.mediaType,
-        offer.context,
-      );
-      setState((prev) => ({ ...prev, localStream }));
+      await lk.connect({
+        roomName: ring.roomName,
+        mediaType: ring.mediaType,
+        participantName: localParticipant.displayName,
+      });
+      pendingRingRef.current = null;
     } catch (err) {
+      await teardownLiveKit();
       setState((prev) => ({
         ...prev,
         status: 'ended',
         error:
           err instanceof Error
             ? err.message
-            : 'Could not access camera/microphone',
+            : 'Could not connect to the call server',
       }));
+      endStateTimeoutRef.current = setTimeout(() => {
+        endStateTimeoutRef.current = null;
+        setState((s) => (s.status === 'ended' ? IDLE_STATE : s));
+      }, ENDED_DISMISS_MS);
     }
-    pendingOfferRef.current = null;
-  }, [localParticipant, state.callId, setupRTCEvents, clearTimers]);
+  }, [
+    state.status,
+    state.direction,
+    localParticipant,
+    buildLiveKit,
+    clearTimers,
+    teardownLiveKit,
+  ]);
 
   const rejectCall = useCallback(() => {
-    // For project "ring all" calls (`isMultiParty` on the pending offer), the
-    // caller has dialed several teammates simultaneously and only needs ONE
-    // of us to pick up. If we broadcast a reject on the call channel here, the
-    // caller's WebRTCService would treat it as the call ending — yanking the
-    // ring away from everyone else who's still deciding. So we just transition
-    // ourselves to idle and let the call continue ringing for our peers.
-    const pending = pendingOfferRef.current;
-    if (pending?.isMultiParty) {
+    const ring = pendingRingRef.current;
+    // Multi-party: don't broadcast a cancel — the caller is dialing other
+    // teammates simultaneously and our reject must not yank their ring.
+    // Just transition ourselves to idle and let the call continue.
+    if (ring?.isMultiParty) {
       resetCall();
       return;
     }
-    if (rtcRef.current) {
-      rtcRef.current.reject();
-      resetCall();
-      return;
-    }
-    if (state.callId && localParticipant) {
-      const callId = state.callId;
-      const sig = new SignalingChannel(
-        `call:${callId}`,
-        localParticipant.userId,
-      );
-      void (async () => {
-        try {
-          await sig.subscribe();
-          sig.send({
-            type: 'reject',
-            callId,
-            from: localParticipant,
-          });
-        } catch {
-          /* ignore */
-        } finally {
-          setTimeout(() => sig.destroy(), 1000);
-          resetCall();
-        }
-      })();
-      return;
+    // 1:1 (DM): tell the caller's inbox we're declining so they get
+    // immediate feedback instead of waiting for the 30s timeout.
+    if (ring && localParticipant && state.callId) {
+      sendInboxMessage(ring.from.userId, {
+        type: 'ring-cancel',
+        callId: state.callId,
+        from: localParticipant,
+        reason: 'cancelled',
+      });
     }
     resetCall();
-  }, [state.callId, localParticipant, resetCall]);
+  }, [state.callId, localParticipant, resetCall, sendInboxMessage]);
 
   const hangUp = useCallback(() => {
-    clearTimers();
-    rtcRef.current?.hangUp();
-    rtcRef.current = null;
-    // Mirror resetCall: explicitly tear down signaling so the channel
-    // can't leak when rtcRef.current was already null (no WebRTCService
-    // to call signaling.destroy() through its own destroy()).
-    signalingRef.current?.destroy();
-    signalingRef.current = null;
-    pendingOfferRef.current = null;
-    remoteParticipantsRef.current = [];
-    setState(IDLE_STATE);
-  }, [clearTimers]);
+    // If we're still ringing, broadcast cancel to everyone we dialed so
+    // their phones stop ringing rather than ringing out for 30s.
+    const status = latestCallStateRef.current.status;
+    const callId = latestCallStateRef.current.callId;
+    if (
+      status === 'ringing' &&
+      latestCallStateRef.current.direction === 'outgoing' &&
+      callId &&
+      localParticipant
+    ) {
+      for (const t of remoteParticipantsRef.current) {
+        sendInboxMessage(t.userId, {
+          type: 'ring-cancel',
+          callId,
+          from: localParticipant,
+          reason: 'cancelled',
+        });
+      }
+    }
+    resetCall();
+  }, [localParticipant, resetCall, sendInboxMessage]);
 
   const toggleMute = useCallback(() => {
     const next = !state.isMuted;
-    rtcRef.current?.toggleMute(next);
+    void liveKitRef.current?.setMicMuted(next);
     setState((prev) => ({ ...prev, isMuted: next }));
   }, [state.isMuted]);
 
   const toggleCamera = useCallback(() => {
     const next = !state.isCameraOff;
-    rtcRef.current?.toggleCamera(next);
+    void liveKitRef.current?.setCameraOff(next);
     setState((prev) => ({ ...prev, isCameraOff: next }));
   }, [state.isCameraOff]);
 
   const toggleScreenShare = useCallback(async () => {
-    if (!rtcRef.current) return;
-    try {
-      if (state.isScreenSharing) {
-        await rtcRef.current.stopScreenShare();
-        setState((prev) => ({
-          ...prev,
-          isScreenSharing: false,
-          screenStream: null,
-        }));
-      } else {
-        const screen = await rtcRef.current.startScreenShare();
-        setState((prev) => ({
-          ...prev,
-          isScreenSharing: true,
-          screenStream: screen,
-          error: null,
-        }));
-        screen.getVideoTracks()[0]?.addEventListener('ended', () => {
-          setState((prev) => ({
-            ...prev,
-            isScreenSharing: false,
-            screenStream: null,
-          }));
-        });
-      }
-    } catch (err) {
-      // Distinguish "user cancelled the picker" (silent) from real failures
-      // (NotSupportedError on mobile, NotAllowedError due to policy, etc.)
-      // — those should surface to the user without ending the call.
-      const isUserAbort =
-        err instanceof DOMException &&
-        (err.name === 'AbortError' || err.name === 'NotAllowedError');
-      if (isUserAbort) return;
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Screen sharing is not available on this device';
-      setState((prev) => ({
-        ...prev,
-        isScreenSharing: false,
-        screenStream: null,
-        error: message,
-      }));
-    }
-  }, [state.isScreenSharing]);
+    const lk = liveKitRef.current;
+    if (!lk) return;
+    await lk.toggleScreenShare();
+  }, []);
 
-  const setVideoEffect = useCallback(async (effect: VideoEffect) => {
-    if (!rtcRef.current) return;
-    setState((prev) => ({ ...prev, isApplyingEffect: true, error: null }));
-    try {
-      await rtcRef.current.setVideoEffect(effect);
-      setState((prev) => ({
-        ...prev,
-        videoEffect: effect,
-        isApplyingEffect: false,
-      }));
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Could not apply the background effect';
-      setState((prev) => ({
-        ...prev,
-        videoEffect: 'none',
-        isApplyingEffect: false,
-        error: message,
-      }));
-    }
+  const setVideoEffect = useCallback(async (_effect: VideoEffect) => {
+    // Background blur is queued behind the LiveKit migration — re-enabling
+    // it requires wiring a TrackProcessor onto the local camera publication.
+    // For now toast so the action surface stays consistent and CallControls
+    // doesn't have to branch on capability.
+    setState((prev) => ({ ...prev, videoEffect: 'none', isApplyingEffect: false }));
+    toast.message('Background blur is rolling out — coming back soon.');
   }, []);
 
   const actions: CallActions = {
@@ -816,9 +736,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   return (
-    <CallCtx.Provider value={{ state, actions }}>
-      {children}
-    </CallCtx.Provider>
+    <CallCtx.Provider value={{ state, actions }}>{children}</CallCtx.Provider>
   );
 };
 

@@ -7,6 +7,12 @@ import type { CallParticipant, CallMediaType } from '@/services/webrtc/types';
 interface IncomingCallModalProps {
   caller: CallParticipant;
   mediaType: CallMediaType;
+  /**
+   * Project / team name when this is a project-wide ring (e.g. "Acme Web").
+   * Shown beneath the caller name as "via <project>" so the callee knows
+   * they're being invited into a multi-party call, not a 1:1 DM.
+   */
+  contextLabel?: string;
   onAccept: () => void;
   onReject: () => void;
 }
@@ -14,6 +20,7 @@ interface IncomingCallModalProps {
 export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   caller,
   mediaType,
+  contextLabel,
   onAccept,
   onReject,
 }) => {
@@ -128,6 +135,11 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
           <p className="text-lg font-semibold text-foreground">
             {caller.displayName}
           </p>
+          {contextLabel && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              via {contextLabel}
+            </p>
+          )}
           <p className="text-sm text-muted-foreground mt-1 animate-pulse">
             Incoming {mediaType} call…
           </p>

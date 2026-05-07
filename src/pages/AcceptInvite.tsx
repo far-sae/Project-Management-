@@ -255,6 +255,33 @@ export const AcceptInvite: React.FC = () => {
         return;
       }
 
+      // Make sure user_profiles has a row for this user BEFORE accepting.
+      // Brand-new Google sign-ins often have no user_profiles row yet
+      // (nothing in the app inserts it — createUserProfile only reads/updates,
+      // and there's no DB trigger that creates it on auth.users insert). When
+      // that's the case, the accept_invitation RPC's `update user_profiles
+      // set organization_id = …` is a silent no-op, refreshUser() then reads
+      // null, and user.organizationId stays as `local-<userId>` — which is
+      // exactly the "I'm logged in but the project is invisible" symptom.
+      // Upsert the row first so the link actually sticks.
+      try {
+        await supabase
+          .from("user_profiles")
+          .upsert(
+            {
+              id: user.userId,
+              email: user.email,
+              display_name: user.displayName || user.email || "User",
+              photo_url: user.photoURL || "",
+              organization_id: inviteOrgId,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "id" },
+          );
+      } catch (preLinkErr) {
+        console.warn("Pre-accept profile upsert failed (non-fatal):", preLinkErr);
+      }
+
       // ✅ userId and userEmail NOT passed — edge function reads from JWT
       await acceptInvitation(
         invitation.invitationId,
@@ -266,14 +293,19 @@ export const AcceptInvite: React.FC = () => {
       // accept_invitation RPC is supposed to update user_profiles.organization_id
       // to the inviting org. Different deployments may have older versions of
       // the function, so we write the link defensively too — idempotent if
-      // the RPC already did it. Wrapped in try/catch so any RLS edge case
-      // doesn't break the success path; the membership row is already in
-      // place at this point so the user can use the org either way.
+      // the RPC already did it. UPSERT (not UPDATE) so it works even when the
+      // user_profiles row doesn't exist yet for this user.
       try {
         await supabase
           .from("user_profiles")
-          .update({ organization_id: inviteOrgId })
-          .eq("id", user.userId);
+          .upsert(
+            {
+              id: user.userId,
+              organization_id: inviteOrgId,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "id" },
+          );
       } catch (linkErr) {
         console.warn("Post-accept profile link failed (non-fatal):", linkErr);
       }

@@ -1,3 +1,5 @@
+import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
+
 export type CallDirection = 'outgoing' | 'incoming';
 export type CallMediaType = 'audio' | 'video';
 export type CallStatus =
@@ -16,103 +18,101 @@ export interface CallParticipant {
   photoURL?: string;
 }
 
-export interface CallState {
-  status: CallStatus;
-  callId: string | null;
-  direction: CallDirection | null;
-  mediaType: CallMediaType;
-  localStream: MediaStream | null;
-  remoteStream: MediaStream | null;
-  screenStream: MediaStream | null;
-  isMuted: boolean;
-  isCameraOff: boolean;
-  isScreenSharing: boolean;
-  /** Currently active visual effect on the local camera (Teams-style blur). */
-  videoEffect: CallVideoEffect;
-  /** True while the background-effect pipeline is loading MediaPipe assets. */
-  isApplyingEffect: boolean;
-  localParticipant: CallParticipant | null;
-  remoteParticipant: CallParticipant | null;
-  /**
-   * For project-wide "ring all" calls, every teammate the caller dialed at
-   * once. While ringing, `remoteParticipant` holds a placeholder (project
-   * label) and this list shows who's being rung. Once someone answers,
-   * `remoteParticipant` is updated to the actual answerer.
-   */
-  remoteParticipants: CallParticipant[];
-  /** Project or DM context so we know which channel to signal on. */
-  context: CallContext | null;
-  error: string | null;
-}
-
 export interface CallContext {
   type: 'project' | 'dm';
-  /** projectId for project calls, recipientUserId for DM calls */
+  /** projectId for project calls, recipientUserId for DM calls. */
   targetId: string;
-  /** Human-readable label for the call UI header */
+  /** Human-readable label for the call UI header. */
   label: string;
 }
 
-// ── Signaling messages ──────────────────────────────────────
+/**
+ * Single source of truth for the call UI. Calls now run over a LiveKit
+ * room (SFU): every roster, mute and track update flows in as a fresh
+ * `participants` snapshot from the LiveKit Room. The other top-level
+ * fields are derived shortcuts for the local participant so the existing
+ * CallControls + ringing screens don't have to dig through the array.
+ */
+export interface CallState {
+  status: CallStatus;
+  /** Stable id assigned by the caller in the ring inbox; survives across reconnects. */
+  callId: string | null;
+  direction: CallDirection | null;
+  mediaType: CallMediaType;
+  /** LiveKit room name once we've started joining; null while still ringing. */
+  roomName: string | null;
+  /**
+   * Local + remote participant snapshots from LiveKit. Empty list while
+   * pre-connect; once connected, the local user's snapshot is always
+   * present (with `isLocal: true`).
+   */
+  participants: CallPeerSnapshot[];
+  localParticipant: CallParticipant | null;
+  /**
+   * For 1:1 (DM) calls, the other side's CallParticipant. For multi-party
+   * project calls while ringing, a placeholder showing the project label;
+   * once someone picks up, the answerer's CallParticipant. Used by the
+   * outgoing-ring screen + minimised tile to show "who am I calling".
+   */
+  remoteParticipant: CallParticipant | null;
+  /**
+   * For project-wide "ring all" calls, every teammate the caller dialed
+   * at once. Empty for DM. Drives "Ringing 3 of 5…" style copy in the
+   * outgoing ring screen.
+   */
+  remoteParticipants: CallParticipant[];
+  /** Project or DM context so we know which inbox/room to use. */
+  context: CallContext | null;
+  /** Local mic/camera state — derived from the local snapshot, mirrored at top level for CallControls. */
+  isMuted: boolean;
+  isCameraOff: boolean;
+  isScreenSharing: boolean;
+  videoEffect: CallVideoEffect;
+  isApplyingEffect: boolean;
+  error: string | null;
+}
 
-export interface SignalOffer {
-  type: 'offer';
-  sdp: RTCSessionDescriptionInit;
+// ── Ring inbox messages ─────────────────────────────────────
+//
+// LiveKit handles all media + signaling, so the only thing we still send
+// peer-to-peer over Supabase Realtime is the ring inbox: "join this room"
+// and "stop ringing, someone else got it / I cancelled". No SDP/ICE here.
+
+/**
+ * Dial broadcast — the caller sends one of these to each teammate's
+ * `call-inbox:<userId>` channel. The callee shows the incoming-call modal
+ * and joins the LiveKit room when they accept.
+ */
+export interface RingOffer {
+  type: 'ring';
   callId: string;
-  from: CallParticipant;
+  /** LiveKit room to join on accept (e.g. `project:<id>` or `dm:<a>__<b>`). */
+  roomName: string;
   mediaType: CallMediaType;
   context: CallContext;
+  from: CallParticipant;
   /**
-   * Caller dialed multiple teammates at once ("ring all" project call). Tells
-   * the callee to reject locally without broadcasting on the call channel —
-   * one teammate's reject must not end the call for the others still ringing.
+   * Caller dialed multiple teammates at once. Callees use this to reject
+   * locally without broadcasting a message that would yank the ring from
+   * everyone else still deciding.
    */
-  isMultiParty?: boolean;
-}
-
-export interface SignalAnswer {
-  type: 'answer';
-  sdp: RTCSessionDescriptionInit;
-  callId: string;
-  from: CallParticipant;
-}
-
-export interface SignalIceCandidate {
-  type: 'ice-candidate';
-  candidate: RTCIceCandidateInit;
-  callId: string;
-}
-
-export interface SignalHangup {
-  type: 'hangup';
-  callId: string;
-  from: CallParticipant;
-}
-
-export interface SignalReject {
-  type: 'reject';
-  callId: string;
-  from: CallParticipant;
+  isMultiParty: boolean;
 }
 
 /**
- * Sent by the caller to a teammate's inbox when another teammate has already
- * picked up a "ring all" project call. The remaining inboxes stop ringing on
- * receipt instead of timing out 30 s later.
+ * Cancel broadcast — sent on a teammate's inbox when the caller bailed
+ * before anyone picked up, or to remaining ringers once someone else
+ * accepted. Stops their ring instead of letting the 30s timeout do it.
  */
-export interface SignalCancel {
-  type: 'cancel';
+export interface RingCancel {
+  type: 'ring-cancel';
   callId: string;
   from: CallParticipant;
+  /** `taken` = someone in the ring-all already accepted; `cancelled` = caller bailed. */
+  reason: 'cancelled' | 'taken';
 }
 
-export type SignalMessage =
-  | SignalOffer
-  | SignalAnswer
-  | SignalIceCandidate
-  | SignalHangup
-  | SignalReject
-  | SignalCancel;
+export type RingMessage = RingOffer | RingCancel;
 
 // ── Initial state ───────────────────────────────────────────
 
@@ -121,17 +121,16 @@ export const INITIAL_CALL_STATE: CallState = {
   callId: null,
   direction: null,
   mediaType: 'audio',
-  localStream: null,
-  remoteStream: null,
-  screenStream: null,
+  roomName: null,
+  participants: [],
+  localParticipant: null,
+  remoteParticipant: null,
+  remoteParticipants: [],
+  context: null,
   isMuted: false,
   isCameraOff: false,
   isScreenSharing: false,
   videoEffect: 'none',
   isApplyingEffect: false,
-  localParticipant: null,
-  remoteParticipant: null,
-  remoteParticipants: [],
-  context: null,
   error: null,
 };
