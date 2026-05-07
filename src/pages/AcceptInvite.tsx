@@ -68,7 +68,13 @@ export const AcceptInvite: React.FC = () => {
     user.email.toLowerCase().trim() !==
     invitation.inviteeEmail.toLowerCase().trim();
 
-  // ─── Redirect to dashboard when invite is invalid (e.g. first-time login with no invite)
+  // Redirect to dashboard when the invite is genuinely irrecoverable.
+  // Clears the token only when we're certain the user shouldn't keep
+  // retrying — i.e. the invite is missing, expired, declined, or already
+  // accepted. We DO NOT clear the token (or redirect at all) just because
+  // the lookup RPC happened to fail for an unauthenticated visitor: the
+  // token has to survive the OAuth round-trip so AcceptInvite can retry
+  // the lookup once the session is established.
   const redirectToDashboard = useCallback(() => {
     sessionStorage.removeItem("pendingInviteToken");
     localStorage.removeItem("pendingInviteToken");
@@ -76,6 +82,9 @@ export const AcceptInvite: React.FC = () => {
   }, [navigate]);
 
   // ─── Load invitation ───────────────────────────────────────────────────────
+  // Re-runs when `user` becomes set so the post-OAuth retry picks up the
+  // authenticated fallback path inside getInvitationByToken (direct table
+  // read) when the public RPC isn't deployed on this Supabase project.
   useEffect(() => {
     const loadInvitation = async () => {
       if (!token) {
@@ -95,6 +104,14 @@ export const AcceptInvite: React.FC = () => {
         const inv = await getInvitationByToken(decodedToken);
         if (!inv) {
           setLoading(false);
+          // Only redirect when we're sure the lookup is final. If the user
+          // hasn't signed in yet, getInvitationByToken can return null
+          // simply because the public RPC is missing on this deployment —
+          // the authenticated fallback inside it would succeed once the
+          // user logs in. Keep the page mounted with the sign-in CTA so
+          // the post-auth reload can retry, instead of bouncing them
+          // through /dashboard → /login (which strips the pending token).
+          if (!user) return;
           redirectToDashboard();
           return;
         }
@@ -112,6 +129,9 @@ export const AcceptInvite: React.FC = () => {
       } catch (err) {
         console.error("Failed to load invitation:", err);
         setLoading(false);
+        // Same logic as the null branch: don't burn the token on a
+        // transient lookup failure for an unauthenticated visitor.
+        if (!user) return;
         redirectToDashboard();
         return;
       } finally {
@@ -120,7 +140,7 @@ export const AcceptInvite: React.FC = () => {
     };
 
     loadInvitation();
-  }, [token, redirectToDashboard]);
+  }, [token, redirectToDashboard, user]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -371,6 +391,56 @@ export const AcceptInvite: React.FC = () => {
           <CardContent className="py-12 text-center">
             <Loader2 className="w-12 h-12 mx-auto animate-spin text-orange-500" />
             <p className="mt-4 text-muted-foreground">Loading invitation...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Lookup-pending fallback: invitation couldn't be loaded for an
+  // unauthenticated visitor (typically because the public
+  // get_invitation_by_token RPC isn't deployed on this Supabase project,
+  // and the authenticated fallback can't run yet). Show a sign-in CTA
+  // instead of a blank page so the user can authenticate; the post-OAuth
+  // reload will retry the lookup with a session and find the invitation
+  // through the table fallback.
+  if (!loading && !invitation && !user && !error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center">
+              <Mail className="w-8 h-8 text-white" />
+            </div>
+            <CardTitle className="text-2xl">Sign in to view your invitation</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground text-center">
+              We couldn't load this invitation without a session. Sign in
+              with the email it was sent to and we'll finish accepting it
+              for you.
+            </p>
+            <Button
+              className="w-full bg-gradient-to-r from-orange-500 to-red-500"
+              onClick={async () => {
+                try {
+                  sessionStorage.setItem("pendingInviteToken", token || "");
+                  localStorage.setItem("pendingInviteToken", token || "");
+                  await signInGoogle();
+                } catch {
+                  setError("Sign-in failed. Please try again.");
+                }
+              }}
+            >
+              Sign in with Google
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => navigate(`/login?redirect=/accept-invite/${token}`)}
+            >
+              Sign in with email
+            </Button>
           </CardContent>
         </Card>
       </div>
