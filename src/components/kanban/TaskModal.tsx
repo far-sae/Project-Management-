@@ -173,11 +173,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return isAdmin;
   }, [user, project?.ownerId, task?.createdBy, isAdmin]);
 
-  /** Whether the current user created this task. Kept for other UI cues — no longer
-   * used as the lock-management gate. */
-  const isTaskCreator = Boolean(
-    user && task?.createdBy && task.createdBy === user.userId,
-  );
   /**
    * Lock + PIN is an admin/owner-only control, both on create and on edit.
    * Members (even if they created the task) and viewers cannot set, change,
