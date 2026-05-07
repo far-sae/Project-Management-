@@ -653,6 +653,38 @@ export const getUserProjects = async (
   const memberContains = JSON.stringify([{ userId }]);
   const legacyMemberContains = JSON.stringify([{ user_id: userId }]);
 
+  const hasRealOrg =
+    !!organizationId && !organizationId.startsWith("local-");
+
+  // Resolve the caller's org-level role first so we can decide whether to
+  // include the org-wide fallback. Owner + admin manage the whole tenant
+  // and need to see every project; plain members and viewers must only see
+  // projects they were explicitly added to (otherwise the sidebar leaks
+  // every project in the org to anyone who joins, which was the reported
+  // bug — invited members ended up with access to projects they were
+  // never invited to).
+  let isOrgAdminOrOwner = false;
+  if (hasRealOrg) {
+    const { data: orgRow } = await supabase
+      .from("organizations")
+      .select("owner_id, members")
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+
+    if (orgRow) {
+      if (orgRow.owner_id === userId) {
+        isOrgAdminOrOwner = true;
+      } else if (Array.isArray(orgRow.members)) {
+        const m = orgRow.members.find(
+          (x: { userId?: string; user_id?: string }) =>
+            (x?.userId || x?.user_id) === userId,
+        );
+        const role = (m as { role?: string } | undefined)?.role;
+        isOrgAdminOrOwner = role === "owner" || role === "admin";
+      }
+    }
+  }
+
   // Run all queries in parallel for speed.
   const [ownerResult, memberResult, legacyResult, orgResult] = await Promise.all([
     supabase
@@ -667,10 +699,10 @@ export const getUserProjects = async (
       .from("projects")
       .select(PROJECTS_SAFE_SELECT)
       .filter("members", "cs", legacyMemberContains),
-    // Also fetch all projects in the user's org — catches newly-invited members
-    // whose userId may not yet appear in the members JSONB due to replication
-    // lag or edge-case timing after accept_invitation.
-    organizationId && !organizationId.startsWith("local-")
+    // Org-wide visibility is for owner/admin only — they manage the whole
+    // tenant. For plain members/viewers we deliberately skip this so they
+    // are scoped to projects they were actually added to.
+    hasRealOrg && isOrgAdminOrOwner
       ? supabase
           .from("projects")
           .select(PROJECTS_SAFE_SELECT)
@@ -688,7 +720,23 @@ export const getUserProjects = async (
   for (const p of legacyResult.data || []) mergedMap.set(p.project_id, p);
   for (const p of orgResult.data || []) mergedMap.set(p.project_id, p);
 
-  return Array.from(mergedMap.values())
+  // Final scope safety: members/viewers only keep projects they're actually
+  // tied to (owner_id or in members JSONB). The owner/legacy/member queries
+  // already filter that way, but if a deployment ever adds a different
+  // source above this still won't leak.
+  const scoped = Array.from(mergedMap.values()).filter((p) => {
+    if (isOrgAdminOrOwner) return true;
+    if (p.owner_id === userId) return true;
+    if (Array.isArray(p.members)) {
+      return p.members.some(
+        (m: { userId?: string; user_id?: string }) =>
+          (m?.userId || m?.user_id) === userId,
+      );
+    }
+    return false;
+  });
+
+  return scoped
     .sort(
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
