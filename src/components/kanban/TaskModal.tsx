@@ -173,11 +173,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return isAdmin;
   }, [user, project?.ownerId, task?.createdBy, isAdmin]);
 
-  /** Only the user who created the task may set, change, or clear lock + PIN (create flow always allowed). */
+  /** Whether the current user created this task. Kept for other UI cues — no longer
+   * used as the lock-management gate. */
   const isTaskCreator = Boolean(
     user && task?.createdBy && task.createdBy === user.userId,
   );
-  const canManageLockAndPin = !isEditing || isTaskCreator;
+  /**
+   * Lock + PIN is an admin/owner-only control, both on create and on edit.
+   * Members (even if they created the task) and viewers cannot set, change,
+   * or clear a task lock — they can still be assigned to a locked task,
+   * unlock by PIN, etc., but only org owner/admin gets to manage the lock
+   * itself.
+   */
+  const canManageLockAndPin = isAdmin;
 
   const hasLockPin = Boolean(task?.hasLockPin);
   const lockedWithPin = Boolean(isEditing && task?.isLocked && hasLockPin);
@@ -797,14 +805,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setSaveError(null);
     setLoading(true);
     try {
-      const isLockedForSave =
-        isEditing && task && user && task.createdBy !== user.userId
-          ? !!task.isLocked
-          : isLocked;
+      // Lock state on save:
+      //   - Only org owner/admin may set, change, or clear the lock.
+      //   - For everyone else, ignore whatever the (disabled) checkbox says
+      //     and preserve the task's current lock state on edit. On create,
+      //     non-admins can never produce a locked task.
+      const isLockedForSave = canManageLockAndPin
+        ? isLocked
+        : isEditing
+          ? !!task?.isLocked
+          : false;
 
       let lockPinHashPayload: string | null | undefined = undefined;
       let createdTaskId: string | undefined;
-      const creatorControlsLock = !isEditing || isTaskCreator;
+      const creatorControlsLock = canManageLockAndPin;
 
       if (!isLockedForSave) {
         lockPinHashPayload = null;
@@ -1970,13 +1984,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <label
                   className={cn(
                     'flex items-center gap-2 select-none px-2 py-1.5 rounded text-sm',
-                    readOnlyTask || (isEditing && !isTaskCreator)
+                    readOnlyTask || !canManageLockAndPin
                       ? 'opacity-60 cursor-not-allowed'
                       : 'cursor-pointer hover:bg-secondary',
                   )}
                   title={
-                    isEditing && !isTaskCreator
-                      ? 'Only the person who created this task can turn lock/PIN on or off'
+                    !canManageLockAndPin
+                      ? 'Only the organization owner or an admin can lock or unlock a task'
                       : 'Only creator, assignees, and project owner can see this task'
                   }
                 >
@@ -1984,7 +1998,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     type="checkbox"
                     checked={isLocked}
                     onChange={(e) => setIsLocked(e.target.checked)}
-                    disabled={readOnlyTask || (isEditing && !isTaskCreator)}
+                    disabled={readOnlyTask || !canManageLockAndPin}
                     className="rounded border-border accent-warning"
                   />
                   <Lock className="w-4 h-4 text-warning" />
@@ -2032,7 +2046,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   !canManageLockAndPin &&
                   task?.hasLockPin && (
                     <p className="mt-2 pl-2 border-l border-border text-[11px] text-muted-foreground">
-                      PIN and lock can only be changed by whoever created this task.
+                      Only the organization owner or an admin can change the lock or PIN on this task.
                     </p>
                   )}
                 {!isEditing && isLocked && (
