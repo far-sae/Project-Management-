@@ -883,7 +883,10 @@ export const ProjectView: React.FC = () => {
                 <Button
                   variant={viewMode === 'mindmap' ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="h-8 rounded-md px-3"
+                  className={cn(
+                    'h-8 rounded-md px-3 text-primary hover:text-primary',
+                    viewMode === 'mindmap' && 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
+                  )}
                   onClick={() => setViewMode('mindmap')}
                   title="Mind map"
                 >

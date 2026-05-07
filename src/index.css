@@ -521,3 +521,49 @@
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
+
+/* ────────────────────────────────────────────────────────────
+   React Flow (xyflow) — bind its CSS variables to our theme so
+   the bottom-left zoom/fit controls follow light/dark mode
+   instead of always rendering in their built-in light palette.
+   ──────────────────────────────────────────────────────────── */
+.react-flow {
+  --xy-controls-button-background-color-default: hsl(var(--card));
+  --xy-controls-button-background-color-hover-default: hsl(var(--secondary));
+  --xy-controls-button-color-default: hsl(var(--foreground));
+  --xy-controls-button-color-hover-default: hsl(var(--foreground));
+  --xy-controls-button-border-color-default: hsl(var(--border));
+  /* Make the dotted background a touch darker in light mode so the white
+     canvas isn't a pure void — gives the cursor visible texture to track
+     against and helps users orient the pan. */
+  --xy-background-pattern-dots-color-default: hsl(var(--muted-foreground) / 0.55);
+}
+
+.react-flow__controls {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.react-flow__controls-button {
+  border-bottom-color: hsl(var(--border)) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+/* Fallback cursor on the empty pane so the OS pointer is always
+   readable on a white background — some Windows themes render the
+   bare "default" cursor very faintly, which matches the "I can't see
+   my cursor in light mode" reports on the mind-map canvas. */
+.react-flow__pane,
+.react-flow__pane.draggable {
+  cursor: grab;
+}
+.react-flow__pane.dragging,
+.react-flow__pane.draggable:active {
+  cursor: grabbing;
+}
+.react-flow__renderer,
+.react-flow__viewport {
+  cursor: inherit;
+}

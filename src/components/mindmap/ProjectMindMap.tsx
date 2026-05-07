@@ -50,6 +50,9 @@ import {
   CheckSquare,
   Columns,
   ChevronDown,
+  Maximize,
+  Minimize,
+  Eraser,
 } from 'lucide-react';
 import type { Project, Task, KanbanColumn } from '@/types';
 import { cn } from '@/lib/utils';
@@ -90,10 +93,10 @@ import { MindMapPlaceholderPanel } from './MindMapPlaceholderPanel';
 // ─────────────────────────────────────────────────────────────
 const ROOT_X = 0;
 const ROOT_Y = 0;
-const COL_GAP_X = 380;
-const TASK_GAP_Y = 110;
-const SUBTASK_OFFSET_X = 290;
-const SUBTASK_GAP_Y = 56;
+const COL_GAP_X = 460;
+const TASK_GAP_Y = 130;
+const SUBTASK_OFFSET_X = 360;
+const SUBTASK_GAP_Y = 64;
 
 // Edge IDs starting with USER_EDGE_PREFIX are drawn by the user (reconnection
 // overrides). AUTO_EDGE_PREFIX edges are derived from the project structure;
@@ -280,22 +283,22 @@ interface ProjectNodeData extends Record<string, unknown> {
 const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }> = ({ data, selected }) => (
   <div
     className={cn(
-      'group relative rounded-2xl border bg-gradient-to-br from-primary/15 to-primary/[0.04] px-4 py-3 shadow-lg min-w-[240px] max-w-[280px] backdrop-blur-sm',
+      'group relative rounded-2xl border bg-gradient-to-br from-primary/15 to-primary/[0.04] px-5 py-4 shadow-lg min-w-[300px] max-w-[360px] backdrop-blur-sm',
       selected ? 'border-primary ring-2 ring-primary/30' : 'border-primary/40',
     )}
   >
     <ConnectionHandles />
     <div className="flex items-center gap-1.5">
-      <Sparkles className="w-3 h-3 text-primary" />
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">Project</p>
+      <Sparkles className="w-3.5 h-3.5 text-primary" />
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">Project</p>
     </div>
-    <p className="mt-0.5 text-sm font-semibold text-foreground leading-snug">{data.label}</p>
+    <p className="mt-1 text-base font-semibold text-foreground leading-snug">{data.label}</p>
     {data.description ? (
-      <p className="mt-1 text-[11px] text-muted-foreground leading-snug line-clamp-3">
+      <p className="mt-1.5 text-[12.5px] text-muted-foreground leading-snug line-clamp-3">
         {data.description}
       </p>
     ) : null}
-    <p className="mt-2 text-[11px] text-muted-foreground">
+    <p className="mt-2.5 text-[12px] text-muted-foreground">
       {data.taskCount} task{data.taskCount === 1 ? '' : 's'}
     </p>
   </div>
@@ -310,19 +313,19 @@ interface ColumnNodeData extends Record<string, unknown> {
 const ColumnNode: React.FC<{ data: ColumnNodeData; selected?: boolean }> = ({ data, selected }) => (
   <div
     className={cn(
-      'group relative rounded-xl border bg-card px-3.5 py-2.5 shadow-sm min-w-[200px] backdrop-blur-sm',
+      'group relative rounded-xl border bg-card px-4 py-3 shadow-sm min-w-[260px] backdrop-blur-sm',
       selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
     )}
   >
     <ConnectionHandles />
     <div className="flex items-center gap-2">
       <span
-        className="inline-block w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-card"
+        className="inline-block w-3 h-3 rounded-full shrink-0 ring-2 ring-card"
         style={{ backgroundColor: data.color || '#94a3b8' }}
       />
-      <p className="text-sm font-semibold text-foreground truncate">{data.label}</p>
+      <p className="text-base font-semibold text-foreground truncate">{data.label}</p>
     </div>
-    <p className="text-[11px] text-muted-foreground mt-0.5 ml-4.5">
+    <p className="text-[12px] text-muted-foreground mt-1 ml-5">
       {data.count} task{data.count === 1 ? '' : 's'}
     </p>
   </div>
@@ -347,7 +350,7 @@ const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({ data, 
   return (
     <div
       className={cn(
-        'group relative w-[260px] rounded-xl border bg-card px-3 py-2.5 shadow-sm transition-all',
+        'group relative w-[320px] rounded-xl border bg-card px-4 py-3 shadow-sm transition-all',
         selected
           ? 'border-primary ring-2 ring-primary/30 shadow-md'
           : 'border-border hover:border-primary/40 hover:shadow-md',
@@ -365,20 +368,20 @@ const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({ data, 
         <div className="flex items-start gap-2">
           <span
             className={cn(
-              'mt-1 inline-block w-2 h-2 rounded-full shrink-0',
+              'mt-1.5 inline-block w-2.5 h-2.5 rounded-full shrink-0',
               STATUS_DOT[data.status] || 'bg-slate-400',
             )}
             aria-hidden
           />
-          <p className="text-sm font-medium text-foreground leading-snug truncate flex-1">
+          <p className="text-[15px] font-medium text-foreground leading-snug truncate flex-1">
             {data.label}
           </p>
         </div>
-        <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
           {data.priority && (
             <span
               className={cn(
-                'text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border',
+                'text-[11px] font-medium uppercase tracking-wide rounded-full px-2 py-0.5 border',
                 PRIORITY_CLASSES[data.priority] ||
                   'bg-secondary text-secondary-foreground border-border',
               )}
@@ -387,22 +390,22 @@ const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({ data, 
             </span>
           )}
           {data.dueDate && (
-            <span className="text-[10px] text-muted-foreground">due {data.dueDate}</span>
+            <span className="text-[11px] text-muted-foreground">due {data.dueDate}</span>
           )}
           {data.subtaskTotal > 0 && (
-            <span className="text-[10px] text-muted-foreground tabular-nums">
+            <span className="text-[11px] text-muted-foreground tabular-nums">
               {data.subtaskDone}/{data.subtaskTotal} subtasks
             </span>
           )}
           {data.attachmentCount > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground tabular-nums">
+            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums">
               <Paperclip className="w-3 h-3" />
               {data.attachmentCount}
             </span>
           )}
         </div>
         {data.assignees.length > 0 && (
-          <p className="mt-1 text-[10px] text-muted-foreground truncate">
+          <p className="mt-1.5 text-[11px] text-muted-foreground truncate">
             {data.assignees.join(', ')}
           </p>
         )}
@@ -465,7 +468,7 @@ interface SubtaskNodeData extends Record<string, unknown> {
 const SubtaskNode: React.FC<{ data: SubtaskNodeData; selected?: boolean }> = ({ data, selected }) => (
   <div
     className={cn(
-      'group relative rounded-md border bg-card/85 px-2.5 py-1.5 min-w-[200px] max-w-[260px]',
+      'group relative rounded-md border bg-card/85 px-3 py-2 min-w-[260px] max-w-[320px]',
       selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
     )}
   >
@@ -473,7 +476,7 @@ const SubtaskNode: React.FC<{ data: SubtaskNodeData; selected?: boolean }> = ({ 
     <div className="flex items-center gap-2">
       <span
         className={cn(
-          'inline-flex items-center justify-center w-3.5 h-3.5 rounded border text-[8px]',
+          'inline-flex items-center justify-center w-4 h-4 rounded border text-[9px]',
           data.completed
             ? 'bg-emerald-500 border-emerald-500 text-white'
             : 'border-border text-transparent',
@@ -484,7 +487,7 @@ const SubtaskNode: React.FC<{ data: SubtaskNodeData; selected?: boolean }> = ({ 
       </span>
       <p
         className={cn(
-          'text-[11px] leading-snug truncate',
+          'text-[13px] leading-snug truncate',
           data.completed ? 'line-through text-muted-foreground' : 'text-foreground',
         )}
       >
@@ -1711,9 +1714,65 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     requestAnimationFrame(() => flow.fitView({ padding: 0.2, duration: 300 }));
   }, [flow, updateExtras]);
 
+  /** Wipe every user-added placeholder (Idea / Task / Column / Project) AND any
+   *  user-drawn edges in one shot. The auto-derived structural graph stays put
+   *  because that mirrors the kanban — we only clear what the user added on
+   *  the mind map surface. */
+  const deleteAllPlaceholders = useCallback(() => {
+    if (extras.ideas.length === 0 && extras.edges.length === 0) {
+      toast.message('Nothing to delete — no placeholders or custom links yet.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Delete all ${extras.ideas.length} placeholder${extras.ideas.length === 1 ? '' : 's'}` +
+          `${extras.edges.length > 0 ? ` and ${extras.edges.length} custom link${extras.edges.length === 1 ? '' : 's'}` : ''}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    updateExtras((prev) => ({
+      ...prev,
+      ideas: [],
+      edges: [],
+      // Drop manual position overrides for ideas — auto-graph positions stay.
+      positions: Object.fromEntries(
+        Object.entries(prev.positions).filter(([k]) => !k.startsWith(IDEA_NODE_PREFIX)),
+      ),
+    }));
+    toast.success('Cleared all placeholders');
+  }, [extras.ideas.length, extras.edges.length, updateExtras]);
+
   const fitView = useCallback(() => {
     flow.fitView({ padding: 0.2, duration: 300 });
   }, [flow]);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    } else {
+      void el.requestFullscreen?.().catch((err: unknown) => {
+        toast.error(
+          err instanceof Error
+            ? `Fullscreen blocked: ${err.message}`
+            : 'Fullscreen not available in this browser',
+        );
+      });
+    }
+  }, []);
 
   const selectionHasUserItems = useMemo(
     () =>
@@ -1895,6 +1954,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
+      ref={containerRef}
       className="relative h-full w-full bg-background rounded-lg border border-border overflow-hidden"
       onContextMenu={handleContextMenu}
       onClick={closeContextMenu}
@@ -2035,12 +2095,38 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         <Button
           size="sm"
           variant="ghost"
+          className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive disabled:opacity-40"
+          onClick={deleteAllPlaceholders}
+          disabled={extras.ideas.length === 0 && extras.edges.length === 0}
+          title="Delete every placeholder & custom link in one go"
+        >
+          <Eraser className="w-3.5 h-3.5" />
+          Clear all
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
           className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
           onClick={resetLayout}
           title="Reset layout & remove custom items"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           Reset
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 gap-1.5 text-xs"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Open mind map in fullscreen'}
+          aria-pressed={isFullscreen}
+        >
+          {isFullscreen ? (
+            <Minimize className="w-3.5 h-3.5" />
+          ) : (
+            <Maximize className="w-3.5 h-3.5" />
+          )}
+          {isFullscreen ? 'Exit' : 'Fullscreen'}
         </Button>
         <Button
           size="sm"

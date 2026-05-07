@@ -9,7 +9,6 @@ import {
   Send,
   Loader2,
   Users,
-  ChevronUp,
   Minus,
   Smile,
   Phone,
@@ -444,23 +443,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       return new Date(m.createdAt).getTime() > lastSeenAt ? acc + 1 : acc;
     }, 0);
   }, [chatMessages, lastSeenAt, open, user]);
-
-  const recentSenders = useMemo(() => {
-    const seen = new Set<string>();
-    const result: { userId: string; displayName: string; photoURL?: string }[] = [];
-    for (let i = chatMessages.length - 1; i >= 0 && result.length < 3; i--) {
-      const m = chatMessages[i];
-      if (!m || !m.userId || seen.has(m.userId)) continue;
-      if (user && m.userId === user.userId) continue;
-      seen.add(m.userId);
-      result.push({
-        userId: m.userId,
-        displayName: displayNameForChatUser(m.userId, m.displayName),
-        photoURL: m.photoURL,
-      });
-    }
-    return result;
-  }, [chatMessages, user, displayNameForChatUser]);
 
   const chatRows = useMemo(
     () =>
@@ -972,64 +954,27 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         <button
           type="button"
           onClick={() => onOpenChange(true)}
-          aria-label="Open project messages and team"
+          aria-label={`Open project messages — ${project.name}`}
+          title={`${project.name} · ${dedupedMembers.length} members${chatMessages.length > 0 ? '' : ' · Start the conversation'}`}
           className={cn(
             'pointer-events-auto group relative inline-flex items-center justify-center backdrop-blur-xl',
-            // Mobile: compact 3rem circular FAB — icon + unread badge only.
-            'h-12 w-12 rounded-full border border-border/70 bg-card/95',
+            'h-14 w-14 rounded-full border border-border/70 bg-primary text-primary-foreground',
             'shadow-[0_12px_36px_rgba(0,0,0,0.32)] transition-all duration-150',
-            'hover:-translate-y-0.5 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-            // Desktop (>= sm): full pill with project name, member count and
-            // recent senders, just like before.
-            'sm:h-auto sm:w-[min(23rem,calc(100vw-2.5rem))] sm:rounded-lg sm:gap-3 sm:pl-3 sm:pr-3 sm:min-h-[3.75rem] sm:justify-start sm:text-left sm:shadow-[0_16px_46px_rgba(0,0,0,0.24)]',
-            'sm:flex',
+            'hover:-translate-y-0.5 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
           )}
         >
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-            <MessageSquare className="h-[18px] w-[18px]" />
-            {unreadCount > 0 && (
-              <span
-                className={cn(
-                  'absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full',
-                  'bg-destructive text-destructive-foreground text-[10px] font-semibold leading-[18px] text-center',
-                  'ring-2 ring-card shadow-sm',
-                )}
-              >
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
-          </div>
-          {/* Project name + member count: hidden on mobile FAB. */}
-          <div className="hidden sm:block min-w-0 flex-1 py-2">
-            <div className="flex items-center gap-1.5">
-              <p className="truncate text-[13px] font-semibold text-foreground leading-tight">
-                {project.name}
-              </p>
-              {unreadCount > 0 && (
-                <span className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-primary animate-pulse" />
+          <MessageSquare className="h-6 w-6" />
+          {unreadCount > 0 && (
+            <span
+              className={cn(
+                'absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full',
+                'bg-destructive text-destructive-foreground text-[10px] font-semibold leading-5 text-center',
+                'ring-2 ring-card shadow-sm',
               )}
-            </div>
-            <p className="truncate text-[11.5px] text-muted-foreground mt-0.5">
-              {dedupedMembers.length} members
-              {chatMessages.length > 0 ? ' · Open chat' : ' · Start the conversation'}
-            </p>
-          </div>
-          {/* Recent senders: hidden on mobile FAB. */}
-          {recentSenders.length > 0 ? (
-            <div className="hidden sm:flex -space-x-1.5 shrink-0 mr-1">
-              {recentSenders.map((s) => (
-                <Avatar key={s.userId} className="w-6 h-6 ring-2 ring-card">
-                  <AvatarImage src={s.photoURL} alt={s.displayName} />
-                  <AvatarFallback className="text-[10px] bg-primary-soft text-primary-soft-foreground">
-                    {(s.displayName || '?').charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-              ))}
-            </div>
-          ) : null}
-          <ChevronUp
-            className="hidden sm:block h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-y-0.5"
-          />
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
         </button>
         <DirectMessageDock
           recipient={dmRecipient}

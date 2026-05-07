@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Loader2, MessageSquare, Minus, Paperclip, Phone, Send, Video, X } from 'lucide-react';
+import { Loader2, MessageSquare, Paperclip, Phone, Send, Video, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -214,9 +214,10 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   return (
     <div
       // Sit immediately to the LEFT of the project chat dock (which lives at sm:right-5 with
-      // width ≈ 23rem). On phones the rail collapses to a single full-width column so we just
-      // dock at the bottom edge.
-      className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-[26rem]"
+      // width ≈ 23rem). 5rem (offset) + 23rem (panel) + 1rem (gap) ≈ 29rem keeps the DM from
+      // overlapping the project chat panel when both are open. On phones the rail collapses
+      // to a single full-width column so we just dock at the bottom edge.
+      className="fixed inset-x-3 bottom-4 z-[100] flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-[29rem]"
       role="complementary"
       aria-label={`Direct message with ${recipient.displayName}`}
     >
@@ -285,11 +286,12 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+              className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               onClick={onClose}
               aria-label="Close direct message"
+              title="Close this chat (project chat stays open)"
             >
-              <Minus className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
