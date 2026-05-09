@@ -645,15 +645,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setCommentSummaryError(null);
     setCommentSummaryOpen(true);
     try {
-      const snippets = taskComments.map((c) => ({
-        author: c.displayName || 'User',
-        at: c.createdAt
-          ? (c.createdAt instanceof Date
-              ? c.createdAt.toISOString()
-              : String(c.createdAt))
-          : '',
-        text: (c.text || '').trim() || '(attachment / time logged)',
-      }));
+      const snippets = [...taskComments]
+        .reverse()
+        .map((c) => ({
+          author: c.displayName || 'User',
+          at: c.createdAt
+            ? (c.createdAt instanceof Date
+                ? c.createdAt.toISOString()
+                : String(c.createdAt))
+            : '',
+          text: (c.text || '').trim() || '(attachment / time logged)',
+        }));
       const result = await summarizeCommentThread(user.userId, task.title, snippets);
       setCommentSummary(result);
     } catch (err) {
