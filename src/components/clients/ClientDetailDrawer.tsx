@@ -721,7 +721,7 @@ const FilesTab: React.FC<{
           Upload file
         </Button>
         <p className="text-xs text-muted-foreground mt-1">
-          PDF, image, doc/spreadsheet, csv, or zip — up to 10 MB.
+          PDF, image, doc/spreadsheet, csv, or zip — up to 500 MB.
         </p>
       </div>
 

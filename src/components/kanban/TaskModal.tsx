@@ -162,7 +162,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     null,
   );
 
-  const MAX_FILE_SIZE = 2 * 1024 * 1024;
+  const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
   const isEditing = !!task;
   /** Task without PIN: owner / admin / creator may edit without entering PIN. */
@@ -684,7 +684,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       for (const file of commentAttachmentFiles) {
         try {
           if (file.size > MAX_FILE_SIZE) {
-            toast.error(`${file.name} exceeds 2MB limit`);
+            toast.error(`${file.name} exceeds 500MB limit`);
             continue;
           }
           const uploaded = await uploadCommentAttachment(file, task.taskId, orgId, {
@@ -1492,7 +1492,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               const validFiles: File[] = [];
                               for (const file of Array.from(files)) {
                                 if (file.size > MAX_FILE_SIZE) {
-                                  toast.error(`${file.name} exceeds 2MB limit`);
+                                  toast.error(`${file.name} exceeds 500MB limit`);
                                   continue;
                                 }
                                 validFiles.push(file);

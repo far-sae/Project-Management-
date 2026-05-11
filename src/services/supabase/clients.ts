@@ -964,7 +964,7 @@ export const deleteNote = async (
 // {orgId}/clients/{clientId}/{timestamp}-{sanitized-filename}
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB — keep aligned with other modules.
+const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024; // 500 MB — keep aligned with other modules.
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
   "image/png",

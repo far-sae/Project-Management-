@@ -794,8 +794,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
     const filtered = files.filter((f) => {
-      if (f.size > 25 * 1024 * 1024) {
-        toast.error(`${f.name} is larger than 25 MB`);
+      if (f.size > 500 * 1024 * 1024) {
+        toast.error(`${f.name} is larger than 500 MB`);
         return false;
       }
       return true;

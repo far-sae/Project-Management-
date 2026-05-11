@@ -185,10 +185,10 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
-    // Cap at 5 files / 25 MB each to avoid blowing storage costs from chat.
+    // Cap at 5 files / 500 MB each to avoid blowing storage costs from chat.
     const filtered = files.filter((f) => {
-      if (f.size > 25 * 1024 * 1024) {
-        toast.error(`${f.name} is larger than 25 MB`);
+      if (f.size > 500 * 1024 * 1024) {
+        toast.error(`${f.name} is larger than 500 MB`);
         return false;
       }
       return true;
