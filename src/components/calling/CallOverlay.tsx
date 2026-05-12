@@ -239,7 +239,9 @@ const ParticipantTile: React.FC<ParticipantTileProps> = ({
   }, [snap.videoStream]);
 
   const initials = (snap.displayName || '?').charAt(0).toUpperCase();
-  const showVideo = !!snap.videoStream && !snap.isCameraOff;
+  // A screen-share track should always render even when the camera is off —
+  // the `isCameraOff` flag describes the camera, not the screen.
+  const showVideo = !!snap.videoStream && (snap.isScreenSharing || !snap.isCameraOff);
 
   return (
     <div

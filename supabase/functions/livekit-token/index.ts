@@ -22,15 +22,22 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 
 const allowedOriginsRaw = Deno.env.get("ALLOWED_ORIGINS") ?? "";
+// Normalize: trim, strip trailing slashes, lowercase scheme+host. Browsers send
+// `Origin: https://example.com` (no slash, no path); a misconfigured secret of
+// `https://example.com/` would otherwise echo back with the slash and fail the
+// CORS check.
+const normalizeOrigin = (o: string): string =>
+  o.trim().replace(/\/+$/, "");
 const allowedOrigins = allowedOriginsRaw
   .split(",")
-  .map((o) => o.trim())
+  .map(normalizeOrigin)
   .filter(Boolean);
 
 function buildCorsHeaders(origin: string | null): Record<string, string> {
+  const normalized = origin ? normalizeOrigin(origin) : null;
   const allow =
-    origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))
-      ? origin
+    normalized && (allowedOrigins.length === 0 || allowedOrigins.includes(normalized))
+      ? normalized
       : (allowedOrigins[0] ?? "*");
   return {
     "Access-Control-Allow-Origin": allow,

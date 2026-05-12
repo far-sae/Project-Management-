@@ -325,7 +325,11 @@ export class LiveKitCallService {
     // Prefer screen-share over camera when both are published — matches
     // the Meet/Teams convention of giving the share the main tile.
     let videoTrack: MediaStreamTrack | null = null;
-    let audioTrack: MediaStreamTrack | null = null;
+    // Both mic audio AND screen-share audio (system audio from the presenter)
+    // are surfaced so viewers hear what the presenter is playing as well as
+    // them speaking. Browsers only expose system audio on Chrome/Edge for
+    // tab/window shares; LiveKit publishes whatever the picker returned.
+    const audioTracks: MediaStreamTrack[] = [];
     let isScreen = false;
     let isCameraOff = true;
     let isMicMuted = true;
@@ -334,7 +338,9 @@ export class LiveKitCallService {
       if (!pub.isSubscribed || !pub.track) {
         // We still need to know mute/camera-off state for the tile even when
         // we haven't subscribed (e.g. background tab pauses).
-        if (pub.kind === Track.Kind.Audio) isMicMuted = pub.isMuted;
+        if (pub.kind === Track.Kind.Audio && !isScreenSharePublication(pub)) {
+          isMicMuted = pub.isMuted;
+        }
         if (pub.source === Track.Source.Camera) isCameraOff = pub.isMuted;
         continue;
       }
@@ -348,8 +354,11 @@ export class LiveKitCallService {
           isCameraOff = pub.isMuted;
         }
       } else if (track.kind === Track.Kind.Audio) {
-        if (!isScreenSharePublication(pub)) {
-          audioTrack = track.mediaStreamTrack;
+        if (isScreenSharePublication(pub)) {
+          // Screen-share audio (system sound from the shared tab/window).
+          if (!pub.isMuted) audioTracks.push(track.mediaStreamTrack);
+        } else {
+          audioTracks.push(track.mediaStreamTrack);
           isMicMuted = pub.isMuted;
         }
       }
@@ -364,7 +373,7 @@ export class LiveKitCallService {
     return {
       userId: remote.identity,
       displayName: remote.name || remote.identity,
-      audioStream: audioTrack ? new MediaStream([audioTrack]) : null,
+      audioStream: audioTracks.length > 0 ? new MediaStream(audioTracks) : null,
       videoStream: videoTrack ? new MediaStream([videoTrack]) : null,
       isMicMuted,
       isCameraOff,

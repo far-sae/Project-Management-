@@ -10,6 +10,11 @@ import {
   refreshTokenIfNeeded,
   ensureValidSession as ensureValidSessionAuth,
 } from '@/services/supabase/auth';
+import {
+  clockOut as clockOutService,
+  clockOutKeepalive,
+  getOpenEntryForUser,
+} from '@/services/supabase/timeEntries';
 import { User } from '@/types';
 
 interface AuthContextType {
@@ -464,6 +469,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
     return () => clearInterval(refreshInterval);
   }, [user]);
 
+  // Auto clock-out on tab/window close. If the user forgets to stop their
+  // timer before closing the browser, fire a best-effort `keepalive` PATCH so
+  // the entry isn't left open across days. A server-side sweep (migration
+  // 055) is the backstop for crashes / abrupt shutdowns where pagehide
+  // doesn't run.
+  useEffect(() => {
+    if (!user) return;
+    const orgId = user.organizationId || `local-${user.userId}`;
+    let openEntryId: string | null = null;
+    let cancelled = false;
+
+    const refresh = async () => {
+      try {
+        const open = await getOpenEntryForUser(orgId, user.userId);
+        if (cancelled) return;
+        openEntryId = open?.entryId ?? null;
+      } catch {
+        /* ignore — listener still fires if a later refresh succeeds */
+      }
+    };
+    void refresh();
+    // Cheap re-poll so a clock-in/out from another tab is reflected here.
+    const interval = setInterval(refresh, 60_000);
+
+    const onPageHide = () => {
+      if (!openEntryId) return;
+      clockOutKeepalive(orgId, openEntryId);
+    };
+    // `pagehide` fires for closes + mobile background tabs; `beforeunload`
+    // gives a second chance on desktop browsers that fire it earlier.
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onPageHide);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onPageHide);
+    };
+  }, [user]);
+
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {
     setError(null);
     setAuthActionLoading(true);
@@ -505,13 +550,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
   const signOut = useCallback(async () => {
     setError(null);
     try {
+      // Auto clock-out: if the user forgot to stop their timer, close any
+      // open time entry before tearing down the session so payroll/reports
+      // don't show them as still clocked in across sign-outs.
+      try {
+        if (user) {
+          const orgId = user.organizationId || `local-${user.userId}`;
+          const open = await getOpenEntryForUser(orgId, user.userId);
+          if (open) {
+            await clockOutService(orgId, open.entryId, open.notes);
+          }
+        }
+      } catch (clockErr) {
+        // Don't block sign-out on a clock-out failure — log and continue.
+        logger.warn('Auto clock-out on sign-out failed:', clockErr);
+      }
       await supabaseSignOut();
       setUser(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign out');
       throw err;
     }
-  }, []);
+  }, [user]);
 
   const ensureValidSession = useCallback(async (): Promise<boolean> => {
     try {
