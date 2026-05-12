@@ -20,6 +20,8 @@ import { deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
 import { ChatAttachmentList } from './ChatAttachmentList';
 import { format, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
+import { useLastSeen } from '@/hooks/useLastSeen';
+import { formatLastSeen, isUserOnline } from '@/services/supabase/lastSeen';
 
 export interface DirectMessageRecipient {
   userId: string;
@@ -204,6 +206,19 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
 
   const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(22rem,calc(100vw-2.5rem))]';
 
+  // Track the recipient's last_seen_at so the header can show
+  // "Online" / "Last seen 5 min ago", WhatsApp-style. Re-rendered every
+  // 30s so the relative label stays fresh even without a fresh ping.
+  const lastSeenMap = useLastSeen(recipient ? [recipient.userId] : []);
+  const recipientLastSeen = recipient ? lastSeenMap.get(recipient.userId) ?? null : null;
+  const [, forceLastSeenTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => forceLastSeenTick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const recipientOnline = isUserOnline(recipientLastSeen);
+  const recipientStatusLabel = formatLastSeen(recipientLastSeen, recipientOnline);
+
   const rows = messages.map((msg, index) => {
     const createdAt = msg.createdAt;
     const previous = messages[index - 1];
@@ -241,11 +256,22 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
               <p className="text-sm font-semibold text-foreground truncate leading-tight">
                 {recipient.displayName}
               </p>
-              {recipient.email ? (
-                <p className="text-[11px] text-muted-foreground truncate">{recipient.email}</p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">Direct message</p>
-              )}
+              <p
+                className={cn(
+                  'text-[11px] truncate inline-flex items-center gap-1.5',
+                  recipientOnline ? 'text-emerald-600' : 'text-muted-foreground',
+                )}
+                title={recipient.email || undefined}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'inline-block w-1.5 h-1.5 rounded-full shrink-0',
+                    recipientOnline ? 'bg-emerald-500' : 'bg-muted-foreground/60',
+                  )}
+                />
+                {recipientStatusLabel}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">

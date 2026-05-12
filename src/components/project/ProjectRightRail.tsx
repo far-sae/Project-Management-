@@ -53,6 +53,7 @@ import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
 import { PresenceStatusInline } from '@/components/presence/PresenceStatusInline';
+import { useLastSeen } from '@/hooks/useLastSeen';
 
 interface ProjectRightRailProps {
   project: Project;
@@ -287,6 +288,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       ),
     [dedupedMembers, user?.userId],
   );
+
+  // Persisted last_seen for every project member — used to render
+  // "Last seen 5 min ago" alongside the presence dot when they're offline.
+  const memberUserIds = useMemo(
+    () => dedupedMembers.map((m) => m.userId).filter((id): id is string => !!id),
+    [dedupedMembers],
+  );
+  const lastSeenByUserId = useLastSeen(memberUserIds);
 
   /** @-mentions: project team only (not whole org — avoids stale or unrelated users). */
   const mentionMembers = useMemo(() => {
@@ -871,6 +880,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   </p>
                   <PresenceStatusInline
                     peer={m.userId ? presenceByUserId?.get(m.userId) : undefined}
+                    lastSeenAt={m.userId ? lastSeenByUserId.get(m.userId) ?? null : null}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground truncate">{m.email}</p>
@@ -1191,6 +1201,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                             {!mine && (
                               <PresenceStatusInline
                                 peer={presenceByUserId?.get(msg.userId)}
+                                lastSeenAt={lastSeenByUserId.get(msg.userId) ?? null}
                                 className="gap-1"
                               />
                             )}

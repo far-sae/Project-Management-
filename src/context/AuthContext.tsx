@@ -15,6 +15,10 @@ import {
   clockOutKeepalive,
   getOpenEntryForUser,
 } from '@/services/supabase/timeEntries';
+import {
+  pingLastSeen,
+  pingLastSeenKeepalive,
+} from '@/services/supabase/lastSeen';
 import { User } from '@/types';
 
 interface AuthContextType {
@@ -468,6 +472,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
     }, 45 * 60 * 1000);
     return () => clearInterval(refreshInterval);
   }, [user]);
+
+  // Last-seen heartbeat. Updates `user_profiles.last_seen_at` every minute
+  // while the tab is visible, on focus/online, and once on pagehide via a
+  // keepalive PATCH. Drives the "Online / Last seen X ago" indicator in DMs
+  // and team panels — live presence handles "currently online".
+  useEffect(() => {
+    if (!user?.userId) return;
+    const userId = user.userId;
+    let cancelled = false;
+
+    const ping = () => {
+      if (cancelled) return;
+      void pingLastSeen(userId);
+    };
+    ping(); // immediate ping on sign-in / app load
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') ping();
+    }, 60_000);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') ping();
+    };
+    const onFocus = () => ping();
+    const onOnline = () => ping();
+    const onPageHide = () => pingLastSeenKeepalive(userId);
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onPageHide);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onPageHide);
+    };
+  }, [user?.userId]);
 
   // Auto clock-out on tab/window close. If the user forgets to stop their
   // timer before closing the browser, fire a best-effort `keepalive` PATCH so
