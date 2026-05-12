@@ -56,10 +56,13 @@ import {
 import {
   addCommentWithGlobalSync,
   deleteComment,
+  deleteCommentDraft,
+  getCommentDraft,
   getTaskComments,
   markNotificationsReadByTask,
   notifyTaskCommentMentions,
   subscribeToComments,
+  upsertCommentDraft,
   verifyTaskLockPin,
 } from '@/services/supabase/database';
 import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
@@ -135,6 +138,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
@@ -161,6 +165,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const commentTypingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // Auto-save: compare current field snapshot against last persisted snapshot
+  // to skip no-op writes (initial load, parent re-renders, realtime echoes).
+  const autoSaveSnapshotRef = useRef<string | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveInFlightRef = useRef<boolean>(false);
+  // Comment draft (server-side, per user/task) — debounce writes while typing.
+  const commentDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commentDraftLoadedRef = useRef<boolean>(false);
 
   const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
@@ -280,6 +292,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
     setSaveError(null);
     setLastSavedAt(null);
+    setAutoSaveStatus('idle');
+    // Reset auto-save baseline so the just-loaded fields don't look like edits.
+    autoSaveSnapshotRef.current = null;
+    autoSaveInFlightRef.current = false;
+    commentDraftLoadedRef.current = false;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (commentDraftTimerRef.current) {
+      clearTimeout(commentDraftTimerRef.current);
+      commentDraftTimerRef.current = null;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: `task` object identity updates after realtime/refetch must not reset fields
   }, [open, task?.taskId, initialStatus]);
 
@@ -358,6 +383,127 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       commentTypingDebounceRef.current = null;
     }
   }, [task?.taskId, open]);
+
+  // ── Auto-save (existing task fields) ───────────────────────
+  // Debounced background save of title/description/subtasks/priority/dueDate/
+  // assignees/tags/urgent so closing the modal doesn't lose typed text.
+  // Lock state and PIN are intentionally excluded — those need explicit intent.
+  useEffect(() => {
+    if (!open) return;
+    if (!isEditing || !task?.taskId || !user) return;
+    if (readOnlyTask || mustUnlockToView || loading) return;
+    // Title is required by the DB — never auto-save an empty title.
+    if (!title.trim()) return;
+
+    const snapshot = JSON.stringify({
+      title: title.trim(),
+      description,
+      priority,
+      dueDate: dueDate ? dueDate.toISOString() : null,
+      assignees: assignees.map((a) => a.userId).sort(),
+      tags: [...tags].sort(),
+      urgent,
+      subtasks: subtasks.map((s) => ({ id: s.id, title: s.title, completed: s.completed })),
+    });
+
+    // First snapshot after (re)open: establish baseline, don't save.
+    if (autoSaveSnapshotRef.current === null) {
+      autoSaveSnapshotRef.current = snapshot;
+      return;
+    }
+    if (autoSaveSnapshotRef.current === snapshot) return;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(async () => {
+      autoSaveTimerRef.current = null;
+      if (autoSaveInFlightRef.current) return;
+      autoSaveInFlightRef.current = true;
+      setAutoSaveStatus('saving');
+      try {
+        await onSave({
+          title: title.trim(),
+          description,
+          priority,
+          dueDate: dueDate ?? null,
+          assignees,
+          tags,
+          urgent,
+          subtasks,
+        } as Partial<Task>);
+        autoSaveSnapshotRef.current = snapshot;
+        setLastSavedAt(new Date());
+        setAutoSaveStatus('saved');
+      } catch (err) {
+        // Keep snapshot unchanged so the next edit retries the save.
+        setAutoSaveStatus('error');
+        console.warn('Task auto-save failed:', err);
+      } finally {
+        autoSaveInFlightRef.current = false;
+      }
+    }, 900);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [
+    open, isEditing, task?.taskId, user, readOnlyTask, mustUnlockToView, loading,
+    title, description, priority, dueDate, assignees, tags, urgent, subtasks,
+    onSave,
+  ]);
+
+  // ── Comment draft: load on open ────────────────────────────
+  useEffect(() => {
+    if (!open || !task?.taskId || !user?.userId || !orgId || mustUnlockToView) {
+      commentDraftLoadedRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    void getCommentDraft(task.taskId, user.userId, orgId)
+      .then((draft) => {
+        if (cancelled) return;
+        // Don't overwrite text the user has already typed since the modal opened.
+        setNewComment((current) => (current ? current : draft));
+        commentDraftLoadedRef.current = true;
+      })
+      .catch(() => {
+        commentDraftLoadedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, task?.taskId, user?.userId, orgId, mustUnlockToView]);
+
+  // ── Comment draft: save on change (debounced) ──────────────
+  useEffect(() => {
+    if (!open || !task?.taskId || !user?.userId || !orgId || mustUnlockToView) return;
+    // Wait until the initial load completes so we don't immediately overwrite
+    // a server draft with an empty string before it's been read.
+    if (!commentDraftLoadedRef.current) return;
+
+    if (commentDraftTimerRef.current) {
+      clearTimeout(commentDraftTimerRef.current);
+    }
+    const taskId = task.taskId;
+    const userId = user.userId;
+    const orgIdSnapshot = orgId;
+    const content = newComment;
+    commentDraftTimerRef.current = setTimeout(() => {
+      commentDraftTimerRef.current = null;
+      void upsertCommentDraft(taskId, userId, orgIdSnapshot, content);
+    }, 600);
+
+    return () => {
+      if (commentDraftTimerRef.current) {
+        clearTimeout(commentDraftTimerRef.current);
+        commentDraftTimerRef.current = null;
+      }
+    };
+  }, [newComment, open, task?.taskId, user?.userId, orgId, mustUnlockToView]);
 
   const scheduleCommentTypingBroadcast = useCallback(
     (taskId: string) => {
@@ -737,6 +883,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setCommentTimeSpentMinutes('');
       setShowTimeSpent(false);
       setActivityRefetchNonce((n) => n + 1);
+      // Clear the saved draft now that the comment is persisted.
+      void deleteCommentDraft(task.taskId, user.userId, orgId);
       toast.success('Comment posted', { id: toastId });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to add comment', { id: toastId });
@@ -2130,8 +2278,22 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 Enter a task title first
               </span>
             ) : isEditing ? (
-              <span className="text-[11px] text-muted-foreground">
-                Changes save when you click <span className="font-medium text-foreground">Save changes</span>.
+              <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
+                {autoSaveStatus === 'saving' ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Saving…
+                  </>
+                ) : autoSaveStatus === 'error' ? (
+                  <span className="text-destructive">Auto-save failed — click Save changes</span>
+                ) : autoSaveStatus === 'saved' || lastSavedAt ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-500" />
+                    Changes saved automatically
+                  </>
+                ) : (
+                  <>Changes save automatically as you type.</>
+                )}
               </span>
             ) : (
               <span className="text-[11px] text-muted-foreground">

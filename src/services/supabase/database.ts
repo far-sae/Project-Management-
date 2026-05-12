@@ -1545,6 +1545,111 @@ export const subscribeToComments = (
 };
 
 // ============================================
+// TASK COMMENT DRAFTS
+// ============================================
+
+/**
+ * Per-user draft of the comment composer for a task. Auto-saved as the user
+ * types so closing the modal / refreshing doesn't lose the unsent text.
+ * Local-org users (`local-*`) bypass Supabase and use localStorage so the
+ * offline path keeps working.
+ */
+const isLocalOrgId = (orgId: string): boolean => orgId.startsWith("local-");
+
+const commentDraftLocalKey = (taskId: string, userId: string): string =>
+  `task-comment-draft:${userId}:${taskId}`;
+
+export const getCommentDraft = async (
+  taskId: string,
+  userId: string,
+  organizationId: string,
+): Promise<string> => {
+  if (!taskId || !userId) return "";
+  if (isLocalOrgId(organizationId)) {
+    try {
+      return localStorage.getItem(commentDraftLocalKey(taskId, userId)) ?? "";
+    } catch {
+      return "";
+    }
+  }
+  const { data, error } = await supabase
+    .from("task_comment_drafts")
+    .select("content")
+    .eq("task_id", taskId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    // Table may not exist yet (migration not applied); fall back silently.
+    logger.warn("getCommentDraft: lookup failed, returning empty", error);
+    return "";
+  }
+  return data?.content ?? "";
+};
+
+export const upsertCommentDraft = async (
+  taskId: string,
+  userId: string,
+  organizationId: string,
+  content: string,
+): Promise<void> => {
+  if (!taskId || !userId) return;
+  if (isLocalOrgId(organizationId)) {
+    try {
+      if (content.length === 0) {
+        localStorage.removeItem(commentDraftLocalKey(taskId, userId));
+      } else {
+        localStorage.setItem(commentDraftLocalKey(taskId, userId), content);
+      }
+    } catch {
+      /* localStorage may be full or disabled — silent no-op */
+    }
+    return;
+  }
+  if (content.length === 0) {
+    await deleteCommentDraft(taskId, userId, organizationId);
+    return;
+  }
+  const { error } = await supabase
+    .from("task_comment_drafts")
+    .upsert(
+      {
+        task_id: taskId,
+        user_id: userId,
+        content,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "task_id,user_id" },
+    );
+  if (error) {
+    logger.warn("upsertCommentDraft: save failed", error);
+  }
+};
+
+export const deleteCommentDraft = async (
+  taskId: string,
+  userId: string,
+  organizationId: string,
+): Promise<void> => {
+  if (!taskId || !userId) return;
+  if (isLocalOrgId(organizationId)) {
+    try {
+      localStorage.removeItem(commentDraftLocalKey(taskId, userId));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  const { error } = await supabase
+    .from("task_comment_drafts")
+    .delete()
+    .eq("task_id", taskId)
+    .eq("user_id", userId);
+  if (error) {
+    logger.warn("deleteCommentDraft: delete failed", error);
+  }
+};
+
+// ============================================
 // NOTIFICATIONS
 // ============================================
 
