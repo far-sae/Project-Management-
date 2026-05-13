@@ -202,20 +202,24 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   const removePending = (idx: number) =>
     setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
 
-  if (!recipient) return null;
-
-  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(22rem,calc(100vw-2.5rem))]';
-
   // Track the recipient's last_seen_at so the header can show
   // "Online" / "Last seen 5 min ago", WhatsApp-style. Re-rendered every
   // 30s so the relative label stays fresh even without a fresh ping.
+  // IMPORTANT: must be called unconditionally before any early return so
+  // the hook order stays stable when `recipient` toggles between null and a
+  // value (otherwise React throws error #310: rendered fewer/more hooks).
   const lastSeenMap = useLastSeen(recipient ? [recipient.userId] : []);
-  const recipientLastSeen = recipient ? lastSeenMap.get(recipient.userId) ?? null : null;
   const [, forceLastSeenTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => forceLastSeenTick((n) => n + 1), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  if (!recipient) return null;
+
+  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(22rem,calc(100vw-2.5rem))]';
+
+  const recipientLastSeen = lastSeenMap.get(recipient.userId) ?? null;
   const recipientOnline = isUserOnline(recipientLastSeen);
   const recipientStatusLabel = formatLastSeen(recipientLastSeen, recipientOnline);
 
