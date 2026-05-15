@@ -3,6 +3,15 @@
 -- and project templates used by the won-handoff modal. A trigger seeds defaults
 -- on org insert; an in-migration data backfill seeds defaults for existing orgs.
 
+-- Alias for is_org_admin_or_owner. Several CRM batch-1 migrations and RPC
+-- functions reference is_org_admin(uuid); the underlying helper from
+-- migration 036 is is_org_admin_or_owner(uuid). This wrapper unifies the name
+-- so every later migration can use is_org_admin consistently.
+create or replace function public.is_org_admin(p_org uuid)
+returns boolean language sql stable as $$
+  select public.is_org_admin_or_owner(p_org);
+$$;
+
 create table if not exists public.pipelines (
   pipeline_id uuid primary key default gen_random_uuid(),
   organization_id uuid not null
@@ -136,14 +145,17 @@ alter table public.pipelines enable row level security;
 alter table public.pipeline_stages enable row level security;
 alter table public.project_templates enable row level security;
 
+drop policy if exists "pipelines read for org members" on public.pipelines;
 create policy "pipelines read for org members"
   on public.pipelines for select
   using (public.is_org_member(organization_id));
 
+drop policy if exists "pipeline_stages read for org members" on public.pipeline_stages;
 create policy "pipeline_stages read for org members"
   on public.pipeline_stages for select
   using (public.is_org_member(organization_id));
 
+drop policy if exists "project_templates read for org members" on public.project_templates;
 create policy "project_templates read for org members"
   on public.project_templates for select
   using (public.is_org_member(organization_id));
