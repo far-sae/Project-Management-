@@ -35,8 +35,10 @@ import {
   Loader2,
   Palette,
   Activity,
+  Plug,
 } from "lucide-react";
 import { toast } from "sonner";
+import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { CapacitySettings } from "@/components/settings/CapacitySettings";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
@@ -496,6 +498,10 @@ export const Settings: React.FC = () => {
               <Activity className="w-4 h-4" />
               Capacity
             </TabsTrigger>
+            <TabsTrigger value="integrations" className="gap-2">
+              <Plug className="w-4 h-4" />
+              Integrations
+            </TabsTrigger>
             {canManageSettings && (
               <TabsTrigger value="organization" className="gap-2">
                 <Building2 className="w-4 h-4" />
@@ -512,6 +518,11 @@ export const Settings: React.FC = () => {
           {/* CAPACITY TAB */}
           <TabsContent value="capacity">
             <CapacitySettings />
+          </TabsContent>
+
+          {/* INTEGRATIONS TAB */}
+          <TabsContent value="integrations">
+            <IntegrationsTab />
           </TabsContent>
 
           {/* ORGANIZATION TAB — owner/admin only */}
