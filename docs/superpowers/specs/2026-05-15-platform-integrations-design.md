@@ -80,7 +80,7 @@
 create table integrations (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  org_id uuid references organizations(id) on delete cascade,
+  org_id uuid references organizations(organization_id) on delete cascade,
   provider text not null check (provider in ('google','gmail','slack')),
   scopes text[] not null default '{}',
   access_token_encrypted text not null,
@@ -122,10 +122,9 @@ create policy "users read own user-level integrations"
 
 create policy "org members read org-level integrations"
   on integrations for select
-  using (org_id is not null
-         and exists (select 1 from organization_members om
-                     where om.org_id = integrations.org_id
-                       and om.user_id = auth.uid()));
+  using (org_id is not null and public.is_org_member(org_id));
+-- is_org_member() is defined in migration 036_time_tracking_and_expenses.sql
+-- and reads the JSONB members array on the organizations table.
 ```
 
 Tasks table gets two optional columns:
