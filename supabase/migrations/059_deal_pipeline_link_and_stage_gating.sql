@@ -9,6 +9,16 @@ alter table public.deals
   add column if not exists stage_id uuid
     references public.pipeline_stages(stage_id) on delete restrict;
 
+-- Plan 1 deal-to-won handoff needs to remember which client a project came from.
+-- Foreign key is on delete set null so deleting the client doesn't cascade and
+-- nuke the project; the project survives, just unlinked.
+alter table public.projects
+  add column if not exists client_id uuid
+    references public.clients(client_id) on delete set null;
+
+create index if not exists projects_client_idx
+  on public.projects(client_id);
+
 -- Backfill: for every deal, point to the seeded default pipeline + the stage
 -- with the matching key.
 update public.deals d set
@@ -145,7 +155,7 @@ begin
     return jsonb_build_object('deal_id', p_deal_id, 'project_id', null);
   end if;
 
-  insert into public.projects (organization_id, name, owner_id, start_date, due_date, client_id)
+  insert into public.projects (organization_id, name, owner_id, start_date, end_date, client_id)
   values (
     v_org,
     coalesce(p_project_input ->> 'name', v_deal.title),
@@ -154,7 +164,7 @@ begin
     coalesce((p_project_input ->> 'due_date')::date, (current_date + interval '30 days')::date),
     v_deal.client_id
   )
-  returning id into v_project;
+  returning project_id into v_project;
 
   v_template := (p_project_input ->> 'template_id')::uuid;
   if v_template is not null then
