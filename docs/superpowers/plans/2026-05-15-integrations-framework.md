@@ -101,6 +101,10 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     environment: 'node',
     globals: false,
+    // Vitest 1.x exits 1 on "no test files found" by default. We have
+    // genuine tests starting from Task 3, but Tasks 1-2 should still
+    // exit 0 so the npm test script doesn't fail in the gap.
+    passWithNoTests: true,
   },
   resolve: {
     alias: {

@@ -34,6 +34,7 @@ const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.H
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
+const IntegrationCallback = React.lazy(() => import('@/components/integrations/IntegrationCallback').then((m) => ({ default: m.IntegrationCallback })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const AboutPage = React.lazy(() => import('@/pages/legal/AboutPage'));
@@ -136,6 +137,7 @@ const router = createBrowserRouter(
         { path: '/cookies', element: lazyRoute(<CookiePolicyPage />) },
         { path: '/terms', element: lazyRoute(<TermsPage />) },
         { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
+        { path: '/integrations/callback', element: lazyRoute(<IntegrationCallback />) },
         { path: '/', element: <LandingPage /> },
         {
           // All authenticated app routes share a single layout — the sidebar
