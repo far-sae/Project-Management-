@@ -1,10 +1,6 @@
 -- 062_lead_forms.sql
 -- Lead-capture forms: per-pipeline definitions, public submissions, rate limits.
 
--- pgcrypto provides gen_random_bytes(), used below to seed turnstile_daily_salt.
--- Modern Supabase ships it but doesn't enable it by default.
-create extension if not exists pgcrypto;
-
 create table if not exists public.lead_forms (
   form_id uuid primary key default gen_random_uuid(),
   organization_id uuid not null
@@ -70,7 +66,18 @@ create table if not exists public.crm_secrets (
 );
 
 insert into public.crm_secrets (key, value)
-values ('turnstile_daily_salt', encode(gen_random_bytes(32), 'base64'))
+-- 32 random bytes via two concatenated gen_random_uuid() calls. Built-in to
+-- Postgres 13+ and resolvable without a schema qualifier, unlike
+-- pgcrypto.gen_random_bytes() which lives in the `extensions` schema on
+-- Supabase and isn't on the migration search_path.
+values (
+  'turnstile_daily_salt',
+  encode(
+    decode(replace(gen_random_uuid()::text, '-', ''), 'hex') ||
+    decode(replace(gen_random_uuid()::text, '-', ''), 'hex'),
+    'base64'
+  )
+)
 on conflict (key) do nothing;
 
 alter table public.lead_forms enable row level security;
