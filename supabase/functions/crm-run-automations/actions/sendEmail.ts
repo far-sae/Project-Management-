@@ -20,8 +20,9 @@ const resolveRecipient = async (ctx: any, spec: string): Promise<string | null> 
     if (!dealId) return null;
     const { data: deal } = await ctx.admin.from("deals").select("owner_id").eq("deal_id", dealId).maybeSingle();
     if (!deal?.owner_id) return null;
-    const { data: prof } = await ctx.admin.from("profiles").select("email").eq("user_id", deal.owner_id).maybeSingle();
-    return prof?.email ?? null;
+    // email lives in auth.users, not user_profiles
+    const { data: userResp } = await ctx.admin.auth.admin.getUserById(deal.owner_id);
+    return userResp?.user?.email ?? null;
   }
   if (spec === "client_email") {
     const clientId = ctx.event.payload?.client_id;

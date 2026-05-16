@@ -25,7 +25,7 @@ export const changeOwner: ActionHandler = async (ctx, config) => {
   }
 
   // Look up display name.
-  const { data: prof } = await ctx.admin.from("profiles").select("display_name").eq("user_id", resolved).maybeSingle();
+  const { data: prof } = await ctx.admin.from("user_profiles").select("display_name").eq("id", resolved).maybeSingle();
   const name = (prof as any)?.display_name ?? null;
 
   const table = entity === "deal" ? "deals" : "clients";
