@@ -22,5 +22,13 @@ Deno.serve(async () => {
   const cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
   await admin.from("form_submission_rate_limits").delete().lt("bucket_started_at", cutoff);
 
+  // Prune automation runs > 90d and events > 30d. Same daily cadence as the salt rotation.
+  await admin.from("automation_runs")
+    .delete()
+    .lt("started_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+  await admin.from("automation_events")
+    .delete()
+    .lt("enqueued_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
   return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
 });
