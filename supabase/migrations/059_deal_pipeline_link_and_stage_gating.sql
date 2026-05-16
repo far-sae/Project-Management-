@@ -189,3 +189,26 @@ end;
 $$;
 
 grant execute on function public.crm_close_deal_to_won(uuid, jsonb) to authenticated;
+
+create or replace view public.deal_forecast_v as
+select
+  d.organization_id,
+  d.pipeline_id,
+  d.owner_id,
+  d.owner_name,
+  d.currency,
+  to_char(
+    coalesce(d.actual_close_date, d.expected_close_date, d.created_at::date),
+    'YYYY-MM'
+  ) as month_bucket,
+  d.value,
+  d.value * (d.probability::numeric / 100.0) as weighted_value,
+  s.is_won,
+  s.is_lost,
+  d.stage_id,
+  d.stage
+from public.deals d
+join public.pipeline_stages s on s.stage_id = d.stage_id
+where not s.is_lost;
+
+grant select on public.deal_forecast_v to authenticated;
