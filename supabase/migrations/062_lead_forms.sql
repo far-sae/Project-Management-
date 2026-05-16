@@ -1,6 +1,10 @@
 -- 062_lead_forms.sql
 -- Lead-capture forms: per-pipeline definitions, public submissions, rate limits.
 
+-- pgcrypto provides gen_random_bytes(), used below to seed turnstile_daily_salt.
+-- Modern Supabase ships it but doesn't enable it by default.
+create extension if not exists pgcrypto;
+
 create table if not exists public.lead_forms (
   form_id uuid primary key default gen_random_uuid(),
   organization_id uuid not null
