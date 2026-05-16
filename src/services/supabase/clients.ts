@@ -1,5 +1,6 @@
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
+import { findDuplicates, recordOverride, type DuplicateMatch } from "./dupDetection";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -1371,6 +1372,16 @@ export interface ImportResult {
   unknownHeaders: string[];
   /** Canonical headers missing from the CSV (informational, not fatal). */
   missingHeaders: string[];
+  /**
+   * Rows that were skipped because duplicate detection matched an existing
+   * client. The dialog uses this to surface per-row "Override and create
+   * anyway" actions without re-running the full import.
+   */
+  rejectedDuplicates: Array<{
+    row: number;
+    input: CreateClientInput;
+    matches: DuplicateMatch[];
+  }>;
 }
 
 export const importClientsFromCsv = async (
@@ -1381,6 +1392,7 @@ export const importClientsFromCsv = async (
 ): Promise<ImportResult> => {
   const errors: CsvRowError[] = [];
   const imported: Client[] = [];
+  const rejectedDuplicates: ImportResult["rejectedDuplicates"] = [];
 
   // Header diagnostics: tell the user which columns we ignored and which
   // canonical ones were missing — same idea as Salesforce's "Field map"
@@ -1423,6 +1435,19 @@ export const importClientsFromCsv = async (
       continue;
     }
 
+    // Pre-flight duplicate check so the importer can hand the rejected rows
+    // back to the UI with an "override" affordance — same pattern as the
+    // inline client form, just batched.
+    const dups = await findDuplicates(organizationId, {
+      name: parsed.input.name,
+      email: parsed.input.email,
+      country: parsed.input.country,
+    });
+    if (dups.length > 0) {
+      rejectedDuplicates.push({ row: i + 2, input: parsed.input, matches: dups });
+      continue;
+    }
+
     try {
       const client = await createClient(
         organizationId,
@@ -1439,7 +1464,28 @@ export const importClientsFromCsv = async (
 
   // Suppress core-set marker for unused custom-field headers if they didn't
   // appear (no need to ask for them).
-  return { imported, errors, unknownHeaders, missingHeaders };
+  return { imported, errors, unknownHeaders, missingHeaders, rejectedDuplicates };
+};
+
+/**
+ * Retry one rejected CSV row, bypassing duplicate detection by tagging the
+ * resulting client with `dup_override` and recording an audit row. Used by
+ * the import dialog when the user explicitly chooses to create a duplicate.
+ */
+export const importClientsOverrideRow = async (
+  organizationId: string,
+  userId: string,
+  userName: string,
+  input: CreateClientInput,
+  matchedExistingId: string,
+): Promise<Client> => {
+  const payload: CreateClientInput = {
+    ...input,
+    tags: Array.from(new Set([...(input.tags ?? []), "dup_override"])),
+  };
+  const created = await createClient(organizationId, userId, userName, payload);
+  await recordOverride(organizationId, created.clientId, matchedExistingId, "CSV override");
+  return created;
 };
 
 /** Build a CSV string for export. Quotes fields containing commas/newlines/quotes. */
