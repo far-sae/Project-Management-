@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
-  Filter, Star, Trash2, MoreVertical,
+  Filter, Star, Trash2, MoreVertical, TrendingUp,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,8 +19,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GitBranch, ListTodo } from 'lucide-react';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { ClientTasksList } from '@/components/clients/ClientTasksList';
+import { ForecastTab } from '@/components/clients/ForecastTab';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
+import { PipelineSelector } from '@/components/clients/PipelineSelector';
 import { useClients } from '@/hooks/useClients';
+import { usePipelines } from '@/hooks/usePipelines';
 import {
   Client, ClientStatus, ClientType,
   CreateClientInput, exportClientsToCsv, formatRevenue,
@@ -27,6 +31,7 @@ import {
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
+import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { COMMON_CURRENCIES } from '@/lib/countries';
@@ -81,10 +86,18 @@ export const Clients: React.FC = () => {
   const {
     organizationId, clients, loading, create, update, remove, canManage,
   } = useClients();
+  const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
+  useEffect(() => {
+    if (!selectedPipelineId && defaultPipeline) {
+      setSelectedPipelineId(defaultPipeline.pipelineId);
+    }
+  }, [defaultPipeline, selectedPipelineId]);
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
+  const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
 
   // Pipeline display currency. Persists per-browser so reps don't have to
   // re-pick on every visit. Defaults to whatever the org is set to.
@@ -132,6 +145,7 @@ export const Clients: React.FC = () => {
     return clients.filter((c) => {
       if (typeFilter !== 'all' && c.type !== typeFilter) return false;
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+      if (bandFilter !== "all" && c.scoreBand !== bandFilter) return false;
       if (!q) return true;
       const haystack = [
         c.name, c.legalName, c.industry, c.email, c.phone,
@@ -142,7 +156,7 @@ export const Clients: React.FC = () => {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [clients, search, typeFilter, statusFilter]);
+  }, [clients, search, typeFilter, statusFilter, bandFilter]);
 
   const handleCreate = async (input: CreateClientInput) => {
     try {
@@ -207,6 +221,9 @@ export const Clients: React.FC = () => {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" asChild>
+                <Link to="/clients/activity">Recent activity</Link>
+              </Button>
               <Button variant="outline" onClick={exportAll}>
                 <Download className="w-4 h-4 mr-2" /> Export CSV
               </Button>
@@ -233,6 +250,9 @@ export const Clients: React.FC = () => {
               </TabsTrigger>
               <TabsTrigger value="tasks">
                 <ListTodo className="w-4 h-4 mr-1.5" /> Tasks
+              </TabsTrigger>
+              <TabsTrigger value="forecast">
+                <TrendingUp className="w-4 h-4 mr-1.5" /> Forecast
               </TabsTrigger>
             </TabsList>
 
@@ -269,6 +289,15 @@ export const Clients: React.FC = () => {
                   {STATUS_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+              <Select value={bandFilter} onValueChange={(v) => setBandFilter(v as any)}>
+                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All scores</SelectItem>
+                  <SelectItem value="hot">Hot</SelectItem>
+                  <SelectItem value="warm">Warm</SelectItem>
+                  <SelectItem value="cold">Cold</SelectItem>
                 </SelectContent>
               </Select>
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
@@ -337,6 +366,7 @@ export const Clients: React.FC = () => {
                     {c.country && (
                       <span className="text-xs text-muted-foreground">{c.country}</span>
                     )}
+                    <ScoreBadge score={c.score} band={c.scoreBand} />
                   </div>
 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
@@ -377,6 +407,11 @@ export const Clients: React.FC = () => {
             <TabsContent value="pipeline" className="mt-4 space-y-4">
               <Card>
                 <CardContent className="pt-4 flex flex-wrap items-center gap-3">
+                  <PipelineSelector
+                    pipelines={pipelines}
+                    value={selectedPipelineId}
+                    onChange={setSelectedPipelineId}
+                  />
                   <div className="flex items-center gap-2">
                     <Coins className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-medium">Display currency</span>
@@ -405,15 +440,28 @@ export const Clients: React.FC = () => {
                   </span>
                 </CardContent>
               </Card>
-              <PipelineAnalyticsCard currency={effectivePipelineCurrency} />
+              <PipelineAnalyticsCard
+                currency={effectivePipelineCurrency}
+                pipelineId={selectedPipelineId || undefined}
+              />
               <DealsKanban
                 clients={clients}
                 displayCurrency={effectivePipelineCurrency}
+                pipelineId={selectedPipelineId || undefined}
+                stages={
+                  selectedPipelineId
+                    ? stagesByPipeline[selectedPipelineId] ?? []
+                    : []
+                }
               />
             </TabsContent>
 
             <TabsContent value="tasks" className="mt-4">
               <ClientTasksList clients={clients} />
+            </TabsContent>
+
+            <TabsContent value="forecast" className="mt-4">
+              <ForecastTab displayCurrency={effectivePipelineCurrency} />
             </TabsContent>
           </Tabs>
         </div>
@@ -424,6 +472,7 @@ export const Clients: React.FC = () => {
         open={openCreate}
         onOpenChange={setOpenCreate}
         onSubmit={handleCreate}
+        organizationId={organizationId}
       />
       {/* Edit */}
       <ClientFormDialog
@@ -431,6 +480,7 @@ export const Clients: React.FC = () => {
         onOpenChange={(o) => { if (!o) setEditing(null); }}
         client={editing}
         onSubmit={handleUpdate}
+        organizationId={organizationId}
       />
       {/* Import */}
       <ImportClientsDialog

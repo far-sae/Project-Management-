@@ -23,7 +23,7 @@ const effectiveOrgId = (
   return null;
 };
 
-export const useDeals = () => {
+export const useDeals = (pipelineId?: string | null) => {
   const { user } = useAuth();
   const { organization, isOwner, isAdmin } = useOrganization();
   const orgId = effectiveOrgId(
@@ -31,21 +31,26 @@ export const useDeals = () => {
     user?.userId,
   );
 
-  const [deals, setDeals] = useState<Deal[]>([]);
+  const [allDeals, setAllDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!orgId) {
-      setDeals([]);
+      setAllDeals([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     return subscribeToDeals(orgId, (next) => {
-      setDeals(next);
+      setAllDeals(next);
       setLoading(false);
     });
   }, [orgId]);
+
+  const deals = useMemo(
+    () => (pipelineId ? allDeals.filter((d) => d.pipelineId === pipelineId) : allDeals),
+    [allDeals, pipelineId],
+  );
 
   const dealsByStage = useMemo(() => {
     const map = new Map<DealStage, Deal[]>();
@@ -76,7 +81,7 @@ export const useDeals = () => {
         user.displayName,
         input,
       );
-      setDeals((prev) => [created, ...prev]);
+      setAllDeals((prev) => [created, ...prev]);
       return created;
     },
     [orgId, user],
@@ -86,7 +91,7 @@ export const useDeals = () => {
     async (dealId: string, input: UpdateDealInput) => {
       if (!orgId) throw new Error("No organization");
       const updated = await updateDealSvc(orgId, dealId, input);
-      setDeals((prev) =>
+      setAllDeals((prev) =>
         prev.map((d) => (d.dealId === dealId ? updated : d)),
       );
       return updated;
@@ -98,7 +103,7 @@ export const useDeals = () => {
     async (dealId: string) => {
       if (!orgId) return;
       await deleteDealSvc(orgId, dealId);
-      setDeals((prev) => prev.filter((d) => d.dealId !== dealId));
+      setAllDeals((prev) => prev.filter((d) => d.dealId !== dealId));
     },
     [orgId],
   );

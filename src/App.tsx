@@ -11,6 +11,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Login } from '@/pages/auth/Login';
 import { Signup } from '@/pages/auth/Signup';
 import LandingPage from '@/pages/landing/LandingPage';
+import { PublicLeadForm } from '@/pages/PublicLeadForm';
 
 // Lazy — every authenticated/heavy page is fetched on demand. This shrinks the initial JS
 // bundle from "everything" to "shell + landing/auth", which is the single biggest perf win
@@ -33,6 +34,7 @@ const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ 
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
+const ClientsActivity = React.lazy(() => import('@/pages/ClientsActivity').then((m) => ({ default: m.ClientsActivity })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
 const IntegrationCallback = React.lazy(() => import('@/components/integrations/IntegrationCallback').then((m) => ({ default: m.IntegrationCallback })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
@@ -128,6 +130,11 @@ const router = createBrowserRouter(
       element: <RouterShell />,
       errorElement: <ErrorBoundary />,
       children: [
+        // Public lead-capture form pages — mounted OUTSIDE the authenticated
+        // AppLayout so they render with no sidebar / no auth guard. Placed
+        // first so they match before any catch-alls.
+        { path: '/forms/:slug', element: <PublicLeadForm /> },
+        { path: '/forms/:slug/embed', element: <PublicLeadForm embed /> },
         { path: '/login', element: <Login /> },
         { path: '/signup', element: <Signup /> },
         { path: '/pricing', element: lazyRoute(<Pricing />) },
@@ -258,6 +265,16 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireOrgAdmin>
                   {lazyAppRoute(<PayrollPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              // Org-wide CRM activity feed. Listed BEFORE `/clients` so the
+              // more specific path matches first.
+              path: '/clients/activity',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<ClientsActivity />)}
                 </ProtectedRoute>
               ),
             },

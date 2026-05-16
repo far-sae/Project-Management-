@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import {
   Building2, X, Mail, Phone, Globe, MapPin, Star, User, Plus,
   FileText, Trash2, Loader2, Paperclip, ExternalLink, MessageSquare,
-  Calendar as CalendarIcon, PhoneCall, Mailbox, Edit,
+  Calendar as CalendarIcon, PhoneCall, Mailbox, Edit, Activity,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,9 +32,11 @@ import {
   isValidEmail,
   uploadClientAttachment,
 } from '@/services/supabase/clients';
+import { ScoreBadge } from '@/components/clients/ScoreBadge';
+import { ActivityTimeline } from './ActivityTimeline';
 import { toast } from 'sonner';
 
-type Tab = 'overview' | 'contacts' | 'activity' | 'files';
+type Tab = 'overview' | 'contacts' | 'activity' | 'files' | 'activity-feed';
 
 interface Props {
   client: Client | null;
@@ -153,6 +155,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               {client.industry && (
                 <Badge variant="outline">{client.industry}</Badge>
               )}
+              <ScoreBadge score={client.score} band={client.scoreBand} />
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
@@ -162,7 +165,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
 
         {/* tabs */}
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="px-4 pt-3">
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="contacts">
               Contacts {contacts.length > 0 && `(${contacts.length})`}
@@ -172,6 +175,10 @@ export const ClientDetailDrawer: React.FC<Props> = ({
             </TabsTrigger>
             <TabsTrigger value="files">
               Files {attachments.length > 0 && `(${attachments.length})`}
+            </TabsTrigger>
+            <TabsTrigger value="activity-feed" className="gap-2">
+              <Activity className="w-4 h-4" />
+              Activity
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -216,6 +223,12 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               canManage={canManage}
               attachments={attachments}
               onChanged={reloadAttachments}
+            />
+          )}
+          {tab === 'activity-feed' && (
+            <ActivityTimeline
+              clientId={client.clientId}
+              emptyHint="No notes, deal moves, tasks, or form submissions yet."
             />
           )}
         </div>

@@ -57,6 +57,8 @@ export interface Deal {
   createdByName?: string | null;
   closedAt?: Date | null;
   closedBy?: string | null;
+  pipelineId: string;
+  stageId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,6 +95,8 @@ export interface UpdateDealInput {
   tags?: string[];
   position?: number;
   lossReason?: string | null;
+  pipelineId?: string;
+  stageId?: string;
 }
 
 const isLocalOrg = (orgId: string) => orgId.startsWith("local-");
@@ -125,6 +129,8 @@ const mapDeal = (row: Record<string, unknown>): Deal => ({
   createdByName: (row.created_by_name as string) ?? null,
   closedAt: row.closed_at ? new Date(row.closed_at as string) : null,
   closedBy: (row.closed_by as string) ?? null,
+  pipelineId: row.pipeline_id as string,
+  stageId: row.stage_id as string,
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
 });
@@ -200,6 +206,8 @@ export const createDeal = async (
       createdByName,
       closedAt: null,
       closedBy: null,
+      pipelineId: "",
+      stageId: "",
       createdAt: now,
       updatedAt: now,
     };
@@ -284,6 +292,8 @@ export const updateDeal = async (
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
       ...(input.position !== undefined ? { position: input.position } : {}),
       ...(input.lossReason !== undefined ? { lossReason: input.lossReason } : {}),
+      ...(input.pipelineId !== undefined ? { pipelineId: input.pipelineId } : {}),
+      ...(input.stageId !== undefined ? { stageId: input.stageId } : {}),
       updatedAt: new Date(),
     };
     all[idx] = merged;
@@ -327,6 +337,8 @@ export const updateDeal = async (
   if (input.lossReason !== undefined) {
     update.loss_reason = input.lossReason;
   }
+  if (input.stageId !== undefined) update.stage_id = input.stageId;
+  if (input.pipelineId !== undefined) update.pipeline_id = input.pipelineId;
 
   const { data, error } = await supabase
     .from("deals")
@@ -336,6 +348,11 @@ export const updateDeal = async (
     .select()
     .single();
   if (error) {
+    const code = (error as { code?: string }).code;
+    const msg = (error as { message?: string }).message ?? "";
+    if (code === "P0001") {
+      throw new Error(msg);  // already human-readable from the trigger
+    }
     logger.error("Failed to update deal:", error);
     throw error;
   }
@@ -447,5 +464,39 @@ export const computeAnalytics = (deals: Deal[]): PipelineAnalytics => {
     averageDealSize:
       wonCount > 0 ? Math.round((wonValueTotal / wonCount) * 100) / 100 : 0,
     winRate: wonCount + lostCount > 0 ? wonCount / (wonCount + lostCount) : 0,
+  };
+};
+
+export interface CloseDealToWonInput {
+  skip?: boolean;
+  name?: string;
+  ownerId?: string;
+  startDate?: string;     // YYYY-MM-DD
+  dueDate?: string;       // YYYY-MM-DD; mapped to projects.end_date by the RPC
+  templateId?: string | null;
+}
+
+export const closeDealToWon = async (
+  dealId: string,
+  input: CloseDealToWonInput,
+): Promise<{ dealId: string; projectId: string | null }> => {
+  const { data, error } = await supabase.rpc("crm_close_deal_to_won", {
+    p_deal_id: dealId,
+    p_project_input: {
+      skip: input.skip ?? false,
+      name: input.name ?? null,
+      owner_id: input.ownerId ?? null,
+      start_date: input.startDate ?? null,
+      due_date: input.dueDate ?? null,
+      template_id: input.templateId ?? null,
+    },
+  });
+  if (error) {
+    logger.error("Failed to close deal to won:", error);
+    throw error;
+  }
+  return {
+    dealId: (data as Record<string, unknown>).deal_id as string,
+    projectId: ((data as Record<string, unknown>).project_id as string) ?? null,
   };
 };

@@ -9,11 +9,13 @@ import {
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   CLIENT_CSV_HEADERS,
   CsvRowError,
-  ImportResult,
   importClientsFromCsv,
+  importClientsOverrideRow,
+  type ImportResult,
 } from '@/services/supabase/clients';
 
 // Sample row uses every column the canonical template ships with so importers
@@ -455,6 +457,45 @@ export const ImportClientsDialog: React.FC<Props> = ({
                       <li>…and {result.errors.length - 8} more</li>
                     )}
                   </ul>
+                </div>
+              )}
+
+              {result.rejectedDuplicates && result.rejectedDuplicates.length > 0 && (
+                <div className="rounded-md border bg-amber-500/10 p-3 space-y-2">
+                  <p className="font-medium text-sm">
+                    Rejected: {result.rejectedDuplicates.length} duplicate(s)
+                  </p>
+                  {result.rejectedDuplicates.map((r) => (
+                    <div key={r.row} className="text-xs flex items-center gap-2">
+                      <span className="flex-1">
+                        Row {r.row}: <strong>{r.input.name}</strong> matches{' '}
+                        <strong>{r.matches[0]?.name}</strong>
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => {
+                          if (!organizationId || !userId || !userName) return;
+                          try {
+                            await importClientsOverrideRow(
+                              organizationId,
+                              userId,
+                              userName,
+                              r.input,
+                              r.matches[0].clientId,
+                            );
+                            toast.success('Overridden');
+                          } catch (err) {
+                            toast.error(
+                              err instanceof Error ? err.message : 'Override failed',
+                            );
+                          }
+                        }}
+                      >
+                        Override and create anyway
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

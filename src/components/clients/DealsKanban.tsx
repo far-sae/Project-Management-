@@ -25,9 +25,11 @@ import {
   DealStage,
   formatDealMoney,
 } from '@/services/supabase/deals';
+import { PipelineStage } from '@/services/supabase/pipelines';
 import { Client } from '@/services/supabase/clients';
 import { toast } from 'sonner';
 import { NewDealDialog } from './NewDealDialog';
+import { DealWonModal } from './DealWonModal';
 import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 interface Props {
@@ -38,6 +40,26 @@ interface Props {
   /** Show every amount converted into this currency. When omitted, each
    *  deal is shown in the currency it was entered in. */
   displayCurrency?: string;
+  /** Optional pipeline scope. When set, the kanban only shows deals in this
+   *  pipeline and drag targets are interpreted against the supplied stages. */
+  pipelineId?: string;
+  /** Stages that drive the column layout. When empty, falls back to the
+   *  legacy hardcoded six-stage list so existing screens keep working before
+   *  the pipelines layer has finished loading. */
+  stages?: PipelineStage[];
+}
+
+/** Internal stage shape used by the column renderer and grouping logic. The
+ *  `id` is the source-of-truth identifier for drag targets — a stage uuid
+ *  when driven by `pipeline_stages`, or the legacy stage key when falling
+ *  back to `DEAL_STAGES`. `key` is the value persisted on `deals.stage`. */
+interface EffectiveStage {
+  id: string;
+  key: string;
+  label: string;
+  color: string;
+  isWon: boolean;
+  isLost: boolean;
 }
 
 const DealCard: React.FC<{
@@ -119,9 +141,9 @@ const DealCard: React.FC<{
 };
 
 const StageColumn: React.FC<{
-  stage: { id: DealStage; label: string; color: string };
+  stage: EffectiveStage;
   deals: Deal[];
-  onAdd: (stage: DealStage) => void;
+  onAdd: (stage: EffectiveStage) => void;
   onSelect?: (d: Deal) => void;
   canCreate: boolean;
   displayCurrency?: string;
@@ -189,7 +211,7 @@ const StageColumn: React.FC<{
             size="sm"
             variant="ghost"
             className="w-full justify-start text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => onAdd(stage.id)}
+            onClick={() => onAdd(stage)}
           >
             <Plus className="w-3.5 h-3.5 mr-1" /> Add deal
           </Button>
@@ -204,26 +226,62 @@ export const DealsKanban: React.FC<Props> = ({
   scopedClientId,
   onSelectDeal,
   displayCurrency,
+  pipelineId,
+  stages,
 }) => {
-  const { dealsByStage, loading, update, canManage } = useDeals();
+  const { dealsByStage, loading, update, canManage } = useDeals(pipelineId);
   const { rates } = useFxRates();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
   const [draggingDeal, setDraggingDeal] = useState<Deal | null>(null);
   const [showNew, setShowNew] = useState<{ stage: DealStage } | null>(null);
+  // Won-stage drop intercept. Set by handleDragEnd when the target stage has
+  // `isWon`; Task 11 will mount <DealWonModal/> against this state. For now we
+  // surface a placeholder toast and clear it so the user still gets feedback.
+  const [pendingWonStage, setPendingWonStage] = useState<{
+    deal: Deal;
+    stageId: string;
+    label: string;
+  } | null>(null);
 
-  const filtered = useMemo(() => {
-    if (!scopedClientId) return dealsByStage;
-    const out = new Map<DealStage, Deal[]>();
-    dealsByStage.forEach((list, stage) => {
-      out.set(
-        stage,
-        list.filter((d) => d.clientId === scopedClientId),
-      );
-    });
-    return out;
-  }, [dealsByStage, scopedClientId]);
+  const effectiveStages = useMemo<EffectiveStage[]>(() => {
+    if (stages && stages.length > 0) {
+      return stages.map((s) => ({
+        id: s.stageId,
+        key: s.key,
+        label: s.label,
+        color: s.color,
+        isWon: s.isWon,
+        isLost: s.isLost,
+      }));
+    }
+    return DEAL_STAGES.map((s) => ({
+      id: s.id, // legacy: id === key, so drag-end can resolve either way
+      key: s.id,
+      label: s.label,
+      color: s.color,
+      isWon: s.id === 'won',
+      isLost: s.id === 'lost',
+    }));
+  }, [stages]);
+
+  // Build a key-indexed map of deals so column rendering can look up each
+  // stage's list in O(1). We re-key from the per-deal `stage` text (the
+  // denormalized convenience column) to stay independent of how `useDeals`
+  // currently groups.
+  const dealsByKey = useMemo(() => {
+    const map = new Map<string, Deal[]>();
+    for (const stage of effectiveStages) map.set(stage.key, []);
+    for (const list of dealsByStage.values()) {
+      for (const d of list) {
+        if (scopedClientId && d.clientId !== scopedClientId) continue;
+        const key = d.stage;
+        if (map.has(key)) map.get(key)!.push(d);
+      }
+    }
+    return map;
+  }, [dealsByStage, effectiveStages, scopedClientId]);
 
   const handleDragStart = (e: DragStartEvent) => {
     const deal = e.active?.data?.current?.deal as Deal | undefined;
@@ -239,15 +297,25 @@ export const DealsKanban: React.FC<Props> = ({
     const overId = e.over?.id?.toString();
     const deal = e.active?.data?.current?.deal as Deal | undefined;
     if (!overId || !deal) return;
-    const targetStage = overId.startsWith('stage:')
-      ? (overId.replace('stage:', '') as DealStage)
+    const targetStageRecord = overId.startsWith('stage:')
+      ? effectiveStages.find((s) => s.id === overId.slice('stage:'.length))
       : null;
-    if (!targetStage || targetStage === deal.stage) return;
+    if (!targetStageRecord || targetStageRecord.key === deal.stage) return;
+
+    // Won stages are intercepted — they need the project-creation handoff in
+    // Task 11 rather than a plain stage update.
+    if (targetStageRecord.isWon) {
+      setPendingWonStage({
+        deal,
+        stageId: targetStageRecord.id,
+        label: targetStageRecord.label,
+      });
+      return;
+    }
+
     try {
-      await update(deal.dealId, { stage: targetStage });
-      const stageLabel =
-        DEAL_STAGES.find((s) => s.id === targetStage)?.label ?? targetStage;
-      toast.success(`Moved "${deal.title}" to ${stageLabel}`);
+      await update(deal.dealId, { stageId: targetStageRecord.id });
+      toast.success(`Moved "${deal.title}" to ${targetStageRecord.label}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not move deal');
     }
@@ -261,7 +329,7 @@ export const DealsKanban: React.FC<Props> = ({
     );
   }
 
-  const totalCount = Array.from(filtered.values()).reduce(
+  const totalCount = Array.from(dealsByKey.values()).reduce(
     (n, l) => n + l.length,
     0,
   );
@@ -285,12 +353,16 @@ export const DealsKanban: React.FC<Props> = ({
         onDragEnd={handleDragEnd}
       >
         <div className="flex gap-3 overflow-x-auto pb-3">
-          {DEAL_STAGES.map((stage) => (
+          {effectiveStages.map((stage) => (
             <StageColumn
               key={stage.id}
               stage={stage}
-              deals={filtered.get(stage.id) ?? []}
-              onAdd={(s) => setShowNew({ stage: s })}
+              deals={dealsByKey.get(stage.key) ?? []}
+              // NewDealDialog still expects the legacy DealStage union. The
+              // mapping is safe in the fallback path (id === key) and in the
+              // pipeline path the column key is the persisted stage text the
+              // dialog will write to `deals.stage` via the sync trigger.
+              onAdd={(s) => setShowNew({ stage: s.key as DealStage })}
               onSelect={onSelectDeal}
               canCreate={canManage}
               displayCurrency={displayCurrency}
@@ -318,6 +390,31 @@ export const DealsKanban: React.FC<Props> = ({
           defaultStage={showNew.stage}
           defaultClientId={scopedClientId ?? null}
           clients={clients}
+        />
+      )}
+
+      {pendingWonStage && (
+        <DealWonModal
+          deal={pendingWonStage.deal}
+          targetStage={
+            (stages && stages.find((s) => s.stageId === pendingWonStage.stageId)) ||
+            // Fallback shape for the legacy mode where no stages prop is passed.
+            ({
+              stageId: pendingWonStage.stageId,
+              key: 'won',
+              label: pendingWonStage.label,
+              isWon: true,
+              isLost: false,
+              defaultProbability: 100,
+              position: 99,
+              color: '#10B981',
+              pipelineId: '',
+              organizationId: '',
+              requiredFields: [],
+              createdAt: new Date(),
+            } as PipelineStage)
+          }
+          onClose={() => setPendingWonStage(null)}
         />
       )}
     </>
