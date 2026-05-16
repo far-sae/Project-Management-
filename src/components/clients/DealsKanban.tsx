@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -29,6 +29,7 @@ import { PipelineStage } from '@/services/supabase/pipelines';
 import { Client } from '@/services/supabase/clients';
 import { toast } from 'sonner';
 import { NewDealDialog } from './NewDealDialog';
+import { DealWonModal } from './DealWonModal';
 import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 interface Props {
@@ -320,18 +321,6 @@ export const DealsKanban: React.FC<Props> = ({
     }
   };
 
-  // Temporary placeholder for Task 11. When a deal is dropped into a Won
-  // stage we set `pendingWonStage`; the modal will mount here in the next
-  // commit. Until then, surface a toast and clear so the user still sees
-  // feedback rather than a silent drop.
-  useEffect(() => {
-    if (!pendingWonStage) return;
-    toast.info(
-      `"${pendingWonStage.deal.title}" reached ${pendingWonStage.label} — won-handoff modal lands next commit.`,
-    );
-    setPendingWonStage(null);
-  }, [pendingWonStage]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -401,6 +390,31 @@ export const DealsKanban: React.FC<Props> = ({
           defaultStage={showNew.stage}
           defaultClientId={scopedClientId ?? null}
           clients={clients}
+        />
+      )}
+
+      {pendingWonStage && (
+        <DealWonModal
+          deal={pendingWonStage.deal}
+          targetStage={
+            (stages && stages.find((s) => s.stageId === pendingWonStage.stageId)) ||
+            // Fallback shape for the legacy mode where no stages prop is passed.
+            ({
+              stageId: pendingWonStage.stageId,
+              key: 'won',
+              label: pendingWonStage.label,
+              isWon: true,
+              isLost: false,
+              defaultProbability: 100,
+              position: 99,
+              color: '#10B981',
+              pipelineId: '',
+              organizationId: '',
+              requiredFields: [],
+              createdAt: new Date(),
+            } as PipelineStage)
+          }
+          onClose={() => setPendingWonStage(null)}
         />
       )}
     </>
