@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
-  Filter, Star, Trash2, MoreVertical,
+  Filter, Star, Trash2, MoreVertical, TrendingUp,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GitBranch, ListTodo } from 'lucide-react';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { ClientTasksList } from '@/components/clients/ClientTasksList';
+import { ForecastTab } from '@/components/clients/ForecastTab';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
 import { PipelineSelector } from '@/components/clients/PipelineSelector';
 import { useClients } from '@/hooks/useClients';
@@ -246,6 +247,9 @@ export const Clients: React.FC = () => {
               <TabsTrigger value="tasks">
                 <ListTodo className="w-4 h-4 mr-1.5" /> Tasks
               </TabsTrigger>
+              <TabsTrigger value="forecast">
+                <TrendingUp className="w-4 h-4 mr-1.5" /> Forecast
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="accounts" className="mt-4 space-y-6">
@@ -450,6 +454,10 @@ export const Clients: React.FC = () => {
 
             <TabsContent value="tasks" className="mt-4">
               <ClientTasksList clients={clients} />
+            </TabsContent>
+
+            <TabsContent value="forecast" className="mt-4">
+              <ForecastTab displayCurrency={effectivePipelineCurrency} />
             </TabsContent>
           </Tabs>
         </div>
