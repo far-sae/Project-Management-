@@ -372,3 +372,19 @@ drop trigger if exists automation_enqueue_form_submission_t on public.form_submi
 create trigger automation_enqueue_form_submission_t
   after insert on public.form_submissions
   for each row execute function public.automation_enqueue_form_submission();
+
+-- Wrappers so supabase-js can call advisory locks via .rpc().
+create or replace function public.pg_try_advisory_lock(key bigint)
+returns boolean language sql security definer
+set search_path = pg_catalog as $$
+  select pg_catalog.pg_try_advisory_lock(key);
+$$;
+
+create or replace function public.pg_advisory_unlock(key bigint)
+returns boolean language sql security definer
+set search_path = pg_catalog as $$
+  select pg_catalog.pg_advisory_unlock(key);
+$$;
+
+grant execute on function public.pg_try_advisory_lock(bigint) to service_role;
+grant execute on function public.pg_advisory_unlock(bigint) to service_role;
