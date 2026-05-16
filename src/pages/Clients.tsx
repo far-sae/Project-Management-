@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
   Filter, Star, Trash2, MoreVertical, TrendingUp,
@@ -220,6 +221,9 @@ export const Clients: React.FC = () => {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" asChild>
+                <Link to="/clients/activity">Recent activity</Link>
+              </Button>
               <Button variant="outline" onClick={exportAll}>
                 <Download className="w-4 h-4 mr-2" /> Export CSV
               </Button>
