@@ -417,6 +417,20 @@ export const createClient = async (
     .single();
 
   if (error) {
+    const code = (error as { code?: string }).code;
+    const msg = String((error as { message?: string }).message ?? "");
+    if (code === "23505") {
+      if (msg.includes("ux_clients_email_per_org")) {
+        throw new Error(
+          "A client with this email already exists. Use Override duplicate to proceed.",
+        );
+      }
+      if (msg.includes("ux_clients_name_country_per_org")) {
+        throw new Error(
+          "A client with this name and country already exists. Use Override duplicate to proceed.",
+        );
+      }
+    }
     logger.error("Failed to create client:", error);
     throw error;
   }
@@ -512,6 +526,24 @@ export const updateClient = async (
     .single();
 
   if (error) {
+    // Update can also hit the duplicate unique indexes (e.g. moving an email
+    // to one that collides with another client in the org). Translate the
+    // 23505 message the same way the create path does so the dialog can
+    // surface the override flow consistently.
+    const code = (error as { code?: string }).code;
+    const msg = String((error as { message?: string }).message ?? "");
+    if (code === "23505") {
+      if (msg.includes("ux_clients_email_per_org")) {
+        throw new Error(
+          "A client with this email already exists. Use Override duplicate to proceed.",
+        );
+      }
+      if (msg.includes("ux_clients_name_country_per_org")) {
+        throw new Error(
+          "A client with this name and country already exists. Use Override duplicate to proceed.",
+        );
+      }
+    }
     logger.error("Failed to update client:", error);
     throw error;
   }

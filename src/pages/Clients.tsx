@@ -447,6 +447,7 @@ export const Clients: React.FC = () => {
         open={openCreate}
         onOpenChange={setOpenCreate}
         onSubmit={handleCreate}
+        organizationId={organizationId}
       />
       {/* Edit */}
       <ClientFormDialog
@@ -454,6 +455,7 @@ export const Clients: React.FC = () => {
         onOpenChange={(o) => { if (!o) setEditing(null); }}
         client={editing}
         onSubmit={handleUpdate}
+        organizationId={organizationId}
       />
       {/* Import */}
       <ImportClientsDialog

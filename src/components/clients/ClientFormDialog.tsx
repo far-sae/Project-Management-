@@ -15,6 +15,8 @@ import {
   Client, ClientStatus, ClientType,
   CreateClientInput, isValidEmail, isValidWebsite,
 } from '@/services/supabase/clients';
+import { findDuplicates, DuplicateMatch } from '@/services/supabase/dupDetection';
+import { DuplicateBanner } from './DuplicateBanner';
 
 const TYPES: { value: ClientType; label: string }[] = [
   { value: 'customer', label: 'Customer' },
@@ -104,21 +106,66 @@ interface Props {
   /** When provided we're editing; otherwise we're creating. */
   client?: Client | null;
   onSubmit: (input: CreateClientInput) => Promise<void>;
+  /**
+   * Organization scope used for live duplicate detection. Optional so the
+   * dialog still renders if a parent forgets to pass it; the banner is a
+   * defence-in-depth layer — server-side unique indexes still hard-block.
+   */
+  organizationId?: string | null;
 }
 
 export const ClientFormDialog: React.FC<Props> = ({
-  open, onOpenChange, client, onSubmit,
+  open, onOpenChange, client, onSubmit, organizationId,
 }) => {
   const [form, setForm] = useState<FormState>(blank);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [matches, setMatches] = useState<DuplicateMatch[]>([]);
+  const [override, setOverride] = useState(false);
 
   useEffect(() => {
     if (open) {
       setForm(client ? fromClient(client) : blank);
       setError(null);
+      setMatches([]);
+      setOverride(false);
     }
   }, [open, client]);
+
+  // Debounced live duplicate scan. 250ms is long enough that we don't fire on
+  // every keystroke but short enough the banner appears before the user
+  // tabs to submit. Skip when editing the same client to avoid the row
+  // matching itself.
+  useEffect(() => {
+    if (!open || !organizationId || !form.name?.trim()) {
+      setMatches([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const m = await findDuplicates(organizationId, {
+          name: form.name,
+          email: form.email,
+          country: form.country,
+        });
+        // Exclude the row being edited from its own duplicate list.
+        const filtered = client
+          ? m.filter((x) => x.clientId !== client.clientId)
+          : m;
+        setMatches(filtered);
+      } catch {
+        // Silent — dup detection is advisory; server still enforces.
+        setMatches([]);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [open, organizationId, form.name, form.email, form.country, client]);
+
+  // Clear override once the user fixes the conflict so a previously-set
+  // override flag doesn't silently apply to a now-clean payload.
+  useEffect(() => {
+    if (matches.length === 0) setOverride(false);
+  }, [matches]);
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }));
@@ -153,10 +200,24 @@ export const ClientFormDialog: React.FC<Props> = ({
       }
     }
 
-    const tags = form.tags
+    // Banner is showing and user hasn't explicitly overridden — block.
+    // The server-side unique index is the real guard; this just spares
+    // the round-trip and keeps the UX in sync with what the DB will do.
+    if (matches.length > 0 && !override) {
+      setError('Possible duplicate — review the banner above or override to proceed.');
+      return;
+    }
+
+    const baseTags = form.tags
       .split(/[,;|]/)
       .map((t) => t.trim())
       .filter(Boolean);
+    // When overriding, append the `dup_override` tag so the partial unique
+    // index lets the row through. Dedupe via Set in case it was typed in
+    // manually by an admin.
+    const tags = override
+      ? Array.from(new Set([...baseTags, 'dup_override']))
+      : baseTags;
 
     const payload: CreateClientInput = {
       name,
@@ -184,6 +245,11 @@ export const ClientFormDialog: React.FC<Props> = ({
     setError(null);
     try {
       await onSubmit(payload);
+      // TODO: recordOverride should be called once we know the created
+      // client's id. `onSubmit` returns void today; the audit row is a
+      // nice-to-have on top of the server-enforced unique index, so we
+      // skip it from the dialog. Wire this once the parent surfaces the
+      // created Client back.
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save client');
@@ -392,6 +458,18 @@ export const ClientFormDialog: React.FC<Props> = ({
           {error && (
             <p className="text-sm text-destructive">{error}</p>
           )}
+
+          <DuplicateBanner
+            matches={matches}
+            onOpenExisting={(id) => {
+              // Close this dialog and let the parent (Clients page) open the
+              // existing client via the custom event. Decoupling via event
+              // keeps the dialog ignorant of routing/state shape.
+              onOpenChange(false);
+              window.dispatchEvent(new CustomEvent('open-client', { detail: id }));
+            }}
+            onOverride={() => setOverride(true)}
+          />
 
           <DialogFooter className="gap-2">
             <Button
