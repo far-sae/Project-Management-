@@ -11,6 +11,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Login } from '@/pages/auth/Login';
 import { Signup } from '@/pages/auth/Signup';
 import LandingPage from '@/pages/landing/LandingPage';
+import { PublicLeadForm } from '@/pages/PublicLeadForm';
 
 // Lazy — every authenticated/heavy page is fetched on demand. This shrinks the initial JS
 // bundle from "everything" to "shell + landing/auth", which is the single biggest perf win
@@ -128,6 +129,11 @@ const router = createBrowserRouter(
       element: <RouterShell />,
       errorElement: <ErrorBoundary />,
       children: [
+        // Public lead-capture form pages — mounted OUTSIDE the authenticated
+        // AppLayout so they render with no sidebar / no auth guard. Placed
+        // first so they match before any catch-alls.
+        { path: '/forms/:slug', element: <PublicLeadForm /> },
+        { path: '/forms/:slug/embed', element: <PublicLeadForm embed /> },
         { path: '/login', element: <Login /> },
         { path: '/signup', element: <Signup /> },
         { path: '/pricing', element: lazyRoute(<Pricing />) },
