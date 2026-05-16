@@ -38,6 +38,7 @@ import {
   Plug,
   GitBranch,
   Target,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
@@ -45,6 +46,7 @@ import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { CapacitySettings } from "@/components/settings/CapacitySettings";
 import { PipelinesSettingsTab } from "@/components/settings/PipelinesSettingsTab";
 import { LeadScoringSettingsTab } from "@/components/settings/LeadScoringSettingsTab";
+import { LeadFormsSettingsTab } from "@/components/settings/LeadFormsSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
 import { useOrganization } from "@/context/OrganizationContext";
 import { Building2 } from "lucide-react";
@@ -514,6 +516,10 @@ export const Settings: React.FC = () => {
               <Target className="w-4 h-4" />
               Lead scoring
             </TabsTrigger>
+            <TabsTrigger value="lead-forms" className="gap-2">
+              <ClipboardList className="w-4 h-4" />
+              Lead forms
+            </TabsTrigger>
             {canManageSettings && (
               <TabsTrigger value="organization" className="gap-2">
                 <Building2 className="w-4 h-4" />
@@ -545,6 +551,11 @@ export const Settings: React.FC = () => {
           {/* LEAD SCORING TAB */}
           <TabsContent value="lead-scoring">
             <LeadScoringSettingsTab />
+          </TabsContent>
+
+          {/* LEAD FORMS TAB */}
+          <TabsContent value="lead-forms">
+            <LeadFormsSettingsTab />
           </TabsContent>
 
           {/* ORGANIZATION TAB — owner/admin only */}
