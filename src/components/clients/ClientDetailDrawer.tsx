@@ -32,6 +32,7 @@ import {
   isValidEmail,
   uploadClientAttachment,
 } from '@/services/supabase/clients';
+import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { toast } from 'sonner';
 
 type Tab = 'overview' | 'contacts' | 'activity' | 'files';
@@ -153,6 +154,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               {client.industry && (
                 <Badge variant="outline">{client.industry}</Badge>
               )}
+              <ScoreBadge score={client.score} band={client.scoreBand} />
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">

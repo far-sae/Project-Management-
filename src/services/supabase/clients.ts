@@ -40,6 +40,8 @@ export interface Client {
   createdByName?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  score: number;
+  scoreBand: "hot" | "warm" | "cold";
 }
 
 export interface ClientContact {
@@ -237,6 +239,8 @@ const mapClient = (row: Record<string, unknown>): Client => ({
   createdByName: (row.created_by_name as string) ?? null,
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
+  score: Number(row.score ?? 0),
+  scoreBand: ((row.score_band as string) || "cold") as Client["scoreBand"],
 });
 
 const mapContact = (row: Record<string, unknown>): ClientContact => ({
@@ -376,6 +380,8 @@ export const createClient = async (
       createdByName: userName,
       createdAt: now,
       updatedAt: now,
+      score: 0,
+      scoreBand: "cold",
     };
     const all = readLocal<Client>(STORE.clients(organizationId), reviveClient);
     writeLocal(STORE.clients(organizationId), [client, ...all]);

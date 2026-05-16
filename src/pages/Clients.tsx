@@ -29,6 +29,7 @@ import {
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
+import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { COMMON_CURRENCIES } from '@/lib/countries';
@@ -94,6 +95,7 @@ export const Clients: React.FC = () => {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
+  const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
 
   // Pipeline display currency. Persists per-browser so reps don't have to
   // re-pick on every visit. Defaults to whatever the org is set to.
@@ -141,6 +143,7 @@ export const Clients: React.FC = () => {
     return clients.filter((c) => {
       if (typeFilter !== 'all' && c.type !== typeFilter) return false;
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+      if (bandFilter !== "all" && c.scoreBand !== bandFilter) return false;
       if (!q) return true;
       const haystack = [
         c.name, c.legalName, c.industry, c.email, c.phone,
@@ -151,7 +154,7 @@ export const Clients: React.FC = () => {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [clients, search, typeFilter, statusFilter]);
+  }, [clients, search, typeFilter, statusFilter, bandFilter]);
 
   const handleCreate = async (input: CreateClientInput) => {
     try {
@@ -280,6 +283,15 @@ export const Clients: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={bandFilter} onValueChange={(v) => setBandFilter(v as any)}>
+                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All scores</SelectItem>
+                  <SelectItem value="hot">Hot</SelectItem>
+                  <SelectItem value="warm">Warm</SelectItem>
+                  <SelectItem value="cold">Cold</SelectItem>
+                </SelectContent>
+              </Select>
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
                 <Filter className="w-3 h-3" />
                 {filtered.length} of {clients.length}
@@ -346,6 +358,7 @@ export const Clients: React.FC = () => {
                     {c.country && (
                       <span className="text-xs text-muted-foreground">{c.country}</span>
                     )}
+                    <ScoreBadge score={c.score} band={c.scoreBand} />
                   </div>
 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
