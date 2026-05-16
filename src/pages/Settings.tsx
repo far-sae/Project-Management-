@@ -36,11 +36,13 @@ import {
   Palette,
   Activity,
   Plug,
+  GitBranch,
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { CapacitySettings } from "@/components/settings/CapacitySettings";
+import { PipelinesSettingsTab } from "@/components/settings/PipelinesSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
 import { useOrganization } from "@/context/OrganizationContext";
 import { Building2 } from "lucide-react";
@@ -502,6 +504,10 @@ export const Settings: React.FC = () => {
               <Plug className="w-4 h-4" />
               Integrations
             </TabsTrigger>
+            <TabsTrigger value="pipelines" className="gap-2">
+              <GitBranch className="w-4 h-4" />
+              Pipelines
+            </TabsTrigger>
             {canManageSettings && (
               <TabsTrigger value="organization" className="gap-2">
                 <Building2 className="w-4 h-4" />
@@ -523,6 +529,11 @@ export const Settings: React.FC = () => {
           {/* INTEGRATIONS TAB */}
           <TabsContent value="integrations">
             <IntegrationsTab />
+          </TabsContent>
+
+          {/* PIPELINES TAB */}
+          <TabsContent value="pipelines">
+            <PipelinesSettingsTab />
           </TabsContent>
 
           {/* ORGANIZATION TAB — owner/admin only */}
