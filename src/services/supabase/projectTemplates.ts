@@ -30,7 +30,7 @@ export const getOrganizationTemplates = async (
   organizationId: string,
 ): Promise<ProjectTemplate[]> => {
   const { data, error } = await supabase
-    .from("project_templates")
+    .from("crm_project_templates")
     .select("*")
     .eq("organization_id", organizationId)
     .order("name", { ascending: true });
