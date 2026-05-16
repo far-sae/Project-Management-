@@ -41,10 +41,10 @@ create or replace view public.crm_activity_v as
     null::uuid,
     t.created_by,
     t.created_by_name,
-    case when t.done then 'completed' else 'created' end,
+    case when t.status = 'done' then 'completed' else 'created' end,
     t.title,
     null,
-    coalesce(t.completed_at, t.created_at)
+    coalesce(t.done_at, t.created_at)
   from public.client_tasks t
 
   union all
