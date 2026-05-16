@@ -163,3 +163,65 @@ create policy "project_templates read for org members"
 -- Writes gated by canManageSettings — enforced application-side in services
 -- (mirrors the existing pattern on organizations.settings); no DB write policy
 -- means inserts/updates go through SECURITY DEFINER service functions only.
+
+create or replace function public.crm_replace_pipeline_stages(
+  p_pipeline_id uuid,
+  p_organization_id uuid,
+  p_stages jsonb
+) returns setof public.pipeline_stages
+language plpgsql security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_keys text[];
+  v_stage jsonb;
+begin
+  if not public.is_org_admin(p_organization_id) then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+
+  select array_agg(s ->> 'key') into v_keys from jsonb_array_elements(p_stages) s;
+
+  delete from public.pipeline_stages
+  where pipeline_id = p_pipeline_id
+    and (v_keys is null or not (key = any(v_keys)));
+
+  for v_stage in select * from jsonb_array_elements(p_stages) loop
+    insert into public.pipeline_stages (
+      stage_id, pipeline_id, organization_id, key, label, color, position,
+      default_probability, is_won, is_lost, required_fields
+    )
+    values (
+      coalesce(nullif(v_stage ->> 'stage_id','')::uuid, gen_random_uuid()),
+      p_pipeline_id,
+      p_organization_id,
+      v_stage ->> 'key',
+      v_stage ->> 'label',
+      coalesce(v_stage ->> 'color', '#94A3B8'),
+      (v_stage ->> 'position')::int,
+      coalesce((v_stage ->> 'default_probability')::int, 10),
+      coalesce((v_stage ->> 'is_won')::boolean, false),
+      coalesce((v_stage ->> 'is_lost')::boolean, false),
+      coalesce(
+        array(select jsonb_array_elements_text(v_stage -> 'required_fields')),
+        '{}'::text[]
+      )
+    )
+    on conflict (pipeline_id, key) do update set
+      label = excluded.label,
+      color = excluded.color,
+      position = excluded.position,
+      default_probability = excluded.default_probability,
+      is_won = excluded.is_won,
+      is_lost = excluded.is_lost,
+      required_fields = excluded.required_fields;
+  end loop;
+
+  return query
+    select * from public.pipeline_stages
+    where pipeline_id = p_pipeline_id
+    order by position;
+end;
+$$;
+
+grant execute on function public.crm_replace_pipeline_stages(uuid, uuid, jsonb) to authenticated;
