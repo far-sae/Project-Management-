@@ -7,13 +7,11 @@ export const enqueueCronEvents = async (admin: any): Promise<void> => {
 };
 
 const enqueueTaskOverdue = async (admin: any): Promise<void> => {
-  const today = new Date().toISOString().slice(0, 10);
-
   // Find newly-overdue tasks for which we haven't already enqueued an event in 24h.
   const { data: tasks } = await admin
     .from("client_tasks")
-    .select("task_id, organization_id, client_id, title, due_date")
-    .lt("due_date", today)
+    .select("task_id, organization_id, client_id, title, due_at")
+    .lt("due_at", new Date().toISOString())
     .neq("status", "done")
     .limit(500);
 
@@ -31,7 +29,7 @@ const enqueueTaskOverdue = async (admin: any): Promise<void> => {
     await admin.from("automation_events").insert({
       organization_id: t.organization_id,
       event_type: "task_overdue",
-      payload: { task_id: t.task_id, client_id: t.client_id, title: t.title, due_date: t.due_date },
+      payload: { task_id: t.task_id, client_id: t.client_id, title: t.title, due_at: t.due_at },
       source_table: "client_tasks",
       source_id: t.task_id,
     });

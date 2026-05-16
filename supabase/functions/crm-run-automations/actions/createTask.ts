@@ -57,7 +57,7 @@ export const createTask: ActionHandler = async (ctx, config) => {
       client_id: clientId ?? null,
       title,
       status: "pending",
-      due_date: due.toISOString().slice(0, 10),
+      due_at: due.toISOString(),
       assigned_to: assigneeId,
       created_by: assigneeId,
       created_by_name: `Automation: ${ctx.recipeName}`,
