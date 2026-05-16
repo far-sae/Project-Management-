@@ -200,3 +200,175 @@ create policy "automation_runs read for org members"
 -- automation_events: service role only, no public access. RLS enabled with no
 -- policies means PostgREST consumers see nothing.
 alter table public.automation_events enable row level security;
+
+-- ===========================================================================
+-- DB triggers that enqueue automation_events. These all use AFTER triggers
+-- so they see the committed row. Each function inserts 0..N events depending
+-- on what changed.
+-- ===========================================================================
+
+-- Deal update: emits deal_stage_entered and/or deal_field_changed.
+create or replace function public.automation_enqueue_deal_update()
+returns trigger language plpgsql as $$
+declare
+  v_payload jsonb;
+  v_changed jsonb := '[]'::jsonb;
+begin
+  if new.stage_id is distinct from old.stage_id then
+    insert into public.automation_events (organization_id, event_type, payload, source_table, source_id)
+    values (
+      new.organization_id, 'deal_stage_entered',
+      jsonb_build_object(
+        'deal_id', new.deal_id,
+        'client_id', new.client_id,
+        'stage_id', new.stage_id,
+        'prev_stage_id', old.stage_id,
+        'pipeline_id', new.pipeline_id,
+        'value', new.value,
+        'currency', new.currency,
+        'owner_id', new.owner_id,
+        'title', new.title
+      ),
+      'deals', new.deal_id
+    );
+  end if;
+
+  if new.value is distinct from old.value then
+    v_changed := v_changed || jsonb_build_array('value');
+  end if;
+  if new.owner_id is distinct from old.owner_id then
+    v_changed := v_changed || jsonb_build_array('owner_id');
+  end if;
+  if new.expected_close_date is distinct from old.expected_close_date then
+    v_changed := v_changed || jsonb_build_array('expected_close_date');
+  end if;
+  if new.probability is distinct from old.probability then
+    v_changed := v_changed || jsonb_build_array('probability');
+  end if;
+
+  if jsonb_array_length(v_changed) > 0 then
+    insert into public.automation_events (organization_id, event_type, payload, source_table, source_id)
+    values (
+      new.organization_id, 'deal_field_changed',
+      jsonb_build_object(
+        'deal_id', new.deal_id,
+        'client_id', new.client_id,
+        'changed_fields', v_changed,
+        'new_values', jsonb_build_object(
+          'value', new.value,
+          'owner_id', new.owner_id,
+          'expected_close_date', new.expected_close_date,
+          'probability', new.probability,
+          'currency', new.currency
+        ),
+        'old_values', jsonb_build_object(
+          'value', old.value,
+          'owner_id', old.owner_id,
+          'expected_close_date', old.expected_close_date,
+          'probability', old.probability,
+          'currency', old.currency
+        )
+      ),
+      'deals', new.deal_id
+    );
+  end if;
+
+  return null;
+end;
+$$;
+
+drop trigger if exists automation_enqueue_deal_update_t on public.deals;
+create trigger automation_enqueue_deal_update_t
+  after update on public.deals
+  for each row execute function public.automation_enqueue_deal_update();
+
+-- Client insert: emits client_created.
+create or replace function public.automation_enqueue_client_insert()
+returns trigger language plpgsql as $$
+begin
+  insert into public.automation_events (organization_id, event_type, payload, source_table, source_id)
+  values (
+    new.organization_id, 'client_created',
+    jsonb_build_object('client_id', new.client_id, 'name', new.name, 'type', new.type, 'source', new.source),
+    'clients', new.client_id
+  );
+  return null;
+end;
+$$;
+
+drop trigger if exists automation_enqueue_client_insert_t on public.clients;
+create trigger automation_enqueue_client_insert_t
+  after insert on public.clients
+  for each row execute function public.automation_enqueue_client_insert();
+
+-- Client update: emits deal_score_band_changed and/or client_tagged (one event per new tag).
+create or replace function public.automation_enqueue_client_update()
+returns trigger language plpgsql as $$
+declare
+  v_added text[];
+  t text;
+begin
+  if new.score_band is distinct from old.score_band then
+    insert into public.automation_events (organization_id, event_type, payload, source_table, source_id)
+    values (
+      new.organization_id, 'deal_score_band_changed',
+      jsonb_build_object(
+        'client_id', new.client_id,
+        'new_band', new.score_band,
+        'prev_band', old.score_band,
+        'score', new.score
+      ),
+      'clients', new.client_id
+    );
+  end if;
+
+  v_added := array(
+    select unnest(coalesce(new.tags, '{}'::text[]))
+    except
+    select unnest(coalesce(old.tags, '{}'::text[]))
+  );
+
+  foreach t in array v_added loop
+    insert into public.automation_events (organization_id, event_type, payload, source_table, source_id)
+    values (
+      new.organization_id, 'client_tagged',
+      jsonb_build_object('client_id', new.client_id, 'tag', t),
+      'clients', new.client_id
+    );
+  end loop;
+
+  return null;
+end;
+$$;
+
+drop trigger if exists automation_enqueue_client_update_t on public.clients;
+create trigger automation_enqueue_client_update_t
+  after update on public.clients
+  for each row execute function public.automation_enqueue_client_update();
+
+-- Form submission insert: emits form_submitted (only for non-rejected non-honeypot rows).
+create or replace function public.automation_enqueue_form_submission()
+returns trigger language plpgsql as $$
+begin
+  if new.rejected_reason is null and not coalesce(new.honeypot_tripped, false) then
+    insert into public.automation_events (organization_id, event_type, payload, source_table, source_id)
+    values (
+      new.organization_id, 'form_submitted',
+      jsonb_build_object(
+        'submission_id', new.submission_id,
+        'form_id', new.form_id,
+        'form_slug', new.form_slug,
+        'client_id', new.client_id,
+        'deal_id', new.deal_id
+      ),
+      'form_submissions', new.submission_id
+    );
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists automation_enqueue_form_submission_t on public.form_submissions;
+create trigger automation_enqueue_form_submission_t
+  after insert on public.form_submissions
+  for each row execute function public.automation_enqueue_form_submission();
