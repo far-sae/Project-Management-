@@ -41,10 +41,12 @@ const Stat: React.FC<{
 
 /** Strip of KPI cards summarizing the sales pipeline. Sits at the top of the
  *  Pipeline tab so reps see the high-level numbers without leaving the page. */
-export const PipelineAnalyticsCard: React.FC<{ currency?: string }> = ({
-  currency,
-}) => {
-  const { deals } = useDeals();
+export const PipelineAnalyticsCard: React.FC<{
+  currency?: string;
+  /** When set, restricts the analytics to a single pipeline. */
+  pipelineId?: string;
+}> = ({ currency, pipelineId }) => {
+  const { deals } = useDeals(pipelineId);
   const { rates } = useFxRates();
 
   // Pick the most-used currency in the pipeline if not overridden, so totals

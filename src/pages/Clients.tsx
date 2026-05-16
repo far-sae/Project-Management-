@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
   Filter, Star, Trash2, MoreVertical,
@@ -19,7 +19,9 @@ import { GitBranch, ListTodo } from 'lucide-react';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { ClientTasksList } from '@/components/clients/ClientTasksList';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
+import { PipelineSelector } from '@/components/clients/PipelineSelector';
 import { useClients } from '@/hooks/useClients';
+import { usePipelines } from '@/hooks/usePipelines';
 import {
   Client, ClientStatus, ClientType,
   CreateClientInput, exportClientsToCsv, formatRevenue,
@@ -81,6 +83,13 @@ export const Clients: React.FC = () => {
   const {
     organizationId, clients, loading, create, update, remove, canManage,
   } = useClients();
+  const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
+  useEffect(() => {
+    if (!selectedPipelineId && defaultPipeline) {
+      setSelectedPipelineId(defaultPipeline.pipelineId);
+    }
+  }, [defaultPipeline, selectedPipelineId]);
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
@@ -377,6 +386,11 @@ export const Clients: React.FC = () => {
             <TabsContent value="pipeline" className="mt-4 space-y-4">
               <Card>
                 <CardContent className="pt-4 flex flex-wrap items-center gap-3">
+                  <PipelineSelector
+                    pipelines={pipelines}
+                    value={selectedPipelineId}
+                    onChange={setSelectedPipelineId}
+                  />
                   <div className="flex items-center gap-2">
                     <Coins className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-medium">Display currency</span>
@@ -405,10 +419,19 @@ export const Clients: React.FC = () => {
                   </span>
                 </CardContent>
               </Card>
-              <PipelineAnalyticsCard currency={effectivePipelineCurrency} />
+              <PipelineAnalyticsCard
+                currency={effectivePipelineCurrency}
+                pipelineId={selectedPipelineId || undefined}
+              />
               <DealsKanban
                 clients={clients}
                 displayCurrency={effectivePipelineCurrency}
+                pipelineId={selectedPipelineId || undefined}
+                stages={
+                  selectedPipelineId
+                    ? stagesByPipeline[selectedPipelineId] ?? []
+                    : []
+                }
               />
             </TabsContent>
 
