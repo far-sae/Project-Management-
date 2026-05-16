@@ -122,40 +122,47 @@ begin
     select * from public.lead_scoring_rules
     where organization_id = v_org and enabled order by position
   loop
-    -- Resolve the field value as jsonb.
-    v_field_val := case v_rule.field
-      when 'industry'        then to_jsonb(v_client.industry)
-      when 'annual_revenue'  then to_jsonb(v_client.annual_revenue)
-      when 'employee_count'  then to_jsonb(v_client.employee_count)
-      when 'source'          then to_jsonb(v_client.source)
-      when 'status'          then to_jsonb(v_client.status)
-      when 'type'            then to_jsonb(v_client.type)
-      when 'rating'          then to_jsonb(v_client.rating)
-      when 'country'         then to_jsonb(v_client.country)
-      when 'recent_activity_days' then to_jsonb(v_recent_days)
-      when 'open_deals_count'     then to_jsonb(v_open_deals)
-      when 'tag_present'          then to_jsonb(v_client.tags)
-      else 'null'::jsonb
-    end;
+    -- Per-iteration BEGIN/EXCEPTION block: a single malformed rule (e.g.
+    -- non-numeric value passed to `gte`) must not poison the whole score.
+    -- The exception handler must live inside a BEGIN/END inside the LOOP —
+    -- PL/pgSQL doesn't allow an EXCEPTION clause directly under LOOP.
+    begin
+      -- Resolve the field value as jsonb.
+      v_field_val := case v_rule.field
+        when 'industry'        then to_jsonb(v_client.industry)
+        when 'annual_revenue'  then to_jsonb(v_client.annual_revenue)
+        when 'employee_count'  then to_jsonb(v_client.employee_count)
+        when 'source'          then to_jsonb(v_client.source)
+        when 'status'          then to_jsonb(v_client.status)
+        when 'type'            then to_jsonb(v_client.type)
+        when 'rating'          then to_jsonb(v_client.rating)
+        when 'country'         then to_jsonb(v_client.country)
+        when 'recent_activity_days' then to_jsonb(v_recent_days)
+        when 'open_deals_count'     then to_jsonb(v_open_deals)
+        when 'tag_present'          then to_jsonb(v_client.tags)
+        else 'null'::jsonb
+      end;
 
-    v_match := case v_rule.operator
-      when 'eq'  then v_field_val = v_rule.value
-      when 'neq' then v_field_val <> v_rule.value
-      when 'gte' then (v_field_val ->> 0)::numeric >= (v_rule.value)::text::numeric
-                      or (v_field_val::text)::numeric >= (v_rule.value::text)::numeric
-      when 'lte' then (v_field_val::text)::numeric <= (v_rule.value::text)::numeric
-      when 'gt'  then (v_field_val::text)::numeric >  (v_rule.value::text)::numeric
-      when 'lt'  then (v_field_val::text)::numeric <  (v_rule.value::text)::numeric
-      when 'in'  then v_rule.value @> v_field_val
-      when 'contains' then (v_field_val::text) ilike '%' || trim(both '"' from v_rule.value::text) || '%'
-      when 'exists' then v_field_val is not null and v_field_val <> 'null'::jsonb
-      else false
-    end;
+      v_match := case v_rule.operator
+        when 'eq'  then v_field_val = v_rule.value
+        when 'neq' then v_field_val <> v_rule.value
+        when 'gte' then (v_field_val ->> 0)::numeric >= (v_rule.value)::text::numeric
+                        or (v_field_val::text)::numeric >= (v_rule.value::text)::numeric
+        when 'lte' then (v_field_val::text)::numeric <= (v_rule.value::text)::numeric
+        when 'gt'  then (v_field_val::text)::numeric >  (v_rule.value::text)::numeric
+        when 'lt'  then (v_field_val::text)::numeric <  (v_rule.value::text)::numeric
+        when 'in'  then v_rule.value @> v_field_val
+        when 'contains' then (v_field_val::text) ilike '%' || trim(both '"' from v_rule.value::text) || '%'
+        when 'exists' then v_field_val is not null and v_field_val <> 'null'::jsonb
+        else false
+      end;
 
-    if v_match then v_score := v_score + v_rule.points; end if;
-  exception when others then
-    -- Cast errors on bad rule data shouldn't poison the score.
-    continue;
+      if v_match then v_score := v_score + v_rule.points; end if;
+    exception when others then
+      -- Skip this rule and continue to the next. Falling out of the
+      -- BEGIN/END returns control to LOOP, which advances naturally.
+      null;
+    end;
   end loop;
 
   v_score := greatest(-100, least(200, v_score));
