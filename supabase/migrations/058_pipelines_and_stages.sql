@@ -53,7 +53,10 @@ create unique index if not exists ux_pipeline_stages_one_won
 create unique index if not exists ux_pipeline_stages_one_lost
   on public.pipeline_stages(pipeline_id) where is_lost;
 
-create table if not exists public.project_templates (
+-- NOTE: named crm_project_templates (not project_templates) because migration
+-- 009 already defines public.project_templates as a "New project from template"
+-- scaffolding table with an incompatible schema (columns/tasks/is_builtin).
+create table if not exists public.crm_project_templates (
   template_id uuid primary key default gen_random_uuid(),
   organization_id uuid not null,
   name text not null,
@@ -96,7 +99,7 @@ begin
     (v_pipeline, p_org, 'lost',        'Lost',        '#EF4444', 6, 0,   false, true,  '{}')
   on conflict (pipeline_id, key) do nothing;
 
-  insert into public.project_templates (organization_id, name, description, task_definitions)
+  insert into public.crm_project_templates (organization_id, name, description, task_definitions)
   values
     (p_org, 'Onboarding',
      'Standard 4-step customer onboarding',
@@ -143,7 +146,7 @@ create trigger pipelines_seed_on_org_insert_t
 -- RLS: members read, admins write.
 alter table public.pipelines enable row level security;
 alter table public.pipeline_stages enable row level security;
-alter table public.project_templates enable row level security;
+alter table public.crm_project_templates enable row level security;
 
 drop policy if exists "pipelines read for org members" on public.pipelines;
 create policy "pipelines read for org members"
@@ -155,9 +158,9 @@ create policy "pipeline_stages read for org members"
   on public.pipeline_stages for select
   using (public.is_org_member(organization_id));
 
-drop policy if exists "project_templates read for org members" on public.project_templates;
-create policy "project_templates read for org members"
-  on public.project_templates for select
+drop policy if exists "crm_project_templates read for org members" on public.crm_project_templates;
+create policy "crm_project_templates read for org members"
+  on public.crm_project_templates for select
   using (public.is_org_member(organization_id));
 
 -- Writes gated by canManageSettings — enforced application-side in services

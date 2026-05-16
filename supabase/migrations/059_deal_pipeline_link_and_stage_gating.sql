@@ -170,7 +170,7 @@ begin
   if v_template is not null then
     for v_task in
       select * from jsonb_array_elements(
-        (select task_definitions from public.project_templates
+        (select task_definitions from public.crm_project_templates
           where template_id = v_template and organization_id = v_org)
       )
     loop
