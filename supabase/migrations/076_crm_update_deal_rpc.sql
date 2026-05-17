@@ -136,6 +136,54 @@ $$;
 
 grant execute on function public.crm_update_deal(uuid, uuid, jsonb) to authenticated;
 
+-- Deal-won handoff needs to create a delivery project from a CRM workflow.
+-- Keep normal project creation admin-only, but allow this vetted SECURITY
+-- DEFINER path to pass the project insert trigger after it validates org
+-- membership and viewer read-only rules.
+create or replace function public.projects_enforce_admin_create_delete()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_catalog
+as $fn$
+declare
+  v_org uuid;
+begin
+  if TG_OP = 'INSERT' then
+    v_org := new.organization_id;
+  else
+    v_org := old.organization_id;
+  end if;
+
+  if v_org is null then
+    return coalesce(new, old);
+  end if;
+
+  if auth.uid() is null then
+    return coalesce(new, old);
+  end if;
+
+  if TG_OP = 'INSERT'
+     and current_setting('app.crm_won_handoff', true) = 'true'
+     and public.is_org_member(v_org)
+     and not public.is_org_viewer(v_org) then
+    return new;
+  end if;
+
+  if not public.is_org_admin_or_owner(v_org) then
+    if TG_OP = 'INSERT' then
+      raise exception 'Only the organization owner or an admin can create a project.'
+        using errcode = '42501';
+    else
+      raise exception 'Only the organization owner or an admin can delete a project.'
+        using errcode = '42501';
+    end if;
+  end if;
+
+  return coalesce(new, old);
+end;
+$fn$;
+
 create or replace function public.crm_close_deal_to_won(
   p_deal_id uuid,
   p_project_input jsonb
@@ -193,18 +241,20 @@ begin
     return jsonb_build_object('deal_id', p_deal_id, 'project_id', null);
   end if;
 
+  perform set_config('app.crm_won_handoff', 'true', true);
+
   insert into public.projects (organization_id, name, owner_id, start_date, end_date, client_id)
   values (
     v_org,
-    coalesce(p_project_input ->> 'name', v_deal.title),
-    coalesce((p_project_input ->> 'owner_id')::uuid, v_deal.owner_id, v_actor),
-    coalesce((p_project_input ->> 'start_date')::date, current_date),
-    coalesce((p_project_input ->> 'due_date')::date, (current_date + interval '30 days')::date),
+    coalesce(nullif(btrim(p_project_input ->> 'name'), ''), v_deal.title),
+    coalesce(nullif(p_project_input ->> 'owner_id', '')::uuid, v_deal.owner_id, v_actor),
+    coalesce(nullif(p_project_input ->> 'start_date', '')::date, current_date),
+    coalesce(nullif(p_project_input ->> 'due_date', '')::date, (current_date + interval '30 days')::date),
     v_deal.client_id
   )
   returning project_id into v_project;
 
-  v_template := (p_project_input ->> 'template_id')::uuid;
+  v_template := nullif(p_project_input ->> 'template_id', '')::uuid;
   if v_template is not null then
     for v_task in
       select * from jsonb_array_elements(

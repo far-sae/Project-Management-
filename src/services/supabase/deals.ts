@@ -216,6 +216,27 @@ const friendlyDealUpdateError = (error: unknown): Error => {
   return error instanceof Error ? error : new Error(msg || "Failed to update deal");
 };
 
+const friendlyDealWonError = (error: unknown): Error => {
+  const e = error as { code?: string; message?: string; details?: string };
+  const msg = String(e?.message ?? "");
+  const details = String(e?.details ?? "");
+  const combined = `${msg} ${details}`;
+
+  if (e?.code === "P0001" && msg) return new Error(msg);
+  if (e?.code === "42501" || /permission denied|only the organization owner/i.test(combined)) {
+    return new Error(
+      "The deal was moved to Won, but project creation is blocked until the latest CRM won-deal migration is applied.",
+    );
+  }
+  if (e?.code === "22P02" || /invalid input syntax.*uuid/i.test(combined)) {
+    return new Error("The won-deal handoff has invalid owner or template data. Try again without a template.");
+  }
+  if (e?.code === "23502" || e?.code === "23503" || /not-null|foreign key/i.test(combined)) {
+    return new Error("The won-deal project could not be created because required project data is missing.");
+  }
+  return error instanceof Error ? error : new Error(msg || "Failed to close deal to won");
+};
+
 const resolveDealStageTarget = async (
   organizationId: string,
   input: CreateDealInput,
@@ -692,7 +713,7 @@ export const closeDealToWon = async (
   });
   if (error) {
     logger.error("Failed to close deal to won:", error);
-    throw error;
+    throw friendlyDealWonError(error);
   }
   return {
     dealId: (data as Record<string, unknown>).deal_id as string,
