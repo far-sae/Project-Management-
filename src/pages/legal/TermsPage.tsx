@@ -131,10 +131,64 @@ const TermsPage = () => {
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">8. Third-party services</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
-          The Service may integrate with or link to third-party services (including identity, email, and
-          storage integrations). Your use of those services is governed by their respective terms and
-          privacy notices. We are not responsible for third-party services we do not control.
+          The Service may integrate with or link to third-party services (including identity, email,
+          calendar, conferencing, messaging, and storage providers). Your use of those services is
+          governed by their respective terms and privacy notices. We are not responsible for third-party
+          services we do not control.
         </p>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          When you connect a third-party service to {LEGAL_PRODUCT_NAME} through{' '}
+          <strong className="text-foreground">Settings &rarr; Integrations</strong> you authorise{' '}
+          {LEGAL_PRODUCT_NAME} to act on your behalf with that provider within the scopes you grant.
+          You can revoke that authorisation at any time from the same screen, or directly with the
+          provider. Specific integrations currently offered include:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-muted-foreground mb-4 leading-relaxed">
+          <li>
+            <strong className="text-foreground">Google (Calendar, Meet, Gmail send).</strong> Subject
+            to the{' '}
+            <a
+              href="https://policies.google.com/terms"
+              className="text-primary underline underline-offset-2"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Google Terms of Service
+            </a>{' '}
+            and the{' '}
+            <a
+              href="https://developers.google.com/terms/api-services-user-data-policy"
+              className="text-primary underline underline-offset-2"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Google API Services User Data Policy
+            </a>
+            . You can revoke {LEGAL_PRODUCT_NAME}&apos;s access at{' '}
+            <a
+              href="https://myaccount.google.com/permissions"
+              className="text-primary underline underline-offset-2"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              https://myaccount.google.com/permissions
+            </a>
+            .
+          </li>
+          <li>
+            <strong className="text-foreground">Slack.</strong> Subject to{' '}
+            <a
+              href="https://slack.com/terms-of-service"
+              className="text-primary underline underline-offset-2"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Slack&apos;s Terms of Service
+            </a>
+            . Org administrators can disconnect from <strong className="text-foreground">Settings &rarr; Integrations</strong>{' '}
+            at any time.
+          </li>
+        </ul>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">9. Confidentiality</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">

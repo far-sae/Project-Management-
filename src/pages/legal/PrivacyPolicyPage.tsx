@@ -159,7 +159,121 @@ const PrivacyPolicyPage = () => {
         </p>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">
-          7. International transfers
+          7. Google API services and third-party integrations
+        </h2>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          {LEGAL_PRODUCT_NAME} lets you connect optional third-party services to your account so the
+          Service can act on your behalf. Connections are always initiated by you, can be disconnected
+          at any time from <strong className="text-foreground">Settings &rarr; Integrations</strong>,
+          and are isolated per user or per organisation as appropriate.
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          Google API Services (Google Calendar, Google Meet, Gmail)
+        </h3>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          When you choose to connect a Google account, {LEGAL_PRODUCT_NAME} uses Google API Services and
+          will request only the scopes listed below. {LEGAL_PRODUCT_NAME}&apos;s use and transfer of
+          information received from Google APIs to any other app will adhere to the{' '}
+          <a
+            href="https://developers.google.com/terms/api-services-user-data-policy"
+            className="text-primary underline underline-offset-2"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Google API Services User Data Policy
+          </a>
+          , including the Limited Use requirements. The scopes we request and how each is used:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-muted-foreground mb-4 leading-relaxed">
+          <li>
+            <strong className="text-foreground">openid, email, profile.</strong> Identify the connected
+            Google account so we can display &quot;Connected as your@email.com&quot; on the integrations
+            screen. We store the email address and display name only.
+          </li>
+          <li>
+            <strong className="text-foreground">
+              https://www.googleapis.com/auth/calendar.events.
+            </strong>{' '}
+            Create a Google Calendar event with an attached Google Meet conference link when you
+            explicitly attach a Meet to a task in {LEGAL_PRODUCT_NAME}. We do not read your existing
+            calendar entries. We store only the event id and Meet URL for the event we created on your
+            behalf, linked to the task you initiated.
+          </li>
+          <li>
+            <strong className="text-foreground">
+              https://www.googleapis.com/auth/gmail.send.
+            </strong>{' '}
+            Send outbound notification and automation emails from your own Gmail address when you have
+            enabled that option, so recipients see your name in their inbox and can reply directly to
+            you. We do not read your inbox, sent items, drafts, labels, or any other Gmail content.
+            We do not request <code>gmail.readonly</code>, <code>gmail.modify</code>, or any other
+            restricted Gmail scope.
+          </li>
+        </ul>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          <strong className="text-foreground">How we handle Google user data.</strong> OAuth refresh and
+          access tokens are encrypted at rest using AES-256-GCM with a key stored only in our server
+          environment; they are never exposed to the browser. Event ids and Meet URLs created on your
+          behalf are stored alongside the task they belong to so we can render the Join Meeting button.
+          We do not sell Google user data, we do not use it for advertising, and we do not use it to
+          train generalised machine-learning or AI models. Only automated processes that are required
+          to operate the integration access this data; human access by our staff is limited to
+          investigating specific support incidents or security events you have raised.
+        </p>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          <strong className="text-foreground">Retention and deletion.</strong> Tokens persist until you
+          disconnect the integration, revoke access at{' '}
+          <a
+            href="https://myaccount.google.com/permissions"
+            className="text-primary underline underline-offset-2"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            https://myaccount.google.com/permissions
+          </a>
+          , or delete your {LEGAL_PRODUCT_NAME} account. On any of those events the stored tokens are
+          revoked at Google and removed from our database within 30 days. You can request a copy or
+          deletion of any stored Google user data by emailing{' '}
+          <a
+            href={`mailto:${LEGAL_CONTACT_EMAIL}`}
+            className="text-primary underline underline-offset-2"
+          >
+            {LEGAL_CONTACT_EMAIL}
+          </a>
+          .
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">Slack</h3>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          When an organisation administrator connects a Slack workspace, {LEGAL_PRODUCT_NAME} requests
+          scopes that let it post messages to channels you select, list public and private channel
+          metadata, resolve member display names, and (where enabled) receive slash-command events.
+          Channel and member metadata is used only at request time to populate pickers in our UI; we do
+          not bulk-export or otherwise archive Slack content. The Slack OAuth token is encrypted at
+          rest. Disconnecting from <strong className="text-foreground">Settings &rarr; Integrations</strong>{' '}
+          revokes the token and stops all posts and event handling.
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          Cloudflare Turnstile (lead-capture forms)
+        </h3>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          Public lead-capture forms render Cloudflare Turnstile to filter automated submissions.
+          Turnstile may process minimal browser and request signals; see{' '}
+          <a
+            href="https://www.cloudflare.com/privacypolicy/"
+            className="text-primary underline underline-offset-2"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Cloudflare&apos;s privacy policy
+          </a>
+          . We do not receive raw fingerprint data; we receive only a pass/fail verification token.
+        </p>
+
+        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">
+          8. International transfers
         </h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           Our subprocessors may process data in the United Kingdom, the European Economic Area, the
@@ -169,7 +283,7 @@ const PrivacyPolicyPage = () => {
           law.
         </p>
 
-        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">8. Retention</h2>
+        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">9. Retention</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           We retain personal information only as long as necessary for the purposes described in this
           policy, including to provide the Service, resolve disputes, enforce agreements, and meet
@@ -179,7 +293,7 @@ const PrivacyPolicyPage = () => {
           you.
         </p>
 
-        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">9. Security</h2>
+        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">10. Security</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           We implement appropriate technical and organisational measures designed to protect personal
           information against unauthorised access, alteration, disclosure, or destruction. No method of
@@ -187,7 +301,7 @@ const PrivacyPolicyPage = () => {
           and protect your credentials.
         </p>
 
-        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">10. Your rights</h2>
+        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">11. Your rights</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           Depending on your location, you may have the right to access, rectify, erase, restrict, or
           object to certain processing of your personal information, to data portability, and to
@@ -203,7 +317,7 @@ const PrivacyPolicyPage = () => {
         </p>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">
-          11. Cookies and similar technologies
+          12. Cookies and similar technologies
         </h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           We use cookies and similar technologies as described in our{' '}
@@ -214,14 +328,14 @@ const PrivacyPolicyPage = () => {
           consented.
         </p>
 
-        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">12. Changes</h2>
+        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">13. Changes</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           We may update this Privacy Policy from time to time. We will post the revised version on this
           page and update the &quot;Last updated&quot; date. Where changes are material, we will provide
           additional notice as appropriate (for example by email or in-product notice).
         </p>
 
-        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">13. Contact</h2>
+        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">14. Contact</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           Questions about this Privacy Policy:{' '}
           <a
