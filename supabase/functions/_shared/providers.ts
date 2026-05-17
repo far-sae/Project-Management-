@@ -27,9 +27,14 @@ export const providers: Record<ProviderId, ProviderConfig> = {
     revokeUrl: 'https://oauth2.googleapis.com/revoke',
     clientIdEnv: 'GOOGLE_CLIENT_ID',
     clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
-    // Filled in by the Google Meet plan; framework registers an empty scope set
-    // and the per-provider plans add to it.
-    scopes: [],
+    // Google Meet: create Calendar events with attached Meet conference links.
+    // openid/email/profile identify the connected account in the Settings UI.
+    scopes: [
+      'openid',
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/calendar.events',
+    ],
     extraAuthParams: { access_type: 'offline', prompt: 'consent' },
     orgLevel: false,
   },
@@ -40,7 +45,15 @@ export const providers: Record<ProviderId, ProviderConfig> = {
     revokeUrl: 'https://oauth2.googleapis.com/revoke',
     clientIdEnv: 'GOOGLE_CLIENT_ID',
     clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
-    scopes: [],
+    // gmail.send only — we never request gmail.readonly / gmail.modify so no
+    // CASA audit is required. openid/email/profile identify the connected
+    // account label in Settings.
+    scopes: [
+      'openid',
+      'email',
+      'profile',
+      'https://www.googleapis.com/auth/gmail.send',
+    ],
     extraAuthParams: { access_type: 'offline', prompt: 'consent' },
     orgLevel: false,
   },
@@ -50,7 +63,20 @@ export const providers: Record<ProviderId, ProviderConfig> = {
     tokenUrl: 'https://slack.com/api/oauth.v2.access',
     clientIdEnv: 'SLACK_CLIENT_ID',
     clientSecretEnv: 'SLACK_CLIENT_SECRET',
-    scopes: [],
+    // Bot scopes for the v2 OAuth flow:
+    //   chat:write          — post messages to channels the bot is in
+    //   chat:write.public   — post in public channels without joining first
+    //   channels:read       — list public channels for the channel picker UI
+    //   groups:read         — list private channels for the channel picker
+    //   users:read          — resolve user ids to display names in messages
+    // `commands` is intentionally omitted until slash-command handlers exist.
+    scopes: [
+      'chat:write',
+      'chat:write.public',
+      'channels:read',
+      'groups:read',
+      'users:read',
+    ],
     orgLevel: true,
   },
 };
