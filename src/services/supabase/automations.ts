@@ -22,6 +22,11 @@ export const ACTION_TYPES = [
   "webhook",
   "slack_post",
   "send_email",
+  "ai_summarize",
+  "ai_classify_lead",
+  "ai_draft_email",
+  "ai_extract",
+  "ai_translate",
 ] as const;
 
 export type TriggerType = (typeof TRIGGER_TYPES)[number];
@@ -134,6 +139,11 @@ const ACTION_LABELS: Record<ActionType, string> = {
   webhook: "call webhook",
   slack_post: "post to Slack",
   send_email: "send email",
+  ai_summarize: "AI: summarize",
+  ai_classify_lead: "AI: classify lead",
+  ai_draft_email: "AI: draft email",
+  ai_extract: "AI: extract fields",
+  ai_translate: "AI: translate",
 };
 
 export const summarizeRecipe = (r: Pick<Recipe, "triggerType" | "actions">): string => {

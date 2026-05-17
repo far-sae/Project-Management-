@@ -40,6 +40,11 @@ const ACTION_LABEL: Record<ActionType, string> = {
   webhook: "call webhook",
   slack_post: "post to Slack",
   send_email: "send email",
+  ai_summarize: "AI: summarize",
+  ai_classify_lead: "AI: classify lead",
+  ai_draft_email: "AI: draft email",
+  ai_extract: "AI: extract fields",
+  ai_translate: "AI: translate",
 };
 
 const OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in", "contains", "exists"] as const;
