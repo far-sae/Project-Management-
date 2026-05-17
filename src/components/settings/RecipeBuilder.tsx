@@ -472,10 +472,10 @@ const ActionConfigEditor: React.FC<{
               </Select>
             </div>
             <div>
-              <Label>Limit (chars)</Label>
+              <Label>Last N notes</Label>
               <Input
                 type="number"
-                value={Number(cfg.limit ?? 280)}
+                value={Number(cfg.limit ?? 5)}
                 onChange={(e) => set({ limit: Number(e.target.value) })}
               />
             </div>
