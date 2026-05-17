@@ -134,6 +134,8 @@ export const Clients: React.FC = () => {
   const [openImport, setOpenImport] = useState(false);
   const [selected, setSelected] = useState<Client | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(() => new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   // Keep the selected client's data in sync when the list refreshes via realtime.
@@ -160,6 +162,36 @@ export const Clients: React.FC = () => {
     });
   }, [clients, search, typeFilter, statusFilter, bandFilter]);
 
+  const selectedClients = useMemo(
+    () => clients.filter((c) => selectedClientIds.has(c.clientId)),
+    [clients, selectedClientIds],
+  );
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const clientId = (event as CustomEvent<string>).detail;
+      const match = clients.find((c) => c.clientId === clientId);
+      if (match) setSelected(match);
+    };
+    window.addEventListener('open-client', handler);
+    return () => window.removeEventListener('open-client', handler);
+  }, [clients]);
+
+  const toggleClientSelection = (clientId: string) => {
+    setSelectedClientIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedClientIds(new Set(filtered.map((c) => c.clientId)));
+  };
+
+  const clearSelection = () => setSelectedClientIds(new Set());
+
   const handleCreate = async (input: CreateClientInput) => {
     try {
       const created = await create(input);
@@ -182,6 +214,15 @@ export const Clients: React.FC = () => {
     }
   };
 
+  const handleUpdateExistingFromCreate = async (
+    clientId: string,
+    input: CreateClientInput,
+  ) => {
+    const updated = await update(clientId, input);
+    toast.success(`Updated existing client "${updated.name}"`);
+    setSelected(updated);
+  };
+
   const handleDelete = async () => {
     if (!confirmDelete) return;
     setDeleting(true);
@@ -189,9 +230,32 @@ export const Clients: React.FC = () => {
       await remove(confirmDelete.clientId);
       toast.success(`Deleted "${confirmDelete.name}"`);
       if (selected?.clientId === confirmDelete.clientId) setSelected(null);
+      setSelectedClientIds((prev) => {
+        const next = new Set(prev);
+        next.delete(confirmDelete.clientId);
+        return next;
+      });
       setConfirmDelete(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedClients.length === 0) return;
+    setDeleting(true);
+    try {
+      for (const client of selectedClients) {
+        await remove(client.clientId);
+      }
+      toast.success(`Deleted ${selectedClients.length} client(s)`);
+      if (selected && selectedClientIds.has(selected.clientId)) setSelected(null);
+      clearSelection();
+      setConfirmBulkDelete(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete selected clients');
     } finally {
       setDeleting(false);
     }
@@ -383,6 +447,36 @@ export const Clients: React.FC = () => {
             </CardContent>
           </Card>
 
+          {canManage && filtered.length > 0 && (
+            <Card>
+              <CardContent className="py-3 flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {selectedClients.length > 0
+                    ? `${selectedClients.length} selected`
+                    : 'Select clients to bulk delete'}
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={selectAllFiltered}>
+                  Select all shown
+                </Button>
+                {selectedClients.length > 0 && (
+                  <>
+                    <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
+                      Clear
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setConfirmBulkDelete(true)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete selected
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* List */}
           {loading ? (
             <Card>
@@ -417,11 +511,29 @@ export const Clients: React.FC = () => {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((c) => (
-                <button
+                <div
                   key={c.clientId}
                   onClick={() => setSelected(c)}
-                  className="text-left rounded-lg border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setSelected(c);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className="relative text-left rounded-lg border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all"
                 >
+                  {canManage && (
+                    <label
+                      className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md bg-card/90 px-2 py-1 text-xs text-muted-foreground border"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedClientIds.has(c.clientId)}
+                        onChange={() => toggleClientSelection(c.clientId)}
+                      />
+                      Select
+                    </label>
+                  )}
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-md bg-primary-soft text-primary-soft-foreground flex items-center justify-center shrink-0">
                       <Building2 className="w-5 h-5" />
@@ -433,7 +545,7 @@ export const Clients: React.FC = () => {
                       </p>
                     </div>
                     {c.rating && (
-                      <Badge variant="outline" className="shrink-0">
+                      <Badge variant="outline" className={canManage ? "shrink-0 mr-24" : "shrink-0"}>
                         <Star className="w-3 h-3 mr-1" /> {c.rating}
                       </Badge>
                     )}
@@ -477,7 +589,7 @@ export const Clients: React.FC = () => {
                       )}
                     </div>
                   )}
-                </button>
+                </div>
               ))}
             </div>
           )}
@@ -569,6 +681,7 @@ export const Clients: React.FC = () => {
         open={openCreate}
         onOpenChange={setOpenCreate}
         onSubmit={handleCreate}
+        onUpdateExisting={canManage ? handleUpdateExistingFromCreate : undefined}
         organizationId={organizationId}
       />
       {/* Edit */}
@@ -624,6 +737,33 @@ export const Clients: React.FC = () => {
             >
               {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               <Trash2 className="w-4 h-4 mr-1" /> Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmBulkDelete}
+        onOpenChange={(o) => { if (!o) setConfirmBulkDelete(false); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected clients?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {selectedClients.length} selected client
+              {selectedClients.length === 1 ? '' : 's'}. Only the clients you
+              selected will be deleted. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={deleting || selectedClients.length === 0}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              <Trash2 className="w-4 h-4 mr-1" /> Delete selected
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -106,6 +106,7 @@ interface Props {
   /** When provided we're editing; otherwise we're creating. */
   client?: Client | null;
   onSubmit: (input: CreateClientInput) => Promise<void>;
+  onUpdateExisting?: (clientId: string, input: CreateClientInput) => Promise<void>;
   /**
    * Organization scope used for live duplicate detection. Optional so the
    * dialog still renders if a parent forgets to pass it; the banner is a
@@ -115,7 +116,7 @@ interface Props {
 }
 
 export const ClientFormDialog: React.FC<Props> = ({
-  open, onOpenChange, client, onSubmit, organizationId,
+  open, onOpenChange, client, onSubmit, onUpdateExisting, organizationId,
 }) => {
   const [form, setForm] = useState<FormState>(blank);
   const [submitting, setSubmitting] = useState(false);
@@ -170,42 +171,41 @@ export const ClientFormDialog: React.FC<Props> = ({
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }));
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (submitting) return;
-
+  const buildPayload = (
+    opts?: { skipDuplicateCheck?: boolean; createDuplicate?: boolean },
+  ): CreateClientInput | null => {
     const name = form.name.trim();
     if (!name) {
       setError('Name is required');
-      return;
+      return null;
     }
     if (form.email && !isValidEmail(form.email.trim())) {
       setError('Invalid email');
-      return;
+      return null;
     }
     if (form.website && !isValidWebsite(form.website.trim())) {
       setError('Invalid website');
-      return;
+      return null;
     }
     const revenue = form.annualRevenue ? Number(form.annualRevenue) : null;
     if (revenue != null && (!Number.isFinite(revenue) || revenue < 0)) {
       setError('Annual revenue must be a non-negative number');
-      return;
+      return null;
     }
     const headcount = form.employeeCount.trim() === '' ? null : Number(form.employeeCount);
     if (headcount != null) {
       if (!Number.isFinite(headcount) || headcount < 0 || !Number.isInteger(headcount)) {
         setError('Employee count must be a non-negative integer');
-        return;
+        return null;
       }
     }
 
     // Banner is showing and user hasn't explicitly overridden — block.
     // The server-side unique index is the real guard; this just spares
     // the round-trip and keeps the UX in sync with what the DB will do.
-    if (matches.length > 0 && !override) {
-      setError('Possible duplicate — review the banner above or override to proceed.');
-      return;
+    if (!client && matches.length > 0 && !opts?.skipDuplicateCheck) {
+      setError('Possible duplicate — update the existing client, create anyway, or skip.');
+      return null;
     }
 
     const baseTags = form.tags
@@ -215,11 +215,11 @@ export const ClientFormDialog: React.FC<Props> = ({
     // When overriding, append the `dup_override` tag so the partial unique
     // index lets the row through. Dedupe via Set in case it was typed in
     // manually by an admin.
-    const tags = override
+    const tags = opts?.createDuplicate
       ? Array.from(new Set([...baseTags, 'dup_override']))
       : baseTags;
 
-    const payload: CreateClientInput = {
+    return {
       name,
       legalName: form.legalName.trim() || null,
       industry: form.industry.trim() || null,
@@ -240,6 +240,17 @@ export const ClientFormDialog: React.FC<Props> = ({
       description: form.description.trim() || null,
       tags,
     };
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+
+    const payload = buildPayload({
+      skipDuplicateCheck: override,
+      createDuplicate: override,
+    });
+    if (!payload) return;
 
     setSubmitting(true);
     setError(null);
@@ -253,6 +264,23 @@ export const ClientFormDialog: React.FC<Props> = ({
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save client');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateExisting = async (clientId: string) => {
+    if (!onUpdateExisting || submitting) return;
+    const payload = buildPayload({ skipDuplicateCheck: true });
+    if (!payload) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onUpdateExisting(clientId, payload);
+      onOpenChange(false);
+      window.dispatchEvent(new CustomEvent('open-client', { detail: clientId }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update existing client');
     } finally {
       setSubmitting(false);
     }
@@ -468,7 +496,13 @@ export const ClientFormDialog: React.FC<Props> = ({
               onOpenChange(false);
               window.dispatchEvent(new CustomEvent('open-client', { detail: id }));
             }}
-            onOverride={() => setOverride(true)}
+            onUpdateExisting={onUpdateExisting ? handleUpdateExisting : undefined}
+            onOverride={() => {
+              setOverride(true);
+              setError(null);
+            }}
+            onSkip={() => onOpenChange(false)}
+            overrideActive={override}
           />
 
           <DialogFooter className="gap-2">
