@@ -67,15 +67,19 @@ export const providers: Record<ProviderId, ProviderConfig> = {
     //   chat:write          — post messages to channels the bot is in
     //   chat:write.public   — post in public channels without joining first
     //   channels:read       — list public channels for the channel picker UI
+    //   channels:history    — read messages in public channels (Slack trigger)
     //   groups:read         — list private channels for the channel picker
     //   users:read          — resolve user ids to display names in messages
+    //   users:read.email    — match Slack senders to TaskCalendar users
     // `commands` is intentionally omitted until slash-command handlers exist.
     scopes: [
       'chat:write',
       'chat:write.public',
       'channels:read',
+      'channels:history',
       'groups:read',
       'users:read',
+      'users:read.email',
     ],
     orgLevel: true,
   },
