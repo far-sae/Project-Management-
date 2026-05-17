@@ -80,6 +80,8 @@ export const providers: Record<ProviderId, ProviderConfig> = {
       'groups:read',
       'users:read',
       'users:read.email',
+      'app_mentions:read',
+      'reactions:read',
     ],
     orgLevel: true,
   },

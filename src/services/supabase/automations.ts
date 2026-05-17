@@ -12,6 +12,7 @@ export const TRIGGER_TYPES = [
   "scheduled",
   "agent_intake",
   "slack_message_received",
+  "slack_reaction_added",
 ] as const;
 
 export const ACTION_TYPES = [
@@ -135,6 +136,7 @@ const TRIGGER_LABELS: Record<TriggerType, string> = {
   scheduled: "scheduled time",
   agent_intake: "AI agent drafts for new lead",
   slack_message_received: "a Slack message is posted",
+  slack_reaction_added: "an emoji reaction is added",
 };
 
 const ACTION_LABELS: Record<ActionType, string> = {

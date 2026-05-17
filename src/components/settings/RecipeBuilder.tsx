@@ -31,6 +31,7 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
   scheduled: "scheduled time",
   agent_intake: "AI agent: draft outreach for new lead",
   slack_message_received: "a Slack message is posted",
+  slack_reaction_added: "an emoji reaction is added to a message",
 };
 
 const ACTION_LABEL: Record<ActionType, string> = {
@@ -79,7 +80,10 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
 
   // Fetch Slack channels on demand when the trigger flips to slack.
   useEffect(() => {
-    if (draft.trigger.type !== "slack_message_received") return;
+    if (
+      draft.trigger.type !== "slack_message_received" &&
+      draft.trigger.type !== "slack_reaction_added"
+    ) return;
     if (slackChannels.length > 0) return;
     setLoadingChannels(true);
     listSlackChannels().then((cs) => {
@@ -288,6 +292,80 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
                     Leave blank to fire on every message in the selected channels.
                   </p>
                 </div>
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={!!draft.trigger.config.mention_only}
+                    onChange={(e) => setTriggerConfig({ mention_only: e.target.checked || undefined })}
+                  />
+                  Only fire when the bot is @mentioned in the message
+                </label>
+              </div>
+            )}
+
+            {/* Slack reaction trigger: emoji list + optional channel filter */}
+            {draft.trigger.type === "slack_reaction_added" && (
+              <div className="ml-16 space-y-2 border-l pl-3 -mt-1">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Emoji reactions (required)</Label>
+                  <Input
+                    value={((draft.trigger.config.reactions as string[]) ?? []).join(", ")}
+                    onChange={(e) => {
+                      const list = e.target.value
+                        .split(",")
+                        .map((s) => s.trim().replace(/^:|:$/g, ""))
+                        .filter(Boolean);
+                      setTriggerConfig({ reactions: list.length ? list : undefined });
+                    }}
+                    placeholder="white_check_mark, pushpin, eyes"
+                    className="h-8"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Comma-separated Slack emoji names (no colons). The reaction
+                    name is what Slack stores — e.g. ✅ is <code>white_check_mark</code>,
+                    📌 is <code>pushpin</code>. Hover an emoji in Slack to see its name.
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">
+                    Channels (optional — blank = any channel the bot is in)
+                  </Label>
+                  {loadingChannels ? (
+                    <p className="text-xs text-muted-foreground">Loading channels…</p>
+                  ) : slackChannels.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No channels found. Connect Slack first, then invite the bot.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto border rounded p-2">
+                      {slackChannels.map((c) => {
+                        const selected = ((draft.trigger.config.channels as string[]) ?? []).includes(c.id);
+                        return (
+                          <label key={c.id} className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => {
+                                const current = (draft.trigger.config.channels as string[]) ?? [];
+                                const next = selected
+                                  ? current.filter((x) => x !== c.id)
+                                  : [...current, c.id];
+                                setTriggerConfig({ channels: next.length ? next : undefined });
+                              }}
+                            />
+                            #{c.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Reactor's email goes into <code>slack.user_email</code> (use with
+                  "Slack sender" assignee). Original message author is in
+                  <code> slack.author_email</code>. Message text is in
+                  <code> slack.text</code>.
+                </p>
               </div>
             )}
 
