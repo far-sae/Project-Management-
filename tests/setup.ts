@@ -6,4 +6,8 @@
   env: {
     get: (_key: string): string | undefined => undefined,
   },
+  // Stub so edge-function modules that call `Deno.serve(handler)` at module
+  // top-level load without throwing under Node vitest. We never actually
+  // invoke the handler in unit tests.
+  serve: (_handler: unknown): void => undefined,
 };
