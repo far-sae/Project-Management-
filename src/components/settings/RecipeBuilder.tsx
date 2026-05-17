@@ -454,6 +454,141 @@ const ActionConfigEditor: React.FC<{
         </div>
       );
 
+    case "ai_summarize":
+      return (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label>Source</Label>
+              <Select
+                value={(cfg.source as string) ?? "client_notes"}
+                onValueChange={(v) => set({ source: v })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client_notes">client notes</SelectItem>
+                  <SelectItem value="free_text">free text</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Limit (chars)</Label>
+              <Input
+                type="number"
+                value={Number(cfg.limit ?? 280)}
+                onChange={(e) => set({ limit: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          {((cfg.source as string) ?? "client_notes") === "free_text" && (
+            <div>
+              <Label>Text</Label>
+              <Input
+                value={(cfg.text as string) ?? ""}
+                onChange={(e) => set({ text: e.target.value })}
+                placeholder="Supports {{placeholders}}"
+              />
+            </div>
+          )}
+        </div>
+      );
+
+    case "ai_classify_lead":
+      return (
+        <p className="text-sm text-muted-foreground">
+          Classifies the event's client as hot/warm/cold and writes to <code>clients.score_band</code>. No config needed.
+        </p>
+      );
+
+    case "ai_draft_email":
+      return (
+        <div className="space-y-2">
+          <div>
+            <Label>Goal</Label>
+            <Input
+              value={(cfg.goal as string) ?? ""}
+              onChange={(e) => set({ goal: e.target.value })}
+              placeholder="e.g. follow up after demo"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label>Tone</Label>
+              <Select
+                value={(cfg.tone as string) ?? "formal"}
+                onValueChange={(v) => set({ tone: v })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="formal">formal</SelectItem>
+                  <SelectItem value="casual">casual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Length</Label>
+              <Select
+                value={(cfg.length as string) ?? "short"}
+                onValueChange={(v) => set({ length: v })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="short">short</SelectItem>
+                  <SelectItem value="medium">medium</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Output is available to downstream actions as <code>{"{{ai.output_subject}}"}</code> and <code>{"{{ai.output_body}}"}</code> (e.g. for a send_email step).
+          </p>
+        </div>
+      );
+
+    case "ai_extract":
+      return (
+        <div className="space-y-2">
+          <div>
+            <Label>Source text</Label>
+            <Input
+              value={(cfg.source_text as string) ?? ""}
+              onChange={(e) => set({ source_text: e.target.value })}
+              placeholder="{{form_submission.notes}}"
+            />
+          </div>
+          <div>
+            <Label>Fields (comma-separated)</Label>
+            <Input
+              value={(cfg.fields as string) ?? ""}
+              onChange={(e) => set({ fields: e.target.value })}
+              placeholder="company_size, budget, timeline"
+            />
+          </div>
+        </div>
+      );
+
+    case "ai_translate":
+      return (
+        <div className="space-y-2">
+          <div>
+            <Label>Source text</Label>
+            <Input
+              value={(cfg.source_text as string) ?? ""}
+              onChange={(e) => set({ source_text: e.target.value })}
+              placeholder="{{placeholders}} supported"
+            />
+          </div>
+          <div>
+            <Label>Target language</Label>
+            <Input
+              value={(cfg.target_language as string) ?? ""}
+              onChange={(e) => set({ target_language: e.target.value })}
+              placeholder="English"
+            />
+          </div>
+        </div>
+      );
+
     default:
       return null;
   }
