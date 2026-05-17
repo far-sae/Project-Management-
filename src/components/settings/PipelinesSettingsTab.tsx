@@ -94,6 +94,27 @@ export const PipelinesSettingsTab: React.FC = () => {
                 </Button>
               )}
             </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>AI Sales Agent re-engages stuck deals after</span>
+              <Input
+                type="number"
+                min={1}
+                max={365}
+                defaultValue={p.staleAfterDays}
+                onBlur={async (e) => {
+                  const next = Number(e.target.value);
+                  if (Number.isFinite(next) && next !== p.staleAfterDays) {
+                    try {
+                      await updatePipeline(p.pipelineId, { staleAfterDays: next });
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Update failed");
+                    }
+                  }
+                }}
+                className="w-20 h-7 text-xs"
+              />
+              <span>days of inactivity (only applies when AI Agent is enabled)</span>
+            </div>
             <PipelineEditor
               pipeline={p}
               initialStages={stagesByPipeline[p.pipelineId] ?? []}

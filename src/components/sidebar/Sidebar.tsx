@@ -28,6 +28,7 @@ import {
   UserCircle,
   Wallet,
   Building2,
+  Bot,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -151,6 +152,7 @@ export const Sidebar: React.FC = () => {
     ? ([
         { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
         { icon: Building2, label: 'Clients', href: '/clients', feature: null },
+        { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: null },
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
         { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },

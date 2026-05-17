@@ -75,6 +75,29 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
 
   if (!evaluateConditions(recipe.conditions ?? [], event, ctx)) return;
 
+  // Special trigger: agent_intake delegates to ai-agent-suggest and skips
+  // the normal action loop entirely (the agent IS the action).
+  if (recipe.trigger_type === "agent_intake" && event.event_type === "client_created") {
+    try {
+      await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/ai-agent-suggest`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          trigger_type: "intake",
+          organization_id: event.organization_id,
+          client_id: (event.payload as { client_id?: string }).client_id,
+          source_event_id: event.event_id,
+        }),
+      });
+    } catch (e) {
+      console.error("agent_intake dispatch failed:", e);
+    }
+    return;
+  }
+
   const recipeRunId = await createRun(admin, {
     recipeId: recipe.recipe_id,
     eventId: event.event_id,

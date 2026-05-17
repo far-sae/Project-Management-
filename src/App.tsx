@@ -34,6 +34,7 @@ const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ 
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
+const AIAgentPage = React.lazy(() => import('@/pages/AIAgent').then((m) => ({ default: m.AIAgent })));
 const ClientsActivity = React.lazy(() => import('@/pages/ClientsActivity').then((m) => ({ default: m.ClientsActivity })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
 const IntegrationCallback = React.lazy(() => import('@/components/integrations/IntegrationCallback').then((m) => ({ default: m.IntegrationCallback })));
@@ -284,6 +285,14 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireOrgAdmin>
                   {lazyAppRoute(<ClientsPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/ai-agent',
+              element: (
+                <ProtectedRoute requireSubscription requireOrgAdmin>
+                  {lazyAppRoute(<AIAgentPage />)}
                 </ProtectedRoute>
               ),
             },

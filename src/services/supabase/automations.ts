@@ -10,6 +10,7 @@ export const TRIGGER_TYPES = [
   "client_tagged",
   "task_overdue",
   "scheduled",
+  "agent_intake",
 ] as const;
 
 export const ACTION_TYPES = [
@@ -131,6 +132,7 @@ const TRIGGER_LABELS: Record<TriggerType, string> = {
   client_tagged: "client is tagged",
   task_overdue: "task becomes overdue",
   scheduled: "scheduled time",
+  agent_intake: "AI agent drafts for new lead",
 };
 
 const ACTION_LABELS: Record<ActionType, string> = {
