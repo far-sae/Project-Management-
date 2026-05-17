@@ -69,6 +69,8 @@ export interface CreateDealInput {
   title: string;
   description?: string | null;
   stage?: DealStage;
+  pipelineId?: string | null;
+  stageId?: string | null;
   value?: number;
   currency?: string;
   expectedCloseDate?: Date | null;
@@ -154,6 +156,150 @@ const readLocal = (orgId: string): Deal[] => {
 const writeLocal = (orgId: string, deals: Deal[]) =>
   localStorage.setItem(localKey(orgId), JSON.stringify(deals));
 
+const isMissingRpcError = (error: unknown): boolean => {
+  const e = error as { code?: string; message?: string; details?: string };
+  const text = `${e?.message ?? ""} ${e?.details ?? ""}`.toLowerCase();
+  return e?.code === "PGRST202" || text.includes("could not find the function");
+};
+
+const friendlyDealCreateError = (error: unknown): Error => {
+  const e = error as { code?: string; message?: string; details?: string };
+  const msg = String(e?.message ?? "");
+  const details = String(e?.details ?? "");
+  const combined = `${msg} ${details}`;
+
+  if (e?.code === "P0001" && msg) {
+    return new Error(msg);
+  }
+  if (e?.code === "42501" || /row-level security|permission denied/i.test(combined)) {
+    return new Error(
+      "You do not have permission to add deals in this workspace. Ask an admin to check your role or apply the latest CRM deal migration.",
+    );
+  }
+  if (e?.code === "23503" || /foreign key/i.test(combined)) {
+    return new Error("This deal is linked to a client or pipeline stage that no longer exists.");
+  }
+  if (
+    e?.code === "23502" ||
+    /null value in column \"(?:pipeline_id|stage_id)\"/i.test(combined)
+  ) {
+    return new Error(
+      "The sales pipeline is not configured correctly yet. Ask an admin to apply the latest CRM deal migration.",
+    );
+  }
+  if (e?.code === "23514" || /check constraint/i.test(combined)) {
+    return new Error("Deal details are invalid. Check the stage, value, and required fields.");
+  }
+  return error instanceof Error ? error : new Error(msg || "Failed to create deal");
+};
+
+const resolveDealStageTarget = async (
+  organizationId: string,
+  input: CreateDealInput,
+): Promise<{ pipeline_id?: string; stage_id?: string }> => {
+  if (input.pipelineId && input.stageId) {
+    return { pipeline_id: input.pipelineId, stage_id: input.stageId };
+  }
+
+  if (input.stageId) {
+    const { data, error } = await supabase
+      .from("pipeline_stages")
+      .select("pipeline_id, stage_id")
+      .eq("organization_id", organizationId)
+      .eq("stage_id", input.stageId)
+      .maybeSingle();
+
+    if (error) {
+      logger.warn("Failed to resolve selected deal stage:", error);
+      return {};
+    }
+
+    if (data) {
+      return {
+        pipeline_id: data.pipeline_id as string,
+        stage_id: data.stage_id as string,
+      };
+    }
+  }
+
+  let pipelineId = input.pipelineId ?? null;
+  if (!pipelineId) {
+    const { data: defaultPipeline, error: defaultError } = await supabase
+      .from("pipelines")
+      .select("pipeline_id")
+      .eq("organization_id", organizationId)
+      .eq("is_default", true)
+      .maybeSingle();
+
+    if (defaultError) {
+      logger.warn("Failed to resolve default deal pipeline:", defaultError);
+      return {};
+    }
+
+    pipelineId = (defaultPipeline?.pipeline_id as string | undefined) ?? null;
+  }
+
+  if (!pipelineId) {
+    const { data: firstPipeline, error: firstError } = await supabase
+      .from("pipelines")
+      .select("pipeline_id")
+      .eq("organization_id", organizationId)
+      .order("position", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (firstError) {
+      logger.warn("Failed to resolve first deal pipeline:", firstError);
+      return {};
+    }
+
+    pipelineId = (firstPipeline?.pipeline_id as string | undefined) ?? null;
+  }
+
+  if (!pipelineId) return {};
+
+  const { data: matchingStage, error: stageError } = await supabase
+    .from("pipeline_stages")
+    .select("pipeline_id, stage_id")
+    .eq("organization_id", organizationId)
+    .eq("pipeline_id", pipelineId)
+    .eq("key", input.stage ?? "lead")
+    .maybeSingle();
+
+  if (stageError) {
+    logger.warn("Failed to resolve deal stage:", stageError);
+    return { pipeline_id: pipelineId };
+  }
+
+  if (matchingStage) {
+    return {
+      pipeline_id: matchingStage.pipeline_id as string,
+      stage_id: matchingStage.stage_id as string,
+    };
+  }
+
+  const { data: firstStage, error: firstStageError } = await supabase
+    .from("pipeline_stages")
+    .select("pipeline_id, stage_id")
+    .eq("organization_id", organizationId)
+    .eq("pipeline_id", pipelineId)
+    .order("position", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (firstStageError) {
+    logger.warn("Failed to resolve first deal stage:", firstStageError);
+    return { pipeline_id: pipelineId };
+  }
+
+  return firstStage
+    ? {
+        pipeline_id: firstStage.pipeline_id as string,
+        stage_id: firstStage.stage_id as string,
+      }
+    : { pipeline_id: pipelineId };
+};
+
 export const getOrganizationDeals = async (
   organizationId: string,
 ): Promise<Deal[]> => {
@@ -237,16 +383,38 @@ export const createDeal = async (
     created_by_name: createdByName,
   };
 
-  const { data, error } = await supabase
-    .from("deals")
-    .insert(row)
-    .select()
+  if (input.pipelineId) {
+    (row as Record<string, unknown>).pipeline_id = input.pipelineId;
+  }
+  if (input.stageId) {
+    (row as Record<string, unknown>).stage_id = input.stageId;
+  }
+
+  const createViaDirectInsert = async () => {
+    const stageTarget = await resolveDealStageTarget(organizationId, input);
+    return supabase
+      .from("deals")
+      .insert({ ...row, ...stageTarget })
+      .select()
+      .single();
+  };
+
+  let { data, error } = await supabase
+    .rpc("crm_create_deal", {
+      p_organization_id: organizationId,
+      p_deal: row,
+    })
     .single();
+
+  if (error && isMissingRpcError(error)) {
+    ({ data, error } = await createViaDirectInsert());
+  }
+
   if (error) {
     logger.error("Failed to create deal:", error);
-    throw error;
+    throw friendlyDealCreateError(error);
   }
-  return mapDeal(data);
+  return mapDeal(data as Record<string, unknown>);
 };
 
 export const updateDeal = async (

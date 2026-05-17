@@ -24,6 +24,8 @@ interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   defaultStage?: DealStage;
+  defaultPipelineId?: string | null;
+  defaultStageId?: string | null;
   defaultClientId?: string | null;
   clients: Client[];
 }
@@ -32,6 +34,8 @@ export const NewDealDialog: React.FC<Props> = ({
   open,
   onOpenChange,
   defaultStage = 'lead',
+  defaultPipelineId = null,
+  defaultStageId = null,
   defaultClientId = null,
   clients,
 }) => {
@@ -86,6 +90,8 @@ export const NewDealDialog: React.FC<Props> = ({
         clientId: client?.clientId ?? null,
         clientName: client?.name ?? null,
         stage: form.stage,
+        pipelineId: defaultPipelineId,
+        stageId: defaultStageId,
         value,
         currency: form.currency,
         expectedCloseDate: form.expectedCloseDate

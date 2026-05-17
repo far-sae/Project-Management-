@@ -235,7 +235,11 @@ export const DealsKanban: React.FC<Props> = ({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
   const [draggingDeal, setDraggingDeal] = useState<Deal | null>(null);
-  const [showNew, setShowNew] = useState<{ stage: DealStage } | null>(null);
+  const [showNew, setShowNew] = useState<{
+    stage: DealStage;
+    pipelineId?: string | null;
+    stageId?: string | null;
+  } | null>(null);
   // Won-stage drop intercept. Set by handleDragEnd when the target stage has
   // `isWon`; Task 11 will mount <DealWonModal/> against this state. For now we
   // surface a placeholder toast and clear it so the user still gets feedback.
@@ -358,11 +362,13 @@ export const DealsKanban: React.FC<Props> = ({
               key={stage.id}
               stage={stage}
               deals={dealsByKey.get(stage.key) ?? []}
-              // NewDealDialog still expects the legacy DealStage union. The
-              // mapping is safe in the fallback path (id === key) and in the
-              // pipeline path the column key is the persisted stage text the
-              // dialog will write to `deals.stage` via the sync trigger.
-              onAdd={(s) => setShowNew({ stage: s.key as DealStage })}
+              onAdd={(s) =>
+                setShowNew({
+                  stage: s.key as DealStage,
+                  pipelineId: pipelineId ?? null,
+                  stageId: stages?.length ? s.id : null,
+                })
+              }
               onSelect={onSelectDeal}
               canCreate={canManage}
               displayCurrency={displayCurrency}
@@ -388,6 +394,8 @@ export const DealsKanban: React.FC<Props> = ({
           open={!!showNew}
           onOpenChange={(o) => !o && setShowNew(null)}
           defaultStage={showNew.stage}
+          defaultPipelineId={showNew.pipelineId ?? null}
+          defaultStageId={showNew.stageId ?? null}
           defaultClientId={scopedClientId ?? null}
           clients={clients}
         />

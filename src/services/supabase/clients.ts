@@ -1556,8 +1556,13 @@ export const importClientsFromCsv = async (
     // inline client form, just batched.
     const dups = await findDuplicates(organizationId, {
       name: parsed.input.name,
+      legalName: parsed.input.legalName,
       email: parsed.input.email,
+      website: parsed.input.website,
+      phone: parsed.input.phone,
       country: parsed.input.country,
+      city: parsed.input.city,
+      state: parsed.input.state,
     });
     if (dups.length > 0) {
       rejectedDuplicates.push({ row: i + 2, input: parsed.input, matches: dups });

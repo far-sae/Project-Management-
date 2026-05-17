@@ -146,8 +146,13 @@ export const ClientFormDialog: React.FC<Props> = ({
       try {
         const m = await findDuplicates(organizationId, {
           name: form.name,
+          legalName: form.legalName,
           email: form.email,
+          website: form.website,
+          phone: form.phone,
           country: form.country,
+          city: form.city,
+          state: form.state,
         });
         // Exclude the row being edited from its own duplicate list.
         const filtered = client
@@ -160,7 +165,19 @@ export const ClientFormDialog: React.FC<Props> = ({
       }
     }, 250);
     return () => clearTimeout(handle);
-  }, [open, organizationId, form.name, form.email, form.country, client]);
+  }, [
+    open,
+    organizationId,
+    form.name,
+    form.legalName,
+    form.email,
+    form.website,
+    form.phone,
+    form.country,
+    form.city,
+    form.state,
+    client,
+  ]);
 
   // Clear override once the user fixes the conflict so a previously-set
   // override flag doesn't silently apply to a now-clean payload.
@@ -515,7 +532,7 @@ export const ClientFormDialog: React.FC<Props> = ({
             </Button>
             <Button type="submit" disabled={submitting}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {client ? 'Save changes' : 'Create client'}
+              {client ? 'Save changes' : override ? 'Add as new client' : 'Create client'}
             </Button>
           </DialogFooter>
         </form>

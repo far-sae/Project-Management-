@@ -539,6 +539,9 @@ export const ImportClientsDialog: React.FC<Props> = ({
                       <span className="flex-1">
                         Row {r.row}: <strong>{r.input.name}</strong> matches{' '}
                         <strong>{r.matches[0]?.name}</strong>
+                        {r.matches[0]?.reasons?.length
+                          ? ` (${r.matches[0].reasons.join(', ')})`
+                          : ''}
                       </span>
                       <Button
                         size="sm"
