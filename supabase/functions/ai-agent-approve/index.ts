@@ -77,14 +77,25 @@ Deno.serve(async (req) => {
   if (sugErr) return json({ error: "lookup_failed", message: sugErr.message }, 500);
   if (!sug) return json({ error: "not_found" }, 404);
 
-  // Caller must be a non-viewer member of the suggestion's org.
-  const { data: member } = await admin
-    .from("organization_members")
-    .select("role")
-    .eq("user_id", userId)
+  // Caller must be a non-viewer member of the suggestion's org. Membership is
+  // stored as jsonb on organizations.members ({userId, role}[]), with the
+  // owner_id column as an additional implicit "owner" membership.
+  const { data: org } = await admin
+    .from("organizations")
+    .select("owner_id, members")
     .eq("organization_id", sug.organization_id)
     .maybeSingle();
-  if (!member || member.role === "viewer") return json({ error: "forbidden" }, 403);
+  if (!org) return json({ error: "forbidden" }, 403);
+
+  let role: string | null = null;
+  if (org.owner_id === userId) {
+    role = "owner";
+  } else {
+    const members = (org.members ?? []) as Array<{ userId?: string; role?: string }>;
+    const me = members.find((m) => m?.userId === userId);
+    role = me?.role ?? null;
+  }
+  if (!role || role === "viewer") return json({ error: "forbidden" }, 403);
 
   if (body.action === "snooze") {
     const days = Math.max(1, Math.min(30, Number(body.snooze_days ?? 1)));
@@ -166,13 +177,9 @@ Deno.serve(async (req) => {
     decided_at: new Date().toISOString(),
   }).eq("id", sug.id);
 
-  // Update last_outreach_at / last_activity_at so the stuck-deal scanner
-  // won't re-fire immediately and re-engagement counters stay accurate.
-  if (sug.client_id) {
-    await admin.from("clients")
-      .update({ last_outreach_at: new Date().toISOString() })
-      .eq("client_id", sug.client_id);
-  }
+  // Bump deals.last_activity_at so the stuck-deal scanner won't immediately
+  // re-fire on the same deal. (The clients table has no last_outreach_at
+  // column — the suggestion row itself records the outreach via decided_at.)
   if (sug.deal_id) {
     await admin.from("deals")
       .update({ last_activity_at: new Date().toISOString() })

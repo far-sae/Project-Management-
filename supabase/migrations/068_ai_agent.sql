@@ -13,7 +13,7 @@ create table public.agent_suggestions (
   trigger_type    text not null check (trigger_type in ('intake','re_engagement')),
   client_id       uuid references clients(client_id) on delete cascade,
   deal_id         uuid references deals(deal_id) on delete cascade,
-  source_event_id uuid references events_queue(id) on delete set null,
+  source_event_id uuid references automation_events(event_id) on delete set null,
   draft           jsonb not null default '{}'::jsonb,
   enrichment_snapshot jsonb,
   confidence      numeric(4,3),
@@ -26,7 +26,7 @@ create table public.agent_suggestions (
   rejected_reasons text[],
   rejected_note   text,
   sent_message_id text,
-  decided_by      uuid references users(user_id) on delete set null,
+  decided_by      uuid references auth.users(id) on delete set null,
   decided_at      timestamptz,
   created_at      timestamptz not null default now(),
   check (client_id is not null or deal_id is not null)
@@ -83,20 +83,20 @@ update public.deals
    and last_activity_at = created_at;
 
 -- ============================================================
--- RLS
+-- RLS — uses the existing helper functions (is_org_member / _admin)
+-- from migration 036. The CRM stores members as JSON on
+-- organizations.members rather than in a separate table.
 -- ============================================================
 alter table public.agent_suggestions enable row level security;
 
 create policy agent_suggestions_org_read on public.agent_suggestions
-  for select using (organization_id in (
-    select organization_id from organization_members where user_id = auth.uid()
-  ));
+  for select to authenticated
+  using (public.is_org_member(organization_id));
 
 create policy agent_suggestions_member_write on public.agent_suggestions
-  for update using (organization_id in (
-    select organization_id from organization_members
-    where user_id = auth.uid() and role in ('owner','admin','member')
-  ));
+  for update to authenticated
+  using (public.is_org_member(organization_id) and not public.is_org_viewer(organization_id))
+  with check (public.is_org_member(organization_id) and not public.is_org_viewer(organization_id));
 
 -- No insert policy: rows only created by service-role (Edge Function).
 
@@ -152,8 +152,10 @@ language sql stable security definer set search_path = public, extensions as $$
   select d.deal_id, d.organization_id
     from deals d
     join pipelines p on p.pipeline_id = d.pipeline_id
+    join pipeline_stages s_curr on s_curr.stage_id = d.stage_id
    where d.organization_id = p_organization_id
-     and d.status = 'open'
+     and not s_curr.is_won
+     and not s_curr.is_lost
      and d.last_activity_at < now() - (p.stale_after_days || ' days')::interval
      and not exists (
        select 1 from agent_suggestions s

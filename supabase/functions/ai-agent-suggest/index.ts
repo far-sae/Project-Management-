@@ -63,11 +63,11 @@ const loadContext = async (admin: SupabaseClient, body: SuggestRequest) => {
 
   if (body.deal_id) {
     const { data: d } = await admin.from("deals")
-      .select("title, value, current_stage_id, last_activity_at, client_id")
+      .select("title, value, stage_id, last_activity_at, client_id")
       .eq("deal_id", body.deal_id).maybeSingle();
     if (d) {
       const { data: s } = await admin.from("pipeline_stages")
-        .select("name").eq("stage_id", d.current_stage_id).maybeSingle();
+        .select("label").eq("stage_id", d.stage_id).maybeSingle();
       const days = Math.floor(
         (Date.now() - new Date(d.last_activity_at as string).getTime()) /
           (24 * 3600 * 1000),
@@ -75,7 +75,7 @@ const loadContext = async (admin: SupabaseClient, body: SuggestRequest) => {
       deal = {
         title: (d.title as string) ?? "(untitled)",
         value: Number(d.value ?? 0),
-        stageName: (s?.name as string) ?? "(unknown)",
+        stageName: (s?.label as string) ?? "(unknown)",
         daysInStage: days,
         lastActivityAt: d.last_activity_at as string,
       };
@@ -85,22 +85,25 @@ const loadContext = async (admin: SupabaseClient, body: SuggestRequest) => {
 
   if (body.client_id) {
     const { data: c } = await admin.from("clients")
-      .select("name, email, company")
+      .select("name, email, legal_name, industry")
       .eq("client_id", body.client_id).maybeSingle();
     if (c) {
+      // In this CRM the "client" is an account/company; contact people live in
+      // `client_contacts`. We use the client.name as both the company name and
+      // the recipient placeholder — the LLM stitches them together.
       client = {
         name: (c.name as string) ?? "",
         email: (c.email as string) ?? "",
-        company: (c.company as string) ?? null,
+        company: (c.legal_name as string) ?? (c.name as string) ?? null,
       };
     }
     const { data: notes } = await admin.from("client_notes")
       .select("body")
       .eq("client_id", body.client_id)
-      .order("created_at", { ascending: false })
+      .order("occurred_at", { ascending: false })
       .limit(5);
     for (const n of notes ?? []) {
-      recentActivity.push(`Note: ${String(n.body).slice(0, 120)}`);
+      if (n.body) recentActivity.push(`Note: ${String(n.body).slice(0, 120)}`);
     }
   }
 
@@ -111,11 +114,11 @@ const loadStages = async (
   admin: SupabaseClient, orgId: string,
 ): Promise<StageRef[]> => {
   const { data } = await admin.from("pipeline_stages")
-    .select("stage_id, name, pipeline_id, pipelines!inner(organization_id)")
+    .select("stage_id, label, pipeline_id, pipelines!inner(organization_id)")
     .eq("pipelines.organization_id", orgId);
   return (data ?? []).map((r) => ({
     stageId: r.stage_id as string,
-    name: r.name as string,
+    name: r.label as string,
   }));
 };
 
