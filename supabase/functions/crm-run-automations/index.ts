@@ -7,6 +7,7 @@ import { enqueueCronEvents } from "./triggers/cron.ts";
 import { nextSendableTime, SendWindow } from "./triggers/sendWindow.ts";
 import { ACTION_REGISTRY } from "./actions/index.ts";
 import { AutomationEvent, Recipe, ActionResult } from "./shared/types.ts";
+import { matchesSlackTrigger } from "./triggers/slackMatch.ts";
 
 const ADVISORY_LOCK_KEY = 0xC8AE0001;
 
@@ -72,6 +73,16 @@ const loadEntityContext = async (admin: any, event: AutomationEvent) => {
 const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Promise<void> => {
   const started = new Date();
   const ctx = await loadEntityContext(admin, event);
+
+  if (
+    recipe.trigger_type === "slack_message_received" &&
+    !matchesSlackTrigger(
+      (recipe.trigger_config ?? {}) as { channels?: string[]; keyword?: string },
+      (event.payload ?? {}) as { channel_id?: string; text?: string },
+    )
+  ) {
+    return;
+  }
 
   if (!evaluateConditions(recipe.conditions ?? [], event, ctx)) return;
 

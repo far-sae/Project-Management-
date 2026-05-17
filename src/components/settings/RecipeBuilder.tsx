@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import {
   ACTION_TYPES, TRIGGER_TYPES,
   Recipe, RecipeAction, RecipeCondition, RecipeDraft, TriggerType, ActionType,
   upsertRecipe,
+  listSlackChannels, SlackChannel,
 } from "@/services/supabase/automations";
 import { toast } from "sonner";
 
@@ -29,6 +30,7 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
   task_overdue: "a task becomes overdue",
   scheduled: "scheduled time",
   agent_intake: "AI agent: draft outreach for new lead",
+  slack_message_received: "a Slack message is posted",
 };
 
 const ACTION_LABEL: Record<ActionType, string> = {
@@ -72,6 +74,20 @@ const draftFromRecipe = (r: Recipe | null): RecipeDraft => r
 export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose }) => {
   const [draft, setDraft] = useState<RecipeDraft>(() => draftFromRecipe(recipe));
   const [saving, setSaving] = useState(false);
+  const [slackChannels, setSlackChannels] = useState<SlackChannel[]>([]);
+  const [loadingChannels, setLoadingChannels] = useState(false);
+
+  // Fetch Slack channels on demand when the trigger flips to slack.
+  useEffect(() => {
+    if (draft.trigger.type !== "slack_message_received") return;
+    if (slackChannels.length > 0) return;
+    setLoadingChannels(true);
+    listSlackChannels().then((cs) => {
+      setSlackChannels(cs);
+      setLoadingChannels(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.trigger.type]);
 
   const setTriggerConfig = (patch: Record<string, unknown>) => {
     setDraft((d) => ({ ...d, trigger: { ...d.trigger, config: { ...d.trigger.config, ...patch } } }));
@@ -222,6 +238,58 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
                 </Select>
               )}
             </div>
+
+            {/* Slack trigger: channel multi-select + optional keyword filter */}
+            {draft.trigger.type === "slack_message_received" && (
+              <div className="ml-16 space-y-2 border-l pl-3 -mt-1">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Channels (required)</Label>
+                  {loadingChannels ? (
+                    <p className="text-xs text-muted-foreground">Loading channels…</p>
+                  ) : slackChannels.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No channels found. Make sure Slack is connected in Settings → Integrations
+                      and the bot is invited to at least one public channel.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto border rounded p-2">
+                      {slackChannels.map((c) => {
+                        const selected = ((draft.trigger.config.channels as string[]) ?? []).includes(c.id);
+                        return (
+                          <label key={c.id} className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => {
+                                const current = (draft.trigger.config.channels as string[]) ?? [];
+                                const next = selected
+                                  ? current.filter((x) => x !== c.id)
+                                  : [...current, c.id];
+                                setTriggerConfig({ channels: next });
+                              }}
+                            />
+                            #{c.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Keyword filter (optional)</Label>
+                  <Input
+                    value={(draft.trigger.config.keyword as string) ?? ""}
+                    onChange={(e) => setTriggerConfig({ keyword: e.target.value || undefined })}
+                    placeholder="e.g. task:  or  /^todo:/i  for regex"
+                    className="h-8"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Plain text = case-insensitive contains. Wrap in slashes for regex.
+                    Leave blank to fire on every message in the selected channels.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-start gap-3">
               <span className="text-sm font-semibold w-16 mt-1">If</span>
@@ -398,6 +466,7 @@ const ActionConfigEditor: React.FC<{
               <SelectContent>
                 <SelectItem value="deal_owner">Deal owner</SelectItem>
                 <SelectItem value="client_owner">Client account owner</SelectItem>
+                <SelectItem value="slack_sender">Slack sender (matched by email)</SelectItem>
               </SelectContent>
             </Select>
           </div>
