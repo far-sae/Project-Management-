@@ -45,6 +45,7 @@ const ACTION_LABEL: Record<ActionType, string> = {
   ai_draft_email: "AI: draft email",
   ai_extract: "AI: extract fields",
   ai_translate: "AI: translate",
+  wait: "Wait",
 };
 
 const OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in", "contains", "exists"] as const;

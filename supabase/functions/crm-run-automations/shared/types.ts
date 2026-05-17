@@ -8,7 +8,8 @@ export type ActionType =
   | "create_task" | "tag" | "set_field" | "change_owner"
   | "add_note" | "move_deal_stage" | "webhook" | "slack_post" | "send_email"
   | "ai_summarize" | "ai_classify_lead" | "ai_draft_email"
-  | "ai_extract" | "ai_translate";
+  | "ai_extract" | "ai_translate"
+  | "wait";
 
 export type RunStatus = "success" | "failure" | "skipped" | "partial";
 
@@ -53,6 +54,8 @@ export interface ActionContext {
   // { ai_output: "...", ai_output_subject: "...", ai_output_body: "..." }
   // Available to substitute() as {{ai.output}}, {{ai.output_subject}}, etc.
   aiOutputs?: Record<string, string>;
+  recipeRunId?: string;
+  nextActionIndex?: number;
 }
 
 export type ActionHandler = (
