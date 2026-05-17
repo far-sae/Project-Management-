@@ -56,6 +56,7 @@ import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
 import { useOrganization } from "@/context/OrganizationContext";
 import { Building2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   type UserNotificationPreferences,
@@ -480,71 +481,58 @@ export const Settings: React.FC = () => {
             next.set('tab', v);
             setSearchParams(next, { replace: true });
           }}
-          className="space-y-6"
+          className="md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 space-y-4 md:space-y-0"
         >
-          {/* On mobile we have 6–7 tabs but only ~360px of width — let the
-              row scroll horizontally instead of compressing every tab into
-              an icon-only sliver. */}
-          <TabsList className="w-full max-w-full overflow-x-auto justify-start sm:justify-center flex-nowrap whitespace-nowrap">
-            <TabsTrigger value="profile" className="gap-2">
-              <User className="w-4 h-4" />
-              Profile
-            </TabsTrigger>
-            <TabsTrigger value="appearance" className="gap-2">
-              <Palette className="w-4 h-4" />
-              Appearance
-            </TabsTrigger>
-            <TabsTrigger value="notifications" className="gap-2">
-              <Bell className="w-4 h-4" />
-              Notifications
-            </TabsTrigger>
-            <TabsTrigger value="subscription" className="gap-2">
-              <CreditCard className="w-4 h-4" />
-              Subscription
-            </TabsTrigger>
-            <TabsTrigger value="security" className="gap-2">
-              <Shield className="w-4 h-4" />
-              Security
-            </TabsTrigger>
-            <TabsTrigger value="capacity" className="gap-2">
-              <Activity className="w-4 h-4" />
-              Capacity
-            </TabsTrigger>
-            <TabsTrigger value="integrations" className="gap-2">
-              <Plug className="w-4 h-4" />
-              Integrations
-            </TabsTrigger>
-            <TabsTrigger value="pipelines" className="gap-2">
-              <GitBranch className="w-4 h-4" />
-              Pipelines
-            </TabsTrigger>
-            <TabsTrigger value="lead-scoring" className="gap-2">
-              <Target className="w-4 h-4" />
-              Lead scoring
-            </TabsTrigger>
-            <TabsTrigger value="lead-forms" className="gap-2">
-              <ClipboardList className="w-4 h-4" />
-              Lead forms
-            </TabsTrigger>
-            <TabsTrigger value="automations" className="gap-2">
-              <Zap className="w-4 h-4" />
-              Automations
-            </TabsTrigger>
-            <TabsTrigger value="sequences" className="gap-2">
-              <MailPlus className="w-4 h-4" />
-              Sequences
-            </TabsTrigger>
-            <TabsTrigger value="ai-usage" className="gap-2">
-              <Sparkles className="w-4 h-4" />
-              AI Usage
-            </TabsTrigger>
-            {canManageSettings && (
-              <TabsTrigger value="organization" className="gap-2">
-                <Building2 className="w-4 h-4" />
-                Organization
-              </TabsTrigger>
-            )}
-          </TabsList>
+          {/* Desktop: vertical left rail with grouped sections.
+              Mobile: horizontal scrolling pill-bar at the top (no sections,
+              just a flat scrolling list to keep it compact). */}
+          <div className="md:sticky md:top-6 md:self-start">
+            <TabsList
+              className={cn(
+                // base reset of the inline-flex/h-12/rounded-xl/bg-secondary
+                // defaults from the primitive, since the vertical layout
+                // wants something completely different visually.
+                'h-auto w-full p-0 bg-transparent text-muted-foreground',
+                // mobile: horizontal scrolling pill bar
+                'flex flex-row gap-1 overflow-x-auto whitespace-nowrap',
+                // desktop: vertical card with section spacing
+                'md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:rounded-lg md:border md:bg-card md:p-2'
+              )}
+            >
+              {/* ───── Account ───── */}
+              <SettingsSectionLabel>Account</SettingsSectionLabel>
+              <SettingsTab value="profile" icon={User}>Profile</SettingsTab>
+              <SettingsTab value="appearance" icon={Palette}>Appearance</SettingsTab>
+              <SettingsTab value="notifications" icon={Bell}>Notifications</SettingsTab>
+              <SettingsTab value="security" icon={Shield}>Security</SettingsTab>
+
+              {/* ───── Billing ───── */}
+              <SettingsSectionLabel>Billing</SettingsSectionLabel>
+              <SettingsTab value="subscription" icon={CreditCard}>Subscription</SettingsTab>
+
+              {/* ───── Workspace ───── */}
+              <SettingsSectionLabel>Workspace</SettingsSectionLabel>
+              <SettingsTab value="capacity" icon={Activity}>Capacity</SettingsTab>
+              <SettingsTab value="integrations" icon={Plug}>Integrations</SettingsTab>
+              {canManageSettings && (
+                <SettingsTab value="organization" icon={Building2}>Organization</SettingsTab>
+              )}
+
+              {/* ───── CRM ───── */}
+              <SettingsSectionLabel>CRM</SettingsSectionLabel>
+              <SettingsTab value="pipelines" icon={GitBranch}>Pipelines</SettingsTab>
+              <SettingsTab value="lead-scoring" icon={Target}>Lead scoring</SettingsTab>
+              <SettingsTab value="lead-forms" icon={ClipboardList}>Lead forms</SettingsTab>
+
+              {/* ───── Automation ───── */}
+              <SettingsSectionLabel>Automation</SettingsSectionLabel>
+              <SettingsTab value="automations" icon={Zap}>Automations</SettingsTab>
+              <SettingsTab value="sequences" icon={MailPlus}>Sequences</SettingsTab>
+              <SettingsTab value="ai-usage" icon={Sparkles}>AI Usage</SettingsTab>
+            </TabsList>
+          </div>
+
+          <div className="min-w-0">
 
           {/* APPEARANCE TAB */}
           <TabsContent value="appearance">
@@ -994,9 +982,41 @@ export const Settings: React.FC = () => {
               </CardContent>
             </Card>
           </TabsContent>
+          </div>
         </Tabs>
       </main>
   );
 };
+
+// ────────────────────────────────────────────────────────────────────────────
+// Settings tab primitives — keep the JSX in the main render tight.
+// Vertical-on-desktop sidebar item; collapses to horizontal pill on mobile.
+// ────────────────────────────────────────────────────────────────────────────
+const SettingsTab: React.FC<{
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}> = ({ value, icon: Icon, children }) => (
+  <TabsTrigger
+    value={value}
+    className={cn(
+      'gap-2 shrink-0',
+      // mobile pill
+      'rounded-md',
+      // desktop full-width left-aligned row
+      'md:w-full md:justify-start md:rounded-md md:px-3 md:py-2'
+    )}
+  >
+    <Icon className="w-4 h-4" />
+    {children}
+  </TabsTrigger>
+);
+
+const SettingsSectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  // Hidden on mobile (no room), shown as a small uppercase label on desktop.
+  <p className="hidden md:block px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground first:pt-1">
+    {children}
+  </p>
+);
 
 export default Settings;

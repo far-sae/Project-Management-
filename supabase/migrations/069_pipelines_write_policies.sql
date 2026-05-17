@@ -43,4 +43,23 @@ create policy "crm_project_templates write for org admins"
   using (public.is_org_admin_or_owner(organization_id))
   with check (public.is_org_admin_or_owner(organization_id));
 
+-- ============================================================
+-- lead_scoring_rules + lead_scoring_thresholds: same bug — only
+-- SELECT policies, writes happen direct from src/services/supabase/
+-- leadScoring.ts and were being silently rejected.
+-- ============================================================
+drop policy if exists "lead_scoring_rules write for org admins" on public.lead_scoring_rules;
+create policy "lead_scoring_rules write for org admins"
+  on public.lead_scoring_rules for all
+  to authenticated
+  using (public.is_org_admin_or_owner(organization_id))
+  with check (public.is_org_admin_or_owner(organization_id));
+
+drop policy if exists "lead_scoring_thresholds write for org admins" on public.lead_scoring_thresholds;
+create policy "lead_scoring_thresholds write for org admins"
+  on public.lead_scoring_thresholds for all
+  to authenticated
+  using (public.is_org_admin_or_owner(organization_id))
+  with check (public.is_org_admin_or_owner(organization_id));
+
 commit;
