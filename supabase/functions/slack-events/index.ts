@@ -13,6 +13,18 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SIGNING_SECRET = Deno.env.get("SLACK_SIGNING_SECRET") ?? "";
 const TOKEN_KEY = Deno.env.get("INTEGRATION_TOKEN_KEY") ?? "";
 
+const kickAutomationWorker = () => {
+  const promise = fetch(`${SUPABASE_URL}/functions/v1/crm-run-automations`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${SERVICE_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ source: "slack-events" }),
+  }).catch((err) => console.error("automation kick failed:", err));
+  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
+};
+
 // ────────────────────────────────────────────────────────────────────────────
 // Signature verification (Slack's v0 scheme).
 // ────────────────────────────────────────────────────────────────────────────
@@ -131,7 +143,7 @@ const resolveOrg = async (
   admin: SupabaseClient, teamId: string,
 ): Promise<{ organizationId: string; botToken: string } | null> => {
   const { data } = await admin.from("integrations")
-    .select("organization_id, access_token_encrypted, metadata")
+    .select("org_id, access_token_encrypted, metadata")
     .eq("provider", "slack")
     .eq("status", "active")
     .filter("metadata->>team_id", "eq", teamId)
@@ -140,7 +152,7 @@ const resolveOrg = async (
   if (!data) return null;
   try {
     const botToken = await decrypt(data.access_token_encrypted as string, TOKEN_KEY);
-    return { organizationId: data.organization_id as string, botToken };
+    return { organizationId: data.org_id as string, botToken };
   } catch {
     return null;
   }
@@ -273,6 +285,7 @@ Deno.serve(async (req) => {
       source_id: ev.ts ?? null,
     });
     if (insertErr) console.error("enqueue failed:", insertErr);
+    else kickAutomationWorker();
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "content-type": "application/json" },
     });
@@ -328,6 +341,7 @@ Deno.serve(async (req) => {
     source_id: `${reactionTs}:${ev.reaction}`,
   });
   if (insertErr) console.error("reaction enqueue failed:", insertErr);
+  else kickAutomationWorker();
 
   return new Response(JSON.stringify({ ok: true }), {
     headers: { "content-type": "application/json" },

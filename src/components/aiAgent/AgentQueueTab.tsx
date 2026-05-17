@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Bot, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Bot, Loader2, PlayCircle } from "lucide-react";
 import { useAgentSuggestions } from "@/hooks/useAgentSuggestions";
-import { AgentSuggestion, decideSuggestion } from "@/services/supabase/agentSuggestions";
+import { AgentSuggestion, decideSuggestion, runAgentNow } from "@/services/supabase/agentSuggestions";
 import { SuggestionCard } from "./SuggestionCard";
 import { EditDraftModal } from "./EditDraftModal";
 import { RejectModal } from "./RejectModal";
@@ -11,10 +12,11 @@ import { toast } from "sonner";
 type Filter = "all" | "intake" | "re_engagement" | "no_enrichment";
 
 export const AgentQueueTab: React.FC = () => {
-  const { pending, loading, refresh } = useAgentSuggestions();
+  const { organizationId, pending, loading, refresh } = useAgentSuggestions();
   const [filter, setFilter] = useState<Filter>("all");
   const [editing, setEditing] = useState<AgentSuggestion | null>(null);
   const [rejecting, setRejecting] = useState<AgentSuggestion | null>(null);
+  const [running, setRunning] = useState(false);
 
   const filtered = pending.filter((s) => {
     if (filter === "intake") return s.triggerType === "intake";
@@ -69,6 +71,20 @@ export const AgentQueueTab: React.FC = () => {
     }
   };
 
+  const runNow = async () => {
+    if (!organizationId) return;
+    setRunning(true);
+    try {
+      const checked = await runAgentNow(organizationId);
+      toast.success(`AI agent checked ${checked} recent client${checked === 1 ? "" : "s"}`);
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Agent run failed");
+    } finally {
+      setRunning(false);
+    }
+  };
+
   if (loading) return (
     <p className="text-sm text-muted-foreground flex items-center gap-2">
       <Loader2 className="w-4 h-4 animate-spin" /> Loading queue…
@@ -77,7 +93,7 @@ export const AgentQueueTab: React.FC = () => {
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2 text-xs">
+      <div className="flex flex-wrap gap-2 text-xs">
         {(["all", "intake", "re_engagement", "no_enrichment"] as const).map((f) => (
           <button
             key={f}
@@ -89,13 +105,17 @@ export const AgentQueueTab: React.FC = () => {
             {f.replace("_", " ")}
           </button>
         ))}
+        <Button size="sm" variant="outline" onClick={runNow} disabled={running || !organizationId}>
+          {running ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <PlayCircle className="w-3 h-3 mr-1" />}
+          Run agent now
+        </Button>
       </div>
 
       {filtered.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground flex flex-col items-center gap-2">
             <Bot className="w-6 h-6 text-indigo-500" />
-            No suggestions right now — the agent is watching.
+            No suggestions right now. Click <strong>Run agent now</strong> to scan recent clients and stuck deals.
           </CardContent>
         </Card>
       ) : (

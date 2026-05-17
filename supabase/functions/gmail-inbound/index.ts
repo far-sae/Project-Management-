@@ -10,6 +10,18 @@ const corsHeaders = {
     "content-type, x-twilio-email-event-webhook-signature, x-twilio-email-event-webhook-timestamp",
 };
 
+const kickAutomationWorker = () => {
+  const promise = fetch(`${SUPABASE_URL}/functions/v1/crm-run-automations`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${SERVICE_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ source: "gmail-inbound" }),
+  }).catch((err) => console.error("automation kick failed:", err));
+  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
+};
+
 // Constant-time string compare to avoid timing side channels.
 const timingSafeEqual = (a: string, b: string): boolean => {
   if (a.length !== b.length) return false;
@@ -129,6 +141,7 @@ Deno.serve(async (req) => {
     source_table: "sequence_replies",
     source_id: null,
   });
+  kickAutomationWorker();
 
   await admin.from("pending_actions")
     .update({ status: "reply_received" })

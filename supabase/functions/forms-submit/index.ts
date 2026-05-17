@@ -12,6 +12,18 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "content-type, x-form-slug, x-turnstile-token",
 };
 
+const kickAutomationWorker = () => {
+  const promise = fetch(`${SUPABASE_URL}/functions/v1/crm-run-automations`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${SERVICE_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ source: "forms-submit" }),
+  }).catch((err) => console.error("automation kick failed:", err));
+  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
+};
+
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 interface FormField {
@@ -275,6 +287,7 @@ Deno.serve(async (req) => {
     user_agent: req.headers.get("user-agent") ?? null,
     turnstile_token_verified: turnstileVerified,
   });
+  kickAutomationWorker();
 
   return new Response(JSON.stringify({
     ok: true,

@@ -8,6 +8,7 @@ import {
   CalendarPlus,
   FolderKanban,
   MailCheck,
+  PlayCircle,
   Plus,
   Trash2,
   UserPlus,
@@ -23,6 +24,7 @@ import {
   Recipe,
   RecipeDraft,
   deleteRecipe,
+  kickAutomationWorker,
   setRecipeEnabled,
   summarizeRecipe,
 } from "@/services/supabase/automations";
@@ -246,6 +248,7 @@ export const AutomationsSettingsTab: React.FC = () => {
   const [editing, setEditing] = useState<Recipe | "new" | null>(null);
   const [initialDraft, setInitialDraft] = useState<RecipeDraft | null>(null);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
+  const [runningNow, setRunningNow] = useState(false);
 
   if (!canManage) {
     return <p className="text-sm text-muted-foreground">Only admins can manage automations.</p>;
@@ -287,6 +290,18 @@ export const AutomationsSettingsTab: React.FC = () => {
     setEditing(recipe);
   };
 
+  const runPendingNow = async () => {
+    setRunningNow(true);
+    try {
+      const result = await kickAutomationWorker({ force: true });
+      const processed = result?.processed ?? 0;
+      const pendings = result?.pendings_drained ?? 0;
+      toast.success(`Automation runner checked ${processed + pendings} pending item${processed + pendings === 1 ? "" : "s"}`);
+    } finally {
+      setRunningNow(false);
+    }
+  };
+
   return (
     <div className="grid lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 space-y-3">
@@ -297,6 +312,9 @@ export const AutomationsSettingsTab: React.FC = () => {
           </h2>
           <Button onClick={openBlankBuilder}>
             <Plus className="w-4 h-4 mr-1" /> New automation
+          </Button>
+          <Button variant="outline" onClick={runPendingNow} disabled={runningNow}>
+            <PlayCircle className="w-4 h-4 mr-1" /> {runningNow ? "Running..." : "Run pending"}
           </Button>
         </div>
 

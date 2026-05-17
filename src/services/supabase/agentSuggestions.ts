@@ -1,4 +1,5 @@
 import { supabase } from "./config";
+import { kickAutomationWorker } from "./automations";
 import { logger } from "@/lib/logger";
 
 export type SuggestionStatus =
@@ -126,4 +127,34 @@ export const decideSuggestion = async (a: DecideArgs): Promise<void> => {
 
   const { error } = await supabase.functions.invoke("ai-agent-approve", { body });
   if (error) throw error;
+};
+
+export const runAgentNow = async (organizationId: string): Promise<number> => {
+  await kickAutomationWorker({ force: true });
+  await supabase.functions.invoke("crm-stuck-deal-scanner", {
+    body: { organization_id: organizationId, source: "agent_page" },
+  }).catch((err) => logger.warn("Stale-deal scan did not run:", err));
+
+  const { data: clients, error } = await supabase
+    .from("clients")
+    .select("client_id")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (error) {
+    logger.warn("Could not load recent clients for agent run:", error);
+    return 0;
+  }
+
+  const rows = clients ?? [];
+  await Promise.all(rows.map((client) => supabase.functions.invoke("ai-agent-suggest", {
+    body: {
+      trigger_type: "intake",
+      organization_id: organizationId,
+      client_id: client.client_id,
+      source_event_id: null,
+    },
+  }).catch((err) => logger.warn("Agent intake suggestion failed:", err))));
+
+  return rows.length;
 };

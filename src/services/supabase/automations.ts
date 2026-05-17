@@ -104,6 +104,46 @@ export interface RecipeRun {
   hasPendingActions?: boolean;
 }
 
+export interface AutomationWorkerResult {
+  ok?: boolean;
+  processed?: number;
+  pendings_drained?: number;
+  skipped?: string;
+}
+
+let lastWorkerKickAt = 0;
+let workerKickInFlight: Promise<AutomationWorkerResult | null> | null = null;
+
+export const kickAutomationWorker = async (
+  options: { force?: boolean } = {},
+): Promise<AutomationWorkerResult | null> => {
+  const now = Date.now();
+  if (!options.force && now - lastWorkerKickAt < 15_000) {
+    return null;
+  }
+  if (workerKickInFlight) return workerKickInFlight;
+
+  lastWorkerKickAt = now;
+  workerKickInFlight = supabase.functions
+    .invoke("crm-run-automations", { body: { source: "app" } })
+    .then(({ data, error }) => {
+      if (error) {
+        logger.warn("Automation worker did not run:", error);
+        return null;
+      }
+      return (data as AutomationWorkerResult) ?? null;
+    })
+    .catch((err) => {
+      logger.warn("Automation worker did not run:", err);
+      return null;
+    })
+    .finally(() => {
+      workerKickInFlight = null;
+    });
+
+  return workerKickInFlight;
+};
+
 export const validateRecipeDraft = (draft: RecipeDraft): void => {
   if (!draft.name || !draft.name.trim()) {
     throw new Error("Recipe name is required");
@@ -259,12 +299,14 @@ export const upsertRecipe = async (
     p_send_window: draft.sendWindow ?? null,
   }).single();
   if (error) throw error;
+  void kickAutomationWorker({ force: true });
   return mapRecipe(data as Record<string, unknown>);
 };
 
 export const deleteRecipe = async (recipeId: string): Promise<void> => {
   const { error } = await supabase.rpc("crm_delete_recipe", { p_recipe_id: recipeId });
   if (error) throw error;
+  void kickAutomationWorker({ force: true });
 };
 
 export const setRecipeEnabled = async (recipeId: string, enabled: boolean): Promise<void> => {

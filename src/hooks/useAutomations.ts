@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useOrganization } from "@/context/OrganizationContext";
-import { Recipe, listRecipes } from "@/services/supabase/automations";
+import { Recipe, kickAutomationWorker, listRecipes } from "@/services/supabase/automations";
 import { supabase } from "@/services/supabase/config";
 import { toast } from "sonner";
 
@@ -67,6 +67,15 @@ export const useAutomations = () => {
       recipeChannel.unsubscribe();
       runChannel.unsubscribe();
     };
+  }, [orgId]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    void kickAutomationWorker({ force: true });
+    const id = window.setInterval(() => {
+      void kickAutomationWorker();
+    }, 30_000);
+    return () => window.clearInterval(id);
   }, [orgId]);
 
   return { organizationId: orgId, recipes, loading, canManage: isOwner || isAdmin };

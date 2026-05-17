@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, MailPlus } from "lucide-react";
+import { Loader2, MailPlus, PlayCircle } from "lucide-react";
 import { useSequences } from "@/hooks/useSequences";
-import { summarizeRecipe } from "@/services/supabase/automations";
+import { kickAutomationWorker, summarizeRecipe } from "@/services/supabase/automations";
 import { listSequenceReplies, SequenceReply } from "@/services/supabase/sequences";
 
 export const SequencesSettingsTab: React.FC = () => {
   const { organizationId, sequences, loading, canManage } = useSequences();
   const [replies, setReplies] = useState<SequenceReply[]>([]);
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
     if (!organizationId) return;
@@ -26,13 +28,28 @@ export const SequencesSettingsTab: React.FC = () => {
     );
   }
 
+  const runPending = async () => {
+    setRunning(true);
+    try {
+      await kickAutomationWorker({ force: true });
+    } finally {
+      setRunning(false);
+    }
+  };
+
   return (
     <div className="grid lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-          <MailPlus className="w-4 h-4 text-indigo-500" />
-          Sequences ({sequences.length})
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+            <MailPlus className="w-4 h-4 text-indigo-500" />
+            Sequences ({sequences.length})
+          </h2>
+          <Button size="sm" variant="outline" onClick={runPending} disabled={running || !organizationId}>
+            {running ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <PlayCircle className="w-3 h-3 mr-1" />}
+            Run sequence steps
+          </Button>
+        </div>
         {sequences.length === 0 ? (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">

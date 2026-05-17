@@ -1,8 +1,8 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useParams } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { OrganizationProvider } from '@/context/OrganizationContext';
+import { OrganizationProvider, useOrganization } from '@/context/OrganizationContext';
 import { SubscriptionProvider } from '@/context/SubscriptionContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -54,6 +54,7 @@ import { CommandPalette } from '@/components/command/CommandPalette';
 import { CallProvider } from '@/components/calling/CallProvider';
 import { CallOverlay } from '@/components/calling/CallOverlay';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { kickAutomationWorker } from '@/services/supabase/automations';
 
 // Used for non-app routes (auth, landing, legal). Authenticated routes get
 // their own scoped fallback inside <AppLayout> so the sidebar stays visible
@@ -120,6 +121,23 @@ const RouterShell: React.FC = () => {
       {user && <CommandPalette />}
     </>
   );
+};
+
+const AutomationWorkerPulse: React.FC = () => {
+  const { user } = useAuth();
+  const { organization } = useOrganization();
+  const orgId = organization?.organizationId ?? null;
+
+  useEffect(() => {
+    if (!user || !orgId) return;
+    void kickAutomationWorker({ force: true });
+    const id = window.setInterval(() => {
+      void kickAutomationWorker();
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [user?.userId, orgId]);
+
+  return null;
 };
 
 // Router is created once at module level — NOT inside App() — so it is stable
@@ -351,6 +369,7 @@ export default function App() {
           <OrganizationProvider>
             <SubscriptionProvider>
               <CallProvider>
+                <AutomationWorkerPulse />
                 <RouterProvider router={router} future={{ v7_startTransition: true }} />
                 <CallOverlay />
                 <Toaster position='bottom-right' />

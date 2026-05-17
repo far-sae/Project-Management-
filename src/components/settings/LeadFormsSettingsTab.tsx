@@ -9,8 +9,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useLeadForms } from "@/hooks/useLeadForms";
 import { usePipelines } from "@/hooks/usePipelines";
 import { createForm, deleteForm } from "@/services/supabase/leadForms";
+import { kickAutomationWorker } from "@/services/supabase/automations";
 import { LeadFormEditor } from "./LeadFormEditor";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, PlayCircle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const DEFAULT_FIELDS = [
@@ -26,6 +27,7 @@ export const LeadFormsSettingsTab: React.FC = () => {
   const [newSlug, setNewSlug] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newPipelineId, setNewPipelineId] = useState<string>("");
+  const [running, setRunning] = useState(false);
 
   React.useEffect(() => {
     if (!newPipelineId && defaultPipeline) setNewPipelineId(defaultPipeline.pipelineId);
@@ -46,6 +48,16 @@ export const LeadFormsSettingsTab: React.FC = () => {
       toast.success("Form created");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Create failed");
+    }
+  };
+
+  const runPending = async () => {
+    setRunning(true);
+    try {
+      await kickAutomationWorker({ force: true });
+      toast.success("Checked pending form automations");
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -85,7 +97,11 @@ export const LeadFormsSettingsTab: React.FC = () => {
           </TabsList>
           {forms.map((f) => (
             <TabsContent key={f.formId} value={f.formId} className="mt-4 space-y-3">
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={runPending} disabled={running}>
+                  {running ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <PlayCircle className="w-4 h-4 mr-1" />}
+                  Run pending
+                </Button>
                 <Button variant="ghost" size="icon" onClick={async () => {
                   if (confirm(`Delete form "${f.title}"?`)) {
                     await deleteForm(f.formId);

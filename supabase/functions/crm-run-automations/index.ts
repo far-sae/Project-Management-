@@ -14,7 +14,7 @@ import { matchesSlackTrigger, matchesSlackReaction } from "./triggers/slackMatch
 const loadSlackBotUserId = async (admin: any, orgId: string): Promise<string | null> => {
   const { data } = await admin.from("integrations")
     .select("metadata")
-    .eq("organization_id", orgId)
+    .eq("org_id", orgId)
     .eq("provider", "slack")
     .eq("status", "active")
     .limit(1)
@@ -23,6 +23,11 @@ const loadSlackBotUserId = async (admin: any, orgId: string): Promise<string | n
 };
 
 const ADVISORY_LOCK_KEY = 0xC8AE0001;
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
+  "access-control-allow-methods": "POST, OPTIONS",
+};
 
 const tryAdvisoryLock = async (admin: any): Promise<boolean> => {
   const { data } = await admin.rpc("pg_try_advisory_lock", { key: ADVISORY_LOCK_KEY });
@@ -341,14 +346,18 @@ const processPendingActions = async (admin: any): Promise<number> => {
   return drained;
 };
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   const admin = makeAdmin();
   const start = Date.now();
 
   const locked = await tryAdvisoryLock(admin);
   if (!locked) {
     return new Response(JSON.stringify({ ok: true, skipped: "already_running" }), {
-      headers: { "content-type": "application/json" },
+      headers: { ...corsHeaders, "content-type": "application/json" },
     });
   }
 
@@ -357,30 +366,36 @@ Deno.serve(async () => {
   try {
     pendingsDrained = await processPendingActions(admin);
     await enqueueCronEvents(admin);
-    const events = await pullBatch(admin, 200);
-    processed = events.length;
 
-    for (const event of events) {
-      try {
-        const recipes = await loadMatchingRecipes(admin, event);
-        for (const recipe of recipes) {
-          if (!triggerConfigMatches(recipe.trigger_config ?? {}, event)) continue;
-          if (await isBursting(admin, recipe.recipe_id)) {
-            await admin.rpc("disable_recipe_for_runaway", { p_recipe_id: recipe.recipe_id });
-            await writeRun(admin, {
-              recipeId: recipe.recipe_id,
-              eventId: event.event_id,
-              organizationId: event.organization_id,
-              results: [{ type: "create_task", status: "skipped", message: "auto_disabled_runaway" }],
-              startedAt: new Date(),
-              finishedAt: new Date(),
-            });
-            continue;
+    // Drain a few batches in one invocation so chained automations keep moving:
+    // workspace_created -> create_project -> project_created -> create_task.
+    for (let batch = 0; batch < 5; batch++) {
+      const events = await pullBatch(admin, 200);
+      if (events.length === 0) break;
+      processed += events.length;
+
+      for (const event of events) {
+        try {
+          const recipes = await loadMatchingRecipes(admin, event);
+          for (const recipe of recipes) {
+            if (!triggerConfigMatches(recipe.trigger_config ?? {}, event)) continue;
+            if (await isBursting(admin, recipe.recipe_id)) {
+              await admin.rpc("disable_recipe_for_runaway", { p_recipe_id: recipe.recipe_id });
+              await writeRun(admin, {
+                recipeId: recipe.recipe_id,
+                eventId: event.event_id,
+                organizationId: event.organization_id,
+                results: [{ type: "create_task", status: "skipped", message: "auto_disabled_runaway" }],
+                startedAt: new Date(),
+                finishedAt: new Date(),
+              });
+              continue;
+            }
+            await runRecipe(admin, recipe, event);
           }
-          await runRecipe(admin, recipe, event);
+        } finally {
+          await markProcessed(admin, event.event_id);
         }
-      } finally {
-        await markProcessed(admin, event.event_id);
       }
     }
   } finally {
@@ -394,6 +409,6 @@ Deno.serve(async () => {
   }
 
   return new Response(JSON.stringify({ ok: true, processed, pendings_drained: pendingsDrained }), {
-    headers: { "content-type": "application/json" },
+    headers: { ...corsHeaders, "content-type": "application/json" },
   });
 });

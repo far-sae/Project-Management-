@@ -18,6 +18,18 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const MODEL = "claude-sonnet-4-6";
 
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
+  "access-control-allow-methods": "POST, OPTIONS",
+};
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "content-type": "application/json" },
+  });
+
 interface SuggestRequest {
   trigger_type: "intake" | "re_engagement";
   organization_id: string;
@@ -183,8 +195,9 @@ const logUsage = async (
 };
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
-    return new Response("method_not_allowed", { status: 405 });
+    return json({ error: "method_not_allowed" }, 405);
   }
   const body = await req.json() as SuggestRequest;
 
@@ -196,9 +209,7 @@ Deno.serve(async (req) => {
     .select("ai_agent_enabled, ai_agent_apollo_daily_cap, ai_agent_draft_daily_cap")
     .eq("organization_id", body.organization_id).maybeSingle();
   if (!org || !org.ai_agent_enabled) {
-    return new Response(JSON.stringify({ skipped: "agent disabled" }), {
-      headers: { "content-type": "application/json" },
-    });
+    return json({ skipped: "agent disabled" });
   }
 
   // Apollo cap (skip enrichment if hit — still allow generic draft).
@@ -237,9 +248,7 @@ Deno.serve(async (req) => {
   const draftUsedToday = await countToday(admin, body.organization_id, "agent_draft");
   if (draftUsedToday >= draftCap) {
     const id = await insertCapReached(admin, body, "llm_cap");
-    return new Response(JSON.stringify({ suggestion_id: id, status: "cap_reached" }), {
-      headers: { "content-type": "application/json" },
-    });
+    return json({ suggestion_id: id, status: "cap_reached" });
   }
 
   const stages = await loadStages(admin, body.organization_id);
@@ -274,9 +283,7 @@ Deno.serve(async (req) => {
       status: "failed",
       rejected_note: `llm_error: ${(e as Error).message}`.slice(0, 300),
     }).select("id").single();
-    return new Response(JSON.stringify({ suggestion_id: data?.id, status: "failed" }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
+    return json({ suggestion_id: data?.id, status: "failed" });
   }
 
   const { data: row, error } = await admin.from("agent_suggestions").insert({
@@ -294,7 +301,5 @@ Deno.serve(async (req) => {
   }).select("id").single();
   if (error) throw error;
 
-  return new Response(JSON.stringify({ suggestion_id: row.id, status: "pending" }), {
-    headers: { "content-type": "application/json" },
-  });
+  return json({ suggestion_id: row.id, status: "pending" });
 });

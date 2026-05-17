@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
   // fall back to any active slack integration in any org they belong
   // to (matches the existing pattern for cross-user shared integrations).
   const { data: integ } = await admin.from("integrations")
-    .select("access_token_encrypted, organization_id")
+    .select("access_token_encrypted, org_id")
     .eq("user_id", userId)
     .eq("provider", "slack")
     .eq("status", "active")
@@ -68,8 +68,8 @@ Deno.serve(async (req) => {
     if (myOrgIds.length === 0) return json({ channels: [] });
 
     const { data: shared } = await admin.from("integrations")
-      .select("access_token_encrypted, organization_id")
-      .in("organization_id", myOrgIds)
+      .select("access_token_encrypted, org_id")
+      .in("org_id", myOrgIds)
       .eq("provider", "slack")
       .eq("status", "active")
       .limit(1)
@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
   let cursor: string | undefined;
   for (let i = 0; i < 10; i++) {
     const params = new URLSearchParams({
-      types: "public_channel",
+      types: "public_channel,private_channel",
       exclude_archived: "true",
       limit: "200",
     });
