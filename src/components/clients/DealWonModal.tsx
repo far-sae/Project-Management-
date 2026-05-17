@@ -1,6 +1,6 @@
 // src/components/clients/DealWonModal.tsx
 import React, { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,9 @@ export const DealWonModal: React.FC<Props> = ({ deal, targetStage: _targetStage,
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Create project from won deal</DialogTitle>
+          <DialogDescription>
+            Choose whether to create a delivery project now or just mark this deal as won.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>

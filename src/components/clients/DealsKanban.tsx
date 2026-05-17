@@ -12,10 +12,25 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import { Building2, Calendar as CalendarIcon, Loader2, Plus, User } from 'lucide-react';
+import {
+  Building2,
+  Calendar as CalendarIcon,
+  GripVertical,
+  Loader2,
+  MoreVertical,
+  Pencil,
+  Plus,
+  User,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { format, isPast } from 'date-fns';
 import { useDeals } from '@/hooks/useDeals';
@@ -65,9 +80,12 @@ interface EffectiveStage {
 const DealCard: React.FC<{
   deal: Deal;
   onSelect?: (d: Deal) => void;
+  onEdit?: (d: Deal) => void;
+  onMove?: (deal: Deal, stage: EffectiveStage) => void;
+  stages: EffectiveStage[];
   displayCurrency?: string;
   rates: Record<string, number>;
-}> = ({ deal, onSelect, displayCurrency, rates }) => {
+}> = ({ deal, onSelect, onEdit, onMove, stages, displayCurrency, rates }) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.dealId,
     data: { type: 'deal', deal },
@@ -76,10 +94,8 @@ const DealCard: React.FC<{
   return (
     <div
       ref={setNodeRef}
-      {...attributes}
-      {...listeners}
       className={cn(
-        'group rounded-md border border-border bg-card p-2.5 cursor-grab active:cursor-grabbing transition-shadow',
+        'group rounded-md border border-border bg-card p-2.5 transition-shadow',
         isDragging ? 'opacity-40 shadow-lg' : 'hover:shadow-sm',
       )}
       onClick={(e) => {
@@ -90,15 +106,67 @@ const DealCard: React.FC<{
       }}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium leading-tight line-clamp-2">{deal.title}</p>
-        <span className="text-sm font-semibold text-foreground shrink-0">
-          {displayCurrency
-            ? formatDealMoney(
-                convertAmount(deal.value, deal.currency, displayCurrency, rates),
-                displayCurrency,
-              )
-            : formatDealMoney(deal.value, deal.currency)}
-        </span>
+        <div className="flex min-w-0 items-start gap-1.5">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="mt-0.5 cursor-grab rounded p-0.5 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 active:cursor-grabbing"
+            aria-label="Drag deal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+          <p className="text-sm font-medium leading-tight line-clamp-2">{deal.title}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="text-sm font-semibold text-foreground">
+            {displayCurrency
+              ? formatDealMoney(
+                  convertAmount(deal.value, deal.currency, displayCurrency, rates),
+                  displayCurrency,
+                )
+              : formatDealMoney(deal.value, deal.currency)}
+          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                aria-label="Deal actions"
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit?.(deal);
+                }}
+              >
+                <Pencil className="mr-2 h-3.5 w-3.5" /> Edit deal
+              </DropdownMenuItem>
+              {stages
+                .filter((s) => s.key !== deal.stage)
+                .map((stage) => (
+                  <DropdownMenuItem
+                    key={stage.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMove?.(deal, stage);
+                    }}
+                  >
+                    Move to {stage.label}
+                  </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
       {deal.clientName && (
         <p className="mt-1 text-xs text-muted-foreground inline-flex items-center gap-1">
@@ -145,10 +213,24 @@ const StageColumn: React.FC<{
   deals: Deal[];
   onAdd: (stage: EffectiveStage) => void;
   onSelect?: (d: Deal) => void;
+  onEdit?: (d: Deal) => void;
+  onMove?: (deal: Deal, stage: EffectiveStage) => void;
+  stages: EffectiveStage[];
   canCreate: boolean;
   displayCurrency?: string;
   rates: Record<string, number>;
-}> = ({ stage, deals, onAdd, onSelect, canCreate, displayCurrency, rates }) => {
+}> = ({
+  stage,
+  deals,
+  onAdd,
+  onSelect,
+  onEdit,
+  onMove,
+  stages,
+  canCreate,
+  displayCurrency,
+  rates,
+}) => {
   const { setNodeRef, isOver } = useDroppable({
     id: `stage:${stage.id}`,
     data: { type: 'stage', stage: stage.id },
@@ -198,6 +280,9 @@ const StageColumn: React.FC<{
               key={d.dealId}
               deal={d}
               onSelect={onSelect}
+              onEdit={onEdit}
+              onMove={onMove}
+              stages={stages}
               displayCurrency={displayCurrency}
               rates={rates}
             />
@@ -240,6 +325,7 @@ export const DealsKanban: React.FC<Props> = ({
     pipelineId?: string | null;
     stageId?: string | null;
   } | null>(null);
+  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   // Won-stage drop intercept. Set by handleDragEnd when the target stage has
   // `isWon`; Task 11 will mount <DealWonModal/> against this state. For now we
   // surface a placeholder toast and clear it so the user still gets feedback.
@@ -296,16 +382,8 @@ export const DealsKanban: React.FC<Props> = ({
     /* no-op — we commit on drop only */
   };
 
-  const handleDragEnd = async (e: DragEndEvent) => {
-    setDraggingDeal(null);
-    const overId = e.over?.id?.toString();
-    const deal = e.active?.data?.current?.deal as Deal | undefined;
-    if (!overId || !deal) return;
-    const targetStageRecord = overId.startsWith('stage:')
-      ? effectiveStages.find((s) => s.id === overId.slice('stage:'.length))
-      : null;
-    if (!targetStageRecord || targetStageRecord.key === deal.stage) return;
-
+  const moveDealToStage = async (deal: Deal, targetStageRecord: EffectiveStage) => {
+    if (targetStageRecord.key === deal.stage) return;
     // Won stages are intercepted — they need the project-creation handoff in
     // Task 11 rather than a plain stage update.
     if (targetStageRecord.isWon) {
@@ -323,6 +401,18 @@ export const DealsKanban: React.FC<Props> = ({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not move deal');
     }
+  };
+
+  const handleDragEnd = async (e: DragEndEvent) => {
+    setDraggingDeal(null);
+    const overId = e.over?.id?.toString();
+    const deal = e.active?.data?.current?.deal as Deal | undefined;
+    if (!overId || !deal) return;
+    const targetStageRecord = overId.startsWith('stage:')
+      ? effectiveStages.find((s) => s.id === overId.slice('stage:'.length))
+      : null;
+    if (!targetStageRecord) return;
+    await moveDealToStage(deal, targetStageRecord);
   };
 
   if (loading) {
@@ -370,6 +460,11 @@ export const DealsKanban: React.FC<Props> = ({
                 })
               }
               onSelect={onSelectDeal}
+              onEdit={(deal) => setEditingDeal(deal)}
+              onMove={(deal, targetStage) => {
+                moveDealToStage(deal, targetStage);
+              }}
+              stages={effectiveStages}
               canCreate={canManage}
               displayCurrency={displayCurrency}
               rates={rates}
@@ -381,6 +476,7 @@ export const DealsKanban: React.FC<Props> = ({
             <div className="w-[18.5rem]">
               <DealCard
                 deal={draggingDeal}
+                stages={effectiveStages}
                 displayCurrency={displayCurrency}
                 rates={rates}
               />
@@ -398,6 +494,18 @@ export const DealsKanban: React.FC<Props> = ({
           defaultStageId={showNew.stageId ?? null}
           defaultClientId={scopedClientId ?? null}
           clients={clients}
+          stages={stages}
+        />
+      )}
+
+      {editingDeal && (
+        <NewDealDialog
+          open={!!editingDeal}
+          onOpenChange={(o) => !o && setEditingDeal(null)}
+          defaultClientId={scopedClientId ?? null}
+          clients={clients}
+          stages={stages}
+          deal={editingDeal}
         />
       )}
 

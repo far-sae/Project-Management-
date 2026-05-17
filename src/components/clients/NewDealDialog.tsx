@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/select';
 import { useDeals } from '@/hooks/useDeals';
 import { Client } from '@/services/supabase/clients';
-import { DEAL_STAGES, DealStage } from '@/services/supabase/deals';
+import { DEAL_STAGES, Deal, DealStage } from '@/services/supabase/deals';
+import { PipelineStage } from '@/services/supabase/pipelines';
 import { toast } from 'sonner';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 
@@ -28,6 +29,8 @@ interface Props {
   defaultStageId?: string | null;
   defaultClientId?: string | null;
   clients: Client[];
+  stages?: PipelineStage[];
+  deal?: Deal | null;
 }
 
 export const NewDealDialog: React.FC<Props> = ({
@@ -38,8 +41,10 @@ export const NewDealDialog: React.FC<Props> = ({
   defaultStageId = null,
   defaultClientId = null,
   clients,
+  stages = [],
+  deal = null,
 }) => {
-  const { create } = useDeals();
+  const { create, update } = useDeals();
   const orgCurrency = useOrgCurrency();
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
@@ -55,6 +60,21 @@ export const NewDealDialog: React.FC<Props> = ({
 
   useEffect(() => {
     if (!open) return;
+    if (deal) {
+      setForm({
+        title: deal.title,
+        description: deal.description ?? '',
+        clientId: deal.clientId ?? 'none',
+        stage: deal.stage,
+        value: String(deal.value ?? ''),
+        currency: deal.currency || orgCurrency,
+        expectedCloseDate: deal.expectedCloseDate
+          ? deal.expectedCloseDate.toISOString().slice(0, 10)
+          : '',
+        source: deal.source ?? 'none',
+      });
+      return;
+    }
     setForm({
       title: '',
       description: '',
@@ -65,7 +85,11 @@ export const NewDealDialog: React.FC<Props> = ({
       expectedCloseDate: '',
       source: 'none',
     });
-  }, [open, defaultStage, defaultClientId, orgCurrency]);
+  }, [open, defaultStage, defaultClientId, orgCurrency, deal]);
+
+  const stageOptions = stages.length > 0
+    ? stages.map((s) => ({ id: s.stageId, key: s.key, label: s.label }))
+    : DEAL_STAGES.map((s) => ({ id: s.id, key: s.id, label: s.label }));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,25 +108,34 @@ export const NewDealDialog: React.FC<Props> = ({
         form.clientId !== 'none'
           ? clients.find((c) => c.clientId === form.clientId)
           : null;
-      await create({
+      const selectedStage = stageOptions.find((s) => s.key === form.stage);
+      const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
         clientId: client?.clientId ?? null,
         clientName: client?.name ?? null,
-        stage: form.stage,
-        pipelineId: defaultPipelineId,
-        stageId: defaultStageId,
+        stage: form.stage as DealStage,
+        pipelineId: selectedStage && stages.length > 0
+          ? stages.find((s) => s.stageId === selectedStage.id)?.pipelineId ?? defaultPipelineId ?? undefined
+          : defaultPipelineId ?? undefined,
+        stageId: selectedStage && stages.length > 0 ? selectedStage.id : defaultStageId ?? undefined,
         value,
         currency: form.currency,
         expectedCloseDate: form.expectedCloseDate
           ? new Date(form.expectedCloseDate)
           : null,
         source: form.source !== 'none' ? form.source : null,
-      });
-      toast.success('Deal created');
+      };
+      if (deal) {
+        await update(deal.dealId, payload);
+        toast.success('Deal updated');
+      } else {
+        await create(payload);
+        toast.success('Deal created');
+      }
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create deal');
+      toast.error(err instanceof Error ? err.message : 'Failed to save deal');
     } finally {
       setBusy(false);
     }
@@ -112,9 +145,11 @@ export const NewDealDialog: React.FC<Props> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>New deal</DialogTitle>
+          <DialogTitle>{deal ? 'Edit deal' : 'New deal'}</DialogTitle>
           <DialogDescription>
-            Track a sales opportunity through your pipeline.
+            {deal
+              ? 'Update this sales opportunity and move it to the right stage.'
+              : 'Track a sales opportunity through your pipeline.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -188,8 +223,8 @@ export const NewDealDialog: React.FC<Props> = ({
               >
                 <SelectTrigger id="d-stage"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {DEAL_STAGES.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                  {stageOptions.map((s) => (
+                    <SelectItem key={s.id} value={s.key}>{s.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -241,7 +276,7 @@ export const NewDealDialog: React.FC<Props> = ({
             </Button>
             <Button type="submit" disabled={busy}>
               {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Create
+              {deal ? 'Save changes' : 'Create'}
             </Button>
           </DialogFooter>
         </form>

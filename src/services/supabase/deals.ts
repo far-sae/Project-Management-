@@ -193,6 +193,29 @@ const friendlyDealCreateError = (error: unknown): Error => {
   return error instanceof Error ? error : new Error(msg || "Failed to create deal");
 };
 
+const friendlyDealUpdateError = (error: unknown): Error => {
+  const e = error as { code?: string; message?: string; details?: string };
+  const msg = String(e?.message ?? "");
+  const details = String(e?.details ?? "");
+  const combined = `${msg} ${details}`;
+
+  if (e?.code === "P0001" && msg) {
+    return new Error(msg);
+  }
+  if (e?.code === "42501" || /row-level security|permission denied/i.test(combined)) {
+    return new Error(
+      "You do not have permission to move or edit this deal. Ask an admin to apply the latest CRM deal update migration or check your role.",
+    );
+  }
+  if (e?.code === "23503" || /foreign key/i.test(combined)) {
+    return new Error("This deal is linked to a client or pipeline stage that no longer exists.");
+  }
+  if (e?.code === "23514" || /check constraint/i.test(combined)) {
+    return new Error("Deal details are invalid. Check the stage, value, and required fields.");
+  }
+  return error instanceof Error ? error : new Error(msg || "Failed to update deal");
+};
+
 const resolveDealStageTarget = async (
   organizationId: string,
   input: CreateDealInput,
@@ -508,23 +531,31 @@ export const updateDeal = async (
   if (input.stageId !== undefined) update.stage_id = input.stageId;
   if (input.pipelineId !== undefined) update.pipeline_id = input.pipelineId;
 
-  const { data, error } = await supabase
+  const updateViaDirectPatch = () => supabase
     .from("deals")
     .update(update)
     .eq("deal_id", dealId)
     .eq("organization_id", organizationId)
     .select()
     .single();
-  if (error) {
-    const code = (error as { code?: string }).code;
-    const msg = (error as { message?: string }).message ?? "";
-    if (code === "P0001") {
-      throw new Error(msg);  // already human-readable from the trigger
-    }
-    logger.error("Failed to update deal:", error);
-    throw error;
+
+  let { data, error } = await supabase
+    .rpc("crm_update_deal", {
+      p_organization_id: organizationId,
+      p_deal_id: dealId,
+      p_patch: update,
+    })
+    .single();
+
+  if (error && isMissingRpcError(error)) {
+    ({ data, error } = await updateViaDirectPatch());
   }
-  return mapDeal(data);
+
+  if (error) {
+    logger.error("Failed to update deal:", error);
+    throw friendlyDealUpdateError(error);
+  }
+  return mapDeal(data as Record<string, unknown>);
 };
 
 export const deleteDeal = async (
