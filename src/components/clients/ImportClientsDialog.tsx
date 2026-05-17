@@ -18,7 +18,10 @@ import {
   importClientsOverrideRow,
   isApolloStyleClientCsv,
   normalizeClientCsvHeader,
+  previewClientImportRows,
   type ImportResult,
+  type ImportPreviewIssue,
+  type ImportPreviewResult,
 } from '@/services/supabase/clients';
 
 // Sample row uses every column the canonical template ships with so importers
@@ -215,12 +218,16 @@ export const ImportClientsDialog: React.FC<Props> = ({
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [checkingRows, setCheckingRows] = useState(false);
+  const [rowReview, setRowReview] = useState<ImportPreviewResult | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const reset = () => {
     setPhase('pick');
     setFile(null);
     setScan(null);
+    setRowReview(null);
+    setCheckingRows(false);
     setParseErrors([]);
     setResult(null);
   };
@@ -229,6 +236,8 @@ export const ImportClientsDialog: React.FC<Props> = ({
     setResult(null);
     setParseErrors([]);
     setScan(null);
+    setRowReview(null);
+    setCheckingRows(false);
     setFile(f);
     if (!f) {
       setPhase('pick');
@@ -242,14 +251,29 @@ export const ImportClientsDialog: React.FC<Props> = ({
       header: true,
       skipEmptyLines: true,
       transformHeader: (h: string) => h.trim().toLowerCase(),
-      complete: (parsed) => {
+      complete: async (parsed) => {
         if (parsed.errors.length > 0) {
           setParseErrors(parsed.errors.map((e) => `Row ${e.row}: ${e.message}`));
           setBusy(false);
           return;
         }
-        setScan(scanRows(parsed.data, parsed.meta.fields ?? []));
+        const nextScan = scanRows(parsed.data, parsed.meta.fields ?? []);
+        setScan(nextScan);
         setPhase('preview');
+        if (organizationId) {
+          setCheckingRows(true);
+          try {
+            setRowReview(await previewClientImportRows(organizationId, parsed.data));
+          } catch (err) {
+            setParseErrors([
+              err instanceof Error
+                ? err.message
+                : 'Could not compare this CSV with existing clients',
+            ]);
+          } finally {
+            setCheckingRows(false);
+          }
+        }
         setBusy(false);
       },
       error: (err: Error) => {
@@ -261,6 +285,11 @@ export const ImportClientsDialog: React.FC<Props> = ({
 
   const confirmImport = async () => {
     if (!scan || !organizationId || !userId || !userName) return;
+    const rowsToImport = rowReview?.importableRows ?? scan.rawRows;
+    if (rowsToImport.length === 0) {
+      setParseErrors(['No clean rows to import. Fix or override the red rows first.']);
+      return;
+    }
     setBusy(true);
     setResult(null);
     try {
@@ -268,7 +297,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         organizationId,
         userId,
         userName,
-        scan.rawRows,
+        rowsToImport,
       );
       setResult(imported);
       setPhase('imported');
@@ -285,6 +314,40 @@ export const ImportClientsDialog: React.FC<Props> = ({
   const isMixed = distinctCurrencies > 1;
   const mappedHeaders = scan?.headerMappings.filter((h) => h.mapped && h.recognized) ?? [];
   const ignoredHeaders = scan?.headerMappings.filter((h) => !h.recognized) ?? [];
+  const readyRows = rowReview?.importableRows.length ?? scan?.totalRows ?? 0;
+  const blockedRows =
+    (rowReview?.invalidRows.length ?? 0) + (rowReview?.duplicateRows.length ?? 0);
+  const visibleBlockedRows = rowReview
+    ? Math.min(rowReview.duplicateRows.length, 8) + Math.min(rowReview.invalidRows.length, 8)
+    : 0;
+
+  const overrideDuplicate = async (issue: ImportPreviewIssue) => {
+    if (!organizationId || !userId || !userName || !issue.input || !issue.matches?.[0]) return;
+    setBusy(true);
+    try {
+      await importClientsOverrideRow(
+        organizationId,
+        userId,
+        userName,
+        issue.input,
+        issue.matches[0].clientId,
+      );
+      setRowReview((prev) =>
+        prev
+          ? {
+              ...prev,
+              duplicateRows: prev.duplicateRows.filter((row) => row.row !== issue.row),
+            }
+          : prev,
+      );
+      onComplete();
+      toast.success(`Created "${issue.name}" as a new client`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Override failed');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Dialog
@@ -294,7 +357,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         if (!o) reset();
       }}
     >
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import clients from CSV</DialogTitle>
           <DialogDescription>
@@ -476,6 +539,89 @@ export const ImportClientsDialog: React.FC<Props> = ({
                   intentionally not converted to a single number.
                 </p>
               )}
+
+              <div className="rounded-md border border-border p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="font-medium text-sm">Existing-client comparison</p>
+                    <p className="text-xs text-muted-foreground">
+                      We compare each row with your clients table before import. Red rows are removed from the import.
+                    </p>
+                  </div>
+                  {checkingRows ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Checking rows
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                        {readyRows} ready
+                      </span>
+                      <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-destructive border border-destructive/30">
+                        {blockedRows} removed
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {rowReview && blockedRows > 0 && (
+                  <div className="space-y-2">
+                    {rowReview.duplicateRows.slice(0, 8).map((issue) => (
+                      <div
+                        key={`dup-${issue.row}`}
+                        className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-medium text-destructive">
+                              Row {issue.row}: {issue.name} removed as possible duplicate
+                            </p>
+                            <p className="text-muted-foreground">
+                              Matches <strong>{issue.matches?.[0]?.name}</strong>
+                              {issue.matches?.[0]?.reasons?.length
+                                ? ` · ${issue.matches[0].reasons.join(', ')}`
+                                : ''}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => overrideDuplicate(issue)}
+                          >
+                            Add as new anyway
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {rowReview.invalidRows.slice(0, 8).map((issue) => (
+                      <div
+                        key={`invalid-${issue.row}`}
+                        className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs"
+                      >
+                        <p className="font-medium text-destructive">
+                          Row {issue.row}: {issue.name} removed
+                        </p>
+                        <p className="text-muted-foreground">{issue.message}</p>
+                      </div>
+                    ))}
+
+                    {blockedRows > visibleBlockedRows && (
+                      <p className="text-xs text-muted-foreground">
+                        And {blockedRows - visibleBlockedRows} more removed row
+                        {blockedRows - visibleBlockedRows === 1 ? '' : 's'}.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {rowReview && blockedRows === 0 && (
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                    No duplicates or invalid rows found. This file is ready to import.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
@@ -585,14 +731,14 @@ export const ImportClientsDialog: React.FC<Props> = ({
           {phase === 'preview' && (
             <Button
               onClick={confirmImport}
-              disabled={!scan || scan.totalRows === 0 || busy}
+              disabled={!scan || readyRows === 0 || busy || checkingRows}
             >
               {busy ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
                 <ArrowRight className="w-4 h-4 mr-2" />
               )}
-              Import {scan ? `${scan.totalRows} row${scan.totalRows === 1 ? '' : 's'}` : ''}
+              Import {scan ? `${readyRows} clean row${readyRows === 1 ? '' : 's'}` : ''}
             </Button>
           )}
         </DialogFooter>

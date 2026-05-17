@@ -1493,6 +1493,95 @@ export interface ImportResult {
   }>;
 }
 
+export interface ImportPreviewIssue {
+  row: number;
+  name: string;
+  message: string;
+  input?: CreateClientInput;
+  matches?: DuplicateMatch[];
+}
+
+export interface ImportPreviewResult {
+  importableRows: Array<Record<string, string>>;
+  invalidRows: ImportPreviewIssue[];
+  duplicateRows: ImportPreviewIssue[];
+}
+
+const normalizeCsvRawRow = (raw: Record<string, string>): Record<string, string> => {
+  const normalised: Record<string, string> = {};
+  for (const k of Object.keys(raw)) {
+    const key = normalizeClientCsvHeader(k);
+    const value = (raw[k] ?? "").toString();
+    if (normalised[key] == null || normalised[key].trim() === "") {
+      normalised[key] = value;
+    }
+  }
+  return normalised;
+};
+
+export const previewClientImportRows = async (
+  organizationId: string,
+  rows: Array<Record<string, string>>,
+): Promise<ImportPreviewResult> => {
+  const importableRows: Array<Record<string, string>> = [];
+  const invalidRows: ImportPreviewIssue[] = [];
+  const duplicateRows: ImportPreviewIssue[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i];
+    const normalised = normalizeCsvRawRow(raw);
+    const hasAnyValue = Object.values(normalised).some((v) => v.trim() !== "");
+    if (!hasAnyValue) continue;
+
+    const parsed = parseCsvRow(normalised);
+    const rowNumber = i + 2;
+    if (!parsed.ok) {
+      invalidRows.push({
+        row: rowNumber,
+        name: normalised.name?.trim() || "(missing name)",
+        message: parsed.reasons.join("; "),
+      });
+      continue;
+    }
+
+    if (!sanitizeText(parsed.input.name)) {
+      invalidRows.push({
+        row: rowNumber,
+        name: "(missing name)",
+        message: "Missing company/client name. Add a name column, or include orgName/company in a lead export.",
+        input: parsed.input,
+      });
+      continue;
+    }
+
+    const dups = await findDuplicates(organizationId, {
+      name: parsed.input.name,
+      legalName: parsed.input.legalName,
+      email: parsed.input.email,
+      website: parsed.input.website,
+      phone: parsed.input.phone,
+      country: parsed.input.country,
+      city: parsed.input.city,
+      state: parsed.input.state,
+    });
+
+    if (dups.length > 0) {
+      duplicateRows.push({
+        row: rowNumber,
+        name: parsed.input.name,
+        message: `Matches ${dups[0].name}`,
+        input: parsed.input,
+        matches: dups,
+      });
+      continue;
+    }
+
+    importableRows.push(raw);
+  }
+
+  return { importableRows, invalidRows, duplicateRows };
+};
+
 export const importClientsFromCsv = async (
   organizationId: string,
   userId: string,
@@ -1523,14 +1612,7 @@ export const importClientsFromCsv = async (
   // the realtime channel and trigger duplicate names on retries.
   for (let i = 0; i < rows.length; i++) {
     const raw = rows[i];
-    const normalised: Record<string, string> = {};
-    for (const k of Object.keys(raw)) {
-      const key = normalizeClientCsvHeader(k);
-      const value = (raw[k] ?? "").toString();
-      if (normalised[key] == null || normalised[key].trim() === "") {
-        normalised[key] = value;
-      }
-    }
+    const normalised = normalizeCsvRawRow(raw);
 
     // Skip wholly-blank rows silently — Excel exports leave them at the end
     // and they shouldn't show up as "Missing client name" noise.

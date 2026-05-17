@@ -1,11 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import {
   Calendar as CalendarIcon, Check, Loader2, Mail, Phone,
-  Plus, RotateCcw, Trash2, Users as UsersIcon,
+  Pencil, Plus, RotateCcw, Trash2, Users as UsersIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useClientTasks } from '@/hooks/useClientTasks';
@@ -58,7 +64,8 @@ export const ClientTasksList: React.FC<Props> = ({
 }) => {
   const [mineOnly, setMineOnly] = useState(!!defaultMineOnly);
   const [showNew, setShowNew] = useState(false);
-  const { tasks, allTasks, buckets, loading, toggleDone, remove } = useClientTasks({
+  const [editingTask, setEditingTask] = useState<ClientTask | null>(null);
+  const { tasks, allTasks, buckets, loading, update, toggleDone, remove } = useClientTasks({
     clientId: scopedClientId ?? undefined,
     mineOnly,
   });
@@ -67,6 +74,22 @@ export const ClientTasksList: React.FC<Props> = ({
     () => tasks.filter((t) => t.status === 'done').slice(0, 20),
     [tasks],
   );
+
+  const moveTask = async (
+    task: ClientTask,
+    target: 'today' | 'tomorrow' | 'thisweek' | 'later' | 'noDate',
+  ) => {
+    const due = new Date();
+    if (target === 'noDate') {
+      await update(task.taskId, { dueAt: null, status: 'pending' });
+      return;
+    }
+    if (target === 'tomorrow') due.setDate(due.getDate() + 1);
+    if (target === 'thisweek') due.setDate(due.getDate() + 3);
+    if (target === 'later') due.setDate(due.getDate() + 14);
+    due.setHours(17, 0, 0, 0);
+    await update(task.taskId, { dueAt: due, status: 'pending' });
+  };
 
   const renderRow = (task: ClientTask) => {
     const Icon = TYPE_ICON[task.type] ?? Check;
@@ -135,6 +158,75 @@ export const ClientTasksList: React.FC<Props> = ({
             )}
           </div>
         </div>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
+          aria-label="Edit task"
+          onClick={() => setEditingTask(task)}
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Move
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() =>
+                moveTask(task, 'today').catch((e) =>
+                  toast.error(e instanceof Error ? e.message : 'Failed to move task'),
+                )
+              }
+            >
+              Today
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                moveTask(task, 'tomorrow').catch((e) =>
+                  toast.error(e instanceof Error ? e.message : 'Failed to move task'),
+                )
+              }
+            >
+              Tomorrow
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                moveTask(task, 'thisweek').catch((e) =>
+                  toast.error(e instanceof Error ? e.message : 'Failed to move task'),
+                )
+              }
+            >
+              This week
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                moveTask(task, 'later').catch((e) =>
+                  toast.error(e instanceof Error ? e.message : 'Failed to move task'),
+                )
+              }
+            >
+              Later
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                moveTask(task, 'noDate').catch((e) =>
+                  toast.error(e instanceof Error ? e.message : 'Failed to move task'),
+                )
+              }
+            >
+              No due date
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           type="button"
           size="icon"
@@ -233,6 +325,15 @@ export const ClientTasksList: React.FC<Props> = ({
         onOpenChange={setShowNew}
         clients={clients}
         defaultClientId={scopedClientId ?? null}
+      />
+      <NewClientTaskDialog
+        open={!!editingTask}
+        onOpenChange={(open) => {
+          if (!open) setEditingTask(null);
+        }}
+        clients={clients}
+        defaultClientId={scopedClientId ?? null}
+        task={editingTask}
       />
       {/* Reference allTasks just so the lint rule for unused returns doesn't strip it */}
       <span className="hidden">{allTasks.length}</span>

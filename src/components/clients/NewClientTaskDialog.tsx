@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select';
 import { useClientTasks } from '@/hooks/useClientTasks';
 import {
-  ClientTaskType, TASK_TYPE_LABEL,
+  ClientTask, ClientTaskType, TASK_TYPE_LABEL,
 } from '@/services/supabase/clientTasks';
 import { Client } from '@/services/supabase/clients';
 import { toast } from 'sonner';
@@ -23,6 +23,7 @@ interface Props {
   onOpenChange: (o: boolean) => void;
   clients: Client[];
   defaultClientId?: string | null;
+  task?: ClientTask | null;
 }
 
 const TYPE_ORDER: ClientTaskType[] = ['todo', 'call', 'email', 'meeting', 'followup'];
@@ -37,8 +38,9 @@ export const NewClientTaskDialog: React.FC<Props> = ({
   onOpenChange,
   clients,
   defaultClientId = null,
+  task = null,
 }) => {
-  const { create } = useClientTasks();
+  const { create, update } = useClientTasks();
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     title: '',
@@ -50,6 +52,16 @@ export const NewClientTaskDialog: React.FC<Props> = ({
 
   useEffect(() => {
     if (!open) return;
+    if (task) {
+      setForm({
+        title: task.title,
+        description: task.description ?? '',
+        type: task.type,
+        dueAt: task.dueAt ? toLocalDatetime(task.dueAt) : '',
+        clientId: task.clientId ?? 'none',
+      });
+      return;
+    }
     // Default due time = end of today (5pm) — most-common for follow-ups.
     const today5pm = new Date();
     today5pm.setHours(17, 0, 0, 0);
@@ -60,7 +72,7 @@ export const NewClientTaskDialog: React.FC<Props> = ({
       dueAt: toLocalDatetime(today5pm),
       clientId: defaultClientId ?? 'none',
     });
-  }, [open, defaultClientId]);
+  }, [open, defaultClientId, task]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,17 +86,23 @@ export const NewClientTaskDialog: React.FC<Props> = ({
         form.clientId !== 'none'
           ? clients.find((c) => c.clientId === form.clientId) ?? null
           : null;
-      await create({
+      const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
         type: form.type,
         dueAt: form.dueAt ? new Date(form.dueAt) : null,
         clientId: client?.clientId ?? null,
-      });
-      toast.success('Task added');
+      };
+      if (task) {
+        await update(task.taskId, payload);
+        toast.success('Task updated');
+      } else {
+        await create(payload);
+        toast.success('Task added');
+      }
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add task');
+      toast.error(err instanceof Error ? err.message : 'Failed to save task');
     } finally {
       setBusy(false);
     }
@@ -94,10 +112,11 @@ export const NewClientTaskDialog: React.FC<Props> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>New task</DialogTitle>
+          <DialogTitle>{task ? 'Edit task' : 'New task'}</DialogTitle>
           <DialogDescription>
-            Schedule a follow-up tied to a client. You'll see it in your task
-            list with overdue / today / this-week buckets.
+            {task
+              ? 'Update the follow-up details, due time, or linked client.'
+              : "Schedule a follow-up tied to a client. You'll see it in your task list with overdue / today / this-week buckets."}
           </DialogDescription>
         </DialogHeader>
 
@@ -178,7 +197,7 @@ export const NewClientTaskDialog: React.FC<Props> = ({
             </Button>
             <Button type="submit" disabled={busy}>
               {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Add task
+              {task ? 'Save task' : 'Add task'}
             </Button>
           </DialogFooter>
         </form>
