@@ -29,6 +29,15 @@ const corsHeaders = {
   "access-control-allow-methods": "POST, OPTIONS",
 };
 
+const isAuthorizedInvoker = async (req: Request, admin: any): Promise<boolean> => {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) return false;
+  if (token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) return true;
+  const { data, error } = await admin.auth.getUser(token);
+  return !error && Boolean(data.user);
+};
+
 const tryAdvisoryLock = async (admin: any): Promise<boolean> => {
   const { data } = await admin.rpc("pg_try_advisory_lock", { key: ADVISORY_LOCK_KEY });
   return Boolean(data);
@@ -352,6 +361,12 @@ Deno.serve(async (req) => {
   }
 
   const admin = makeAdmin();
+  if (!await isAuthorizedInvoker(req, admin)) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
+  }
   const start = Date.now();
 
   const locked = await tryAdvisoryLock(admin);

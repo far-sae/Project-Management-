@@ -20,6 +20,42 @@ interface StaleDealRow {
   organization_id: string;
 }
 
+const isOrgMember = (members: unknown, userId: string): boolean => {
+  const rows = Array.isArray(members) ? members : [];
+  return rows.some((m) => {
+    const row = (m ?? {}) as Record<string, unknown>;
+    return row.userId === userId || row.user_id === userId || row.id === userId;
+  });
+};
+
+const getAuthorizedOrgFilter = async (
+  req: Request,
+  admin: ReturnType<typeof createClient>,
+): Promise<string[] | null> => {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) return null;
+  if (token === SERVICE_KEY) return [];
+
+  const { data: userInfo, error: userErr } = await admin.auth.getUser(token);
+  const user = userInfo.user;
+  if (userErr || !user) return null;
+
+  const body = await req.clone().json().catch(() => ({})) as { organization_id?: string };
+  if (!body.organization_id) return null;
+
+  const { data: org } = await admin
+    .from("organizations")
+    .select("organization_id, owner_id, members")
+    .eq("organization_id", body.organization_id)
+    .maybeSingle();
+  if (!org) return null;
+  if (org.owner_id === user.id || isOrgMember(org.members, user.id)) {
+    return [org.organization_id as string];
+  }
+  return null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
@@ -33,9 +69,19 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: orgs } = await admin.from("organizations")
+  const authorizedOrgIds = await getAuthorizedOrgFilter(req, admin);
+  if (authorizedOrgIds === null) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+    });
+  }
+
+  let orgQuery = admin.from("organizations")
     .select("organization_id")
     .eq("ai_agent_enabled", true);
+  if (authorizedOrgIds.length > 0) orgQuery = orgQuery.in("organization_id", authorizedOrgIds);
+  const { data: orgs } = await orgQuery;
 
   const summary: Record<string, number> = {};
 

@@ -29,3 +29,29 @@ verify_jwt = false
 # return clean 401 bodies; gateway-level verify is off to keep CORS preflight working.
 [functions.livekit-token]
 verify_jwt = false
+
+# Browser-invoked automation/agent functions validate authorization inside the
+# function. Gateway JWT verification must be off so OPTIONS preflight can return
+# CORS headers instead of being rejected before the function runs.
+[functions.crm-run-automations]
+verify_jwt = false
+
+[functions.crm-stuck-deal-scanner]
+verify_jwt = false
+
+[functions.ai-agent-suggest]
+verify_jwt = false
+
+[functions.slack-list-channels]
+verify_jwt = false
+
+# Public webhook endpoints validate provider signatures or public form rules
+# inside the function, so gateway JWT verification must stay off.
+[functions.slack-events]
+verify_jwt = false
+
+[functions.forms-submit]
+verify_jwt = false
+
+[functions.gmail-inbound]
+verify_jwt = false

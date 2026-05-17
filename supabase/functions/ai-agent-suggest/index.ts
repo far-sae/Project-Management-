@@ -38,6 +38,37 @@ interface SuggestRequest {
   source_event_id?: string;
 }
 
+const isOrgMember = (members: unknown, userId: string): boolean => {
+  const rows = Array.isArray(members) ? members : [];
+  return rows.some((m) => {
+    const row = (m ?? {}) as Record<string, unknown>;
+    return row.userId === userId || row.user_id === userId || row.id === userId;
+  });
+};
+
+const authorizeOrgRequest = async (
+  req: Request,
+  admin: SupabaseClient,
+  orgId: string,
+): Promise<boolean> => {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) return false;
+  if (token === SERVICE_KEY) return true;
+
+  const { data: userInfo, error: userErr } = await admin.auth.getUser(token);
+  const user = userInfo.user;
+  if (userErr || !user) return false;
+
+  const { data: org } = await admin
+    .from("organizations")
+    .select("owner_id, members")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (!org) return false;
+  return org.owner_id === user.id || isOrgMember(org.members, user.id);
+};
+
 const countToday = async (
   admin: SupabaseClient, orgId: string, actionType: string,
 ): Promise<number> => {
@@ -204,6 +235,10 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  if (!await authorizeOrgRequest(req, admin, body.organization_id)) {
+    return json({ error: "unauthorized" }, 401);
+  }
 
   const { data: org } = await admin.from("organizations")
     .select("ai_agent_enabled, ai_agent_apollo_daily_cap, ai_agent_draft_daily_cap")
