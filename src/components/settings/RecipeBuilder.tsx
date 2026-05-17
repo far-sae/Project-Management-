@@ -28,6 +28,7 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
   client_tagged: "a client is tagged",
   task_overdue: "a task becomes overdue",
   scheduled: "scheduled time",
+  agent_intake: "AI agent: draft outreach for new lead",
 };
 
 const ACTION_LABEL: Record<ActionType, string> = {
