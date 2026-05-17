@@ -1,9 +1,10 @@
 // supabase/functions/crm-run-automations/index.ts
 import { makeAdmin } from "./shared/client.ts";
-import { writeRun } from "./shared/runLog.ts";
+import { writeRun, createRun, finalizeRun, finalizeResumedRun } from "./shared/runLog.ts";
 import { triggerConfigMatches } from "./triggers/matchers.ts";
 import { evaluateConditions } from "./conditions/evaluator.ts";
 import { enqueueCronEvents } from "./triggers/cron.ts";
+import { nextSendableTime, SendWindow } from "./triggers/sendWindow.ts";
 import { ACTION_REGISTRY } from "./actions/index.ts";
 import { AutomationEvent, Recipe, ActionResult } from "./shared/types.ts";
 
@@ -72,17 +73,24 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
   const started = new Date();
   const ctx = await loadEntityContext(admin, event);
 
-  if (!evaluateConditions(recipe.conditions ?? [], event, ctx)) {
-    return; // conditions fail → not a run, just no-op
-  }
+  if (!evaluateConditions(recipe.conditions ?? [], event, ctx)) return;
 
-  const results: ActionResult[] = [];
+  const recipeRunId = await createRun(admin, {
+    recipeId: recipe.recipe_id,
+    eventId: event.event_id,
+    organizationId: event.organization_id,
+    startedAt: started,
+  });
+
   const aiOutputs: Record<string, string> = {};
-  for (const actionSpec of recipe.actions) {
+  const results: ActionResult[] = [];
+
+  for (let i = 0; i < recipe.actions.length; i++) {
+    const actionSpec = recipe.actions[i];
     const handler = ACTION_REGISTRY[actionSpec.type];
     const t0 = Date.now();
     if (!handler) {
-      results.push({ type: actionSpec.type, status: "failure", message: "Unknown action type" });
+      results.push({ type: actionSpec.type, status: "failure", message: "Unknown action type", duration_ms: 0 });
       break;
     }
     try {
@@ -95,17 +103,18 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
           recipeName: recipe.name,
           runStartedAt: started,
           aiOutputs,
+          recipeRunId,
+          nextActionIndex: i,
         },
         actionSpec.config ?? {},
       );
       results.push({ ...r, type: actionSpec.type, duration_ms: Date.now() - t0 });
       if (r.meta && typeof r.meta === "object") {
         for (const [k, v] of Object.entries(r.meta)) {
-          if (k.startsWith("ai_output") && typeof v === "string") {
-            aiOutputs[k] = v;
-          }
+          if (k.startsWith("ai_output") && typeof v === "string") aiOutputs[k] = v;
         }
       }
+      if (r.meta?.defer === true) break;  // wait scheduled — rest fires later
       if (r.status === "failure") break;
     } catch (err) {
       results.push({
@@ -118,14 +127,145 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
     }
   }
 
-  await writeRun(admin, {
-    recipeId: recipe.recipe_id,
-    eventId: event.event_id,
-    organizationId: event.organization_id,
-    results,
-    startedAt: started,
-    finishedAt: new Date(),
-  });
+  await finalizeRun(admin, { runId: recipeRunId, results, finishedAt: new Date() });
+};
+
+const executeActionsResume = async (
+  admin: any,
+  recipe: Recipe,
+  event: AutomationEvent,
+  startIndex: number,
+  initialAiOutputs: Record<string, string>,
+  existingRunId: string,
+): Promise<void> => {
+  const started = new Date();
+  const aiOutputs = { ...initialAiOutputs };
+  const results: ActionResult[] = [];
+
+  for (let i = startIndex; i < recipe.actions.length; i++) {
+    const actionSpec = recipe.actions[i];
+    const handler = ACTION_REGISTRY[actionSpec.type];
+    const t0 = Date.now();
+    if (!handler) {
+      results.push({ type: actionSpec.type, status: "failure", message: "Unknown action type", duration_ms: 0 });
+      break;
+    }
+    try {
+      const r = await handler(
+        {
+          admin,
+          orgId: event.organization_id,
+          event,
+          recipeId: recipe.recipe_id,
+          recipeName: recipe.name,
+          runStartedAt: started,
+          aiOutputs,
+          recipeRunId: existingRunId,
+          nextActionIndex: i,
+        },
+        actionSpec.config ?? {},
+      );
+      results.push({ ...r, type: actionSpec.type, duration_ms: Date.now() - t0 });
+      if (r.meta && typeof r.meta === "object") {
+        for (const [k, v] of Object.entries(r.meta)) {
+          if (k.startsWith("ai_output") && typeof v === "string") aiOutputs[k] = v;
+        }
+      }
+      if (r.meta?.defer === true) break;
+      if (r.status === "failure") break;
+    } catch (err) {
+      results.push({
+        type: actionSpec.type,
+        status: "failure",
+        message: err instanceof Error ? err.message : String(err),
+        duration_ms: Date.now() - t0,
+      });
+      break;
+    }
+  }
+
+  await finalizeResumedRun(admin, { runId: existingRunId, newResults: results, finishedAt: new Date() });
+};
+
+const processPendingActions = async (admin: any): Promise<number> => {
+  const nowIso = new Date().toISOString();
+  const { data: pendings } = await admin
+    .from("pending_actions")
+    .select(`
+      id, organization_id, recipe_id, source_event_id, next_action_index,
+      ai_outputs, deal_id, client_id,
+      automation_recipes!inner(actions, send_window, enabled, name),
+      automation_events(payload, event_type, source_table, source_id, depth, enqueued_at, processed_at)
+    `)
+    .eq("status", "pending")
+    .lte("fire_at", nowIso)
+    .limit(100);
+
+  let drained = 0;
+  for (const p of pendings ?? []) {
+    if (!p.automation_recipes.enabled) {
+      await admin.from("pending_actions").update({ status: "cancelled" }).eq("id", p.id);
+      continue;
+    }
+    const nextValid = nextSendableTime(
+      (p.automation_recipes.send_window as SendWindow | null) ?? null,
+      new Date(),
+    );
+    if (nextValid.getTime() > Date.now()) {
+      await admin.from("pending_actions").update({ fire_at: nextValid.toISOString() }).eq("id", p.id);
+      continue;
+    }
+    if (!p.automation_events) {
+      await admin.from("pending_actions").update({ status: "cancelled" }).eq("id", p.id);
+      continue;
+    }
+
+    const { data: existingRun } = await admin
+      .from("automation_runs")
+      .select("run_id")
+      .eq("recipe_id", p.recipe_id)
+      .eq("event_id", p.source_event_id)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const runId = existingRun?.run_id;
+    if (!runId) {
+      await admin.from("pending_actions").update({ status: "cancelled" }).eq("id", p.id);
+      continue;
+    }
+
+    await executeActionsResume(
+      admin,
+      {
+        recipe_id: p.recipe_id,
+        organization_id: p.organization_id,
+        name: p.automation_recipes.name,
+        trigger_type: p.automation_events.event_type,
+        trigger_config: {},
+        conditions: [],
+        actions: p.automation_recipes.actions,
+      } as Recipe,
+      {
+        event_id: p.source_event_id,
+        organization_id: p.organization_id,
+        event_type: p.automation_events.event_type,
+        payload: p.automation_events.payload,
+        source_table: p.automation_events.source_table,
+        source_id: p.automation_events.source_id,
+        depth: p.automation_events.depth,
+        enqueued_at: p.automation_events.enqueued_at,
+        processed_at: p.automation_events.processed_at,
+      } as AutomationEvent,
+      p.next_action_index,
+      (p.ai_outputs as Record<string, string>) ?? {},
+      runId,
+    );
+
+    await admin.from("pending_actions").update({ status: "fired" }).eq("id", p.id);
+    drained += 1;
+  }
+  return drained;
 };
 
 Deno.serve(async () => {
@@ -140,7 +280,9 @@ Deno.serve(async () => {
   }
 
   let processed = 0;
+  let pendingsDrained = 0;
   try {
+    pendingsDrained = await processPendingActions(admin);
     await enqueueCronEvents(admin);
     const events = await pullBatch(admin, 200);
     processed = events.length;
@@ -178,7 +320,7 @@ Deno.serve(async () => {
     await releaseAdvisoryLock(admin);
   }
 
-  return new Response(JSON.stringify({ ok: true, processed }), {
+  return new Response(JSON.stringify({ ok: true, processed, pendings_drained: pendingsDrained }), {
     headers: { "content-type": "application/json" },
   });
 });

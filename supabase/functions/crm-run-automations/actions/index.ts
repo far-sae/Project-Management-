@@ -10,6 +10,7 @@ import { webhook } from "./webhook.ts";
 import { slackPost } from "./slackPost.ts";
 import { sendEmail } from "./sendEmail.ts";
 import { aiSummarize, aiClassifyLead, aiDraftEmail, aiExtract, aiTranslate } from "./ai.ts";
+import { wait } from "./wait.ts";
 
 export const ACTION_REGISTRY: Record<ActionType, ActionHandler> = {
   create_task: createTask,
@@ -26,4 +27,5 @@ export const ACTION_REGISTRY: Record<ActionType, ActionHandler> = {
   ai_draft_email: aiDraftEmail,
   ai_extract: aiExtract,
   ai_translate: aiTranslate,
+  wait,
 };

@@ -27,6 +27,7 @@ export const ACTION_TYPES = [
   "ai_draft_email",
   "ai_extract",
   "ai_translate",
+  "wait",
 ] as const;
 
 export type TriggerType = (typeof TRIGGER_TYPES)[number];
@@ -50,6 +51,7 @@ export interface RecipeDraft {
   trigger: { type: TriggerType; config: Record<string, unknown> };
   conditions: RecipeCondition[];
   actions: RecipeAction[];
+  sendWindow?: { hours: [number, number]; days: number[]; timezone: string } | null;
 }
 
 export interface Recipe {
@@ -67,6 +69,7 @@ export interface Recipe {
   lastRunAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  sendWindow?: { hours: [number, number]; days: number[]; timezone: string } | null;
 }
 
 export interface RecipeRun {
@@ -84,6 +87,7 @@ export interface RecipeRun {
   }>;
   startedAt: Date;
   finishedAt: Date;
+  hasPendingActions?: boolean;
 }
 
 export const validateRecipeDraft = (draft: RecipeDraft): void => {
@@ -144,6 +148,7 @@ const ACTION_LABELS: Record<ActionType, string> = {
   ai_draft_email: "AI: draft email",
   ai_extract: "AI: extract fields",
   ai_translate: "AI: translate",
+  wait: "Wait",
 };
 
 export const summarizeRecipe = (r: Pick<Recipe, "triggerType" | "actions">): string => {
@@ -168,6 +173,7 @@ const mapRecipe = (row: Record<string, unknown>): Recipe => ({
   lastRunAt: row.last_run_at ? new Date(row.last_run_at as string) : null,
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
+  sendWindow: (row.send_window as Recipe["sendWindow"]) ?? null,
 });
 
 const mapRun = (row: Record<string, unknown>): RecipeRun => ({
@@ -210,6 +216,7 @@ export const upsertRecipe = async (
     p_conditions: draft.conditions,
     p_actions: draft.actions,
     p_enabled: draft.enabled,
+    p_send_window: draft.sendWindow ?? null,
   }).single();
   if (error) throw error;
   return mapRecipe(data as Record<string, unknown>);
@@ -253,5 +260,23 @@ export const listRuns = async (
     logger.error("Failed to load automation runs:", error);
     return [];
   }
-  return (data || []).map(mapRun);
+
+  const rows = data ?? [];
+  const pendingByEvent: Record<string, boolean> = {};
+  if (rows.length > 0) {
+    const { data: pendings } = await supabase
+      .from("pending_actions")
+      .select("source_event_id")
+      .eq("recipe_id", recipeId)
+      .eq("status", "pending");
+    for (const p of pendings ?? []) {
+      const eventId = p.source_event_id as string | null;
+      if (eventId) pendingByEvent[eventId] = true;
+    }
+  }
+
+  return rows.map((r) => ({
+    ...mapRun(r),
+    hasPendingActions: !!pendingByEvent[(r.event_id as string) ?? ""],
+  }));
 };

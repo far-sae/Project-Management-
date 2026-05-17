@@ -18,6 +18,10 @@ export default defineConfig({
         find: 'https://esm.sh/@anthropic-ai/sdk@0.30.0',
         replacement: path.resolve(__dirname, 'tests/stubs/anthropic.ts'),
       },
+      {
+        find: 'https://esm.sh/@supabase/supabase-js@2',
+        replacement: path.resolve(__dirname, 'tests/stubs/supabase-js.ts'),
+      },
     ],
   },
 });

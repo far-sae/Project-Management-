@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { listRuns, RecipeRun } from "@/services/supabase/automations";
+import { stopSequenceRun } from "@/services/supabase/sequences";
 import { Loader2, CheckCircle2, XCircle, AlertTriangle, MinusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 const STATUS_ICON: Record<RecipeRun["status"], React.FC<{ className?: string }>> = {
   success: CheckCircle2,
@@ -61,6 +63,23 @@ export const RecipeRunsList: React.FC<Props> = ({ recipeId }) => {
                   </li>
                 ))}
               </ul>
+            )}
+            {run.hasPendingActions && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const n = await stopSequenceRun(run.runId);
+                    toast.success(`Cancelled ${n} pending action(s)`);
+                    listRuns(recipeId, 50).then(setRuns);
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Stop failed");
+                  }
+                }}
+              >
+                Stop sequence
+              </Button>
             )}
           </div>
         );
