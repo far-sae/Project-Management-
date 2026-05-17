@@ -77,6 +77,7 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
   }
 
   const results: ActionResult[] = [];
+  const aiOutputs: Record<string, string> = {};
   for (const actionSpec of recipe.actions) {
     const handler = ACTION_REGISTRY[actionSpec.type];
     const t0 = Date.now();
@@ -86,10 +87,25 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
     }
     try {
       const r = await handler(
-        { admin, orgId: event.organization_id, event, recipeId: recipe.recipe_id, recipeName: recipe.name, runStartedAt: started },
+        {
+          admin,
+          orgId: event.organization_id,
+          event,
+          recipeId: recipe.recipe_id,
+          recipeName: recipe.name,
+          runStartedAt: started,
+          aiOutputs,
+        },
         actionSpec.config ?? {},
       );
       results.push({ ...r, type: actionSpec.type, duration_ms: Date.now() - t0 });
+      if (r.meta && typeof r.meta === "object") {
+        for (const [k, v] of Object.entries(r.meta)) {
+          if (k.startsWith("ai_output") && typeof v === "string") {
+            aiOutputs[k] = v;
+          }
+        }
+      }
       if (r.status === "failure") break;
     } catch (err) {
       results.push({

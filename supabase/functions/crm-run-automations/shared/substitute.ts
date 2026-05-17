@@ -6,12 +6,18 @@ export interface SubstituteContext {
   client?: { name?: string; email?: string; industry?: string; url?: string };
   actor?: string;
   recipe?: { name?: string };
+  aiOutputs?: Record<string, string>;
   [k: string]: unknown;
 }
 
 const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g;
 
 const resolve = (path: string, ctx: SubstituteContext): unknown => {
+  if (path.startsWith("ai.")) {
+    const key = "ai_" + path.slice(3);
+    const outputs = (ctx as { aiOutputs?: Record<string, string> }).aiOutputs;
+    return outputs?.[key];
+  }
   const parts = path.split(".");
   let v: any = ctx;
   for (const p of parts) {
