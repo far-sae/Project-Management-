@@ -10,10 +10,18 @@ const corsHeaders = {
     "content-type, x-twilio-email-event-webhook-signature, x-twilio-email-event-webhook-timestamp",
 };
 
-const verifySignature = async (
+// Constant-time string compare to avoid timing side channels.
+const timingSafeEqual = (a: string, b: string): boolean => {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+};
+
+const verifyEcdsaSignature = async (
   body: string, timestamp: string, signatureB64: string,
 ): Promise<boolean> => {
-  if (!INBOUND_SECRET) return false;
+  if (!INBOUND_SECRET || !timestamp || !signatureB64) return false;
   try {
     const publicKeyDer = Uint8Array.from(atob(INBOUND_SECRET), (c) => c.charCodeAt(0));
     const key = await crypto.subtle.importKey(
@@ -26,6 +34,19 @@ const verifySignature = async (
   } catch {
     return false;
   }
+};
+
+export const isAuthorized = async (
+  req: Request, rawBody: string,
+): Promise<boolean> => {
+  if (!INBOUND_SECRET) return false;
+  const url = new URL(req.url);
+  const querySecret = url.searchParams.get("secret") ?? "";
+  if (querySecret && timingSafeEqual(querySecret, INBOUND_SECRET)) return true;
+
+  const sig = req.headers.get("x-twilio-email-event-webhook-signature") ?? "";
+  const ts = req.headers.get("x-twilio-email-event-webhook-timestamp") ?? "";
+  return verifyEcdsaSignature(rawBody, ts, sig);
 };
 
 export const extractRunIdFromTo = (toHeader: string): string | null => {
@@ -46,10 +67,8 @@ Deno.serve(async (req) => {
   }
 
   const rawBody = await req.text();
-  const sig = req.headers.get("x-twilio-email-event-webhook-signature") ?? "";
-  const ts = req.headers.get("x-twilio-email-event-webhook-timestamp") ?? "";
-  if (!await verifySignature(rawBody, ts, sig)) {
-    return new Response(JSON.stringify({ error: "invalid_signature" }), {
+  if (!await isAuthorized(req, rawBody)) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401, headers: { ...corsHeaders, "content-type": "application/json" },
     });
   }

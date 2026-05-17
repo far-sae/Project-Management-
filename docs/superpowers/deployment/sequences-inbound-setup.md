@@ -12,9 +12,9 @@ receive reply webhooks.
 
 ## Steps
 
-### 1. Add MX records on `inbound.taskcalendar.co.uk`
+### 1. Add MX record on `inbound.taskcalendar.co.uk`
 
-In your DNS provider (Cloudflare, Vercel DNS, GoDaddy, etc.) add:
+In your DNS provider (Cloudflare, GoDaddy, Vercel DNS, etc.) add:
 
 | Host | Type | Value | Priority |
 |---|---|---|---|
@@ -26,35 +26,64 @@ nslookup -type=MX inbound.taskcalendar.co.uk
 ```
 You should see `mx.sendgrid.net` in the response.
 
-### 2. Add the hostname in SendGrid
+### 2. Authenticate your domain in SendGrid
 
-1. SendGrid dashboard → Settings → **Inbound Parse** → **Add Host & URL**.
-2. **Hostname:** `inbound.taskcalendar.co.uk`
-3. **Destination URL:** `https://<your-project-ref>.supabase.co/functions/v1/gmail-inbound`
-4. **POST the raw, full MIME message:** UNCHECK (we want parsed form fields).
-5. **Send signed POSTs:** CHECK.
-6. Save.
+Before SendGrid will let you add an Inbound Parse host, you must
+authenticate the domain:
 
-### 3. Copy the signing key
+1. SendGrid → **Settings → Sender Authentication → Authenticate Your Domain**.
+2. Pick your DNS host, enter `taskcalendar.co.uk`.
+3. SendGrid gives you 3 CNAME records — add them to your DNS.
+4. Wait 5–30 min, then click **Verify**.
 
-SendGrid → Inbound Parse → click the hostname row → copy the displayed
-**Webhook Verification Key** (base64-encoded public key).
+The Inbound Parse "Domain" dropdown only lists authenticated domains.
 
-### 4. Set Supabase secrets
+### 3. Generate a shared secret
+
+The newer SendGrid Inbound Parse UI does not expose a signed-webhook
+toggle, so we authenticate via a secret in the destination URL.
+Generate a random 32-byte secret:
+
+```powershell
+[Convert]::ToBase64String([byte[]](1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+```
+
+Copy the output — you will paste it in **two** places (the URL and the
+Supabase secret).
+
+### 4. Add the host in SendGrid
+
+1. SendGrid → **Settings → Inbound Parse → Add Host & URL**.
+2. **Subdomain:** `inbound`
+3. **Domain:** `taskcalendar.co.uk` (pick from dropdown — only appears
+   after step 2).
+4. **Destination URL:**
+   `https://<your-project-ref>.supabase.co/functions/v1/gmail-inbound?secret=<paste-secret-from-step-3>`
+5. **Check incoming emails for spam:** optional (leave UNCHECKED is fine).
+6. **POST the raw, full MIME message:** UNCHECKED (we want parsed fields).
+7. Click **Add**.
+
+### 5. Set Supabase secrets
 
 ```bash
 npx supabase secrets set \
-  SENDGRID_INBOUND_WEBHOOK_SECRET=<paste-the-key> \
+  SENDGRID_INBOUND_WEBHOOK_SECRET=<same-secret-from-step-3> \
   SEQUENCE_INBOUND_DOMAIN=inbound.taskcalendar.co.uk
 ```
 
-### 5. Deploy the function
+The value of `SENDGRID_INBOUND_WEBHOOK_SECRET` must match exactly what's
+after `?secret=` in the destination URL — the function compares them in
+constant time and rejects requests that don't match.
+
+### 6. Deploy the function
 
 ```bash
 npx supabase functions deploy gmail-inbound --no-verify-jwt
+npx supabase functions deploy crm-run-automations
 ```
 
 The `--no-verify-jwt` flag is required — SendGrid doesn't send a JWT.
+The worker is redeployed so it picks up `SEQUENCE_INBOUND_DOMAIN`.
 
 ## Verify end-to-end
 
@@ -70,9 +99,24 @@ The `--no-verify-jwt` flag is required — SendGrid doesn't send a JWT.
      increments.
 
 If nothing happens, check:
-- `npx supabase functions logs gmail-inbound` for signature-verification
-  failures (means the secret doesn't match what SendGrid signed with).
+- `npx supabase functions logs gmail-inbound` — look for `unauthorized`
+  (secret mismatch) or signature errors.
 - DNS MX propagation (`nslookup -type=MX inbound.taskcalendar.co.uk`).
 - That the Reply-To header on the original email looks like
   `reply+<uuid>@inbound.taskcalendar.co.uk` — if it's a different
   domain, `SEQUENCE_INBOUND_DOMAIN` was wrong when the email was sent.
+
+## Notes on auth modes
+
+`gmail-inbound` accepts two auth modes (in this order):
+
+1. **`?secret=<value>` query param** — for the standard SendGrid Inbound
+   Parse UI (no signed-webhook toggle). The secret is compared in
+   constant time against `SENDGRID_INBOUND_WEBHOOK_SECRET`.
+2. **ECDSA signature headers** (`x-twilio-email-event-webhook-signature`
+   and `…-timestamp`) — for accounts that DO expose signed inbound
+   webhooks. In that case the env var holds the base64 public key
+   instead of a random secret.
+
+You only need one of them configured. The URL-secret path is the simpler
+choice and works on every SendGrid plan.
