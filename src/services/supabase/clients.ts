@@ -189,13 +189,27 @@ const sanitizeTags = (tags: string[] | null | undefined): string[] => {
 const isMissingRpcError = (error: unknown): boolean => {
   const e = error as { code?: string; message?: string; details?: string };
   const text = `${e?.message ?? ""} ${e?.details ?? ""}`.toLowerCase();
-  return e?.code === "PGRST202" || text.includes("could not find the function");
+  return e?.code === "PGRST202" || e?.code === "42883" || text.includes("could not find the function");
 };
 
 const createClientPermissionError = () =>
   new Error(
     "You do not have permission to create clients in this workspace. Ask an admin to apply the latest CRM permissions migrations or check your role.",
   );
+
+const friendlyClientDeleteError = (error: unknown): Error => {
+  const e = error as { code?: string; message?: string };
+  const message = String(e?.message ?? "");
+  if (e?.code === "42501" || /row-level security|permission denied|not authorized/i.test(message)) {
+    return new Error(
+      "You do not have permission to delete clients in this workspace. Ask an owner/admin to apply the latest CRM delete migration or check your role.",
+    );
+  }
+  if (e?.code === "P0002" || /not found/i.test(message)) {
+    return new Error("Client was already deleted or could not be found.");
+  }
+  return error instanceof Error ? error : new Error(message || "Failed to delete client");
+};
 
 const validateClientInput = (input: CreateClientInput) => {
   if (!input.name || sanitizeText(input.name) === null) {
@@ -614,14 +628,32 @@ export const deleteClient = async (
     );
     return;
   }
-  const { error } = await supabase
+
+  const { error: rpcError } = await supabase.rpc("crm_delete_client", {
+    p_organization_id: organizationId,
+    p_client_id: clientId,
+  });
+  if (!rpcError) return;
+  if (!isMissingRpcError(rpcError)) {
+    logger.error("Failed to delete client:", rpcError);
+    throw friendlyClientDeleteError(rpcError);
+  }
+
+  const { data, error } = await supabase
     .from("clients")
     .delete()
     .eq("organization_id", organizationId)
-    .eq("client_id", clientId);
+    .eq("client_id", clientId)
+    .select("client_id")
+    .maybeSingle();
   if (error) {
     logger.error("Failed to delete client:", error);
-    throw error;
+    throw friendlyClientDeleteError(error);
+  }
+  if (!data) {
+    throw new Error(
+      "Client was not deleted. Please make sure you are an owner/admin and that the latest CRM delete migration is deployed.",
+    );
   }
 };
 

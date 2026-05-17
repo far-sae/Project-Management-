@@ -56,5 +56,8 @@ verify_jwt = false
 [functions.forms-submit]
 verify_jwt = false
 
+[functions.forms-get]
+verify_jwt = false
+
 [functions.gmail-inbound]
 verify_jwt = false

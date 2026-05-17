@@ -11,6 +11,7 @@ const APP_ORIGIN = Deno.env.get("APP_ORIGIN") ?? "*";
 const corsHeaders = {
   "Access-Control-Allow-Origin": APP_ORIGIN,
   "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Cache-Control": "public, max-age=60",
 };
 
