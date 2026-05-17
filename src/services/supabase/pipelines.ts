@@ -15,6 +15,7 @@ export interface Pipeline {
   isDefault: boolean;
   position: number;
   createdBy: string | null;
+  staleAfterDays: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +43,7 @@ export const mapPipelineRow = (r: Record<string, unknown>): Pipeline => ({
   isDefault: Boolean(r.is_default),
   position: Number(r.position ?? 0),
   createdBy: (r.created_by as string) ?? null,
+  staleAfterDays: Number(r.stale_after_days ?? 14),
   createdAt: new Date(r.created_at as string),
   updatedAt: new Date(r.updated_at as string),
 });
@@ -123,6 +125,7 @@ export interface UpdatePipelineInput {
   description?: string | null;
   isDefault?: boolean;
   position?: number;
+  staleAfterDays?: number;
 }
 
 export const updatePipeline = async (
@@ -134,6 +137,7 @@ export const updatePipeline = async (
   if (input.description !== undefined) update.description = input.description;
   if (input.isDefault !== undefined) update.is_default = input.isDefault;
   if (input.position !== undefined) update.position = input.position;
+  if (input.staleAfterDays !== undefined) update.stale_after_days = input.staleAfterDays;
   const { data, error } = await supabase
     .from("pipelines")
     .update(update)
