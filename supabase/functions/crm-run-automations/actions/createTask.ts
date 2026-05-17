@@ -34,7 +34,9 @@ export const createTask: ActionHandler = async (ctx, config) => {
   const payload = ctx.event.payload as Record<string, unknown>;
   const dealId = payload.deal_id as string | undefined;
   const clientId = payload.client_id as string | undefined;
-  const isSlackEvent = ctx.event.event_type === "slack_message_received";
+  const isSlackEvent =
+    ctx.event.event_type === "slack_message_received" ||
+    ctx.event.event_type === "slack_reaction_added";
 
   if (!clientId && !dealId && !isSlackEvent) {
     return { status: "skipped", message: "No client or deal in event payload" };

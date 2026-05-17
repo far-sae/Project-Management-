@@ -7,7 +7,20 @@ import { enqueueCronEvents } from "./triggers/cron.ts";
 import { nextSendableTime, SendWindow } from "./triggers/sendWindow.ts";
 import { ACTION_REGISTRY } from "./actions/index.ts";
 import { AutomationEvent, Recipe, ActionResult } from "./shared/types.ts";
-import { matchesSlackTrigger } from "./triggers/slackMatch.ts";
+import { matchesSlackTrigger, matchesSlackReaction } from "./triggers/slackMatch.ts";
+
+// Look up the Slack bot_user_id for an org (cached in integration metadata
+// at OAuth time). Returns null if no Slack integration or no bot_user_id.
+const loadSlackBotUserId = async (admin: any, orgId: string): Promise<string | null> => {
+  const { data } = await admin.from("integrations")
+    .select("metadata")
+    .eq("organization_id", orgId)
+    .eq("provider", "slack")
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  return ((data?.metadata as { bot_user_id?: string })?.bot_user_id) ?? null;
+};
 
 const ADVISORY_LOCK_KEY = 0xC8AE0001;
 
@@ -74,14 +87,25 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
   const started = new Date();
   const ctx = await loadEntityContext(admin, event);
 
-  if (
-    recipe.trigger_type === "slack_message_received" &&
-    !matchesSlackTrigger(
-      (recipe.trigger_config ?? {}) as { channels?: string[]; keyword?: string },
+  if (recipe.trigger_type === "slack_message_received") {
+    const cfg = (recipe.trigger_config ?? {}) as {
+      channels?: string[]; keyword?: string; mention_only?: boolean;
+    };
+    const botUserId = cfg.mention_only
+      ? await loadSlackBotUserId(admin, event.organization_id)
+      : null;
+    if (!matchesSlackTrigger(
+      cfg,
       (event.payload ?? {}) as { channel_id?: string; text?: string },
-    )
-  ) {
-    return;
+      { botUserId },
+    )) return;
+  }
+
+  if (recipe.trigger_type === "slack_reaction_added") {
+    if (!matchesSlackReaction(
+      (recipe.trigger_config ?? {}) as { reactions?: string[]; channels?: string[] },
+      (event.payload ?? {}) as { reaction?: string; channel_id?: string },
+    )) return;
   }
 
   if (!evaluateConditions(recipe.conditions ?? [], event, ctx)) return;
