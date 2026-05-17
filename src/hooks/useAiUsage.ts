@@ -23,6 +23,11 @@ export const useAiUsage = () => {
       setUsage(u);
       setLoading(false);
     });
+    const refreshUsage = () => {
+      getUsage(orgId).then((u) => {
+        if (!cancelled) setUsage(u);
+      });
+    };
     const channel = supabase
       .channel(`ai-usage-${orgId}-${Math.random().toString(36).slice(2, 9)}`)
       .on("postgres_changes", {
@@ -30,16 +35,18 @@ export const useAiUsage = () => {
         schema: "public",
         table: "ai_block_runs",
         filter: `organization_id=eq.${orgId}`,
-      }, () => getUsage(orgId).then(setUsage))
+      }, refreshUsage)
       .on("postgres_changes", {
         event: "*",
         schema: "public",
         table: "ai_block_usage_caps",
         filter: `organization_id=eq.${orgId}`,
-      }, () => getUsage(orgId).then(setUsage))
+      }, refreshUsage)
       .subscribe();
+    const interval = window.setInterval(refreshUsage, 30_000);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
       channel.unsubscribe();
     };
   }, [orgId]);

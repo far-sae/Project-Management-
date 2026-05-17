@@ -40,6 +40,24 @@ export const LeadScoringSettingsTab: React.FC = () => {
     return v;
   };
 
+  const saveRulePatch = async (ruleId: string, patch: Parameters<typeof updateRule>[1]) => {
+    try {
+      await updateRule(ruleId, patch);
+      toast.success("Rule saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    }
+  };
+
+  const removeRule = async (ruleId: string) => {
+    try {
+      await deleteRule(ruleId);
+      toast.success("Rule deleted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex gap-3 items-end">
@@ -62,21 +80,21 @@ export const LeadScoringSettingsTab: React.FC = () => {
       <div className="space-y-2">
         {rules.map((r) => (
           <div key={r.ruleId} className="border rounded-md p-3 grid grid-cols-12 gap-2 items-end">
-            <Input className="col-span-3" defaultValue={r.label} onBlur={(e) => updateRule(r.ruleId, { label: e.target.value })} />
-            <Select value={r.field} onValueChange={(v) => updateRule(r.ruleId, { field: v as ScoringField })}>
+            <Input className="col-span-3" defaultValue={r.label} onBlur={(e) => saveRulePatch(r.ruleId, { label: e.target.value })} />
+            <Select value={r.field} onValueChange={(v) => saveRulePatch(r.ruleId, { field: v as ScoringField })}>
               <SelectTrigger className="col-span-2"><SelectValue /></SelectTrigger>
               <SelectContent>{FIELDS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
             </Select>
-            <Select value={r.operator} onValueChange={(v) => updateRule(r.ruleId, { operator: v as ScoringOperator })}>
+            <Select value={r.operator} onValueChange={(v) => saveRulePatch(r.ruleId, { operator: v as ScoringOperator })}>
               <SelectTrigger className="col-span-1"><SelectValue /></SelectTrigger>
               <SelectContent>{OPS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
             </Select>
-            <Input className="col-span-3" defaultValue={JSON.stringify(r.value)} onBlur={(e) => updateRule(r.ruleId, { value: parseValue(e.target.value) })} />
-            <Input className="col-span-1" type="number" defaultValue={r.points} onBlur={(e) => updateRule(r.ruleId, { points: Number(e.target.value) })} />
+            <Input className="col-span-3" defaultValue={JSON.stringify(r.value)} onBlur={(e) => saveRulePatch(r.ruleId, { value: parseValue(e.target.value) })} />
+            <Input className="col-span-1" type="number" defaultValue={r.points} onBlur={(e) => saveRulePatch(r.ruleId, { points: Number(e.target.value) })} />
             <div className="col-span-1 flex items-center gap-2">
-              <Switch checked={r.enabled} onCheckedChange={(v) => updateRule(r.ruleId, { enabled: v })} />
+              <Switch checked={r.enabled} onCheckedChange={(v) => saveRulePatch(r.ruleId, { enabled: v })} />
             </div>
-            <Button variant="ghost" size="icon" className="col-span-1" onClick={() => deleteRule(r.ruleId)}>
+            <Button variant="ghost" size="icon" className="col-span-1" onClick={() => removeRule(r.ruleId)}>
               <Trash2 className="w-4 h-4" />
             </Button>
           </div>

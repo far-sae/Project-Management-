@@ -34,7 +34,7 @@ export const AiUsageSettingsTab: React.FC = () => {
   useEffect(() => {
     if (!organizationId) return;
     listRuns(organizationId, 50).then(setRuns);
-  }, [organizationId]);
+  }, [organizationId, usage?.currentMonthRuns]);
 
   useEffect(() => {
     if (usage) setCapDraft(usage.monthlyRunCap);

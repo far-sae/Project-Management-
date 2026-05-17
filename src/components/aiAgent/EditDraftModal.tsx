@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -37,6 +44,9 @@ export const EditDraftModal: React.FC<Props> = ({ open, initial, onCancel, onSen
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit draft</DialogTitle>
+          <DialogDescription>
+            Review and adjust the AI-generated outreach before sending it.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>

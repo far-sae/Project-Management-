@@ -65,13 +65,24 @@ export const getUsage = async (organizationId: string): Promise<AiBlockUsage> =>
 
   // The DB function lazily creates the row on first AI call. Default if not present.
   const monthlyRunCap = (cap?.monthly_run_cap as number) ?? 1000;
-  const currentMonthRuns = (cap?.current_month_runs as number) ?? 0;
-  const currentMonthStartedAt = cap?.current_month_started_at
+  const calendarMonthStartedAt = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const capMonthStartedAt = cap?.current_month_started_at
     ? new Date(cap.current_month_started_at as string)
-    : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    : calendarMonthStartedAt;
+  const currentMonthStartedAt = capMonthStartedAt < calendarMonthStartedAt
+    ? calendarMonthStartedAt
+    : capMonthStartedAt;
+
+  // Count actual run rows so AI Agent usage is reflected even when it writes
+  // telemetry directly instead of going through check_and_increment_ai_cap().
+  const monthStart = new Date(currentMonthStartedAt);
+  const { count: currentMonthRuns } = await supabase
+    .from("ai_block_runs")
+    .select("run_id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .gte("created_at", monthStart.toISOString());
 
   // Sum current-month spend by querying ai_block_runs.
-  const monthStart = new Date(currentMonthStartedAt);
   const { data: rows } = await supabase
     .from("ai_block_runs")
     .select("cost_usd_cents")
@@ -84,7 +95,7 @@ export const getUsage = async (organizationId: string): Promise<AiBlockUsage> =>
 
   return {
     monthlyRunCap,
-    currentMonthRuns,
+    currentMonthRuns: currentMonthRuns ?? 0,
     currentMonthSpendCents,
     currentMonthStartedAt,
   };

@@ -42,6 +42,9 @@ verify_jwt = false
 [functions.ai-agent-suggest]
 verify_jwt = false
 
+[functions.ai-agent-approve]
+verify_jwt = false
+
 [functions.slack-list-channels]
 verify_jwt = false
 

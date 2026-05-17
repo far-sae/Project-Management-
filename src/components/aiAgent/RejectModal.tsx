@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,6 +53,9 @@ export const RejectModal: React.FC<Props> = ({ open, onCancel, onReject }) => {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Why reject this draft?</DialogTitle>
+          <DialogDescription>
+            Choose the reason this AI draft should not be used so future suggestions can improve.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">

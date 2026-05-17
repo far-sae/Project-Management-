@@ -102,6 +102,21 @@ export const createRule = async (
   input: RuleInput,
 ): Promise<LeadScoringRule> => {
   validateRuleInput(input);
+  const { data: rpcData, error: rpcError } = await supabase
+    .rpc("crm_create_lead_scoring_rule", {
+      p_organization_id: organizationId,
+      p_label: input.label.trim(),
+      p_field: input.field,
+      p_operator: input.operator,
+      p_value: input.value,
+      p_points: input.points,
+      p_position: input.position ?? 1,
+      p_enabled: input.enabled ?? true,
+    })
+    .single();
+  if (!rpcError && rpcData) return mapRuleRow(rpcData as Record<string, unknown>);
+  if (rpcError && !isMissingRpcError(rpcError)) throw rpcError;
+
   const { data, error } = await supabase
     .from("lead_scoring_rules")
     .insert({
@@ -127,6 +142,15 @@ export const updateRule = async (
   if (input.operator && !VALID_OPERATORS.includes(input.operator)) {
     throw new Error("Invalid operator");
   }
+  const { data: rpcData, error: rpcError } = await supabase
+    .rpc("crm_update_lead_scoring_rule", {
+      p_rule_id: ruleId,
+      p_patch: input,
+    })
+    .single();
+  if (!rpcError && rpcData) return mapRuleRow(rpcData as Record<string, unknown>);
+  if (rpcError && !isMissingRpcError(rpcError)) throw rpcError;
+
   const update: Record<string, unknown> = {};
   if (input.label !== undefined) update.label = input.label.trim();
   if (input.field !== undefined) update.field = input.field;
@@ -146,6 +170,12 @@ export const updateRule = async (
 };
 
 export const deleteRule = async (ruleId: string): Promise<void> => {
+  const { error: rpcError } = await supabase.rpc("crm_delete_lead_scoring_rule", {
+    p_rule_id: ruleId,
+  });
+  if (!rpcError) return;
+  if (!isMissingRpcError(rpcError)) throw rpcError;
+
   const { error } = await supabase.from("lead_scoring_rules").delete().eq("rule_id", ruleId);
   if (error) throw error;
 };
@@ -155,6 +185,21 @@ export const saveThresholds = async (
   t: Thresholds,
 ): Promise<Thresholds> => {
   if (t.hot < t.warm) throw new Error("Hot threshold must be ≥ warm");
+  const { data: rpcData, error: rpcError } = await supabase
+    .rpc("crm_save_lead_scoring_thresholds", {
+      p_organization_id: organizationId,
+      p_hot: t.hot,
+      p_warm: t.warm,
+    })
+    .single();
+  if (!rpcError && rpcData) {
+    return {
+      hot: Number((rpcData as Record<string, unknown>).hot),
+      warm: Number((rpcData as Record<string, unknown>).warm),
+    };
+  }
+  if (rpcError && !isMissingRpcError(rpcError)) throw rpcError;
+
   const { data, error } = await supabase
     .from("lead_scoring_thresholds")
     .upsert({ organization_id: organizationId, hot: t.hot, warm: t.warm })
@@ -162,4 +207,9 @@ export const saveThresholds = async (
     .single();
   if (error) throw error;
   return { hot: data.hot, warm: data.warm };
+};
+
+const isMissingRpcError = (error: { code?: string; message?: string }): boolean => {
+  const message = (error.message ?? "").toLowerCase();
+  return error.code === "42883" || message.includes("function") && message.includes("does not exist");
 };

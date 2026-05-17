@@ -38,6 +38,9 @@ interface SuggestRequest {
   source_event_id?: string;
 }
 
+const computeCostCents = (inputTokens: number, outputTokens: number): number =>
+  inputTokens * 0.0003 + outputTokens * 0.0015;
+
 const isOrgMember = (members: unknown, userId: string): boolean => {
   const rows = Array.isArray(members) ? members : [];
   return rows.some((m) => {
@@ -208,6 +211,7 @@ const logUsage = async (
     model?: string;
     inputTokens?: number;
     outputTokens?: number;
+    costUsdCents?: number;
     durationMs?: number;
     status?: "success" | "failure" | "skipped";
     errorMessage?: string;
@@ -219,6 +223,7 @@ const logUsage = async (
     model: fields.model ?? "n/a",
     input_tokens: fields.inputTokens ?? null,
     output_tokens: fields.outputTokens ?? null,
+    cost_usd_cents: fields.costUsdCents ?? null,
     duration_ms: fields.durationMs ?? null,
     status: fields.status ?? "success",
     error_message: fields.errorMessage ?? null,
@@ -302,6 +307,7 @@ Deno.serve(async (req) => {
       model: MODEL,
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,
+      costUsdCents: computeCostCents(r.inputTokens, r.outputTokens),
       durationMs: r.durationMs,
       status: "success",
     });
