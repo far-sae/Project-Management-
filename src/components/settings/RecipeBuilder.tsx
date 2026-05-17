@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -232,6 +239,9 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{recipe ? "Edit automation" : "New automation"}</DialogTitle>
+          <DialogDescription>
+            Choose a trigger, optional conditions, and the action this automation should run.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

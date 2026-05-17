@@ -98,6 +98,29 @@ const readLocal = (orgId: string): ClientTask[] => {
 const writeLocal = (orgId: string, tasks: ClientTask[]) =>
   localStorage.setItem(localKey(orgId), JSON.stringify(tasks));
 
+const isMissingRpcError = (error: unknown): boolean => {
+  const e = error as { code?: string; message?: string; details?: string };
+  const text = `${e?.message ?? ""} ${e?.details ?? ""}`.toLowerCase();
+  return e?.code === "PGRST202" || text.includes("could not find the function");
+};
+
+const friendlyTaskCreateError = (error: unknown): Error => {
+  const e = error as { code?: string; message?: string };
+  const msg = String(e?.message ?? "");
+  if (e?.code === "42501" || /row-level security|permission denied/i.test(msg)) {
+    return new Error(
+      "You do not have permission to add client tasks in this workspace. Ask an admin to apply the latest CRM task migration or check your role.",
+    );
+  }
+  if (e?.code === "23503" || /foreign key/i.test(msg)) {
+    return new Error("This task is linked to a client or deal that no longer exists.");
+  }
+  if (e?.code === "23514" || /check constraint/i.test(msg)) {
+    return new Error("Task details are invalid. Check the title, type, and status.");
+  }
+  return error instanceof Error ? error : new Error(msg || "Failed to create client task");
+};
+
 export const getOrganizationClientTasks = async (
   organizationId: string,
 ): Promise<ClientTask[]> => {
@@ -166,16 +189,28 @@ export const createClientTask = async (
     created_by: createdBy,
     created_by_name: createdByName,
   };
-  const { data, error } = await supabase
+  const createViaDirectInsert = () => supabase
     .from("client_tasks")
     .insert(row)
     .select()
     .single();
+
+  let { data, error } = await supabase
+    .rpc("crm_create_client_task", {
+      p_organization_id: organizationId,
+      p_task: row,
+    })
+    .single();
+
+  if (error && isMissingRpcError(error)) {
+    ({ data, error } = await createViaDirectInsert());
+  }
+
   if (error) {
     logger.error("Failed to create client task:", error);
-    throw error;
+    throw friendlyTaskCreateError(error);
   }
-  return mapTask(data);
+  return mapTask(data as Record<string, unknown>);
 };
 
 export const updateClientTask = async (
