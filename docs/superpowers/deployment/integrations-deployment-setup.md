@@ -264,16 +264,15 @@ The framework code is on `main` after the merge. Deploy the 5 new Edge Functions
 
 ```bash
 npx supabase functions deploy oauth-start
-npx supabase functions deploy oauth-callback
+npx supabase functions deploy oauth-callback --no-verify-jwt
 npx supabase functions deploy integrations-disconnect
 npx supabase functions deploy integrations-action
-npx supabase functions deploy integrations-webhook
+npx supabase functions deploy integrations-webhook --no-verify-jwt
 ```
 
-Or all at once if your CLI supports it:
-```bash
-npx supabase functions deploy oauth-start oauth-callback integrations-disconnect integrations-action integrations-webhook
-```
+**The `--no-verify-jwt` flag is required on `oauth-callback` and `integrations-webhook`.** Both are reached by browser redirects (from Slack/Google) or provider-initiated webhooks — neither carries an `Authorization` header. Without the flag, Supabase's JWT gateway 401s the request with `UNAUTHORIZED_NO_AUTH_HEADER` before your function code ever runs. The functions verify authenticity themselves: `oauth-callback` via the HMAC-signed `state` param, `integrations-webhook` via provider signature headers.
+
+The other three (`oauth-start`, `integrations-disconnect`, `integrations-action`) are always called by your authenticated frontend (or by the automation worker with a service-role key), so JWT verification is appropriate — don't add `--no-verify-jwt` to those.
 
 Each deploy takes ~10–30 seconds and prints the deployed URL.
 
