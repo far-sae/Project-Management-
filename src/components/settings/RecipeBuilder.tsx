@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Plus } from "lucide-react";
+import { AlertTriangle, Plus, Sparkles, Trash2 } from "lucide-react";
 import {
   ACTION_TYPES, TRIGGER_TYPES,
   Recipe, RecipeAction, RecipeCondition, RecipeDraft, TriggerType, ActionType,
@@ -17,6 +17,7 @@ import { toast } from "sonner";
 interface Props {
   organizationId: string;
   recipe: Recipe | null;
+  initialDraft?: RecipeDraft | null;
   onClose: () => void;
 }
 
@@ -54,29 +55,36 @@ const ACTION_LABEL: Record<ActionType, string> = {
 
 const OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in", "contains", "exists"] as const;
 
-const draftFromRecipe = (r: Recipe | null): RecipeDraft => r
-  ? {
+const draftFromRecipe = (r: Recipe | null, initialDraft?: RecipeDraft | null): RecipeDraft => {
+  if (r) {
+    return {
       name: r.name,
       description: r.description ?? "",
       enabled: r.enabled,
       trigger: { type: r.triggerType, config: r.triggerConfig },
       conditions: r.conditions,
       actions: r.actions,
-    }
-  : {
-      name: "",
-      description: "",
-      enabled: true,
-      trigger: { type: "deal_stage_entered", config: {} },
-      conditions: [],
-      actions: [{ type: "create_task", config: { title: "", assignee: "deal_owner", due_in_days: 3 } }],
+      sendWindow: r.sendWindow ?? null,
     };
+  }
+  if (initialDraft) return initialDraft;
+  return {
+    name: "",
+    description: "",
+    enabled: true,
+    trigger: { type: "deal_stage_entered", config: {} },
+    conditions: [],
+    actions: [{ type: "create_task", config: { title: "", assignee: "deal_owner", due_in_days: 3 } }],
+  };
+};
 
-export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose }) => {
-  const [draft, setDraft] = useState<RecipeDraft>(() => draftFromRecipe(recipe));
+export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initialDraft, onClose }) => {
+  const [draft, setDraft] = useState<RecipeDraft>(() => draftFromRecipe(recipe, initialDraft));
   const [saving, setSaving] = useState(false);
   const [slackChannels, setSlackChannels] = useState<SlackChannel[]>([]);
   const [loadingChannels, setLoadingChannels] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(() => draft.conditions.length > 0);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Fetch Slack channels on demand when the trigger flips to slack.
   useEffect(() => {
@@ -166,14 +174,54 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
     return `(${sw.hours[0]}–${sw.hours[1]} ${days} · ${sw.timezone})`;
   };
 
+  const validateForBeginners = (): string | null => {
+    if (!draft.name.trim()) return "Give this automation a name first.";
+    if (draft.trigger.type === "slack_message_received") {
+      const channels = (draft.trigger.config.channels as string[]) ?? [];
+      if (channels.length === 0) {
+        return "Choose at least one Slack channel so we know where to listen.";
+      }
+    }
+    if (draft.trigger.type === "slack_reaction_added") {
+      const reactions = (draft.trigger.config.reactions as string[]) ?? [];
+      if (reactions.length === 0) {
+        return "Add at least one Slack emoji reaction, such as white_check_mark or eyes.";
+      }
+    }
+    for (const action of draft.actions) {
+      if (action.type === "create_task" && !(action.config.title as string)?.trim()) {
+        return "Add a task title in the Then section.";
+      }
+      if (action.type === "webhook" && !(action.config.url as string)?.trim()) {
+        return "Add the webhook URL before saving.";
+      }
+      if (action.type === "slack_post" && !(action.config.channel_id as string)?.trim()) {
+        return "Add the Slack channel ID for the message action.";
+      }
+      if (action.type === "send_email") {
+        if (!(action.config.to as string)?.trim()) return "Add an email recipient.";
+        if (!(action.config.subject as string)?.trim()) return "Add an email subject.";
+      }
+    }
+    return null;
+  };
+
   const save = async () => {
+    const validationMessage = validateForBeginners();
+    if (validationMessage) {
+      setSaveError(validationMessage);
+      return;
+    }
     setSaving(true);
+    setSaveError(null);
     try {
       await upsertRecipe(organizationId, recipe?.recipeId ?? null, draft);
       toast.success(recipe ? "Recipe updated" : "Recipe created");
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed");
+      const message = err instanceof Error ? err.message : "Save failed";
+      setSaveError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -181,14 +229,32 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{recipe ? "Edit automation" : "New automation"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="rounded-lg border bg-primary/5 border-primary/20 p-3 flex items-start gap-3">
+            <Sparkles className="w-4 h-4 text-primary mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium">Build it like a sentence.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Choose when something happens, optionally add filters, then choose what the app should do.
+                Advanced fields are available when you need more control.
+              </p>
+            </div>
+          </div>
+
+          {saveError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5" />
+              <span>{saveError}</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-3 gap-3 items-end">
-            <div className="col-span-2">
+            <div className="col-span-2 space-y-2">
               <Label>Name</Label>
               <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={120} />
             </div>
@@ -196,11 +262,23 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
               <Switch checked={draft.enabled} onCheckedChange={(v) => setDraft({ ...draft, enabled: v })} />
               <Label>Active</Label>
             </div>
+            <div className="col-span-3 space-y-2">
+              <Label>Description (optional)</Label>
+              <Input
+                value={draft.description ?? ""}
+                onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                maxLength={240}
+                placeholder="Example: Remind the owner to follow up after every new client."
+              />
+            </div>
           </div>
 
           <div className="border-t pt-4 space-y-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-semibold w-16">When</span>
+            <div className="flex items-start gap-3 flex-wrap">
+              <div className="w-16">
+                <span className="text-sm font-semibold">When</span>
+                <p className="text-[11px] text-muted-foreground">the trigger</p>
+              </div>
               <Select
                 value={draft.trigger.type}
                 onValueChange={(v) => setDraft({ ...draft, trigger: { type: v as TriggerType, config: {} } })}
@@ -370,48 +448,80 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
             )}
 
             <div className="flex items-start gap-3">
-              <span className="text-sm font-semibold w-16 mt-1">If</span>
-              <div className="flex-1 space-y-2">
-                {draft.conditions.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input
-                      value={c.field}
-                      onChange={(e) => updateCondition(i, { field: e.target.value })}
-                      className="w-[180px]"
-                      placeholder="deal.value"
-                    />
-                    <Select
-                      value={c.operator}
-                      onValueChange={(v) => updateCondition(i, { operator: v as RecipeCondition["operator"] })}
-                    >
-                      <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {OPERATORS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      value={typeof c.value === "string" ? c.value : JSON.stringify(c.value)}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        let v: unknown = raw;
-                        try { v = JSON.parse(raw); } catch { /* keep raw */ }
-                        updateCondition(i, { value: v });
-                      }}
-                      placeholder='1000 or "VIP" or ["a","b"]'
-                    />
-                    <Button variant="ghost" size="icon" onClick={() => removeCondition(i)}>
-                      <Trash2 className="w-4 h-4" />
+              <div className="w-16 mt-1">
+                <span className="text-sm font-semibold">If</span>
+                <p className="text-[11px] text-muted-foreground">optional</p>
+              </div>
+              <div className="flex-1 rounded-md border p-3 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Advanced conditions</p>
+                    <p className="text-xs text-muted-foreground">
+                      Most automations can skip this. Use conditions only when the
+                      automation should run for certain values, tags, or amounts.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                  >
+                    {showAdvanced ? "Hide" : "Show"}
+                  </Button>
+                </div>
+                {showAdvanced && (
+                  <div className="space-y-2">
+                    {draft.conditions.map((c, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Input
+                          value={c.field}
+                          onChange={(e) => updateCondition(i, { field: e.target.value })}
+                          className="w-[180px]"
+                          placeholder="deal.value"
+                        />
+                        <Select
+                          value={c.operator}
+                          onValueChange={(v) => updateCondition(i, { operator: v as RecipeCondition["operator"] })}
+                        >
+                          <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {OPERATORS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={typeof c.value === "string" ? c.value : JSON.stringify(c.value)}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            let v: unknown = raw;
+                            try { v = JSON.parse(raw); } catch { /* keep raw */ }
+                            updateCondition(i, { value: v });
+                          }}
+                          placeholder='1000 or "VIP" or ["a","b"]'
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => removeCondition(i)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    {draft.conditions.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        No filters yet. This automation will run whenever the trigger happens.
+                      </p>
+                    )}
+                    <Button variant="outline" size="sm" onClick={addCondition}>
+                      <Plus className="w-3 h-3 mr-1" /> Add condition
                     </Button>
                   </div>
-                ))}
-                <Button variant="outline" size="sm" onClick={addCondition}>
-                  <Plus className="w-3 h-3 mr-1" /> Add condition
-                </Button>
+                )}
               </div>
             </div>
 
             <div className="flex items-start gap-3">
-              <span className="text-sm font-semibold w-16 mt-1">Then</span>
+              <div className="w-16 mt-1">
+                <span className="text-sm font-semibold">Then</span>
+                <p className="text-[11px] text-muted-foreground">the action</p>
+              </div>
               <div className="flex-1 space-y-3">
                 {draft.actions.map((a, i) => (
                   <div key={i} className="border rounded-md p-3 space-y-2">

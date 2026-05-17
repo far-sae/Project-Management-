@@ -13,8 +13,11 @@ import { toast } from 'sonner';
 import {
   CLIENT_CSV_HEADERS,
   CsvRowError,
+  getClientCsvHeaderMappings,
   importClientsFromCsv,
   importClientsOverrideRow,
+  isApolloStyleClientCsv,
+  normalizeClientCsvHeader,
   type ImportResult,
 } from '@/services/supabase/clients';
 
@@ -76,11 +79,20 @@ interface CurrencyBucket {
   sampleNames: string[];
 }
 
+interface HeaderMapping {
+  source: string;
+  target: string;
+  mapped: boolean;
+  recognized: boolean;
+}
+
 interface ScanResult {
   totalRows: number;
   buckets: CurrencyBucket[];
   unspecified: CurrencyBucket;
   rawRows: Array<Record<string, string>>;
+  headerMappings: HeaderMapping[];
+  isApolloStyle: boolean;
 }
 
 interface Props {
@@ -132,7 +144,10 @@ const formatCurrencyTotal = (amount: number, currency: string): string => {
  * fall into the "unspecified" bucket so the importer can spot when their
  * spreadsheet is missing the column entirely vs. having a mix.
  */
-const scanRows = (rows: Array<Record<string, string>>): ScanResult => {
+const scanRows = (
+  rows: Array<Record<string, string>>,
+  sourceHeaders: string[] = [],
+): ScanResult => {
   const map = new Map<string, CurrencyBucket>();
   let unspecified: CurrencyBucket = {
     currency: '',
@@ -140,11 +155,15 @@ const scanRows = (rows: Array<Record<string, string>>): ScanResult => {
     totalRevenue: 0,
     sampleNames: [],
   };
+  const headers = sourceHeaders.length > 0
+    ? sourceHeaders
+    : Object.keys(rows[0] ?? {});
+  const headerMappings = getClientCsvHeaderMappings(headers);
 
   for (const raw of rows) {
     const normalised: Record<string, string> = {};
     for (const k of Object.keys(raw)) {
-      normalised[k.toLowerCase().trim()] = (raw[k] ?? '').toString();
+      normalised[normalizeClientCsvHeader(k)] = (raw[k] ?? '').toString();
     }
     const hasAnyValue = Object.values(normalised).some((v) => v.trim() !== '');
     if (!hasAnyValue) continue;
@@ -181,6 +200,8 @@ const scanRows = (rows: Array<Record<string, string>>): ScanResult => {
     buckets,
     unspecified,
     rawRows: rows,
+    headerMappings,
+    isApolloStyle: isApolloStyleClientCsv(headers),
   };
 };
 
@@ -227,7 +248,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
           setBusy(false);
           return;
         }
-        setScan(scanRows(parsed.data));
+        setScan(scanRows(parsed.data, parsed.meta.fields ?? []));
         setPhase('preview');
         setBusy(false);
       },
@@ -262,6 +283,8 @@ export const ImportClientsDialog: React.FC<Props> = ({
   const distinctCurrencies =
     (scan?.buckets.length ?? 0) + (scan?.unspecified.rowCount ? 1 : 0);
   const isMixed = distinctCurrencies > 1;
+  const mappedHeaders = scan?.headerMappings.filter((h) => h.mapped && h.recognized) ?? [];
+  const ignoredHeaders = scan?.headerMappings.filter((h) => !h.recognized) ?? [];
 
   return (
     <Dialog
@@ -275,8 +298,8 @@ export const ImportClientsDialog: React.FC<Props> = ({
         <DialogHeader>
           <DialogTitle>Import clients from CSV</DialogTitle>
           <DialogDescription>
-            Upload a spreadsheet of clients. We'll scan it for currencies and
-            show you a breakdown before anything gets imported.
+            Upload a spreadsheet of clients or leads. We'll recognize common
+            CRM and Apollo columns, show a preview, then import only after you confirm.
           </DialogDescription>
         </DialogHeader>
 
@@ -337,6 +360,36 @@ export const ImportClientsDialog: React.FC<Props> = ({
 
           {phase === 'preview' && scan && (
             <div className="rounded-md border border-border p-3 space-y-3">
+              <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-sm">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-primary mt-0.5" />
+                  <div>
+                    <p className="font-medium">
+                      {scan.isApolloStyle
+                        ? 'We recognized this as an Apollo-style leads file.'
+                        : 'We checked your spreadsheet columns.'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Company columns become client fields. Person fields like
+                      fullName, position, seniority, and LinkedIn are kept as client
+                      details for now.
+                    </p>
+                    {mappedHeaders.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Mapped: {mappedHeaders.slice(0, 6).map((h) => `${h.source} → ${h.target}`).join(', ')}
+                        {mappedHeaders.length > 6 && `, +${mappedHeaders.length - 6} more`}
+                      </p>
+                    )}
+                    {ignoredHeaders.length > 0 && (
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                        Ignored: {ignoredHeaders.slice(0, 6).map((h) => h.source).join(', ')}
+                        {ignoredHeaders.length > 6 && `, +${ignoredHeaders.length - 6} more`}.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Coins className="w-4 h-4 text-primary" />
@@ -428,10 +481,26 @@ export const ImportClientsDialog: React.FC<Props> = ({
 
           {phase === 'imported' && result && (
             <div className="rounded-md border p-3 text-sm space-y-2">
-              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
-                <CheckCircle2 className="w-4 h-4" />
+              <div
+                className={`flex items-center gap-2 font-medium ${
+                  result.imported.length > 0
+                    ? 'text-emerald-700 dark:text-emerald-300'
+                    : 'text-amber-700 dark:text-amber-300'
+                }`}
+              >
+                {result.imported.length > 0 ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4" />
+                )}
                 Imported {result.imported.length} client{result.imported.length === 1 ? '' : 's'}
               </div>
+              {result.imported.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Nothing was added. Check the skipped rows below; most import
+                  issues come from missing company/client names or duplicate clients.
+                </p>
+              )}
 
               {result.unknownHeaders.length > 0 && (
                 <div className="text-xs text-muted-foreground">
@@ -446,8 +515,8 @@ export const ImportClientsDialog: React.FC<Props> = ({
                 <div>
                   <div className="text-amber-700 dark:text-amber-300 font-medium flex items-center gap-2 mb-1">
                     <AlertTriangle className="w-4 h-4" />
-                    Removed {result.errors.length} row{result.errors.length === 1 ? '' : 's'} that
-                    didn't match the client template
+                    Skipped {result.errors.length} row{result.errors.length === 1 ? '' : 's'} that
+                    could not become clients
                   </div>
                   <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
                     {result.errors.slice(0, 8).map((e: CsvRowError, i) => (

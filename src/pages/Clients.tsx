@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
   Filter, Star, Trash2, MoreVertical, TrendingUp,
+  ArrowRight,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -84,7 +85,7 @@ const StatusBadge: React.FC<{ status: ClientStatus }> = ({ status }) => (
 export const Clients: React.FC = () => {
   const { user } = useAuth();
   const {
-    organizationId, clients, loading, create, update, remove, canManage,
+    organizationId, clients, loading, create, update, remove, canCreate, canManage,
   } = useClients();
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
@@ -98,6 +99,7 @@ export const Clients: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
+  const [activeTab, setActiveTab] = useState<'accounts' | 'pipeline' | 'tasks' | 'forecast'>('accounts');
 
   // Pipeline display currency. Persists per-browser so reps don't have to
   // re-pick on every visit. Defaults to whatever the org is set to.
@@ -217,7 +219,7 @@ export const Clients: React.FC = () => {
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
                 Your CRM accounts — companies you sell to, work with, or have on the radar.
-                {canManage && ' Track contacts, calls, meetings, and uploaded documents.'}
+                {canCreate && ' Add clients, import leads, and track follow-ups from one place.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -227,12 +229,12 @@ export const Clients: React.FC = () => {
               <Button variant="outline" onClick={exportAll}>
                 <Download className="w-4 h-4 mr-2" /> Export CSV
               </Button>
-              {canManage && (
+              {canCreate && (
                 <Button variant="outline" onClick={() => setOpenImport(true)}>
                   <Upload className="w-4 h-4 mr-2" /> Import
                 </Button>
               )}
-              {canManage && (
+              {canCreate && (
                 <Button onClick={() => setOpenCreate(true)}>
                   <Plus className="w-4 h-4 mr-2" /> New client
                 </Button>
@@ -240,7 +242,75 @@ export const Clients: React.FC = () => {
             </div>
           </div>
 
-          <Tabs defaultValue="accounts">
+          <Card>
+            <CardContent className="pt-5">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Start here
+                  </p>
+                  <h2 className="text-lg font-semibold mt-1">Choose what you want to do next</h2>
+                  <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+                    Clients are companies or people you work with. Add them one by one,
+                    import a spreadsheet, then track follow-ups, deals, and activity from here.
+                  </p>
+                </div>
+                <Badge variant="outline">{clients.length} saved client{clients.length === 1 ? '' : 's'}</Badge>
+              </div>
+              <div className="grid gap-3 md:grid-cols-4 mt-4">
+                {canCreate && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setOpenCreate(true)}
+                      className="rounded-lg border bg-background p-3 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
+                    >
+                      <Plus className="w-4 h-4 text-primary mb-2" />
+                      <p className="font-medium text-sm">Add one client</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Best for a single new company or contact.
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpenImport(true)}
+                      className="rounded-lg border bg-background p-3 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
+                    >
+                      <Upload className="w-4 h-4 text-primary mb-2" />
+                      <p className="font-medium text-sm">Import leads</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Upload CSV files, including Apollo-style exports.
+                      </p>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('pipeline')}
+                  className="rounded-lg border bg-background p-3 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
+                >
+                  <GitBranch className="w-4 h-4 text-primary mb-2" />
+                  <p className="font-medium text-sm">Track sales</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Move deals through stages and see totals.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tasks')}
+                  className="rounded-lg border bg-background p-3 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
+                >
+                  <ListTodo className="w-4 h-4 text-primary mb-2" />
+                  <p className="font-medium text-sm">Follow up</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    See the next task for every client.
+                  </p>
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
             <TabsList>
               <TabsTrigger value="accounts">
                 <Building2 className="w-4 h-4 mr-1.5" /> Accounts
@@ -257,6 +327,12 @@ export const Clients: React.FC = () => {
             </TabsList>
 
             <TabsContent value="accounts" className="mt-4 space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold">Accounts</h2>
+                <p className="text-sm text-muted-foreground">
+                  Your main client list. Search, filter, open a record, or add/import more clients.
+                </p>
+              </div>
           {/* Filters */}
           <Card>
             <CardContent className="pt-4 flex flex-wrap items-center gap-3">
@@ -320,16 +396,19 @@ export const Clients: React.FC = () => {
                 <Building2 className="w-10 h-10 mx-auto text-muted-foreground/60" />
                 <p className="text-sm text-muted-foreground">
                   {clients.length === 0
-                    ? 'No clients yet. Add your first one or import a CSV.'
-                    : 'No clients match your filters.'}
+                    ? 'No clients yet. Add one client if you only have a name, or import a spreadsheet if you already have a list.'
+                    : 'No clients match your filters. Try clearing search, type, status, or score filters.'}
                 </p>
-                {canManage && clients.length === 0 && (
-                  <div className="flex justify-center gap-2 pt-2">
+                {canCreate && clients.length === 0 && (
+                  <div className="flex flex-wrap justify-center gap-2 pt-2">
                     <Button onClick={() => setOpenCreate(true)}>
                       <Plus className="w-4 h-4 mr-2" /> New client
                     </Button>
                     <Button variant="outline" onClick={() => setOpenImport(true)}>
                       <Upload className="w-4 h-4 mr-2" /> Import
+                    </Button>
+                    <Button variant="ghost" onClick={() => setActiveTab('pipeline')}>
+                      Learn pipeline <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
                 )}
@@ -405,6 +484,12 @@ export const Clients: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="pipeline" className="mt-4 space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Pipeline</h2>
+                <p className="text-sm text-muted-foreground">
+                  Track possible sales as deals. Each deal moves through stages until it is won or lost.
+                </p>
+              </div>
               <Card>
                 <CardContent className="pt-4 flex flex-wrap items-center gap-3">
                   <PipelineSelector
@@ -456,11 +541,23 @@ export const Clients: React.FC = () => {
               />
             </TabsContent>
 
-            <TabsContent value="tasks" className="mt-4">
+            <TabsContent value="tasks" className="mt-4 space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Tasks</h2>
+                <p className="text-sm text-muted-foreground">
+                  A simple follow-up list for calls, emails, meetings, and client reminders.
+                </p>
+              </div>
               <ClientTasksList clients={clients} />
             </TabsContent>
 
-            <TabsContent value="forecast" className="mt-4">
+            <TabsContent value="forecast" className="mt-4 space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold">Forecast</h2>
+                <p className="text-sm text-muted-foreground">
+                  Estimate likely revenue from open deals, grouped into easy sales projections.
+                </p>
+              </div>
               <ForecastTab displayCurrency={effectivePipelineCurrency} />
             </TabsContent>
           </Tabs>

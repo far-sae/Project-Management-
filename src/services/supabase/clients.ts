@@ -186,6 +186,17 @@ const sanitizeTags = (tags: string[] | null | undefined): string[] => {
   return [...seen];
 };
 
+const isMissingRpcError = (error: unknown): boolean => {
+  const e = error as { code?: string; message?: string; details?: string };
+  const text = `${e?.message ?? ""} ${e?.details ?? ""}`.toLowerCase();
+  return e?.code === "PGRST202" || text.includes("could not find the function");
+};
+
+const createClientPermissionError = () =>
+  new Error(
+    "You do not have permission to create clients in this workspace. Ask an admin to apply the latest CRM permissions migrations or check your role.",
+  );
+
 const validateClientInput = (input: CreateClientInput) => {
   if (!input.name || sanitizeText(input.name) === null) {
     throw new Error("Client name is required");
@@ -417,15 +428,29 @@ export const createClient = async (
     created_by_name: userName,
   };
 
-  const { data, error } = await supabase
+  const createViaDirectInsert = () => supabase
     .from("clients")
     .insert(row)
     .select()
     .single();
 
+  let { data, error } = await supabase
+    .rpc("crm_create_client", {
+      p_organization_id: organizationId,
+      p_client: row,
+    })
+    .single();
+
+  if (error && isMissingRpcError(error)) {
+    ({ data, error } = await createViaDirectInsert());
+  }
+
   if (error) {
     const code = (error as { code?: string }).code;
     const msg = String((error as { message?: string }).message ?? "");
+    if (code === "42501" || /row-level security|permission denied/i.test(msg)) {
+      throw createClientPermissionError();
+    }
     if (code === "23505") {
       if (msg.includes("ux_clients_email_per_org")) {
         throw new Error(
@@ -441,7 +466,7 @@ export const createClient = async (
     logger.error("Failed to create client:", error);
     throw error;
   }
-  return mapClient(data);
+  return mapClient(data as Record<string, unknown>);
 };
 
 export const updateClient = async (
@@ -1232,6 +1257,7 @@ export const CLIENT_CUSTOM_FIELD_HEADERS = [
   "billing_email",
   "billing_phone",
   "primary_contact_name",
+  "primary_contact_title",
   "primary_contact_email",
   "primary_contact_phone",
   "secondary_contact_name",
@@ -1239,6 +1265,9 @@ export const CLIENT_CUSTOM_FIELD_HEADERS = [
   "secondary_contact_phone",
   "lifecycle_stage",         // lead / mql / sql / opportunity / customer / churned
   "linkedin_url",
+  "lead_seniority",
+  "lead_function",
+  "email_status",
   "twitter_url",
   "notes",
 ] as const;
@@ -1254,6 +1283,80 @@ const ALLOWED_HEADER_SET = new Set<string>([
   ...CLIENT_CORE_HEADERS,
   ...CLIENT_CUSTOM_FIELD_HEADERS,
 ]);
+
+const HEADER_ALIASES: Record<string, string> = {
+  company: "name",
+  companyname: "name",
+  organization: "name",
+  organizationname: "name",
+  orgname: "name",
+  accountname: "name",
+  orgwebsite: "website",
+  orgwebsiteurl: "website",
+  organizationwebsite: "website",
+  websiteurl: "website",
+  companywebsite: "website",
+  orgindustry: "industry",
+  organizationindustry: "industry",
+  companyindustry: "industry",
+  orgcity: "city",
+  organizationcity: "city",
+  companycity: "city",
+  orgstate: "state",
+  organizationstate: "state",
+  companystate: "state",
+  orgcountry: "country",
+  organizationcountry: "country",
+  companycountry: "country",
+  orgsize: "employee_count",
+  organizationsize: "employee_count",
+  companysize: "employee_count",
+  employeecount: "employee_count",
+  estimatednumemployees: "employee_count",
+  fullname: "primary_contact_name",
+  personname: "primary_contact_name",
+  contactname: "primary_contact_name",
+  position: "primary_contact_title",
+  title: "primary_contact_title",
+  jobtitle: "primary_contact_title",
+  linkedinurl: "linkedin_url",
+  linkedin: "linkedin_url",
+  seniority: "lead_seniority",
+  functional: "lead_function",
+  function: "lead_function",
+  emailstatus: "email_status",
+};
+
+const normalizeHeaderKey = (header: string): string =>
+  header.toLowerCase().trim().replace(/[\s_\-./()]+/g, "");
+
+export const normalizeClientCsvHeader = (header: string): string => {
+  const trimmed = header.toLowerCase().trim();
+  return HEADER_ALIASES[normalizeHeaderKey(header)] ?? trimmed;
+};
+
+export const getClientCsvHeaderMappings = (headers: string[]) =>
+  headers
+    .map((source) => {
+      const target = normalizeClientCsvHeader(source);
+      return {
+        source: source.trim(),
+        target,
+        mapped: target !== source.toLowerCase().trim(),
+        recognized: ALLOWED_HEADER_SET.has(target),
+      };
+    })
+    .filter((m) => m.source.length > 0);
+
+export const isApolloStyleClientCsv = (headers: string[]): boolean => {
+  const normalized = new Set(headers.map((h) => normalizeHeaderKey(h)));
+  return (
+    normalized.has("orgname") ||
+    normalized.has("orgwebsite") ||
+    normalized.has("linkedinurl") ||
+    (normalized.has("fullname") && normalized.has("seniority"))
+  );
+};
 
 const VALID_TYPES: ClientType[] = ["customer", "prospect", "partner", "vendor", "other"];
 const VALID_STATUSES: ClientStatus[] = ["active", "inactive", "archived"];
@@ -1406,7 +1509,7 @@ export const importClientsFromCsv = async (
   const seenHeaders = new Set<string>();
   if (rows.length > 0) {
     for (const k of Object.keys(rows[0])) {
-      seenHeaders.add(k.toLowerCase().trim());
+      seenHeaders.add(normalizeClientCsvHeader(k));
     }
   }
   const unknownHeaders = Array.from(seenHeaders).filter(
@@ -1422,7 +1525,11 @@ export const importClientsFromCsv = async (
     const raw = rows[i];
     const normalised: Record<string, string> = {};
     for (const k of Object.keys(raw)) {
-      normalised[k.toLowerCase().trim()] = (raw[k] ?? "").toString();
+      const key = normalizeClientCsvHeader(k);
+      const value = (raw[k] ?? "").toString();
+      if (normalised[key] == null || normalised[key].trim() === "") {
+        normalised[key] = value;
+      }
     }
 
     // Skip wholly-blank rows silently — Excel exports leave them at the end
@@ -1437,7 +1544,10 @@ export const importClientsFromCsv = async (
     }
 
     if (!sanitizeText(parsed.input.name)) {
-      errors.push({ row: i + 2, message: "Missing client name" });
+      errors.push({
+        row: i + 2,
+        message: "Missing company/client name. Add a name column, or include orgName/company in a lead export.",
+      });
       continue;
     }
 

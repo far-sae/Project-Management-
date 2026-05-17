@@ -27,7 +27,7 @@ const effectiveOrgId = (
  */
 export const useClients = () => {
   const { user } = useAuth();
-  const { organization, isOwner, isAdmin } = useOrganization();
+  const { organization, isOwner, isAdmin, isViewer } = useOrganization();
   const orgId = effectiveOrgId(
     organization?.organizationId ?? user?.organizationId ?? null,
     user?.userId,
@@ -86,6 +86,7 @@ export const useClients = () => {
     remove,
     isOwner,
     isAdmin,
+    canCreate: Boolean(orgId?.startsWith("local-") || (organization && !isViewer)),
     canManage: isOwner || isAdmin,
   };
 };

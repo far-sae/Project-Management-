@@ -171,14 +171,14 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               Contacts {contacts.length > 0 && `(${contacts.length})`}
             </TabsTrigger>
             <TabsTrigger value="activity">
-              Activity {notes.length > 0 && `(${notes.length})`}
+              Notes {notes.length > 0 && `(${notes.length})`}
             </TabsTrigger>
             <TabsTrigger value="files">
               Files {attachments.length > 0 && `(${attachments.length})`}
             </TabsTrigger>
             <TabsTrigger value="activity-feed" className="gap-2">
               <Activity className="w-4 h-4" />
-              Activity
+              Timeline
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -228,7 +228,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
           {tab === 'activity-feed' && (
             <ActivityTimeline
               clientId={client.clientId}
-              emptyHint="No notes, deal moves, tasks, or form submissions yet."
+              emptyHint="No timeline events yet. Notes, deal moves, tasks, and form submissions will appear here automatically."
             />
           )}
         </div>
@@ -473,7 +473,9 @@ const ContactsTab: React.FC<{
       )}
 
       {contacts.length === 0 && !showForm && (
-        <p className="text-sm text-muted-foreground">No contacts yet.</p>
+        <p className="text-sm text-muted-foreground">
+          No contacts yet. Add the main person your team should talk to for this client.
+        </p>
       )}
 
       <ul className="space-y-2">
@@ -528,7 +530,7 @@ const ContactsTab: React.FC<{
   );
 };
 
-// ─── Activity tab (notes / calls / meetings / emails) ────────────────────────
+// ─── Notes tab (notes / calls / meetings / emails) ───────────────────────────
 
 const ActivityTab: React.FC<{
   clientId: string;
@@ -617,7 +619,9 @@ const ActivityTab: React.FC<{
       )}
 
       {notes.length === 0 && (
-        <p className="text-sm text-muted-foreground">No activity logged yet.</p>
+        <p className="text-sm text-muted-foreground">
+          No notes yet. Log calls, meetings, emails, or quick reminders so everyone has context.
+        </p>
       )}
 
       <ul className="space-y-2">
@@ -739,7 +743,9 @@ const FilesTab: React.FC<{
       </div>
 
       {attachments.length === 0 && (
-        <p className="text-sm text-muted-foreground">No files yet.</p>
+        <p className="text-sm text-muted-foreground">
+          No files yet. Upload contracts, briefs, spreadsheets, or other documents for this client.
+        </p>
       )}
 
       <ul className="space-y-2">

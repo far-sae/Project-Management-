@@ -551,31 +551,55 @@ export const Settings: React.FC = () => {
 
           {/* PIPELINES TAB */}
           <TabsContent value="pipelines">
+            <SettingsHelp
+              title="Pipelines"
+              description="Set up the sales stages your team moves deals through, from first conversation to won or lost."
+            />
             <PipelinesSettingsTab />
           </TabsContent>
 
           {/* LEAD SCORING TAB */}
           <TabsContent value="lead-scoring">
+            <SettingsHelp
+              title="Lead scoring"
+              description="Choose the signals that make a client or deal hot, warm, or cold so the team knows who to contact first."
+            />
             <LeadScoringSettingsTab />
           </TabsContent>
 
           {/* LEAD FORMS TAB */}
           <TabsContent value="lead-forms">
+            <SettingsHelp
+              title="Lead forms"
+              description="Create simple public forms that collect new leads and send them into your CRM."
+            />
             <LeadFormsSettingsTab />
           </TabsContent>
 
           {/* AUTOMATIONS TAB */}
           <TabsContent value="automations">
+            <SettingsHelp
+              title="Automations"
+              description="Make the app do repeat work for you, like creating follow-up tasks when clients or deals change."
+            />
             <AutomationsSettingsTab />
           </TabsContent>
 
           {/* SEQUENCES TAB */}
           <TabsContent value="sequences">
+            <SettingsHelp
+              title="Sequences"
+              description="Build timed outreach steps for emails, waits, and follow-ups without writing code."
+            />
             <SequencesSettingsTab />
           </TabsContent>
 
           {/* AI USAGE TAB */}
           <TabsContent value="ai-usage">
+            <SettingsHelp
+              title="AI usage"
+              description="Control AI limits and review which automations or agent actions are using credits."
+            />
             <AiUsageSettingsTab />
           </TabsContent>
 
@@ -1017,6 +1041,18 @@ const SettingsSectionLabel: React.FC<{ children: React.ReactNode }> = ({ childre
   <p className="hidden md:block px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground first:pt-1">
     {children}
   </p>
+);
+
+const SettingsHelp: React.FC<{ title: string; description: string }> = ({
+  title,
+  description,
+}) => (
+  <Card className="mb-4">
+    <CardContent className="py-4">
+      <p className="text-sm font-medium">{title}</p>
+      <p className="text-sm text-muted-foreground mt-1">{description}</p>
+    </CardContent>
+  </Card>
 );
 
 export default Settings;

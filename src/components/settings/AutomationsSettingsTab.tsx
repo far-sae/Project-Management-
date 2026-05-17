@@ -3,16 +3,121 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, Zap, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Zap, AlertCircle, ListTodo, Tag, Flame, MessageSquare } from "lucide-react";
 import { useAutomations } from "@/hooks/useAutomations";
-import { Recipe, deleteRecipe, setRecipeEnabled, summarizeRecipe } from "@/services/supabase/automations";
+import {
+  Recipe,
+  RecipeDraft,
+  deleteRecipe,
+  setRecipeEnabled,
+  summarizeRecipe,
+} from "@/services/supabase/automations";
 import { RecipeBuilder } from "./RecipeBuilder";
 import { RecipeRunsList } from "./RecipeRunsList";
 import { toast } from "sonner";
 
+const AUTOMATION_TEMPLATES: Array<{
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+  draft: RecipeDraft;
+}> = [
+  {
+    title: "Follow up with every new client",
+    description: "When a client is added, create a task for the account owner.",
+    icon: ListTodo,
+    draft: {
+      name: "New client follow-up",
+      description: "Create a reminder whenever a new client is added.",
+      enabled: true,
+      trigger: { type: "client_created", config: {} },
+      conditions: [],
+      actions: [
+        {
+          type: "create_task",
+          config: {
+            title: "Follow up with {{client.name}}",
+            assignee: "client_owner",
+            due_in_days: 1,
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Organize form leads",
+    description: "When a form is submitted, tag the client and add a note.",
+    icon: Tag,
+    draft: {
+      name: "Tag new form leads",
+      description: "Mark new form submissions so the team can review them.",
+      enabled: true,
+      trigger: { type: "form_submitted", config: {} },
+      conditions: [],
+      actions: [
+        { type: "tag", config: { tag: "new-form-lead", mode: "add" } },
+        {
+          type: "add_note",
+          config: {
+            body: "New lead came from a form submission. Review and follow up.",
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Act on hot deals",
+    description: "When a deal becomes hot, create a same-day follow-up task.",
+    icon: Flame,
+    draft: {
+      name: "Hot deal follow-up",
+      description: "Create an urgent task whenever a deal reaches the hot score band.",
+      enabled: true,
+      trigger: { type: "deal_score_band_changed", config: { band: "hot" } },
+      conditions: [],
+      actions: [
+        {
+          type: "create_task",
+          config: {
+            title: "Follow up on hot deal",
+            assignee: "deal_owner",
+            due_in_days: 0,
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Turn Slack messages into tasks",
+    description: "When Slack mentions a task, create a CRM task for the sender.",
+    icon: MessageSquare,
+    draft: {
+      name: "Slack task intake",
+      description: "Create a CRM task from Slack task messages.",
+      enabled: true,
+      trigger: {
+        type: "slack_message_received",
+        config: { keyword: "task", mention_only: true, channels: [] },
+      },
+      conditions: [],
+      actions: [
+        {
+          type: "create_task",
+          config: {
+            title: "{{slack.text}}",
+            assignee: "slack_sender",
+            due_in_days: 1,
+          },
+        },
+      ],
+    },
+  },
+];
+
 export const AutomationsSettingsTab: React.FC = () => {
   const { organizationId, recipes, loading, canManage } = useAutomations();
   const [editing, setEditing] = useState<Recipe | "new" | null>(null);
+  const [initialDraft, setInitialDraft] = useState<RecipeDraft | null>(null);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
 
   if (!canManage) {
@@ -40,6 +145,21 @@ export const AutomationsSettingsTab: React.FC = () => {
     }
   };
 
+  const openBlankBuilder = () => {
+    setInitialDraft(null);
+    setEditing("new");
+  };
+
+  const openTemplateBuilder = (draft: RecipeDraft) => {
+    setInitialDraft(draft);
+    setEditing("new");
+  };
+
+  const openExistingBuilder = (recipe: Recipe) => {
+    setInitialDraft(null);
+    setEditing(recipe);
+  };
+
   return (
     <div className="grid lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 space-y-3">
@@ -48,17 +168,53 @@ export const AutomationsSettingsTab: React.FC = () => {
             <Zap className="w-5 h-5 text-amber-500" />
             Automations
           </h2>
-          <Button onClick={() => setEditing("new")}>
+          <Button onClick={openBlankBuilder}>
             <Plus className="w-4 h-4 mr-1" /> New automation
           </Button>
         </div>
+
+        <Card>
+          <CardContent className="py-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium">Start with a simple template</p>
+              <p className="text-xs text-muted-foreground">
+                Pick a common workflow, review the plain-English steps, then save it.
+                You can still edit the advanced details before turning it on.
+              </p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-2">
+              {AUTOMATION_TEMPLATES.map((template) => {
+                const Icon = template.icon;
+                return (
+                  <button
+                    key={template.title}
+                    type="button"
+                    onClick={() => openTemplateBuilder(template.draft)}
+                    className="rounded-lg border bg-background p-3 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
+                  >
+                    <Icon className="w-4 h-4 text-primary mb-2" />
+                    <p className="text-sm font-medium">{template.title}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {template.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
 
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : recipes.length === 0 ? (
           <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No automations yet. Click <strong>New automation</strong> to create one.
+            <CardContent className="py-10 text-center text-sm text-muted-foreground space-y-2">
+              <Zap className="w-8 h-8 mx-auto text-muted-foreground/60" />
+              <p>No automations yet.</p>
+              <p>
+                Use a template above if you are new, or click <strong>New automation</strong>
+                to build one from scratch.
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -84,7 +240,7 @@ export const AutomationsSettingsTab: React.FC = () => {
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(r)}>Edit</Button>
+                    <Button variant="ghost" size="sm" onClick={() => openExistingBuilder(r)}>Edit</Button>
                     <Button variant="ghost" size="icon" onClick={() => remove(r)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -115,7 +271,11 @@ export const AutomationsSettingsTab: React.FC = () => {
         <RecipeBuilder
           organizationId={organizationId}
           recipe={editing === "new" ? null : editing}
-          onClose={() => setEditing(null)}
+          initialDraft={editing === "new" ? initialDraft : null}
+          onClose={() => {
+            setEditing(null);
+            setInitialDraft(null);
+          }}
         />
       )}
     </div>
