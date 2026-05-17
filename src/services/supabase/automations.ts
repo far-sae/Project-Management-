@@ -11,6 +11,7 @@ export const TRIGGER_TYPES = [
   "task_overdue",
   "scheduled",
   "agent_intake",
+  "slack_message_received",
 ] as const;
 
 export const ACTION_TYPES = [
@@ -133,6 +134,7 @@ const TRIGGER_LABELS: Record<TriggerType, string> = {
   task_overdue: "task becomes overdue",
   scheduled: "scheduled time",
   agent_intake: "AI agent drafts for new lead",
+  slack_message_received: "a Slack message is posted",
 };
 
 const ACTION_LABELS: Record<ActionType, string> = {
@@ -281,4 +283,22 @@ export const listRuns = async (
     ...mapRun(r),
     hasPendingActions: !!pendingByEvent[(r.event_id as string) ?? ""],
   }));
+};
+
+// ============================================================
+// Slack channel list — used by the recipe builder's channel picker
+// when the trigger is slack_message_received.
+// ============================================================
+export interface SlackChannel { id: string; name: string }
+
+export const listSlackChannels = async (): Promise<SlackChannel[]> => {
+  const { data, error } = await supabase.functions.invoke("slack-list-channels", {
+    body: {},
+  });
+  if (error) {
+    logger.error("Failed to load Slack channels:", error);
+    return [];
+  }
+  const channels = ((data as { channels?: SlackChannel[] })?.channels ?? []);
+  return channels;
 };
