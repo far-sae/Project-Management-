@@ -74,6 +74,7 @@ serve(async (req) => {
     // Slack-specific
     authed_user?: { access_token?: string };
     team?: { id?: string; name?: string };
+    bot_user_id?: string;
   };
 
   // Slack returns its bot/user tokens differently. For now we take the top-level
@@ -93,6 +94,7 @@ serve(async (req) => {
   const metadata: Record<string, unknown> = {};
   if (tokenJson.team?.id) metadata.team_id = tokenJson.team.id;
   if (tokenJson.team?.name) metadata.team_name = tokenJson.team.name;
+  if (tokenJson.bot_user_id) metadata.bot_user_id = tokenJson.bot_user_id;
 
   // Upsert by (user_id, provider)
   const { error: upsertError } = await supabase

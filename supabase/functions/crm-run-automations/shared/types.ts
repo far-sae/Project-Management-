@@ -4,7 +4,8 @@ export type TriggerType =
   | "form_submitted" | "client_created" | "client_tagged"
   | "task_overdue" | "scheduled"
   | "agent_intake"
-  | "slack_message_received";
+  | "slack_message_received"
+  | "slack_reaction_added";
 
 export type ActionType =
   | "create_task" | "tag" | "set_field" | "change_owner"

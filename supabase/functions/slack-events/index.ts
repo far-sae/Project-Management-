@@ -105,6 +105,24 @@ const buildPermalink = async (
   }
 };
 
+// Fetch the original message that a reaction was added to.
+// Returns text + author info (or null if it can't be fetched).
+const fetchMessage = async (
+  botToken: string, channelId: string, ts: string,
+): Promise<{ text: string; user: string | null } | null> => {
+  try {
+    const j = await slackFetch(botToken, "conversations.history", {
+      channel: channelId, latest: ts, oldest: ts, inclusive: "true", limit: "1",
+    });
+    const msgs = (j.messages ?? []) as Array<{ text?: string; user?: string }>;
+    const m = msgs[0];
+    if (!m) return null;
+    return { text: m.text ?? "", user: m.user ?? null };
+  } catch {
+    return null;
+  }
+};
+
 // ────────────────────────────────────────────────────────────────────────────
 // Org lookup by Slack team_id (uses the partial expression index from
 // migration 070).
@@ -192,79 +210,124 @@ Deno.serve(async (req) => {
     channel?: string;
     ts?: string;
     thread_ts?: string;
+    // reaction_added specific
+    reaction?: string;
+    item?: { channel?: string; ts?: string; type?: string };
+    item_user?: string;
   };
-
-  // Only `message` events for now.
-  if (ev.type !== "message") {
-    return new Response(JSON.stringify({ ok: true, note: "non_message" }), {
-      headers: { "content-type": "application/json" },
-    });
-  }
-  // Drop bot-authored messages to prevent loops.
-  if (ev.bot_id || ev.subtype === "bot_message") {
-    return new Response(JSON.stringify({ ok: true, note: "bot_message" }), {
-      headers: { "content-type": "application/json" },
-    });
-  }
-  // Drop edits / deletes / channel-join chatter etc.
-  if (ev.subtype && ev.subtype !== "thread_broadcast") {
-    return new Response(JSON.stringify({ ok: true, note: `subtype_${ev.subtype}` }), {
-      headers: { "content-type": "application/json" },
-    });
-  }
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Idempotency check — return 200 quickly on retries.
-  if (eventId) {
-    if (await seenBefore(admin, eventId)) {
-      return new Response(JSON.stringify({ ok: true, note: "duplicate" }), {
-        headers: { "content-type": "application/json" },
-      });
-    }
+  const ok = (note: string) =>
+    new Response(JSON.stringify({ ok: true, note }), {
+      headers: { "content-type": "application/json" },
+    });
+
+  // We only handle message + reaction_added today. Everything else is a
+  // 200-no-op so Slack stops retrying.
+  if (ev.type !== "message" && ev.type !== "reaction_added") {
+    return ok(`ignored_type_${ev.type ?? "unknown"}`);
+  }
+
+  // Idempotency — same retry can arrive ~1s apart up to 3x.
+  if (eventId && await seenBefore(admin, eventId)) {
+    return ok("duplicate");
   }
 
   const org = await resolveOrg(admin, teamId);
-  if (!org) {
-    return new Response(JSON.stringify({ ok: true, note: "no_org_for_team" }), {
+  if (!org) return ok("no_org_for_team");
+
+  // ───────────────── message ─────────────────
+  if (ev.type === "message") {
+    // Drop bot-authored messages to prevent loops.
+    if (ev.bot_id || ev.subtype === "bot_message") return ok("bot_message");
+    // Drop edits / deletes / channel-join chatter etc.
+    if (ev.subtype && ev.subtype !== "thread_broadcast") return ok(`subtype_${ev.subtype}`);
+
+    const [{ email, name }, channelName, permalink] = await Promise.all([
+      ev.user ? lookupUserEmail(org.botToken, ev.user) : Promise.resolve({ email: null, name: null }),
+      ev.channel ? lookupChannelName(org.botToken, ev.channel) : Promise.resolve(null),
+      ev.channel && ev.ts ? buildPermalink(org.botToken, ev.channel, ev.ts) : Promise.resolve(null),
+    ]);
+
+    const payload = {
+      team_id: teamId,
+      channel_id: ev.channel ?? null,
+      channel_name: channelName,
+      user_id: ev.user ?? null,
+      user_email: email,
+      user_name: name,
+      text: ev.text ?? "",
+      message_ts: ev.ts ?? null,
+      permalink,
+      thread_ts: ev.thread_ts ?? null,
+    };
+
+    const { error: insertErr } = await admin.from("automation_events").insert({
+      organization_id: org.organizationId,
+      event_type: "slack_message_received",
+      payload,
+      source_table: "slack",
+      source_id: ev.ts ?? null,
+    });
+    if (insertErr) console.error("enqueue failed:", insertErr);
+    return new Response(JSON.stringify({ ok: true }), {
       headers: { "content-type": "application/json" },
     });
   }
 
-  // Enrich via Slack API (best-effort, all tolerant of failure).
-  const [{ email, name }, channelName, permalink] = await Promise.all([
+  // ───────────────── reaction_added ─────────────────
+  // Only react to reactions on messages (not files / threads / etc).
+  if (ev.item?.type !== "message") return ok("non_message_reaction");
+
+  const reactionChannel = ev.item?.channel ?? null;
+  const reactionTs = ev.item?.ts ?? null;
+  if (!reactionChannel || !reactionTs) return ok("incomplete_reaction");
+
+  // Reactor = the person who clicked the emoji.
+  // item_user = the person whose message got reacted to (may be null).
+  const [reactor, originalMsg, channelName, permalink] = await Promise.all([
     ev.user ? lookupUserEmail(org.botToken, ev.user) : Promise.resolve({ email: null, name: null }),
-    ev.channel ? lookupChannelName(org.botToken, ev.channel) : Promise.resolve(null),
-    ev.channel && ev.ts ? buildPermalink(org.botToken, ev.channel, ev.ts) : Promise.resolve(null),
+    fetchMessage(org.botToken, reactionChannel, reactionTs),
+    lookupChannelName(org.botToken, reactionChannel),
+    buildPermalink(org.botToken, reactionChannel, reactionTs),
   ]);
+
+  // The reacted-to author (item_user) is who the message is "about" — get
+  // their email separately so {{slack.author_email}} works for assignment.
+  const author = ev.item_user
+    ? await lookupUserEmail(org.botToken, ev.item_user)
+    : { email: null, name: null };
 
   const payload = {
     team_id: teamId,
-    channel_id: ev.channel ?? null,
+    channel_id: reactionChannel,
     channel_name: channelName,
+    reaction: ev.reaction ?? "",                       // e.g. "white_check_mark"
+    // The reactor (who clicked emoji)
     user_id: ev.user ?? null,
-    user_email: email,
-    user_name: name,
-    text: ev.text ?? "",
-    message_ts: ev.ts ?? null,
+    user_email: reactor.email,
+    user_name: reactor.name,
+    // The original message author
+    author_id: ev.item_user ?? null,
+    author_email: author.email,
+    author_name: author.name,
+    // The original message text — most recipes will want this as task title
+    text: originalMsg?.text ?? "",
+    message_ts: reactionTs,
     permalink,
-    thread_ts: ev.thread_ts ?? null,
   };
 
   const { error: insertErr } = await admin.from("automation_events").insert({
     organization_id: org.organizationId,
-    event_type: "slack_message_received",
+    event_type: "slack_reaction_added",
     payload,
     source_table: "slack",
-    source_id: ev.ts ?? null,
+    source_id: `${reactionTs}:${ev.reaction}`,
   });
-  if (insertErr) {
-    console.error("enqueue failed:", insertErr);
-    // Still return 200 so Slack doesn't retry forever; the dedupe row
-    // is already in place, so a retry would dedupe out anyway.
-  }
+  if (insertErr) console.error("reaction enqueue failed:", insertErr);
 
   return new Response(JSON.stringify({ ok: true }), {
     headers: { "content-type": "application/json" },

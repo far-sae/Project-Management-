@@ -45,13 +45,16 @@ JWT, we verify their signing-secret signature ourselves.
 ## 4. Add the new Slack scopes
 
 In the Slack app dashboard → **OAuth & Permissions → Bot Token Scopes**,
-add these THREE new scopes:
+make sure ALL of these are present (add any that are missing):
 
+- `chat:write` + `chat:write.public` — post messages (existing)
+- `channels:read` — list public channels for the picker (existing)
 - `channels:history` — read messages from public channels the bot is in
+- `groups:read` — list private channels for the picker (existing)
+- `users:read` — resolve user ids to display names (existing)
 - `users:read.email` — match Slack senders to TaskCalendar users by email
-- `channels:read` is already there from Batch 2a; if it's not, add it
-
-(`users:read` was already added in a previous session.)
+- `app_mentions:read` — receive `app_mention` events for the @mention-only trigger
+- `reactions:read` — receive `reaction_added` events for the emoji-reaction trigger
 
 ## 5. Enable Event Subscriptions
 
@@ -67,8 +70,10 @@ In the Slack app dashboard → **Event Subscriptions**:
    the `challenge` parameter", check `npx supabase functions logs
    slack-events` for the error.
 
-3. **Subscribe to bot events** → click "Add Bot User Event" →
-   add `message.channels`
+3. **Subscribe to bot events** → click "Add Bot User Event" → add ALL of:
+   - `message.channels` — for the "Slack message posted" trigger
+   - `app_mention` — for the `mention_only` filter on that trigger
+   - `reaction_added` — for the "emoji reaction added" trigger
 4. Save Changes
 
 ## 6. Reinstall the app to your workspace
@@ -98,18 +103,40 @@ The bot can only see messages in channels it's been invited to.
 
 ## 8. Frontend redeploy
 
-Standard Vite/Vercel/Netlify push. After it's live:
+Standard Vite/Vercel/Netlify push. Three Slack-driven recipe shapes are
+available after deploy:
+
+### A. Plain message in selected channels
 
 1. Settings → Automations → **New recipe**
 2. **When:** "a Slack message is posted"
-3. Pick channels from the dropdown (loads via `slack-list-channels`).
-4. Optional keyword filter — leave blank to fire on every message, or:
-   - `task:` — fires only on messages containing `task:` (case-insensitive)
-   - `/^todo:/i` — regex form (anchor + flags supported)
+3. Pick channels from the dropdown.
+4. Optional keyword filter — `task:` (contains) or `/^todo:/i` (regex).
 5. **Then:** add `create_task`, set **Assignee:** "Slack sender
-   (matched by email)", **Title:** `{{slack.text}}` (or
-   `{{slack.user_name}}: {{slack.text}}` for context).
-6. Save + enable.
+   (matched by email)", **Title:** `{{slack.text}}`.
+
+### B. Only when the bot is @mentioned
+
+Same as A, but check **"Only fire when the bot is @mentioned in the
+message"**. Tasks then only fire when someone writes e.g.
+`@TaskCalendar follow up with Acme`. Cleaner signal-to-noise than a
+keyword filter for ad-hoc requests.
+
+### C. Emoji reaction turns any message into a task
+
+1. **When:** "an emoji reaction is added to a message"
+2. **Emoji reactions (required):** `white_check_mark, pushpin`
+   (or whatever names — comma-separated, no colons; hover an emoji in
+   Slack to see its name).
+3. **Channels (optional):** leave blank for any channel the bot is in,
+   or pick specific ones.
+4. **Then:** `create_task`, Assignee: "Slack sender" (= whoever
+   clicked the emoji), Title: `{{slack.text}}` (the message that was
+   reacted to).
+
+   Extra placeholders for this trigger: `{{slack.author_email}}` (the
+   person whose message got reacted to) and `{{slack.reaction}}`
+   (the emoji name).
 
 ## 9. Verify
 
@@ -123,6 +150,13 @@ Standard Vite/Vercel/Netlify push. After it's live:
 5. Replay protection: if a request arrives with a timestamp >5 minutes
    old, the function returns 401. Slack's own retries (~3 attempts ~1s
    apart) are deduped by `X-Slack-Event-Id`.
+6. **Mention test:** create a recipe with `mention_only` checked. Post
+   a message WITHOUT the mention — no task. Then post
+   `@TaskCalendar follow up` — task appears.
+7. **Reaction test:** create a recipe with reactions
+   `white_check_mark`. React to any message in the channel with ✅ —
+   task appears with the original message text as the title, assigned
+   to whoever clicked the emoji.
 
 ## Troubleshooting
 
@@ -133,3 +167,5 @@ Standard Vite/Vercel/Netlify push. After it's live:
 | Assignee comes out null | Slack user's email doesn't match any TaskCalendar user, AND no recipe creator fallback (rare) | Make sure Slack user has `users:read.email` scope granted; check that the user's TaskCalendar account uses the same email |
 | Events arrive but no recipes match | `metadata.team_id` not populated (pre-batch slack integration) | Reinstall the Slack app |
 | `slack-list-channels` returns empty | Bot not in any channels yet, OR the OAuth row lacks the new scopes | `/invite` the bot; reinstall the app |
+| `mention_only` recipe never fires | `metadata.bot_user_id` not populated (org installed Slack before this batch) | Reinstall the Slack app — the OAuth callback writes bot_user_id on install |
+| Reaction recipe doesn't fire | `reaction_added` event not subscribed in Slack app, OR bot not in the channel, OR the reaction name doesn't match exactly | Check Slack app Event Subscriptions; check `npx supabase functions logs slack-events` for `non_message_reaction` or no log at all |
