@@ -29,6 +29,9 @@ Deno.serve(async () => {
   await admin.from("automation_events")
     .delete()
     .lt("enqueued_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+  await admin.from("ai_block_runs")
+    .delete()
+    .lt("created_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
 
   return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
 });
