@@ -112,6 +112,39 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
     setDraft((d) => ({ ...d, actions: d.actions.filter((_, ai) => ai !== i) }));
   };
 
+  const setSendWindow = (patch: Partial<NonNullable<RecipeDraft["sendWindow"]>> | null) => {
+    setDraft((d) => ({
+      ...d,
+      sendWindow: patch === null ? null : {
+        hours: patch.hours ?? d.sendWindow?.hours ?? [9, 18],
+        days: patch.days ?? d.sendWindow?.days ?? [1, 2, 3, 4, 5],
+        timezone: patch.timezone ?? d.sendWindow?.timezone ?? "Europe/London",
+      },
+    }));
+  };
+
+  const toggleDay = (n: number) => {
+    setDraft((d) => {
+      const current = d.sendWindow?.days ?? [1, 2, 3, 4, 5];
+      const next = current.includes(n) ? current.filter((x) => x !== n) : [...current, n].sort();
+      return {
+        ...d,
+        sendWindow: {
+          hours: d.sendWindow?.hours ?? [9, 18],
+          timezone: d.sendWindow?.timezone ?? "Europe/London",
+          days: next,
+        },
+      };
+    });
+  };
+
+  const sendWindowSummary = (sw: RecipeDraft["sendWindow"]): string => {
+    if (!sw) return "(none — send any time)";
+    const dayNames = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const days = sw.days.map((d) => dayNames[d]).join("/");
+    return `(${sw.hours[0]}–${sw.hours[1]} ${days} · ${sw.timezone})`;
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -261,6 +294,64 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, onClose
               </div>
             </div>
           </div>
+
+          {draft.actions.some((a) => a.type === "send_email") && (
+            <details className="border-t pt-3" open={!!draft.sendWindow}>
+              <summary className="text-sm font-semibold cursor-pointer">
+                Send window {sendWindowSummary(draft.sendWindow ?? null)}
+              </summary>
+              <div className="pt-2 space-y-2">
+                <div className="grid grid-cols-3 gap-2 items-end">
+                  <div>
+                    <Label>From hour (0–23)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={draft.sendWindow?.hours?.[0] ?? 9}
+                      onChange={(e) => setSendWindow({ hours: [Number(e.target.value), draft.sendWindow?.hours?.[1] ?? 18] })}
+                    />
+                  </div>
+                  <div>
+                    <Label>To hour (1–24)</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={draft.sendWindow?.hours?.[1] ?? 18}
+                      onChange={(e) => setSendWindow({ hours: [draft.sendWindow?.hours?.[0] ?? 9, Number(e.target.value)] })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Timezone</Label>
+                    <Input
+                      value={draft.sendWindow?.timezone ?? "Europe/London"}
+                      onChange={(e) => setSendWindow({ timezone: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {([["Mon", 1], ["Tue", 2], ["Wed", 3], ["Thu", 4], ["Fri", 5], ["Sat", 6], ["Sun", 7]] as const).map(([label, num]) => (
+                    <label key={num} className="flex items-center gap-1 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={(draft.sendWindow?.days ?? [1, 2, 3, 4, 5]).includes(num)}
+                        onChange={() => toggleDay(num)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline"
+                  onClick={() => setDraft((d) => ({ ...d, sendWindow: null }))}
+                >
+                  Remove window (send any time)
+                </button>
+              </div>
+            </details>
+          )}
         </div>
 
         <DialogFooter>
@@ -587,6 +678,36 @@ const ActionConfigEditor: React.FC<{
               placeholder="English"
             />
           </div>
+        </div>
+      );
+
+    case "wait":
+      return (
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div>
+            <Label>Wait</Label>
+            <Input
+              type="number"
+              min={1}
+              value={Number(cfg.value ?? 1)}
+              onChange={(e) => set({ value: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label>Unit</Label>
+            <Select value={(cfg.unit as string) ?? "days"} onValueChange={(v) => set({ unit: v })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="minutes">minutes</SelectItem>
+                <SelectItem value="hours">hours</SelectItem>
+                <SelectItem value="days">days</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="col-span-2 text-xs text-muted-foreground">
+            Actions after this wait fire after the delay, subject to the recipe's send window.
+            Reply detection cancels pending actions for this recipe run.
+          </p>
         </div>
       );
 
