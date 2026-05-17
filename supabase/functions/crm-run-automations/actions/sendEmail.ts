@@ -1,10 +1,10 @@
 // supabase/functions/crm-run-automations/actions/sendEmail.ts
+// Recipe-engine wrapper around the shared Gmail send helper.
 
 import { ActionHandler } from "../shared/types.ts";
 import { substitute } from "../shared/substitute.ts";
-import { decrypt } from "../../_shared/crypto.ts";
+import { sendViaGmail } from "../../_shared/gmailSend.ts";
 
-const TOKEN_KEY = Deno.env.get("INTEGRATION_TOKEN_KEY");
 const INBOUND_DOMAIN = Deno.env.get("SEQUENCE_INBOUND_DOMAIN") ?? "inbound.taskcalendar.co.uk";
 
 interface ResolveContext {
@@ -43,67 +43,10 @@ const resolveSenderUserId = async (ctx: any): Promise<string | null> => {
   return recipe?.created_by ?? null;
 };
 
-const buildRawMessage = (
-  fromEmail: string, fromName: string | null,
-  to: string, replyTo: string, subject: string, bodyHtml: string,
-): string => {
-  const fromHeader = fromName ? `${fromName.replace(/"/g, "")} <${fromEmail}>` : fromEmail;
-  const boundary = `tcb_${crypto.randomUUID()}`;
-  const lines = [
-    `From: ${fromHeader}`,
-    `To: ${to}`,
-    `Reply-To: ${replyTo}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "",
-    bodyHtml.replace(/<[^>]+>/g, ""),
-    "",
-    `--${boundary}`,
-    "Content-Type: text/html; charset=UTF-8",
-    "",
-    bodyHtml,
-    "",
-    `--${boundary}--`,
-  ];
-  const utf8 = new TextEncoder().encode(lines.join("\r\n"));
-  let bin = "";
-  utf8.forEach((b) => (bin += String.fromCharCode(b)));
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-};
-
 export const sendEmail: ActionHandler = async (ctx, config) => {
-  if (!TOKEN_KEY) {
-    return { status: "failure", message: "INTEGRATION_TOKEN_KEY not set on the worker" };
-  }
-
   const senderUserId = await resolveSenderUserId(ctx);
   if (!senderUserId) {
     return { status: "skipped", message: "Could not resolve sender for this event" };
-  }
-
-  const { data: integration } = await ctx.admin
-    .from("integrations")
-    .select("access_token_encrypted, status, metadata")
-    .eq("user_id", senderUserId)
-    .eq("provider", "gmail")
-    .eq("status", "active")
-    .maybeSingle();
-  if (!integration) {
-    return {
-      status: "skipped",
-      message: "No active Gmail integration for the sender — connect in Settings → Integrations",
-    };
-  }
-
-  let accessToken: string;
-  try {
-    accessToken = await decrypt(integration.access_token_encrypted as string, TOKEN_KEY);
-  } catch (err) {
-    return { status: "failure", message: `Token decrypt failed: ${err instanceof Error ? err.message : String(err)}` };
   }
 
   const to = await resolveRecipient(
@@ -125,36 +68,33 @@ export const sendEmail: ActionHandler = async (ctx, config) => {
     aiOutputs: ctx.aiOutputs,
   });
 
-  const fromEmail = (integration.metadata as { email?: string })?.email;
-  if (!fromEmail) {
-    return { status: "failure", message: "Connected Gmail account has no email in metadata — reconnect to populate" };
-  }
-  const fromName = (integration.metadata as { name?: string })?.name ?? null;
-  const replyTo = `reply+${ctx.recipeRunId ?? ctx.recipeId}@${INBOUND_DOMAIN}`;
-
-  const raw = buildRawMessage(fromEmail, fromName, to, replyTo, subject, bodyHtml);
-
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: {
-      "authorization": `Bearer ${accessToken}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ raw }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    return { status: "failure", message: `Gmail HTTP ${res.status}: ${body.slice(0, 200)}` };
-  }
-  const respBody = await res.json();
-  return {
-    status: "success",
-    meta: {
-      message_id: (respBody as { id?: string }).id ?? null,
-      thread_id: (respBody as { threadId?: string }).threadId ?? null,
+  try {
+    const r = await sendViaGmail({
+      admin: ctx.admin,
+      senderUserId,
       to,
-      reply_to: replyTo,
-    },
-  };
+      subject,
+      bodyHtml,
+      replyToToken: ctx.recipeRunId ?? ctx.recipeId,
+      inboundDomain: INBOUND_DOMAIN,
+    });
+    return {
+      status: "success",
+      meta: {
+        message_id: r.messageId,
+        thread_id: r.threadId,
+        to: r.to,
+        reply_to: r.replyTo,
+      },
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("no active Gmail integration")) {
+      return {
+        status: "skipped",
+        message: "No active Gmail integration for the sender — connect in Settings → Integrations",
+      };
+    }
+    return { status: "failure", message: msg };
+  }
 };
