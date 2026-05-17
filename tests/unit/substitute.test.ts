@@ -24,3 +24,25 @@ describe("substitute", () => {
       .toBe("by Faraz for Won handoff");
   });
 });
+
+describe("substitute — ai.* keys", () => {
+  it("resolves {{ai.output}} from aiOutputs", () => {
+    expect(
+      substitute("Drafted: {{ai.output}}", { aiOutputs: { ai_output: "Hello world" } } as any),
+    ).toBe("Drafted: Hello world");
+  });
+
+  it("resolves {{ai.output_subject}} and {{ai.output_body}}", () => {
+    const ctx = { aiOutputs: { ai_output_subject: "Re: Quote", ai_output_body: "Hi!" } } as any;
+    expect(substitute("S:{{ai.output_subject}} B:{{ai.output_body}}", ctx))
+      .toBe("S:Re: Quote B:Hi!");
+  });
+
+  it("passes through {{ai.foo}} when key is missing", () => {
+    expect(substitute("{{ai.foo}}", { aiOutputs: {} } as any)).toBe("{{ai.foo}}");
+  });
+
+  it("does not require aiOutputs to be present", () => {
+    expect(substitute("{{ai.output}}", {} as any)).toBe("{{ai.output}}");
+  });
+});
