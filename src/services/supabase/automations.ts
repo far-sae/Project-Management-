@@ -87,6 +87,7 @@ export interface RecipeRun {
   }>;
   startedAt: Date;
   finishedAt: Date;
+  hasPendingActions?: boolean;
 }
 
 export const validateRecipeDraft = (draft: RecipeDraft): void => {
@@ -259,5 +260,23 @@ export const listRuns = async (
     logger.error("Failed to load automation runs:", error);
     return [];
   }
-  return (data || []).map(mapRun);
+
+  const rows = data ?? [];
+  const pendingByEvent: Record<string, boolean> = {};
+  if (rows.length > 0) {
+    const { data: pendings } = await supabase
+      .from("pending_actions")
+      .select("source_event_id")
+      .eq("recipe_id", recipeId)
+      .eq("status", "pending");
+    for (const p of pendings ?? []) {
+      const eventId = p.source_event_id as string | null;
+      if (eventId) pendingByEvent[eventId] = true;
+    }
+  }
+
+  return rows.map((r) => ({
+    ...mapRun(r),
+    hasPendingActions: !!pendingByEvent[(r.event_id as string) ?? ""],
+  }));
 };

@@ -41,6 +41,7 @@ import {
   ClipboardList,
   Zap,
   Sparkles,
+  MailPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
@@ -50,6 +51,7 @@ import { PipelinesSettingsTab } from "@/components/settings/PipelinesSettingsTab
 import { LeadScoringSettingsTab } from "@/components/settings/LeadScoringSettingsTab";
 import { LeadFormsSettingsTab } from "@/components/settings/LeadFormsSettingsTab";
 import { AutomationsSettingsTab } from "@/components/settings/AutomationsSettingsTab";
+import { SequencesSettingsTab } from "@/components/settings/SequencesSettingsTab";
 import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
 import { useOrganization } from "@/context/OrganizationContext";
@@ -528,6 +530,10 @@ export const Settings: React.FC = () => {
               <Zap className="w-4 h-4" />
               Automations
             </TabsTrigger>
+            <TabsTrigger value="sequences" className="gap-2">
+              <MailPlus className="w-4 h-4" />
+              Sequences
+            </TabsTrigger>
             <TabsTrigger value="ai-usage" className="gap-2">
               <Sparkles className="w-4 h-4" />
               AI Usage
@@ -573,6 +579,11 @@ export const Settings: React.FC = () => {
           {/* AUTOMATIONS TAB */}
           <TabsContent value="automations">
             <AutomationsSettingsTab />
+          </TabsContent>
+
+          {/* SEQUENCES TAB */}
+          <TabsContent value="sequences">
+            <SequencesSettingsTab />
           </TabsContent>
 
           {/* AI USAGE TAB */}
