@@ -7,6 +7,7 @@ import { enqueueCronEvents } from "./triggers/cron.ts";
 import { nextSendableTime, SendWindow } from "./triggers/sendWindow.ts";
 import { ACTION_REGISTRY } from "./actions/index.ts";
 import { AutomationEvent, Recipe, ActionResult } from "./shared/types.ts";
+import { matchesSlackTrigger } from "./triggers/slackMatch.ts";
 
 const ADVISORY_LOCK_KEY = 0xC8AE0001;
 
@@ -69,35 +70,17 @@ const loadEntityContext = async (admin: any, event: AutomationEvent) => {
   return ctx;
 };
 
-// Slack messages need per-recipe filtering on top of plain trigger_type
-// matching: each recipe declares which channels it cares about + an
-// optional keyword filter. Returns true if this recipe should fire on
-// this Slack event.
-const matchesSlackTrigger = (recipe: Recipe, event: AutomationEvent): boolean => {
-  const cfg = (recipe.trigger_config ?? {}) as { channels?: string[]; keyword?: string };
-  const channels = cfg.channels ?? [];
-  if (channels.length === 0) return false;
-  const channelId = (event.payload as { channel_id?: string }).channel_id ?? "";
-  if (!channels.includes(channelId)) return false;
-  const text = ((event.payload as { text?: string }).text ?? "").toString();
-  const keyword = (cfg.keyword ?? "").trim();
-  if (!keyword) return true;
-  const regexMatch = keyword.match(/^\/(.+)\/([gimsuy]*)$/);
-  if (regexMatch) {
-    try {
-      return new RegExp(regexMatch[1], regexMatch[2]).test(text);
-    } catch {
-      return false;
-    }
-  }
-  return text.toLowerCase().includes(keyword.toLowerCase());
-};
-
 const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Promise<void> => {
   const started = new Date();
   const ctx = await loadEntityContext(admin, event);
 
-  if (recipe.trigger_type === "slack_message_received" && !matchesSlackTrigger(recipe, event)) {
+  if (
+    recipe.trigger_type === "slack_message_received" &&
+    !matchesSlackTrigger(
+      (recipe.trigger_config ?? {}) as { channels?: string[]; keyword?: string },
+      (event.payload ?? {}) as { channel_id?: string; text?: string },
+    )
+  ) {
     return;
   }
 
