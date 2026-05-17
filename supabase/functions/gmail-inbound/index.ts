@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
 
   const { data: run } = await admin
     .from("automation_runs")
-    .select("recipe_id, organization_id, event_id")
+    .select("recipe_id, organization_id, event_id, automation_events(payload, source_table, source_id)")
     .eq("run_id", runId)
     .maybeSingle();
   if (!run) {
@@ -113,6 +113,21 @@ Deno.serve(async (req) => {
     subject: subject.slice(0, 1000),
     body_preview: text.slice(0, 500),
     raw_payload: Object.fromEntries(form),
+  });
+
+  const originalPayload = (run.automation_events as { payload?: Record<string, unknown> } | null)?.payload ?? {};
+  await admin.from("automation_events").insert({
+    organization_id: run.organization_id,
+    event_type: "email_reply_received",
+    payload: {
+      ...originalPayload,
+      reply_run_id: runId,
+      from_address: fromField.slice(0, 320),
+      subject: subject.slice(0, 1000),
+      body_preview: text.slice(0, 500),
+    },
+    source_table: "sequence_replies",
+    source_id: null,
   });
 
   await admin.from("pending_actions")

@@ -35,6 +35,12 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
   form_submitted: "a form is submitted",
   client_created: "a client is created",
   client_tagged: "a client is tagged",
+  workspace_created: "a workspace is created",
+  project_created: "a project is created",
+  task_created: "a project task is created",
+  task_assigned: "a project task is assigned",
+  task_status_changed: "a project task changes status",
+  email_reply_received: "an email reply is received",
   task_overdue: "a task becomes overdue",
   scheduled: "scheduled time",
   agent_intake: "AI agent: draft outreach for new lead",
@@ -44,6 +50,11 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
 
 const ACTION_LABEL: Record<ActionType, string> = {
   create_task: "create task",
+  create_workspace: "create workspace",
+  create_project: "create project",
+  create_project_task: "create project task",
+  assign_task: "assign task",
+  create_google_meet: "create Google Meet link",
   tag: "tag client",
   set_field: "set field",
   change_owner: "change owner",
@@ -198,6 +209,15 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
     for (const action of draft.actions) {
       if (action.type === "create_task" && !(action.config.title as string)?.trim()) {
         return "Add a task title in the Then section.";
+      }
+      if (action.type === "create_workspace" && !(action.config.name as string)?.trim()) {
+        return "Add a workspace name in the Then section.";
+      }
+      if (action.type === "create_project" && !(action.config.name as string)?.trim()) {
+        return "Add a project name in the Then section.";
+      }
+      if (action.type === "create_project_task" && !(action.config.title as string)?.trim()) {
+        return "Add a project task title in the Then section.";
       }
       if (action.type === "webhook" && !(action.config.url as string)?.trim()) {
         return "Add the webhook URL before saving.";
@@ -671,6 +691,120 @@ const ActionConfigEditor: React.FC<{
         </div>
       );
 
+    case "create_workspace":
+      return (
+        <div className="grid grid-cols-1 gap-2">
+          <Input
+            value={(cfg.name as string) ?? ""}
+            onChange={(e) => set({ name: e.target.value })}
+            placeholder="Workspace name, e.g. {{client.name}} onboarding"
+          />
+        </div>
+      );
+
+    case "create_project":
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            value={(cfg.name as string) ?? ""}
+            onChange={(e) => set({ name: e.target.value })}
+            placeholder="Project name"
+          />
+          <Input
+            value={(cfg.workspace_id as string) ?? ""}
+            onChange={(e) => set({ workspace_id: e.target.value || undefined })}
+            placeholder="Workspace UUID (optional)"
+          />
+          <Input
+            className="col-span-2"
+            value={(cfg.description as string) ?? ""}
+            onChange={(e) => set({ description: e.target.value })}
+            placeholder="Description"
+          />
+          <Input
+            value={(cfg.owner_id as string) ?? ""}
+            onChange={(e) => set({ owner_id: e.target.value || undefined })}
+            placeholder="Owner UUID or blank"
+          />
+          <Input
+            value={(cfg.due_in_days as number | string) ?? ""}
+            onChange={(e) => set({ due_in_days: e.target.value ? Number(e.target.value) : undefined })}
+            placeholder="Due in days"
+            type="number"
+          />
+        </div>
+      );
+
+    case "create_project_task":
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            value={(cfg.title as string) ?? ""}
+            onChange={(e) => set({ title: e.target.value })}
+            placeholder="Task title"
+          />
+          <Input
+            value={(cfg.project_id as string) ?? ""}
+            onChange={(e) => set({ project_id: e.target.value || undefined })}
+            placeholder="Project UUID or use event project"
+          />
+          <Input
+            className="col-span-2"
+            value={(cfg.description as string) ?? ""}
+            onChange={(e) => set({ description: e.target.value })}
+            placeholder="Description"
+          />
+          <Select value={(cfg.priority as string) ?? "medium"} onValueChange={(v) => set({ priority: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">low</SelectItem>
+              <SelectItem value="medium">medium</SelectItem>
+              <SelectItem value="high">high</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            value={(cfg.assignee_id as string) ?? ""}
+            onChange={(e) => set({ assignee_id: e.target.value || undefined })}
+            placeholder="Assignee UUID"
+          />
+        </div>
+      );
+
+    case "assign_task":
+      return (
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            value={(cfg.task_id as string) ?? ""}
+            onChange={(e) => set({ task_id: e.target.value || undefined })}
+            placeholder="Task UUID or use event task"
+          />
+          <Input
+            value={(cfg.assignee_id as string) ?? ""}
+            onChange={(e) => set({ assignee_id: e.target.value })}
+            placeholder="Assignee UUID"
+          />
+        </div>
+      );
+
+    case "create_google_meet":
+      return (
+        <div className="grid grid-cols-1 gap-2">
+          <Input
+            value={(cfg.task_id as string) ?? ""}
+            onChange={(e) => set({ task_id: e.target.value || undefined })}
+            placeholder="Task UUID or use event task"
+          />
+          <Input
+            value={(cfg.summary as string) ?? ""}
+            onChange={(e) => set({ summary: e.target.value })}
+            placeholder="Calendar title, e.g. Meeting: {{task.title}}"
+          />
+          <p className="text-xs text-muted-foreground">
+            Uses the task due date/time and the connected Google account of the task creator or recipe creator.
+          </p>
+        </div>
+      );
+
     case "tag":
       return (
         <div className="grid grid-cols-3 gap-2">
@@ -799,7 +933,7 @@ const ActionConfigEditor: React.FC<{
           <Input
             value={(cfg.to as string) ?? ""}
             onChange={(e) => set({ to: e.target.value })}
-            placeholder="deal_owner_email | client_email | literal@addr"
+            placeholder="deal_owner_email | client_email | task_assignee_email | literal@addr"
           />
           <Input
             value={(cfg.subject as string) ?? ""}

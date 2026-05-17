@@ -71,6 +71,9 @@ const isBursting = async (admin: any, recipeId: string): Promise<boolean> => {
 const loadEntityContext = async (admin: any, event: AutomationEvent) => {
   const dealId = (event.payload as any).deal_id as string | undefined;
   const clientId = (event.payload as any).client_id as string | undefined;
+  const workspaceId = (event.payload as any).workspace_id as string | undefined;
+  const projectId = (event.payload as any).project_id as string | undefined;
+  const taskId = (event.payload as any).task_id as string | undefined;
   const ctx: any = {};
   if (dealId) {
     const { data } = await admin.from("deals").select("title, value, currency, stage, owner_id, owner_name").eq("deal_id", dealId).maybeSingle();
@@ -79,6 +82,18 @@ const loadEntityContext = async (admin: any, event: AutomationEvent) => {
   if (clientId) {
     const { data } = await admin.from("clients").select("name, email, industry, country, tags").eq("client_id", clientId).maybeSingle();
     if (data) ctx.client = data;
+  }
+  if (workspaceId) {
+    const { data } = await admin.from("workspaces").select("workspace_id, name, is_default").eq("workspace_id", workspaceId).maybeSingle();
+    if (data) ctx.workspace = data;
+  }
+  if (projectId) {
+    const { data } = await admin.from("projects").select("project_id, name, description, owner_id, workspace_id, end_date").eq("project_id", projectId).maybeSingle();
+    if (data) ctx.project = data;
+  }
+  if (taskId) {
+    const { data } = await admin.from("tasks").select("task_id, title, description, status, priority, due_date, assignees, project_id").eq("task_id", taskId).maybeSingle();
+    if (data) ctx.task = data;
   }
   return ctx;
 };

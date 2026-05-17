@@ -14,6 +14,13 @@ interface ResolveContext {
 }
 
 const resolveRecipient = async (ctx: ResolveContext, spec: string): Promise<string | null> => {
+  if (spec === "task_assignee_email") {
+    const taskId = ctx.payload.task_id as string | undefined;
+    if (!taskId) return null;
+    const { data: task } = await ctx.admin.from("tasks").select("assignees").eq("task_id", taskId).maybeSingle();
+    const assignees = Array.isArray(task?.assignees) ? task.assignees : [];
+    return (assignees[0]?.email as string | undefined) ?? null;
+  }
   if (spec === "deal_owner_email") {
     const dealId = ctx.payload.deal_id as string | undefined;
     if (!dealId) return null;
@@ -33,6 +40,11 @@ const resolveRecipient = async (ctx: ResolveContext, spec: string): Promise<stri
 
 // Sender user_id = deal owner, fallback to recipe creator.
 const resolveSenderUserId = async (ctx: any): Promise<string | null> => {
+  const taskId = (ctx.event.payload as { task_id?: string }).task_id;
+  if (taskId) {
+    const { data } = await ctx.admin.from("tasks").select("created_by").eq("task_id", taskId).maybeSingle();
+    if (data?.created_by) return data.created_by;
+  }
   const dealId = (ctx.event.payload as { deal_id?: string }).deal_id;
   if (dealId) {
     const { data } = await ctx.admin.from("deals").select("owner_id").eq("deal_id", dealId).maybeSingle();
@@ -41,6 +53,31 @@ const resolveSenderUserId = async (ctx: any): Promise<string | null> => {
   const { data: recipe } = await ctx.admin
     .from("automation_recipes").select("created_by").eq("recipe_id", ctx.recipeId).maybeSingle();
   return recipe?.created_by ?? null;
+};
+
+const buildTemplateContext = async (ctx: any) => {
+  const payload = ctx.event.payload as Record<string, unknown>;
+  let task = payload;
+  const taskId = payload.task_id as string | undefined;
+  if (taskId) {
+    const { data } = await ctx.admin
+      .from("tasks")
+      .select("task_id, title, description, status, priority, due_date, assignees, google_meet_link")
+      .eq("task_id", taskId)
+      .maybeSingle();
+    if (data) task = data as Record<string, unknown>;
+  }
+
+  return {
+    deal: payload as any,
+    client: { name: payload.client_name as string | undefined },
+    workspace: payload as any,
+    project: payload as any,
+    task: task as any,
+    email: payload as any,
+    recipe: { name: ctx.recipeName },
+    aiOutputs: ctx.aiOutputs,
+  };
 };
 
 export const sendEmail: ActionHandler = async (ctx, config) => {
@@ -55,18 +92,9 @@ export const sendEmail: ActionHandler = async (ctx, config) => {
   );
   if (!to) return { status: "skipped", message: "Could not resolve recipient" };
 
-  const subject = substitute(String(config.subject ?? ""), {
-    deal: ctx.event.payload as any,
-    client: { name: (ctx.event.payload as any).client_name },
-    recipe: { name: ctx.recipeName },
-    aiOutputs: ctx.aiOutputs,
-  });
-  const bodyHtml = substitute(String(config.body_html ?? ""), {
-    deal: ctx.event.payload as any,
-    client: { name: (ctx.event.payload as any).client_name },
-    recipe: { name: ctx.recipeName },
-    aiOutputs: ctx.aiOutputs,
-  });
+  const templateCtx = await buildTemplateContext(ctx);
+  const subject = substitute(String(config.subject ?? ""), templateCtx);
+  const bodyHtml = substitute(String(config.body_html ?? ""), templateCtx);
 
   try {
     const r = await sendViaGmail({

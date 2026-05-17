@@ -2,13 +2,17 @@
 export type TriggerType =
   | "deal_stage_entered" | "deal_score_band_changed" | "deal_field_changed"
   | "form_submitted" | "client_created" | "client_tagged"
+  | "workspace_created" | "project_created" | "task_created"
+  | "task_assigned" | "task_status_changed" | "email_reply_received"
   | "task_overdue" | "scheduled"
   | "agent_intake"
   | "slack_message_received"
   | "slack_reaction_added";
 
 export type ActionType =
-  | "create_task" | "tag" | "set_field" | "change_owner"
+  | "create_task" | "create_workspace" | "create_project"
+  | "create_project_task" | "assign_task" | "create_google_meet"
+  | "tag" | "set_field" | "change_owner"
   | "add_note" | "move_deal_stage" | "webhook" | "slack_post" | "send_email"
   | "ai_summarize" | "ai_classify_lead" | "ai_draft_email"
   | "ai_extract" | "ai_translate"

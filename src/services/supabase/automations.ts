@@ -8,6 +8,12 @@ export const TRIGGER_TYPES = [
   "form_submitted",
   "client_created",
   "client_tagged",
+  "workspace_created",
+  "project_created",
+  "task_created",
+  "task_assigned",
+  "task_status_changed",
+  "email_reply_received",
   "task_overdue",
   "scheduled",
   "agent_intake",
@@ -17,6 +23,11 @@ export const TRIGGER_TYPES = [
 
 export const ACTION_TYPES = [
   "create_task",
+  "create_workspace",
+  "create_project",
+  "create_project_task",
+  "assign_task",
+  "create_google_meet",
   "tag",
   "set_field",
   "change_owner",
@@ -110,6 +121,18 @@ export const validateRecipeDraft = (draft: RecipeDraft): void => {
     if (a.type === "create_task" && !(a.config?.title as string)?.trim()) {
       throw new Error("create_task requires a title");
     }
+    if (a.type === "create_workspace" && !(a.config?.name as string)?.trim()) {
+      throw new Error("create_workspace requires a name");
+    }
+    if (a.type === "create_project" && !(a.config?.name as string)?.trim()) {
+      throw new Error("create_project requires a name");
+    }
+    if (a.type === "create_project_task" && !(a.config?.title as string)?.trim()) {
+      throw new Error("create_project_task requires a title");
+    }
+    if (a.type === "assign_task" && !(a.config?.assignee_id as string)?.trim()) {
+      throw new Error("assign_task requires an assignee_id");
+    }
     if (a.type === "webhook" && !(a.config?.url as string)) {
       throw new Error("webhook requires a url");
     }
@@ -132,6 +155,12 @@ const TRIGGER_LABELS: Record<TriggerType, string> = {
   form_submitted: "form is submitted",
   client_created: "client is created",
   client_tagged: "client is tagged",
+  workspace_created: "workspace is created",
+  project_created: "project is created",
+  task_created: "task is created",
+  task_assigned: "task is assigned",
+  task_status_changed: "task status changes",
+  email_reply_received: "email reply is received",
   task_overdue: "task becomes overdue",
   scheduled: "scheduled time",
   agent_intake: "AI agent drafts for new lead",
@@ -141,6 +170,11 @@ const TRIGGER_LABELS: Record<TriggerType, string> = {
 
 const ACTION_LABELS: Record<ActionType, string> = {
   create_task: "create task",
+  create_workspace: "create workspace",
+  create_project: "create project",
+  create_project_task: "create project task",
+  assign_task: "assign task",
+  create_google_meet: "create Google Meet link",
   tag: "tag client",
   set_field: "set field",
   change_owner: "change owner",
@@ -249,6 +283,7 @@ export const setRecipeEnabled = async (recipeId: string, enabled: boolean): Prom
     trigger: { type: data.trigger_type, config: data.trigger_config ?? {} },
     conditions: data.conditions ?? [],
     actions: data.actions ?? [],
+    sendWindow: data.send_window ?? null,
   });
 };
 

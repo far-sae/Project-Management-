@@ -34,11 +34,14 @@ export const createTask: ActionHandler = async (ctx, config) => {
   const payload = ctx.event.payload as Record<string, unknown>;
   const dealId = payload.deal_id as string | undefined;
   const clientId = payload.client_id as string | undefined;
+  const projectId = payload.project_id as string | undefined;
+  const taskId = payload.task_id as string | undefined;
   const isSlackEvent =
     ctx.event.event_type === "slack_message_received" ||
     ctx.event.event_type === "slack_reaction_added";
+  const isEmailReplyEvent = ctx.event.event_type === "email_reply_received";
 
-  if (!clientId && !dealId && !isSlackEvent) {
+  if (!clientId && !dealId && !isSlackEvent && !isEmailReplyEvent) {
     return { status: "skipped", message: "No client or deal in event payload" };
   }
 
@@ -72,6 +75,10 @@ export const createTask: ActionHandler = async (ctx, config) => {
   const title = substitute(String(config.title ?? "Untitled task"), {
     deal: payload as any,
     client: { name: payload.client_name as string | undefined },
+    workspace: payload as any,
+    project: payload as any,
+    task: payload as any,
+    email: payload as any,
     recipe: { name: ctx.recipeName },
     // Slack-trigger payload is exposed under {{slack.*}} (text, channel_name,
     // user_name, user_email, permalink). Unknown placeholders pass through
@@ -108,5 +115,12 @@ export const createTask: ActionHandler = async (ctx, config) => {
     .select("task_id")
     .single();
   if (error) return { status: "failure", message: error.message };
-  return { status: "success", meta: { task_id: (data as any).task_id } };
+  return {
+    status: "success",
+    meta: {
+      task_id: (data as any).task_id,
+      project_id: projectId,
+      source_task_id: taskId,
+    },
+  };
 };

@@ -3,7 +3,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, Zap, AlertCircle, ListTodo, Tag, Flame, MessageSquare } from "lucide-react";
+import {
+  Briefcase,
+  CalendarPlus,
+  FolderKanban,
+  MailCheck,
+  Plus,
+  Trash2,
+  UserPlus,
+  Zap,
+  AlertCircle,
+  ListTodo,
+  Tag,
+  Flame,
+  MessageSquare,
+} from "lucide-react";
 import { useAutomations } from "@/hooks/useAutomations";
 import {
   Recipe,
@@ -106,6 +120,119 @@ const AUTOMATION_TEMPLATES: Array<{
           config: {
             title: "{{slack.text}}",
             assignee: "slack_sender",
+            due_in_days: 1,
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Start a project from each workspace",
+    description: "When a workspace is created, create a starter project inside it.",
+    icon: FolderKanban,
+    draft: {
+      name: "Workspace starter project",
+      description: "Automatically add a project whenever a workspace is created.",
+      enabled: true,
+      trigger: { type: "workspace_created", config: {} },
+      conditions: [],
+      actions: [
+        {
+          type: "create_project",
+          config: {
+            name: "{{workspace.name}} starter project",
+            description: "Created automatically from the workspace automation.",
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Prepare tasks for every new project",
+    description: "When a project is created, add a kickoff task that can be assigned.",
+    icon: Briefcase,
+    draft: {
+      name: "Project kickoff task",
+      description: "Add a first task to every new project.",
+      enabled: true,
+      trigger: { type: "project_created", config: {} },
+      conditions: [],
+      actions: [
+        {
+          type: "create_project_task",
+          config: {
+            title: "Kick off {{project.name}}",
+            description: "Review scope, owner, deadline, and next steps.",
+            priority: "medium",
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Assign project tasks automatically",
+    description: "When a task is created, assign it to a selected teammate.",
+    icon: UserPlus,
+    draft: {
+      name: "Auto-assign new project tasks",
+      description: "Assign new project tasks to the right person.",
+      enabled: true,
+      trigger: { type: "task_created", config: {} },
+      conditions: [],
+      actions: [
+        {
+          type: "assign_task",
+          config: {
+            assignee_id: "",
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Add Meet link to assigned tasks",
+    description: "When a task is assigned, create and save a Google Meet link.",
+    icon: CalendarPlus,
+    draft: {
+      name: "Create and share Meet for assigned task",
+      description: "Attach a Google Meet link to assigned tasks and email it to the assignee.",
+      enabled: true,
+      trigger: { type: "task_assigned", config: {} },
+      conditions: [],
+      actions: [
+        {
+          type: "create_google_meet",
+          config: {
+            summary: "{{task.title}}",
+          },
+        },
+        {
+          type: "send_email",
+          config: {
+            to: "task_assignee_email",
+            subject: "Meeting link: {{task.title}}",
+            body_html: "Here is the Google Meet link for {{task.title}}: {{task.google_meet_link}}",
+          },
+        },
+      ],
+    },
+  },
+  {
+    title: "Follow up when someone replies",
+    description: "When an email reply comes in, create a task so nothing is missed.",
+    icon: MailCheck,
+    draft: {
+      name: "Email reply follow-up",
+      description: "Create a follow-up task from inbound automation replies.",
+      enabled: true,
+      trigger: { type: "email_reply_received", config: {} },
+      conditions: [],
+      actions: [
+        {
+          type: "create_task",
+          config: {
+            title: "Reply to {{email.from_address}}",
+            assignee: "client_owner",
             due_in_days: 1,
           },
         },
