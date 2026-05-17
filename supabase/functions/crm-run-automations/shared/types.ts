@@ -3,7 +3,8 @@ export type TriggerType =
   | "deal_stage_entered" | "deal_score_band_changed" | "deal_field_changed"
   | "form_submitted" | "client_created" | "client_tagged"
   | "task_overdue" | "scheduled"
-  | "agent_intake";
+  | "agent_intake"
+  | "slack_message_received";
 
 export type ActionType =
   | "create_task" | "tag" | "set_field" | "change_owner"
