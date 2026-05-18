@@ -103,10 +103,7 @@ export const Sidebar: React.FC = () => {
   const visibleProjects = useMemo(() => {
     if (isAll) return projects;
     if (isUnassigned) return projects.filter((p) => !p.workspaceId);
-    return projects.filter((p) => {
-      if (!p.workspaceId) return true;
-      return p.workspaceId === selectedWorkspaceId;
-    });
+    return projects.filter((p) => p.workspaceId === selectedWorkspaceId);
   }, [projects, selectedWorkspaceId, isAll, isUnassigned]);
 
   const sortedProjects = useMemo(() => {
