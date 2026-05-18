@@ -17,8 +17,9 @@ export const findLinkedAccount = async (
 ): Promise<LinkedAccount | null> => {
   const { data } = await admin
     .from("integrations")
-    .select("user_id, metadata")
+    .select("user_id, metadata, status")
     .eq("provider", "telegram")
+    .eq("status", "active")
     .filter("metadata->>telegram_user_id", "eq", String(telegramUserId))
     .maybeSingle();
   if (!data) return null;
@@ -103,7 +104,13 @@ export const handleStart = async (
       current_org_id: codeRow.org_id,
     },
   }, { onConflict: "user_id,provider" });
-  await sendMessage(chatId, `✅ Linked! You can now send things like \`add workspace Sales\` or \`task: call John tomorrow 3pm in Q1 launch\`. Send /help for more.`);
+  const { data: orgRow } = await admin
+    .from("organizations")
+    .select("name")
+    .eq("organization_id", codeRow.org_id)
+    .maybeSingle();
+  const orgName = (orgRow?.name as string | undefined) ?? "your org";
+  await sendMessage(chatId, `✅ Linked in *${orgName}*. Try \`add workspace Sales\` or \`task: call John tomorrow 3pm in Q1 launch\`. Send /help for more.`);
 };
 
 export const handleUnlink = async (
@@ -175,23 +182,61 @@ export const handleNaturalLanguage = async (
   account: LinkedAccount,
   text: string,
 ): Promise<void> => {
-  // Compact context for the parser.
-  const [{ data: wsData }, { data: projData }, { data: clData }, { data: orgData }] = await Promise.all([
+  // Compact context for the parser. We don't have a per-user timezone column,
+  // so default to UTC — passing the org's country code as a tz misparses
+  // relative dates (the prior bug).
+  const [{ data: wsData }, { data: projData }, { data: clData }] = await Promise.all([
     admin.from("workspaces").select("name").eq("organization_id", account.current_org_id).limit(50),
     admin.from("projects").select("name").eq("organization_id", account.current_org_id).limit(50),
     admin.from("clients").select("name").eq("organization_id", account.current_org_id).limit(50),
-    admin.from("organizations").select("country").eq("organization_id", account.current_org_id).maybeSingle(),
   ]);
   const intent = await parseIntent(text, {
     workspaces: (wsData ?? []).map((r) => (r as { name: string }).name),
     projects: (projData ?? []).map((r) => (r as { name: string }).name),
     clients: (clData ?? []).map((r) => (r as { name: string }).name),
     nowIso: new Date().toISOString(),
-    timezone: (orgData?.country as string | undefined) ?? "UTC",
+    timezone: "UTC",
   });
   const reply = await resolveIntent(admin, account, String(chatId), intent);
   await sendReply(chatId, reply);
 };
+
+// Local /help and /orgs dispatch — does not go through OpenAI so it works
+// even if the OpenAI key is missing or rate-limited.
+export const handleHelp = async (chatId: number): Promise<void> => {
+  await sendMessage(chatId, HELP_TEXT);
+};
+
+export const handleListOrgs = async (
+  admin: SupabaseClient,
+  chatId: number,
+  account: LinkedAccount,
+): Promise<void> => {
+  const orgs = await listOrgsForUser(admin, account.user_id);
+  if (orgs.length === 0) {
+    await sendMessage(chatId, "You're not in any orgs yet.");
+    return;
+  }
+  const lines = orgs.map((o) =>
+    `${o.organization_id === account.current_org_id ? "▶" : " "} ${o.name}`,
+  );
+  await sendMessage(chatId, lines.join("\n"));
+};
+
+const HELP_TEXT = `*TaskCalendar bot — natural-language commands*
+
+Examples:
+• \`add workspace Acme Onboarding\`
+• \`new project Q1 launch in Acme Onboarding\`
+• \`task: call John tomorrow 3pm in Q1 launch\`
+• \`new client Acme Corp\`
+• \`client task: follow up with Acme on Friday\`
+
+Slash commands:
+• \`/orgs\` — list your orgs
+• \`/switchorg <name>\` — switch current org
+• \`/unlink\` — disconnect this chat
+• \`/help\` — show this message`;
 
 export const handleCallbackQuery = async (
   admin: SupabaseClient,

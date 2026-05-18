@@ -16,7 +16,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendMessage } from "./telegram.ts";
 import {
   findLinkedAccount, handleStart, handleUnlink, handleSwitchOrg,
-  handleNaturalLanguage, handleCallbackQuery,
+  handleNaturalLanguage, handleCallbackQuery, handleHelp, handleListOrgs,
 } from "./handlers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -37,12 +37,20 @@ interface TgUpdate {
   };
 }
 
+const timingSafeEqual = (a: string, b: string): boolean => {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+};
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method_not_allowed", { status: 405 });
 
-  // Webhook authenticity: Telegram echoes the secret as a header.
+  // Webhook authenticity: Telegram echoes the secret as a header. Constant-time
+  // compare so a timing leak can't be used to bruteforce the secret.
   const headerSecret = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
-  if (!WEBHOOK_SECRET || headerSecret !== WEBHOOK_SECRET) {
+  if (!WEBHOOK_SECRET || !timingSafeEqual(headerSecret, WEBHOOK_SECRET)) {
     return new Response("unauthorized", { status: 401 });
   }
 
@@ -87,11 +95,11 @@ Deno.serve(async (req) => {
     }
 
     if (text === "/help") {
-      await handleNaturalLanguage(admin, chatId, account, "help");
+      await handleHelp(chatId);
       return new Response("ok");
     }
     if (text === "/orgs") {
-      await handleNaturalLanguage(admin, chatId, account, "list my orgs");
+      await handleListOrgs(admin, chatId, account);
       return new Response("ok");
     }
     if (text.startsWith("/switchorg")) {
