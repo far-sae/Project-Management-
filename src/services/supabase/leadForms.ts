@@ -128,7 +128,7 @@ export const createForm = async (
       fields: input.fields,
       thank_you_message: input.thankYouMessage ?? "Thanks — we got it.",
       redirect_url: input.redirectUrl ?? null,
-      turnstile_enabled: input.turnstileEnabled ?? true,
+      turnstile_enabled: input.turnstileEnabled ?? false,
       rate_limit_per_minute: input.rateLimitPerMinute ?? 10,
       rate_limit_per_hour: input.rateLimitPerHour ?? 100,
     })

@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const TURNSTILE_SECRET = Deno.env.get("TURNSTILE_SECRET_KEY") ?? "";
+const TURNSTILE_SITE_KEY = Deno.env.get("TURNSTILE_SITE_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -222,12 +223,14 @@ Deno.serve(async (req) => {
   // 2. Turnstile
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "0.0.0.0";
   let turnstileVerified = false;
-  if (form.turnstile_enabled) {
+  if (form.turnstile_enabled && TURNSTILE_SECRET && TURNSTILE_SITE_KEY) {
     const token = req.headers.get("x-turnstile-token") ?? "";
     turnstileVerified = await verifyTurnstile(token, ip);
     if (!turnstileVerified) {
       return json({ error: "verification_failed" }, 403);
     }
+  } else if (form.turnstile_enabled && (!TURNSTILE_SECRET || !TURNSTILE_SITE_KEY)) {
+    console.warn("Turnstile enabled for form but TURNSTILE secrets are incomplete; accepting submission without challenge.");
   }
 
   // 3. Rate limit
