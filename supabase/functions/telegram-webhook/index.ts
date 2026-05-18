@@ -17,6 +17,7 @@ import { sendMessage } from "./telegram.ts";
 import {
   findLinkedAccount, handleStart, handleUnlink, handleSwitchOrg,
   handleNaturalLanguage, handleCallbackQuery, handleHelp, handleListOrgs,
+  handleCancel,
 } from "./handlers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -100,6 +101,10 @@ Deno.serve(async (req) => {
     }
     if (text === "/orgs") {
       await handleListOrgs(admin, chatId, account);
+      return new Response("ok");
+    }
+    if (text === "/cancel") {
+      await handleCancel(admin, chatId);
       return new Response("ok");
     }
     if (text.startsWith("/switchorg")) {

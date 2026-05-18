@@ -3,8 +3,8 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendMessage, answerCallbackQuery, type InlineButton } from "./telegram.ts";
 import { parseIntent } from "./intent.ts";
-import { resolveIntent, executePending } from "./agentActions.ts";
-import type { AgentReply, LinkedAccount } from "./types.ts";
+import { resolveIntent, executePending, loadConvo, clearConvo } from "./agentActions.ts";
+import type { AgentReply, Intent, LinkedAccount } from "./types.ts";
 
 const sha256Hex = async (s: string): Promise<string> => {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -182,9 +182,21 @@ export const handleNaturalLanguage = async (
   account: LinkedAccount,
   text: string,
 ): Promise<void> => {
-  // Compact context for the parser. We don't have a per-user timezone column,
-  // so default to UTC — passing the org's country code as a tz misparses
-  // relative dates (the prior bug).
+  // 1. If we're mid-conversation (bot asked for a missing field on the previous
+  //    turn), slot this message in as that field and re-resolve without going
+  //    through the LLM. Saves a round-trip and is robust to single-word replies
+  //    like "Marketing" that OpenAI would otherwise classify as unknown.
+  const convo = await loadConvo(admin, String(chatId));
+  if (convo) {
+    const filled: Intent = { ...convo.partial_intent, [convo.awaiting_field]: text.trim() };
+    const reply = await resolveIntent(admin, account, String(chatId), filled);
+    await sendReply(chatId, reply);
+    return;
+  }
+
+  // 2. Fresh command. Compact context for the parser. We don't have a per-user
+  //    timezone column, so default to UTC — passing the org's country code as
+  //    a tz misparses relative dates (the prior bug).
   const [{ data: wsData }, { data: projData }, { data: clData }] = await Promise.all([
     admin.from("workspaces").select("name").eq("organization_id", account.current_org_id).limit(50),
     admin.from("projects").select("name").eq("organization_id", account.current_org_id).limit(50),
@@ -199,6 +211,14 @@ export const handleNaturalLanguage = async (
   });
   const reply = await resolveIntent(admin, account, String(chatId), intent);
   await sendReply(chatId, reply);
+};
+
+export const handleCancel = async (
+  admin: SupabaseClient,
+  chatId: number,
+): Promise<void> => {
+  await clearConvo(admin, String(chatId));
+  await sendMessage(chatId, "🛑 Cancelled. Send a new command anytime.");
 };
 
 // Local /help and /orgs dispatch — does not go through OpenAI so it works
@@ -235,6 +255,7 @@ Examples:
 Slash commands:
 • \`/orgs\` — list your orgs
 • \`/switchorg <name>\` — switch current org
+• \`/cancel\` — drop the current "what's the X?" prompt
 • \`/unlink\` — disconnect this chat
 • \`/help\` — show this message`;
 

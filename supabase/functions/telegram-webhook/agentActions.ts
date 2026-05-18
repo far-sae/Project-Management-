@@ -7,6 +7,66 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { AgentReply, Intent, LinkedAccount } from "./types.ts";
 
 const PENDING_TTL_MIN = 10;
+const CONVO_TTL_MIN = 5;
+
+// Queue a conversation state row: "I'm waiting for the user to send me X for
+// this partial intent". The next inbound text on the same chat will be plugged
+// into intent[awaitingField] and re-resolved.
+const queueConvo = async (
+  admin: SupabaseClient,
+  account: LinkedAccount,
+  chatId: string,
+  awaitingField: "name" | "title" | "project" | "client" | "workspace",
+  partialIntent: Intent,
+): Promise<void> => {
+  const expiresAt = new Date(Date.now() + CONVO_TTL_MIN * 60_000).toISOString();
+  await admin.from("agent_conversation_state").upsert({
+    provider: "telegram",
+    chat_id: chatId,
+    user_id: account.user_id,
+    org_id: account.current_org_id,
+    awaiting_field: awaitingField,
+    partial_intent: partialIntent,
+    expires_at: expiresAt,
+  }, { onConflict: "provider,chat_id" });
+};
+
+export const clearConvo = async (
+  admin: SupabaseClient,
+  chatId: string,
+): Promise<void> => {
+  await admin
+    .from("agent_conversation_state")
+    .delete()
+    .eq("provider", "telegram")
+    .eq("chat_id", chatId);
+};
+
+export interface LoadedConvo {
+  awaiting_field: "name" | "title" | "project" | "client" | "workspace";
+  partial_intent: Intent;
+}
+
+export const loadConvo = async (
+  admin: SupabaseClient,
+  chatId: string,
+): Promise<LoadedConvo | null> => {
+  const { data } = await admin
+    .from("agent_conversation_state")
+    .select("awaiting_field, partial_intent, expires_at")
+    .eq("provider", "telegram")
+    .eq("chat_id", chatId)
+    .maybeSingle();
+  if (!data) return null;
+  if (new Date((data.expires_at as string)).getTime() < Date.now()) {
+    await clearConvo(admin, chatId);
+    return null;
+  }
+  return {
+    awaiting_field: data.awaiting_field as LoadedConvo["awaiting_field"],
+    partial_intent: data.partial_intent as Intent,
+  };
+};
 
 const findByName = async (
   admin: SupabaseClient,
@@ -71,7 +131,11 @@ export const resolveIntent = async (
 
     case "create_workspace": {
       const name = (intent.name ?? intent.workspace ?? "").trim();
-      if (!name) return { kind: "text", text: "What should the workspace be called?" };
+      if (!name) {
+        await queueConvo(admin, account, chatId, "name", intent);
+        return { kind: "text", text: "What should the workspace be called?" };
+      }
+      await clearConvo(admin, chatId);
       const pendingId = await queuePending(admin, account, chatId, intent, {});
       return {
         kind: "confirm",
@@ -82,7 +146,10 @@ export const resolveIntent = async (
 
     case "create_project": {
       const name = (intent.name ?? intent.project ?? intent.title ?? "").trim();
-      if (!name) return { kind: "text", text: "What should the project be called?" };
+      if (!name) {
+        await queueConvo(admin, account, chatId, "name", intent);
+        return { kind: "text", text: "What should the project be called?" };
+      }
       let workspaceId: string | null = null;
       if (intent.workspace) {
         const { matches } = await findByName(admin, "workspaces", "name", "workspace_id", account.current_org_id, intent.workspace);
@@ -104,6 +171,7 @@ export const resolveIntent = async (
         }
         workspaceId = matches[0].id;
       }
+      await clearConvo(admin, chatId);
       const pendingId = await queuePending(admin, account, chatId, intent, workspaceId ? { workspace_id: workspaceId } : {});
       return {
         kind: "confirm",
@@ -114,8 +182,14 @@ export const resolveIntent = async (
 
     case "create_task": {
       const title = (intent.title ?? "").trim();
-      if (!title) return { kind: "text", text: "What's the task title?" };
-      if (!intent.project) return { kind: "text", text: "Which project? e.g. `task: X in Q1 launch`." };
+      if (!title) {
+        await queueConvo(admin, account, chatId, "title", intent);
+        return { kind: "text", text: "What's the task title?" };
+      }
+      if (!intent.project) {
+        await queueConvo(admin, account, chatId, "project", intent);
+        return { kind: "text", text: "Which project? e.g. `task: X in Q1 launch`." };
+      }
       const { matches } = await findByName(admin, "projects", "name", "project_id", account.current_org_id, intent.project);
       if (matches.length === 0) {
         return { kind: "text", text: `No project called *${intent.project}*.` };
@@ -127,6 +201,7 @@ export const resolveIntent = async (
           choices: matches.map((m) => ({ label: m.name, callback: `pickproj:${m.id}` })),
         };
       }
+      await clearConvo(admin, chatId);
       const pendingId = await queuePending(admin, account, chatId, intent, { project_id: matches[0].id });
       const dueBit = intent.due ? ` due *${intent.due}*` : "";
       return {
@@ -138,7 +213,11 @@ export const resolveIntent = async (
 
     case "create_client": {
       const name = (intent.name ?? intent.client ?? "").trim();
-      if (!name) return { kind: "text", text: "What's the client name?" };
+      if (!name) {
+        await queueConvo(admin, account, chatId, "name", intent);
+        return { kind: "text", text: "What's the client name?" };
+      }
+      await clearConvo(admin, chatId);
       const pendingId = await queuePending(admin, account, chatId, intent, {});
       return {
         kind: "confirm",
@@ -149,7 +228,10 @@ export const resolveIntent = async (
 
     case "create_client_task": {
       const title = (intent.title ?? "").trim();
-      if (!title) return { kind: "text", text: "What's the task title?" };
+      if (!title) {
+        await queueConvo(admin, account, chatId, "title", intent);
+        return { kind: "text", text: "What's the task title?" };
+      }
       let clientId: string | null = null;
       if (intent.client) {
         const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
@@ -165,6 +247,7 @@ export const resolveIntent = async (
         }
         clientId = matches[0].id;
       }
+      await clearConvo(admin, chatId);
       const pendingId = await queuePending(admin, account, chatId, intent, clientId ? { client_id: clientId } : {});
       const onBit = intent.client ? ` for *${intent.client}*` : "";
       const dueBit = intent.due ? ` due *${intent.due}*` : "";
