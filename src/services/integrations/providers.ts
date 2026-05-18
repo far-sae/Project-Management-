@@ -25,6 +25,14 @@ export const providerDisplay: Record<ProviderId, ProviderDisplay> = {
     accent: 'text-violet-600',
     orgLevel: true,
   },
+  telegram: {
+    id: 'telegram',
+    label: 'Telegram',
+    description: 'Manage workspaces, projects, tasks, and clients by texting the bot.',
+    iconName: 'MessageCircle',
+    accent: 'text-sky-600',
+    orgLevel: false,
+  },
 };
 
 export const providerOrder: ProviderId[] = ['google', 'gmail', 'slack'];

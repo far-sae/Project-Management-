@@ -1,4 +1,4 @@
-export type ProviderId = 'google' | 'gmail' | 'slack';
+export type ProviderId = 'google' | 'gmail' | 'slack' | 'telegram';
 
 export type IntegrationStatus = 'active' | 'revoked' | 'error' | 'pending' | 'not_connected';
 
@@ -16,7 +16,7 @@ export interface ProviderDisplay {
   label: string;
   description: string;
   /** Lucide icon name, resolved at render time */
-  iconName: 'Video' | 'Mail' | 'MessageSquare';
+  iconName: 'Video' | 'Mail' | 'MessageSquare' | 'MessageCircle';
   /** Brand color used as the card accent (Tailwind class fragment) */
   accent: string;
   /** Whether this provider is org-level (admin-only) */

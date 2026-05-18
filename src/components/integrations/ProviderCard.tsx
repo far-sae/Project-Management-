@@ -8,12 +8,12 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Video, Mail, MessageSquare, Loader2 } from 'lucide-react';
+import { Video, Mail, MessageSquare, MessageCircle, Loader2 } from 'lucide-react';
 import { providerDisplay } from '@/services/integrations/providers';
 import type { ProviderDisplay, ProviderId } from '@/services/integrations/types';
 import { useIntegration } from '@/hooks/useIntegration';
 
-const icons = { Video, Mail, MessageSquare } as const;
+const icons = { Video, Mail, MessageSquare, MessageCircle } as const;
 
 interface Props {
   provider: ProviderId;
