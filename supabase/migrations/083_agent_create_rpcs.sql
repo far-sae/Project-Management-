@@ -32,6 +32,7 @@ as $$
 $$;
 
 revoke execute on function public.is_org_member_for(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.is_org_member_for(uuid, uuid) to service_role;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- agent_create_workspace
@@ -66,6 +67,7 @@ end;
 $$;
 
 revoke execute on function public.agent_create_workspace(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.agent_create_workspace(uuid, uuid, text) to service_role;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- agent_create_project
@@ -109,6 +111,7 @@ end;
 $$;
 
 revoke execute on function public.agent_create_project(uuid, uuid, uuid, text, text) from public, anon, authenticated;
+grant execute on function public.agent_create_project(uuid, uuid, uuid, text, text) to service_role;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- agent_create_task
@@ -166,6 +169,7 @@ end;
 $$;
 
 revoke execute on function public.agent_create_task(uuid, uuid, uuid, text, timestamptz, text) from public, anon, authenticated;
+grant execute on function public.agent_create_task(uuid, uuid, uuid, text, timestamptz, text) to service_role;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- crm_create_client_as: p_user_id variant of crm_create_client.
@@ -196,6 +200,7 @@ end;
 $$;
 
 revoke execute on function public.crm_create_client_as(uuid, uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.crm_create_client_as(uuid, uuid, jsonb) to service_role;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- crm_create_client_task_as: p_user_id variant of crm_create_client_task.
@@ -246,3 +251,4 @@ end;
 $$;
 
 revoke execute on function public.crm_create_client_task_as(uuid, uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.crm_create_client_task_as(uuid, uuid, jsonb) to service_role;
