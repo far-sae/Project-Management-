@@ -1,5 +1,6 @@
 import React from 'react';
 import { ProviderCard } from './ProviderCard';
+import { TelegramConnectCard } from './TelegramConnectCard';
 import { providerOrder, providerDisplay } from '@/services/integrations/providers';
 import { useOrganization } from '@/context/OrganizationContext';
 
@@ -32,6 +33,7 @@ export const IntegrationsTab: React.FC = () => {
             />
           );
         })}
+        <TelegramConnectCard />
       </div>
     </div>
   );
