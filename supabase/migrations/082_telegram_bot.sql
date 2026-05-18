@@ -29,6 +29,7 @@ create index if not exists telegram_link_codes_user_idx
 
 alter table public.telegram_link_codes enable row level security;
 
+drop policy if exists "users read own link codes" on public.telegram_link_codes;
 create policy "users read own link codes"
   on public.telegram_link_codes for select
   using (auth.uid() = user_id);
