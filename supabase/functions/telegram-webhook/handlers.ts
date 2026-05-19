@@ -28,7 +28,7 @@ export const findLinkedAccount = async (
   return {
     user_id: data.user_id as string,
     current_org_id: meta.current_org_id,
-    telegram_user_id: telegramUserId,
+    external_id: String(telegramUserId),
   };
 };
 

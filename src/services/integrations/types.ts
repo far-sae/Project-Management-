@@ -1,4 +1,4 @@
-export type ProviderId = 'google' | 'gmail' | 'slack' | 'telegram';
+export type ProviderId = 'google' | 'gmail' | 'slack' | 'telegram' | 'whatsapp';
 
 export type IntegrationStatus = 'active' | 'revoked' | 'error' | 'pending' | 'not_connected';
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ProviderCard } from './ProviderCard';
 import { TelegramConnectCard } from './TelegramConnectCard';
+import { WhatsAppConnectCard } from './WhatsAppConnectCard';
 import { providerOrder, providerDisplay } from '@/services/integrations/providers';
 import { useOrganization } from '@/context/OrganizationContext';
 
@@ -34,6 +35,7 @@ export const IntegrationsTab: React.FC = () => {
           );
         })}
         <TelegramConnectCard />
+        <WhatsAppConnectCard />
       </div>
     </div>
   );

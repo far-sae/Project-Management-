@@ -33,6 +33,14 @@ export const providerDisplay: Record<ProviderId, ProviderDisplay> = {
     accent: 'text-sky-600',
     orgLevel: false,
   },
+  whatsapp: {
+    id: 'whatsapp',
+    label: 'WhatsApp',
+    description: 'Same bot, on WhatsApp. Text it and it creates entries in your workspace.',
+    iconName: 'MessageCircle',
+    accent: 'text-emerald-600',
+    orgLevel: false,
+  },
 };
 
 export const providerOrder: ProviderId[] = ['google', 'gmail', 'slack'];
