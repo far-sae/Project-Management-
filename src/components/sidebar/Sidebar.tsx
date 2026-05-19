@@ -29,6 +29,7 @@ import {
   Wallet,
   Building2,
   Bot,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -61,6 +62,8 @@ import { toast } from 'sonner';
 
 const QUICK_ITEMS_FULL = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
+  { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects' },
+  { icon: TrendingUp, label: 'CRM analytics', href: '/dashboard/clients' },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks' },
   { icon: Inbox, label: 'Inbox', href: '/inbox' },
   { icon: Calendar, label: 'Calendar', href: '/calendar' },

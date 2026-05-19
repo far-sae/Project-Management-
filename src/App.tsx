@@ -40,6 +40,8 @@ const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) =>
 const IntegrationCallback = React.lazy(() => import('@/components/integrations/IntegrationCallback').then((m) => ({ default: m.IntegrationCallback })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
+const ClientsDashboardPage = React.lazy(() => import('@/pages/dashboards/ClientsDashboard').then((m) => ({ default: m.ClientsDashboard })));
 const AboutPage = React.lazy(() => import('@/pages/legal/AboutPage'));
 const ContractsInfoPage = React.lazy(() => import('@/pages/legal/ContractsInfoPage'));
 const PrivacyPolicyPage = React.lazy(() => import('@/pages/legal/PrivacyPolicyPage'));
@@ -177,6 +179,22 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireOrgAdmin>
                   {lazyAppRoute(<Dashboard />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/dashboard/projects',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<ProjectsDashboard />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/dashboard/clients',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<ClientsDashboardPage />)}
                 </ProtectedRoute>
               ),
             },
