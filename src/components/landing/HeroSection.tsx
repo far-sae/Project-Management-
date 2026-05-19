@@ -44,7 +44,7 @@ const HeroSection = () => {
             </motion.div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.05] tracking-tight mb-6">
-              The all-in-one workspace<br />
+              One workspace<br />
               for <span className="text-gradient">teams that ship.</span>
             </h1>
 
