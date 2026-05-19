@@ -32,14 +32,26 @@ export interface CreateMeetResult {
  * updated server-side; the caller should refetch the task to pick up the new
  * google_meet_link column.
  */
+export interface CreateMeetOptions {
+  durationMinutes?: number;
+  /** Explicit meeting start time (overrides the task's saved due_date and
+   *  is persisted back to the task). Useful for picking "tomorrow 3pm"
+   *  without waiting for autosave to land first. */
+  startTime?: Date;
+}
+
 export async function createMeetForTask(
   taskId: string,
-  durationMinutes?: number,
+  opts: CreateMeetOptions = {},
 ): Promise<CreateMeetResult> {
   const res = await fetch(`${FUNCTIONS_URL}/task-create-meet`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-    body: JSON.stringify({ taskId, durationMinutes }),
+    body: JSON.stringify({
+      taskId,
+      durationMinutes: opts.durationMinutes,
+      startTime: opts.startTime?.toISOString(),
+    }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string; message?: string };

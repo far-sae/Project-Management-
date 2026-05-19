@@ -144,10 +144,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
-  // Google Meet checkbox in the create-task flow. Visible only when the user
-  // has Google integration active and the task has a due date with a time.
+  // Google Meet — checkbox + meeting-time picker.
+  // The DayPickerPopover only sets a calendar day; we keep meetingTime
+  // separately as an "HH:MM" string and combine the two when handing the
+  // start to the Meet edge function.
   const [addGoogleMeet, setAddGoogleMeet] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [meetingTime, setMeetingTime] = useState<string>('10:00');
 
   const [aiLoading, setAiLoading] = useState<{ description?: boolean; suggestions?: boolean }>({});
   const [aiError, setAiError] = useState<string | null>(null);
@@ -282,6 +285,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setIsLocked(!!task.isLocked);
       setTags(task.tags || []);
       setSubtasks(task.subtasks?.length ? task.subtasks : []);
+      // Seed meetingTime from the task's saved due_date time (if non-midnight),
+      // otherwise leave the default '10:00' so the picker still feels useful.
+      if (task.dueDate) {
+        const d = new Date(task.dueDate);
+        if (d.getHours() !== 0 || d.getMinutes() !== 0) {
+          setMeetingTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+        }
+      }
     } else {
       setTitle('');
       setDescription('');
@@ -295,6 +306,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setTags([]);
       setSubtasks([]);
       setAddGoogleMeet(false);
+      setMeetingTime('10:00');
     }
     setAiError(null);
     setSaveError(null);
@@ -334,22 +346,40 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return () => { cancelled = true; };
   }, [open]);
 
+  // Combine the user-picked calendar day (dueDate) and the meeting time
+  // (HH:MM) into a single Date. Returns null if either piece is missing.
+  const combinedMeetingStart = React.useMemo<Date | null>(() => {
+    if (!dueDate) return null;
+    const match = /^(\d{1,2}):(\d{2})$/.exec(meetingTime.trim());
+    if (!match) return null;
+    const h = Number(match[1]);
+    const m = Number(match[2]);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    const combined = new Date(dueDate);
+    combined.setHours(h, m, 0, 0);
+    return combined;
+  }, [dueDate, meetingTime]);
+
   const [meetAddInFlight, setMeetAddInFlight] = useState(false);
   const handleAddMeetToExisting = async () => {
     if (!task?.taskId) return;
-    if (!dueDate) {
-      toast.error('Set a due date before adding a Meet link');
+    if (!combinedMeetingStart) {
+      toast.error('Set a meeting date and time before adding a Meet link');
       return;
     }
     setMeetAddInFlight(true);
     const toastId = toast.loading('Creating Google Meet link...');
     try {
-      const { meetLink } = await createMeetForTask(task.taskId);
+      const { meetLink } = await createMeetForTask(task.taskId, {
+        startTime: combinedMeetingStart,
+      });
       toast.success('Meet link added', { id: toastId });
       try { await navigator.clipboard.writeText(meetLink); } catch { /* clipboard optional */ }
       // The link is on the row now; the parent will pick it up on the next
       // refetch. Reflect it locally so the user sees it without a refresh.
       (task as Task).googleMeetLink = meetLink;
+      // The edge function also wrote due_date back, so sync our local copy.
+      (task as Task).dueDate = combinedMeetingStart;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Meet creation failed', { id: toastId });
     } finally {
@@ -1089,7 +1119,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         if (addGoogleMeet && createdTaskId) {
           const meetToast = toast.loading('Creating Google Meet link...');
           try {
-            const { meetLink } = await createMeetForTask(createdTaskId);
+            const { meetLink } = await createMeetForTask(createdTaskId, {
+              startTime: combinedMeetingStart ?? undefined,
+            });
             toast.success('Meet link added', { id: meetToast });
             try { await navigator.clipboard.writeText(meetLink); } catch { /* clipboard optional */ }
           } catch (err) {
@@ -2112,22 +2144,37 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
               {/* Google Meet — three states based on create/edit + link presence + connection. */}
               {!isEditing && googleConnected && (
-                <label
-                  className={`mt-2 flex items-center gap-2 text-sm cursor-pointer select-none ${
-                    dueDate ? '' : 'opacity-50 cursor-not-allowed'
-                  }`}
-                  title={dueDate ? '' : 'Set a due date to enable Google Meet'}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-input"
-                    checked={addGoogleMeet && Boolean(dueDate)}
-                    disabled={!dueDate || readOnlyTask}
-                    onChange={(e) => setAddGoogleMeet(e.target.checked)}
-                  />
-                  <Video className="h-4 w-4 text-emerald-600" />
-                  <span>Add Google Meet link</span>
-                </label>
+                <>
+                  <label
+                    className={`mt-2 flex items-center gap-2 text-sm cursor-pointer select-none ${
+                      dueDate ? '' : 'opacity-50 cursor-not-allowed'
+                    }`}
+                    title={dueDate ? '' : 'Set a due date to enable Google Meet'}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-input"
+                      checked={addGoogleMeet && Boolean(dueDate)}
+                      disabled={!dueDate || readOnlyTask}
+                      onChange={(e) => setAddGoogleMeet(e.target.checked)}
+                    />
+                    <Video className="h-4 w-4 text-emerald-600" />
+                    <span>Add Google Meet link</span>
+                  </label>
+                  {addGoogleMeet && dueDate && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>Meeting time:</span>
+                      <Input
+                        type="time"
+                        value={meetingTime}
+                        onChange={(e) => setMeetingTime(e.target.value)}
+                        className="h-8 w-28"
+                        disabled={readOnlyTask}
+                      />
+                      <span className="text-[11px]">on {dueDate.toLocaleDateString()}</span>
+                    </div>
+                  )}
+                </>
               )}
 
               {isEditing && task?.googleMeetLink && (
@@ -2160,22 +2207,36 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               )}
 
               {isEditing && !task?.googleMeetLink && googleConnected && !readOnlyTask && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2 h-8 gap-2"
-                  onClick={handleAddMeetToExisting}
-                  disabled={!dueDate || meetAddInFlight}
-                  title={dueDate ? '' : 'Set a due date first'}
-                >
-                  {meetAddInFlight ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Video className="h-3.5 w-3.5 text-emerald-600" />
+                <div className="mt-2 space-y-2">
+                  {dueDate && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>Meeting time:</span>
+                      <Input
+                        type="time"
+                        value={meetingTime}
+                        onChange={(e) => setMeetingTime(e.target.value)}
+                        className="h-8 w-28"
+                      />
+                      <span className="text-[11px]">on {dueDate.toLocaleDateString()}</span>
+                    </div>
                   )}
-                  Add Google Meet link
-                </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-2"
+                    onClick={handleAddMeetToExisting}
+                    disabled={!dueDate || meetAddInFlight}
+                    title={dueDate ? '' : 'Set a due date first'}
+                  >
+                    {meetAddInFlight ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Video className="h-3.5 w-3.5 text-emerald-600" />
+                    )}
+                    Add Google Meet link
+                  </Button>
+                </div>
               )}
 
               {!googleConnected && !isEditing && (

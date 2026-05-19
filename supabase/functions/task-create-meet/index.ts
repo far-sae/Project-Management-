@@ -35,6 +35,10 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({})) as {
     taskId?: string;
     durationMinutes?: number;
+    /** Optional explicit meeting start time (ISO 8601). If provided, this
+     *  overrides the task's saved due_date and the new value is persisted
+     *  back to the row so the UI shows the meeting time consistently. */
+    startTime?: string;
   };
   const taskId = (body.taskId ?? "").trim();
   if (!taskId) return json({ error: "taskId required" }, 400);
@@ -60,8 +64,17 @@ Deno.serve(async (req) => {
   if (task.google_meet_link) {
     return json({ meetLink: task.google_meet_link, note: "already_has_link" });
   }
-  if (!task.due_date) {
+  // The caller may pass an explicit startTime (e.g. "tomorrow 3pm") which we
+  // prefer over the row's due_date. This lets the user pick a meeting time
+  // in the modal and not depend on autosave landing first.
+  const explicitStartIso = (body.startTime ?? "").trim();
+  const startSource = explicitStartIso || task.due_date;
+  if (!startSource) {
     return json({ error: "task_needs_due_date" }, 400);
+  }
+  const startDate = new Date(startSource);
+  if (Number.isNaN(startDate.getTime())) {
+    return json({ error: "invalid_start_time" }, 400);
   }
 
   // 3. Get the user's Google tokens. They must have connected Google in Settings.
@@ -76,7 +89,7 @@ Deno.serve(async (req) => {
   }
 
   // 4. Create the Calendar event with a Meet link.
-  const start = new Date(task.due_date);
+  const start = startDate;
   const end = new Date(start.getTime() + (body.durationMinutes ?? 30) * 60_000);
   const requestId = `task-${taskId}-${Date.now()}`;
 
@@ -117,14 +130,20 @@ Deno.serve(async (req) => {
     return json({ error: "no_meet_link_returned" }, 502);
   }
 
-  // 5. Persist on the task row.
+  // 5. Persist on the task row. If the caller supplied an explicit start
+  //    time, also update due_date so the UI is consistent with the Calendar
+  //    event we just created.
+  const updatePayload: Record<string, unknown> = {
+    google_meet_link: event.hangoutLink,
+    google_event_id: event.id ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  if (explicitStartIso) {
+    updatePayload.due_date = start.toISOString();
+  }
   const { error: updateErr } = await admin
     .from("tasks")
-    .update({
-      google_meet_link: event.hangoutLink,
-      google_event_id: event.id ?? null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("task_id", taskId);
 
   if (updateErr) {
