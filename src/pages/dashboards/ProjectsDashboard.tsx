@@ -9,10 +9,7 @@ import {
 import { ArrowRight, FolderKanban, Loader2 } from 'lucide-react';
 import { useAllTasks } from '@/hooks/useAllTasks';
 import { useProjects } from '@/hooks/useProjects';
-import { useWorkspaces } from '@/hooks/useWorkspaces';
-import {
-  ALL_WORKSPACES_ID, UNASSIGNED_WORKSPACE_ID, useSelectedWorkspace,
-} from '@/hooks/useSelectedWorkspace';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { Task, DEFAULT_COLUMNS } from '@/types';
 
 import { KpiTile } from '@/components/dashboards/KpiTile';
@@ -37,7 +34,6 @@ export const ProjectsDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { tasks, loading: tasksLoading } = useAllTasks();
   const { projects } = useProjects();
-  const { workspaces } = useWorkspaces();
   const { selectedId: selectedWorkspaceId, isAll, isUnassigned } = useSelectedWorkspace();
 
   const [range, setRange] = useState<Range>('30d');

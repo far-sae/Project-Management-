@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { ArrowRight, Users, Loader2, Briefcase, AlertTriangle } from 'lucide-react';
+import { ArrowRight, Users, Loader2, AlertTriangle } from 'lucide-react';
 import { useClients } from '@/hooks/useClients';
 import { useDeals } from '@/hooks/useDeals';
 import { useClientTasks } from '@/hooks/useClientTasks';
