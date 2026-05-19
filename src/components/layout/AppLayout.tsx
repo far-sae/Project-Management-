@@ -49,17 +49,21 @@ export const AppLayout: React.FC = () => {
   return (
     <ProjectChromeProvider>
       <ClockGate>
-        <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-x-hidden">
+        {/* h-screen + overflow-hidden pins the shell to the viewport so the
+            sidebar stays fixed and only the routed content (<main>) scrolls. */}
+        <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-hidden">
           <Sidebar />
-          <Suspense
-            fallback={
-              <div className="flex-1 min-w-0 flex items-center justify-center">
-                <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            }
-          >
-            <Outlet />
-          </Suspense>
+          <main className="flex-1 min-w-0 h-full overflow-y-auto">
+            <Suspense
+              fallback={
+                <div className="h-full flex items-center justify-center">
+                  <Loader2Icon className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              }
+            >
+              <Outlet />
+            </Suspense>
+          </main>
         </div>
       </ClockGate>
     </ProjectChromeProvider>

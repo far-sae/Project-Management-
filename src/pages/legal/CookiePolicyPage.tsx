@@ -48,14 +48,20 @@ const CookiePolicyPage = () => {
         </h3>
         <ul className="list-disc pl-5 space-y-2 text-muted-foreground mb-4 leading-relaxed">
           <li>
-            <strong className="text-foreground">Authentication and security.</strong> Our infrastructure
-            and auth providers set cookies or tokens needed to keep you signed in securely, protect
-            against fraud, and maintain session integrity.
+            <strong className="text-foreground">Authentication and security.</strong> Our auth
+            provider (Supabase / Firebase) stores a session access-token and refresh-token in your
+            browser&apos;s local storage so you stay signed in across page reloads. These are not
+            shared with third parties and are removed when you sign out.
           </li>
           <li>
-            <strong className="text-foreground">Preferences.</strong> We store your cookie choice
-            (e.g. whether you accepted optional analytics) locally on your device so we do not ask
-            you again on every visit.
+            <strong className="text-foreground">Preferences and UI state.</strong> We store your
+            cookie choice, theme (light/dark), selected workspace, pinned projects, and a few small
+            UI flags locally on your device so the app remembers them between visits.
+          </li>
+          <li>
+            <strong className="text-foreground">Plan and feature state.</strong> A short-lived
+            cached copy of your subscription tier may be kept in memory or local storage to avoid
+            re-fetching it on every navigation; it is refreshed in the background.
           </li>
         </ul>
 

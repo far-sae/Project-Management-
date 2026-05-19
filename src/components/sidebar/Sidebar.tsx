@@ -583,8 +583,10 @@ export const Sidebar: React.FC = () => {
       {/* Spacer so page content below the fixed mobile top bar isn't covered. */}
       <div className="md:hidden h-12 shrink-0" aria-hidden="true" />
 
-      {/* Desktop sidebar — unchanged width and behaviour for >= md screens. */}
-      <aside className="w-64 bg-card border-r border-border h-screen hidden md:flex flex-col shrink-0">
+      {/* Desktop sidebar — unchanged width and behaviour for >= md screens.
+          overflow-y-auto so a long projects list can scroll inside the sidebar
+          itself without pushing the page's main scroll. */}
+      <aside className="w-64 bg-card border-r border-border h-screen hidden md:flex flex-col shrink-0 overflow-y-auto">
         {body}
       </aside>
 

@@ -20,9 +20,10 @@ const TermsPage = () => {
         <p className="text-muted-foreground mb-6 leading-relaxed">
           These Terms of Service (&quot;Terms&quot;) constitute a legal agreement between you and{' '}
           {LEGAL_COMPANY_NAME} (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) governing access to and use of{' '}
-          {LEGAL_PRODUCT_NAME}, our software product for project management, team collaboration, and
-          related features (the &quot;Service&quot;), including any websites, applications, and services we
-          make available in connection with {LEGAL_PRODUCT_NAME}.
+          {LEGAL_PRODUCT_NAME}, our software product for project management, sales CRM, automation,
+          team collaboration, and related features (the &quot;Service&quot;), including any websites,
+          applications, chat-bot integrations, and services we make available in connection with{' '}
+          {LEGAL_PRODUCT_NAME}.
         </p>
         <p className="text-muted-foreground mb-8 leading-relaxed">
           By creating an account, accepting an invitation, or otherwise using the Service, you confirm
@@ -216,6 +217,21 @@ const TermsPage = () => {
           INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
           NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL MEET YOUR REQUIREMENTS OR BE
           UNINTERRUPTED OR ERROR-FREE.
+        </p>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          <strong className="text-foreground">AI features.</strong> Parts of the Service use
+          large-language-model APIs to generate suggestions (e.g. task descriptions, lead scoring,
+          intent parsing for the Telegram bot, AI Blocks in automations, AI sales agent
+          recommendations). AI output is probabilistic and may be inaccurate, incomplete, biased, or
+          out of date. You are responsible for reviewing any AI output before relying on it for
+          business, financial, legal, or other decisions. We do not warrant that AI output is fit for
+          any particular purpose.
+        </p>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          <strong className="text-foreground">Chat-bot integrations.</strong> Optional integrations
+          such as the Telegram bot are provided on a best-effort basis and depend on the third-party
+          platform&apos;s availability. We do not guarantee delivery of any individual message and we
+          may rate-limit or disable a bot connection if abuse is detected.
         </p>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">12. Limitation of liability</h2>

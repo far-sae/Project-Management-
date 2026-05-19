@@ -18,8 +18,11 @@ const PrivacyPolicyPage = () => {
         <p className="text-muted-foreground mb-6 leading-relaxed">
           This Privacy Policy explains how {LEGAL_COMPANY_NAME} (&quot;we&quot;, &quot;us&quot;, or
           &quot;our&quot;) collects, uses, discloses, and safeguards personal information when you access or
-          use {LEGAL_PRODUCT_NAME}, our web-based project management and collaboration platform (the
-          &quot;Service&quot;). We respect your privacy and aim to comply with applicable data protection
+          use {LEGAL_PRODUCT_NAME}, our web-based project management, CRM, and collaboration platform
+          (the &quot;Service&quot;). The Service includes project / task workflows, a sales CRM
+          (clients, deals, pipelines, lead forms), automation recipes, an AI sales agent, optional
+          chat-bot integrations (Telegram, with WhatsApp planned), and Google / Gmail / Slack
+          integrations. We respect your privacy and aim to comply with applicable data protection
           laws, including the EU and UK General Data Protection Regulation (GDPR) where they apply.
         </p>
         <p className="text-muted-foreground mb-8 leading-relaxed text-sm border-l-2 border-border pl-4">
@@ -242,6 +245,49 @@ const PrivacyPolicyPage = () => {
             {LEGAL_CONTACT_EMAIL}
           </a>
           .
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">Telegram bot</h3>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          {LEGAL_PRODUCT_NAME} offers an optional Telegram bot that lets you create workspaces,
+          projects, tasks, clients, and CRM activities by sending the bot natural-language messages.
+          You opt in by generating a one-time 6-digit code from{' '}
+          <strong className="text-foreground">Settings &rarr; Integrations &rarr; Telegram</strong>
+          {' '}and sending <code>/start &lt;code&gt;</code> to the bot.
+        </p>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          When you link your chat we store your Telegram user id, username, chat id, and the
+          TaskCalendar organisation you selected at link time, alongside your account record. Each
+          inbound message is forwarded to OpenAI (see &quot;AI features&quot; below) for intent
+          parsing and is then matched to a confirm-before-write action you tap. We do not store
+          message text beyond a short pending-action buffer (~10 minutes) used to wait for your
+          confirmation; conversation-state for missing-field prompts expires in 5 minutes.
+          Unlinking the bot from Settings deletes the integration row immediately.
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          AI features (OpenAI / Anthropic)
+        </h3>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          {LEGAL_PRODUCT_NAME} uses large-language-model APIs to power optional features: the AI
+          task assistant, the AI sales agent (lead enrichment, follow-up suggestions, draft replies),
+          intent parsing for the Telegram bot, AI Blocks in automation recipes (summarise / classify
+          / draft email), and report-insight generation.
+        </p>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          The relevant content you provide (task titles, deal context, the message text you send to
+          the bot, etc.) is transmitted to the model provider via a secure server-to-server request
+          from our Edge Functions. The model returns a structured response which we either show to
+          you for confirmation or write back to your workspace. We do not knowingly send personal
+          contact data such as phone numbers, full email bodies, or attachments to the model unless
+          you have explicitly included that content in the prompt.
+        </p>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          We pass <code>store=false</code> / equivalent flags where supported by the model provider
+          so prompts are not retained for model training by default. AI-generated suggestions are
+          informational; they may be wrong, biased, or stale, and you remain responsible for any
+          action you take based on them. You can disable AI features per organisation in{' '}
+          <strong className="text-foreground">Settings &rarr; AI Usage</strong>.
         </p>
 
         <h3 className="text-base font-semibold text-foreground mt-6 mb-2">Slack</h3>
