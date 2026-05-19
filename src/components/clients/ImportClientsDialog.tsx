@@ -221,6 +221,9 @@ export const ImportClientsDialog: React.FC<Props> = ({
   const [checkingRows, setCheckingRows] = useState(false);
   const [rowReview, setRowReview] = useState<ImportPreviewResult | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  // User-picked extra column names to capture into customFields for this import.
+  const [extraColumns, setExtraColumns] = useState<string[]>([]);
+  const [newColumnInput, setNewColumnInput] = useState('');
 
   const reset = () => {
     setPhase('pick');
@@ -263,7 +266,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         if (organizationId) {
           setCheckingRows(true);
           try {
-            setRowReview(await previewClientImportRows(organizationId, parsed.data));
+            setRowReview(await previewClientImportRows(organizationId, parsed.data, extraColumns));
           } catch (err) {
             setParseErrors([
               err instanceof Error
@@ -298,6 +301,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         userId,
         userName,
         rowsToImport,
+        extraColumns,
       );
       setResult(imported);
       setPhase('imported');
@@ -451,6 +455,88 @@ export const ImportClientsDialog: React.FC<Props> = ({
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Add custom column — lets users keep ignored columns as customFields. */}
+              <div className="rounded-md border border-border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <p className="text-sm font-medium">Keep extra columns</p>
+                    <p className="text-xs text-muted-foreground">
+                      Type a column name from your CSV to capture it on each client as a custom field.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newColumnInput}
+                    onChange={(e) => setNewColumnInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newColumnInput.trim()) {
+                        e.preventDefault();
+                        const k = newColumnInput.trim().toLowerCase().replace(/\s+/g, '_');
+                        if (k && !extraColumns.includes(k)) setExtraColumns([...extraColumns, k]);
+                        setNewColumnInput('');
+                      }
+                    }}
+                    placeholder="e.g. region, sla_tier, renewal_date"
+                    className="flex-1 h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+                  />
+                  <Button
+                    size="sm" variant="outline"
+                    type="button"
+                    onClick={() => {
+                      const k = newColumnInput.trim().toLowerCase().replace(/\s+/g, '_');
+                      if (k && !extraColumns.includes(k)) setExtraColumns([...extraColumns, k]);
+                      setNewColumnInput('');
+                    }}
+                    disabled={!newColumnInput.trim()}
+                  >
+                    Add column
+                  </Button>
+                </div>
+                {ignoredHeaders.length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    Quick add from ignored columns:
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {ignoredHeaders.slice(0, 8).map((h) => (
+                        <button
+                          key={h.source}
+                          type="button"
+                          className="px-2 py-0.5 rounded border border-border hover:bg-secondary text-foreground/80 text-[11px]"
+                          onClick={() => {
+                            if (!extraColumns.includes(h.source)) {
+                              setExtraColumns([...extraColumns, h.source]);
+                            }
+                          }}
+                        >
+                          + {h.source}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {extraColumns.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {extraColumns.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-flex items-center gap-1 rounded bg-primary/10 text-primary px-2 py-0.5 text-[11px]"
+                      >
+                        {c}
+                        <button
+                          type="button"
+                          className="hover:text-foreground"
+                          onClick={() => setExtraColumns(extraColumns.filter((x) => x !== c))}
+                          aria-label={`Remove ${c}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-3 flex-wrap">

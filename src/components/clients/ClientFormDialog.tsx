@@ -38,6 +38,7 @@ interface FormState {
   name: string;
   legalName: string;
   industry: string;
+  category: string;
   type: ClientType;
   status: ClientStatus;
   website: string;
@@ -60,6 +61,7 @@ const blank: FormState = {
   name: '',
   legalName: '',
   industry: '',
+  category: '',
   type: 'customer',
   status: 'active',
   website: '',
@@ -82,6 +84,7 @@ const fromClient = (c: Client): FormState => ({
   name: c.name,
   legalName: c.legalName ?? '',
   industry: c.industry ?? '',
+  category: c.category ?? '',
   type: c.type,
   status: c.status,
   website: c.website ?? '',
@@ -240,6 +243,7 @@ export const ClientFormDialog: React.FC<Props> = ({
       name,
       legalName: form.legalName.trim() || null,
       industry: form.industry.trim() || null,
+      category: form.category.trim() || null,
       type: form.type,
       status: form.status,
       website: form.website.trim() || null,
@@ -344,6 +348,27 @@ export const ClientFormDialog: React.FC<Props> = ({
                 onChange={(e) => set('industry', e.target.value)}
                 placeholder="Manufacturing"
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cf-category">Category</Label>
+              <Input
+                id="cf-category" maxLength={60}
+                value={form.category}
+                onChange={(e) => set('category', e.target.value)}
+                placeholder="Enterprise, SMB, NGO…"
+                list="cf-category-suggestions"
+              />
+              {/* Suggestions come from common categories; users can also type free text. */}
+              <datalist id="cf-category-suggestions">
+                <option value="Enterprise" />
+                <option value="SMB" />
+                <option value="Startup" />
+                <option value="NGO" />
+                <option value="Government" />
+                <option value="Reseller" />
+                <option value="Agency" />
+                <option value="Education" />
+              </datalist>
             </div>
 
             <div className="space-y-1">

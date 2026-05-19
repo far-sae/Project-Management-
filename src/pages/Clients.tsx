@@ -99,6 +99,7 @@ export const Clients: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [activeTab, setActiveTab] = useState<'accounts' | 'pipeline' | 'tasks' | 'forecast'>('accounts');
 
   // Pipeline display currency. Persists per-browser so reps don't have to
@@ -150,9 +151,10 @@ export const Clients: React.FC = () => {
       if (typeFilter !== 'all' && c.type !== typeFilter) return false;
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
       if (bandFilter !== "all" && c.scoreBand !== bandFilter) return false;
+      if (categoryFilter !== 'all' && (c.category ?? '') !== categoryFilter) return false;
       if (!q) return true;
       const haystack = [
-        c.name, c.legalName, c.industry, c.email, c.phone,
+        c.name, c.legalName, c.industry, c.category, c.email, c.phone,
         c.city, c.country, c.accountOwnerName, ...(c.tags ?? []),
       ]
         .filter(Boolean)
@@ -160,7 +162,15 @@ export const Clients: React.FC = () => {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [clients, search, typeFilter, statusFilter, bandFilter]);
+  }, [clients, search, typeFilter, statusFilter, bandFilter, categoryFilter]);
+
+  // Build a unique sorted list of categories used in the current org so the
+  // filter dropdown only offers real values.
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of clients) if (c.category) set.add(c.category);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [clients]);
 
   const selectedClients = useMemo(
     () => clients.filter((c) => selectedClientIds.has(c.clientId)),
@@ -440,6 +450,17 @@ export const Clients: React.FC = () => {
                   <SelectItem value="cold">Cold</SelectItem>
                 </SelectContent>
               </Select>
+              {availableCategories.length > 0 && (
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    {availableCategories.map((cat) => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
                 <Filter className="w-3 h-3" />
                 {filtered.length} of {clients.length}
@@ -554,6 +575,9 @@ export const Clients: React.FC = () => {
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <Badge variant="outline" className="capitalize">{c.type}</Badge>
                     <StatusBadge status={c.status} />
+                    {c.category && (
+                      <Badge variant="secondary" className="text-[10px]">{c.category}</Badge>
+                    )}
                     {c.country && (
                       <span className="text-xs text-muted-foreground">{c.country}</span>
                     )}

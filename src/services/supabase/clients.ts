@@ -32,6 +32,7 @@ export interface Client {
   rating?: string | null;
   source?: string | null;
   description?: string | null;
+  category?: string | null;
   tags: string[];
   accountOwnerId?: string | null;
   accountOwnerName?: string | null;
@@ -110,6 +111,7 @@ export interface CreateClientInput {
   rating?: string | null;
   source?: string | null;
   description?: string | null;
+  category?: string | null;
   tags?: string[];
   accountOwnerId?: string | null;
   accountOwnerName?: string | null;
@@ -255,6 +257,7 @@ const mapClient = (row: Record<string, unknown>): Client => ({
   rating: (row.rating as string) ?? null,
   source: (row.source as string) ?? null,
   description: (row.description as string) ?? null,
+  category: (row.category as string) ?? null,
   tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
   accountOwnerId: (row.account_owner_id as string) ?? null,
   accountOwnerName: (row.account_owner_name as string) ?? null,
@@ -397,6 +400,7 @@ export const createClient = async (
       rating: sanitizeText(input.rating ?? null),
       source: sanitizeText(input.source ?? null),
       description: sanitizeText(input.description ?? null),
+      category: sanitizeText(input.category ?? null),
       tags: sanitizeTags(input.tags),
       accountOwnerId: input.accountOwnerId ?? userId,
       accountOwnerName: input.accountOwnerName ?? userName,
@@ -434,6 +438,7 @@ export const createClient = async (
     rating: sanitizeText(input.rating ?? null),
     source: sanitizeText(input.source ?? null),
     description: sanitizeText(input.description ?? null),
+    category: sanitizeText(input.category ?? null),
     tags: sanitizeTags(input.tags),
     account_owner_id: input.accountOwnerId ?? userId,
     account_owner_name: input.accountOwnerName ?? userName,
@@ -528,6 +533,7 @@ export const updateClient = async (
     assign("rating", input.rating !== undefined ? sanitizeText(input.rating) : undefined);
     assign("source", input.source !== undefined ? sanitizeText(input.source) : undefined);
     assign("description", input.description !== undefined ? sanitizeText(input.description) : undefined);
+    assign("category", input.category !== undefined ? sanitizeText(input.category) : undefined);
     if (input.tags !== undefined) merged.tags = sanitizeTags(input.tags);
     assign("accountOwnerId", input.accountOwnerId);
     assign("accountOwnerName", input.accountOwnerName);
@@ -558,6 +564,7 @@ export const updateClient = async (
   if (input.rating !== undefined) update.rating = sanitizeText(input.rating);
   if (input.source !== undefined) update.source = sanitizeText(input.source);
   if (input.description !== undefined) update.description = sanitizeText(input.description);
+  if (input.category !== undefined) update.category = sanitizeText(input.category);
   if (input.tags !== undefined) update.tags = sanitizeTags(input.tags);
   if (input.accountOwnerId !== undefined) update.account_owner_id = input.accountOwnerId;
   if (input.accountOwnerName !== undefined) update.account_owner_name = input.accountOwnerName;
@@ -1257,6 +1264,7 @@ export const CLIENT_CORE_HEADERS = [
   "name",
   "legal_name",
   "industry",
+  "category",
   "type",
   "status",
   "website",
@@ -1409,7 +1417,10 @@ type RowParseResult =
   | { ok: true; input: CreateClientInput }
   | { ok: false; reasons: string[] };
 
-const parseCsvRow = (row: Record<string, string>): RowParseResult => {
+const parseCsvRow = (
+  row: Record<string, string>,
+  extraCustomColumns: ReadonlySet<string> = new Set(),
+): RowParseResult => {
   const reasons: string[] = [];
 
   const trimmedOrNull = (v: string | undefined): string | null => {
@@ -1464,11 +1475,17 @@ const parseCsvRow = (row: Record<string, string>): RowParseResult => {
   const revenue = parseNumberStrict(row.annual_revenue, "annual_revenue");
   const employees = parseNumberStrict(row.employee_count, "employee_count");
 
-  // Capture extras into customFields (only those we explicitly accept). Any
-  // truly unrecognized column gets ignored — we do NOT fail the row for
-  // extra columns, since CSVs from CRMs often have a long tail.
+  // Capture extras into customFields. We accept (a) the canonical custom-field
+  // headers we know about and (b) any header the user explicitly opted to
+  // capture for this import (the "Add column" feature). Any truly unrecognized
+  // column gets ignored — we do NOT fail the row for extra columns since CSVs
+  // from CRMs often have a long tail.
   const customFields: Record<string, string> = {};
   for (const key of CUSTOM_HEADER_SET) {
+    const v = trimmedOrNull(row[key]);
+    if (v !== null) customFields[key] = v;
+  }
+  for (const key of extraCustomColumns) {
     const v = trimmedOrNull(row[key]);
     if (v !== null) customFields[key] = v;
   }
@@ -1498,6 +1515,7 @@ const parseCsvRow = (row: Record<string, string>): RowParseResult => {
     rating: trimmedOrNull(row.rating),
     source: trimmedOrNull(row.source),
     description: trimmedOrNull(row.description),
+    category: trimmedOrNull(row.category),
     tags,
     accountOwnerName: trimmedOrNull(row.account_owner_name),
     customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
@@ -1554,7 +1572,9 @@ const normalizeCsvRawRow = (raw: Record<string, string>): Record<string, string>
 export const previewClientImportRows = async (
   organizationId: string,
   rows: Array<Record<string, string>>,
+  extraCustomColumns: string[] = [],
 ): Promise<ImportPreviewResult> => {
+  const extraSet = new Set(extraCustomColumns.map((c) => normalizeClientCsvHeader(c)));
   const importableRows: Array<Record<string, string>> = [];
   const invalidRows: ImportPreviewIssue[] = [];
   const duplicateRows: ImportPreviewIssue[] = [];
@@ -1565,7 +1585,7 @@ export const previewClientImportRows = async (
     const hasAnyValue = Object.values(normalised).some((v) => v.trim() !== "");
     if (!hasAnyValue) continue;
 
-    const parsed = parseCsvRow(normalised);
+    const parsed = parseCsvRow(normalised, extraSet);
     const rowNumber = i + 2;
     if (!parsed.ok) {
       invalidRows.push({
@@ -1619,7 +1639,10 @@ export const importClientsFromCsv = async (
   userId: string,
   userName: string,
   rows: Array<Record<string, string>>,
+  /** User-picked extra columns to capture into customFields for THIS import. */
+  extraCustomColumns: string[] = [],
 ): Promise<ImportResult> => {
+  const extraSet = new Set(extraCustomColumns.map((c) => normalizeClientCsvHeader(c)));
   const errors: CsvRowError[] = [];
   const imported: Client[] = [];
   const rejectedDuplicates: ImportResult["rejectedDuplicates"] = [];
@@ -1634,7 +1657,7 @@ export const importClientsFromCsv = async (
     }
   }
   const unknownHeaders = Array.from(seenHeaders).filter(
-    (h) => !ALLOWED_HEADER_SET.has(h),
+    (h) => !ALLOWED_HEADER_SET.has(h) && !extraSet.has(h),
   );
   const missingHeaders = [...CLIENT_CORE_HEADERS].filter(
     (h) => !seenHeaders.has(h),
@@ -1651,7 +1674,7 @@ export const importClientsFromCsv = async (
     const hasAnyValue = Object.values(normalised).some((v) => v.trim() !== "");
     if (!hasAnyValue) continue;
 
-    const parsed = parseCsvRow(normalised);
+    const parsed = parseCsvRow(normalised, extraSet);
     if (!parsed.ok) {
       errors.push({ row: i + 2, message: parsed.reasons.join("; ") });
       continue;
