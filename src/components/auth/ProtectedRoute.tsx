@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useSubscription } from '@/context/SubscriptionContext';
+import { useSubscription, AppFeature } from '@/context/SubscriptionContext';
 import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
@@ -12,6 +12,8 @@ interface ProtectedRouteProps {
   requireAdmin?: boolean;
   /** Restrict to organization owner + admin (not regular members). */
   requireOrgAdmin?: boolean;
+  /** Block the route unless the user's plan includes this feature. */
+  requireFeature?: AppFeature;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
@@ -19,9 +21,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requireSubscription = false,
   requireAdmin = false,
   requireOrgAdmin = false,
+  requireFeature,
 }) => {
   const { user, loading: authLoading } = useAuth();
-  const { canAccessFeatures, loading: subLoading } = useSubscription();
+  const { canAccessFeatures, hasFeature, loading: subLoading } = useSubscription();
   const { isAdmin: isOrgAdminOrOwner, loading: orgLoading } = useOrganization();
   const location = useLocation();
 
@@ -54,6 +57,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // Don't redirect while subscription is still loading — avoids flash to /pricing
   if (requireSubscription && !canAccessFeatures && !subLoading && !orgLoading) {
     return <Navigate to="/pricing" state={{ from: location }} replace />;
+  }
+
+  // ── Feature required (plan gate) ───────────────────
+  // Wait for subscription to finish loading so we don't false-redirect during
+  // the initial fetch. App owner always passes (acts as global override).
+  if (requireFeature && !subLoading && !hasFeature(requireFeature) && !isAppOwner(user.userId)) {
+    return <Navigate to="/pricing" state={{ from: location, requiredFeature: requireFeature }} replace />;
   }
 
   // ── Org-admin required (Dashboard / HR / Payroll / Time / Expenses /

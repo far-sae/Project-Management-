@@ -76,7 +76,9 @@ export const Settings: React.FC = () => {
     trialInfo,
     refreshSubscription,
     loading: subscriptionLoading,
+    hasFeature,
   } = useSubscription();
+  const hasCrm = hasFeature('crm');
   // Organization tab is owner/admin-only — regular members don't see workspace
   // settings like country, currency, branding, or feature toggles.
   const { canManageSettings } = useOrganization();
@@ -518,17 +520,25 @@ export const Settings: React.FC = () => {
                 <SettingsTab value="organization" icon={Building2}>Organization</SettingsTab>
               )}
 
-              {/* ───── CRM ───── */}
-              <SettingsSectionLabel>CRM</SettingsSectionLabel>
-              <SettingsTab value="pipelines" icon={GitBranch}>Pipelines</SettingsTab>
-              <SettingsTab value="lead-scoring" icon={Target}>Lead scoring</SettingsTab>
-              <SettingsTab value="lead-forms" icon={ClipboardList}>Lead forms</SettingsTab>
+              {/* ───── CRM (Advanced plan and up) ───── */}
+              {hasCrm && (
+                <>
+                  <SettingsSectionLabel>CRM</SettingsSectionLabel>
+                  <SettingsTab value="pipelines" icon={GitBranch}>Pipelines</SettingsTab>
+                  <SettingsTab value="lead-scoring" icon={Target}>Lead scoring</SettingsTab>
+                  <SettingsTab value="lead-forms" icon={ClipboardList}>Lead forms</SettingsTab>
+                </>
+              )}
 
-              {/* ───── Automation ───── */}
-              <SettingsSectionLabel>Automation</SettingsSectionLabel>
-              <SettingsTab value="automations" icon={Zap}>Automations</SettingsTab>
-              <SettingsTab value="sequences" icon={MailPlus}>Sequences</SettingsTab>
-              <SettingsTab value="ai-usage" icon={Sparkles}>AI Usage</SettingsTab>
+              {/* ───── Automation (Advanced plan and up) ───── */}
+              {hasCrm && (
+                <>
+                  <SettingsSectionLabel>Automation</SettingsSectionLabel>
+                  <SettingsTab value="automations" icon={Zap}>Automations</SettingsTab>
+                  <SettingsTab value="sequences" icon={MailPlus}>Sequences</SettingsTab>
+                  <SettingsTab value="ai-usage" icon={Sparkles}>AI Usage</SettingsTab>
+                </>
+              )}
             </TabsList>
           </div>
 

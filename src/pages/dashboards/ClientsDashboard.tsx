@@ -219,6 +219,37 @@ export const ClientsDashboard: React.FC = () => {
     );
   }
 
+  // No clients AND no open deals → single welcome card beats six empty graphs.
+  const hasAnyData =
+    clients.length > 0 || deals.length > 0 || clientTasks.length > 0;
+  if (!hasAnyData) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <Card>
+          <CardContent className="p-8 text-center space-y-3">
+            <Users className="h-10 w-10 mx-auto text-orange-500" />
+            <h2 className="text-xl font-semibold">Your CRM dashboard is ready</h2>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Add your first client or deal and this dashboard will fill in with pipeline funnel, forecast, win rate, and more.
+            </p>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Button onClick={() => navigate('/clients')}>Add a client</Button>
+              <Button variant="outline" onClick={() => navigate('/clients')}>Add a deal</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Track whether each downstream chart actually has data — used to suppress
+  // misleading "$1/$2/$3/$4" axis ticks when the series is all zeros.
+  const forecastHasData = forecastData.some((d) => d.value > 0 || (d.compare ?? 0) > 0);
+  const funnelHasData = funnelData.some((s) => s.count > 0);
+  const topPerformersHasData = topOwners.length > 0;
+  const scoreHasData = scoreData.length > 0;
+  const activityHasData = activityByType.length > 0;
+
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
       {/* Header */}
@@ -275,32 +306,56 @@ export const ClientsDashboard: React.FC = () => {
       {/* Row 2: funnel + forecast */}
       <div className="grid lg:grid-cols-2 gap-3">
         <ChartCard title="Pipeline funnel" subtitle="Counts and value per stage" bodyHeight="h-64">
-          <PipelineFunnel data={funnelData} valueFormatter={fmtMoney} />
+          {funnelHasData ? (
+            <PipelineFunnel data={funnelData} valueFormatter={fmtMoney} />
+          ) : (
+            <div className="h-full grid place-items-center text-center text-sm text-muted-foreground px-6">
+              No open deals — add a deal to populate the funnel.
+            </div>
+          )}
         </ChartCard>
         <ChartCard title="Forecast" subtitle="Weighted by stage probability — next 6 months" bodyHeight="h-64">
-          <TrendArea
-            data={forecastData}
-            primaryName="Forecast"
-            compareName="Last year"
-            yFormatter={(v) => fmtMoney(v).replace(/\.00$/, '')}
-          />
+          {forecastHasData ? (
+            <TrendArea
+              data={forecastData}
+              primaryName="Forecast"
+              compareName="Last year"
+              yFormatter={(v) => fmtMoney(v).replace(/\.00$/, '')}
+            />
+          ) : (
+            <div className="h-full grid place-items-center text-center text-sm text-muted-foreground px-6">
+              Add expected close dates to your open deals to see a forecast.
+            </div>
+          )}
         </ChartCard>
       </div>
 
       {/* Row 3: top performers + score distribution */}
       <div className="grid lg:grid-cols-3 gap-3">
         <ChartCard title="Top performers" subtitle={`Won value, ${range}`} bodyHeight="h-72" className="lg:col-span-2">
-          <BarHorizontal data={topOwners} highlightTop valueFormatter={fmtMoney} />
+          {topPerformersHasData ? (
+            <BarHorizontal data={topOwners} highlightTop valueFormatter={fmtMoney} />
+          ) : (
+            <div className="h-full grid place-items-center text-center text-sm text-muted-foreground px-6">
+              No deals won in this period yet.
+            </div>
+          )}
         </ChartCard>
         <ChartCard title="Lead score" subtitle="Client distribution" bodyHeight="h-72">
-          <div className="grid grid-rows-[1fr_auto] gap-2 h-full">
-            <StatusDonut
-              data={scoreData}
-              centerValue={clients.length.toLocaleString()}
-              centerLabel="clients"
-            />
-            <DonutLegend data={scoreData} />
-          </div>
+          {scoreHasData ? (
+            <div className="grid grid-rows-[1fr_auto] gap-2 h-full">
+              <StatusDonut
+                data={scoreData}
+                centerValue={clients.length.toLocaleString()}
+                centerLabel="clients"
+              />
+              <DonutLegend data={scoreData} />
+            </div>
+          ) : (
+            <div className="h-full grid place-items-center text-center text-sm text-muted-foreground px-6">
+              Add clients to see lead-score distribution.
+            </div>
+          )}
         </ChartCard>
       </div>
 
@@ -344,7 +399,13 @@ export const ClientsDashboard: React.FC = () => {
           )}
         </ChartCard>
         <ChartCard title="Activity by type" subtitle={`Client tasks created · ${range}`} bodyHeight="h-72">
-          <BarHorizontal data={activityByType} />
+          {activityHasData ? (
+            <BarHorizontal data={activityByType} />
+          ) : (
+            <div className="h-full grid place-items-center text-center text-sm text-muted-foreground px-6">
+              No client tasks logged in this period.
+            </div>
+          )}
         </ChartCard>
       </div>
 

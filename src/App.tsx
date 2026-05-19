@@ -193,7 +193,7 @@ const router = createBrowserRouter(
             {
               path: '/dashboard/clients',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requireFeature="crm">
                   {lazyAppRoute(<ClientsDashboardPage />)}
                 </ProtectedRoute>
               ),
@@ -310,7 +310,7 @@ const router = createBrowserRouter(
               // more specific path matches first.
               path: '/clients/activity',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requireOrgAdmin requireFeature="crm">
                   {lazyAppRoute(<ClientsActivity />)}
                 </ProtectedRoute>
               ),
@@ -319,7 +319,7 @@ const router = createBrowserRouter(
               // CRM clients — owner/admin only.
               path: '/clients',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requireOrgAdmin requireFeature="crm">
                   {lazyAppRoute(<ClientsPage />)}
                 </ProtectedRoute>
               ),
@@ -327,7 +327,7 @@ const router = createBrowserRouter(
             {
               path: '/ai-agent',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requireOrgAdmin requireFeature="crm">
                   {lazyAppRoute(<AIAgentPage />)}
                 </ProtectedRoute>
               ),

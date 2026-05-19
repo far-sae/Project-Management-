@@ -151,8 +151,8 @@ export const Sidebar: React.FC = () => {
   const bottomMenuItems = canSeePeopleOps
     ? ([
         { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
-        { icon: Building2, label: 'Clients', href: '/clients', feature: null },
-        { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: null },
+        { icon: Building2, label: 'Clients', href: '/clients', feature: 'crm' as const },
+        { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
         { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },
@@ -247,11 +247,14 @@ export const Sidebar: React.FC = () => {
       )}
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
-        {/* Quick navigation — full / member / viewer surfaces */}
+        {/* Quick navigation — full / member / viewer surfaces.
+            Hide CRM analytics when the user's plan doesn't include CRM. */}
         <QuickMenu
           items={
             canSeePeopleOps
-              ? QUICK_ITEMS_FULL
+              ? QUICK_ITEMS_FULL.filter(
+                  (i) => i.href !== '/dashboard/clients' || hasFeature('crm'),
+                )
               : isViewer
                 ? QUICK_ITEMS_VIEWER
                 : QUICK_ITEMS_MEMBER
