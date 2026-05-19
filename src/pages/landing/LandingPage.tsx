@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import Navbar from "@/components/landing/Navbar";
 import HeroSection from "@/components/landing/HeroSection";
+import ScrollingShowcase from "@/components/landing/ScrollingShowcase";
 import FeaturesSection from "@/components/landing/FeaturesSection";
 import StatsSection from "@/components/landing/StatsSection";
 import PricingSection from "@/components/landing/PricingSection";
@@ -33,6 +34,7 @@ const LandingPage = () => {
     <div className="min-h-screen bg-background">
       <Navbar />
       <HeroSection />
+      <ScrollingShowcase />
       <FeaturesSection />
       <StatsSection />
       <PricingSection />

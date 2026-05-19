@@ -1,37 +1,63 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, LayoutDashboard, Users, BarChart3 } from "lucide-react";
+import {
+  ArrowRight, Check, Sparkles, Bot, TrendingUp, MessageCircle, Video,
+} from "lucide-react";
 import { Link } from "react-router-dom";
+
+const float = (delay = 0, duration = 6) => ({
+  y: [0, -10, 0],
+  transition: {
+    duration,
+    delay,
+    repeat: Infinity,
+    ease: "easeInOut" as const,
+  },
+});
 
 const HeroSection = () => {
   return (
-    <section className="relative pt-[calc(8rem+1px)] pb-20 overflow-hidden">
+    <section className="relative pt-[calc(7rem+1px)] pb-24 overflow-hidden">
+      {/* Ambient glow */}
       <div className="absolute inset-0 -z-10">
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-20 left-[10%] w-[28rem] h-[28rem] bg-primary/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-[5%] w-[24rem] h-[24rem] bg-orange-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[40rem] h-[40rem] bg-purple-500/5 rounded-full blur-3xl" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          {/* Left — copy + CTAs */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
+            transition={{ duration: 0.6 }}
           >
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight mb-6">
-              Organize work.{" "}
-              <span className="text-gradient">Deliver results.</span>
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 backdrop-blur px-3 py-1 text-xs text-muted-foreground mb-6"
+            >
+              <Sparkles className="h-3 w-3 text-orange-500" />
+              <span>New: Telegram bot, AI Sales Agent &amp; Google Meet</span>
+            </motion.div>
+
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.05] tracking-tight mb-6">
+              The all-in-one workspace<br />
+              for <span className="text-gradient">teams that ship.</span>
             </h1>
 
-            <p className="text-lg text-muted-foreground max-w-lg mb-8 leading-relaxed">
-              The all-in-one project management platform that helps your team plan, track, and ship
-              faster — with boards, timelines, and real-time collaboration.
+            <p className="text-lg text-muted-foreground max-w-xl mb-8 leading-relaxed">
+              Plan projects, run a sales pipeline, automate the busywork, and chat with
+              an AI agent — all from one tab. Or one Telegram message.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-3 max-w-md mb-8">
-              <Button size="lg" className="h-12 px-6 shrink-0" asChild>
+            <div className="flex flex-col sm:flex-row gap-3 max-w-md mb-6">
+              <Button size="lg" className="h-12 px-6 shrink-0 group" asChild>
                 <Link to="/signup">
-                  Get Started Free <ArrowRight size={16} />
+                  Get started free
+                  <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
                 </Link>
               </Button>
               <Button size="lg" variant="outline" className="h-12 px-6" asChild>
@@ -39,70 +65,154 @@ const HeroSection = () => {
               </Button>
             </div>
 
-            <p className="text-sm text-muted-foreground">
-              No credit card required
-            </p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> 28-day free trial</span>
+              <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> No credit card</span>
+              <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> Cancel anytime</span>
+            </div>
           </motion.div>
 
+          {/* Right — floating multi-card mockup */}
           <motion.div
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.7, delay: 0.2 }}
-            className="relative"
+            transition={{ duration: 0.7, delay: 0.15 }}
+            className="relative h-[480px]"
           >
-            <div className="relative bg-card rounded-2xl border border-border shadow-2xl shadow-primary/10 p-6 overflow-hidden">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-3 h-3 rounded-full bg-destructive/60" />
-                <div className="w-3 h-3 rounded-full bg-primary/60" />
-                <div className="w-3 h-3 rounded-full bg-orange-500/60" />
-                <span className="ml-3 text-xs font-semibold text-foreground/90">TaskCalendar — Sprint Board</span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { title: "To Do", color: "bg-muted", items: ["Design homepage", "Write API docs"] },
-                  { title: "In Progress", color: "bg-primary/10", items: ["Build dashboard", "User auth"] },
-                  { title: "Done", color: "bg-orange-500/10", items: ["Setup CI/CD", "DB schema"] },
-                ].map((col) => (
-                  <div key={col.title} className={`${col.color} rounded-lg p-3`}>
-                    <p className="text-xs font-semibold text-foreground mb-2">{col.title}</p>
-                    {col.items.map((item) => (
-                      <div key={item} className="bg-background rounded-md p-2 mb-2 shadow-sm border border-border">
-                        <p className="text-xs text-foreground">{item}</p>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-
-              <div className="absolute -top-3 -right-3 bg-primary text-primary-foreground rounded-full p-2 shadow-lg">
-                <LayoutDashboard size={16} />
-              </div>
-            </div>
-
+            {/* Card 1 — Kanban (primary) */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6, duration: 0.5 }}
-              className="absolute -bottom-4 -left-4 bg-card rounded-xl border border-border shadow-lg p-3 flex items-center gap-2"
+              animate={float(0, 7)}
+              className="absolute top-4 left-2 right-2 bg-card rounded-2xl border border-border shadow-2xl shadow-primary/10 p-5 z-20"
             >
-              <Users size={16} className="text-primary" />
-              <span className="text-xs font-medium text-foreground">Team collaboration</span>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-3 h-3 rounded-full bg-rose-400/70" />
+                <div className="w-3 h-3 rounded-full bg-amber-400/70" />
+                <div className="w-3 h-3 rounded-full bg-emerald-400/70" />
+                <span className="ml-2 text-xs font-semibold text-foreground/90">Sprint Board · Q2 launch</span>
+                <span className="ml-auto text-[10px] text-muted-foreground">Live</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <KanbanColumn title="To do" items={['Design homepage', 'Write API docs']} />
+                <KanbanColumn title="In progress" items={['Build dashboard', 'User auth']} accent />
+                <KanbanColumn title="Done" items={['Setup CI/CD']} />
+              </div>
             </motion.div>
 
+            {/* Card 2 — Telegram chat (top right, smaller) */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8, duration: 0.5 }}
-              className="absolute -top-4 -left-6 bg-card rounded-xl border border-border shadow-lg p-3 flex items-center gap-2"
+              animate={float(0.5, 8)}
+              className="absolute -top-2 -right-2 w-56 bg-card rounded-2xl border border-border shadow-xl shadow-sky-500/10 p-3 z-30"
             >
-              <BarChart3 size={16} className="text-orange-500" />
-              <span className="text-xs font-medium text-foreground">Track progress</span>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="h-7 w-7 rounded-full bg-sky-500/15 grid place-items-center">
+                  <MessageCircle className="h-3.5 w-3.5 text-sky-500" />
+                </div>
+                <div className="text-xs">
+                  <div className="font-semibold text-foreground/90">@TaskCalendarBot</div>
+                  <div className="text-[10px] text-muted-foreground">via Telegram</div>
+                </div>
+              </div>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="bg-muted/60 rounded-lg rounded-tl-sm px-2 py-1.5 inline-block">
+                  add task <em>call Acme tomorrow 3pm</em>
+                </div>
+                <div className="bg-orange-500/10 text-foreground rounded-lg rounded-tr-sm px-2 py-1.5 inline-block float-right">
+                  ✅ Created in <strong>Q2 launch</strong>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Card 3 — CRM funnel (bottom right) */}
+            <motion.div
+              animate={float(1.2, 9)}
+              className="absolute bottom-2 right-0 w-64 bg-card rounded-2xl border border-border shadow-xl shadow-orange-500/10 p-3 z-30"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/90">
+                  <TrendingUp className="h-3.5 w-3.5 text-orange-500" />
+                  Pipeline
+                </div>
+                <div className="text-[10px] text-emerald-500 font-medium">+12%</div>
+              </div>
+              <FunnelMini />
+            </motion.div>
+
+            {/* Card 4 — Google Meet pill (left middle) */}
+            <motion.div
+              animate={float(0.8, 6)}
+              className="absolute top-32 -left-2 bg-card rounded-xl border border-border shadow-lg shadow-emerald-500/10 px-3 py-2 flex items-center gap-2 z-30"
+            >
+              <Video className="h-4 w-4 text-emerald-500" />
+              <div className="text-[11px]">
+                <div className="font-semibold text-foreground/90">Meet attached</div>
+                <div className="text-muted-foreground">Tomorrow · 3:00 PM</div>
+              </div>
+            </motion.div>
+
+            {/* Card 5 — AI suggestion (bottom left) */}
+            <motion.div
+              animate={float(1.8, 7)}
+              className="absolute bottom-4 -left-2 w-52 bg-card rounded-xl border border-border shadow-lg shadow-purple-500/10 p-3 z-30"
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="h-6 w-6 rounded-full bg-purple-500/15 grid place-items-center">
+                  <Bot className="h-3.5 w-3.5 text-purple-500" />
+                </div>
+                <span className="text-xs font-semibold text-foreground/90">AI Sales Agent</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Acme Corp</strong> looks hot — they opened your proposal 4 times today. Want me to draft a follow-up?
+              </p>
             </motion.div>
           </motion.div>
         </div>
       </div>
     </section>
+  );
+};
+
+// ── Small inline mock components ────────────────────────────────────────────
+
+const KanbanColumn: React.FC<{
+  title: string;
+  items: string[];
+  accent?: boolean;
+}> = ({ title, items, accent }) => (
+  <div className={`rounded-lg p-2 ${accent ? 'bg-orange-500/5 border border-orange-500/20' : 'bg-muted/40'}`}>
+    <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">{title}</div>
+    <div className="space-y-1.5">
+      {items.map((it) => (
+        <div key={it} className="bg-card rounded-md px-2 py-1.5 text-[11px] text-foreground/90 border border-border/60">
+          {it}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const FunnelMini: React.FC = () => {
+  const stages = [
+    { name: 'Lead', pct: 100, accent: false },
+    { name: 'Qualified', pct: 70, accent: false },
+    { name: 'Proposal', pct: 45, accent: false },
+    { name: 'Won', pct: 25, accent: true },
+  ];
+  return (
+    <div className="space-y-1">
+      {stages.map((s) => (
+        <div key={s.name} className="flex items-center gap-2 text-[10px]">
+          <span className="w-14 shrink-0 text-muted-foreground">{s.name}</span>
+          <div className="flex-1 h-3 rounded bg-muted/50 overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${s.pct}%` }}
+              transition={{ duration: 1.4, delay: 0.6, ease: 'easeOut' }}
+              className={`h-full rounded ${s.accent ? 'bg-orange-500' : 'bg-foreground/40'}`}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 };
 
