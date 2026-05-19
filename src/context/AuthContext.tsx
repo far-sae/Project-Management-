@@ -164,10 +164,12 @@ const ensureOrganizationExists = async (
 
     let invitePending = !!pendingInviteTokenInStorage || urlHasInvite;
     if (!invitePending && email) {
-      // Try direct table first; fall back to a lenient match. The invitations
-      // table may be RLS-restricted for a newly-created user, so catch failures
-      // and still err on the side of NOT creating a tenant when the user has
-      // just followed an invite link.
+      // Best-effort DB check. The storage token + URL signals above are the
+      // authoritative "is this an invite flow?" signals (AcceptInvite sets the
+      // token before triggering OAuth). This lookup only flips invitePending
+      // when it SUCCEEDS and finds a pending row — a lookup error (RLS, etc.)
+      // is treated as "unknown, no signal" so fresh non-invited Google signups
+      // still get an org auto-created instead of being silently skipped.
       try {
         const { data: pendingInvites, error: pendingInviteError } = await supabase
           .from('invitations')
@@ -177,16 +179,12 @@ const ensureOrganizationExists = async (
           .gt('expires_at', new Date().toISOString())
           .limit(1);
         if (pendingInviteError) {
-          // RLS blocked — treat as "invite pending" to be safe. A new user who
-          // followed an invite link will almost always hit this on first login.
-          console.warn('⚠️ Pending-invite lookup failed (treating as pending):', pendingInviteError);
-          invitePending = true;
+          console.warn('⚠️ Pending-invite lookup failed (no token/URL signal — proceeding with org create):', pendingInviteError);
         } else if (pendingInvites && pendingInvites.length > 0) {
           invitePending = true;
         }
       } catch (lookupErr) {
-        console.warn('⚠️ Pending-invite lookup threw (treating as pending):', lookupErr);
-        invitePending = true;
+        console.warn('⚠️ Pending-invite lookup threw (no token/URL signal — proceeding with org create):', lookupErr);
       }
     }
 
