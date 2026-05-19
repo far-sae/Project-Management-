@@ -212,7 +212,7 @@ export const ProjectsDashboard: React.FC = () => {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4 md:p-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:px-8 md:py-6">
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
