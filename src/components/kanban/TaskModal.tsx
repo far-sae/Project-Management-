@@ -37,7 +37,7 @@ import {
   Trash2, Loader2, Sparkles, Wand2, MessageSquare,
   ListTree, Paperclip, X, Check, Circle, Activity, Clock,
   CheckCircle2, Lock, MoreHorizontal, Bell, Mail, Link2,
-  AlertTriangle, Save, KeyRound, Users,
+  AlertTriangle, Save, KeyRound, Users, Video,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -66,6 +66,7 @@ import {
   verifyTaskLockPin,
 } from '@/services/supabase/database';
 import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
+import { isGoogleConnected, createMeetForTask } from '@/services/integrations/googleMeet';
 import { markOnboardingAi } from '@/components/onboarding/OnboardingChecklist';
 import { useTaskActivity } from '@/hooks/useActivity';
 import { ActivityEvent } from '@/types/activity';
@@ -142,6 +143,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+
+  // Google Meet checkbox in the create-task flow. Visible only when the user
+  // has Google integration active and the task has a due date with a time.
+  const [addGoogleMeet, setAddGoogleMeet] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
 
   const [aiLoading, setAiLoading] = useState<{ description?: boolean; suggestions?: boolean }>({});
   const [aiError, setAiError] = useState<string | null>(null);
@@ -288,6 +294,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setInitialComment('');
       setTags([]);
       setSubtasks([]);
+      setAddGoogleMeet(false);
     }
     setAiError(null);
     setSaveError(null);
@@ -315,6 +322,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
     setPinUnlockedSession(isTaskLockUnlockedInSession(task.taskId));
   }, [task?.taskId, open]);
+
+  // Check Google integration when the create modal opens so we know whether
+  // to surface the "Add Google Meet" checkbox.
+  useEffect(() => {
+    if (!open || task) return;
+    let cancelled = false;
+    isGoogleConnected()
+      .then((connected) => { if (!cancelled) setGoogleConnected(connected); })
+      .catch(() => { if (!cancelled) setGoogleConnected(false); });
+    return () => { cancelled = true; };
+  }, [open, task]);
 
   useEffect(() => {
     setLockPinNew('');
@@ -1026,6 +1044,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setLastSavedAt(new Date());
         toast.success('Task updated');
       } else {
+        // If the Meet checkbox is on, pre-generate the task id so we can call
+        // task-create-meet right after the save without waiting on the parent
+        // to surface the new taskId.
+        if (addGoogleMeet && !createdTaskId) {
+          createdTaskId = crypto.randomUUID();
+        }
         await onSave({
           ...(createdTaskId ? { taskId: createdTaskId } : {}),
           projectId,
@@ -1036,6 +1060,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           _initialComment: initialComment.trim() || undefined,
         } as CreateTaskInput & { _initialComment?: string });
         toast.success('Task created');
+
+        // After the task lands, kick off Meet creation (best-effort; surface
+        // the error in a toast but don't fail the whole flow).
+        if (addGoogleMeet && createdTaskId) {
+          const meetToast = toast.loading('Creating Google Meet link...');
+          try {
+            const { meetLink } = await createMeetForTask(createdTaskId);
+            toast.success('Meet link added', { id: meetToast });
+            try { await navigator.clipboard.writeText(meetLink); } catch { /* clipboard optional */ }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Meet creation failed';
+            toast.error(msg, { id: meetToast });
+          }
+        }
       }
       onClose();
     } catch (error) {
@@ -2048,6 +2086,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 Due date
               </Label>
               <DayPickerPopover value={dueDate} onChange={setDueDate} disabled={readOnlyTask} />
+              {!isEditing && googleConnected && (
+                <label
+                  className={`mt-2 flex items-center gap-2 text-sm cursor-pointer select-none ${
+                    dueDate ? '' : 'opacity-50 cursor-not-allowed'
+                  }`}
+                  title={dueDate ? '' : 'Set a due date to enable Google Meet'}
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-input"
+                    checked={addGoogleMeet && Boolean(dueDate)}
+                    disabled={!dueDate || readOnlyTask}
+                    onChange={(e) => setAddGoogleMeet(e.target.checked)}
+                  />
+                  <Video className="h-4 w-4 text-emerald-600" />
+                  <span>Add Google Meet link</span>
+                </label>
+              )}
             </div>
 
             {/* Team & assignees */}
