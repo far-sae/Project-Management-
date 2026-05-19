@@ -24,16 +24,16 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user, signOut } = useAuth();
-  const { isViewer, isOwner } = useOrganization();
+  const { isViewer } = useOrganization();
   const { openEntry, loading, clockIn } = useTimeTracking();
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (!user) return <>{children}</>;
-  // Build/support team — bypass.
+  // Build/support team only bypass (Claude / on-call). Org owners and admins
+  // are required to clock in same as members, per org policy: every signed-in
+  // person on the workforce roster is on the clock.
   if (isAppOwner(user.userId)) return <>{children}</>;
-  // Org owner doesn't need to clock in — they manage the workspace.
-  if (isOwner) return <>{children}</>;
   // Viewers don't have shifts to log; they're observers (clients, auditors).
   // Forcing them to clock in would be confusing and pollute timesheets.
   if (isViewer) return <>{children}</>;
@@ -98,6 +98,7 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
             <p className="text-xs text-muted-foreground mt-1">
               Your work hours will be recorded for the team timesheet. You can
               clock out anytime from the project view or the Time Tracking page.
+              If you forget, the system auto clocks you out at 9 hours.
             </p>
           </div>
 
