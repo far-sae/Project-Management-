@@ -24,16 +24,17 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user, signOut } = useAuth();
-  const { isViewer } = useOrganization();
+  const { isViewer, isOwner } = useOrganization();
   const { openEntry, loading, clockIn } = useTimeTracking();
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (!user) return <>{children}</>;
-  // Build/support team only bypass (Claude / on-call). Org owners and admins
-  // are required to clock in same as members, per org policy: every signed-in
-  // person on the workforce roster is on the clock.
+  // Build/support team (Claude / on-call) — bypass.
   if (isAppOwner(user.userId)) return <>{children}</>;
+  // Org owner doesn't clock in — they run the org, not a shift.
+  // Only admins and members are on the workforce clock.
+  if (isOwner) return <>{children}</>;
   // Viewers don't have shifts to log; they're observers (clients, auditors).
   // Forcing them to clock in would be confusing and pollute timesheets.
   if (isViewer) return <>{children}</>;
