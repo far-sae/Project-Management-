@@ -782,7 +782,16 @@ export const Clients: React.FC = () => {
         organizationId={organizationId}
         userId={user?.userId}
         userName={user?.displayName}
-        onComplete={() => undefined}
+        onComplete={(imported) => {
+          // If any imported client has a category, switch to grouped view so
+          // the user immediately sees their data organised by category — and
+          // clear any active category filter so all groups are visible.
+          if (imported && imported.some((c) => c.category && c.category.trim().length > 0)) {
+            setGroupByCategory(true);
+            setCategoryFilter('all');
+            toast.success('Switched to "Group by category" view');
+          }
+        }}
       />
 
       {/* Detail drawer */}

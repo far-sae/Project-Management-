@@ -19,6 +19,7 @@ import {
   isApolloStyleClientCsv,
   normalizeClientCsvHeader,
   previewClientImportRows,
+  type Client,
   type ImportResult,
   type ImportPreviewIssue,
   type ImportPreviewResult,
@@ -104,7 +105,10 @@ interface Props {
   organizationId: string | null;
   userId: string | undefined;
   userName: string | undefined;
-  onComplete: () => void;
+  /** Called after every successful import phase. Receives the clients we
+   *  just persisted so the parent can auto-switch to a grouped view, scroll
+   *  to a category, etc. */
+  onComplete: (imported?: Client[]) => void;
 }
 
 const downloadCsv = (filename: string, content: string) => {
@@ -305,7 +309,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
       );
       setResult(imported);
       setPhase('imported');
-      if (imported.imported.length > 0) onComplete();
+      if (imported.imported.length > 0) onComplete(imported.imported);
     } catch (err) {
       setParseErrors([err instanceof Error ? err.message : 'Import failed']);
     } finally {
@@ -329,7 +333,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
     if (!organizationId || !userId || !userName || !issue.input || !issue.matches?.[0]) return;
     setBusy(true);
     try {
-      await importClientsOverrideRow(
+      const created = await importClientsOverrideRow(
         organizationId,
         userId,
         userName,
@@ -344,7 +348,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
             }
           : prev,
       );
-      onComplete();
+      onComplete([created]);
       toast.success(`Created "${issue.name}" as a new client`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Override failed');
