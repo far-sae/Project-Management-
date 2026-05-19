@@ -123,7 +123,7 @@ const PublicAdminStats = () => {
             Service at a glance
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            See how many people use our service, which plans they&apos;re on, and usage stats — no login required.
+            See how many people use our service, which plans they&apos;re on, and usage stats. No login required.
           </p>
         </motion.div>
 

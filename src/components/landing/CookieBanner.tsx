@@ -50,8 +50,8 @@ const CookieBanner: React.FC = () => {
         <div className="flex-1 text-sm text-muted-foreground">
           <p className="font-medium text-foreground mb-1">Cookies and similar technologies</p>
           <p>
-            {LEGAL_PRODUCT_NAME} stores essential data on your device — your sign-in tokens, theme,
-            selected workspace, and pinned projects — so the app remembers them between visits.
+            {LEGAL_PRODUCT_NAME} stores essential data on your device (sign in tokens, theme,
+            selected workspace, pinned projects) so the app remembers them between visits.
             Choose <span className="text-foreground">Accept all</span> to also enable optional
             analytics (Google Analytics) that help us improve the product. You can change your mind
             any time. Details in our{' '}

@@ -23,14 +23,14 @@ const features: Feature[] = [
   {
     icon: Calendar,
     title: "Real meeting attached",
-    description: "Pick a date and time and we'll create a Google Calendar event with a Meet link and invite everyone — without leaving the task.",
+    description: "Pick a date and time and we'll create a Google Calendar event with a Meet link and invite everyone, without leaving the task.",
     accentClass: "bg-emerald-500/15 text-emerald-500",
     visual: <MeetVisual />,
   },
   {
     icon: BarChart3,
     title: "Analytics that update live",
-    description: "Throughput, cycle time, workload, win rate, forecast — Monday-style dashboards built from your real data.",
+    description: "Throughput, cycle time, workload, win rate, forecast. Clean dashboards built from your real data.",
     accentClass: "bg-amber-500/15 text-amber-500",
     visual: <AnalyticsVisual />,
   },
@@ -44,7 +44,7 @@ const features: Feature[] = [
   {
     icon: Bot,
     title: "AI sales agent",
-    description: "Lead scoring, follow-up suggestions, draft replies — all gated behind a Review/Approve button so nothing sends without you.",
+    description: "Lead scoring, followup suggestions, draft replies. All gated behind a Review or Approve button so nothing sends without you.",
     accentClass: "bg-purple-500/15 text-purple-500",
     visual: <AgentVisual />,
   },
@@ -57,15 +57,15 @@ const features: Feature[] = [
   },
   {
     icon: Users,
-    title: "Real-time team",
-    description: "Comments, mentions, presence, notifications, and an inbox — built in. No second tool for chat.",
+    title: "Real time team",
+    description: "Comments, mentions, presence, notifications, and an inbox. Built in. No second tool for chat.",
     accentClass: "bg-rose-500/15 text-rose-500",
     visual: <TeamVisual />,
   },
   {
     icon: MessageSquare,
     title: "CRM with pipelines",
-    description: "Clients, deals, custom stages, lead forms, dedup, scoring — a real CRM next to your project work, not in another app.",
+    description: "Clients, deals, custom stages, lead forms, dedup, scoring. A real CRM next to your project work, not in another app.",
     accentClass: "bg-pink-500/15 text-pink-500",
     visual: <CrmVisual />,
   },
@@ -96,8 +96,8 @@ const FeaturesSection = () => {
             Everything your team needs.
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Project management, CRM, automation, AI, and chat-bot control —
-            one workspace, one data model, one bill.
+            Project management, CRM, automation, AI, and chatbot control.
+            One workspace, one data model, one bill.
           </p>
         </motion.div>
 
@@ -201,7 +201,7 @@ function AgentVisual() {
     <div className="space-y-1 h-full text-[10px]">
       {[
         '📈 Acme opened your proposal 4× today',
-        '✍️  Drafted follow-up — review?',
+        '✍️  Drafted reply. Review?',
         '🎯 Lead score: 62 → 84',
       ].map((t, i) => (
         <motion.div

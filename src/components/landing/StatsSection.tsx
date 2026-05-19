@@ -23,7 +23,7 @@ const stats: Stat[] = [
     value: 25,
     suffix: '+ automations',
     label: 'Triggers & actions',
-    description: 'Stage moves, scores, tags, schedules — wired to email, Slack, webhooks',
+    description: 'Stage moves, scores, tags, schedules. Wired to email, Slack, webhooks.',
   },
   {
     icon: Users,
@@ -35,8 +35,8 @@ const stats: Stat[] = [
   {
     icon: CheckCircle,
     value: 28,
-    suffix: '-day',
-    label: 'Full-feature trial',
+    suffix: ' day',
+    label: 'Full feature trial',
     description: 'No credit card. Advanced plan unlocks on day one.',
   },
 ];

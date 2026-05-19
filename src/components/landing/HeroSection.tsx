@@ -50,7 +50,7 @@ const HeroSection = () => {
 
             <p className="text-lg text-muted-foreground max-w-xl mb-8 leading-relaxed">
               Plan projects, run a sales pipeline, automate the busywork, and chat with
-              an AI agent — all from one tab. Or one Telegram message.
+              an AI agent. All from one tab. Or one Telegram message.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3 max-w-md mb-6">
@@ -66,7 +66,7 @@ const HeroSection = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> 28-day free trial</span>
+              <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> 28 day free trial</span>
               <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> No credit card</span>
               <span className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-500" /> Cancel anytime</span>
             </div>
@@ -161,7 +161,7 @@ const HeroSection = () => {
                 <span className="text-xs font-semibold text-foreground/90">AI Sales Agent</span>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Acme Corp</strong> looks hot — they opened your proposal 4 times today. Want me to draft a follow-up?
+                <strong className="text-foreground">Acme Corp</strong> looks hot. They opened your proposal 4 times today. Want me to draft a reply?
               </p>
             </motion.div>
           </motion.div>

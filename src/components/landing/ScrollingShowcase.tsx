@@ -32,8 +32,8 @@ const ScrollingShowcase: React.FC = () => {
             See your work the way you think.
           </h2>
           <p className="text-muted-foreground">
-            Boards. Calendar. Timelines. CRM. Dashboards. AI agents. Chat-bot control.
-            Switch any time — same data, different lens.
+            Boards. Calendar. Timelines. CRM. Dashboards. AI agents. Chatbot control.
+            Switch any time. Same data, different lens.
           </p>
         </motion.div>
       </div>
@@ -272,10 +272,10 @@ const TelegramMock: React.FC = () => (
 const AgentMock: React.FC = () => (
   <div className="space-y-2 text-[11px] h-full">
     {[
-      { icon: '📈', text: 'Acme Corp opened your proposal 4× today — draft a follow-up?', kind: 'review' },
-      { icon: '⏱️', text: 'Deal Globex hasn’t moved in 12 days — snooze or reach out?', kind: 'review' },
+      { icon: '📈', text: 'Acme Corp opened your proposal 4× today. Draft a reply?', kind: 'review' },
+      { icon: '⏱️', text: 'Deal Globex has not moved in 12 days. Snooze or reach out?', kind: 'review' },
       { icon: '🎯', text: 'Lead score climbed for Initech (62 → 84)', kind: 'info' },
-      { icon: '✍️', text: 'Drafted onboarding email for Acme — open to review', kind: 'review' },
+      { icon: '✍️', text: 'Drafted onboarding email for Acme. Open to review.', kind: 'review' },
     ].map((s, i) => (
       <div
         key={i}
