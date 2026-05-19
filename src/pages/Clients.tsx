@@ -100,6 +100,7 @@ export const Clients: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'accounts' | 'pipeline' | 'tasks' | 'forecast'>('accounts');
 
   // Pipeline display currency. Persists per-browser so reps don't have to
@@ -171,6 +172,23 @@ export const Clients: React.FC = () => {
     for (const c of clients) if (c.category) set.add(c.category);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [clients]);
+
+  // Filtered clients grouped by category for the "Group by category" view.
+  // Uncategorized rows fall into a synthetic group rendered last.
+  const groupedFiltered = useMemo(() => {
+    const buckets = new Map<string, typeof filtered>();
+    for (const c of filtered) {
+      const key = c.category?.trim() || '__uncategorized__';
+      const list = buckets.get(key);
+      if (list) list.push(c);
+      else buckets.set(key, [c]);
+    }
+    const named = Array.from(buckets.entries())
+      .filter(([k]) => k !== '__uncategorized__')
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    const uncategorized = buckets.get('__uncategorized__');
+    return uncategorized ? [...named, ['Uncategorized', uncategorized] as const] : named;
+  }, [filtered]);
 
   const selectedClients = useMemo(
     () => clients.filter((c) => selectedClientIds.has(c.clientId)),
@@ -451,15 +469,26 @@ export const Clients: React.FC = () => {
                 </SelectContent>
               </Select>
               {availableCategories.length > 0 && (
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All categories</SelectItem>
-                    {availableCategories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      {availableCategories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={groupByCategory ? 'default' : 'outline'}
+                    onClick={() => setGroupByCategory((v) => !v)}
+                    title={groupByCategory ? 'Show as flat grid' : 'Group cards by category'}
+                  >
+                    {groupByCategory ? 'Grouped' : 'Group by category'}
+                  </Button>
+                </>
               )}
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
                 <Filter className="w-3 h-3" />
@@ -530,8 +559,10 @@ export const Clients: React.FC = () => {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map((c) => (
+            (() => {
+              // Single source of truth for a client card; used by both flat
+              // and grouped layouts so they stay visually identical.
+              const renderCard = (c: typeof filtered[number]) => (
                 <div
                   key={c.clientId}
                   onClick={() => setSelected(c)}
@@ -614,8 +645,36 @@ export const Clients: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
+              );
+
+              if (groupByCategory) {
+                return (
+                  <div className="space-y-6">
+                    {groupedFiltered.map(([cat, items]) => (
+                      <section key={cat}>
+                        <div className="flex items-baseline justify-between mb-2 pb-1.5 border-b border-border">
+                          <h3 className="text-sm font-semibold text-foreground">
+                            {cat}
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              {items.length} client{items.length === 1 ? '' : 's'}
+                            </span>
+                          </h3>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {items.map(renderCard)}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {filtered.map(renderCard)}
+                </div>
+              );
+            })()
           )}
             </TabsContent>
 
