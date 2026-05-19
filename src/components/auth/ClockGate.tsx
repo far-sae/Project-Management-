@@ -23,8 +23,8 @@ import { toast } from 'sonner';
 export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user, signOut } = useAuth();
-  const { isViewer, isOwner } = useOrganization();
+  const { user, signOut, loading: authLoading } = useAuth();
+  const { isViewer, isOwner, loading: orgLoading } = useOrganization();
   const { openEntry, loading, clockIn } = useTimeTracking();
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,6 +32,26 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   if (!user) return <>{children}</>;
   // Build/support team (Claude / on-call) — bypass.
   if (isAppOwner(user.userId)) return <>{children}</>;
+
+  // Wait for the user's organization + role to be fully resolved before
+  // deciding the gate. AuthContext seeds organizationId='local-<uid>' on the
+  // initial render and only swaps in the real one after
+  // ensureOrganizationExists finishes (~500-1000ms on fresh sign-up, less on
+  // reload). Without this guard the member clock-in card flashes for that
+  // window before isOwner flips to true.
+  const orgUnresolved =
+    authLoading ||
+    orgLoading ||
+    !!user.organizationId?.startsWith('local-');
+  if (orgUnresolved) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background p-4">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-label="Loading" />
+        <p className="text-sm text-muted-foreground">Loading your workspace…</p>
+      </div>
+    );
+  }
+
   // Org owner doesn't clock in — they run the org, not a shift.
   // Only admins and members are on the workforce clock.
   if (isOwner) return <>{children}</>;
