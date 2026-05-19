@@ -59,6 +59,10 @@ export interface Task {
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;
+  /** Hangouts Meet URL (joinable). Populated by the task-create-meet edge function or the createGoogleMeet automation action. */
+  googleMeetLink?: string | null;
+  /** Calendar event id created alongside the Meet link. */
+  googleEventId?: string | null;
 }
 
 export interface CommentAttachment {

@@ -323,16 +323,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setPinUnlockedSession(isTaskLockUnlockedInSession(task.taskId));
   }, [task?.taskId, open]);
 
-  // Check Google integration when the create modal opens so we know whether
-  // to surface the "Add Google Meet" checkbox.
+  // Check Google integration on open in both create and edit modes so the
+  // Meet UI can decide what to show (checkbox, add-link button, existing link).
   useEffect(() => {
-    if (!open || task) return;
+    if (!open) return;
     let cancelled = false;
     isGoogleConnected()
       .then((connected) => { if (!cancelled) setGoogleConnected(connected); })
       .catch(() => { if (!cancelled) setGoogleConnected(false); });
     return () => { cancelled = true; };
-  }, [open, task]);
+  }, [open]);
+
+  const [meetAddInFlight, setMeetAddInFlight] = useState(false);
+  const handleAddMeetToExisting = async () => {
+    if (!task?.taskId) return;
+    if (!dueDate) {
+      toast.error('Set a due date before adding a Meet link');
+      return;
+    }
+    setMeetAddInFlight(true);
+    const toastId = toast.loading('Creating Google Meet link...');
+    try {
+      const { meetLink } = await createMeetForTask(task.taskId);
+      toast.success('Meet link added', { id: toastId });
+      try { await navigator.clipboard.writeText(meetLink); } catch { /* clipboard optional */ }
+      // The link is on the row now; the parent will pick it up on the next
+      // refetch. Reflect it locally so the user sees it without a refresh.
+      (task as Task).googleMeetLink = meetLink;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Meet creation failed', { id: toastId });
+    } finally {
+      setMeetAddInFlight(false);
+    }
+  };
 
   useEffect(() => {
     setLockPinNew('');
@@ -2086,6 +2109,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 Due date
               </Label>
               <DayPickerPopover value={dueDate} onChange={setDueDate} disabled={readOnlyTask} />
+
+              {/* Google Meet — three states based on create/edit + link presence + connection. */}
               {!isEditing && googleConnected && (
                 <label
                   className={`mt-2 flex items-center gap-2 text-sm cursor-pointer select-none ${
@@ -2103,6 +2128,60 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <Video className="h-4 w-4 text-emerald-600" />
                   <span>Add Google Meet link</span>
                 </label>
+              )}
+
+              {isEditing && task?.googleMeetLink && (
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  <Video className="h-4 w-4 text-emerald-600" />
+                  <a
+                    href={task.googleMeetLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline truncate max-w-[160px]"
+                    title={task.googleMeetLink}
+                  >
+                    Join Google Meet
+                  </a>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(task.googleMeetLink!);
+                        toast.success('Meet link copied');
+                      } catch {
+                        toast.error('Could not copy');
+                      }
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+
+              {isEditing && !task?.googleMeetLink && googleConnected && !readOnlyTask && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 h-8 gap-2"
+                  onClick={handleAddMeetToExisting}
+                  disabled={!dueDate || meetAddInFlight}
+                  title={dueDate ? '' : 'Set a due date first'}
+                >
+                  {meetAddInFlight ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Video className="h-3.5 w-3.5 text-emerald-600" />
+                  )}
+                  Add Google Meet link
+                </Button>
+              )}
+
+              {!googleConnected && !isEditing && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Connect Google in Settings → Integrations to add a Meet link.
+                </p>
               )}
             </div>
 
