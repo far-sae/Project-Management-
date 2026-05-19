@@ -50,9 +50,11 @@ const CookieBanner: React.FC = () => {
         <div className="flex-1 text-sm text-muted-foreground">
           <p className="font-medium text-foreground mb-1">Cookies and similar technologies</p>
           <p>
-            {LEGAL_PRODUCT_NAME} uses essential cookies and similar storage to keep you signed in and
-            to remember your choices. If you accept, we also use analytics to improve the product. See
-            our{' '}
+            {LEGAL_PRODUCT_NAME} stores essential data on your device — your sign-in tokens, theme,
+            selected workspace, and pinned projects — so the app remembers them between visits.
+            Choose <span className="text-foreground">Accept all</span> to also enable optional
+            analytics (Google Analytics) that help us improve the product. You can change your mind
+            any time. Details in our{' '}
             <a href="/cookies" className="underline text-primary">
               Cookie Policy
             </a>
@@ -67,7 +69,7 @@ const CookieBanner: React.FC = () => {
             .
           </p>
         </div>
-        <div className="flex gap-2 justify-end">
+        <div className="flex gap-2 justify-end shrink-0">
           <Button size="sm" variant="outline" onClick={handleReject}>
             Only essential
           </Button>
