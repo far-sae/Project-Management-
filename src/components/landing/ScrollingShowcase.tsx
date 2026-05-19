@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   LayoutList, Calendar as CalendarIcon, GanttChartSquare, TrendingUp,
-  MessageCircle, Bot, BarChart3, Zap,
+  MessageCircle, Bot, BarChart3, Zap, type LucideIcon,
 } from 'lucide-react';
 
 /**
@@ -71,7 +71,7 @@ const ScrollingShowcase: React.FC = () => {
 interface MockScreen {
   title: string;
   subtitle: string;
-  Icon: React.ComponentType<{ className?: string; size?: number | string }>;
+  Icon: LucideIcon;
   accentClass: string;
   render: () => React.ReactNode;
 }

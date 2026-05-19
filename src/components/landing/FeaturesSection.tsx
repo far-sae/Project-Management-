@@ -1,11 +1,11 @@
 import { motion } from "framer-motion";
 import {
   LayoutList, MessageSquare, BarChart3, Calendar, Users,
-  Bot, Zap, Plug, MessageCircle,
+  Bot, Zap, Plug, MessageCircle, type LucideIcon,
 } from "lucide-react";
 
 interface Feature {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   title: string;
   description: string;
   accentClass: string;

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { motion, useInView } from "framer-motion";
-import { CheckCircle, Users, FolderKanban, Zap } from "lucide-react";
+import { CheckCircle, Users, FolderKanban, Zap, type LucideIcon } from "lucide-react";
 
 interface Stat {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   value: number;
   suffix?: string;
   label: string;
