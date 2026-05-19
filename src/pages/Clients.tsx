@@ -468,28 +468,32 @@ export const Clients: React.FC = () => {
                   <SelectItem value="cold">Cold</SelectItem>
                 </SelectContent>
               </Select>
-              {availableCategories.length > 0 && (
-                <>
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All categories</SelectItem>
-                      {availableCategories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={groupByCategory ? 'default' : 'outline'}
-                    onClick={() => setGroupByCategory((v) => !v)}
-                    title={groupByCategory ? 'Show as flat grid' : 'Group cards by category'}
-                  >
-                    {groupByCategory ? 'Grouped' : 'Group by category'}
-                  </Button>
-                </>
-              )}
+              {/* Category filter + group toggle — always visible so the
+                  feature is discoverable even before any client has a
+                  category. */}
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {availableCategories.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      No categories yet. Set one when adding or editing a client.
+                    </div>
+                  )}
+                  {availableCategories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                variant={groupByCategory ? 'default' : 'outline'}
+                onClick={() => setGroupByCategory((v) => !v)}
+                title={groupByCategory ? 'Show as flat grid' : 'Group cards by category'}
+              >
+                {groupByCategory ? 'Grouped' : 'Group by category'}
+              </Button>
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
                 <Filter className="w-3 h-3" />
                 {filtered.length} of {clients.length}
@@ -606,8 +610,15 @@ export const Clients: React.FC = () => {
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <Badge variant="outline" className="capitalize">{c.type}</Badge>
                     <StatusBadge status={c.status} />
-                    {c.category && (
+                    {c.category ? (
                       <Badge variant="secondary" className="text-[10px]">{c.category}</Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] text-muted-foreground border-dashed"
+                      >
+                        + Category
+                      </Badge>
                     )}
                     {c.country && (
                       <span className="text-xs text-muted-foreground">{c.country}</span>
