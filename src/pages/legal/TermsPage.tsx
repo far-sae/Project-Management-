@@ -21,9 +21,9 @@ const TermsPage = () => {
           These Terms of Service (&quot;Terms&quot;) constitute a legal agreement between you and{' '}
           {LEGAL_COMPANY_NAME} (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) governing access to and use of{' '}
           {LEGAL_PRODUCT_NAME}, our software product for project management, sales CRM, automation,
-          team collaboration, and related features (the &quot;Service&quot;), including any websites,
-          applications, chat-bot integrations, and services we make available in connection with{' '}
-          {LEGAL_PRODUCT_NAME}.
+          analytics, team collaboration, and related features (the &quot;Service&quot;), including any
+          websites, applications, Telegram and WhatsApp chat-bot integrations, and services we make
+          available in connection with {LEGAL_PRODUCT_NAME}.
         </p>
         <p className="text-muted-foreground mb-8 leading-relaxed">
           By creating an account, accepting an invitation, or otherwise using the Service, you confirm
@@ -229,9 +229,12 @@ const TermsPage = () => {
         </p>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           <strong className="text-foreground">Chat-bot integrations.</strong> Optional integrations
-          such as the Telegram bot are provided on a best-effort basis and depend on the third-party
-          platform&apos;s availability. We do not guarantee delivery of any individual message and we
-          may rate-limit or disable a bot connection if abuse is detected.
+          on Telegram and WhatsApp are provided on a best-effort basis and depend on the third-party
+          platform&apos;s availability and policies (Telegram Bot API and Meta WhatsApp Cloud API).
+          We do not guarantee delivery of any individual message and we may rate-limit or disable a
+          bot connection if abuse is detected. Outside the standard customer-service window,
+          WhatsApp requires pre-approved template messages — we will only initiate such messages on
+          your behalf if you have configured an automation that does so.
         </p>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">12. Limitation of liability</h2>

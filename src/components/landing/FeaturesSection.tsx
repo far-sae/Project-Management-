@@ -50,8 +50,8 @@ const features: Feature[] = [
   },
   {
     icon: MessageCircle,
-    title: "Telegram (and WhatsApp soon)",
-    description: "Text the bot in plain English: 'add task call John tomorrow 3pm in Q1 launch'. It confirms, you tap Yes.",
+    title: "Telegram and WhatsApp bots",
+    description: "Text either bot in plain English: 'add task call John tomorrow 3pm in Q1 launch'. It confirms, you tap Yes.",
     accentClass: "bg-sky-500/15 text-sky-500",
     visual: <TelegramVisual />,
   },

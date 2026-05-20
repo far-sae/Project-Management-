@@ -19,11 +19,12 @@ const PrivacyPolicyPage = () => {
           This Privacy Policy explains how {LEGAL_COMPANY_NAME} (&quot;we&quot;, &quot;us&quot;, or
           &quot;our&quot;) collects, uses, discloses, and safeguards personal information when you access or
           use {LEGAL_PRODUCT_NAME}, our web-based project management, CRM, and collaboration platform
-          (the &quot;Service&quot;). The Service includes project / task workflows, a sales CRM
-          (clients, deals, pipelines, lead forms), automation recipes, an AI sales agent, optional
-          chat-bot integrations (Telegram, with WhatsApp planned), and Google / Gmail / Slack
-          integrations. We respect your privacy and aim to comply with applicable data protection
-          laws, including the EU and UK General Data Protection Regulation (GDPR) where they apply.
+          (the &quot;Service&quot;). The Service includes project and task workflows, a sales CRM
+          (clients, deals, pipelines, lead forms, categories), graphical analytics dashboards,
+          automation recipes, an AI sales agent, optional chat-bot integrations on Telegram and
+          WhatsApp, and Google / Gmail / Slack integrations. We respect your privacy and aim to
+          comply with applicable data protection laws, including the EU and UK General Data
+          Protection Regulation (GDPR) where they apply.
         </p>
         <p className="text-muted-foreground mb-8 leading-relaxed text-sm border-l-2 border-border pl-4">
           This policy is provided for transparency. It does not constitute legal advice. If you need
@@ -152,6 +153,18 @@ const PrivacyPolicyPage = () => {
             <strong className="text-foreground">Analytics.</strong> If you consent, tools such as
             Google Analytics 4 to understand aggregate usage.
           </li>
+          <li>
+            <strong className="text-foreground">AI / large-language-model API.</strong> OpenAI for
+            intent parsing of chat-bot messages, AI sales agent suggestions, AI Blocks in automation
+            recipes, and report-insight generation. Server-to-server requests; prompts not retained
+            for model training (<code>store=false</code> where supported).
+          </li>
+          <li>
+            <strong className="text-foreground">Chat-bot delivery.</strong> Meta WhatsApp Cloud API
+            and Telegram Bot API to relay inbound messages from users who have opted in, and to
+            deliver our replies. Used only for the chat-bot connection itself; no data is shared
+            with these providers beyond what is needed to deliver a single message.
+          </li>
         </ul>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           We may also disclose information if required by law, court order, or competent authority, or
@@ -247,22 +260,56 @@ const PrivacyPolicyPage = () => {
           .
         </p>
 
-        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">Telegram bot</h3>
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          Chat-bot integrations (Telegram and WhatsApp)
+        </h3>
         <p className="text-muted-foreground mb-3 leading-relaxed">
-          {LEGAL_PRODUCT_NAME} offers an optional Telegram bot that lets you create workspaces,
-          projects, tasks, clients, and CRM activities by sending the bot natural-language messages.
-          You opt in by generating a one-time 6-digit code from{' '}
+          {LEGAL_PRODUCT_NAME} offers optional chat-bot integrations on Telegram and Meta WhatsApp
+          that let you create workspaces, projects, tasks, clients, and CRM activities by sending a
+          bot natural-language messages. You opt in by generating a one-time 6-digit code from{' '}
           <strong className="text-foreground">Settings &rarr; Integrations &rarr; Telegram</strong>
-          {' '}and sending <code>/start &lt;code&gt;</code> to the bot.
+          {' '}or{' '}
+          <strong className="text-foreground">Settings &rarr; Integrations &rarr; WhatsApp</strong>
+          {' '}and sending <code>/start &lt;code&gt;</code> to the bot. Both bots are opt-in and you
+          always send the first message; the bot only replies in direct response to you, inside the
+          standard customer-service window.
         </p>
         <p className="text-muted-foreground mb-3 leading-relaxed">
-          When you link your chat we store your Telegram user id, username, chat id, and the
-          TaskCalendar organisation you selected at link time, alongside your account record. Each
-          inbound message is forwarded to OpenAI (see &quot;AI features&quot; below) for intent
-          parsing and is then matched to a confirm-before-write action you tap. We do not store
-          message text beyond a short pending-action buffer (~10 minutes) used to wait for your
-          confirmation; conversation-state for missing-field prompts expires in 5 minutes.
-          Unlinking the bot from Settings deletes the integration row immediately.
+          <strong className="text-foreground">What we store on link:</strong> for Telegram, your
+          Telegram user id, username, chat id, and the TaskCalendar organisation you selected. For
+          WhatsApp, your phone number (E.164 format) and the selected organisation. Both
+          integrations are stored against your account record and removable in one click from
+          Settings.
+        </p>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          <strong className="text-foreground">What happens to message text:</strong> each inbound
+          message is forwarded to OpenAI (see &quot;AI features&quot; below) for intent parsing,
+          then matched to a confirm-before-write action you tap. We do not store message text
+          beyond a short pending-action buffer (~10 minutes) used to wait for your confirmation;
+          conversation-state for missing-field prompts expires in 5 minutes. Unlinking the bot
+          from Settings deletes the integration row immediately and stops all message processing
+          for that chat.
+        </p>
+        <p className="text-muted-foreground mb-3 leading-relaxed">
+          <strong className="text-foreground">WhatsApp specifics:</strong> messages are routed via
+          Meta&apos;s WhatsApp Cloud API. Meta&apos;s own{' '}
+          <a
+            href="https://www.whatsapp.com/legal/business-policy"
+            className="text-primary underline underline-offset-2"
+            target="_blank" rel="noopener noreferrer"
+          >
+            WhatsApp Business Messaging Policy
+          </a>{' '}
+          and{' '}
+          <a
+            href="https://www.facebook.com/policy.php"
+            className="text-primary underline underline-offset-2"
+            target="_blank" rel="noopener noreferrer"
+          >
+            Meta Privacy Policy
+          </a>{' '}
+          also apply to message delivery on that channel. We verify the HMAC signature of every
+          inbound webhook with our app secret so only Meta can deliver events to our endpoint.
         </p>
 
         <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
