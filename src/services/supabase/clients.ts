@@ -13,6 +13,7 @@ export type ClientNoteKind = "note" | "call" | "meeting" | "email" | "task";
 export interface Client {
   clientId: string;
   organizationId: string;
+  workspaceId: string;
   name: string;
   legalName?: string | null;
   industry?: string | null;
@@ -95,6 +96,7 @@ export interface ClientAttachment {
 
 export interface CreateClientInput {
   name: string;
+  workspaceId?: string;
   legalName?: string | null;
   industry?: string | null;
   type?: ClientType;
@@ -243,6 +245,7 @@ const validateClientInput = (input: CreateClientInput) => {
 const mapClient = (row: Record<string, unknown>): Client => ({
   clientId: row.client_id as string,
   organizationId: row.organization_id as string,
+  workspaceId: (row.workspace_id as string) ?? "",
   name: row.name as string,
   legalName: (row.legal_name as string) ?? null,
   industry: (row.industry as string) ?? null,
@@ -387,6 +390,7 @@ export const createClient = async (
     const client: Client = {
       clientId: crypto.randomUUID(),
       organizationId,
+      workspaceId: input.workspaceId ?? "local-default",
       name: sanitizeText(input.name)!,
       legalName: sanitizeText(input.legalName ?? null),
       industry: sanitizeText(input.industry ?? null),
@@ -423,8 +427,14 @@ export const createClient = async (
     return client;
   }
 
+  if (!input.workspaceId) {
+    throw new Error(
+      "Cannot create a client without a workspace. Pick a workspace in the sidebar first.",
+    );
+  }
   const row = {
     organization_id: organizationId,
+    workspace_id: input.workspaceId,
     name: sanitizeText(input.name)!,
     legal_name: sanitizeText(input.legalName ?? null),
     industry: sanitizeText(input.industry ?? null),
@@ -520,6 +530,7 @@ export const updateClient = async (
     const assign = <K extends keyof Client>(k: K, v: Client[K] | undefined) => {
       if (v !== undefined) merged[k] = v as Client[K];
     };
+    assign("workspaceId", input.workspaceId);
     assign("name", input.name ? sanitizeText(input.name) ?? all[idx].name : undefined);
     assign("legalName", input.legalName !== undefined ? sanitizeText(input.legalName) : undefined);
     assign("industry", input.industry !== undefined ? sanitizeText(input.industry) : undefined);
@@ -551,6 +562,7 @@ export const updateClient = async (
   }
 
   const update: Record<string, unknown> = {};
+  if (input.workspaceId !== undefined) update.workspace_id = input.workspaceId;
   if (input.name !== undefined) update.name = sanitizeText(input.name);
   if (input.legalName !== undefined) update.legal_name = sanitizeText(input.legalName);
   if (input.industry !== undefined) update.industry = sanitizeText(input.industry);

@@ -89,7 +89,9 @@ const StatusBadge: React.FC<{ status: ClientStatus }> = ({ status }) => (
 export const Clients: React.FC = () => {
   const { user } = useAuth();
   const {
-    organizationId, clients, loading, create, update, remove, canCreate, canManage,
+    organizationId, clients, allClients, loading, create, update, remove,
+    canCreate, canManage,
+    selectedWorkspace, isAllWorkspaces,
   } = useClients();
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
   const { deals: allDeals, remove: removeDeal, update: updateDeal } = useDeals();
@@ -315,9 +317,16 @@ export const Clients: React.FC = () => {
             <div>
               <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
                 <Building2 className="w-6 h-6 text-primary" /> Clients
+                <Badge variant="outline" className="ml-2 text-xs font-medium">
+                  {isAllWorkspaces
+                    ? 'All workspaces'
+                    : selectedWorkspace?.name ?? 'Workspace'}
+                </Badge>
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
-                Your CRM accounts — companies you sell to, work with, or have on the radar.
+                {isAllWorkspaces
+                  ? 'Accounts across every workspace in this organization.'
+                  : `Accounts that live in the "${selectedWorkspace?.name ?? 'current'}" workspace. Switch workspace in the sidebar to see a different list.`}
                 {canCreate && ' Add clients, import leads, and track follow-ups from one place.'}
               </p>
             </div>
@@ -769,6 +778,11 @@ export const Clients: React.FC = () => {
                 clients={clients}
                 displayCurrency={effectivePipelineCurrency}
                 pipelineId={selectedPipelineId || undefined}
+                restrictToClientIds={
+                  isAllWorkspaces
+                    ? null
+                    : new Set(clients.map((c) => c.clientId))
+                }
                 stages={
                   selectedPipelineId
                     ? stagesByPipeline[selectedPipelineId] ?? []
@@ -851,8 +865,11 @@ export const Clients: React.FC = () => {
       {/* Deal detail drawer — HubSpot-style 3-column view */}
       {(() => {
         const selectedDeal = allDeals.find((d) => d.dealId === selectedDealId) ?? null;
+        // Look up the linked client against the org-wide list so the drawer
+        // still works if the user happens to flip workspaces while the deal
+        // is open from a different workspace.
         const linkedClient = selectedDeal?.clientId
-          ? clients.find((c) => c.clientId === selectedDeal.clientId) ?? null
+          ? allClients.find((c) => c.clientId === selectedDeal.clientId) ?? null
           : null;
         if (!selectedDeal) return null;
         const stagesForDeal = stagesByPipeline[selectedDeal.pipelineId] ?? [];

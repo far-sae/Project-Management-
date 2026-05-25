@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useOrganization } from "@/context/OrganizationContext";
+import { useSelectedWorkspace } from "@/hooks/useSelectedWorkspace";
 import {
   Client,
   CreateClientInput,
@@ -33,28 +34,63 @@ export const useClients = () => {
     user?.userId,
   );
 
-  const [clients, setClients] = useState<Client[]>([]);
+  const {
+    selectedId: selectedWorkspaceId,
+    selected: selectedWorkspace,
+    workspaces,
+    DEFAULT_WORKSPACE_ID,
+    isAll,
+    isUnassigned,
+  } = useSelectedWorkspace();
+
+  const [allClients, setAllClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!orgId) {
-      setClients([]);
+      setAllClients([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     return subscribeToClients(orgId, (next) => {
-      setClients(next);
+      setAllClients(next);
       setLoading(false);
     });
   }, [orgId]);
 
+  // Clients are workspace-scoped: each workspace gets its own list. The
+  // sidebar's "All workspaces" view still aggregates everything so users can
+  // search across the org. "Unassigned" is a no-op for clients (every row has
+  // a workspace post-092) and shows an empty list.
+  const clients = useMemo(() => {
+    if (isAll) return allClients;
+    if (isUnassigned) return [];
+    if (!selectedWorkspaceId) return allClients;
+    return allClients.filter((c) => c.workspaceId === selectedWorkspaceId);
+  }, [allClients, selectedWorkspaceId, isAll, isUnassigned]);
+
+  // What workspace should a newly created client land in? Prefer the sidebar
+  // selection; fall back to the org's default workspace if the sidebar is
+  // showing "All" so create from any view still works.
+  const activeWorkspaceId = useMemo(() => {
+    if (!isAll && !isUnassigned && selectedWorkspaceId) return selectedWorkspaceId;
+    if (DEFAULT_WORKSPACE_ID && DEFAULT_WORKSPACE_ID !== "__default__") {
+      return DEFAULT_WORKSPACE_ID;
+    }
+    return workspaces[0]?.workspaceId ?? null;
+  }, [isAll, isUnassigned, selectedWorkspaceId, DEFAULT_WORKSPACE_ID, workspaces]);
+
   const create = useCallback(
     async (input: CreateClientInput) => {
       if (!orgId || !user) throw new Error("Not signed in");
-      return createClientSvc(orgId, user.userId, user.displayName, input);
+      const workspaceId = input.workspaceId ?? activeWorkspaceId ?? undefined;
+      return createClientSvc(orgId, user.userId, user.displayName, {
+        ...input,
+        workspaceId,
+      });
     },
-    [orgId, user],
+    [orgId, user, activeWorkspaceId],
   );
 
   const update = useCallback(
@@ -71,7 +107,7 @@ export const useClients = () => {
       const result = await deleteClientSvc(orgId, clientId);
       // Drop locally so the row disappears immediately even if the realtime
       // subscription is delayed.
-      setClients((prev) => prev.filter((c) => c.clientId !== clientId));
+      setAllClients((prev) => prev.filter((c) => c.clientId !== clientId));
       return result;
     },
     [orgId],
@@ -79,6 +115,11 @@ export const useClients = () => {
 
   return {
     organizationId: orgId,
+    workspaceId: activeWorkspaceId,
+    selectedWorkspace,
+    isAllWorkspaces: isAll,
+    isUnassignedWorkspace: isUnassigned,
+    allClients,
     clients,
     loading,
     create,

@@ -51,6 +51,10 @@ interface Props {
   clients: Client[];
   /** When set, the kanban only shows deals for this client. */
   scopedClientId?: string | null;
+  /** When set, the kanban only shows deals whose linked client is in this
+   *  set. Used by the workspace-scoped Pipeline tab to hide deals belonging
+   *  to clients in other workspaces. */
+  restrictToClientIds?: Set<string> | null;
   onSelectDeal?: (deal: Deal) => void;
   /** Show every amount converted into this currency. When omitted, each
    *  deal is shown in the currency it was entered in. */
@@ -309,6 +313,7 @@ const StageColumn: React.FC<{
 export const DealsKanban: React.FC<Props> = ({
   clients,
   scopedClientId,
+  restrictToClientIds,
   onSelectDeal,
   displayCurrency,
   pipelineId,
@@ -366,12 +371,13 @@ export const DealsKanban: React.FC<Props> = ({
     for (const list of dealsByStage.values()) {
       for (const d of list) {
         if (scopedClientId && d.clientId !== scopedClientId) continue;
+        if (restrictToClientIds && d.clientId && !restrictToClientIds.has(d.clientId)) continue;
         const key = d.stage;
         if (map.has(key)) map.get(key)!.push(d);
       }
     }
     return map;
-  }, [dealsByStage, effectiveStages, scopedClientId]);
+  }, [dealsByStage, effectiveStages, scopedClientId, restrictToClientIds]);
 
   const handleDragStart = (e: DragStartEvent) => {
     const deal = e.active?.data?.current?.deal as Deal | undefined;
