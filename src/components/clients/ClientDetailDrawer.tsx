@@ -34,6 +34,7 @@ import {
 } from '@/services/supabase/clients';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { ActivityTimeline } from './ActivityTimeline';
+import { SendEmailDialog } from './SendEmailDialog';
 import { toast } from 'sonner';
 
 type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files';
@@ -68,6 +69,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
 }) => {
   const { user } = useAuth();
   const [tab, setTab] = useState<MainTab>('activity');
+  const [openEmail, setOpenEmail] = useState(false);
 
   const [contacts, setContacts] = useState<ClientContact[]>([]);
   const [notes, setNotes] = useState<ClientNote[]>([]);
@@ -214,7 +216,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
             {/* Quick action row — HubSpot's row of round icon buttons */}
             <div className="flex items-center justify-center gap-2 pt-1">
               <QuickAction icon={MessageSquare} label="Note" onClick={quickAction('notes')} />
-              <QuickAction icon={Mailbox} label="Email" onClick={quickAction('emails')} href={client.email ? `mailto:${client.email}` : undefined} />
+              <QuickAction icon={Mailbox} label="Email" onClick={() => setOpenEmail(true)} />
               <QuickAction icon={PhoneCall} label="Call" onClick={quickAction('calls')} href={client.phone ? `tel:${client.phone}` : undefined} />
               <QuickAction icon={FileText} label="Task" onClick={quickAction('tasks')} />
               <QuickAction icon={CalendarIcon} label="Meeting" onClick={quickAction('meetings')} />
@@ -317,6 +319,14 @@ export const ClientDetailDrawer: React.FC<Props> = ({
           </aside>
         </div>
       </aside>
+
+      <SendEmailDialog
+        open={openEmail}
+        onOpenChange={setOpenEmail}
+        client={client}
+        organizationId={organizationId}
+        onLogged={reloadNotes}
+      />
     </div>
   );
 };

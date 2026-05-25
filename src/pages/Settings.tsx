@@ -42,6 +42,7 @@ import {
   Zap,
   Sparkles,
   MailPlus,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
@@ -53,6 +54,7 @@ import { LeadFormsSettingsTab } from "@/components/settings/LeadFormsSettingsTab
 import { AutomationsSettingsTab } from "@/components/settings/AutomationsSettingsTab";
 import { SequencesSettingsTab } from "@/components/settings/SequencesSettingsTab";
 import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
+import { EmailTemplatesSettingsTab } from "@/components/settings/EmailTemplatesSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
 import { useOrganization } from "@/context/OrganizationContext";
 import { Building2 } from "lucide-react";
@@ -527,6 +529,7 @@ export const Settings: React.FC = () => {
                   <SettingsTab value="pipelines" icon={GitBranch}>Pipelines</SettingsTab>
                   <SettingsTab value="lead-scoring" icon={Target}>Lead scoring</SettingsTab>
                   <SettingsTab value="lead-forms" icon={ClipboardList}>Lead forms</SettingsTab>
+                  <SettingsTab value="email-templates" icon={Mail}>Email templates</SettingsTab>
                 </>
               )}
 
@@ -584,6 +587,15 @@ export const Settings: React.FC = () => {
               description="Create simple public forms that collect new leads and send them into your CRM."
             />
             <LeadFormsSettingsTab />
+          </TabsContent>
+
+          {/* EMAIL TEMPLATES TAB */}
+          <TabsContent value="email-templates">
+            <SettingsHelp
+              title="Email templates"
+              description="Save reusable subjects and bodies your reps can pick from when emailing a client. Merge tokens like {{client.name}} get filled in automatically."
+            />
+            <EmailTemplatesSettingsTab />
           </TabsContent>
 
           {/* AUTOMATIONS TAB */}
