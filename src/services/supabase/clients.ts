@@ -1586,6 +1586,67 @@ const parseCsvRow = (
   return { ok: true, input };
 };
 
+/**
+ * Build a CreateContactInput from a parsed CSV row. We prefer explicit
+ * `primary_contact_*` columns when present, fall back to a raw
+ * `first_name`/`last_name` pair (common in Apollo-style exports), and finally
+ * use the row's own email/phone so a client imported with just an email still
+ * gets a useful primary contact instead of an empty Contacts pane.
+ */
+const splitFullName = (full: string): { first: string; last: string } => {
+  const parts = full.trim().split(/\s+/);
+  if (parts.length === 0) return { first: "", last: "" };
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+};
+
+const buildImportedContactInput = (
+  input: CreateClientInput,
+  rawRow: Record<string, string>,
+): CreateContactInput | null => {
+  const custom = (input.customFields ?? {}) as Record<string, unknown>;
+  const cf = (k: string): string | null => {
+    const v = custom[k];
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
+  const rf = (k: string): string | null => {
+    const v = rawRow[k];
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
+
+  // First / last: try explicit columns, then split a single primary_contact_name.
+  let first: string | null = rf("first_name") ?? rf("firstname");
+  let last: string | null = rf("last_name") ?? rf("lastname");
+  if (!first && !last) {
+    const full = cf("primary_contact_name");
+    if (full) {
+      const split = splitFullName(full);
+      first = split.first || null;
+      last = split.last || null;
+    }
+  }
+
+  const email =
+    cf("primary_contact_email") ??
+    sanitizeText(input.email ?? null);
+  const phone =
+    cf("primary_contact_phone") ??
+    sanitizeText(input.phone ?? null);
+  const title = cf("primary_contact_title");
+
+  const hasIdentity = Boolean(first || last || email);
+  if (!hasIdentity) return null;
+
+  return {
+    firstName: first,
+    lastName: last,
+    email,
+    phone,
+    title,
+    isPrimary: true,
+  };
+};
+
 export interface ImportResult {
   imported: Client[];
   errors: CsvRowError[];
@@ -1780,6 +1841,46 @@ export const importClientsFromCsv = async (
         workspaceId ? { ...parsed.input, workspaceId } : parsed.input,
       );
       imported.push(client);
+
+      // Auto-populate the right-hand "Contacts" panel so freshly imported
+      // clients don't open empty. We pull from the CSV's primary_contact_*
+      // columns first, fall back to first_name/last_name + the row's main
+      // email/phone, and only create the row if there is enough identity to
+      // satisfy createContact's name-or-email guard.
+      try {
+        const contact = buildImportedContactInput(parsed.input, normalised);
+        if (contact) {
+          await createContact(organizationId, client.clientId, userId, contact);
+        }
+      } catch (contactErr) {
+        // Don't fail the row just because the auto-contact insert tripped.
+        logger.warn(
+          `Imported client "${client.name}" but couldn't auto-create contact:`,
+          contactErr,
+        );
+      }
+
+      // Drop a single-line activity event on the client timeline so the
+      // Activity tab has something to show right away.
+      try {
+        await createNote(
+          organizationId,
+          client.clientId,
+          userId,
+          userName,
+          {
+            kind: "note",
+            subject: "Imported from CSV",
+            body: `Imported via the CSV importer on ${new Date().toISOString().slice(0, 10)}.`,
+            occurredAt: new Date(),
+          },
+        );
+      } catch (noteErr) {
+        logger.warn(
+          `Imported client "${client.name}" but couldn't log timeline note:`,
+          noteErr,
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       errors.push({ row: i + 2, message });
@@ -1812,6 +1913,35 @@ export const importClientsOverrideRow = async (
   };
   const created = await createClient(organizationId, userId, userName, payload);
   await recordOverride(organizationId, created.clientId, matchedExistingId, "CSV override");
+
+  // Mirror the auto-contact + auto-note behaviour of the bulk importer so
+  // override rows aren't second-class citizens (empty Contacts pane and a
+  // bare timeline).
+  try {
+    const contact = buildImportedContactInput(payload, {});
+    if (contact) {
+      await createContact(organizationId, created.clientId, userId, contact);
+    }
+  } catch (contactErr) {
+    logger.warn(
+      `Override-created client "${created.name}" couldn't auto-create contact:`,
+      contactErr,
+    );
+  }
+  try {
+    await createNote(organizationId, created.clientId, userId, userName, {
+      kind: "note",
+      subject: "Imported from CSV (override)",
+      body: `Created on ${new Date().toISOString().slice(0, 10)} as a deliberate duplicate of an existing client.`,
+      occurredAt: new Date(),
+    });
+  } catch (noteErr) {
+    logger.warn(
+      `Override-created client "${created.name}" couldn't log timeline note:`,
+      noteErr,
+    );
+  }
+
   return created;
 };
 
