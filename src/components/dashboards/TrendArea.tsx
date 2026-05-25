@@ -59,7 +59,7 @@ export const TrendArea: React.FC<Props> = ({
           axisLine={false}
           tickLine={false}
           width={36}
-          tickFormatter={yFormatter}
+          tickFormatter={(v: number) => (yFormatter ? yFormatter(v) : v.toLocaleString())}
         />
         <Tooltip
           contentStyle={{ borderRadius: 8, fontSize: 12, padding: '6px 10px' }}

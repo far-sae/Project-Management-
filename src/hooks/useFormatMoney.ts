@@ -20,7 +20,12 @@ export const useFormatMoney = () => {
   const orgCurrency = useOrgCurrency();
   return useCallback(
     (amount: number, rowCurrency?: string | null): string => {
-      const trimmed = (rowCurrency ?? '').trim().toUpperCase();
+      // Defensive: callers occasionally bind this directly to library
+      // formatters (e.g. Recharts tickFormatter) that pass a numeric tick
+      // index as the second arg. Treat anything non-string as "no
+      // currency override" so .trim() doesn't crash the render.
+      const raw = typeof rowCurrency === 'string' ? rowCurrency : '';
+      const trimmed = raw.trim().toUpperCase();
       const useCurrency = trimmed && trimmed !== 'USD' ? trimmed : orgCurrency;
       return formatMoneyRaw(amount, useCurrency);
     },
@@ -37,7 +42,8 @@ export const useDisplayCurrencySymbol = () => {
   const orgCurrency = useOrgCurrency();
   return useCallback(
     (rowCurrency?: string | null): string => {
-      const trimmed = (rowCurrency ?? '').trim().toUpperCase();
+      const raw = typeof rowCurrency === 'string' ? rowCurrency : '';
+      const trimmed = raw.trim().toUpperCase();
       const useCurrency = trimmed && trimmed !== 'USD' ? trimmed : orgCurrency;
       try {
         const parts = new Intl.NumberFormat(undefined, {

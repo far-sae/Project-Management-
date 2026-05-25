@@ -41,7 +41,7 @@ export const StackedBar: React.FC<Props> = ({ data, series, yFormatter }) => {
           axisLine={false}
           tickLine={false}
           width={32}
-          tickFormatter={yFormatter}
+          tickFormatter={(v: number) => (yFormatter ? yFormatter(v) : v.toLocaleString())}
         />
         <Tooltip
           cursor={{ fill: palette.light, opacity: 0.4 }}

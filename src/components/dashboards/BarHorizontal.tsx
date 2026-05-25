@@ -43,7 +43,9 @@ export const BarHorizontal: React.FC<Props> = ({
           tick={{ fontSize: 11, fill: palette.muted }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={valueFormatter}
+          // Wrap so Recharts' second arg (tick index) doesn't leak into
+          // single-arg formatters like useFormatMoney(amount, currency).
+          tickFormatter={(v: number) => (valueFormatter ? valueFormatter(v) : String(v))}
         />
         <YAxis
           type="category"
