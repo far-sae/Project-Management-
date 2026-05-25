@@ -22,6 +22,7 @@ import {
 import {
   Deal, DEAL_STAGES, formatDealMoney,
 } from '@/services/supabase/deals';
+import type { PipelineStage } from '@/services/supabase/pipelines';
 import { ActivityTimeline } from './ActivityTimeline';
 
 type DealTab = 'activity' | 'notes' | 'emails' | 'calls' | 'meetings' | 'tasks';
@@ -44,6 +45,10 @@ interface Props {
   onDelete: (deal: Deal) => void;
   /** Navigate to the linked client's full record. */
   onOpenClient?: (client: Client) => void;
+  /** Stages of the deal's pipeline, in position order. Used by the Path. */
+  pipelineStages?: PipelineStage[];
+  /** Called when the user taps a stage chip in the Path. */
+  onStageChange?: (deal: Deal, stage: PipelineStage) => Promise<void> | void;
 }
 
 const stageInfo = (stage: string) =>
@@ -51,6 +56,7 @@ const stageInfo = (stage: string) =>
 
 export const DealDetailDrawer: React.FC<Props> = ({
   deal, client, organizationId, canManage, onClose, onEdit, onDelete, onOpenClient,
+  pipelineStages, onStageChange,
 }) => {
   const { user } = useAuth();
   const [tab, setTab] = useState<DealTab>('activity');
@@ -121,6 +127,19 @@ export const DealDetailDrawer: React.FC<Props> = ({
             )}
           </div>
         </div>
+
+        {/* Path — Salesforce-style horizontal stage stepper. Renders only
+            when pipelineStages is provided. Each chevron is clickable in
+            admin mode; tapping advances/regresses the deal via the same
+            update path the kanban uses. */}
+        {pipelineStages && pipelineStages.length > 0 && (
+          <PathStepper
+            deal={deal}
+            stages={pipelineStages}
+            canManage={canManage}
+            onStageChange={onStageChange}
+          />
+        )}
 
         {/* 3-column body */}
         <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_320px]">
@@ -399,6 +418,91 @@ const QuickAction: React.FC<{
 };
 
 export default DealDetailDrawer;
+
+// ── Path stepper (Salesforce-style horizontal stage progression) ─────────
+
+const PathStepper: React.FC<{
+  deal: Deal;
+  stages: PipelineStage[];
+  canManage: boolean;
+  onStageChange?: (deal: Deal, stage: PipelineStage) => Promise<void> | void;
+}> = ({ deal, stages, canManage, onStageChange }) => {
+  const [busy, setBusy] = useState<string | null>(null);
+  const sorted = [...stages].sort((a, b) => a.position - b.position);
+  const currentIndex = sorted.findIndex((s) => s.stageId === deal.stageId);
+
+  const tap = async (s: PipelineStage) => {
+    if (!canManage || !onStageChange || s.stageId === deal.stageId) return;
+    setBusy(s.stageId);
+    try {
+      await onStageChange(deal, s);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="px-4 py-2 border-b border-border bg-card overflow-x-auto">
+      <div className="flex items-center gap-0.5 min-w-max">
+        {sorted.map((s, i) => {
+          const isCurrent = s.stageId === deal.stageId;
+          const isPast = currentIndex > -1 && i < currentIndex;
+          const isLast = i === sorted.length - 1;
+          const isFirst = i === 0;
+
+          // Color logic — past = accent, current = solid accent, future = muted.
+          let bg = '#f1f5f9';      // slate-100
+          let fg = '#64748b';      // slate-500
+          if (isCurrent) {
+            bg = s.color || '#f97316';
+            fg = '#ffffff';
+          } else if (isPast) {
+            bg = `${s.color || '#f97316'}33`;
+            fg = s.color || '#f97316';
+          }
+
+          return (
+            <button
+              key={s.stageId}
+              type="button"
+              disabled={!canManage || !onStageChange || isCurrent || busy !== null}
+              onClick={() => tap(s)}
+              title={isCurrent ? `${s.label} (current)` : canManage ? `Move to ${s.label}` : s.label}
+              className={`
+                relative h-9 px-4 text-xs font-semibold transition-colors
+                ${isFirst ? 'rounded-l-md' : ''}
+                ${isLast ? 'rounded-r-md' : ''}
+                ${!isLast ? 'pr-6' : ''}
+                ${!isFirst ? 'pl-6' : ''}
+                ${canManage && !isCurrent && onStageChange ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}
+                ${busy === s.stageId ? 'opacity-60' : ''}
+              `}
+              style={{
+                backgroundColor: bg,
+                color: fg,
+                clipPath: !isLast
+                  ? `polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, ${isFirst ? '0' : '12px'} 50%)`
+                  : isFirst
+                    ? undefined
+                    : `polygon(0 0, 100% 0, 100% 100%, 0 100%, 12px 50%)`,
+              }}
+            >
+              <span className="flex items-center gap-1.5">
+                {isCurrent && <span className="text-[10px]">●</span>}
+                {s.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {canManage && onStageChange && (
+        <div className="text-[10px] text-muted-foreground mt-1">
+          Tap a stage to move the deal there.
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── Per-deal note composer + feed ─────────────────────────────────────────
 

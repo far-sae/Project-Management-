@@ -90,7 +90,7 @@ export const Clients: React.FC = () => {
     organizationId, clients, loading, create, update, remove, canCreate, canManage,
   } = useClients();
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
-  const { deals: allDeals, remove: removeDeal } = useDeals();
+  const { deals: allDeals, remove: removeDeal, update: updateDeal } = useDeals();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   useEffect(() => {
@@ -829,17 +829,24 @@ export const Clients: React.FC = () => {
           ? clients.find((c) => c.clientId === selectedDeal.clientId) ?? null
           : null;
         if (!selectedDeal) return null;
+        const stagesForDeal = stagesByPipeline[selectedDeal.pipelineId] ?? [];
         return (
           <DealDetailDrawer
             deal={selectedDeal}
             client={linkedClient}
             organizationId={organizationId}
             canManage={canManage}
+            pipelineStages={stagesForDeal}
+            onStageChange={async (d, stage) => {
+              try {
+                await updateDeal(d.dealId, { stageId: stage.stageId });
+                toast.success(`Moved to ${stage.label}`);
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Stage move failed');
+              }
+            }}
             onClose={() => setSelectedDealId(null)}
             onEdit={() => {
-              // Editing lives on the deal-card menu (Edit → opens NewDealDialog
-              // inside DealsKanban). Closing the drawer puts the user back on
-              // the pipeline board where they can hit the ⋮ menu.
               setSelectedDealId(null);
               toast.info('Use the ⋮ menu on the deal card to edit.');
             }}
