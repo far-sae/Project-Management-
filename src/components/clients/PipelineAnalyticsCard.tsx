@@ -45,9 +45,19 @@ export const PipelineAnalyticsCard: React.FC<{
   currency?: string;
   /** When set, restricts the analytics to a single pipeline. */
   pipelineId?: string;
-}> = ({ currency, pipelineId }) => {
-  const { deals } = useDeals(pipelineId);
+  /** When set, restricts analytics to deals linked to these clients
+   *  (i.e. the workspace's clients). */
+  restrictToClientIds?: Set<string> | null;
+}> = ({ currency, pipelineId, restrictToClientIds }) => {
+  const { deals: allDeals } = useDeals(pipelineId);
   const { rates } = useFxRates();
+
+  const deals = useMemo(() => {
+    if (!restrictToClientIds) return allDeals;
+    return allDeals.filter(
+      (d) => !d.clientId || restrictToClientIds.has(d.clientId),
+    );
+  }, [allDeals, restrictToClientIds]);
 
   // Pick the most-used currency in the pipeline if not overridden, so totals
   // make sense for orgs that primarily price in EUR/INR/etc.

@@ -174,6 +174,14 @@ export const Clients: React.FC = () => {
     [clients, selectedClientIds],
   );
 
+  // Shared allow-list for every workspace-scoped view (kanban, analytics,
+  // tasks, forecast). When the sidebar shows "All workspaces" we pass null
+  // so the downstream components skip filtering entirely.
+  const workspaceClientIds = useMemo(
+    () => (isAllWorkspaces ? null : new Set(clients.map((c) => c.clientId))),
+    [isAllWorkspaces, clients],
+  );
+
   useEffect(() => {
     const handler = (event: Event) => {
       const clientId = (event as CustomEvent<string>).detail;
@@ -630,16 +638,13 @@ export const Clients: React.FC = () => {
               <PipelineAnalyticsCard
                 currency={effectivePipelineCurrency}
                 pipelineId={selectedPipelineId || undefined}
+                restrictToClientIds={workspaceClientIds}
               />
               <DealsKanban
                 clients={clients}
                 displayCurrency={effectivePipelineCurrency}
                 pipelineId={selectedPipelineId || undefined}
-                restrictToClientIds={
-                  isAllWorkspaces
-                    ? null
-                    : new Set(clients.map((c) => c.clientId))
-                }
+                restrictToClientIds={workspaceClientIds}
                 stages={
                   selectedPipelineId
                     ? stagesByPipeline[selectedPipelineId] ?? []
@@ -656,7 +661,10 @@ export const Clients: React.FC = () => {
                   A simple follow-up list for calls, emails, meetings, and client reminders.
                 </p>
               </div>
-              <ClientTasksList clients={clients} />
+              <ClientTasksList
+                clients={clients}
+                restrictToClientIds={workspaceClientIds}
+              />
             </TabsContent>
 
             <TabsContent value="forecast" className="mt-4 space-y-4">
@@ -666,7 +674,10 @@ export const Clients: React.FC = () => {
                   Estimate likely revenue from open deals, grouped into easy sales projections.
                 </p>
               </div>
-              <ForecastTab displayCurrency={effectivePipelineCurrency} />
+              <ForecastTab
+                displayCurrency={effectivePipelineCurrency}
+                restrictToClientIds={workspaceClientIds}
+              />
             </TabsContent>
           </Tabs>
         </div>

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useClientTasks } from '@/hooks/useClientTasks';
 import {
-  ClientTask, ClientTaskType, TASK_TYPE_LABEL,
+  ClientTask, ClientTaskType, TASK_TYPE_LABEL, bucketFor as bucketForTask,
 } from '@/services/supabase/clientTasks';
 import { Client } from '@/services/supabase/clients';
 import { toast } from 'sonner';
@@ -50,6 +50,9 @@ interface Props {
   clients: Client[];
   /** When set, only this client's tasks render (for use inside ClientDetailDrawer). */
   scopedClientId?: string | null;
+  /** When set, only tasks linked to these clients render (used by the
+   *  workspace-scoped Tasks tab). Tasks with no clientId stay visible. */
+  restrictToClientIds?: Set<string> | null;
   /** When true, only "my tasks" filter is shown. */
   defaultMineOnly?: boolean;
   /** Compact list (used inside drawer). */
@@ -59,16 +62,50 @@ interface Props {
 export const ClientTasksList: React.FC<Props> = ({
   clients,
   scopedClientId,
+  restrictToClientIds,
   defaultMineOnly,
   compact,
 }) => {
   const [mineOnly, setMineOnly] = useState(!!defaultMineOnly);
   const [showNew, setShowNew] = useState(false);
   const [editingTask, setEditingTask] = useState<ClientTask | null>(null);
-  const { tasks, allTasks, buckets, loading, update, toggleDone, remove } = useClientTasks({
+  const {
+    tasks: tasksFromHook,
+    allTasks: allTasksFromHook,
+    loading, update, toggleDone, remove,
+  } = useClientTasks({
     clientId: scopedClientId ?? undefined,
     mineOnly,
   });
+
+  const tasks = useMemo(() => {
+    if (!restrictToClientIds) return tasksFromHook;
+    return tasksFromHook.filter(
+      (t) => !t.clientId || restrictToClientIds.has(t.clientId),
+    );
+  }, [tasksFromHook, restrictToClientIds]);
+
+  const allTasks = useMemo(() => {
+    if (!restrictToClientIds) return allTasksFromHook;
+    return allTasksFromHook.filter(
+      (t) => !t.clientId || restrictToClientIds.has(t.clientId),
+    );
+  }, [allTasksFromHook, restrictToClientIds]);
+
+  const buckets = useMemo(() => {
+    const out: Record<'overdue' | 'today' | 'thisweek' | 'later' | 'noDate', ClientTask[]> = {
+      overdue: [], today: [], thisweek: [], later: [], noDate: [],
+    };
+    const now = new Date();
+    for (const t of tasks) {
+      if (t.status !== 'pending') continue;
+      // Reuse the same bucketing the hook uses so the UI looks identical.
+      // We don't import bucketFor at the top — pull it in lazily here.
+      const bucket = bucketForTask(t, now);
+      out[bucket].push(t);
+    }
+    return out;
+  }, [tasks]);
 
   const doneList = useMemo(
     () => tasks.filter((t) => t.status === 'done').slice(0, 20),

@@ -7,6 +7,8 @@ export interface ForecastRow {
   pipelineId: string;
   ownerId: string | null;
   ownerName: string | null;
+  clientId: string | null;
+  workspaceId: string | null;
   currency: string;
   monthBucket: string;            // 'YYYY-MM'
   value: number;
@@ -21,6 +23,8 @@ const mapForecastRow = (r: Record<string, unknown>): ForecastRow => ({
   pipelineId: r.pipeline_id as string,
   ownerId: (r.owner_id as string) ?? null,
   ownerName: (r.owner_name as string) ?? null,
+  clientId: (r.client_id as string) ?? null,
+  workspaceId: (r.workspace_id as string) ?? null,
   currency: (r.currency as string)?.toUpperCase() ?? "USD",
   monthBucket: r.month_bucket as string,
   value: Number(r.value ?? 0),

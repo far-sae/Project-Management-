@@ -12,9 +12,12 @@ import {
 
 interface Props {
   displayCurrency: string;
+  /** When set, restricts the forecast to deals linked to these clients
+   *  (i.e. the currently selected workspace's clients). */
+  restrictToClientIds?: Set<string> | null;
 }
 
-export const ForecastTab: React.FC<Props> = ({ displayCurrency }) => {
+export const ForecastTab: React.FC<Props> = ({ displayCurrency, restrictToClientIds }) => {
   const { pipelines } = usePipelines();
   const [pipelineId, setPipelineId] = useState<string>("all");
   const [ownerId, setOwnerId] = useState<string>("all");
@@ -25,6 +28,7 @@ export const ForecastTab: React.FC<Props> = ({ displayCurrency }) => {
     ownerId: ownerId === "all" ? null : ownerId,
     period,
     displayCurrency,
+    restrictToClientIds,
   });
 
   const chartData = months.map((m) => ({

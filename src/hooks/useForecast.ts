@@ -14,10 +14,13 @@ export const useForecast = (params: {
   ownerId: string | null;
   period: ForecastPeriod;
   displayCurrency: string;
+  /** When set, only deals whose linked client is in this set are counted.
+   *  Used by the workspace-scoped Forecast tab. */
+  restrictToClientIds?: Set<string> | null;
 }) => {
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
-  const [rows, setRows] = useState<ForecastRow[]>([]);
+  const [allRows, setAllRows] = useState<ForecastRow[]>([]);
   const [loading, setLoading] = useState(true);
   const { rates } = useFxRates();
 
@@ -25,9 +28,19 @@ export const useForecast = (params: {
     if (!orgId) return;
     setLoading(true);
     getForecastRows(orgId, params.pipelineId, params.ownerId)
-      .then((next) => setRows(next))
+      .then((next) => setAllRows(next))
       .finally(() => setLoading(false));
   }, [orgId, params.pipelineId, params.ownerId]);
+
+  // Workspace scoping: rows for deals linked to a client outside the active
+  // workspace are dropped before any aggregation runs. Deals with no
+  // client_id stay visible — they are unscoped by definition.
+  const rows = useMemo(() => {
+    if (!params.restrictToClientIds) return allRows;
+    return allRows.filter(
+      (r) => !r.clientId || params.restrictToClientIds!.has(r.clientId),
+    );
+  }, [allRows, params.restrictToClientIds]);
 
   const months = useMemo(() => buildMonthRange(params.period), [params.period]);
 
