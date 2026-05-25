@@ -5,13 +5,19 @@ import {
   Calendar as CalendarIcon, FileText, Briefcase, Building2, ExternalLink,
   TrendingUp, Target, User, Globe, MapPin,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/AuthContext';
 import {
   Client, ClientNote, ClientNoteKind,
-  getClientNotes,
+  createNote, deleteNote, getDealNotes,
 } from '@/services/supabase/clients';
 import {
   Deal, DEAL_STAGES, formatDealMoney,
@@ -46,29 +52,28 @@ const stageInfo = (stage: string) =>
 export const DealDetailDrawer: React.FC<Props> = ({
   deal, client, organizationId, canManage, onClose, onEdit, onDelete, onOpenClient,
 }) => {
-  const { user: _user } = useAuth();
+  const { user } = useAuth();
   const [tab, setTab] = useState<DealTab>('activity');
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Notes for a deal are stored against its linked client (the client_notes
-  // table doesn't have a deal_id column today). We filter the client's notes
-  // by anything that mentions the deal id in the subject for now; long-term
-  // we'd add a deal_id column. For v1 this just surfaces the linked client's
-  // recent activity so the right rail isn't empty.
+  // Notes are scoped to this specific deal via client_notes.deal_id
+  // (migration 089). The composer below writes new notes with both
+  // client_id (from the linked client) and deal_id so they show up here
+  // AND on the client's own timeline.
+  const reloadDealNotes = async () => {
+    if (!deal || !organizationId) return;
+    setNotes(await getDealNotes(organizationId, deal.dealId));
+  };
   useEffect(() => {
     if (!deal || !organizationId) return;
-    if (!client) {
-      setNotes([]);
-      return;
-    }
     setLoading(true);
     let cancelled = false;
-    getClientNotes(organizationId, client.clientId)
+    getDealNotes(organizationId, deal.dealId)
       .then((n) => { if (!cancelled) setNotes(n); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [deal?.dealId, client?.clientId, organizationId]);
+  }, [deal?.dealId, organizationId]);
 
   if (!deal || !organizationId) return null;
 
@@ -264,47 +269,17 @@ export const DealDetailDrawer: React.FC<Props> = ({
               )}
 
               {tab !== 'activity' && (
-                <div className="space-y-3">
-                  {(() => {
-                    const wantedKind = KIND_FOR_TAB[tab];
-                    const filtered = wantedKind ? notes.filter((n) => n.kind === wantedKind) : notes;
-                    if (filtered.length === 0) {
-                      return (
-                        <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-                          {client
-                            ? `No ${tab} logged for ${client.name} yet. Open the client record to log activity — it'll show up here automatically.`
-                            : 'Link this deal to a client to log activity.'}
-                          {client && onOpenClient && (
-                            <div className="mt-2">
-                              <Button variant="outline" size="sm" onClick={() => onOpenClient(client)}>
-                                Open {client.name} <ExternalLink className="w-3 h-3 ml-1" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-                    return (
-                      <ul className="space-y-2">
-                        {filtered.map((n) => (
-                          <li key={n.noteId} className="rounded-md border p-3">
-                            <div className="text-xs text-muted-foreground mb-1">
-                              {n.authorName ?? 'Someone'} · {format(n.occurredAt, 'PPp')}
-                            </div>
-                            {n.subject && (
-                              <div className="text-sm font-medium mb-0.5">{n.subject}</div>
-                            )}
-                            {n.body && (
-                              <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                                {n.body}
-                              </div>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    );
-                  })()}
-                </div>
+                <DealNoteSection
+                  deal={deal}
+                  client={client}
+                  organizationId={organizationId}
+                  userId={user?.userId}
+                  userName={user?.displayName}
+                  canManage={canManage}
+                  notes={notes}
+                  kindFilter={KIND_FOR_TAB[tab]}
+                  onChanged={reloadDealNotes}
+                />
               )}
             </div>
           </section>
@@ -424,3 +399,155 @@ const QuickAction: React.FC<{
 };
 
 export default DealDetailDrawer;
+
+// ── Per-deal note composer + feed ─────────────────────────────────────────
+
+const DealNoteSection: React.FC<{
+  deal: Deal;
+  client: Client | null;
+  organizationId: string;
+  userId: string | undefined;
+  userName: string | undefined;
+  canManage: boolean;
+  notes: ClientNote[];
+  kindFilter?: ClientNoteKind;
+  onChanged: () => Promise<void> | void;
+}> = ({ deal, client, organizationId, userId, userName, canManage, notes, kindFilter, onChanged }) => {
+  const [kind, setKind] = useState<ClientNoteKind>(kindFilter ?? 'note');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (kindFilter) setKind(kindFilter);
+  }, [kindFilter]);
+
+  const visible = kindFilter ? notes.filter((n) => n.kind === kindFilter) : notes;
+  const canCompose = !!userId && !!client; // need a linked client to write client_id
+
+  const submit = async () => {
+    if (!userId || !userName || !client) return;
+    if (!subject.trim() && !body.trim()) {
+      toast.error('Write something to log');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createNote(organizationId, client.clientId, userId, userName, {
+        kind,
+        subject: subject.trim() || null,
+        body: body.trim() || null,
+        occurredAt: new Date(),
+        dealId: deal.dealId,
+      });
+      setSubject('');
+      setBody('');
+      if (!kindFilter) setKind('note');
+      await onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to log');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const remove = async (n: ClientNote) => {
+    if (!confirm('Delete this entry?')) return;
+    try {
+      await deleteNote(organizationId, n.noteId);
+      await onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    }
+  };
+
+  const canDelete = (n: ClientNote) => canManage || n.authorId === userId;
+
+  return (
+    <div className="space-y-3">
+      {canCompose && (
+        <div className="border rounded-md p-3 space-y-2 bg-secondary/30">
+          <div className="flex gap-2">
+            {!kindFilter && (
+              <Select value={kind} onValueChange={(v) => setKind(v as ClientNoteKind)}>
+                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="note">Note</SelectItem>
+                  <SelectItem value="call">Call</SelectItem>
+                  <SelectItem value="meeting">Meeting</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="task">Task</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <Input
+              placeholder="Subject (optional)" maxLength={200}
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </div>
+          <Textarea
+            placeholder="Details…" rows={3} maxLength={5000}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+          />
+          <div className="flex justify-end">
+            <Button size="sm" onClick={submit} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Log against this deal
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!canCompose && (
+        <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+          Link this deal to a client before logging activity.
+          {onChanged && (
+            <span className="ml-1">Edit the deal to set its client.</span>
+          )}
+        </div>
+      )}
+
+      {visible.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {kindFilter
+            ? `No ${kindFilter}s logged on this deal yet.`
+            : 'No notes logged on this deal yet.'}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {visible.map((n) => (
+            <li key={n.noteId} className="rounded-md border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-muted-foreground mb-1">
+                    {n.authorName ?? 'Someone'} · {format(n.occurredAt, 'PPp')}
+                  </div>
+                  {n.subject && (
+                    <div className="text-sm font-medium mb-0.5">{n.subject}</div>
+                  )}
+                  {n.body && (
+                    <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                      {n.body}
+                    </div>
+                  )}
+                </div>
+                {canDelete(n) && (
+                  <button
+                    type="button"
+                    onClick={() => remove(n)}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};

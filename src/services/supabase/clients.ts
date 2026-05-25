@@ -66,6 +66,8 @@ export interface ClientContact {
 export interface ClientNote {
   noteId: string;
   clientId: string;
+  /** When set, the note is scoped to a specific deal as well as the client. */
+  dealId?: string | null;
   organizationId: string;
   kind: ClientNoteKind;
   subject?: string | null;
@@ -139,6 +141,9 @@ export interface CreateNoteInput {
   subject?: string | null;
   body?: string | null;
   occurredAt?: Date;
+  /** Optional. When set, the note attaches to a specific deal as well as
+   *  the parent client — used by the deal detail drawer. */
+  dealId?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -292,6 +297,7 @@ const mapContact = (row: Record<string, unknown>): ClientContact => ({
 const mapNote = (row: Record<string, unknown>): ClientNote => ({
   noteId: row.note_id as string,
   clientId: row.client_id as string,
+  dealId: (row.deal_id as string) ?? null,
   organizationId: row.organization_id as string,
   kind: ((row.kind as string) || "note") as ClientNoteKind,
   subject: (row.subject as string) ?? null,
@@ -982,6 +988,29 @@ export const getClientNotes = async (
   return (data || []).map(mapNote);
 };
 
+/** Notes scoped to a specific deal (deal_id column, added in migration 089). */
+export const getDealNotes = async (
+  organizationId: string,
+  dealId: string,
+): Promise<ClientNote[]> => {
+  if (isLocalOrg(organizationId)) {
+    return readLocal<ClientNote>(STORE.notes(organizationId), reviveNote)
+      .filter((n) => n.dealId === dealId)
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+  }
+  const { data, error } = await supabase
+    .from("client_notes")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("deal_id", dealId)
+    .order("occurred_at", { ascending: false });
+  if (error) {
+    logger.error("Failed to load deal notes:", error);
+    return [];
+  }
+  return (data || []).map(mapNote);
+};
+
 export const createNote = async (
   organizationId: string,
   clientId: string,
@@ -1000,6 +1029,7 @@ export const createNote = async (
     const note: ClientNote = {
       noteId: crypto.randomUUID(),
       clientId,
+      dealId: input.dealId ?? null,
       organizationId,
       kind: input.kind ?? "note",
       subject,
@@ -1015,7 +1045,7 @@ export const createNote = async (
     return note;
   }
 
-  const row = {
+  const row: Record<string, unknown> = {
     client_id: clientId,
     organization_id: organizationId,
     kind: input.kind ?? "note",
@@ -1025,6 +1055,7 @@ export const createNote = async (
     author_id: userId,
     author_name: userName,
   };
+  if (input.dealId) row.deal_id = input.dealId;
 
   const { data, error } = await supabase
     .from("client_notes")
