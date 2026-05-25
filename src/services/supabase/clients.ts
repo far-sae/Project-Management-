@@ -1703,6 +1703,10 @@ export const importClientsFromCsv = async (
   rows: Array<Record<string, string>>,
   /** User-picked extra columns to capture into customFields for THIS import. */
   extraCustomColumns: string[] = [],
+  /** Workspace every imported row should land in. When omitted, the RPC's
+   *  org-default fallback is used — which is why omitting it caused imports
+   *  to ignore the sidebar's workspace selection. */
+  workspaceId?: string | null,
 ): Promise<ImportResult> => {
   const extraSet = new Set(extraCustomColumns.map((c) => normalizeClientCsvHeader(c)));
   const errors: CsvRowError[] = [];
@@ -1773,7 +1777,7 @@ export const importClientsFromCsv = async (
         organizationId,
         userId,
         userName,
-        parsed.input,
+        workspaceId ? { ...parsed.input, workspaceId } : parsed.input,
       );
       imported.push(client);
     } catch (err) {
@@ -1798,9 +1802,12 @@ export const importClientsOverrideRow = async (
   userName: string,
   input: CreateClientInput,
   matchedExistingId: string,
+  /** Workspace the overridden row should land in. */
+  workspaceId?: string | null,
 ): Promise<Client> => {
   const payload: CreateClientInput = {
     ...input,
+    workspaceId: workspaceId ?? input.workspaceId,
     tags: Array.from(new Set([...(input.tags ?? []), "dup_override"])),
   };
   const created = await createClient(organizationId, userId, userName, payload);

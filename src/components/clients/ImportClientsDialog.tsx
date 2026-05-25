@@ -103,6 +103,10 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   organizationId: string | null;
+  /** Workspace every imported row should land in. Comes from the page's
+   *  current sidebar selection so imports respect the workspace boundary. */
+  workspaceId?: string | null;
+  workspaceName?: string | null;
   userId: string | undefined;
   userName: string | undefined;
   /** Called after every successful import phase. Receives the clients we
@@ -215,7 +219,8 @@ const scanRows = (
 type Phase = 'pick' | 'preview' | 'imported';
 
 export const ImportClientsDialog: React.FC<Props> = ({
-  open, onOpenChange, organizationId, userId, userName, onComplete,
+  open, onOpenChange, organizationId, workspaceId, workspaceName,
+  userId, userName, onComplete,
 }) => {
   const [phase, setPhase] = useState<Phase>('pick');
   const [file, setFile] = useState<File | null>(null);
@@ -306,6 +311,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         userName,
         rowsToImport,
         extraColumns,
+        workspaceId ?? null,
       );
       setResult(imported);
       setPhase('imported');
@@ -339,6 +345,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         userName,
         issue.input,
         issue.matches[0].clientId,
+        workspaceId ?? null,
       );
       setRowReview((prev) =>
         prev
@@ -372,6 +379,14 @@ export const ImportClientsDialog: React.FC<Props> = ({
             Upload a spreadsheet of clients or leads. We'll recognize common
             CRM and Apollo columns, show a preview, then import only after you confirm.
           </DialogDescription>
+          <p className="text-xs text-muted-foreground mt-1">
+            Imported rows will land in workspace{' '}
+            <strong className="text-foreground">
+              {workspaceName ?? 'Default'}
+            </strong>
+            . Switch workspace in the sidebar before importing to send them
+            somewhere else.
+          </p>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -791,6 +806,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
                               userName,
                               r.input,
                               r.matches[0].clientId,
+                              workspaceId ?? null,
                             );
                             toast.success('Overridden');
                           } catch (err) {

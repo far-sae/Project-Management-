@@ -75,7 +75,8 @@ const downloadFile = (filename: string, content: string, mime: string) => {
 export const Clients: React.FC = () => {
   const { user } = useAuth();
   const {
-    organizationId, clients, allClients, loading, create, update, remove,
+    organizationId, workspaceId: activeWorkspaceId,
+    clients, allClients, loading, create, update, remove,
     canCreate, canManage,
     selectedWorkspace, isAllWorkspaces,
   } = useClients();
@@ -692,6 +693,8 @@ export const Clients: React.FC = () => {
         open={openImport}
         onOpenChange={setOpenImport}
         organizationId={organizationId}
+        workspaceId={activeWorkspaceId}
+        workspaceName={selectedWorkspace?.name ?? null}
         userId={user?.userId}
         userName={user?.displayName}
         onComplete={(imported) => {
