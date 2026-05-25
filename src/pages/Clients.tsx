@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
-  Filter, Star, Trash2, MoreVertical, TrendingUp,
+  Filter, Trash2, MoreVertical, TrendingUp,
   ArrowRight, Pencil,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -29,14 +29,14 @@ import { useClients } from '@/hooks/useClients';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
   Client, ClientStatus, ClientType,
-  CreateClientInput, exportClientsToCsv, formatRevenue,
+  CreateClientInput, exportClientsToCsv,
 } from '@/services/supabase/clients';
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
 import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialog';
 import { SavedListViews } from '@/components/clients/SavedListViews';
+import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
-import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { COMMON_CURRENCIES } from '@/lib/countries';
@@ -71,20 +71,6 @@ const downloadFile = (filename: string, content: string, mime: string) => {
   a.remove();
   URL.revokeObjectURL(url);
 };
-
-const StatusBadge: React.FC<{ status: ClientStatus }> = ({ status }) => (
-  <Badge
-    className={
-      status === 'active'
-        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-        : status === 'archived'
-        ? 'bg-muted text-muted-foreground border-border'
-        : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
-    }
-  >
-    {status}
-  </Badge>
-);
 
 export const Clients: React.FC = () => {
   const { user } = useAuth();
@@ -181,23 +167,6 @@ export const Clients: React.FC = () => {
     for (const c of clients) if (c.category) set.add(c.category);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [clients]);
-
-  // Filtered clients grouped by category for the "Group by category" view.
-  // Uncategorized rows fall into a synthetic group rendered last.
-  const groupedFiltered = useMemo(() => {
-    const buckets = new Map<string, typeof filtered>();
-    for (const c of filtered) {
-      const key = c.category?.trim() || '__uncategorized__';
-      const list = buckets.get(key);
-      if (list) list.push(c);
-      else buckets.set(key, [c]);
-    }
-    const named = Array.from(buckets.entries())
-      .filter(([k]) => k !== '__uncategorized__')
-      .sort((a, b) => a[0].localeCompare(b[0]));
-    const uncategorized = buckets.get('__uncategorized__');
-    return uncategorized ? [...named, ['Uncategorized', uncategorized] as const] : named;
-  }, [filtered]);
 
   const selectedClients = useMemo(
     () => clients.filter((c) => selectedClientIds.has(c.clientId)),
@@ -570,23 +539,21 @@ export const Clients: React.FC = () => {
             </Card>
           )}
 
-          {/* List */}
+          {/* Excel-style table */}
           {loading ? (
             <Card>
               <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
                 <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading clients…
               </CardContent>
             </Card>
-          ) : filtered.length === 0 ? (
+          ) : clients.length === 0 ? (
             <Card>
               <CardContent className="py-10 text-center space-y-2">
                 <Building2 className="w-10 h-10 mx-auto text-muted-foreground/60" />
                 <p className="text-sm text-muted-foreground">
-                  {clients.length === 0
-                    ? 'No clients yet. Add one client if you only have a name, or import a spreadsheet if you already have a list.'
-                    : 'No clients match your filters. Try clearing search, type, status, or score filters.'}
+                  No clients yet. Add one client if you only have a name, or import a spreadsheet if you already have a list.
                 </p>
-                {canCreate && clients.length === 0 && (
+                {canCreate && (
                   <div className="flex flex-wrap justify-center gap-2 pt-2">
                     <Button onClick={() => setOpenCreate(true)}>
                       <Plus className="w-4 h-4 mr-2" /> New client
@@ -602,129 +569,18 @@ export const Clients: React.FC = () => {
               </CardContent>
             </Card>
           ) : (
-            (() => {
-              // Single source of truth for a client card; used by both flat
-              // and grouped layouts so they stay visually identical.
-              const renderCard = (c: typeof filtered[number]) => (
-                <div
-                  key={c.clientId}
-                  onClick={() => setSelected(c)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setSelected(c);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className="relative text-left rounded-lg border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all"
-                >
-                  {canManage && (
-                    <label
-                      className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md bg-card/90 px-2 py-1 text-xs text-muted-foreground border"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedClientIds.has(c.clientId)}
-                        onChange={() => toggleClientSelection(c.clientId)}
-                      />
-                      Select
-                    </label>
-                  )}
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-md bg-primary-soft text-primary-soft-foreground flex items-center justify-center shrink-0">
-                      <Building2 className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate">{c.name}</h3>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {c.industry || c.type}
-                      </p>
-                    </div>
-                    {c.rating && (
-                      <Badge variant="outline" className={canManage ? "shrink-0 mr-24" : "shrink-0"}>
-                        <Star className="w-3 h-3 mr-1" /> {c.rating}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="mt-3 flex items-center gap-2 flex-wrap">
-                    <Badge variant="outline" className="capitalize">{c.type}</Badge>
-                    <StatusBadge status={c.status} />
-                    {c.category ? (
-                      <Badge variant="secondary" className="text-[10px]">{c.category}</Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] text-muted-foreground border-dashed"
-                      >
-                        + Category
-                      </Badge>
-                    )}
-                    {c.country && (
-                      <span className="text-xs text-muted-foreground">{c.country}</span>
-                    )}
-                    <ScoreBadge score={c.score} band={c.scoreBand} />
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide">Revenue</p>
-                      <p className="text-foreground">
-                        {c.annualRevenue == null ? '—' : formatRevenue(c.annualRevenue)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide">Owner</p>
-                      <p className="text-foreground truncate">
-                        {c.accountOwnerName || '—'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {c.tags && c.tags.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {c.tags.slice(0, 4).map((t) => (
-                        <Badge key={t} variant="secondary" className="text-[10px]">
-                          {t}
-                        </Badge>
-                      ))}
-                      {c.tags.length > 4 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          +{c.tags.length - 4}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-
-              if (groupByCategory) {
-                return (
-                  <div className="space-y-6">
-                    {groupedFiltered.map(([cat, items]) => (
-                      <section key={cat}>
-                        <div className="flex items-baseline justify-between mb-2 pb-1.5 border-b border-border">
-                          <h3 className="text-sm font-semibold text-foreground">
-                            {cat}
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">
-                              {items.length} client{items.length === 1 ? '' : 's'}
-                            </span>
-                          </h3>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                          {items.map(renderCard)}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                );
-              }
-
-              return (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {filtered.map(renderCard)}
-                </div>
-              );
-            })()
+            <ClientsTable
+              rows={filtered}
+              selectedIds={selectedClientIds}
+              groupByCategory={groupByCategory}
+              canManage={canManage}
+              onOpen={(c) => setSelected(c)}
+              onToggleRow={toggleClientSelection}
+              onToggleAll={(allSelected) => {
+                if (allSelected) clearSelection();
+                else selectAllFiltered();
+              }}
+            />
           )}
             </TabsContent>
 
