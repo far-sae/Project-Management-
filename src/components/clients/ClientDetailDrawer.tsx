@@ -36,7 +36,15 @@ import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { ActivityTimeline } from './ActivityTimeline';
 import { toast } from 'sonner';
 
-type Tab = 'overview' | 'contacts' | 'activity' | 'files' | 'activity-feed';
+type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files';
+
+const KIND_FOR_TAB: Partial<Record<MainTab, ClientNoteKind>> = {
+  notes: 'note',
+  calls: 'call',
+  emails: 'email',
+  meetings: 'meeting',
+  tasks: 'task',
+};
 
 interface Props {
   client: Client | null;
@@ -59,7 +67,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   client, organizationId, canManage, onClose, onEdit, onDelete,
 }) => {
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<MainTab>('activity');
 
   const [contacts, setContacts] = useState<ClientContact[]>([]);
   const [notes, setNotes] = useState<ClientNote[]>([]);
@@ -116,84 +124,188 @@ export const ClientDetailDrawer: React.FC<Props> = ({
 
   if (!client || !organizationId) return null;
 
+  const quickAction = (target: MainTab) => () => setTab(target);
+
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
-      {/* backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
         onClick={onClose}
         aria-hidden
       />
 
-      {/* drawer */}
-      <aside className="relative ml-auto h-full w-full sm:w-[640px] bg-card border-l border-border shadow-xl flex flex-col animate-in slide-in-from-right-2 duration-200">
-        {/* header */}
-        <div className="p-4 border-b border-border flex items-start gap-3">
-          <div className="flex-shrink-0 w-10 h-10 rounded-md bg-primary-soft text-primary-soft-foreground flex items-center justify-center">
-            <Building2 className="w-5 h-5" />
+      {/* Wide modal — HubSpot-style 3-column record view. 95vw on desktop,
+          full-screen on mobile. Right-side slide animation reuses the
+          existing drawer affordance so the UX is familiar. */}
+      <aside className="relative ml-auto h-full w-full sm:w-[95vw] sm:max-w-[1400px] bg-background border-l border-border shadow-xl flex flex-col animate-in slide-in-from-right-2 duration-200">
+        {/* Top bar — name, badges, close + edit/delete */}
+        <div className="px-4 py-3 border-b border-border flex items-center gap-3 bg-card">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+          >
+            <X className="w-4 h-4" /> Close
+          </button>
+          <div className="h-5 w-px bg-border" />
+          <div className="flex items-center gap-2 min-w-0">
+            <Building2 className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-medium text-foreground truncate">Companies</span>
+            <span className="text-sm text-muted-foreground">/</span>
+            <span className="text-sm font-semibold text-foreground truncate">{client.name}</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-semibold truncate">{client.name}</h2>
-            <div className="flex items-center gap-2 flex-wrap mt-1">
-              <Badge variant="outline" className="capitalize">{client.type}</Badge>
-              <Badge
-                className={
-                  client.status === 'active'
-                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-                    : client.status === 'archived'
-                    ? 'bg-muted text-muted-foreground border-border'
-                    : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
-                }
-              >
-                {client.status}
-              </Badge>
-              {client.rating && (
-                <Badge variant="outline">
-                  <Star className="w-3 h-3 mr-1" /> {client.rating}
-                </Badge>
-              )}
-              {client.industry && (
-                <Badge variant="outline">{client.industry}</Badge>
-              )}
-              <ScoreBadge score={client.score} band={client.scoreBand} />
-            </div>
+          <div className="ml-auto flex items-center gap-1">
+            {canManage && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => onEdit(client)}>
+                  <Edit className="w-3.5 h-3.5 mr-1" /> Edit
+                </Button>
+                <Button
+                  variant="ghost" size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onDelete(client)}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+                </Button>
+              </>
+            )}
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-            <X className="w-4 h-4" />
-          </Button>
         </div>
 
-        {/* tabs */}
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="px-4 pt-3">
-          <TabsList className="grid grid-cols-5 w-full">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="contacts">
-              Contacts {contacts.length > 0 && `(${contacts.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="activity">
-              Notes {notes.length > 0 && `(${notes.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="files">
-              Files {attachments.length > 0 && `(${attachments.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="activity-feed" className="gap-2">
-              <Activity className="w-4 h-4" />
-              Timeline
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {loading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+        {/* 3-column body */}
+        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_320px]">
+          {/* ── LEFT: identity + quick actions + about ─────────────────── */}
+          <aside className="border-r border-border bg-card/40 overflow-y-auto p-4 space-y-4">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-primary-soft text-primary-soft-foreground flex items-center justify-center text-lg font-bold">
+                {client.name.charAt(0).toUpperCase()}
+              </div>
+              <h2 className="mt-3 text-xl font-bold truncate w-full">{client.name}</h2>
+              {client.phone && (
+                <a href={`tel:${client.phone}`} className="mt-0.5 text-sm text-muted-foreground hover:text-foreground">
+                  {client.phone}
+                </a>
+              )}
+              <div className="flex items-center gap-1 flex-wrap justify-center mt-2">
+                <Badge variant="outline" className="capitalize text-[10px]">{client.type}</Badge>
+                <Badge
+                  className={`text-[10px] ${
+                    client.status === 'active'
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                      : client.status === 'archived'
+                      ? 'bg-muted text-muted-foreground border-border'
+                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                  }`}
+                >
+                  {client.status}
+                </Badge>
+                {client.category && (
+                  <Badge variant="secondary" className="text-[10px]">{client.category}</Badge>
+                )}
+                {client.rating && (
+                  <Badge variant="outline" className="text-[10px]">
+                    <Star className="w-3 h-3 mr-0.5" /> {client.rating}
+                  </Badge>
+                )}
+                <ScoreBadge score={client.score} band={client.scoreBand} />
+              </div>
             </div>
-          )}
 
-          {tab === 'overview' && (
-            <OverviewTab client={client} fullAddress={fullAddress} />
-          )}
-          {tab === 'contacts' && (
+            {/* Quick action row — HubSpot's row of round icon buttons */}
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <QuickAction icon={MessageSquare} label="Note" onClick={quickAction('notes')} />
+              <QuickAction icon={Mailbox} label="Email" onClick={quickAction('emails')} href={client.email ? `mailto:${client.email}` : undefined} />
+              <QuickAction icon={PhoneCall} label="Call" onClick={quickAction('calls')} href={client.phone ? `tel:${client.phone}` : undefined} />
+              <QuickAction icon={FileText} label="Task" onClick={quickAction('tasks')} />
+              <QuickAction icon={CalendarIcon} label="Meeting" onClick={quickAction('meetings')} />
+            </div>
+
+            <div className="border-t border-border pt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                About this company
+              </h3>
+              <OverviewTab client={client} fullAddress={fullAddress} />
+            </div>
+          </aside>
+
+          {/* ── MIDDLE: tabbed activity ─────────────────────────────────── */}
+          <section className="flex flex-col overflow-hidden">
+            <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)} className="px-4 pt-3">
+              <TabsList className="bg-transparent border-b border-border rounded-none w-full justify-start gap-1 h-auto p-0">
+                {([
+                  { v: 'activity', label: 'Activity', icon: Activity },
+                  { v: 'notes', label: 'Notes' },
+                  { v: 'emails', label: 'Emails' },
+                  { v: 'calls', label: 'Calls' },
+                  { v: 'tasks', label: 'Tasks' },
+                  { v: 'meetings', label: 'Meetings' },
+                  { v: 'files', label: 'Files' },
+                ] as const).map((t) => (
+                  <TabsTrigger
+                    key={t.v}
+                    value={t.v}
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-orange-500 data-[state=active]:bg-transparent px-3 pb-2"
+                  >
+                    {t.label}
+                    {t.v === 'files' && attachments.length > 0 && (
+                      <span className="ml-1 text-xs text-muted-foreground">({attachments.length})</span>
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {loading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-3">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                </div>
+              )}
+
+              {tab === 'activity' && (
+                <ActivityTimeline
+                  clientId={client.clientId}
+                  emptyHint="No timeline events yet. Notes, deal moves, tasks, and form submissions will appear here automatically."
+                />
+              )}
+
+              {(tab === 'notes' || tab === 'calls' || tab === 'emails' || tab === 'meetings' || tab === 'tasks') && (
+                <ActivityTab
+                  clientId={client.clientId}
+                  organizationId={organizationId}
+                  userId={user?.userId}
+                  userName={user?.displayName}
+                  canManage={canManage}
+                  notes={notes}
+                  onChanged={reloadNotes}
+                  kindFilter={KIND_FOR_TAB[tab]}
+                />
+              )}
+
+              {tab === 'files' && (
+                <FilesTab
+                  clientId={client.clientId}
+                  organizationId={organizationId}
+                  userId={user?.userId}
+                  userName={user?.displayName}
+                  canManage={canManage}
+                  attachments={attachments}
+                  onChanged={reloadAttachments}
+                />
+              )}
+            </div>
+          </section>
+
+          {/* ── RIGHT: contacts list ────────────────────────────────────── */}
+          <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Contacts
+                {contacts.length > 0 && (
+                  <span className="ml-1 text-muted-foreground normal-case">({contacts.length})</span>
+                )}
+              </h3>
+            </div>
             <ContactsTab
               clientId={client.clientId}
               organizationId={organizationId}
@@ -202,53 +314,39 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               contacts={contacts}
               onChanged={reloadContacts}
             />
-          )}
-          {tab === 'activity' && (
-            <ActivityTab
-              clientId={client.clientId}
-              organizationId={organizationId}
-              userId={user?.userId}
-              userName={user?.displayName}
-              canManage={canManage}
-              notes={notes}
-              onChanged={reloadNotes}
-            />
-          )}
-          {tab === 'files' && (
-            <FilesTab
-              clientId={client.clientId}
-              organizationId={organizationId}
-              userId={user?.userId}
-              userName={user?.displayName}
-              canManage={canManage}
-              attachments={attachments}
-              onChanged={reloadAttachments}
-            />
-          )}
-          {tab === 'activity-feed' && (
-            <ActivityTimeline
-              clientId={client.clientId}
-              emptyHint="No timeline events yet. Notes, deal moves, tasks, and form submissions will appear here automatically."
-            />
-          )}
+          </aside>
         </div>
-
-        {canManage && (
-          <div className="border-t border-border p-3 flex items-center justify-between gap-2">
-            <Button variant="outline" onClick={() => onEdit(client)}>
-              <Edit className="w-4 h-4 mr-2" /> Edit
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => onDelete(client)}
-            >
-              <Trash2 className="w-4 h-4 mr-2" /> Delete
-            </Button>
-          </div>
-        )}
       </aside>
     </div>
+  );
+};
+
+// Tiny round icon button used in the quick-action row.
+const QuickAction: React.FC<{
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick?: () => void;
+  href?: string;
+}> = ({ icon: Icon, label, onClick, href }) => {
+  const Inner = (
+    <span className="flex flex-col items-center gap-1">
+      <span className="h-9 w-9 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 grid place-items-center transition-colors hover:bg-orange-500/25">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </span>
+  );
+  if (href) {
+    return (
+      <a href={href} aria-label={label}>
+        {Inner}
+      </a>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} aria-label={label}>
+      {Inner}
+    </button>
   );
 };
 
@@ -540,8 +638,14 @@ const ActivityTab: React.FC<{
   canManage: boolean;
   notes: ClientNote[];
   onChanged: () => Promise<void> | void;
-}> = ({ clientId, organizationId, userId, userName, canManage, notes, onChanged }) => {
-  const [kind, setKind] = useState<ClientNoteKind>('note');
+  /** If set, only show notes of this kind and pre-select the composer to it. */
+  kindFilter?: ClientNoteKind;
+}> = ({ clientId, organizationId, userId, userName, canManage, notes, onChanged, kindFilter }) => {
+  const [kind, setKind] = useState<ClientNoteKind>(kindFilter ?? 'note');
+  useEffect(() => {
+    if (kindFilter) setKind(kindFilter);
+  }, [kindFilter]);
+  const visibleNotes = kindFilter ? notes.filter((n) => n.kind === kindFilter) : notes;
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -588,16 +692,18 @@ const ActivityTab: React.FC<{
       {userId && (
         <div className="border rounded-md p-3 space-y-2 bg-secondary/30">
           <div className="flex gap-2">
-            <Select value={kind} onValueChange={(v) => setKind(v as ClientNoteKind)}>
-              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="note">Note</SelectItem>
-                <SelectItem value="call">Call</SelectItem>
-                <SelectItem value="meeting">Meeting</SelectItem>
-                <SelectItem value="email">Email</SelectItem>
-                <SelectItem value="task">Task</SelectItem>
-              </SelectContent>
-            </Select>
+            {!kindFilter && (
+              <Select value={kind} onValueChange={(v) => setKind(v as ClientNoteKind)}>
+                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="note">Note</SelectItem>
+                  <SelectItem value="call">Call</SelectItem>
+                  <SelectItem value="meeting">Meeting</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="task">Task</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             <Input
               placeholder="Subject (optional)" maxLength={200}
               value={subject}
@@ -618,14 +724,16 @@ const ActivityTab: React.FC<{
         </div>
       )}
 
-      {notes.length === 0 && (
+      {visibleNotes.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No notes yet. Log calls, meetings, emails, or quick reminders so everyone has context.
+          {kindFilter
+            ? `No ${kindFilter}s logged yet. Use the composer above to add the first.`
+            : 'No notes yet. Log calls, meetings, emails, or quick reminders so everyone has context.'}
         </p>
       )}
 
       <ul className="space-y-2">
-        {notes.map((n) => {
+        {visibleNotes.map((n) => {
           const Icon = NOTE_KIND_ICON[n.kind] ?? MessageSquare;
           return (
             <li key={n.noteId} className="rounded-md border p-3">
