@@ -427,14 +427,12 @@ export const createClient = async (
     return client;
   }
 
-  if (!input.workspaceId) {
-    throw new Error(
-      "Cannot create a client without a workspace. Pick a workspace in the sidebar first.",
-    );
-  }
-  const row = {
+  // workspace_id is optional here on purpose. The server-side
+  // crm_create_client RPC (migration 093) resolves it to the org's default
+  // workspace if the caller didn't pass one, so a brief race between the
+  // workspace switcher and the New-client dialog never blocks creation.
+  const row: Record<string, unknown> = {
     organization_id: organizationId,
-    workspace_id: input.workspaceId,
     name: sanitizeText(input.name)!,
     legal_name: sanitizeText(input.legalName ?? null),
     industry: sanitizeText(input.industry ?? null),
@@ -462,12 +460,33 @@ export const createClient = async (
     created_by: userId,
     created_by_name: userName,
   };
+  if (input.workspaceId) row.workspace_id = input.workspaceId;
 
-  const createViaDirectInsert = () => supabase
-    .from("clients")
-    .insert(row)
-    .select()
-    .single();
+  // Direct-insert fallback (used only when the crm_create_client RPC is
+  // missing) needs an explicit workspace_id because there is no server-side
+  // default-resolver in that path. Look up the org's default workspace on
+  // demand so the direct path matches the RPC's behaviour.
+  const ensureWorkspaceForDirectInsert = async () => {
+    if (row.workspace_id) return;
+    const { data: ws } = await supabase
+      .from("workspaces")
+      .select("workspace_id")
+      .eq("organization_id", organizationId)
+      .order("is_default", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (ws?.workspace_id) row.workspace_id = ws.workspace_id;
+  };
+
+  const createViaDirectInsert = async () => {
+    await ensureWorkspaceForDirectInsert();
+    return supabase
+      .from("clients")
+      .insert(row)
+      .select()
+      .single();
+  };
 
   let { data, error } = await supabase
     .rpc("crm_create_client", {
