@@ -19,6 +19,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GitBranch, ListTodo } from 'lucide-react';
 import { DealsKanban } from '@/components/clients/DealsKanban';
+import { DealDetailDrawer } from '@/components/clients/DealDetailDrawer';
+import { useDeals } from '@/hooks/useDeals';
 import { ClientTasksList } from '@/components/clients/ClientTasksList';
 import { ForecastTab } from '@/components/clients/ForecastTab';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
@@ -88,6 +90,8 @@ export const Clients: React.FC = () => {
     organizationId, clients, loading, create, update, remove, canCreate, canManage,
   } = useClients();
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
+  const { deals: allDeals, remove: removeDeal } = useDeals();
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   useEffect(() => {
     if (!selectedPipelineId && defaultPipeline) {
@@ -744,6 +748,7 @@ export const Clients: React.FC = () => {
                     ? stagesByPipeline[selectedPipelineId] ?? []
                     : []
                 }
+                onSelectDeal={(d) => setSelectedDealId(d.dealId)}
               />
             </TabsContent>
 
@@ -816,6 +821,45 @@ export const Clients: React.FC = () => {
           onDelete={(c) => setConfirmDelete(c)}
         />
       )}
+
+      {/* Deal detail drawer — HubSpot-style 3-column view */}
+      {(() => {
+        const selectedDeal = allDeals.find((d) => d.dealId === selectedDealId) ?? null;
+        const linkedClient = selectedDeal?.clientId
+          ? clients.find((c) => c.clientId === selectedDeal.clientId) ?? null
+          : null;
+        if (!selectedDeal) return null;
+        return (
+          <DealDetailDrawer
+            deal={selectedDeal}
+            client={linkedClient}
+            organizationId={organizationId}
+            canManage={canManage}
+            onClose={() => setSelectedDealId(null)}
+            onEdit={() => {
+              // Editing lives on the deal-card menu (Edit → opens NewDealDialog
+              // inside DealsKanban). Closing the drawer puts the user back on
+              // the pipeline board where they can hit the ⋮ menu.
+              setSelectedDealId(null);
+              toast.info('Use the ⋮ menu on the deal card to edit.');
+            }}
+            onDelete={async (d) => {
+              if (!confirm(`Delete deal "${d.title}"? This cannot be undone.`)) return;
+              try {
+                await removeDeal(d.dealId);
+                setSelectedDealId(null);
+                toast.success('Deal deleted');
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Delete failed');
+              }
+            }}
+            onOpenClient={(c) => {
+              setSelectedDealId(null);
+              setSelected(c);
+            }}
+          />
+        );
+      })()}
 
       {/* Delete confirmation */}
       <AlertDialog
