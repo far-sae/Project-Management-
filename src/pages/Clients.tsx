@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
   Filter, Star, Trash2, MoreVertical, TrendingUp,
-  ArrowRight,
+  ArrowRight, Pencil,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,7 @@ import {
   CreateClientInput, exportClientsToCsv, formatRevenue,
 } from '@/services/supabase/clients';
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
+import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialog';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
@@ -142,6 +143,7 @@ export const Clients: React.FC = () => {
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(() => new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [openBulkEdit, setOpenBulkEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   // Keep the selected client's data in sync when the list refreshes via realtime.
@@ -520,6 +522,14 @@ export const Clients: React.FC = () => {
                   <>
                     <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
                       Clear
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setOpenBulkEdit(true)}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" /> Mass edit
                     </Button>
                     <Button
                       type="button"
@@ -922,6 +932,16 @@ export const Clients: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BulkEditClientsDialog
+        open={openBulkEdit}
+        onOpenChange={setOpenBulkEdit}
+        clients={selectedClients}
+        onApply={async (clientId, patch) => {
+          await update(clientId, patch);
+        }}
+        onClear={clearSelection}
+      />
     </>
   );
 };

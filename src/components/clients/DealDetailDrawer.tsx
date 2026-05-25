@@ -607,9 +607,7 @@ const DealNoteSection: React.FC<{
       {!canCompose && (
         <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
           Link this deal to a client before logging activity.
-          {onChanged && (
-            <span className="ml-1">Edit the deal to set its client.</span>
-          )}
+          <span className="ml-1">Edit the deal to set its client.</span>
         </div>
       )}
 
