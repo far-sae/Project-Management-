@@ -33,6 +33,7 @@ import {
 } from '@/services/supabase/clients';
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
 import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialog';
+import { SavedListViews } from '@/components/clients/SavedListViews';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
@@ -491,6 +492,21 @@ export const Clients: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+              <SavedListViews
+                organizationId={organizationId}
+                currentFilters={{
+                  search, typeFilter, statusFilter, bandFilter,
+                  categoryFilter, groupByCategory,
+                }}
+                onApply={(f) => {
+                  setSearch(f.search);
+                  setTypeFilter(f.typeFilter);
+                  setStatusFilter(f.statusFilter);
+                  setBandFilter(f.bandFilter);
+                  setCategoryFilter(f.categoryFilter);
+                  setGroupByCategory(f.groupByCategory);
+                }}
+              />
               <Button
                 type="button"
                 size="sm"
