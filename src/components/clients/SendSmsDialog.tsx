@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Send, Loader2, MessageSquare } from 'lucide-react';
+import { Send, Loader2, MessageSquare, Sparkles } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type { Client } from '@/services/supabase/clients';
 import { createNote } from '@/services/supabase/clients';
 import { sendSms } from '@/services/supabase/sms';
+import { suggestReplies } from '@/services/supabase/aiSuggestions';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
@@ -32,12 +33,39 @@ export const SendSmsDialog: React.FC<SendSmsDialogProps> = ({
   const [to, setTo] = useState(client.phone ?? '');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
     setTo(client.phone ?? '');
     setBody('');
+    setSuggestions([]);
   }, [open, client.phone]);
+
+  const handleSuggest = async () => {
+    setSuggesting(true);
+    setSuggestions([]);
+    try {
+      const drafts = await suggestReplies({
+        channel: 'sms',
+        client: {
+          name: client.name,
+          industry: client.industry,
+          country: client.country,
+          rating: client.rating,
+          scoreBand: client.scoreBand,
+        },
+        draft: body,
+        senderName: user?.displayName ?? null,
+      });
+      setSuggestions(drafts);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'AI suggestion failed');
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const segments = Math.max(1, Math.ceil(body.length / SEGMENT_LEN));
 
@@ -109,7 +137,24 @@ export const SendSmsDialog: React.FC<SendSmsDialogProps> = ({
             />
           </div>
           <div>
-            <Label className="text-xs">Message</Label>
+            <div className="flex items-center justify-between mb-1">
+              <Label className="text-xs">Message</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleSuggest}
+                disabled={suggesting || sending}
+                className="h-7 text-xs"
+              >
+                {suggesting ? (
+                  <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3 h-3 mr-1.5" />
+                )}
+                Suggest with AI
+              </Button>
+            </div>
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -122,6 +167,23 @@ export const SendSmsDialog: React.FC<SendSmsDialogProps> = ({
               {body.length}/{MAX_LEN} chars · {segments} SMS segment
               {segments === 1 ? '' : 's'}
             </p>
+            {suggestions.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => { setBody(s); setSuggestions([]); }}
+                    className="w-full text-left p-2 rounded border bg-muted/30 hover:bg-muted/60 transition-colors text-xs whitespace-pre-wrap"
+                  >
+                    <span className="text-[10px] font-semibold text-muted-foreground mr-1">
+                      Draft {i + 1}
+                    </span>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

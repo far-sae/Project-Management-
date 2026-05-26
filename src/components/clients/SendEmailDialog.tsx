@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Send, Loader2, Mail, ExternalLink } from 'lucide-react';
+import { Send, Loader2, Mail, ExternalLink, Sparkles } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
@@ -15,6 +15,7 @@ import type { Client, CreateNoteInput } from '@/services/supabase/clients';
 import { createNote } from '@/services/supabase/clients';
 import { useEmailTemplates } from '@/hooks/useEmailTemplates';
 import { expandTemplate, MergeContext } from '@/services/supabase/emailTemplates';
+import { suggestReplies } from '@/services/supabase/aiSuggestions';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
@@ -38,6 +39,8 @@ export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [logging, setLogging] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const ctx: MergeContext = useMemo(() => ({
     client: {
@@ -60,7 +63,32 @@ export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
     setTemplateId(NONE);
     setSubject('');
     setBody('');
+    setSuggestions([]);
   }, [open, client.email]);
+
+  const handleSuggest = async () => {
+    setSuggesting(true);
+    setSuggestions([]);
+    try {
+      const drafts = await suggestReplies({
+        channel: 'email',
+        client: {
+          name: client.name,
+          industry: client.industry,
+          country: client.country,
+          rating: client.rating,
+          scoreBand: client.scoreBand,
+        },
+        draft: body,
+        senderName: user?.displayName ?? null,
+      });
+      setSuggestions(drafts);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'AI suggestion failed');
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   const handlePickTemplate = (id: string) => {
     setTemplateId(id);
@@ -177,7 +205,24 @@ export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
           </div>
 
           <div>
-            <Label className="text-xs">Body</Label>
+            <div className="flex items-center justify-between mb-1">
+              <Label className="text-xs">Body</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleSuggest}
+                disabled={suggesting || logging}
+                className="h-7 text-xs"
+              >
+                {suggesting ? (
+                  <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3 h-3 mr-1.5" />
+                )}
+                Suggest with AI
+              </Button>
+            </div>
             <Textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -185,6 +230,26 @@ export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
               maxLength={8000}
               disabled={logging}
             />
+            {suggestions.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                <p className="text-[11px] text-muted-foreground">
+                  Click to use one of these AI drafts:
+                </p>
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => { setBody(s); setSuggestions([]); }}
+                    className="w-full text-left p-2 rounded border bg-muted/30 hover:bg-muted/60 transition-colors text-xs whitespace-pre-wrap"
+                  >
+                    <span className="text-[10px] font-semibold text-muted-foreground mr-1">
+                      Draft {i + 1}
+                    </span>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
