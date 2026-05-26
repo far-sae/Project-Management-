@@ -24,6 +24,10 @@ import {
 } from '@/services/supabase/deals';
 import type { PipelineStage } from '@/services/supabase/pipelines';
 import { ActivityTimeline } from './ActivityTimeline';
+import {
+  Quote, listQuotesForDeal, deleteQuote,
+} from '@/services/supabase/quotes';
+import { QuoteBuilderDialog } from './QuoteBuilderDialog';
 
 type DealTab = 'activity' | 'notes' | 'emails' | 'calls' | 'meetings' | 'tasks';
 
@@ -62,6 +66,22 @@ export const DealDetailDrawer: React.FC<Props> = ({
   const [tab, setTab] = useState<DealTab>('activity');
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [loading, setLoading] = useState(false);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [openQuoteBuilder, setOpenQuoteBuilder] = useState(false);
+  const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
+
+  const reloadQuotes = async () => {
+    if (!deal || !organizationId) return;
+    setQuotes(await listQuotesForDeal(organizationId, deal.dealId));
+  };
+  useEffect(() => {
+    if (!deal || !organizationId) {
+      setQuotes([]);
+      return;
+    }
+    void reloadQuotes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deal?.dealId, organizationId]);
 
   // Notes are scoped to this specific deal via client_notes.deal_id
   // (migration 089). The composer below writes new notes with both
@@ -374,9 +394,84 @@ export const DealDetailDrawer: React.FC<Props> = ({
                 </div>
               </div>
             )}
+
+            <div className="pt-2 border-t border-border">
+              <div className="flex items-center justify-between mb-1.5">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Quotes ({quotes.length})
+                </h3>
+                {canManage && (
+                  <Button
+                    type="button" size="sm" variant="outline"
+                    onClick={() => { setEditingQuote(null); setOpenQuoteBuilder(true); }}
+                  >
+                    <FileText className="w-3.5 h-3.5 mr-1" /> New
+                  </Button>
+                )}
+              </div>
+              {quotes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No quotes yet. Create one to bundle line items and send a
+                  PDF proposal.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {quotes.map((q) => (
+                    <li
+                      key={q.quoteId}
+                      className="rounded-md border p-2 text-xs hover:bg-muted/30 cursor-pointer"
+                      onClick={() => { setEditingQuote(q); setOpenQuoteBuilder(true); }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium truncate">{q.quoteNumber}</span>
+                        <Badge variant="outline" className="text-[9px] capitalize">{q.status}</Badge>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground truncate">{q.title}</div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[11px] tabular-nums">{formatDealMoney(q.total, q.currency)}</span>
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!organizationId) return;
+                              if (!confirm(`Delete quote ${q.quoteNumber}?`)) return;
+                              try {
+                                await deleteQuote(organizationId, q.quoteId);
+                                await reloadQuotes();
+                              } catch (err) {
+                                toast.error(err instanceof Error ? err.message : 'Delete failed');
+                              }
+                            }}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </aside>
         </div>
       </aside>
+
+      {deal && organizationId && (
+        <QuoteBuilderDialog
+          open={openQuoteBuilder}
+          onOpenChange={(o) => {
+            setOpenQuoteBuilder(o);
+            if (!o) setEditingQuote(null);
+          }}
+          organizationId={organizationId}
+          deal={deal}
+          client={client}
+          existing={editingQuote}
+          onSaved={() => void reloadQuotes()}
+        />
+      )}
     </div>
   );
 };
