@@ -19,6 +19,7 @@ import {
   pingLastSeen,
   pingLastSeenKeepalive,
 } from '@/services/supabase/lastSeen';
+import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { User } from '@/types';
 
 interface AuthContextType {
@@ -411,6 +412,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
                     photoURL: profile?.photo_url || prev.photoURL,
                   };
                 });
+
+                // Record a login event in the security audit log once we
+                // know which org the user belongs to. Only fires on actual
+                // SIGNED_IN events, not the INITIAL_SESSION re-hydration on
+                // page load, so reloading the app doesn't spam the log.
+                if (event === 'SIGNED_IN' && resolvedOrgId && !resolvedOrgId.startsWith('local-')) {
+                  void recordAuditEvent(
+                    resolvedOrgId,
+                    { userId, displayName: profile?.display_name || displayName },
+                    {
+                      action: 'login',
+                      targetType: 'user',
+                      targetId: userId,
+                      targetLabel: profile?.display_name || displayName || userEmail,
+                      metadata: { provider, email: userEmail },
+                    },
+                  );
+                }
               } catch (err) {
                 console.error('❌ Auth setup failed:', err);
               }
@@ -607,6 +626,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
       } catch (clockErr) {
         // Don't block sign-out on a clock-out failure — log and continue.
         logger.warn('Auto clock-out on sign-out failed:', clockErr);
+      }
+      // Record logout BEFORE clearing the session — we need the org context
+      // to still be valid for the audit insert to satisfy RLS.
+      if (user?.organizationId && !user.organizationId.startsWith('local-')) {
+        void recordAuditEvent(
+          user.organizationId,
+          { userId: user.userId, displayName: user.displayName },
+          {
+            action: 'logout',
+            targetType: 'user',
+            targetId: user.userId,
+            targetLabel: user.displayName ?? user.email ?? null,
+            metadata: { provider: user.provider ?? null },
+          },
+        );
       }
       await supabaseSignOut();
       setUser(null);
