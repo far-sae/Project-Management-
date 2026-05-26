@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
 import { createInvitation } from '@/services/supabase/invitations';
+import { recordAuditEvent } from '@/services/supabase/auditLog';
 import {
   getInvitationEmailFailureHint,
   openInvitationMailto,
@@ -64,6 +65,16 @@ export const OrganizationMembers: React.FC = () => {
         toast.success('Success', {
           description: `Invitation email sent to ${inviteEmail}.`,
         });
+        void recordAuditEvent(
+          organization.organizationId,
+          { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+          {
+            action: 'member_invited',
+            targetType: 'user',
+            targetLabel: inviteEmail.trim(),
+            metadata: { role: inviteRole, viaEmail: true },
+          },
+        );
       } else {
         openInvitationMailto({
           toEmail: inviteEmail.trim(),
@@ -80,6 +91,16 @@ export const OrganizationMembers: React.FC = () => {
         toast('Email client opened', {
           description: `We couldn’t send via EmailJS.${emailHint ? ` ${emailHint}` : ''}${serverBit} A draft was opened for ${inviteEmail}.`,
         });
+        void recordAuditEvent(
+          organization.organizationId,
+          { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+          {
+            action: 'member_invited',
+            targetType: 'user',
+            targetLabel: inviteEmail.trim(),
+            metadata: { role: inviteRole, viaEmail: false, fallback: 'mailto' },
+          },
+        );
       }
 
       setInviteEmail('');

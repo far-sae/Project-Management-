@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useProjects } from '@/hooks/useProjects';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -310,6 +311,18 @@ export const Team: React.FC = () => {
       // Optimistically update local state so the removed member disappears immediately.
       setProjectMembers((prev) =>
         prev.filter((m) => m.userId !== member.userId),
+      );
+
+      void recordAuditEvent(
+        organization?.organizationId ?? null,
+        { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+        {
+          action: 'member_removed',
+          targetType: 'user',
+          targetId: member.userId,
+          targetLabel: member.displayName ?? member.email ?? null,
+          metadata: { projectId: selectedProject, unassignTasks },
+        },
       );
 
       await refreshProjects();

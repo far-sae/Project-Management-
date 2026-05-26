@@ -37,6 +37,7 @@ import { SavedListViews } from '@/components/clients/SavedListViews';
 import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
+import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { COMMON_CURRENCIES } from '@/lib/countries';
@@ -261,11 +262,26 @@ export const Clients: React.FC = () => {
   const handleBulkDelete = async () => {
     if (selectedClients.length === 0) return;
     setDeleting(true);
+    const targetSample = selectedClients.slice(0, 5).map((c) => c.name);
     try {
       for (const client of selectedClients) {
         await remove(client.clientId);
       }
       toast.success(`Deleted ${selectedClients.length} account(s)`);
+      void recordAuditEvent(
+        organizationId,
+        { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+        {
+          action: 'bulk_delete',
+          targetType: 'client',
+          targetLabel: `${selectedClients.length} account(s)`,
+          metadata: {
+            count: selectedClients.length,
+            sample: targetSample,
+            workspaceId: activeWorkspaceId,
+          },
+        },
+      );
       if (selected && selectedClientIds.has(selected.clientId)) setSelected(null);
       clearSelection();
       setConfirmBulkDelete(false);
@@ -284,6 +300,16 @@ export const Clients: React.FC = () => {
     const csv = exportClientsToCsv(filtered);
     downloadFile(`clients-${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv');
     toast.success(`Exported ${filtered.length} account(s)`);
+    void recordAuditEvent(
+      organizationId,
+      { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+      {
+        action: 'data_exported',
+        targetType: 'client',
+        targetLabel: `${filtered.length} account(s) → CSV`,
+        metadata: { count: filtered.length, format: 'csv', workspaceId: activeWorkspaceId },
+      },
+    );
   };
 
   return (
@@ -709,6 +735,22 @@ export const Clients: React.FC = () => {
         userId={user?.userId}
         userName={user?.displayName}
         onComplete={(imported) => {
+          if (imported && imported.length > 0) {
+            void recordAuditEvent(
+              organizationId,
+              { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+              {
+                action: 'client_imported',
+                targetType: 'client',
+                targetLabel: `${imported.length} account(s) via CSV`,
+                metadata: {
+                  count: imported.length,
+                  workspaceId: activeWorkspaceId,
+                  workspaceName: selectedWorkspace?.name ?? null,
+                },
+              },
+            );
+          }
           // If any imported client has a category, switch to grouped view so
           // the user immediately sees their data organised by category — and
           // clear any active category filter so all groups are visible.
@@ -843,7 +885,23 @@ export const Clients: React.FC = () => {
         onApply={async (clientId, patch) => {
           await update(clientId, patch);
         }}
-        onClear={clearSelection}
+        onClear={() => {
+          // Fires after the dialog finishes applying changes to every row.
+          void recordAuditEvent(
+            organizationId,
+            { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+            {
+              action: 'bulk_edit',
+              targetType: 'client',
+              targetLabel: `${selectedClients.length} account(s)`,
+              metadata: {
+                count: selectedClients.length,
+                workspaceId: activeWorkspaceId,
+              },
+            },
+          );
+          clearSelection();
+        }}
       />
     </>
   );
