@@ -230,10 +230,10 @@ export const ClientsDashboard: React.FC = () => {
             <Users className="h-10 w-10 mx-auto text-orange-500" />
             <h2 className="text-xl font-semibold">Your CRM dashboard is ready</h2>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Add your first client or deal and this dashboard will fill in with pipeline funnel, forecast, win rate, and more.
+              Add your first account or deal and this dashboard will fill in with pipeline funnel, forecast, win rate, and more.
             </p>
             <div className="flex items-center justify-center gap-2 pt-2">
-              <Button onClick={() => navigate('/clients')}>Add a client</Button>
+              <Button onClick={() => navigate('/clients')}>Add an account</Button>
               <Button variant="outline" onClick={() => navigate('/clients')}>Add a deal</Button>
             </div>
           </CardContent>
@@ -257,7 +257,7 @@ export const ClientsDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">CRM dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            {deals.length.toLocaleString()} deals · {clients.length.toLocaleString()} clients
+            {deals.length.toLocaleString()} deals · {clients.length.toLocaleString()} accounts
           </p>
         </div>
         <Select value={range} onValueChange={(v) => setRange(v as Range)}>
@@ -341,19 +341,19 @@ export const ClientsDashboard: React.FC = () => {
             </div>
           )}
         </ChartCard>
-        <ChartCard title="Lead score" subtitle="Client distribution" bodyHeight="h-72">
+        <ChartCard title="Lead score" subtitle="Account distribution" bodyHeight="h-72">
           {scoreHasData ? (
             <div className="grid grid-rows-[1fr_auto] gap-2 h-full">
               <StatusDonut
                 data={scoreData}
                 centerValue={clients.length.toLocaleString()}
-                centerLabel="clients"
+                centerLabel="accounts"
               />
               <DonutLegend data={scoreData} />
             </div>
           ) : (
             <div className="h-full grid place-items-center text-center text-sm text-muted-foreground px-6">
-              Add clients to see lead-score distribution.
+              Add accounts to see lead-score distribution.
             </div>
           )}
         </ChartCard>

@@ -213,7 +213,7 @@ export const Clients: React.FC = () => {
       toast.success(`Created "${created.name}"`);
     } catch (err) {
       console.error(err);
-      toast.error(err instanceof Error ? err.message : 'Failed to create client');
+      toast.error(err instanceof Error ? err.message : 'Failed to create account');
     }
   };
 
@@ -225,7 +225,7 @@ export const Clients: React.FC = () => {
       setEditing(null);
     } catch (err) {
       console.error(err);
-      toast.error(err instanceof Error ? err.message : 'Failed to update client');
+      toast.error(err instanceof Error ? err.message : 'Failed to update account');
     }
   };
 
@@ -234,7 +234,7 @@ export const Clients: React.FC = () => {
     input: CreateClientInput,
   ) => {
     const updated = await update(clientId, input);
-    toast.success(`Updated existing client "${updated.name}"`);
+    toast.success(`Updated existing account "${updated.name}"`);
     setSelected(updated);
   };
 
@@ -265,12 +265,12 @@ export const Clients: React.FC = () => {
       for (const client of selectedClients) {
         await remove(client.clientId);
       }
-      toast.success(`Deleted ${selectedClients.length} client(s)`);
+      toast.success(`Deleted ${selectedClients.length} account(s)`);
       if (selected && selectedClientIds.has(selected.clientId)) setSelected(null);
       clearSelection();
       setConfirmBulkDelete(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete selected clients');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete selected accounts');
     } finally {
       setDeleting(false);
     }
@@ -283,7 +283,7 @@ export const Clients: React.FC = () => {
     }
     const csv = exportClientsToCsv(filtered);
     downloadFile(`clients-${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv');
-    toast.success(`Exported ${filtered.length} client(s)`);
+    toast.success(`Exported ${filtered.length} account(s)`);
   };
 
   return (
@@ -294,7 +294,7 @@ export const Clients: React.FC = () => {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-                <Building2 className="w-6 h-6 text-primary" /> Clients
+                <Building2 className="w-6 h-6 text-primary" /> CRM
                 <Badge variant="outline" className="ml-2 text-xs font-medium">
                   {isAllWorkspaces
                     ? 'All workspaces'
@@ -305,7 +305,7 @@ export const Clients: React.FC = () => {
                 {isAllWorkspaces
                   ? 'Accounts across every workspace in this organization.'
                   : `Accounts that live in the "${selectedWorkspace?.name ?? 'current'}" workspace. Switch workspace in the sidebar to see a different list.`}
-                {canCreate && ' Add clients, import leads, and track follow-ups from one place.'}
+                {canCreate && ' Add accounts, import leads, and track follow-ups from one place.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -322,7 +322,7 @@ export const Clients: React.FC = () => {
               )}
               {canCreate && (
                 <Button onClick={() => setOpenCreate(true)}>
-                  <Plus className="w-4 h-4 mr-2" /> New client
+                  <Plus className="w-4 h-4 mr-2" /> New account
                 </Button>
               )}
             </div>
@@ -337,11 +337,11 @@ export const Clients: React.FC = () => {
                   </p>
                   <h2 className="text-lg font-semibold mt-1">Choose what you want to do next</h2>
                   <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-                    Clients are companies or people you work with. Add them one by one,
+                    Accounts are the companies or people you work with. Add them one by one,
                     import a spreadsheet, then track follow-ups, deals, and activity from here.
                   </p>
                 </div>
-                <Badge variant="outline">{clients.length} saved client{clients.length === 1 ? '' : 's'}</Badge>
+                <Badge variant="outline">{clients.length} saved account{clients.length === 1 ? '' : 's'}</Badge>
               </div>
               <div className="grid gap-3 md:grid-cols-4 mt-4">
                 {canCreate && (
@@ -352,7 +352,7 @@ export const Clients: React.FC = () => {
                       className="rounded-lg border bg-background p-3 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
                     >
                       <Plus className="w-4 h-4 text-primary mb-2" />
-                      <p className="font-medium text-sm">Add one client</p>
+                      <p className="font-medium text-sm">Add one account</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         Best for a single new company or contact.
                       </p>
@@ -389,7 +389,7 @@ export const Clients: React.FC = () => {
                   <ListTodo className="w-4 h-4 text-primary mb-2" />
                   <p className="font-medium text-sm">Follow up</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    See the next task for every client.
+                    See the next task for every account.
                   </p>
                 </button>
               </div>
@@ -416,7 +416,7 @@ export const Clients: React.FC = () => {
               <div>
                 <h2 className="text-lg font-semibold">Accounts</h2>
                 <p className="text-sm text-muted-foreground">
-                  Your main client list. Search, filter, open a record, or add/import more clients.
+                  Your main accounts list. Search, filter, open a record, or add/import more accounts.
                 </p>
               </div>
           {/* Filters */}
@@ -471,7 +471,7 @@ export const Clients: React.FC = () => {
                   <SelectItem value="all">All categories</SelectItem>
                   {availableCategories.length === 0 && (
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No categories yet. Set one when adding or editing a client.
+                      No categories yet. Set one when adding or editing an account.
                     </div>
                   )}
                   {availableCategories.map((cat) => (
@@ -516,7 +516,7 @@ export const Clients: React.FC = () => {
                 <span className="text-sm text-muted-foreground">
                   {selectedClients.length > 0
                     ? `${selectedClients.length} selected`
-                    : 'Select clients to bulk delete'}
+                    : 'Select accounts to bulk delete'}
                 </span>
                 <Button type="button" variant="outline" size="sm" onClick={selectAllFiltered}>
                   Select all shown
@@ -552,7 +552,7 @@ export const Clients: React.FC = () => {
           {loading ? (
             <Card>
               <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
-                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading clients…
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading accounts…
               </CardContent>
             </Card>
           ) : clients.length === 0 ? (
@@ -560,12 +560,12 @@ export const Clients: React.FC = () => {
               <CardContent className="py-10 text-center space-y-2">
                 <Building2 className="w-10 h-10 mx-auto text-muted-foreground/60" />
                 <p className="text-sm text-muted-foreground">
-                  No clients yet. Add one client if you only have a name, or import a spreadsheet if you already have a list.
+                  No accounts yet. Add one account if you only have a name, or import a spreadsheet if you already have a list.
                 </p>
                 {canCreate && (
                   <div className="flex flex-wrap justify-center gap-2 pt-2">
                     <Button onClick={() => setOpenCreate(true)}>
-                      <Plus className="w-4 h-4 mr-2" /> New client
+                      <Plus className="w-4 h-4 mr-2" /> New account
                     </Button>
                     <Button variant="outline" onClick={() => setOpenImport(true)}>
                       <Upload className="w-4 h-4 mr-2" /> Import
@@ -658,7 +658,7 @@ export const Clients: React.FC = () => {
               <div>
                 <h2 className="text-lg font-semibold">Tasks</h2>
                 <p className="text-sm text-muted-foreground">
-                  A simple follow-up list for calls, emails, meetings, and client reminders.
+                  A simple follow-up list for calls, emails, meetings, and account reminders.
                 </p>
               </div>
               <ClientTasksList
@@ -788,7 +788,7 @@ export const Clients: React.FC = () => {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this client?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this account?</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete <strong>{confirmDelete?.name}</strong>{' '}
               and every contact, note, and uploaded file attached to it. This
@@ -815,10 +815,10 @@ export const Clients: React.FC = () => {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete selected clients?</AlertDialogTitle>
+            <AlertDialogTitle>Delete selected accounts?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete {selectedClients.length} selected client
-              {selectedClients.length === 1 ? '' : 's'}. Only the clients you
+              This will permanently delete {selectedClients.length} selected account
+              {selectedClients.length === 1 ? '' : 's'}. Only the accounts you
               selected will be deleted. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

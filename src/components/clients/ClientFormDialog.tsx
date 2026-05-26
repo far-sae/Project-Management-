@@ -224,7 +224,7 @@ export const ClientFormDialog: React.FC<Props> = ({
     // The server-side unique index is the real guard; this just spares
     // the round-trip and keeps the UX in sync with what the DB will do.
     if (!client && matches.length > 0 && !opts?.skipDuplicateCheck) {
-      setError('Possible duplicate — update the existing client, create anyway, or skip.');
+      setError('Possible duplicate — update the existing account, create anyway, or skip.');
       return null;
     }
 
@@ -284,7 +284,7 @@ export const ClientFormDialog: React.FC<Props> = ({
       // created Client back.
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save client');
+      setError(err instanceof Error ? err.message : 'Failed to save account');
     } finally {
       setSubmitting(false);
     }
@@ -301,7 +301,7 @@ export const ClientFormDialog: React.FC<Props> = ({
       onOpenChange(false);
       window.dispatchEvent(new CustomEvent('open-client', { detail: clientId }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update existing client');
+      setError(err instanceof Error ? err.message : 'Failed to update existing account');
     } finally {
       setSubmitting(false);
     }
@@ -311,7 +311,7 @@ export const ClientFormDialog: React.FC<Props> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{client ? 'Edit client' : 'New client'}</DialogTitle>
+          <DialogTitle>{client ? 'Edit account' : 'New account'}</DialogTitle>
           <DialogDescription>
             {client
               ? 'Update the client account details.'

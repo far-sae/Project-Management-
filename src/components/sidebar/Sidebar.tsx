@@ -151,7 +151,7 @@ export const Sidebar: React.FC = () => {
   const bottomMenuItems = canSeePeopleOps
     ? ([
         { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
-        { icon: Building2, label: 'Clients', href: '/clients', feature: 'crm' as const },
+        { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
         { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
