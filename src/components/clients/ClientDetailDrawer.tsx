@@ -36,9 +36,10 @@ import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { ActivityTimeline } from './ActivityTimeline';
 import { SendEmailDialog } from './SendEmailDialog';
 import { SendSmsDialog } from './SendSmsDialog';
+import { InvoicesPanel } from './InvoicesPanel';
 import { toast } from 'sonner';
 
-type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files';
+type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files' | 'invoices';
 
 const KIND_FOR_TAB: Partial<Record<MainTab, ClientNoteKind>> = {
   notes: 'note',
@@ -245,6 +246,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                   { v: 'tasks', label: 'Tasks' },
                   { v: 'meetings', label: 'Meetings' },
                   { v: 'files', label: 'Files' },
+                  { v: 'invoices', label: 'Invoices' },
                 ] as const).map((t) => (
                   <TabsTrigger
                     key={t.v}
@@ -296,6 +298,14 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                   canManage={canManage}
                   attachments={attachments}
                   onChanged={reloadAttachments}
+                />
+              )}
+
+              {tab === 'invoices' && (
+                <InvoicesPanel
+                  organizationId={organizationId}
+                  client={client}
+                  canManage={canManage}
                 />
               )}
             </div>
