@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
   Filter, Trash2, MoreVertical, TrendingUp,
-  ArrowRight, Pencil,
+  ArrowRight, Pencil, ArrowLeft,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,7 @@ import { SavedListViews } from '@/components/clients/SavedListViews';
 import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
+import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
@@ -99,6 +100,34 @@ export const Clients: React.FC = () => {
   const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'accounts' | 'pipeline' | 'tasks' | 'forecast'>('accounts');
 
+  // Category landing gate. Users see a tile picker first; clicking a tile
+  // (or "All accounts") lands them in the full CRM view filtered to that
+  // category. Persists per browser so reps don't see the gate every time.
+  const LANDING_KEY = 'pm_crm_landing_done';
+  const [showLanding, setShowLanding] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(LANDING_KEY) !== '1';
+    } catch {
+      return true;
+    }
+  });
+  const exitLanding = (category: string | null) => {
+    if (category === '__uncategorized__') {
+      setCategoryFilter('__uncategorized__');
+    } else if (category) {
+      setCategoryFilter(category);
+    } else {
+      setCategoryFilter('all');
+    }
+    setShowLanding(false);
+    try { localStorage.setItem(LANDING_KEY, '1'); } catch { /* ignore */ }
+  };
+  const backToLanding = () => {
+    setShowLanding(true);
+    setCategoryFilter('all');
+    try { localStorage.removeItem(LANDING_KEY); } catch { /* ignore */ }
+  };
+
   // Pipeline display currency. Persists per-browser so reps don't have to
   // re-pick on every visit. Defaults to whatever the org is set to.
   const orgCurrency = useOrgCurrency();
@@ -149,7 +178,11 @@ export const Clients: React.FC = () => {
       if (typeFilter !== 'all' && c.type !== typeFilter) return false;
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
       if (bandFilter !== "all" && c.scoreBand !== bandFilter) return false;
-      if (categoryFilter !== 'all' && (c.category ?? '') !== categoryFilter) return false;
+      if (categoryFilter === '__uncategorized__') {
+        if (c.category && c.category.trim().length > 0) return false;
+      } else if (categoryFilter !== 'all' && (c.category ?? '') !== categoryFilter) {
+        return false;
+      }
       if (!q) return true;
       const haystack = [
         c.name, c.legalName, c.industry, c.category, c.email, c.phone,
@@ -335,6 +368,11 @@ export const Clients: React.FC = () => {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {!showLanding && (
+                <Button variant="outline" onClick={backToLanding}>
+                  <ArrowLeft className="w-4 h-4 mr-2" /> Categories
+                </Button>
+              )}
               <Button variant="outline" asChild>
                 <Link to="/clients/activity">Recent activity</Link>
               </Button>
@@ -354,12 +392,22 @@ export const Clients: React.FC = () => {
             </div>
           </div>
 
+          {showLanding && (
+            <CrmCategoryLanding clients={clients} onPick={exitLanding} />
+          )}
+
+          {!showLanding && (
+          <>
           <Card>
             <CardContent className="pt-5">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Start here
+                    {categoryFilter === 'all'
+                      ? 'All accounts'
+                      : categoryFilter === '__uncategorized__'
+                        ? 'Uncategorized'
+                        : `Category: ${categoryFilter}`}
                   </p>
                   <h2 className="text-lg font-semibold mt-1">Choose what you want to do next</h2>
                   <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
@@ -706,6 +754,8 @@ export const Clients: React.FC = () => {
               />
             </TabsContent>
           </Tabs>
+          </>
+          )}
         </div>
       </main>
 
