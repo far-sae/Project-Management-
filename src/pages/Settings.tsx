@@ -55,6 +55,7 @@ import { AutomationsSettingsTab } from "@/components/settings/AutomationsSetting
 import { SequencesSettingsTab } from "@/components/settings/SequencesSettingsTab";
 import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
 import { EmailTemplatesSettingsTab } from "@/components/settings/EmailTemplatesSettingsTab";
+import { AuditLogSettingsTab } from "@/components/settings/AuditLogSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
 import { useOrganization } from "@/context/OrganizationContext";
 import { Building2 } from "lucide-react";
@@ -521,6 +522,9 @@ export const Settings: React.FC = () => {
               {canManageSettings && (
                 <SettingsTab value="organization" icon={Building2}>Organization</SettingsTab>
               )}
+              {canManageSettings && (
+                <SettingsTab value="audit-log" icon={Shield}>Audit log</SettingsTab>
+              )}
 
               {/* ───── CRM (Advanced plan and up) ───── */}
               {hasCrm && (
@@ -587,6 +591,11 @@ export const Settings: React.FC = () => {
               description="Create simple public forms that collect new leads and send them into your CRM."
             />
             <LeadFormsSettingsTab />
+          </TabsContent>
+
+          {/* AUDIT LOG TAB */}
+          <TabsContent value="audit-log">
+            <AuditLogSettingsTab />
           </TabsContent>
 
           {/* EMAIL TEMPLATES TAB */}
