@@ -56,6 +56,7 @@ import { SequencesSettingsTab } from "@/components/settings/SequencesSettingsTab
 import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
 import { EmailTemplatesSettingsTab } from "@/components/settings/EmailTemplatesSettingsTab";
 import { AuditLogSettingsTab } from "@/components/settings/AuditLogSettingsTab";
+import { MfaSettingsTab } from "@/components/settings/MfaSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
 import { useOrganization } from "@/context/OrganizationContext";
 import { Building2 } from "lucide-react";
@@ -525,6 +526,7 @@ export const Settings: React.FC = () => {
               {canManageSettings && (
                 <SettingsTab value="audit-log" icon={Shield}>Audit log</SettingsTab>
               )}
+              <SettingsTab value="mfa" icon={Shield}>Two-factor</SettingsTab>
 
               {/* ───── CRM (Advanced plan and up) ───── */}
               {hasCrm && (
@@ -596,6 +598,11 @@ export const Settings: React.FC = () => {
           {/* AUDIT LOG TAB */}
           <TabsContent value="audit-log">
             <AuditLogSettingsTab />
+          </TabsContent>
+
+          {/* MFA TAB */}
+          <TabsContent value="mfa">
+            <MfaSettingsTab />
           </TabsContent>
 
           {/* EMAIL TEMPLATES TAB */}
