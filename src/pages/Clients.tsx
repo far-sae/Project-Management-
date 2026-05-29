@@ -477,7 +477,11 @@ export const Clients: React.FC = () => {
   return (
     <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        <div className="max-w-6xl mx-auto space-y-6">
+        {/* The Pipeline tab needs full page width so the kanban stretches
+            edge-to-edge like the project board — drop the max-w-6xl gate
+            there but keep it everywhere else (form-heavy tabs read better
+            when constrained). */}
+        <div className={`${activeTab === 'pipeline' ? 'max-w-none' : 'max-w-6xl mx-auto'} space-y-6`}>
           {/* Header */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>

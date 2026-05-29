@@ -284,7 +284,7 @@ const StageColumn: React.FC<{
           {formatDealMoney(total, totalCurrency)}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[8rem] max-h-[calc(100vh-22rem)]">
+      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[12rem] max-h-[calc(100vh-16rem)]">
         {deals.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-4">
             Drop deals here

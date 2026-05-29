@@ -31,6 +31,41 @@ import { recordLocalStageChange } from '@/services/supabase/dealRelations';
 const fmtDate = (d: Date | null | undefined) =>
   d ? format(d, 'MMM d, yyyy') : '—';
 
+/**
+ * In-page nav link that scrolls a section into view. Plain `href="#id"` jumps
+ * don't work reliably here because the section lives inside the CRM page's
+ * scrollable <main>, not the document body — browser fragment navigation
+ * targets the document scroller and silently no-ops on our nested one. So
+ * we resolve the element ourselves and call scrollIntoView on it.
+ */
+const SidebarLink: React.FC<{
+  id: string;
+  label: string;
+  icon?: React.ReactNode;
+  count?: number;
+  active?: boolean;
+}> = ({ id, label, icon, count, active }) => (
+  <button
+    type="button"
+    onClick={() => {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }}
+    className={
+      'w-full text-left block px-2 py-1 rounded inline-flex items-center gap-1.5 '
+      + (active
+        ? 'text-primary font-medium bg-primary/10'
+        : 'hover:bg-muted text-muted-foreground')
+    }
+  >
+    {icon}
+    {label}
+    {count != null && count > 0 && (
+      <Badge variant="outline" className="ml-auto text-[9px]">{count}</Badge>
+    )}
+  </button>
+);
+
 export interface DealDetailViewProps {
   dealId: string;
   /** Called when the user taps the back chevron. Lets the parent decide
@@ -146,35 +181,26 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
-      <aside className="lg:w-56 shrink-0 space-y-4">
+      <aside className="lg:w-56 shrink-0 space-y-4 lg:sticky lg:top-4 lg:self-start">
         {showBack && (
           <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
             <ArrowLeft className="w-4 h-4 mr-1" /> All Deals
           </Button>
         )}
         <nav className="space-y-1 text-sm">
-          <a href="#info" className="block px-2 py-1 rounded text-primary font-medium bg-primary/10">Info</a>
-          <a href="#timeline" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground">Timeline</a>
+          <SidebarLink id="info" label="Info" active />
+          <SidebarLink id="stage-history" label="Timeline" />
         </nav>
         <div className="space-y-1">
           <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground px-2">Related List</p>
           <nav className="space-y-0.5 text-sm">
-            <a href="#notes" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><MessageSquare className="w-3 h-3" /> Notes</a>
-            <a href="#stage-history" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5">
-              <History className="w-3 h-3" /> Stage History
-              {stageHistory.length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{stageHistory.length}</Badge>}
-            </a>
-            <a href="#competitors" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5">
-              <Swords className="w-3 h-3" /> Competitors
-              {competitors.length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{competitors.length}</Badge>}
-            </a>
-            <a href="#open-activities" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><ListTodo className="w-3 h-3" /> Open Activities</a>
-            <a href="#closed-activities" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3" /> Closed Activities</a>
-            <a href="#contact-roles" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5">
-              <Users className="w-3 h-3" /> Contact Roles
-              {contactRoles.length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{contactRoles.length}</Badge>}
-            </a>
-            <a href="#emails" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><Mail className="w-3 h-3" /> Emails</a>
+            <SidebarLink id="notes" label="Notes" icon={<MessageSquare className="w-3 h-3" />} />
+            <SidebarLink id="stage-history" label="Stage History" icon={<History className="w-3 h-3" />} count={stageHistory.length} />
+            <SidebarLink id="competitors" label="Competitors" icon={<Swords className="w-3 h-3" />} count={competitors.length} />
+            <SidebarLink id="open-activities" label="Open Activities" icon={<ListTodo className="w-3 h-3" />} />
+            <SidebarLink id="closed-activities" label="Closed Activities" icon={<CheckCircle2 className="w-3 h-3" />} />
+            <SidebarLink id="contact-roles" label="Contact Roles" icon={<Users className="w-3 h-3" />} count={contactRoles.length} />
+            <SidebarLink id="emails" label="Emails" icon={<Mail className="w-3 h-3" />} />
           </nav>
         </div>
         <div className="border-t pt-3 space-y-1">
@@ -213,7 +239,7 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
           </div>
         </div>
 
-        <Card>
+        <Card id="info">
           <CardContent className="pt-5 grid grid-cols-2 md:grid-cols-4 gap-y-3 gap-x-6">
             <div>
               <p className="text-xs text-muted-foreground">Stage</p>
