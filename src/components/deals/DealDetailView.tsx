@@ -199,9 +199,33 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
   }, [deal]);
 
   if (loading || !deal) {
+    // Always render the back arrow even when the deal isn't loaded yet
+    // (or has been filtered out by a workspace switch). Without it the
+    // rep got stuck on a centred "Deal not found" screen with no escape.
     return (
-      <div className="min-h-[40vh] grid place-items-center text-muted-foreground">
-        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Deal not found'}
+      <div className="space-y-4">
+        {showBack && (
+          <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
+            <ArrowLeft className="w-4 h-4 mr-1" /> All Deals
+          </Button>
+        )}
+        <div className="min-h-[30vh] grid place-items-center text-sm text-muted-foreground space-y-3 text-center">
+          {loading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <div>
+              <p className="font-medium text-foreground">Deal not found</p>
+              <p className="mt-1">
+                It may have been deleted, or it's in a workspace you don't currently have selected.
+              </p>
+              {showBack && (
+                <Button size="sm" variant="outline" className="mt-3" onClick={onBack}>
+                  Back to deals
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }

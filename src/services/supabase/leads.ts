@@ -448,6 +448,7 @@ export const createLead = async (
     };
     const all = readLocal<Lead>(STORE.leads(organizationId), reviveLead);
     writeLocal(STORE.leads(organizationId), [lead, ...all]);
+    notifyLocalLeadsChanged(organizationId);
     return lead;
   }
 
@@ -564,6 +565,7 @@ export const updateLead = async (
     merged.updatedAt = new Date();
     all[idx] = merged;
     writeLocal(STORE.leads(organizationId), all);
+    notifyLocalLeadsChanged(organizationId);
     return merged;
   }
 
@@ -623,6 +625,7 @@ export const deleteLead = async (
   if (isLocalOrg(organizationId)) {
     const all = readLocal<Lead>(STORE.leads(organizationId), reviveLead);
     writeLocal(STORE.leads(organizationId), all.filter((l) => l.leadId !== leadId));
+    notifyLocalLeadsChanged(organizationId);
     return;
   }
   const { error } = await supabase
@@ -656,12 +659,32 @@ export const getOrganizationLeads = async (
   return (data || []).map(mapLead);
 };
 
+// Cross-instance sync for local-org mode (mirrors deals + clients pattern).
+// Supabase mode already gets this via postgres_changes; local-org mode
+// listens for a window CustomEvent so changes in one component propagate
+// to every other useLeads subscriber without a page reload.
+const LOCAL_LEADS_EVENT = "pm-leads-changed-local";
+
+export const notifyLocalLeadsChanged = (organizationId: string) => {
+  try {
+    window.dispatchEvent(new CustomEvent(LOCAL_LEADS_EVENT, { detail: { organizationId } }));
+  } catch { /* ignore */ }
+};
+
 export const subscribeToLeads = (
   organizationId: string,
   callback: (leads: Lead[]) => void,
 ): (() => void) => {
   getOrganizationLeads(organizationId).then(callback);
-  if (isLocalOrg(organizationId)) return () => {};
+  if (isLocalOrg(organizationId)) {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ organizationId: string }>;
+      if (ce.detail?.organizationId !== organizationId) return;
+      getOrganizationLeads(organizationId).then(callback);
+    };
+    window.addEventListener(LOCAL_LEADS_EVENT, handler);
+    return () => window.removeEventListener(LOCAL_LEADS_EVENT, handler);
+  }
 
   const channel = supabase
     .channel(`leads-${organizationId}-${Math.random().toString(36).slice(2, 9)}`)

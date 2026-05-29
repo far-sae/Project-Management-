@@ -454,6 +454,7 @@ export const createClient = async (
     };
     const all = readLocal<Client>(STORE.clients(organizationId), reviveClient);
     writeLocal(STORE.clients(organizationId), [client, ...all]);
+    notifyLocalClientsChanged(organizationId);
     return client;
   }
 
@@ -647,6 +648,7 @@ export const updateClient = async (
     merged.updatedAt = new Date();
     all[idx] = merged;
     writeLocal(STORE.clients(organizationId), all);
+    notifyLocalClientsChanged(organizationId);
     return merged;
   }
 
@@ -747,6 +749,7 @@ export const deleteClient = async (
         reviveAttachment,
       ).filter((a) => a.clientId !== clientId),
     );
+    notifyLocalClientsChanged(organizationId);
     return;
   }
 
@@ -798,12 +801,34 @@ export const getOrganizationClients = async (
   return (data || []).map(mapClient);
 };
 
+// Cross-instance sync — mirrors the deals pattern. When one useClients
+// instance writes a client locally, every other instance (different tab,
+// different page, the kanban + the detail drawer at once) refetches and
+// re-renders so nothing requires a page reload to see the change.
+// Supabase mode gets this for free via postgres_changes; local-org mode
+// gets it via a window CustomEvent.
+const LOCAL_CLIENTS_EVENT = "pm-clients-changed-local";
+
+export const notifyLocalClientsChanged = (organizationId: string) => {
+  try {
+    window.dispatchEvent(new CustomEvent(LOCAL_CLIENTS_EVENT, { detail: { organizationId } }));
+  } catch { /* ignore — SSR or stripped env */ }
+};
+
 export const subscribeToClients = (
   organizationId: string,
   callback: (clients: Client[]) => void,
 ): (() => void) => {
   getOrganizationClients(organizationId).then(callback);
-  if (isLocalOrg(organizationId)) return () => {};
+  if (isLocalOrg(organizationId)) {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ organizationId: string }>;
+      if (ce.detail?.organizationId !== organizationId) return;
+      getOrganizationClients(organizationId).then(callback);
+    };
+    window.addEventListener(LOCAL_CLIENTS_EVENT, handler);
+    return () => window.removeEventListener(LOCAL_CLIENTS_EVENT, handler);
+  }
 
   const channel = supabase
     .channel(

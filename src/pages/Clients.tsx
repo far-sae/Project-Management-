@@ -938,7 +938,38 @@ export const Clients: React.FC = () => {
                 }
 
                 // Zoho empty state when there are zero deals in scope.
+                // If allDeals has rows but they're all filtered out by the
+                // current workspace / pipeline scope, show a different
+                // message with an escape hatch — otherwise reps see "no
+                // deals" and panic that their work vanished.
                 if (scopedDeals.length === 0) {
+                  if (allDeals.length > 0) {
+                    return (
+                      <div className="rounded-lg border p-8 text-center space-y-3 max-w-2xl mx-auto">
+                        <p className="text-base font-semibold">
+                          No deals in this scope
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          You have {allDeals.length} deal{allDeals.length === 1 ? '' : 's'} in this organization,
+                          but none are in the current workspace
+                          {selectedPipelineId ? ' or pipeline' : ''}. Switch workspace
+                          (or change the pipeline selector below) to see them.
+                        </p>
+                        <div className="flex items-center justify-center gap-2 pt-2">
+                          {selectedPipelineId && (
+                            <Button variant="outline" size="sm" onClick={() => setSelectedPipelineId('')}>
+                              Show all pipelines
+                            </Button>
+                          )}
+                          {canManage && (
+                            <Button size="sm" onClick={() => setOpenCreateDeal(true)}>
+                              <Plus className="w-3.5 h-3.5 mr-1" /> Create Deal here
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <DealsEmptyState
                       canManage={canManage}
