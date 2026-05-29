@@ -116,10 +116,38 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [section, setSection] = useState<DetailSection>('info');
 
-  const handleStagePick = (next: DealStage) => {
+  // Move the deal straight to the clicked stage. For open-pipeline stages
+  // we don't gate on a verify dialog — the rep can use the Edit button for
+  // amount / close-date tweaks. Won and Lost still pop the Verify Details
+  // modal so the rep can confirm revenue + close date before closing the
+  // deal (matches Zoho's actual behavior).
+  const handleStagePick = async (next: DealStage) => {
     if (!deal || next === deal.stage) return;
-    setVerifyTarget(next);
-    setVerifyOpen(true);
+    if (next === 'won' || next === 'lost') {
+      setVerifyTarget(next);
+      setVerifyOpen(true);
+      return;
+    }
+    const previousStage = deal.stage;
+    try {
+      await update(deal.dealId, {
+        stage: next,
+        probability: STAGE_DEFAULT_PROBABILITY[next],
+      });
+      recordLocalStageChange(deal.organizationId, {
+        dealId: deal.dealId,
+        fromStage: previousStage,
+        toStage: next,
+        amount: deal.value,
+        probability: STAGE_DEFAULT_PROBABILITY[next],
+        expectedCloseDate: deal.expectedCloseDate ?? null,
+        changedBy: null,
+        changedByName: null,
+      });
+      toast.success(`Stage moved to ${DEAL_STAGES.find((s) => s.id === next)?.label ?? next}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not move stage');
+    }
   };
 
   const handleVerifyConfirm = async (patch: {

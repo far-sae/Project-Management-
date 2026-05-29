@@ -428,6 +428,7 @@ export const createDeal = async (
       updatedAt: now,
     };
     writeLocal(organizationId, [deal, ...readLocal(organizationId)]);
+    notifyLocalDealsChanged(organizationId);
     return deal;
   }
 
@@ -548,6 +549,7 @@ export const updateDeal = async (
     };
     all[idx] = merged;
     writeLocal(organizationId, all);
+    notifyLocalDealsChanged(organizationId);
     return merged;
   }
 
@@ -629,6 +631,7 @@ export const deleteDeal = async (
   if (isLocalOrg(organizationId)) {
     const all = readLocal(organizationId).filter((d) => d.dealId !== dealId);
     writeLocal(organizationId, all);
+    notifyLocalDealsChanged(organizationId);
     return;
   }
   const { error } = await supabase.from("deals").delete().eq("deal_id", dealId);
@@ -638,12 +641,33 @@ export const deleteDeal = async (
   }
 };
 
+// Cross-instance sync for local-org mode: when one useDeals instance writes
+// to localStorage, every other instance needs to refetch so e.g. the
+// detail view and the kanban don't end up with different stages. Postgres
+// realtime handles this for Supabase mode; in local mode we dispatch a
+// CustomEvent on the window and every subscriber listens.
+const LOCAL_DEALS_EVENT = "pm-deals-changed-local";
+
+export const notifyLocalDealsChanged = (organizationId: string) => {
+  try {
+    window.dispatchEvent(new CustomEvent(LOCAL_DEALS_EVENT, { detail: { organizationId } }));
+  } catch { /* ignore — SSR or stripped env */ }
+};
+
 export const subscribeToDeals = (
   organizationId: string,
   callback: (deals: Deal[]) => void,
 ): (() => void) => {
   getOrganizationDeals(organizationId).then(callback);
-  if (isLocalOrg(organizationId)) return () => {};
+  if (isLocalOrg(organizationId)) {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ organizationId: string }>;
+      if (ce.detail?.organizationId !== organizationId) return;
+      getOrganizationDeals(organizationId).then(callback);
+    };
+    window.addEventListener(LOCAL_DEALS_EVENT, handler);
+    return () => window.removeEventListener(LOCAL_DEALS_EVENT, handler);
+  }
   const channelName = `deals-${organizationId}-${Math.random()
     .toString(36)
     .slice(2, 9)}`;
