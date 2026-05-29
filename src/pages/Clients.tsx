@@ -43,6 +43,8 @@ import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { AccountsLanding } from '@/components/clients/AccountsLanding';
 import { AccountsHubCard } from '@/components/clients/AccountsHubCard';
+import { ManageCategoriesDialog } from '@/components/clients/ManageCategoriesDialog';
+import { useClientCategories } from '@/hooks/useClientCategories';
 import { LeadsLanding } from '@/components/leads/LeadsLanding';
 import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
@@ -190,6 +192,17 @@ export const Clients: React.FC = () => {
   }, [selectedLead, liveSelectedLead]);
 
   const isLocalOrg = !!organizationId?.startsWith('local-');
+
+  // ─── Account categories ────────────────────────────────────────────────
+  const {
+    categories: registeredCategories,
+    workspaceId: categoriesWorkspaceId,
+    create: createCategorySvc,
+    update: updateCategorySvc,
+    remove: removeCategorySvc,
+    canManage: canManageCategories,
+  } = useClientCategories();
+  const [openManageCategories, setOpenManageCategories] = useState(false);
 
   // Category landing gate. Users see a tile picker first; clicking a tile
   // (or "All accounts") lands them in the full CRM view filtered to that
@@ -684,7 +697,17 @@ export const Clients: React.FC = () => {
                   onImport={() => setOpenImport(true)}
                 />
               ) : showLanding ? (
-                <CrmCategoryLanding clients={clients} onPick={exitLanding} />
+                <CrmCategoryLanding
+                  clients={clients}
+                  registered={registeredCategories}
+                  onPick={exitLanding}
+                  onCreateCategory={canManageCategories
+                    ? () => setOpenManageCategories(true)
+                    : undefined}
+                  onManageCategories={canManageCategories
+                    ? () => setOpenManageCategories(true)
+                    : undefined}
+                />
               ) : (
               <>
               <AccountsHubCard
@@ -1013,6 +1036,20 @@ export const Clients: React.FC = () => {
           onDelete={(c) => setConfirmDelete(c)}
         />
       )}
+
+      {/* Account categories — managed list lives in client_categories */}
+      <ManageCategoriesDialog
+        open={openManageCategories}
+        onOpenChange={setOpenManageCategories}
+        categories={registeredCategories}
+        clients={clients}
+        canManage={canManageCategories}
+        workspaceId={isAllWorkspaces ? null : categoriesWorkspaceId}
+        workspaceName={selectedWorkspace?.name ?? null}
+        onCreate={createCategorySvc}
+        onUpdate={updateCategorySvc}
+        onDelete={removeCategorySvc}
+      />
 
       {/* Contact dialogs and drawer */}
       <ContactFormDialog
