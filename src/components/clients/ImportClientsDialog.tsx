@@ -298,14 +298,20 @@ export const ImportClientsDialog: React.FC<Props> = ({
           try {
             setRowReview(await previewClientImportRows(organizationId, parsed.data, extraColumns));
           } catch (err) {
-            setParseErrors([
-              err instanceof Error
-                ? err.message
-                : 'Could not compare this CSV with existing clients',
-            ]);
+            // Surface the actual Supabase/Postgres reason — generic "Could
+            // not compare" used to mask missing-RPC or RLS errors that the
+            // rep could actually act on.
+            const reason = extractErrorMessage(err, 'Could not compare this CSV with existing clients');
+            setParseErrors([reason]);
+            toast.error(reason);
           } finally {
             setCheckingRows(false);
           }
+        } else {
+          // No org context yet — usually means the page is still loading
+          // session info or the user is signed out. Don't silently land in
+          // a half-loaded preview state.
+          toast.error('No organization loaded yet — refresh and try again.');
         }
         setBusy(false);
       },
@@ -317,7 +323,25 @@ export const ImportClientsDialog: React.FC<Props> = ({
   };
 
   const confirmImport = async () => {
-    if (!scan || !organizationId || !userId || !userName) return;
+    // Be loud about every precondition that used to fail silently. Each one
+    // used to leave the rep staring at a frozen "Import N clean rows" button
+    // with no idea why nothing happened.
+    if (!scan) {
+      toast.error('Pick a CSV file first.');
+      return;
+    }
+    if (!organizationId) {
+      toast.error('No organization in context — refresh the page and try again.');
+      return;
+    }
+    if (!userId || !userName) {
+      toast.error('Not signed in — refresh the page and try again.');
+      return;
+    }
+    if (!workspaceId) {
+      toast.error('Pick a workspace in the sidebar first — accounts need a workspace to land in.');
+      return;
+    }
     const rowsToImport = rowReview?.importableRows ?? scan.rawRows;
     if (rowsToImport.length === 0) {
       setParseErrors(['No clean rows to import. Fix or override the red rows first.']);
@@ -332,13 +356,17 @@ export const ImportClientsDialog: React.FC<Props> = ({
         userName,
         rowsToImport,
         extraColumns,
-        workspaceId ?? null,
+        workspaceId,
       );
       setResult(imported);
       setPhase('imported');
       if (imported.imported.length > 0) onComplete(imported.imported);
+      if (imported.imported.length === 0 && imported.errors.length > 0) {
+        toast.error(`Imported 0 rows. First issue: ${imported.errors[0]?.message ?? 'unknown'}.`);
+      }
     } catch (err) {
-      setParseErrors([err instanceof Error ? err.message : 'Import failed']);
+      setParseErrors([extractErrorMessage(err, 'Import failed')]);
+      toast.error(extractErrorMessage(err, 'Import failed'));
     } finally {
       setBusy(false);
     }

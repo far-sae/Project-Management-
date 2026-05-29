@@ -37,6 +37,8 @@ import { ActivityTimeline } from './ActivityTimeline';
 import { SendEmailDialog } from './SendEmailDialog';
 import { SendSmsDialog } from './SendSmsDialog';
 import { InvoicesPanel } from './InvoicesPanel';
+import { AccountHierarchyCard } from './AccountHierarchyCard';
+import { AccountStageHistoryCard } from './AccountStageHistoryCard';
 import { toast } from 'sonner';
 
 type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files' | 'invoices';
@@ -56,6 +58,13 @@ interface Props {
   onClose: () => void;
   onEdit: (client: Client) => void;
   onDelete: (client: Client) => void;
+  /** Full org-wide accounts list — powers the new Account Hierarchy card
+   *  in the right rail. Optional so existing callers don't break; when
+   *  omitted the hierarchy section just hides. */
+  allAccounts?: Client[];
+  /** Called when the rep clicks a related account in the hierarchy tree.
+   *  Lets the parent swap the drawer to that account. */
+  onOpenAccount?: (c: Client) => void;
 }
 
 const NOTE_KIND_ICON: Record<ClientNoteKind, React.ComponentType<{ className?: string }>> = {
@@ -68,6 +77,7 @@ const NOTE_KIND_ICON: Record<ClientNoteKind, React.ComponentType<{ className?: s
 
 export const ClientDetailDrawer: React.FC<Props> = ({
   client, organizationId, canManage, onClose, onEdit, onDelete,
+  allAccounts, onOpenAccount,
 }) => {
   const { user } = useAuth();
   const [tab, setTab] = useState<MainTab>('activity');
@@ -329,6 +339,26 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               contacts={contacts}
               onChanged={reloadContacts}
             />
+
+            {/* Zoho-style related lists: parent / child accounts and the
+                cross-deal Stage History trail. Both are read-only here. */}
+            {allAccounts && allAccounts.length > 0 && (
+              <div className="border-t pt-3">
+                <AccountHierarchyCard
+                  account={client}
+                  allAccounts={allAccounts}
+                  onOpenAccount={onOpenAccount}
+                />
+              </div>
+            )}
+
+            <div className="border-t pt-3">
+              <AccountStageHistoryCard
+                organizationId={organizationId}
+                clientId={client.clientId}
+                currency={client.customFields?.currency as string | undefined}
+              />
+            </div>
           </aside>
         </div>
       </aside>

@@ -479,11 +479,10 @@ export const Clients: React.FC = () => {
   return (
     <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        {/* The Pipeline tab needs full page width so the kanban stretches
-            edge-to-edge like the project board — drop the max-w-6xl gate
-            there but keep it everywhere else (form-heavy tabs read better
-            when constrained). */}
-        <div className={`${activeTab === 'pipeline' ? 'max-w-none' : 'max-w-6xl mx-auto'} space-y-6`}>
+        {/* Every CRM tab gets full page width — matches the project-board
+            layout and gives leads / contacts / accounts / pipeline lists
+            enough room for all their columns without internal scroll. */}
+        <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
@@ -1148,6 +1147,8 @@ export const Clients: React.FC = () => {
           onClose={() => setSelected(null)}
           onEdit={(c) => setEditing(c)}
           onDelete={(c) => setConfirmDelete(c)}
+          allAccounts={allClients}
+          onOpenAccount={(c) => setSelected(c)}
         />
       )}
 

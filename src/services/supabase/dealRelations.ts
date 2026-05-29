@@ -485,6 +485,56 @@ const writeLocalHistory = (orgId: string, list: DealStageHistoryEntry[]) => {
   try { localStorage.setItem(STAGE_HISTORY_KEY(orgId), JSON.stringify(list)); } catch { /* ignore */ }
 };
 
+// Every stage transition across every deal linked to a single account.
+// Used by the Accounts module's "Stage History" related list, matching
+// Zoho's per-account stage trail.
+export const listAccountStageHistory = async (
+  organizationId: string,
+  clientId: string,
+): Promise<DealStageHistoryEntry[]> => {
+  if (isLocalOrg(organizationId)) {
+    // Local mode: filter the local history store by deals whose dealId
+    // belongs to this client.
+    try {
+      const dealsRaw = localStorage.getItem(`pm_deals_${organizationId}`);
+      const dealsList = dealsRaw
+        ? (JSON.parse(dealsRaw) as Array<{ dealId: string; clientId: string | null }>)
+        : [];
+      const accountDealIds = new Set(
+        dealsList.filter((d) => d.clientId === clientId).map((d) => d.dealId),
+      );
+      return readLocalHistory(organizationId)
+        .filter((h) => accountDealIds.has(h.dealId))
+        .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime());
+    } catch { return []; }
+  }
+  // Supabase: fetch the deal ids for this account first (one round-trip),
+  // then pull the history rows for those deals. Avoids a join we'd
+  // otherwise have to encode in a view.
+  const { data: deals, error: dealsError } = await supabase
+    .from("deals")
+    .select("deal_id")
+    .eq("organization_id", organizationId)
+    .eq("client_id", clientId);
+  if (dealsError) {
+    logger.error("listAccountStageHistory deals lookup failed:", dealsError);
+    return [];
+  }
+  const ids = (deals ?? []).map((d) => d.deal_id as string);
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from("deal_stage_history")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .in("deal_id", ids)
+    .order("changed_at", { ascending: false });
+  if (error) {
+    logger.error("listAccountStageHistory history fetch failed:", error);
+    return [];
+  }
+  return (data ?? []).map(mapHistory);
+};
+
 export const listDealStageHistory = async (
   organizationId: string,
   dealId: string,
