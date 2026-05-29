@@ -116,6 +116,10 @@ export const createClientCategory = async (
         && c.name.toLowerCase() === name.toLowerCase(),
     );
     if (dup) throw new Error("A category with that name already exists in this workspace.");
+    const inWorkspace = list.filter((c) => c.workspaceId === input.workspaceId);
+    const nextSort = inWorkspace.length === 0
+      ? 0
+      : Math.max(...inWorkspace.map((c) => c.sortOrder)) + 1;
     const next: ClientCategory = {
       categoryId: crypto.randomUUID(),
       organizationId,
@@ -123,7 +127,7 @@ export const createClientCategory = async (
       name,
       color: sanitize(input.color),
       description: sanitize(input.description),
-      sortOrder: input.sortOrder ?? list.length,
+      sortOrder: input.sortOrder ?? nextSort,
       createdBy: userId,
       createdByName: userName,
       createdAt: now,
@@ -131,6 +135,22 @@ export const createClientCategory = async (
     };
     writeLocal(organizationId, [...list, next]);
     return next;
+  }
+
+  // Pick the next slot inside this workspace so add-order is preserved across
+  // backends. One small read; admin op, runs rarely.
+  let nextSort = 0;
+  if (input.sortOrder === undefined) {
+    const { data: maxRow } = await supabase
+      .from("client_categories")
+      .select("sort_order")
+      .eq("organization_id", organizationId)
+      .eq("workspace_id", input.workspaceId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const current = (maxRow as { sort_order?: number } | null)?.sort_order;
+    nextSort = typeof current === "number" ? current + 1 : 0;
   }
 
   const { data, error } = await supabase
@@ -141,7 +161,7 @@ export const createClientCategory = async (
       name,
       color: sanitize(input.color),
       description: sanitize(input.description),
-      sort_order: input.sortOrder ?? 0,
+      sort_order: input.sortOrder ?? nextSort,
       created_by: userId,
       created_by_name: userName,
     })
@@ -158,6 +178,58 @@ export const createClientCategory = async (
   return mapCategory(data as Record<string, unknown>);
 };
 
+// Rename the free-text `category` value on every client row whose category
+// case-insensitively matches `oldName`, scoped to the same workspace. Without
+// this companion update, renaming a category orphans its accounts (the
+// category row says "Tier 1" but the clients still carry "Enterprise").
+const cascadeRenameClients = async (
+  organizationId: string,
+  workspaceId: string,
+  oldName: string,
+  newName: string,
+): Promise<void> => {
+  if (oldName.toLowerCase() === newName.toLowerCase()) return;
+
+  if (isLocalOrg(organizationId)) {
+    try {
+      const key = `pm_clients_${organizationId}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const list = JSON.parse(raw) as Array<Record<string, unknown>>;
+      let changed = false;
+      for (const c of list) {
+        if (
+          c.workspaceId === workspaceId
+          && typeof c.category === "string"
+          && c.category.trim().toLowerCase() === oldName.toLowerCase()
+        ) {
+          c.category = newName;
+          c.updatedAt = new Date().toISOString();
+          changed = true;
+        }
+      }
+      if (changed) localStorage.setItem(key, JSON.stringify(list));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  // Supabase: ilike is case-insensitive and exact on the full string.
+  const { error } = await supabase
+    .from("clients")
+    .update({ category: newName, updated_at: new Date().toISOString() })
+    .eq("organization_id", organizationId)
+    .eq("workspace_id", workspaceId)
+    .ilike("category", oldName);
+  if (error) {
+    // Don't reverse the category rename if the cascade fails — log it loudly
+    // so the rep can re-tag manually. Surfacing the partial state to the
+    // caller would force them to roll back a successful registry write.
+    logger.error("cascadeRenameClients failed (category renamed but accounts not):", error);
+  }
+};
+
 export const updateClientCategory = async (
   organizationId: string,
   categoryId: string,
@@ -167,10 +239,23 @@ export const updateClientCategory = async (
     const list = readLocal(organizationId);
     const idx = list.findIndex((c) => c.categoryId === categoryId);
     if (idx === -1) throw new Error("Category not found");
-    const merged: ClientCategory = { ...list[idx] };
+    const current = list[idx];
+    const merged: ClientCategory = { ...current };
+    let renamedFrom: string | null = null;
     if (input.name !== undefined) {
       const nm = sanitize(input.name);
       if (!nm) throw new Error("Category name cannot be empty");
+      // Mirror the create-path dup check so the local + Supabase contracts
+      // agree on case-insensitive uniqueness within a workspace.
+      const dup = list.find(
+        (c) => c.categoryId !== categoryId
+          && c.workspaceId === current.workspaceId
+          && c.name.toLowerCase() === nm.toLowerCase(),
+      );
+      if (dup) throw new Error("A category with that name already exists in this workspace.");
+      if (nm.toLowerCase() !== current.name.toLowerCase() || nm !== current.name) {
+        renamedFrom = current.name;
+      }
       merged.name = nm;
     }
     if (input.color !== undefined) merged.color = sanitize(input.color);
@@ -179,13 +264,33 @@ export const updateClientCategory = async (
     merged.updatedAt = new Date();
     list[idx] = merged;
     writeLocal(organizationId, list);
+    if (renamedFrom) {
+      await cascadeRenameClients(organizationId, merged.workspaceId, renamedFrom, merged.name);
+    }
     return merged;
   }
 
+  // Look up the current row first so we know the previous name + workspace
+  // for the cascade. One extra round-trip; rename is a rare admin op.
+  const { data: prev, error: readErr } = await supabase
+    .from("client_categories")
+    .select("name, workspace_id")
+    .eq("organization_id", organizationId)
+    .eq("category_id", categoryId)
+    .single();
+  if (readErr) {
+    logger.error("updateClientCategory pre-read failed:", readErr);
+    throw readErr;
+  }
+
   const patch: Record<string, unknown> = {};
+  let renamedFrom: string | null = null;
   if (input.name !== undefined) {
     const nm = sanitize(input.name);
     if (!nm) throw new Error("Category name cannot be empty");
+    if (nm !== (prev as { name: string }).name) {
+      renamedFrom = (prev as { name: string }).name;
+    }
     patch.name = nm;
   }
   if (input.color !== undefined) patch.color = sanitize(input.color);
@@ -207,7 +312,11 @@ export const updateClientCategory = async (
     logger.error("updateClientCategory failed:", error);
     throw error;
   }
-  return mapCategory(data as Record<string, unknown>);
+  const next = mapCategory(data as Record<string, unknown>);
+  if (renamedFrom) {
+    await cascadeRenameClients(organizationId, next.workspaceId, renamedFrom, next.name);
+  }
+  return next;
 };
 
 export const deleteClientCategory = async (

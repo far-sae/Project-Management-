@@ -4,6 +4,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +52,7 @@ export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState<string>('');
   const [creating, setCreating] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ClientCategory | null>(null);
 
   // Count accounts per category (case-insensitive match against
   // client.category). Empty registered categories show a "0 accounts" badge
@@ -129,16 +134,14 @@ export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
     }
   };
 
-  const handleDelete = async (c: ClientCategory) => {
-    const inUse = usageByName.get(c.name.toLowerCase()) ?? 0;
-    const msg = inUse > 0
-      ? `Delete "${c.name}"? ${inUse} account${inUse === 1 ? '' : 's'} still use this category. Those accounts keep the text "${c.name}" on them; you can re-categorise them later.`
-      : `Delete "${c.name}"?`;
-    if (!confirm(msg)) return;
+  const confirmDelete = async () => {
+    const c = pendingDelete;
+    if (!c) return;
     setBusyId(c.categoryId);
     try {
       await onDelete(c.categoryId);
       toast.success(`Deleted category "${c.name}"`);
+      setPendingDelete(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Delete failed');
     } finally {
@@ -270,7 +273,7 @@ export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
                               <Button size="sm" variant="ghost" onClick={() => startEdit(c)} disabled={busyId === c.categoryId}>
                                 <Edit2 className="w-3.5 h-3.5" />
                               </Button>
-                              <Button size="sm" variant="ghost" onClick={() => handleDelete(c)}
+                              <Button size="sm" variant="ghost" onClick={() => setPendingDelete(c)}
                                 disabled={busyId === c.categoryId}
                                 className="text-destructive hover:text-destructive">
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -332,6 +335,46 @@ export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this category?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete && (() => {
+                const inUse = usageByName.get(pendingDelete.name.toLowerCase()) ?? 0;
+                if (inUse > 0) {
+                  return (
+                    <>
+                      <strong>"{pendingDelete.name}"</strong> is still tagged on{' '}
+                      {inUse} account{inUse === 1 ? '' : 's'}. The category text stays on
+                      those accounts so nothing is lost — you can re-categorise them later.
+                    </>
+                  );
+                }
+                return <>Delete <strong>"{pendingDelete.name}"</strong>?</>;
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busyId === pendingDelete?.categoryId}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); void confirmDelete(); }}
+              disabled={busyId === pendingDelete?.categoryId}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {busyId === pendingDelete?.categoryId ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Deleting…</>
+              ) : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 };

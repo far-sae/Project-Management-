@@ -284,7 +284,10 @@ export const Clients: React.FC = () => {
       if (bandFilter !== "all" && c.scoreBand !== bandFilter) return false;
       if (categoryFilter === '__uncategorized__') {
         if (c.category && c.category.trim().length > 0) return false;
-      } else if (categoryFilter !== 'all' && (c.category ?? '') !== categoryFilter) {
+      } else if (
+        categoryFilter !== 'all'
+        && (c.category ?? '').trim().toLowerCase() !== categoryFilter.toLowerCase()
+      ) {
         return false;
       }
       if (!q) return true;
@@ -299,13 +302,23 @@ export const Clients: React.FC = () => {
     });
   }, [clients, search, typeFilter, statusFilter, bandFilter, categoryFilter]);
 
-  // Build a unique sorted list of categories used in the current org so the
-  // filter dropdown only offers real values.
+  // Union of registered categories + free-text categories on accounts.
+  // Keyed case-insensitively so "Enterprise" and "ENTERPRISE" collapse into
+  // one option (matches how the landing buckets them). Registered names win
+  // as the display label so dropdowns show the canonical casing.
   const availableCategories = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of clients) if (c.category) set.add(c.category);
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [clients]);
+    const map = new Map<string, string>();
+    for (const r of registeredCategories) {
+      map.set(r.name.toLowerCase(), r.name);
+    }
+    for (const c of clients) {
+      const raw = c.category?.trim();
+      if (!raw) continue;
+      const k = raw.toLowerCase();
+      if (!map.has(k)) map.set(k, raw);
+    }
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+  }, [clients, registeredCategories]);
 
   const selectedClients = useMemo(
     () => clients.filter((c) => selectedClientIds.has(c.clientId)),

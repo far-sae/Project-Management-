@@ -60,8 +60,18 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
 
     // 1. Seed from the registered list — even empty registered categories
     //    should appear so the rep can see them on the landing.
+    //    On the All-workspaces view, two workspaces can each own a "Enterprise"
+    //    category. We collapse same-name buckets (first-seen wins for the
+    //    color/key) so the picker doesn't render a non-deterministic tile
+    //    whose metadata flips between renders.
     for (const r of registered) {
       const key = r.name.toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.registered = true;
+        if (existing.color == null && r.color) existing.color = r.color;
+        continue;
+      }
       map.set(key, {
         key: r.name,                   // display + filter use the raw name
         label: r.name,
