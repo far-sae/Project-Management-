@@ -1016,3 +1016,560 @@ export const leadDisplayName = (l: Lead): string => {
 export const leadStatusLabel = (s: LeadStatus): string => {
   return LEAD_STATUS_OPTIONS.find((o) => o.value === s)?.label ?? s;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CSV import — Zoho-style "Import Leads" feature
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Header aliases keep the importer permissive — Apollo / Salesforce /
+ *  HubSpot exports all use slightly different column names. Map them to a
+ *  canonical internal key so the parser only has to learn one shape. */
+const LEAD_HEADER_ALIASES: Record<string, string> = {
+  firstname: "first_name",
+  "first name": "first_name",
+  givenname: "first_name",
+  lastname: "last_name",
+  "last name": "last_name",
+  surname: "last_name",
+  familyname: "last_name",
+  fullname: "full_name",
+  "full name": "full_name",
+  name: "full_name",
+  email: "email",
+  emailaddress: "email",
+  "email address": "email",
+  workemail: "email",
+  phone: "phone",
+  phonenumber: "phone",
+  workphone: "phone",
+  mobile: "mobile",
+  mobilephone: "mobile",
+  cellphone: "mobile",
+  cell: "mobile",
+  fax: "fax",
+  website: "website",
+  url: "website",
+  domain: "website",
+  company: "company",
+  companyname: "company",
+  organization: "company",
+  organizationname: "company",
+  account: "company",
+  accountname: "company",
+  industry: "industry",
+  vertical: "industry",
+  title: "title",
+  "job title": "title",
+  jobtitle: "title",
+  position: "title",
+  role: "title",
+  salutation: "salutation",
+  honorific: "salutation",
+  city: "city",
+  state: "state",
+  region: "state",
+  country: "country",
+  street: "street",
+  address: "street",
+  address1: "street",
+  "address line 1": "street",
+  zipcode: "postal_code",
+  zip: "postal_code",
+  postalcode: "postal_code",
+  postal: "postal_code",
+  annualrevenue: "annual_revenue",
+  "annual revenue": "annual_revenue",
+  revenue: "annual_revenue",
+  employeecount: "no_of_employees",
+  "employee count": "no_of_employees",
+  numberofemployees: "no_of_employees",
+  "no. of employees": "no_of_employees",
+  employees: "no_of_employees",
+  leadowner: "lead_owner_name",
+  "lead owner": "lead_owner_name",
+  owner: "lead_owner_name",
+  assignedto: "lead_owner_name",
+  leadsource: "lead_source",
+  "lead source": "lead_source",
+  source: "lead_source",
+  leadstatus: "lead_status",
+  "lead status": "lead_status",
+  status: "lead_status",
+  stage: "lead_status",
+  rating: "rating",
+  description: "description",
+  notes: "description",
+  comments: "description",
+  tags: "tags",
+  labels: "tags",
+  linkedin: "linkedin_url",
+  linkedinurl: "linkedin_url",
+  "linkedin url": "linkedin_url",
+  twitter: "twitter",
+  twitterhandle: "twitter",
+  skype: "skype_id",
+  skypeid: "skype_id",
+};
+
+const normalizeHeader = (h: string): string => {
+  const cleaned = h.toLowerCase().trim();
+  // Collapse runs of separators so "Last_Name", "last-name", "last name" all match.
+  const compact = cleaned.replace(/[\s_\-./()]+/g, "");
+  if (LEAD_HEADER_ALIASES[compact]) return LEAD_HEADER_ALIASES[compact];
+  if (LEAD_HEADER_ALIASES[cleaned]) return LEAD_HEADER_ALIASES[cleaned];
+  // Try a sorted-token canonical form so "Email (Work)" and "Work Email"
+  // both collapse to the same lookup key. Catches Salesforce/HubSpot
+  // exports that put the qualifier in parens vs. as a prefix.
+  const tokens = cleaned.split(/[\s_\-./()]+/).filter(Boolean).sort();
+  if (tokens.length >= 2) {
+    const sortedCompact = tokens.join("");
+    if (LEAD_HEADER_ALIASES[sortedCompact]) return LEAD_HEADER_ALIASES[sortedCompact];
+  }
+  return cleaned;
+};
+
+export interface ParsedCsv {
+  rows: Array<Record<string, string>>;
+  /** Source headers that collapsed to the same canonical key. When this
+   *  happens the import would silently last-write-wins, so the dialog
+   *  surfaces them as a warning. */
+  duplicateHeaders: Array<{ canonical: string; sources: string[] }>;
+}
+
+/** Parse a CSV string into row objects. Handles quoted fields, escaped quotes,
+ *  embedded commas, embedded newlines, BOM, and normalises CRLF both inside
+ *  AND outside quoted fields. Header row is normalised so callers can read
+ *  by canonical key. */
+export const parseLeadCsv = (text: string): ParsedCsv => {
+  const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const rows: string[][] = [];
+  let cur: string[] = [];
+  let field = "";
+  let i = 0;
+  let inQuotes = false;
+  while (i < src.length) {
+    const c = src[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (src[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      // Inside quotes, normalise CRLF to LF so Windows-exported quoted
+      // descriptions don't keep stray \r characters.
+      if (c === "\r") {
+        if (src[i + 1] === "\n") {
+          field += "\n";
+          i += 2;
+        } else {
+          field += "\n";
+          i += 1;
+        }
+        continue;
+      }
+      field += c;
+      i += 1;
+      continue;
+    }
+    if (c === '"') {
+      inQuotes = true;
+      i += 1;
+      continue;
+    }
+    if (c === ",") {
+      cur.push(field);
+      field = "";
+      i += 1;
+      continue;
+    }
+    if (c === "\r") {
+      // swallow CR; the next LF closes the row
+      i += 1;
+      continue;
+    }
+    if (c === "\n") {
+      cur.push(field);
+      rows.push(cur);
+      cur = [];
+      field = "";
+      i += 1;
+      continue;
+    }
+    field += c;
+    i += 1;
+  }
+  if (field !== "" || cur.length > 0) {
+    cur.push(field);
+    rows.push(cur);
+  }
+  if (rows.length === 0) return { rows: [], duplicateHeaders: [] };
+
+  // Normalise headers and detect collisions where multiple source columns
+  // would clobber each other in the row dict.
+  const sourceHeaders = rows[0];
+  const headers = sourceHeaders.map((h) => normalizeHeader(h));
+  const sourcesByCanonical = new Map<string, string[]>();
+  for (let c = 0; c < headers.length; c++) {
+    const key = headers[c];
+    const sources = sourcesByCanonical.get(key) ?? [];
+    sources.push(sourceHeaders[c]);
+    sourcesByCanonical.set(key, sources);
+  }
+  const duplicateHeaders: Array<{ canonical: string; sources: string[] }> = [];
+  for (const [canonical, sources] of sourcesByCanonical.entries()) {
+    if (sources.length > 1) duplicateHeaders.push({ canonical, sources });
+  }
+
+  const out: Array<Record<string, string>> = [];
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    if (cells.every((v) => v.trim() === "")) continue;
+    const obj: Record<string, string> = {};
+    // Last-write-wins on duplicates, but we already warned via
+    // duplicateHeaders so the rep can rename or remove a column.
+    for (let c = 0; c < headers.length; c++) {
+      obj[headers[c]] = (cells[c] ?? "").trim();
+    }
+    out.push(obj);
+  }
+  return { rows: out, duplicateHeaders };
+};
+
+const LEAD_STATUS_LOOKUP: Record<string, LeadStatus> = {
+  new: "new",
+  contacted: "contacted",
+  "not contacted": "not_contacted",
+  "not_contacted": "not_contacted",
+  "attempted to contact": "attempted_to_contact",
+  "attempted_to_contact": "attempted_to_contact",
+  "contact in future": "contact_in_future",
+  "contact_in_future": "contact_in_future",
+  "pre-qualified": "pre_qualified",
+  "pre qualified": "pre_qualified",
+  "pre_qualified": "pre_qualified",
+  qualified: "pre_qualified",
+  "not qualified": "not_qualified",
+  "not_qualified": "not_qualified",
+  unqualified: "not_qualified",
+  "junk lead": "junk_lead",
+  junk: "junk_lead",
+  "junk_lead": "junk_lead",
+  "lost lead": "lost_lead",
+  lost: "lost_lead",
+  "lost_lead": "lost_lead",
+  converted: "converted",
+};
+
+const parseLeadStatusValue = (raw: string | undefined | null): LeadStatus | null => {
+  if (!raw) return null;
+  const k = raw.toLowerCase().trim();
+  return LEAD_STATUS_LOOKUP[k] ?? null;
+};
+
+const parseTagList = (raw: string | undefined | null): string[] => {
+  if (!raw) return [];
+  return raw
+    .split(/[,;|]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+};
+
+// Detect magnitude suffixes BEFORE stripping non-numeric chars so '1.5M',
+// '$2.3B', '500K', '1.2bn' all parse as the order-of-magnitude they intend.
+// Apollo / Crunchbase / ZoomInfo revenue exports use these almost universally.
+const MAGNITUDE_SUFFIXES: Array<{ re: RegExp; mult: number }> = [
+  { re: /\bt(?:rillion)?\b/i, mult: 1e12 },
+  { re: /\bb(?:n|illion)?\b/i, mult: 1e9 },
+  { re: /\bmm\b/i,             mult: 1e6 },
+  { re: /\bm(?:illion)?\b/i,   mult: 1e6 },
+  { re: /\bk\b/i,              mult: 1e3 },
+];
+
+const parseNumber = (raw: string | undefined | null): number | null => {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  let multiplier = 1;
+  let body = s;
+  for (const { re, mult } of MAGNITUDE_SUFFIXES) {
+    if (re.test(body)) {
+      multiplier = mult;
+      body = body.replace(re, "").trim();
+      break;
+    }
+  }
+  // Now strip currency / commas / spaces while keeping '.' and '-' so
+  // "$1,234.56" -> 1234.56. Scientific notation (1e6) survives because
+  // we only strip the magnitude letter when it appears as a word boundary.
+  const cleaned = body.replace(/[^\d.\-eE+]/g, "");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n * multiplier;
+};
+
+export interface LeadCsvRowError {
+  row: number;       // 1-indexed against the source spreadsheet (header = row 1)
+  message: string;
+}
+
+export interface LeadCsvCoercion {
+  row: number;
+  field: string;
+  original: string;
+  coercedTo: string;
+}
+
+export interface ImportLeadsResult {
+  imported: Lead[];
+  errors: LeadCsvRowError[];
+  /** Headers we saw but couldn't map to a canonical lead field. Useful for
+   *  the dialog's "we ignored these columns" diagnostic. */
+  unknownHeaders: string[];
+  /** Canonical headers we expected but didn't see in the file. */
+  missingRequired: string[];
+  /** Source columns that collapsed to the same canonical key (e.g. both
+   *  'Email' and 'Work Email' map to email — only the rightmost wins). */
+  duplicateHeaders: Array<{ canonical: string; sources: string[] }>;
+  /** Per-row value-level coercions the dialog should surface so the user
+   *  doesn't end up with a silently inflated 'New' cohort etc. */
+  coercions: LeadCsvCoercion[];
+  /** True when the import was halted early because too many consecutive
+   *  rows failed with the same systemic error (auth/RLS). */
+  aborted: boolean;
+}
+
+/** Build a CreateLeadInput from a single parsed CSV row. Splits full_name
+ *  into first/last when explicit columns weren't provided. Returns either
+ *  ok=true with the input, or ok=false with a human-readable reason. Also
+ *  appends to coercions[] for any value-level normalisations the importer
+ *  applied silently (e.g. unknown lead_status → 'new'), so the dialog can
+ *  warn the user instead of letting them discover the mismatch later. */
+const buildLeadInput = (
+  row: Record<string, string>,
+  workspaceId: string,
+  rowNumber: number,
+  coercions: LeadCsvCoercion[],
+): { ok: true; input: CreateLeadInput } | { ok: false; reason: string } => {
+  let firstName = row.first_name?.trim() ?? "";
+  let lastName = row.last_name?.trim() ?? "";
+
+  if (!lastName && row.full_name?.trim()) {
+    const parts = row.full_name.trim().split(/\s+/);
+    if (parts.length === 1) {
+      lastName = parts[0];
+    } else {
+      firstName = firstName || parts.slice(0, -1).join(" ");
+      lastName = parts[parts.length - 1];
+    }
+  }
+
+  if (!lastName) {
+    return { ok: false, reason: "Missing last name (or full name)." };
+  }
+
+  const company = row.company?.trim() ?? "";
+  if (!company) {
+    return { ok: false, reason: "Missing company. Set a Company column, or 'Organization' / 'Account'." };
+  }
+
+  const annualRevenue = parseNumber(row.annual_revenue);
+  const noOfEmployeesRaw = parseNumber(row.no_of_employees);
+  const noOfEmployees =
+    noOfEmployeesRaw == null ? null : Math.round(noOfEmployeesRaw);
+
+  // Track coercions on lead_status so the user sees a 'these rows had
+  // unknown statuses' panel rather than ending up with a falsely inflated
+  // "New" cohort after the import.
+  const rawStatus = row.lead_status?.trim() ?? "";
+  let status: LeadStatus = "new";
+  if (rawStatus) {
+    const parsed = parseLeadStatusValue(rawStatus);
+    if (parsed) {
+      status = parsed;
+    } else {
+      coercions.push({
+        row: rowNumber,
+        field: "lead_status",
+        original: rawStatus,
+        coercedTo: "new",
+      });
+    }
+  }
+
+  const input: CreateLeadInput = {
+    workspaceId,
+    salutation: row.salutation || null,
+    firstName: firstName || null,
+    lastName,
+    title: row.title || null,
+    email: row.email || null,
+    phone: row.phone || null,
+    mobile: row.mobile || null,
+    fax: row.fax || null,
+    website: row.website || null,
+    skypeId: row.skype_id || null,
+    twitter: row.twitter || null,
+    linkedinUrl: row.linkedin_url || null,
+    company,
+    industry: row.industry || null,
+    annualRevenue,
+    noOfEmployees,
+    street: row.street || null,
+    city: row.city || null,
+    state: row.state || null,
+    postalCode: row.postal_code || null,
+    country: row.country || null,
+    leadOwnerName: row.lead_owner_name || null,
+    leadSource: row.lead_source || null,
+    leadStatus: status,
+    rating: row.rating || null,
+    description: row.description || null,
+    tags: parseTagList(row.tags),
+  };
+
+  return { ok: true, input };
+};
+
+/** Headers the importer actively reads. Anything outside this set is
+ *  ignored (and reported back in unknownHeaders so the dialog can warn). */
+const KNOWN_LEAD_HEADERS = new Set<string>([
+  "first_name", "last_name", "full_name", "salutation", "title",
+  "email", "phone", "mobile", "fax", "website",
+  "company", "industry", "annual_revenue", "no_of_employees",
+  "street", "city", "state", "country", "postal_code",
+  "lead_owner_name", "lead_source", "lead_status", "rating",
+  "description", "tags",
+  "skype_id", "twitter", "linkedin_url",
+]);
+
+const REQUIRED_LEAD_HEADERS = ["last_name", "company"] as const;
+
+/** When this many consecutive rows fail with the exact same error message,
+ *  we assume the failure is structural (RLS / auth / workspace mismatch)
+ *  and abort the loop rather than burn through hundreds of identical
+ *  Supabase round-trips against a tenant the rep can't write to. */
+const IDENTICAL_FAILURE_ABORT_THRESHOLD = 5;
+
+export const computeImportPrecheck = (
+  rows: Array<Record<string, string>>,
+): { unknownHeaders: string[]; missingRequired: string[] } => {
+  const seen = new Set<string>();
+  if (rows.length > 0) {
+    for (const k of Object.keys(rows[0])) seen.add(k);
+  }
+  const unknownHeaders = Array.from(seen).filter(
+    (h) => !KNOWN_LEAD_HEADERS.has(h) && h !== "full_name",
+  );
+  const missingRequired = REQUIRED_LEAD_HEADERS.filter(
+    (h) => !(seen.has(h) || (h === "last_name" && seen.has("full_name"))),
+  );
+  return { unknownHeaders, missingRequired: [...missingRequired] };
+};
+
+export const importLeadsFromCsv = async (
+  organizationId: string,
+  userId: string | null,
+  userName: string | null,
+  workspaceId: string,
+  rows: Array<Record<string, string>>,
+  options: {
+    duplicateHeaders?: Array<{ canonical: string; sources: string[] }>;
+  } = {},
+): Promise<ImportLeadsResult> => {
+  const errors: LeadCsvRowError[] = [];
+  const imported: Lead[] = [];
+  const coercions: LeadCsvCoercion[] = [];
+  const { unknownHeaders, missingRequired } = computeImportPrecheck(rows);
+  const duplicateHeaders = options.duplicateHeaders ?? [];
+
+  // Circuit-breaker state. Track the last error message and how many times
+  // we've seen it in a row.
+  let lastErrorMessage: string | null = null;
+  let consecutiveIdenticalErrors = 0;
+  let aborted = false;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNumber = i + 2;
+    const built = buildLeadInput(row, workspaceId, rowNumber, coercions);
+    if (!built.ok) {
+      errors.push({ row: rowNumber, message: built.reason });
+      lastErrorMessage = built.reason;
+      consecutiveIdenticalErrors += 1;
+      // Pre-validation errors don't usually pile up identically across
+      // hundreds of rows, but if they do (e.g. every row missing company),
+      // bail out early too.
+      if (consecutiveIdenticalErrors >= IDENTICAL_FAILURE_ABORT_THRESHOLD) {
+        errors.push({
+          row: rowNumber + 1,
+          message: `Aborted after ${consecutiveIdenticalErrors} identical "${lastErrorMessage}" errors — fix the source data and re-import.`,
+        });
+        aborted = true;
+        break;
+      }
+      continue;
+    }
+    try {
+      const lead = await createLead(organizationId, userId, userName, built.input);
+      imported.push(lead);
+      consecutiveIdenticalErrors = 0;
+      lastErrorMessage = null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      errors.push({ row: rowNumber, message });
+      if (message === lastErrorMessage) {
+        consecutiveIdenticalErrors += 1;
+      } else {
+        lastErrorMessage = message;
+        consecutiveIdenticalErrors = 1;
+      }
+      if (consecutiveIdenticalErrors >= IDENTICAL_FAILURE_ABORT_THRESHOLD) {
+        errors.push({
+          row: rowNumber + 1,
+          message: `Aborted after ${consecutiveIdenticalErrors} identical "${message}" errors — likely a permission / workspace issue. Fix and retry.`,
+        });
+        aborted = true;
+        break;
+      }
+    }
+  }
+
+  return {
+    imported, errors, unknownHeaders, missingRequired,
+    duplicateHeaders, coercions, aborted,
+  };
+};
+
+/** Static CSV template the dialog offers as a "Download template" link.
+ *  Match Zoho's column order so reps coming from there feel at home. */
+export const buildLeadsCsvTemplate = (): string => {
+  const headers = [
+    "salutation", "first_name", "last_name", "title", "company",
+    "email", "phone", "mobile", "website",
+    "industry", "annual_revenue", "no_of_employees",
+    "street", "city", "state", "postal_code", "country",
+    "lead_source", "lead_status", "rating",
+    "description", "tags",
+    "linkedin_url", "twitter", "skype_id",
+  ];
+  const sample = [
+    "Ms.", "Sam", "Smith", "Owner", "Sam's Cafe",
+    "sam@samscafe.com", "+15551112222", "+15553334444", "samscafe.com",
+    "Small/Medium Enterprise", "500000", "5",
+    "12 Main St", "Boston", "MA", "02108", "USA",
+    "Web Research", "new", "Active",
+    "Interested in a yearly contract.", "vip,hot",
+    "https://linkedin.com/in/example", "@samscafe", "sam.live",
+  ];
+  const escape = (v: string) => /[",\n\r]/.test(v)
+    ? `"${v.replace(/"/g, '""')}"`
+    : v;
+  return [headers.join(","), sample.map(escape).join(",")].join("\n") + "\n";
+};
+

@@ -44,6 +44,7 @@ import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
 import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadConvertDialog } from '@/components/leads/LeadConvertDialog';
+import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
 import { useLeads } from '@/hooks/useLeads';
 import type { Lead } from '@/services/supabase/leads';
 import { leadDisplayName } from '@/services/supabase/leads';
@@ -112,12 +113,14 @@ export const Clients: React.FC = () => {
   // ─── Leads state ────────────────────────────────────────────────────────
   const {
     leads, allLeads, loading: leadsLoading,
+    workspaceId: activeLeadWorkspaceId,
     create: createLeadSvc, update: updateLeadSvc, remove: removeLeadSvc, convert: convertLeadSvc,
     canCreate: canCreateLead, canManage: canManageLead,
   } = useLeads();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [openCreateLead, setOpenCreateLead] = useState(false);
+  const [openImportLead, setOpenImportLead] = useState(false);
   const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
@@ -558,7 +561,7 @@ export const Clients: React.FC = () => {
                 <LeadsLanding
                   canCreate={canCreateLead}
                   onCreate={() => setOpenCreateLead(true)}
-                  onImport={() => toast.info('Lead CSV import is coming next — for now create leads one at a time.')}
+                  onImport={() => setOpenImportLead(true)}
                 />
               ) : (
                 <>
@@ -570,9 +573,14 @@ export const Clients: React.FC = () => {
                       </p>
                     </div>
                     {canCreateLead && (
-                      <Button onClick={() => setOpenCreateLead(true)}>
-                        <Plus className="w-4 h-4 mr-2" /> Create Lead
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={() => setOpenImportLead(true)}>
+                          <Upload className="w-4 h-4 mr-2" /> Import Leads
+                        </Button>
+                        <Button onClick={() => setOpenCreateLead(true)}>
+                          <Plus className="w-4 h-4 mr-2" /> Create Lead
+                        </Button>
+                      </div>
                     )}
                   </div>
                   <LeadsTable
@@ -926,6 +934,55 @@ export const Clients: React.FC = () => {
       )}
 
       {/* Lead dialogs and drawer */}
+      <ImportLeadsDialog
+        open={openImportLead}
+        onOpenChange={setOpenImportLead}
+        organizationId={organizationId}
+        // Skip the implicit-workspace fallback when the user is in 'All
+        // workspaces' / 'Unassigned' — the dialog will refuse to import
+        // and surface a clear message instead of silently stamping every
+        // row into workspaces[0].
+        workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
+        workspaceName={selectedWorkspace?.name ?? null}
+        userId={user?.userId}
+        userName={user?.displayName}
+        onComplete={(result) => {
+          // Always audit the attempt — even when zero rows landed, finance/
+          // compliance reviewers need to see that a bulk action ran.
+          void recordAuditEvent(
+            organizationId,
+            { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+            {
+              action: result.imported.length > 0 ? 'lead_imported' : 'lead_import_failed',
+              targetType: 'lead',
+              targetLabel: `${result.imported.length}/${result.imported.length + result.errors.length} lead(s) via CSV`,
+              metadata: {
+                imported: result.imported.length,
+                errors: result.errors.length,
+                coercions: result.coercions.length,
+                unknownHeaders: result.unknownHeaders,
+                missingRequired: result.missingRequired,
+                aborted: result.aborted,
+                workspaceId: activeLeadWorkspaceId,
+                workspaceName: selectedWorkspace?.name ?? null,
+              },
+            },
+          );
+
+          if (result.imported.length === 0) {
+            toast.error('No leads were imported. Check the row errors above.');
+            return;
+          }
+          if (result.errors.length > 0 || result.coercions.length > 0) {
+            toast.warning(
+              `Imported ${result.imported.length} of ${result.imported.length + result.errors.length} leads — review the warnings above.`,
+            );
+          } else {
+            toast.success(`Imported ${result.imported.length} lead${result.imported.length === 1 ? '' : 's'} into ${selectedWorkspace?.name ?? 'workspace'}`);
+          }
+        }}
+      />
+
       <LeadFormDialog
         open={openCreateLead || !!editingLead}
         onOpenChange={(o) => {
