@@ -93,6 +93,9 @@ export const useClientCategories = () => {
   const update = useCallback(
     async (categoryId: string, input: UpdateClientCategoryInput) => {
       if (!orgId) throw new Error("No organization");
+      // Returns { category, cascade } so the caller can warn on partial
+      // rename failures instead of silently leaving the registry and the
+      // clients table out of sync.
       return updateSvc(orgId, categoryId, input);
     },
     [orgId],
@@ -119,8 +122,17 @@ export const useClientCategories = () => {
     remove,
     isOwner,
     isAdmin,
+    // canManage = can use the dialog at all (add / promote derived). Mirrors
+    // the INSERT RLS policy: any non-viewer member.
     canManage: Boolean(
       orgId && !orgId.startsWith("local-") && !isViewer,
+    ),
+    // canAdminCategories = can rename or delete an existing registered
+    // category. Mirrors migration 106's admin-only UPDATE/DELETE policy,
+    // which is required so the cascade rename across clients.category has
+    // matching privilege and doesn't silently zero-row.
+    canAdminCategories: Boolean(
+      orgId && !orgId.startsWith("local-") && (isOwner || isAdmin),
     ),
   };
 };

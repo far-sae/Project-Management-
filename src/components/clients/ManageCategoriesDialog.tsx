@@ -15,6 +15,7 @@ import {
   ClientCategory,
   CreateClientCategoryInput,
   UpdateClientCategoryInput,
+  UpdateClientCategoryResult,
 } from '@/services/supabase/clientCategories';
 import type { Client } from '@/services/supabase/clients';
 import { cn } from '@/lib/utils';
@@ -28,10 +29,13 @@ interface ManageCategoriesDialogProps {
    *  surface free-text "derived" categories alongside the registered list. */
   clients: Client[];
   canManage: boolean;
+  /** Permission to rename / delete registered categories. Mirrors the
+   *  admin/owner UPDATE policy on client_categories (migration 106). */
+  canAdmin: boolean;
   workspaceId: string | null;
   workspaceName: string | null;
   onCreate: (input: CreateClientCategoryInput) => Promise<ClientCategory>;
-  onUpdate: (categoryId: string, input: UpdateClientCategoryInput) => Promise<ClientCategory>;
+  onUpdate: (categoryId: string, input: UpdateClientCategoryInput) => Promise<UpdateClientCategoryResult>;
   onDelete: (categoryId: string) => Promise<void>;
 }
 
@@ -41,7 +45,7 @@ const PALETTE = [
 ];
 
 export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
-  open, onOpenChange, categories, clients, canManage,
+  open, onOpenChange, categories, clients, canManage, canAdmin,
   workspaceId, workspaceName,
   onCreate, onUpdate, onDelete,
 }) => {
@@ -124,8 +128,23 @@ export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
     }
     setBusyId(c.categoryId);
     try {
-      await onUpdate(c.categoryId, { name, color: editColor });
-      toast.success(`Renamed to "${name}"`);
+      const result = await onUpdate(c.categoryId, { name, color: editColor });
+      // The registry write may succeed while the cascade rename across
+      // clients.category fails (RLS, network, transient errors). Surface
+      // the partial state instead of silently lying with success.
+      if (result.cascade && !result.cascade.ok) {
+        toast.warning(
+          `Renamed to "${name}", but ${result.cascade.updated} account${result.cascade.updated === 1 ? '' : 's'} still carry "${c.name}". `
+          + `Reason: ${result.cascade.reason}. Re-run the rename or retag those accounts manually.`,
+          { duration: 10000 },
+        );
+      } else if (result.cascade && result.cascade.ok && result.cascade.updated > 0) {
+        toast.success(
+          `Renamed to "${name}" — ${result.cascade.updated} account${result.cascade.updated === 1 ? '' : 's'} re-tagged.`,
+        );
+      } else {
+        toast.success(`Renamed to "${name}"`);
+      }
       cancelEdit();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Update failed');
@@ -268,13 +287,13 @@ export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
                           <Badge variant="outline" className="text-[10px] shrink-0">
                             {usage} account{usage === 1 ? '' : 's'}
                           </Badge>
-                          {canManage && (
+                          {canAdmin && (
                             <>
-                              <Button size="sm" variant="ghost" onClick={() => startEdit(c)} disabled={busyId === c.categoryId}>
+                              <Button size="sm" variant="ghost" onClick={() => startEdit(c)} disabled={busyId === c.categoryId || pendingDelete !== null}>
                                 <Edit2 className="w-3.5 h-3.5" />
                               </Button>
                               <Button size="sm" variant="ghost" onClick={() => setPendingDelete(c)}
-                                disabled={busyId === c.categoryId}
+                                disabled={busyId === c.categoryId || pendingDelete !== null}
                                 className="text-destructive hover:text-destructive">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
@@ -338,9 +357,12 @@ export const ManageCategoriesDialog: React.FC<ManageCategoriesDialogProps> = ({
 
       <AlertDialog
         open={pendingDelete !== null}
-        onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
+        onOpenChange={(o) => { if (!o && busyId === null) setPendingDelete(null); }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          className="z-[60]"
+          onEscapeKeyDown={(e) => { if (busyId !== null) e.preventDefault(); }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this category?</AlertDialogTitle>
             <AlertDialogDescription>

@@ -201,6 +201,7 @@ export const Clients: React.FC = () => {
     update: updateCategorySvc,
     remove: removeCategorySvc,
     canManage: canManageCategories,
+    canAdminCategories,
   } = useClientCategories();
   const [openManageCategories, setOpenManageCategories] = useState(false);
 
@@ -1057,6 +1058,7 @@ export const Clients: React.FC = () => {
         categories={registeredCategories}
         clients={clients}
         canManage={canManageCategories}
+        canAdmin={canAdminCategories}
         workspaceId={isAllWorkspaces ? null : categoriesWorkspaceId}
         workspaceName={selectedWorkspace?.name ?? null}
         onCreate={createCategorySvc}
