@@ -59,6 +59,7 @@ export interface ContactWithAccount {
   ownerName: string | null;
   photoUrl: string | null;
   isPrimary: boolean;
+  customFields: Record<string, unknown>;
 
   createdAt: Date;
   updatedAt: Date;
@@ -104,6 +105,9 @@ export interface CreateContactWithAccountInput {
   ownerName?: string | null;
   isPrimary?: boolean;
   photoUrl?: string | null;
+  /** Free-form key/value pairs landed by the "Keep extra columns" UI in
+   *  the CSV importer. Persisted to client_contacts.custom_fields. */
+  customFields?: Record<string, unknown>;
 }
 
 export type UpdateContactInput = Partial<Omit<CreateContactWithAccountInput, "clientId">>
@@ -208,6 +212,7 @@ interface ContactRow {
   owner_name: string | null;
   photo_url: string | null;
   is_primary: boolean | null;
+  custom_fields: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   // joined from clients
@@ -273,6 +278,7 @@ const mapContactWithAccount = (
   ownerName: r.owner_name,
   photoUrl: r.photo_url,
   isPrimary: Boolean(r.is_primary),
+  customFields: (r.custom_fields as Record<string, unknown>) ?? {},
 
   createdAt: new Date(r.created_at),
   updatedAt: new Date(r.updated_at),
@@ -493,6 +499,7 @@ export const createContactFull = async (
     owner_name: input.ownerName ?? userName,
     photo_url: sanitize(input.photoUrl),
     is_primary: Boolean(input.isPrimary),
+    custom_fields: input.customFields ?? {},
     created_by: userId,
   };
 
@@ -605,6 +612,7 @@ export const updateContactFull = async (
   if (input.ownerId !== undefined) patch.owner_id = input.ownerId;
   if (input.ownerName !== undefined) patch.owner_name = input.ownerName;
   if (input.photoUrl !== undefined) patch.photo_url = sanitize(input.photoUrl);
+  if (input.customFields !== undefined) patch.custom_fields = input.customFields;
 
   // Demote any existing primary on this client before flipping ours, so
   // the partial unique index on (client_id) where is_primary is true holds.

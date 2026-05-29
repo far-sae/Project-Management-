@@ -78,6 +78,8 @@ export const ImportContactsDialog: React.FC<Props> = ({
   const [duplicateHeaders, setDuplicateHeaders] = useState<ImportResult['duplicateHeaders']>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [extraColumns, setExtraColumns] = useState<string[]>([]);
+  const [newExtraCol, setNewExtraCol] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const accountByLowerName = useMemo(() => {
@@ -93,6 +95,8 @@ export const ImportContactsDialog: React.FC<Props> = ({
     setDuplicateHeaders([]);
     setParseErrors([]);
     setResult(null);
+    setExtraColumns([]);
+    setNewExtraCol('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -128,8 +132,11 @@ export const ImportContactsDialog: React.FC<Props> = ({
   const precheck = useMemo(() => {
     if (!headers) return null;
     const seen = new Set(headers);
+    // Columns the rep already opted to keep are not "unknown" — they're
+    // intentional custom fields.
+    const extra = new Set(extraColumns.map((s) => s.trim()).filter(Boolean));
     const unknownHeaders = headers.filter(
-      (h) => !KNOWN_HEADERS.has(h) && h !== 'full_name',
+      (h) => !KNOWN_HEADERS.has(h) && h !== 'full_name' && !extra.has(h),
     );
     const missingRequired = REQUIRED_HEADERS.filter((h) => {
       if (h === 'account') return !(seen.has('account') || seen.has('company'));
@@ -137,7 +144,7 @@ export const ImportContactsDialog: React.FC<Props> = ({
       return !seen.has(h);
     });
     return { unknownHeaders, missingRequired: [...missingRequired] };
-  }, [headers]);
+  }, [headers, extraColumns]);
 
   const buildInput = (
     row: Record<string, string>,
@@ -166,6 +173,17 @@ export const ImportContactsDialog: React.FC<Props> = ({
         reason: `No matching account found for "${accountName}". Create it first or check the spelling.`,
         accountName,
       };
+    }
+
+    // Fold "Keep extra columns" picks into customFields so they survive
+    // the import instead of being silently dropped.
+    const customFields: Record<string, unknown> = {};
+    for (const col of extraColumns) {
+      const key = col.trim();
+      if (!key) continue;
+      const val = row[key];
+      if (val == null || val === '') continue;
+      customFields[key] = val;
     }
 
     const input: CreateContactWithAccountInput = {
@@ -201,6 +219,7 @@ export const ImportContactsDialog: React.FC<Props> = ({
       dateOfBirth: row.date_of_birth ? new Date(row.date_of_birth) : null,
       description: row.description || null,
       tags: (row.tags || '').split(/[,;|]/).map((t) => t.trim()).filter(Boolean),
+      customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
     };
     return { ok: true, input, matchedAccountName: match.name };
   };
@@ -276,7 +295,7 @@ export const ImportContactsDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="w-[95vw] max-w-4xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="w-[97vw] max-w-6xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 break-words">
             <Upload className="w-5 h-5 text-primary shrink-0" />
@@ -371,10 +390,84 @@ export const ImportContactsDialog: React.FC<Props> = ({
                 <DiagBlock tone="amber" title="Columns we'll ignore">
                   <span className="break-words">
                     <code className="font-mono break-all">{precheck!.unknownHeaders.join(', ')}</code>
-                    {' '}— the rows still import, just without those values.
+                    {' '}— add them below to keep on each contact as a custom field.
                   </span>
                 </DiagBlock>
               )}
+
+              {/* Keep extra columns — same affordance Accounts/Leads have.
+                  Anything the rep types here is folded into customFields. */}
+              <div className="rounded-md border p-3 space-y-2">
+                <div>
+                  <p className="text-sm font-semibold">Keep extra columns</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Type a column name from your CSV to capture it on each contact as a custom field.
+                  </p>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <input
+                    value={newExtraCol}
+                    onChange={(e) => setNewExtraCol(e.target.value)}
+                    placeholder="e.g. region, sla_tier, renewal_date"
+                    className="flex-1 h-9 px-3 text-sm border rounded-md bg-background"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newExtraCol.trim()) {
+                        e.preventDefault();
+                        const v = newExtraCol.trim();
+                        setExtraColumns((prev) => (prev.includes(v) ? prev : [...prev, v]));
+                        setNewExtraCol('');
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!newExtraCol.trim()}
+                    onClick={() => {
+                      const v = newExtraCol.trim();
+                      if (!v) return;
+                      setExtraColumns((prev) => (prev.includes(v) ? prev : [...prev, v]));
+                      setNewExtraCol('');
+                    }}
+                  >
+                    Add column
+                  </Button>
+                </div>
+                {precheck && precheck.unknownHeaders.filter((h) => !extraColumns.includes(h)).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="text-[11px] text-muted-foreground self-center">Quick add:</span>
+                    {precheck.unknownHeaders.filter((h) => !extraColumns.includes(h)).slice(0, 12).map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() => setExtraColumns((prev) => [...prev, h])}
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-amber-500/40 text-amber-700 hover:bg-amber-500/10"
+                      >
+                        + {h}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {extraColumns.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="text-[11px] text-muted-foreground self-center">Keeping:</span>
+                    {extraColumns.map((c) => (
+                      <Badge key={c} variant="outline" className="text-[10px] gap-1 pl-2 pr-1">
+                        {c}
+                        <button
+                          type="button"
+                          className="opacity-60 hover:opacity-100"
+                          onClick={() => setExtraColumns((prev) => prev.filter((x) => x !== c))}
+                          title={`Stop keeping ${c}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
               {duplicateHeaders.length > 0 && (
                 <DiagBlock tone="amber" title="Duplicate columns — only the rightmost wins">
                   <ul className="space-y-0.5">

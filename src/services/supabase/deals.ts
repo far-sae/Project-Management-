@@ -65,6 +65,9 @@ export interface Deal {
   contactId?: string | null;
   leadSource?: string | null;
   campaignSource?: string | null;
+  /** Free-form key/value pairs landed by the "Keep extra columns" UI in
+   *  the CSV importer (migration 109). */
+  customFields: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -89,6 +92,7 @@ export interface CreateDealInput {
   contactId?: string | null;
   leadSource?: string | null;
   campaignSource?: string | null;
+  customFields?: Record<string, unknown>;
 }
 
 export interface UpdateDealInput {
@@ -115,6 +119,7 @@ export interface UpdateDealInput {
   contactId?: string | null;
   leadSource?: string | null;
   campaignSource?: string | null;
+  customFields?: Record<string, unknown>;
 }
 
 const isLocalOrg = (orgId: string) => orgId.startsWith("local-");
@@ -154,6 +159,7 @@ const mapDeal = (row: Record<string, unknown>): Deal => ({
   contactId: (row.contact_id as string) ?? null,
   leadSource: (row.lead_source as string) ?? null,
   campaignSource: (row.campaign_source as string) ?? null,
+  customFields: (row.custom_fields as Record<string, unknown>) ?? {},
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
 });
@@ -424,6 +430,7 @@ export const createDeal = async (
       contactId: input.contactId ?? null,
       leadSource: input.leadSource ?? input.source ?? null,
       campaignSource: input.campaignSource ?? null,
+      customFields: input.customFields ?? {},
       createdAt: now,
       updatedAt: now,
     };
@@ -459,6 +466,7 @@ export const createDeal = async (
     contact_id: input.contactId ?? null,
     lead_source: input.leadSource ?? input.source ?? null,
     campaign_source: input.campaignSource ?? null,
+    custom_fields: input.customFields ?? {},
   };
 
   if (input.pipelineId) {
@@ -545,6 +553,7 @@ export const updateDeal = async (
       ...(input.contactId !== undefined ? { contactId: input.contactId } : {}),
       ...(input.leadSource !== undefined ? { leadSource: input.leadSource } : {}),
       ...(input.campaignSource !== undefined ? { campaignSource: input.campaignSource } : {}),
+      ...(input.customFields !== undefined ? { customFields: input.customFields } : {}),
       updatedAt: new Date(),
     };
     all[idx] = merged;
@@ -596,6 +605,7 @@ export const updateDeal = async (
   if (input.contactId !== undefined) update.contact_id = input.contactId;
   if (input.leadSource !== undefined) update.lead_source = input.leadSource;
   if (input.campaignSource !== undefined) update.campaign_source = input.campaignSource;
+  if (input.customFields !== undefined) update.custom_fields = input.customFields;
 
   const updateViaDirectPatch = () => supabase
     .from("deals")

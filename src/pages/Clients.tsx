@@ -27,6 +27,7 @@ import { DealDetailView } from '@/components/deals/DealDetailView';
 import { DealsEmptyState } from '@/components/deals/DealsEmptyState';
 import { DealsListView } from '@/components/deals/DealsListView';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
+import { ImportDealsDialog } from '@/components/deals/ImportDealsDialog';
 import { useDeals } from '@/hooks/useDeals';
 import { ClientTasksList } from '@/components/clients/ClientTasksList';
 import { ForecastTab } from '@/components/clients/ForecastTab';
@@ -114,7 +115,7 @@ export const Clients: React.FC = () => {
     selectedWorkspace, isAllWorkspaces,
   } = useClients();
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
-  const { deals: allDeals, remove: removeDeal, update: updateDeal } = useDeals();
+  const { deals: allDeals, create: createDealHook, remove: removeDeal, update: updateDeal } = useDeals();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   // Pipeline-tab-local state: which deal is open inline (Zoho detail view),
   // which view mode the rep prefers, and whether the Create Deal dialog is
@@ -122,6 +123,7 @@ export const Clients: React.FC = () => {
   const [pipelineDealId, setPipelineDealId] = useState<string | null>(null);
   const [pipelineView, setPipelineView] = useState<'kanban' | 'list'>('kanban');
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
+  const [openImportDeals, setOpenImportDeals] = useState(false);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   useEffect(() => {
     if (!selectedPipelineId && defaultPipeline) {
@@ -940,7 +942,7 @@ export const Clients: React.FC = () => {
                     <DealsEmptyState
                       canManage={canManage}
                       onCreate={() => setOpenCreateDeal(true)}
-                      onImport={() => toast.info('Import flow coming soon — for now create deals individually.')}
+                      onImport={() => setOpenImportDeals(true)}
                     />
                   );
                 }
@@ -976,9 +978,14 @@ export const Clients: React.FC = () => {
                           </Button>
                         </div>
                         {canManage && (
-                          <Button size="sm" onClick={() => setOpenCreateDeal(true)}>
-                            <Plus className="w-3.5 h-3.5 mr-1" /> Create Deal
-                          </Button>
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => setOpenImportDeals(true)}>
+                              <Upload className="w-3.5 h-3.5 mr-1" /> Import
+                            </Button>
+                            <Button size="sm" onClick={() => setOpenCreateDeal(true)}>
+                              <Plus className="w-3.5 h-3.5 mr-1" /> Create Deal
+                            </Button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -1164,6 +1171,23 @@ export const Clients: React.FC = () => {
         onOpenChange={setOpenCreateDeal}
         clients={clients}
         contacts={contacts}
+      />
+
+      {/* Deals CSV importer — same shape as Leads / Contacts / Accounts. */}
+      <ImportDealsDialog
+        open={openImportDeals}
+        onOpenChange={setOpenImportDeals}
+        organizationId={organizationId}
+        accounts={clients}
+        workspaceName={selectedWorkspace?.name ?? null}
+        create={createDealHook}
+        onComplete={(r) => {
+          if (r.imported > 0) {
+            toast.success(`Imported ${r.imported} deal${r.imported === 1 ? '' : 's'}.`);
+          } else if (r.errors.length > 0) {
+            toast.error(`Couldn't import — ${r.errors[0]?.message ?? 'see details'}.`);
+          }
+        }}
       />
 
       {/* Contact dialogs and drawer */}

@@ -53,6 +53,8 @@ export const ImportLeadsDialog: React.FC<Props> = ({
   const [duplicateHeaders, setDuplicateHeaders] = useState<Array<{ canonical: string; sources: string[] }>>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [result, setResult] = useState<ImportLeadsResult | null>(null);
+  const [extraColumns, setExtraColumns] = useState<string[]>([]);
+  const [newExtraCol, setNewExtraCol] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const reset = () => {
@@ -62,6 +64,8 @@ export const ImportLeadsDialog: React.FC<Props> = ({
     setDuplicateHeaders([]);
     setParseErrors([]);
     setResult(null);
+    setExtraColumns([]);
+    setNewExtraCol('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -104,9 +108,11 @@ export const ImportLeadsDialog: React.FC<Props> = ({
   // Compute precheck (unknown / missing required headers) the moment we
   // have parsed rows, so the preview screen can surface the exact same
   // diagnostics the import would produce — without a wasted round trip.
+  // Re-run when the rep adds/removes "Keep extra columns" so those drop
+  // out of the unknown-headers warning live.
   const precheck = useMemo(
-    () => (parsed.length > 0 ? computeImportPrecheck(parsed) : null),
-    [parsed],
+    () => (parsed.length > 0 ? computeImportPrecheck(parsed, extraColumns) : null),
+    [parsed, extraColumns],
   );
 
   const handleImport = async () => {
@@ -122,7 +128,7 @@ export const ImportLeadsDialog: React.FC<Props> = ({
         userName ?? null,
         workspaceId,
         parsed,
-        { duplicateHeaders },
+        { duplicateHeaders, extraColumns },
       );
       setResult(res);
       setPhase('imported');
@@ -135,7 +141,7 @@ export const ImportLeadsDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="w-[95vw] max-w-4xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="w-[97vw] max-w-6xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 break-words">
             <Upload className="w-5 h-5 text-primary shrink-0" />
@@ -172,9 +178,22 @@ export const ImportLeadsDialog: React.FC<Props> = ({
               rowCount={parsed.length}
               sampleRows={parsed.slice(0, 3)}
               missingRequired={precheck?.missingRequired ?? []}
+              unknownHeaders={precheck?.unknownHeaders ?? []}
               duplicateHeaders={duplicateHeaders}
               hasWorkspace={!!workspaceId}
               parseErrors={parseErrors}
+              extraColumns={extraColumns}
+              newExtraCol={newExtraCol}
+              onChangeNewExtraCol={setNewExtraCol}
+              onAddExtraCol={(name) => {
+                const v = name.trim();
+                if (!v) return;
+                setExtraColumns((prev) => (prev.includes(v) ? prev : [...prev, v]));
+                setNewExtraCol('');
+              }}
+              onRemoveExtraCol={(name) =>
+                setExtraColumns((prev) => prev.filter((c) => c !== name))
+              }
               onReset={reset}
               onImport={handleImport}
             />
@@ -279,25 +298,25 @@ const PreviewBlock: React.FC<{
   rowCount: number;
   sampleRows: Array<Record<string, string>>;
   missingRequired: string[];
+  /** Computed by the parent against the current extraColumns selection, so
+   *  the warning shrinks live as the rep ticks columns to keep. */
+  unknownHeaders: string[];
   duplicateHeaders: Array<{ canonical: string; sources: string[] }>;
   hasWorkspace: boolean;
   parseErrors: string[];
+  extraColumns: string[];
+  newExtraCol: string;
+  onChangeNewExtraCol: (v: string) => void;
+  onAddExtraCol: (v: string) => void;
+  onRemoveExtraCol: (name: string) => void;
   onReset: () => void;
   onImport: () => void;
 }> = ({
-  file, headers, rowCount, sampleRows, missingRequired, duplicateHeaders,
-  hasWorkspace, parseErrors, onReset, onImport,
+  file, headers, rowCount, sampleRows, missingRequired, unknownHeaders, duplicateHeaders,
+  hasWorkspace, parseErrors,
+  extraColumns, newExtraCol, onChangeNewExtraCol, onAddExtraCol, onRemoveExtraCol,
+  onReset, onImport,
 }) => {
-  const recognizedHeaders = new Set([
-    'first_name', 'last_name', 'full_name', 'salutation', 'title',
-    'email', 'phone', 'mobile', 'fax', 'website',
-    'company', 'industry', 'annual_revenue', 'no_of_employees',
-    'street', 'city', 'state', 'country', 'postal_code',
-    'lead_owner_name', 'lead_source', 'lead_status', 'rating',
-    'description', 'tags',
-    'skype_id', 'twitter', 'linkedin_url',
-  ]);
-  const unknownHeaders = headers.filter((h) => !recognizedHeaders.has(h));
 
   return (
     <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
@@ -337,10 +356,80 @@ const PreviewBlock: React.FC<{
           <p className="text-amber-700/80 dark:text-amber-300/80 mt-1 break-words">
             We don't have a place for:{' '}
             <code className="font-mono break-all">{unknownHeaders.join(', ')}</code>.
-            The rows will still import, just without those values.
+            They will land on each lead as a custom field if you add them below.
           </p>
         </div>
       )}
+
+      {/* Keep extra columns — same affordance the Accounts importer has.
+          Anything the rep types here is folded into lead.customFields so
+          rare CSV columns don't get dropped on the floor. */}
+      <div className="rounded-md border p-3 space-y-2">
+        <div>
+          <p className="text-sm font-semibold">Keep extra columns</p>
+          <p className="text-[11px] text-muted-foreground">
+            Type a column name from your CSV to capture it on each lead as a custom field.
+          </p>
+        </div>
+        <div className="flex gap-2 items-center">
+          <input
+            value={newExtraCol}
+            onChange={(e) => onChangeNewExtraCol(e.target.value)}
+            placeholder="e.g. region, sla_tier, renewal_date"
+            className="flex-1 h-9 px-3 text-sm border rounded-md bg-background"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newExtraCol.trim()) {
+                e.preventDefault();
+                onAddExtraCol(newExtraCol);
+              }
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!newExtraCol.trim()}
+            onClick={() => onAddExtraCol(newExtraCol)}
+          >
+            Add column
+          </Button>
+        </div>
+        {/* Quick-add chips for the unknown-headers the importer found.
+            Tapping promotes that header straight into customFields. */}
+        {unknownHeaders.filter((h) => !extraColumns.includes(h)).length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <span className="text-[11px] text-muted-foreground self-center">Quick add:</span>
+            {unknownHeaders.filter((h) => !extraColumns.includes(h)).slice(0, 12).map((h) => (
+              <button
+                key={h}
+                type="button"
+                onClick={() => onAddExtraCol(h)}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-amber-500/40 text-amber-700 hover:bg-amber-500/10"
+              >
+                + {h}
+              </button>
+            ))}
+          </div>
+        )}
+        {extraColumns.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <span className="text-[11px] text-muted-foreground self-center">Keeping:</span>
+            {extraColumns.map((c) => (
+              <Badge key={c} variant="outline" className="text-[10px] gap-1 pl-2 pr-1">
+                {c}
+                <button
+                  type="button"
+                  className="opacity-60 hover:opacity-100"
+                  onClick={() => onRemoveExtraCol(c)}
+                  title={`Stop keeping ${c}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">

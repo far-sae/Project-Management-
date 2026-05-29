@@ -1355,6 +1355,7 @@ const buildLeadInput = (
   workspaceId: string,
   rowNumber: number,
   coercions: LeadCsvCoercion[],
+  extraColumns: string[] = [],
 ): { ok: true; input: CreateLeadInput } | { ok: false; reason: string } => {
   let firstName = row.first_name?.trim() ?? "";
   let lastName = row.last_name?.trim() ?? "";
@@ -1402,6 +1403,18 @@ const buildLeadInput = (
     }
   }
 
+  // Fold any "Keep extra columns" picks from the import dialog into
+  // customFields so the rep doesn't lose data the CSV had that doesn't
+  // match a standard lead column.
+  const customFields: Record<string, unknown> = {};
+  for (const col of extraColumns) {
+    const key = col.trim();
+    if (!key) continue;
+    const val = row[key];
+    if (val == null || val === '') continue;
+    customFields[key] = val;
+  }
+
   const input: CreateLeadInput = {
     workspaceId,
     salutation: row.salutation || null,
@@ -1431,6 +1444,7 @@ const buildLeadInput = (
     rating: row.rating || null,
     description: row.description || null,
     tags: parseTagList(row.tags),
+    customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
   };
 
   return { ok: true, input };
@@ -1458,13 +1472,17 @@ const IDENTICAL_FAILURE_ABORT_THRESHOLD = 5;
 
 export const computeImportPrecheck = (
   rows: Array<Record<string, string>>,
+  extraColumns: string[] = [],
 ): { unknownHeaders: string[]; missingRequired: string[] } => {
   const seen = new Set<string>();
   if (rows.length > 0) {
     for (const k of Object.keys(rows[0])) seen.add(k);
   }
+  // Columns the rep explicitly opted to keep are not "unknown" anymore —
+  // they're intentional custom fields.
+  const extra = new Set(extraColumns.map((s) => s.trim()).filter(Boolean));
   const unknownHeaders = Array.from(seen).filter(
-    (h) => !KNOWN_LEAD_HEADERS.has(h) && h !== "full_name",
+    (h) => !KNOWN_LEAD_HEADERS.has(h) && h !== "full_name" && !extra.has(h),
   );
   const missingRequired = REQUIRED_LEAD_HEADERS.filter(
     (h) => !(seen.has(h) || (h === "last_name" && seen.has("full_name"))),
@@ -1480,12 +1498,16 @@ export const importLeadsFromCsv = async (
   rows: Array<Record<string, string>>,
   options: {
     duplicateHeaders?: Array<{ canonical: string; sources: string[] }>;
+    /** Extra CSV column names the rep ticked in "Keep extra columns" —
+     *  these become lead.customFields entries instead of being dropped. */
+    extraColumns?: string[];
   } = {},
 ): Promise<ImportLeadsResult> => {
   const errors: LeadCsvRowError[] = [];
   const imported: Lead[] = [];
   const coercions: LeadCsvCoercion[] = [];
-  const { unknownHeaders, missingRequired } = computeImportPrecheck(rows);
+  const extraColumns = (options.extraColumns ?? []).map((s) => s.trim()).filter(Boolean);
+  const { unknownHeaders, missingRequired } = computeImportPrecheck(rows, extraColumns);
   const duplicateHeaders = options.duplicateHeaders ?? [];
 
   // Circuit-breaker state. Track the last error message and how many times
@@ -1497,7 +1519,7 @@ export const importLeadsFromCsv = async (
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = i + 2;
-    const built = buildLeadInput(row, workspaceId, rowNumber, coercions);
+    const built = buildLeadInput(row, workspaceId, rowNumber, coercions, extraColumns);
     if (!built.ok) {
       errors.push({ row: rowNumber, message: built.reason });
       lastErrorMessage = built.reason;
