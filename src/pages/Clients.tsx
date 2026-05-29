@@ -19,9 +19,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   GitBranch, ListTodo, Home as HomeIcon, UserPlus, Users as UsersIcon,
+  LayoutGrid, List,
 } from 'lucide-react';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { DealDetailDrawer } from '@/components/clients/DealDetailDrawer';
+import { DealDetailView } from '@/components/deals/DealDetailView';
+import { DealsEmptyState } from '@/components/deals/DealsEmptyState';
+import { DealsListView } from '@/components/deals/DealsListView';
+import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { useDeals } from '@/hooks/useDeals';
 import { ClientTasksList } from '@/components/clients/ClientTasksList';
 import { ForecastTab } from '@/components/clients/ForecastTab';
@@ -111,6 +116,12 @@ export const Clients: React.FC = () => {
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
   const { deals: allDeals, remove: removeDeal, update: updateDeal } = useDeals();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  // Pipeline-tab-local state: which deal is open inline (Zoho detail view),
+  // which view mode the rep prefers, and whether the Create Deal dialog is
+  // open from the empty state or the kanban header.
+  const [pipelineDealId, setPipelineDealId] = useState<string | null>(null);
+  const [pipelineView, setPipelineView] = useState<'kanban' | 'list'>('kanban');
+  const [openCreateDeal, setOpenCreateDeal] = useState(false);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   useEffect(() => {
     if (!selectedPipelineId && defaultPipeline) {
@@ -897,64 +908,140 @@ export const Clients: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="pipeline" className="mt-4 space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold">Pipeline</h2>
-                <p className="text-sm text-muted-foreground">
-                  Track possible sales as deals. Each deal moves through stages until it is won or lost.
-                </p>
-              </div>
-              <Card>
-                <CardContent className="pt-4 flex flex-wrap items-center gap-3">
-                  <PipelineSelector
-                    pipelines={pipelines}
-                    value={selectedPipelineId}
-                    onChange={setSelectedPipelineId}
-                  />
-                  <div className="flex items-center gap-2">
-                    <Coins className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Display currency</span>
-                  </div>
-                  <Select
-                    value={effectivePipelineCurrency}
-                    onValueChange={handlePipelineCurrencyChange}
-                  >
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencyOptions.map((c) => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <span className="text-xs text-muted-foreground">
-                    All deal values, column totals and KPIs convert from each
-                    deal's saved currency into this one.
-                  </span>
-                  <span className="text-[11px] text-muted-foreground ml-auto">
-                    {fxUsingFallback || !fxFetchedAt
-                      ? 'Rates: built-in fallback'
-                      : `Rates: live · updated ${new Date(fxFetchedAt).toLocaleDateString()}`}
-                  </span>
-                </CardContent>
-              </Card>
-              <PipelineAnalyticsCard
-                currency={effectivePipelineCurrency}
-                pipelineId={selectedPipelineId || undefined}
-                restrictToClientIds={workspaceClientIds}
-              />
-              <DealsKanban
-                clients={clients}
-                displayCurrency={effectivePipelineCurrency}
-                pipelineId={selectedPipelineId || undefined}
-                restrictToClientIds={workspaceClientIds}
-                stages={
-                  selectedPipelineId
-                    ? stagesByPipeline[selectedPipelineId] ?? []
-                    : []
+              {(() => {
+                // Deals visible in the current Pipeline tab scope: workspace
+                // clients only (or all when on All-workspaces) + optional
+                // pipeline filter. Determines whether we render the empty
+                // state, the inline detail, or the standard kanban / list.
+                const scopedDeals = allDeals.filter((d) => {
+                  if (selectedPipelineId && d.pipelineId !== selectedPipelineId) return false;
+                  if (workspaceClientIds && d.clientId && !workspaceClientIds.has(d.clientId)) return false;
+                  return true;
+                });
+
+                // Inline Zoho-style detail. Replaces kanban/list while open;
+                // the back chevron clears the selection.
+                if (pipelineDealId) {
+                  return (
+                    <DealDetailView
+                      dealId={pipelineDealId}
+                      onBack={() => setPipelineDealId(null)}
+                    />
+                  );
                 }
-                onSelectDeal={(d) => setSelectedDealId(d.dealId)}
-              />
+
+                // Zoho empty state when there are zero deals in scope.
+                if (scopedDeals.length === 0) {
+                  return (
+                    <DealsEmptyState
+                      canManage={canManage}
+                      onCreate={() => setOpenCreateDeal(true)}
+                      onImport={() => toast.info('Import flow coming soon — for now create deals individually.')}
+                    />
+                  );
+                }
+
+                return (
+                  <>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <h2 className="text-lg font-semibold">Pipeline</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Track possible sales as deals. Each deal moves through stages until it is won or lost.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex rounded-md border overflow-hidden">
+                          <Button
+                            variant={pipelineView === 'list' ? 'default' : 'ghost'}
+                            size="sm"
+                            className="rounded-none"
+                            onClick={() => setPipelineView('list')}
+                            title="List view"
+                          >
+                            <List className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant={pipelineView === 'kanban' ? 'default' : 'ghost'}
+                            size="sm"
+                            className="rounded-none"
+                            onClick={() => setPipelineView('kanban')}
+                            title="Kanban view"
+                          >
+                            <LayoutGrid className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        {canManage && (
+                          <Button size="sm" onClick={() => setOpenCreateDeal(true)}>
+                            <Plus className="w-3.5 h-3.5 mr-1" /> Create Deal
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    <Card>
+                      <CardContent className="pt-4 flex flex-wrap items-center gap-3">
+                        <PipelineSelector
+                          pipelines={pipelines}
+                          value={selectedPipelineId}
+                          onChange={setSelectedPipelineId}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Coins className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">Display currency</span>
+                        </div>
+                        <Select
+                          value={effectivePipelineCurrency}
+                          onValueChange={handlePipelineCurrencyChange}
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {currencyOptions.map((c) => (
+                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-xs text-muted-foreground">
+                          All deal values, column totals and KPIs convert from each
+                          deal's saved currency into this one.
+                        </span>
+                        <span className="text-[11px] text-muted-foreground ml-auto">
+                          {fxUsingFallback || !fxFetchedAt
+                            ? 'Rates: built-in fallback'
+                            : `Rates: live · updated ${new Date(fxFetchedAt).toLocaleDateString()}`}
+                        </span>
+                      </CardContent>
+                    </Card>
+                    <PipelineAnalyticsCard
+                      currency={effectivePipelineCurrency}
+                      pipelineId={selectedPipelineId || undefined}
+                      restrictToClientIds={workspaceClientIds}
+                    />
+
+                    {pipelineView === 'kanban' ? (
+                      <DealsKanban
+                        clients={clients}
+                        displayCurrency={effectivePipelineCurrency}
+                        pipelineId={selectedPipelineId || undefined}
+                        restrictToClientIds={workspaceClientIds}
+                        stages={
+                          selectedPipelineId
+                            ? stagesByPipeline[selectedPipelineId] ?? []
+                            : []
+                        }
+                        onSelectDeal={(d) => setPipelineDealId(d.dealId)}
+                      />
+                    ) : (
+                      <DealsListView
+                        deals={scopedDeals}
+                        onSelectDeal={(d) => setPipelineDealId(d.dealId)}
+                      />
+                    )}
+                  </>
+                );
+              })()}
             </TabsContent>
 
             <TabsContent value="tasks" className="mt-4 space-y-4">
@@ -1064,6 +1151,15 @@ export const Clients: React.FC = () => {
         onCreate={createCategorySvc}
         onUpdate={updateCategorySvc}
         onDelete={removeCategorySvc}
+      />
+
+      {/* Zoho-style Create Deal dialog. Opens from the Pipeline tab's empty
+          state or the kanban header. */}
+      <DealFormDialog
+        open={openCreateDeal}
+        onOpenChange={setOpenCreateDeal}
+        clients={clients}
+        contacts={contacts}
       />
 
       {/* Contact dialogs and drawer */}
@@ -1526,8 +1622,11 @@ export const Clients: React.FC = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Deal detail drawer — HubSpot-style 3-column view */}
-      {(() => {
+      {/* Deal detail drawer — HubSpot-style 3-column view.
+          Suppressed on the Pipeline tab: that tab uses the new Zoho-style
+          inline DealDetailView instead, so we don't want the drawer and the
+          inline view racing for the same selectedDealId. */}
+      {activeTab !== 'pipeline' && (() => {
         const selectedDeal = allDeals.find((d) => d.dealId === selectedDealId) ?? null;
         // Look up the linked client against the org-wide list so the drawer
         // still works if the user happens to flip workspaces while the deal

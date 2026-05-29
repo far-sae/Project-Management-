@@ -34,8 +34,6 @@ const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ 
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
-const DealsPage = React.lazy(() => import('@/pages/Deals'));
-const DealDetailPage = React.lazy(() => import('@/pages/DealDetail'));
 const AIAgentPage = React.lazy(() => import('@/pages/AIAgent').then((m) => ({ default: m.AIAgent })));
 const ClientsActivity = React.lazy(() => import('@/pages/ClientsActivity').then((m) => ({ default: m.ClientsActivity })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
@@ -197,22 +195,6 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireFeature="crm">
                   {lazyAppRoute(<ClientsDashboardPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/dashboard/deals',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm">
-                  {lazyAppRoute(<DealsPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/dashboard/deals/:dealId',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm">
-                  {lazyAppRoute(<DealDetailPage />)}
                 </ProtectedRoute>
               ),
             },

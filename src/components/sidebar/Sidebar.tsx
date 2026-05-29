@@ -152,7 +152,6 @@ export const Sidebar: React.FC = () => {
     ? ([
         { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
         { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
-        { icon: TrendingUp, label: 'Deals', href: '/dashboard/deals', feature: 'crm' as const },
         { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },

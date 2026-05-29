@@ -1,11 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Edit, Loader2, Phone,
   Users, History, Swords,
   CheckCircle2, MessageSquare, Trash2,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, differenceInCalendarDays } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,43 +25,41 @@ import { DealVerifyDetailsDialog } from '@/components/deals/DealVerifyDetailsDia
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { DealCompetitorsCard } from '@/components/deals/DealCompetitorsCard';
 import { DealContactRolesCard } from '@/components/deals/DealContactRolesCard';
-import { differenceInCalendarDays } from 'date-fns';
 import { recordLocalStageChange } from '@/services/supabase/dealRelations';
 
 const fmtDate = (d: Date | null | undefined) =>
   d ? format(d, 'MMM d, yyyy') : '—';
 
+export interface DealDetailViewProps {
+  dealId: string;
+  /** Called when the user taps the back chevron. Lets the parent decide
+   *  whether to clear a selection, change tab, or navigate elsewhere. */
+  onBack: () => void;
+  /** When true, the back arrow renders. Hidden when the detail view is the
+   *  page's primary content (no place to go back to). */
+  showBack?: boolean;
+}
+
 /**
- * Zoho-style full-page Deal detail.
- *
- * Layout:
- *   - Top bar: back arrow, deal title + amount, Edit / kebab actions.
- *   - Summary grid: Stage, Probability, Expected Revenue, Closing Date.
- *   - Stage Path stepper — clicking a stage opens VerifyDetails.
- *   - Contact Person card with email + phone.
- *   - Related lists: Notes (deferred to ActivityTimeline reuse), Competitors,
- *     Open/Closed Activities (deferred), Contact Roles, Stage History.
- *   - Sidebar with Info / Timeline tabs and Sales Summary block.
+ * Zoho-style Deal detail view. Embeddable — lives inside the Pipeline tab
+ * of the CRM page rather than a dedicated route. Layout matches the Zoho
+ * screenshots: summary grid, Stage Path, Contact Person, Competitors,
+ * Contact Roles, Stage History, with a side rail of Sales Summary numbers.
  */
-const DealDetail: React.FC = () => {
-  const { dealId } = useParams<{ dealId: string }>();
-  const navigate = useNavigate();
+export const DealDetailView: React.FC<DealDetailViewProps> = ({
+  dealId, onBack, showBack = true,
+}) => {
   const { deals, update, remove, loading, canManage } = useDeals();
   const { clients } = useClients();
   const { contacts } = useContacts();
 
-  const deal = useMemo(
-    () => deals.find((d) => d.dealId === dealId) ?? null,
-    [deals, dealId],
-  );
+  const deal = useMemo(() => deals.find((d) => d.dealId === dealId) ?? null, [deals, dealId]);
 
   const primaryContact = useMemo(
     () => (deal?.contactId ? contacts.find((c) => c.contactId === deal.contactId) ?? null : null),
     [deal, contacts],
   );
 
-  // Contacts pool for the contact-roles picker: contacts of the linked
-  // account, falling back to all contacts when the deal has no account.
   const candidateContacts = useMemo(() => {
     if (!deal?.clientId) return contacts;
     return contacts.filter((c) => c.clientId === deal.clientId);
@@ -75,7 +72,6 @@ const DealDetail: React.FC = () => {
     canManage: canManageRelations,
   } = useDealRelations(deal?.dealId ?? null);
 
-  // ─── Stage Path + Verify Details ─────────────────────────────────────────
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyTarget, setVerifyTarget] = useState<DealStage | null>(null);
   const [editing, setEditing] = useState(false);
@@ -101,7 +97,6 @@ const DealDetail: React.FC = () => {
       expectedCloseDate: patch.expectedCloseDate,
       probability: STAGE_DEFAULT_PROBABILITY[patch.stage],
     });
-    // In local mode the DB trigger isn't there to write history; mirror it.
     recordLocalStageChange(deal.organizationId, {
       dealId: deal.dealId,
       fromStage: previousStage,
@@ -121,7 +116,7 @@ const DealDetail: React.FC = () => {
     try {
       await remove(deal.dealId);
       toast.success('Deal deleted');
-      navigate('/dashboard/deals');
+      onBack();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not delete deal');
     } finally {
@@ -130,7 +125,6 @@ const DealDetail: React.FC = () => {
     }
   };
 
-  // ─── Sales Summary numbers ───────────────────────────────────────────────
   const salesCycleDays = useMemo(() => {
     if (!deal) return null;
     const start = deal.createdAt;
@@ -140,7 +134,7 @@ const DealDetail: React.FC = () => {
 
   if (loading || !deal) {
     return (
-      <div className="min-h-[60vh] grid place-items-center text-muted-foreground">
+      <div className="min-h-[40vh] grid place-items-center text-muted-foreground">
         {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Deal not found'}
       </div>
     );
@@ -150,12 +144,13 @@ const DealDetail: React.FC = () => {
   const expectedRevenue = Math.round((deal.value * deal.probability) / 100);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 p-4 md:p-6">
-      {/* ─── Sidebar ────────────────────────────────────────────────────── */}
+    <div className="flex flex-col lg:flex-row gap-6">
       <aside className="lg:w-56 shrink-0 space-y-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard/deals')} className="-ml-2">
-          <ArrowLeft className="w-4 h-4 mr-1" /> All Deals
-        </Button>
+        {showBack && (
+          <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
+            <ArrowLeft className="w-4 h-4 mr-1" /> All Deals
+          </Button>
+        )}
         <nav className="space-y-1 text-sm">
           <a href="#info" className="block px-2 py-1 rounded text-primary font-medium bg-primary/10">Info</a>
           <a href="#timeline" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground">Timeline</a>
@@ -189,9 +184,7 @@ const DealDetail: React.FC = () => {
         </div>
       </aside>
 
-      {/* ─── Main content ───────────────────────────────────────────────── */}
       <main className="flex-1 min-w-0 space-y-5">
-        {/* Header */}
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-semibold break-words">
@@ -213,7 +206,6 @@ const DealDetail: React.FC = () => {
           </div>
         </div>
 
-        {/* Summary grid */}
         <Card>
           <CardContent className="pt-5 grid grid-cols-2 md:grid-cols-4 gap-y-3 gap-x-6">
             <div>
@@ -238,7 +230,6 @@ const DealDetail: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Stage Path */}
         <Card>
           <CardContent className="pt-5">
             <DealStagePath
@@ -250,7 +241,6 @@ const DealDetail: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Extra details (Type / Next step / Lead source / Campaign source) */}
         {(deal.dealType || deal.nextStep || deal.leadSource || deal.campaignSource) && (
           <Card>
             <CardContent className="pt-5 grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-sm">
@@ -262,7 +252,6 @@ const DealDetail: React.FC = () => {
           </Card>
         )}
 
-        {/* Contact Person */}
         {primaryContact && (
           <Card>
             <CardContent className="pt-5">
@@ -291,7 +280,6 @@ const DealDetail: React.FC = () => {
           </Card>
         )}
 
-        {/* Related lists below */}
         <Card id="competitors">
           <CardContent className="pt-5">
             <DealCompetitorsCard
@@ -350,20 +338,19 @@ const DealDetail: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Notes / Activities placeholder — could be wired to ActivityTimeline */}
         <Card id="notes">
           <CardContent className="pt-5">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-semibold">Notes</h3>
             </div>
             <p className="text-xs text-muted-foreground italic">
-              Open the deal in the CRM Pipeline tab to add notes, calls, meetings, and tasks against this deal.
+              Notes, calls, meetings, and tasks for this deal live on the deal's drawer in the kanban — extending this section
+              with the ActivityTimeline is the next iteration.
             </p>
           </CardContent>
         </Card>
       </main>
 
-      {/* Edit dialog */}
       {editing && (
         <DealFormDialog
           open={editing}
@@ -374,7 +361,6 @@ const DealDetail: React.FC = () => {
         />
       )}
 
-      {/* Verify Details modal triggered by Stage Path */}
       <DealVerifyDetailsDialog
         open={verifyOpen}
         onOpenChange={setVerifyOpen}
@@ -383,7 +369,6 @@ const DealDetail: React.FC = () => {
         onConfirm={handleVerifyConfirm}
       />
 
-      {/* Delete confirm */}
       <AlertDialog open={confirmDelete} onOpenChange={(o) => { if (!deleting) setConfirmDelete(o); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -407,5 +392,3 @@ const DealDetail: React.FC = () => {
     </div>
   );
 };
-
-export default DealDetail;
