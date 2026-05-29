@@ -46,25 +46,27 @@ export const DealStagePath: React.FC<DealStagePathProps> = ({
                 disabled={!interactive}
                 onClick={() => interactive && onPick!(key)}
                 className={cn(
-                  'group flex flex-col items-center gap-1 shrink-0',
-                  interactive ? 'cursor-pointer' : 'cursor-default',
+                  'group flex flex-col items-center gap-1 shrink-0 px-1 py-1 rounded-md transition-colors',
+                  interactive
+                    ? 'cursor-pointer hover:bg-primary/5'
+                    : 'cursor-default',
                 )}
-                title={meta?.label ?? key}
+                title={interactive ? `Move to ${meta?.label ?? key}` : meta?.label ?? key}
               >
                 <span
                   className={cn(
-                    'w-7 h-7 rounded-full grid place-items-center border-2 transition-all',
+                    'w-9 h-9 rounded-full grid place-items-center border-2 transition-all',
                     passed && 'bg-emerald-500/15 border-emerald-500 text-emerald-600',
                     isCurrent && 'bg-emerald-500 border-emerald-500 text-white shadow-md scale-110',
                     !passed && !isCurrent && 'bg-background border-border text-muted-foreground',
-                    interactive && !isCurrent && !passed && 'group-hover:border-primary/60',
+                    interactive && !isCurrent && !passed && 'group-hover:border-primary group-hover:text-primary group-hover:scale-105',
                   )}
                 >
-                  {passed ? <Check className="w-3.5 h-3.5" /> : <span className="w-2 h-2 rounded-full bg-current opacity-50" />}
+                  {passed ? <Check className="w-4 h-4" /> : <span className="w-2 h-2 rounded-full bg-current opacity-50" />}
                 </span>
                 <span
                   className={cn(
-                    'text-[10px] font-medium whitespace-nowrap',
+                    'text-[11px] font-medium whitespace-nowrap',
                     isCurrent ? 'text-foreground' : 'text-muted-foreground',
                   )}
                 >
@@ -86,22 +88,23 @@ export const DealStagePath: React.FC<DealStagePathProps> = ({
           disabled={!interactive}
           onClick={() => interactive && onPick!('won')}
           className={cn(
-            'flex flex-col items-center gap-1 shrink-0',
-            interactive ? 'cursor-pointer' : 'cursor-default',
+            'group flex flex-col items-center gap-1 shrink-0 px-1 py-1 rounded-md transition-colors',
+            interactive ? 'cursor-pointer hover:bg-emerald-500/10' : 'cursor-default',
           )}
-          title="Closed Won"
+          title={interactive ? 'Mark as Closed Won' : 'Closed Won'}
         >
           <span
             className={cn(
-              'w-7 h-7 rounded-full grid place-items-center border-2 transition-all',
+              'w-9 h-9 rounded-full grid place-items-center border-2 transition-all',
               current === 'won'
                 ? 'bg-emerald-500 border-emerald-500 text-white shadow-md scale-110'
-                : 'bg-background border-border text-muted-foreground hover:border-emerald-500/60',
+                : 'bg-background border-border text-muted-foreground',
+              interactive && current !== 'won' && 'group-hover:border-emerald-500 group-hover:text-emerald-600 group-hover:scale-105',
             )}
           >
-            <ThumbsUp className="w-3.5 h-3.5" />
+            <ThumbsUp className="w-4 h-4" />
           </span>
-          <span className={cn('text-[10px] font-medium', current === 'won' ? 'text-foreground' : 'text-muted-foreground')}>
+          <span className={cn('text-[11px] font-medium', current === 'won' ? 'text-foreground' : 'text-muted-foreground')}>
             Won
           </span>
         </button>
@@ -114,22 +117,23 @@ export const DealStagePath: React.FC<DealStagePathProps> = ({
           disabled={!interactive}
           onClick={() => interactive && onPick!('lost')}
           className={cn(
-            'flex flex-col items-center gap-1 shrink-0',
-            interactive ? 'cursor-pointer' : 'cursor-default',
+            'group flex flex-col items-center gap-1 shrink-0 px-1 py-1 rounded-md transition-colors',
+            interactive ? 'cursor-pointer hover:bg-rose-500/10' : 'cursor-default',
           )}
-          title="Closed Lost"
+          title={interactive ? 'Mark as Closed Lost' : 'Closed Lost'}
         >
           <span
             className={cn(
-              'w-7 h-7 rounded-full grid place-items-center border-2 transition-all',
+              'w-9 h-9 rounded-full grid place-items-center border-2 transition-all',
               current === 'lost'
                 ? 'bg-rose-500 border-rose-500 text-white shadow-md scale-110'
-                : 'bg-background border-border text-muted-foreground hover:border-rose-500/60',
+                : 'bg-background border-border text-muted-foreground',
+              interactive && current !== 'lost' && 'group-hover:border-rose-500 group-hover:text-rose-600 group-hover:scale-105',
             )}
           >
-            <ThumbsDown className="w-3.5 h-3.5" />
+            <ThumbsDown className="w-4 h-4" />
           </span>
-          <span className={cn('text-[10px] font-medium', current === 'lost' ? 'text-foreground' : 'text-muted-foreground')}>
+          <span className={cn('text-[11px] font-medium', current === 'lost' ? 'text-foreground' : 'text-muted-foreground')}>
             Lost
           </span>
         </button>

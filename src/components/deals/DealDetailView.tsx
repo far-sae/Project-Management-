@@ -31,37 +31,38 @@ import { recordLocalStageChange } from '@/services/supabase/dealRelations';
 const fmtDate = (d: Date | null | undefined) =>
   d ? format(d, 'MMM d, yyyy') : '—';
 
-/**
- * In-page nav link that scrolls a section into view. Plain `href="#id"` jumps
- * don't work reliably here because the section lives inside the CRM page's
- * scrollable <main>, not the document body — browser fragment navigation
- * targets the document scroller and silently no-ops on our nested one. So
- * we resolve the element ourselves and call scrollIntoView on it.
- */
-const SidebarLink: React.FC<{
-  id: string;
+type DetailSection =
+  | 'info'
+  | 'notes'
+  | 'stage-history'
+  | 'competitors'
+  | 'open-activities'
+  | 'closed-activities'
+  | 'contact-roles'
+  | 'emails';
+
+const SidebarTab: React.FC<{
+  id: DetailSection;
   label: string;
   icon?: React.ReactNode;
   count?: number;
-  active?: boolean;
-}> = ({ id, label, icon, count, active }) => (
+  active: boolean;
+  onPick: (id: DetailSection) => void;
+}> = ({ id, label, icon, count, active, onPick }) => (
   <button
     type="button"
-    onClick={() => {
-      const el = document.getElementById(id);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }}
+    onClick={() => onPick(id)}
     className={
-      'w-full text-left block px-2 py-1 rounded inline-flex items-center gap-1.5 '
+      'w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded text-sm transition-colors '
       + (active
         ? 'text-primary font-medium bg-primary/10'
         : 'hover:bg-muted text-muted-foreground')
     }
   >
     {icon}
-    {label}
+    <span className="flex-1 min-w-0 truncate">{label}</span>
     {count != null && count > 0 && (
-      <Badge variant="outline" className="ml-auto text-[9px]">{count}</Badge>
+      <Badge variant="outline" className="text-[9px]">{count}</Badge>
     )}
   </button>
 );
@@ -113,6 +114,7 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [section, setSection] = useState<DetailSection>('info');
 
   const handleStagePick = (next: DealStage) => {
     if (!deal || next === deal.stage) return;
@@ -179,6 +181,180 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
   const stageMeta = DEAL_STAGES.find((s) => s.id === deal.stage);
   const expectedRevenue = Math.round((deal.value * deal.probability) / 100);
 
+  // The Info panel always shows: summary card + clickable Stage Path + extra
+  // fields + the linked Contact Person. Related-list sidebar items each show
+  // a single focused panel below the always-visible Info header.
+  const InfoPanel = (
+    <>
+      <Card>
+        <CardContent className="pt-5 grid grid-cols-2 md:grid-cols-4 gap-y-3 gap-x-6">
+          <div>
+            <p className="text-xs text-muted-foreground">Stage</p>
+            <p className="font-semibold inline-flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: stageMeta?.color ?? '#999' }} />
+              {stageMeta?.label ?? deal.stage}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Probability (%)</p>
+            <p className="font-semibold">{deal.probability}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Expected Revenue</p>
+            <p className="font-semibold tabular-nums">{formatDealMoney(expectedRevenue, deal.currency)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Closing Date</p>
+            <p className="font-semibold">{fmtDate(deal.expectedCloseDate)}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="pt-5">
+          <DealStagePath
+            current={deal.stage}
+            onPick={canManage ? handleStagePick : undefined}
+            expectedCloseLabel={fmtDate(deal.expectedCloseDate)}
+            readOnly={!canManage}
+          />
+        </CardContent>
+      </Card>
+
+      {(deal.dealType || deal.nextStep || deal.leadSource || deal.campaignSource) && (
+        <Card>
+          <CardContent className="pt-5 grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-sm">
+            {deal.dealType && (<p><span className="text-muted-foreground">Type:</span> <span className="font-medium">{deal.dealType}</span></p>)}
+            {deal.nextStep && (<p><span className="text-muted-foreground">Next Step:</span> <span className="font-medium">{deal.nextStep}</span></p>)}
+            {deal.leadSource && (<p><span className="text-muted-foreground">Lead Source:</span> <span className="font-medium">{deal.leadSource}</span></p>)}
+            {deal.campaignSource && (<p><span className="text-muted-foreground">Campaign Source:</span> <span className="font-medium">{deal.campaignSource}</span></p>)}
+          </CardContent>
+        </Card>
+      )}
+
+      {primaryContact && (
+        <Card>
+          <CardContent className="pt-5">
+            <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground mb-2">Contact Person</p>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-muted grid place-items-center shrink-0">
+                <Users className="w-5 h-5 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold">
+                  {[primaryContact.firstName, primaryContact.lastName].filter(Boolean).join(' ') || '(no name)'}
+                </p>
+                {primaryContact.email && (
+                  <a href={`mailto:${primaryContact.email}`} className="text-sm text-primary hover:underline block">
+                    {primaryContact.email}
+                  </a>
+                )}
+                {primaryContact.phone && (
+                  <p className="text-sm text-muted-foreground inline-flex items-center gap-1">
+                    <Phone className="w-3 h-3" /> {primaryContact.phone}
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </>
+  );
+
+  const StageHistoryPanel = (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold">Stage History</h3>
+          <span className="text-xs text-muted-foreground">{stageHistory.length}</span>
+        </div>
+        {stageHistory.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">No stage changes recorded yet.</p>
+        ) : (
+          <ul className="space-y-2">
+            {stageHistory.map((h) => {
+              const from = DEAL_STAGES.find((s) => s.id === h.fromStage)?.label ?? h.fromStage ?? '(new)';
+              const to = DEAL_STAGES.find((s) => s.id === h.toStage)?.label ?? h.toStage;
+              return (
+                <li key={h.historyId} className="text-xs flex flex-wrap items-baseline gap-1.5">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500 self-center" />
+                  <span className="font-medium">{from} → {to}</span>
+                  {h.amount != null && (
+                    <span className="text-muted-foreground tabular-nums">
+                      · {formatDealMoney(h.amount, deal.currency)}
+                    </span>
+                  )}
+                  <span className="text-muted-foreground ml-auto">{format(h.changedAt, 'MMM d, yyyy · HH:mm')}</span>
+                  {h.changedByName && <span className="text-muted-foreground">by {h.changedByName}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const CompetitorsPanel = (
+    <Card>
+      <CardContent className="pt-5">
+        <DealCompetitorsCard
+          competitors={competitors}
+          canManage={canManage && canManageRelations}
+          onAdd={addCompetitor}
+          onRemove={removeCompetitor}
+          dealId={deal.dealId}
+        />
+      </CardContent>
+    </Card>
+  );
+
+  const ContactRolesPanel = (
+    <Card>
+      <CardContent className="pt-5">
+        <DealContactRolesCard
+          contactRoles={contactRoles}
+          candidateContacts={candidateContacts}
+          canManage={canManage && canManageRelations}
+          dealId={deal.dealId}
+          onAdd={addContactRole}
+          onPatch={patchContactRole}
+          onRemove={removeContactRole}
+        />
+      </CardContent>
+    </Card>
+  );
+
+  // The DealActivitySections component already groups its own cards by kind
+  // (Notes, Open Activities, Closed Activities, Emails). We render it always
+  // but pass a `visible` filter so only the section the rep picked actually
+  // mounts — that way each tab gives a focused single-section view instead
+  // of dropping the rep into the middle of a long scroll.
+  const renderSection = () => {
+    switch (section) {
+      case 'info':              return InfoPanel;
+      case 'stage-history':     return StageHistoryPanel;
+      case 'competitors':       return CompetitorsPanel;
+      case 'contact-roles':     return ContactRolesPanel;
+      case 'notes':
+      case 'open-activities':
+      case 'closed-activities':
+      case 'emails':
+        return (
+          <DealActivitySections
+            dealId={deal.dealId}
+            clientId={deal.clientId ?? null}
+            organizationId={organizationId}
+            canManage={canManage}
+            visible={section}
+          />
+        );
+      default:
+        return InfoPanel;
+    }
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-6">
       <aside className="lg:w-56 shrink-0 space-y-4 lg:sticky lg:top-4 lg:self-start">
@@ -187,20 +363,19 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
             <ArrowLeft className="w-4 h-4 mr-1" /> All Deals
           </Button>
         )}
-        <nav className="space-y-1 text-sm">
-          <SidebarLink id="info" label="Info" active />
-          <SidebarLink id="stage-history" label="Timeline" />
+        <nav className="space-y-1">
+          <SidebarTab id="info" label="Info" active={section === 'info'} onPick={setSection} />
         </nav>
         <div className="space-y-1">
           <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground px-2">Related List</p>
-          <nav className="space-y-0.5 text-sm">
-            <SidebarLink id="notes" label="Notes" icon={<MessageSquare className="w-3 h-3" />} />
-            <SidebarLink id="stage-history" label="Stage History" icon={<History className="w-3 h-3" />} count={stageHistory.length} />
-            <SidebarLink id="competitors" label="Competitors" icon={<Swords className="w-3 h-3" />} count={competitors.length} />
-            <SidebarLink id="open-activities" label="Open Activities" icon={<ListTodo className="w-3 h-3" />} />
-            <SidebarLink id="closed-activities" label="Closed Activities" icon={<CheckCircle2 className="w-3 h-3" />} />
-            <SidebarLink id="contact-roles" label="Contact Roles" icon={<Users className="w-3 h-3" />} count={contactRoles.length} />
-            <SidebarLink id="emails" label="Emails" icon={<Mail className="w-3 h-3" />} />
+          <nav className="space-y-0.5">
+            <SidebarTab id="notes" label="Notes" icon={<MessageSquare className="w-3.5 h-3.5" />} active={section === 'notes'} onPick={setSection} />
+            <SidebarTab id="stage-history" label="Stage History" icon={<History className="w-3.5 h-3.5" />} count={stageHistory.length} active={section === 'stage-history'} onPick={setSection} />
+            <SidebarTab id="competitors" label="Competitors" icon={<Swords className="w-3.5 h-3.5" />} count={competitors.length} active={section === 'competitors'} onPick={setSection} />
+            <SidebarTab id="open-activities" label="Open Activities" icon={<ListTodo className="w-3.5 h-3.5" />} active={section === 'open-activities'} onPick={setSection} />
+            <SidebarTab id="closed-activities" label="Closed Activities" icon={<CheckCircle2 className="w-3.5 h-3.5" />} active={section === 'closed-activities'} onPick={setSection} />
+            <SidebarTab id="contact-roles" label="Contact Roles" icon={<Users className="w-3.5 h-3.5" />} count={contactRoles.length} active={section === 'contact-roles'} onPick={setSection} />
+            <SidebarTab id="emails" label="Emails" icon={<Mail className="w-3.5 h-3.5" />} active={section === 'emails'} onPick={setSection} />
           </nav>
         </div>
         <div className="border-t pt-3 space-y-1">
@@ -239,144 +414,7 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
           </div>
         </div>
 
-        <Card id="info">
-          <CardContent className="pt-5 grid grid-cols-2 md:grid-cols-4 gap-y-3 gap-x-6">
-            <div>
-              <p className="text-xs text-muted-foreground">Stage</p>
-              <p className="font-semibold inline-flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: stageMeta?.color ?? '#999' }} />
-                {stageMeta?.label ?? deal.stage}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Probability (%)</p>
-              <p className="font-semibold">{deal.probability}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Expected Revenue</p>
-              <p className="font-semibold tabular-nums">{formatDealMoney(expectedRevenue, deal.currency)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Closing Date</p>
-              <p className="font-semibold">{fmtDate(deal.expectedCloseDate)}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5">
-            <DealStagePath
-              current={deal.stage}
-              onPick={canManage ? handleStagePick : undefined}
-              expectedCloseLabel={fmtDate(deal.expectedCloseDate)}
-              readOnly={!canManage}
-            />
-          </CardContent>
-        </Card>
-
-        {(deal.dealType || deal.nextStep || deal.leadSource || deal.campaignSource) && (
-          <Card>
-            <CardContent className="pt-5 grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-sm">
-              {deal.dealType && (<p><span className="text-muted-foreground">Type:</span> <span className="font-medium">{deal.dealType}</span></p>)}
-              {deal.nextStep && (<p><span className="text-muted-foreground">Next Step:</span> <span className="font-medium">{deal.nextStep}</span></p>)}
-              {deal.leadSource && (<p><span className="text-muted-foreground">Lead Source:</span> <span className="font-medium">{deal.leadSource}</span></p>)}
-              {deal.campaignSource && (<p><span className="text-muted-foreground">Campaign Source:</span> <span className="font-medium">{deal.campaignSource}</span></p>)}
-            </CardContent>
-          </Card>
-        )}
-
-        {primaryContact && (
-          <Card>
-            <CardContent className="pt-5">
-              <p className="text-[10px] uppercase font-semibold tracking-wide text-muted-foreground mb-2">Contact Person</p>
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-muted grid place-items-center shrink-0">
-                  <Users className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold">
-                    {[primaryContact.firstName, primaryContact.lastName].filter(Boolean).join(' ') || '(no name)'}
-                  </p>
-                  {primaryContact.email && (
-                    <a href={`mailto:${primaryContact.email}`} className="text-sm text-primary hover:underline block">
-                      {primaryContact.email}
-                    </a>
-                  )}
-                  {primaryContact.phone && (
-                    <p className="text-sm text-muted-foreground inline-flex items-center gap-1">
-                      <Phone className="w-3 h-3" /> {primaryContact.phone}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card id="competitors">
-          <CardContent className="pt-5">
-            <DealCompetitorsCard
-              competitors={competitors}
-              canManage={canManage && canManageRelations}
-              onAdd={addCompetitor}
-              onRemove={removeCompetitor}
-              dealId={deal.dealId}
-            />
-          </CardContent>
-        </Card>
-
-        <Card id="contact-roles">
-          <CardContent className="pt-5">
-            <DealContactRolesCard
-              contactRoles={contactRoles}
-              candidateContacts={candidateContacts}
-              canManage={canManage && canManageRelations}
-              dealId={deal.dealId}
-              onAdd={addContactRole}
-              onPatch={patchContactRole}
-              onRemove={removeContactRole}
-            />
-          </CardContent>
-        </Card>
-
-        <Card id="stage-history">
-          <CardContent className="pt-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold">Stage History</h3>
-              <span className="text-xs text-muted-foreground">{stageHistory.length}</span>
-            </div>
-            {stageHistory.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">No stage changes recorded yet.</p>
-            ) : (
-              <ul className="space-y-2">
-                {stageHistory.map((h) => {
-                  const from = DEAL_STAGES.find((s) => s.id === h.fromStage)?.label ?? h.fromStage ?? '(new)';
-                  const to = DEAL_STAGES.find((s) => s.id === h.toStage)?.label ?? h.toStage;
-                  return (
-                    <li key={h.historyId} className="text-xs flex flex-wrap items-baseline gap-1.5">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-500 self-center" />
-                      <span className="font-medium">{from} → {to}</span>
-                      {h.amount != null && (
-                        <span className="text-muted-foreground tabular-nums">
-                          · {formatDealMoney(h.amount, deal.currency)}
-                        </span>
-                      )}
-                      <span className="text-muted-foreground ml-auto">{format(h.changedAt, 'MMM d, yyyy · HH:mm')}</span>
-                      {h.changedByName && <span className="text-muted-foreground">by {h.changedByName}</span>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <DealActivitySections
-          dealId={deal.dealId}
-          clientId={deal.clientId ?? null}
-          organizationId={organizationId}
-          canManage={canManage}
-        />
+        {renderSection()}
       </main>
 
       {editing && (

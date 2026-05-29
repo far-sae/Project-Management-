@@ -28,6 +28,10 @@ interface DealActivitySectionsProps {
   clientId: string | null;
   organizationId: string | null;
   canManage: boolean;
+  /** When set, only that one sub-section renders. Used by the detail view's
+   *  tab navigation so picking "Notes" doesn't also dump Open / Closed /
+   *  Emails on the rep. Omit to show all four. */
+  visible?: 'notes' | 'open-activities' | 'closed-activities' | 'emails';
 }
 
 type ActivityKind = Extract<ClientNoteKind, 'task' | 'meeting' | 'call'>;
@@ -54,8 +58,10 @@ const KIND_META: Record<ClientNoteKind, { label: string; icon: typeof MessageSqu
  *     records that it happened so the timeline stays honest).
  */
 export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
-  dealId, clientId, organizationId, canManage,
+  dealId, clientId, organizationId, canManage, visible,
 }) => {
+  const show = (key: NonNullable<DealActivitySectionsProps['visible']>) =>
+    !visible || visible === key;
   const { user } = useAuth();
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [loading, setLoading] = useState(false);
@@ -238,7 +244,7 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
   return (
     <>
       {/* ─── Notes ──────────────────────────────────────────────────────── */}
-      <Card id="notes">
+      {show('notes') && <Card id="notes">
         <CardContent className="pt-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold">Notes</h3>
@@ -257,10 +263,10 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
             <ul className="space-y-0">{justNotes.map(renderRow)}</ul>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* ─── Open Activities ────────────────────────────────────────────── */}
-      <Card id="open-activities">
+      {show('open-activities') && <Card id="open-activities">
         <CardContent className="pt-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold">Open Activities</h3>
@@ -285,10 +291,10 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
             <ul className="space-y-0">{openActivities.map(renderRow)}</ul>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* ─── Closed Activities ──────────────────────────────────────────── */}
-      <Card id="closed-activities">
+      {show('closed-activities') && <Card id="closed-activities">
         <CardContent className="pt-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-semibold">Closed Activities</h3>
@@ -302,10 +308,10 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
             <ul className="space-y-0">{closedActivities.map(renderRow)}</ul>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* ─── Emails ─────────────────────────────────────────────────────── */}
-      <Card id="emails">
+      {show('emails') && <Card id="emails">
         <CardContent className="pt-5 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="text-base font-semibold">Emails</h3>
@@ -331,7 +337,7 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
             <ul className="space-y-0">{emails.map(renderRow)}</ul>
           )}
         </CardContent>
-      </Card>
+      </Card>}
     </>
   );
 };
