@@ -295,7 +295,7 @@ export const ImportContactsDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="w-[97vw] max-w-6xl max-h-[95vh] overflow-y-auto">
+      <DialogContent className="w-[97vw] max-w-[97vw] sm:max-w-6xl max-h-[95vh] sm:max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 break-words">
             <Upload className="w-5 h-5 text-primary shrink-0" />

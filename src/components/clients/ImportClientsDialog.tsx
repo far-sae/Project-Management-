@@ -25,6 +25,27 @@ import {
   type ImportPreviewResult,
 } from '@/services/supabase/clients';
 
+// Supabase + thrown plain objects don't always satisfy `instanceof Error`,
+// so `err.message` on the unknown can yield "Override failed" when there's
+// actually a useful Postgres message attached. Walk known shapes and pull
+// the most informative string we can.
+const extractErrorMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string' && err.trim()) return err.trim();
+  if (err && typeof err === 'object') {
+    const e = err as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const message = typeof e.message === 'string' ? e.message : '';
+    const details = typeof e.details === 'string' ? e.details : '';
+    const hint = typeof e.hint === 'string' ? e.hint : '';
+    const code = typeof e.code === 'string' ? e.code : '';
+    const composed = [message, details, hint && `(hint: ${hint})`, code && `[${code}]`]
+      .filter(Boolean)
+      .join(' — ');
+    if (composed) return composed;
+  }
+  return fallback;
+};
+
 // Sample row uses every column the canonical template ships with so importers
 // can see what kind of data each field expects. Columns are split into core
 // (top-level Client fields) + business extras (captured into customFields).
@@ -336,7 +357,22 @@ export const ImportClientsDialog: React.FC<Props> = ({
     : 0;
 
   const overrideDuplicate = async (issue: ImportPreviewIssue) => {
-    if (!organizationId || !userId || !userName || !issue.input || !issue.matches?.[0]) return;
+    if (!organizationId || !userId || !userName) {
+      toast.error('Not signed in — refresh and try again.');
+      return;
+    }
+    if (!issue.input) {
+      toast.error("Couldn't override that row — the parsed input is missing. Try re-uploading the file.");
+      return;
+    }
+    if (!issue.matches?.[0]) {
+      toast.error("Couldn't override that row — no matched existing client to override against.");
+      return;
+    }
+    if (!workspaceId) {
+      toast.error('Pick a workspace first — overrides need to know where to file the new client.');
+      return;
+    }
     setBusy(true);
     try {
       const created = await importClientsOverrideRow(
@@ -345,7 +381,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         userName,
         issue.input,
         issue.matches[0].clientId,
-        workspaceId ?? null,
+        workspaceId,
       );
       setRowReview((prev) =>
         prev
@@ -358,7 +394,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
       onComplete([created]);
       toast.success(`Created "${issue.name}" as a new client`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Override failed');
+      toast.error(extractErrorMessage(err, 'Override failed'));
     } finally {
       setBusy(false);
     }
@@ -372,7 +408,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         if (!o) reset();
       }}
     >
-      <DialogContent className="w-[97vw] max-w-6xl max-h-[95vh] overflow-y-auto">
+      <DialogContent className="w-[97vw] max-w-[97vw] sm:max-w-6xl max-h-[95vh] sm:max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import clients from CSV</DialogTitle>
           <DialogDescription>
@@ -810,9 +846,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
                             );
                             toast.success('Overridden');
                           } catch (err) {
-                            toast.error(
-                              err instanceof Error ? err.message : 'Override failed',
-                            );
+                            toast.error(extractErrorMessage(err, 'Override failed'));
                           }
                         }}
                       >

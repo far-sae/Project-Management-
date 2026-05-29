@@ -647,6 +647,7 @@ export const Clients: React.FC = () => {
               ) : contacts.length === 0 ? (
                 <ContactsLanding
                   canCreate={canCreateContact && contactsAccountsInScope.length > 0}
+                  noAccountsInWorkspace={canCreateContact && contactsAccountsInScope.length === 0}
                   onCreate={() => {
                     if (contactsAccountsInScope.length === 0) {
                       toast.info('Create an account first — contacts need a parent account.');
@@ -656,6 +657,7 @@ export const Clients: React.FC = () => {
                     setOpenCreateContact(true);
                   }}
                   onImport={() => setOpenImportContact(true)}
+                  onGoToAccounts={() => setActiveTab('accounts')}
                 />
               ) : (
                 <>

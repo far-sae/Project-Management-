@@ -6,9 +6,20 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
 interface ContactsLandingProps {
+  /** Set by the parent to (permission-allowed) && (workspace has at least
+   *  one account). When false, the parent must tell us *why* via
+   *  `noAccountsInWorkspace`. Without that hint we'd mislabel a missing-
+   *  accounts state as a missing-permission one. */
   canCreate: boolean;
+  /** True when permissions are fine but this workspace just has no
+   *  accounts yet, so the rep needs to create an account before they can
+   *  attach contacts to it. */
+  noAccountsInWorkspace?: boolean;
   onCreate: () => void;
   onImport: () => void;
+  /** Called when the rep taps the "Add an account" link in the no-accounts
+   *  branch. Lets the parent flip the active tab. */
+  onGoToAccounts?: () => void;
 }
 
 const POINTS: { icon: React.ComponentType<{ className?: string }>; label: string; hint: string }[] = [
@@ -34,7 +45,7 @@ const POINTS: { icon: React.ComponentType<{ className?: string }>; label: string
  * Shown when no contacts exist in the workspace yet.
  */
 export const ContactsLanding: React.FC<ContactsLandingProps> = ({
-  canCreate, onCreate, onImport,
+  canCreate, noAccountsInWorkspace, onCreate, onImport, onGoToAccounts,
 }) => (
   <div className="grid place-items-center py-10">
     <Card className="max-w-3xl w-full">
@@ -76,6 +87,18 @@ export const ContactsLanding: React.FC<ContactsLandingProps> = ({
                   <Upload className="w-4 h-4 mr-2" /> Import Contacts
                 </Button>
               </>
+            ) : noAccountsInWorkspace ? (
+              <div className="text-xs text-center space-y-2">
+                <p className="text-muted-foreground">
+                  This workspace has no accounts yet — contacts attach to accounts, so
+                  add or import an account first.
+                </p>
+                {onGoToAccounts && (
+                  <Button size="sm" variant="outline" onClick={onGoToAccounts} className="w-full">
+                    Add an account
+                  </Button>
+                )}
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground text-center">
                 Ask an admin or owner to add contacts. Viewers can read but not create.
