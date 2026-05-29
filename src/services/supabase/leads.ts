@@ -507,6 +507,7 @@ export const createLead = async (
     logger.error("createLead failed:", error);
     throw error;
   }
+  notifyLeadsChanged(organizationId);
   return mapLead(data as Record<string, unknown>);
 };
 
@@ -615,6 +616,7 @@ export const updateLead = async (
     logger.error("updateLead failed:", error);
     throw error;
   }
+  notifyLeadsChanged(organizationId);
   return mapLead(data as Record<string, unknown>);
 };
 
@@ -637,6 +639,7 @@ export const deleteLead = async (
     logger.error("deleteLead failed:", error);
     throw error;
   }
+  notifyLeadsChanged(organizationId);
 };
 
 export const getOrganizationLeads = async (
@@ -659,31 +662,35 @@ export const getOrganizationLeads = async (
   return (data || []).map(mapLead);
 };
 
-// Cross-instance sync for local-org mode (mirrors deals + clients pattern).
-// Supabase mode already gets this via postgres_changes; local-org mode
-// listens for a window CustomEvent so changes in one component propagate
-// to every other useLeads subscriber without a page reload.
-const LOCAL_LEADS_EVENT = "pm-leads-changed-local";
+// Cross-instance sync (same pattern as deals + clients). Fires in BOTH
+// modes so siblings on the same page sync without waiting on Supabase
+// realtime.
+const LEADS_CHANGED_EVENT = "pm-leads-changed";
 
-export const notifyLocalLeadsChanged = (organizationId: string) => {
+export const notifyLeadsChanged = (organizationId: string) => {
   try {
-    window.dispatchEvent(new CustomEvent(LOCAL_LEADS_EVENT, { detail: { organizationId } }));
+    window.dispatchEvent(new CustomEvent(LEADS_CHANGED_EVENT, { detail: { organizationId } }));
   } catch { /* ignore */ }
 };
+
+/** @deprecated use notifyLeadsChanged. */
+export const notifyLocalLeadsChanged = notifyLeadsChanged;
 
 export const subscribeToLeads = (
   organizationId: string,
   callback: (leads: Lead[]) => void,
 ): (() => void) => {
   getOrganizationLeads(organizationId).then(callback);
+
+  const ceHandler = (e: Event) => {
+    const ce = e as CustomEvent<{ organizationId: string }>;
+    if (ce.detail?.organizationId !== organizationId) return;
+    getOrganizationLeads(organizationId).then(callback);
+  };
+  window.addEventListener(LEADS_CHANGED_EVENT, ceHandler);
+
   if (isLocalOrg(organizationId)) {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ organizationId: string }>;
-      if (ce.detail?.organizationId !== organizationId) return;
-      getOrganizationLeads(organizationId).then(callback);
-    };
-    window.addEventListener(LOCAL_LEADS_EVENT, handler);
-    return () => window.removeEventListener(LOCAL_LEADS_EVENT, handler);
+    return () => window.removeEventListener(LEADS_CHANGED_EVENT, ceHandler);
   }
 
   const channel = supabase
@@ -700,7 +707,10 @@ export const subscribeToLeads = (
     )
     .subscribe();
 
-  return () => { channel.unsubscribe(); };
+  return () => {
+    window.removeEventListener(LEADS_CHANGED_EVENT, ceHandler);
+    channel.unsubscribe();
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

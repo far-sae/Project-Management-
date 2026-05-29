@@ -500,6 +500,7 @@ export const createDeal = async (
     logger.error("Failed to create deal:", error);
     throw friendlyDealCreateError(error);
   }
+  notifyDealsChanged(organizationId);
   return mapDeal(data as Record<string, unknown>);
 };
 
@@ -631,6 +632,9 @@ export const updateDeal = async (
     logger.error("Failed to update deal:", error);
     throw friendlyDealUpdateError(error);
   }
+  // Notify same-tab siblings (kanban + drawer + analytics) immediately,
+  // so the stage move is visible without waiting on Supabase realtime.
+  notifyDealsChanged(organizationId);
   return mapDeal(data as Record<string, unknown>);
 };
 
@@ -641,7 +645,7 @@ export const deleteDeal = async (
   if (isLocalOrg(organizationId)) {
     const all = readLocal(organizationId).filter((d) => d.dealId !== dealId);
     writeLocal(organizationId, all);
-    notifyLocalDealsChanged(organizationId);
+    notifyDealsChanged(organizationId);
     return;
   }
   const { error } = await supabase.from("deals").delete().eq("deal_id", dealId);
@@ -649,35 +653,47 @@ export const deleteDeal = async (
     logger.error("Failed to delete deal:", error);
     throw error;
   }
+  notifyDealsChanged(organizationId);
 };
 
-// Cross-instance sync for local-org mode: when one useDeals instance writes
-// to localStorage, every other instance needs to refetch so e.g. the
-// detail view and the kanban don't end up with different stages. Postgres
-// realtime handles this for Supabase mode; in local mode we dispatch a
-// CustomEvent on the window and every subscriber listens.
-const LOCAL_DEALS_EVENT = "pm-deals-changed-local";
+// Cross-instance sync: when one useDeals instance writes (local OR
+// Supabase), every other instance in the same tab needs to refetch so the
+// detail view and the kanban don't end up with different stages.
+// Supabase mode also gets postgres_changes for cross-tab sync, but the
+// CustomEvent fires regardless so sibling components on the *same* page
+// (kanban + drawer + analytics card) stay in sync even when the user's
+// Supabase project doesn't have realtime enabled, or there's a lag before
+// the realtime event arrives.
+const DEALS_CHANGED_EVENT = "pm-deals-changed";
 
-export const notifyLocalDealsChanged = (organizationId: string) => {
+export const notifyDealsChanged = (organizationId: string) => {
   try {
-    window.dispatchEvent(new CustomEvent(LOCAL_DEALS_EVENT, { detail: { organizationId } }));
+    window.dispatchEvent(new CustomEvent(DEALS_CHANGED_EVENT, { detail: { organizationId } }));
   } catch { /* ignore — SSR or stripped env */ }
 };
+
+/** @deprecated kept for backwards compat — use notifyDealsChanged. */
+export const notifyLocalDealsChanged = notifyDealsChanged;
 
 export const subscribeToDeals = (
   organizationId: string,
   callback: (deals: Deal[]) => void,
 ): (() => void) => {
   getOrganizationDeals(organizationId).then(callback);
+
+  // Same-tab CustomEvent listener runs in BOTH modes so siblings sync
+  // synchronously after every successful write the current page made.
+  const ceHandler = (e: Event) => {
+    const ce = e as CustomEvent<{ organizationId: string }>;
+    if (ce.detail?.organizationId !== organizationId) return;
+    getOrganizationDeals(organizationId).then(callback);
+  };
+  window.addEventListener(DEALS_CHANGED_EVENT, ceHandler);
+
   if (isLocalOrg(organizationId)) {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ organizationId: string }>;
-      if (ce.detail?.organizationId !== organizationId) return;
-      getOrganizationDeals(organizationId).then(callback);
-    };
-    window.addEventListener(LOCAL_DEALS_EVENT, handler);
-    return () => window.removeEventListener(LOCAL_DEALS_EVENT, handler);
+    return () => window.removeEventListener(DEALS_CHANGED_EVENT, ceHandler);
   }
+
   const channelName = `deals-${organizationId}-${Math.random()
     .toString(36)
     .slice(2, 9)}`;
@@ -697,6 +713,7 @@ export const subscribeToDeals = (
     )
     .subscribe();
   return () => {
+    window.removeEventListener(DEALS_CHANGED_EVENT, ceHandler);
     channel.unsubscribe();
   };
 };

@@ -8,7 +8,9 @@ import { currencyForCountry } from '@/lib/countries';
  *
  *   1. organization.settings.currency — explicit override the owner set.
  *   2. organization.country — implied from the country picker.
- *   3. 'USD' — last-resort default for fresh tenants without settings.
+ *   3. localStorage 'pm_preferred_currency' — picked at signup before any
+ *      org exists.
+ *   4. 'USD' — last-resort default for fresh tenants without settings.
  *
  * Existing rows already store their original currency on each record, so
  * this hook only changes what the *next* form pre-fills with — it never
@@ -21,6 +23,10 @@ export const useOrgCurrency = (): string => {
     if (explicit) return explicit;
     const fromCountry = currencyForCountry(organization?.country);
     if (fromCountry) return fromCountry;
+    try {
+      const stored = localStorage.getItem('pm_preferred_currency');
+      if (stored && stored.trim()) return stored.trim();
+    } catch { /* ignore */ }
     return 'USD';
   }, [organization?.settings?.currency, organization?.country]);
 };

@@ -9,9 +9,10 @@ import {
   Card, CardContent, CardDescription,
   CardFooter, CardHeader, CardTitle,
 } from '@/components/ui/card';
-import { Loader2, Mail, Lock, User, Check, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Mail, Lock, User, Check, Eye, EyeOff, Coins } from 'lucide-react';
 import { FcGoogle } from 'react-icons/fc';
 import { toast } from 'sonner';
+import { CurrencySelect } from '@/components/ui/currency-select';
 
 export const SignupForm: React.FC = () => {
   const navigate = useNavigate();
@@ -24,6 +25,16 @@ export const SignupForm: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  // Default to the user's locale currency when the browser knows it,
+  // falling back to USD. Reps can change it from Settings later.
+  const [currency, setCurrency] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem('pm_preferred_currency');
+      if (stored) return stored;
+      const parts = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).resolvedOptions();
+      return parts.currency ?? 'USD';
+    } catch { return 'USD'; }
+  });
 
   const redirectParam = new URLSearchParams(location.search).get('redirect');
 
@@ -70,6 +81,10 @@ export const SignupForm: React.FC = () => {
       return;
     }
 
+    // Persist the chosen currency BEFORE signup so OrganizationContext can
+    // apply it as the org-level default the first time the org loads.
+    try { localStorage.setItem('pm_preferred_currency', currency); } catch { /* ignore */ }
+
     const toastId = toast.loading('Creating your account...');
     try {
       await signUp(trimmedEmail, password, trimmedName);
@@ -95,6 +110,9 @@ export const SignupForm: React.FC = () => {
 
   const handleGoogleSignIn = async () => {
     clearError();
+    // Same currency persist for Google sign-up — the rep won't see the
+    // form again, so we lock in their choice now.
+    try { localStorage.setItem('pm_preferred_currency', currency); } catch { /* ignore */ }
     const toastId = toast.loading('Signing up with Google...');
     try {
       await signInGoogle();
@@ -244,6 +262,23 @@ export const SignupForm: React.FC = () => {
                   )}
                 </button>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="currency">Preferred currency</Label>
+              <div className="relative">
+                <Coins className="absolute left-3 top-3 h-4 w-4 text-muted-foreground z-10" />
+                <CurrencySelect
+                  value={currency}
+                  onValueChange={setCurrency}
+                  disabled={loading}
+                  showLabels
+                  className="pl-10"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Used as the default for deals, invoices, expenses. Change anytime in Settings → Organization.
+              </p>
             </div>
 
             <Button

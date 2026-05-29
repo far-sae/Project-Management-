@@ -584,6 +584,7 @@ export const createClient = async (
       .join(" — ");
     throw new Error(composed || "Failed to create client (no reason returned by the server).");
   }
+  notifyClientsChanged(organizationId);
   return mapClient(data as Record<string, unknown>);
 };
 
@@ -716,6 +717,7 @@ export const updateClient = async (
     logger.error("Failed to update client:", error);
     throw error;
   }
+  notifyClientsChanged(organizationId);
   return mapClient(data);
 };
 
@@ -757,7 +759,10 @@ export const deleteClient = async (
     p_organization_id: organizationId,
     p_client_id: clientId,
   });
-  if (!rpcError) return;
+  if (!rpcError) {
+    notifyClientsChanged(organizationId);
+    return;
+  }
   if (!isMissingRpcError(rpcError)) {
     logger.error("Failed to delete client:", rpcError);
     throw friendlyClientDeleteError(rpcError);
@@ -779,6 +784,7 @@ export const deleteClient = async (
       "Client was not deleted. Please make sure you are an owner/admin and that the latest CRM delete migration is deployed.",
     );
   }
+  notifyClientsChanged(organizationId);
 };
 
 export const getOrganizationClients = async (
@@ -801,33 +807,37 @@ export const getOrganizationClients = async (
   return (data || []).map(mapClient);
 };
 
-// Cross-instance sync — mirrors the deals pattern. When one useClients
-// instance writes a client locally, every other instance (different tab,
-// different page, the kanban + the detail drawer at once) refetches and
-// re-renders so nothing requires a page reload to see the change.
-// Supabase mode gets this for free via postgres_changes; local-org mode
-// gets it via a window CustomEvent.
-const LOCAL_CLIENTS_EVENT = "pm-clients-changed-local";
+// Cross-instance sync (same pattern as deals). The CustomEvent fires in
+// BOTH local-org and Supabase modes so sibling components on the same page
+// (the table + drawer + analytics card) stay in sync even when the user's
+// Supabase project doesn't have realtime enabled, or there's a lag before
+// the realtime event arrives.
+const CLIENTS_CHANGED_EVENT = "pm-clients-changed";
 
-export const notifyLocalClientsChanged = (organizationId: string) => {
+export const notifyClientsChanged = (organizationId: string) => {
   try {
-    window.dispatchEvent(new CustomEvent(LOCAL_CLIENTS_EVENT, { detail: { organizationId } }));
-  } catch { /* ignore — SSR or stripped env */ }
+    window.dispatchEvent(new CustomEvent(CLIENTS_CHANGED_EVENT, { detail: { organizationId } }));
+  } catch { /* ignore */ }
 };
+
+/** @deprecated use notifyClientsChanged. */
+export const notifyLocalClientsChanged = notifyClientsChanged;
 
 export const subscribeToClients = (
   organizationId: string,
   callback: (clients: Client[]) => void,
 ): (() => void) => {
   getOrganizationClients(organizationId).then(callback);
+
+  const ceHandler = (e: Event) => {
+    const ce = e as CustomEvent<{ organizationId: string }>;
+    if (ce.detail?.organizationId !== organizationId) return;
+    getOrganizationClients(organizationId).then(callback);
+  };
+  window.addEventListener(CLIENTS_CHANGED_EVENT, ceHandler);
+
   if (isLocalOrg(organizationId)) {
-    const handler = (e: Event) => {
-      const ce = e as CustomEvent<{ organizationId: string }>;
-      if (ce.detail?.organizationId !== organizationId) return;
-      getOrganizationClients(organizationId).then(callback);
-    };
-    window.addEventListener(LOCAL_CLIENTS_EVENT, handler);
-    return () => window.removeEventListener(LOCAL_CLIENTS_EVENT, handler);
+    return () => window.removeEventListener(CLIENTS_CHANGED_EVENT, ceHandler);
   }
 
   const channel = supabase
@@ -849,6 +859,7 @@ export const subscribeToClients = (
     .subscribe();
 
   return () => {
+    window.removeEventListener(CLIENTS_CHANGED_EVENT, ceHandler);
     channel.unsubscribe();
   };
 };
