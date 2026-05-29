@@ -44,6 +44,7 @@ interface FormState {
   website: string;
   email: string;
   phone: string;
+  fax: string;
   addressLine1: string;
   city: string;
   state: string;
@@ -55,6 +56,13 @@ interface FormState {
   source: string;
   description: string;
   tags: string;
+  // Zoho-style fields
+  accountSite: string;
+  parentClientId: string;
+  accountNumber: string;
+  tickerSymbol: string;
+  ownership: string;
+  sicCode: string;
 }
 
 const blank: FormState = {
@@ -67,6 +75,7 @@ const blank: FormState = {
   website: '',
   email: '',
   phone: '',
+  fax: '',
   addressLine1: '',
   city: '',
   state: '',
@@ -78,6 +87,12 @@ const blank: FormState = {
   source: '',
   description: '',
   tags: '',
+  accountSite: '',
+  parentClientId: '',
+  accountNumber: '',
+  tickerSymbol: '',
+  ownership: '',
+  sicCode: '',
 };
 
 const fromClient = (c: Client): FormState => ({
@@ -90,6 +105,7 @@ const fromClient = (c: Client): FormState => ({
   website: c.website ?? '',
   email: c.email ?? '',
   phone: c.phone ?? '',
+  fax: c.fax ?? '',
   addressLine1: c.addressLine1 ?? '',
   city: c.city ?? '',
   state: c.state ?? '',
@@ -101,6 +117,12 @@ const fromClient = (c: Client): FormState => ({
   source: c.source ?? '',
   description: c.description ?? '',
   tags: (c.tags ?? []).join(', '),
+  accountSite: c.accountSite ?? '',
+  parentClientId: c.parentClientId ?? '',
+  accountNumber: c.accountNumber ?? '',
+  tickerSymbol: c.tickerSymbol ?? '',
+  ownership: c.ownership ?? '',
+  sicCode: c.sicCode ?? '',
 });
 
 interface Props {
@@ -260,6 +282,15 @@ export const ClientFormDialog: React.FC<Props> = ({
       source: form.source.trim() || null,
       description: form.description.trim() || null,
       tags,
+      // Zoho-style fields. Empty strings collapse to null so we don't
+      // overwrite a previously-set value with an empty string on edit.
+      fax: form.fax.trim() || null,
+      accountSite: form.accountSite.trim() || null,
+      parentClientId: form.parentClientId.trim() || null,
+      accountNumber: form.accountNumber.trim() || null,
+      tickerSymbol: form.tickerSymbol.trim() || null,
+      ownership: form.ownership.trim() || null,
+      sicCode: form.sicCode.trim() || null,
     };
   };
 
@@ -502,6 +533,76 @@ export const ClientFormDialog: React.FC<Props> = ({
                 value={form.source}
                 onChange={(e) => set('source', e.target.value)}
                 placeholder="Referral, web, event…"
+              />
+            </div>
+
+            {/* ─── Zoho-style "Account Information" extras ───────────── */}
+            <div className="md:col-span-2 mt-2 pt-3 border-t border-border">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Account information
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cf-site">Account site</Label>
+              <Input
+                id="cf-site" maxLength={120}
+                value={form.accountSite}
+                onChange={(e) => set('accountSite', e.target.value)}
+                placeholder="HQ, London office, Region EU…"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cf-num">Account number</Label>
+              <Input
+                id="cf-num" maxLength={80}
+                value={form.accountNumber}
+                onChange={(e) => set('accountNumber', e.target.value)}
+                placeholder="Internal customer reference"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cf-ticker">Ticker symbol</Label>
+              <Input
+                id="cf-ticker" maxLength={20}
+                value={form.tickerSymbol}
+                onChange={(e) => set('tickerSymbol', e.target.value.toUpperCase())}
+                placeholder="ACME"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Ownership</Label>
+              <Select
+                value={form.ownership || 'none'}
+                onValueChange={(v) => set('ownership', v === 'none' ? '' : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="Public">Public</SelectItem>
+                  <SelectItem value="Private">Private</SelectItem>
+                  <SelectItem value="Subsidiary">Subsidiary</SelectItem>
+                  <SelectItem value="Government">Government</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cf-fax">Fax</Label>
+              <Input
+                id="cf-fax" maxLength={40}
+                value={form.fax}
+                onChange={(e) => set('fax', e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cf-sic">SIC code</Label>
+              <Input
+                id="cf-sic" maxLength={20}
+                value={form.sicCode}
+                onChange={(e) => set('sicCode', e.target.value)}
+                placeholder="4-digit US Standard Industrial code"
               />
             </div>
 

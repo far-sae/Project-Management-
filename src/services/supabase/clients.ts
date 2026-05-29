@@ -22,6 +22,7 @@ export interface Client {
   website?: string | null;
   email?: string | null;
   phone?: string | null;
+  fax?: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -35,6 +36,13 @@ export interface Client {
   description?: string | null;
   category?: string | null;
   tags: string[];
+  // Zoho-style account fields (migration 103)
+  accountSite?: string | null;
+  parentClientId?: string | null;
+  accountNumber?: string | null;
+  tickerSymbol?: string | null;
+  ownership?: string | null;
+  sicCode?: string | null;
   accountOwnerId?: string | null;
   accountOwnerName?: string | null;
   customFields: Record<string, unknown>;
@@ -104,6 +112,7 @@ export interface CreateClientInput {
   website?: string | null;
   email?: string | null;
   phone?: string | null;
+  fax?: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -117,6 +126,13 @@ export interface CreateClientInput {
   description?: string | null;
   category?: string | null;
   tags?: string[];
+  // Zoho-style account fields
+  accountSite?: string | null;
+  parentClientId?: string | null;
+  accountNumber?: string | null;
+  tickerSymbol?: string | null;
+  ownership?: string | null;
+  sicCode?: string | null;
   accountOwnerId?: string | null;
   accountOwnerName?: string | null;
   customFields?: Record<string, unknown>;
@@ -254,6 +270,7 @@ const mapClient = (row: Record<string, unknown>): Client => ({
   website: (row.website as string) ?? null,
   email: (row.email as string) ?? null,
   phone: (row.phone as string) ?? null,
+  fax: (row.fax as string) ?? null,
   addressLine1: (row.address_line1 as string) ?? null,
   addressLine2: (row.address_line2 as string) ?? null,
   city: (row.city as string) ?? null,
@@ -267,6 +284,12 @@ const mapClient = (row: Record<string, unknown>): Client => ({
   description: (row.description as string) ?? null,
   category: (row.category as string) ?? null,
   tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+  accountSite: (row.account_site as string) ?? null,
+  parentClientId: (row.parent_client_id as string) ?? null,
+  accountNumber: (row.account_number as string) ?? null,
+  tickerSymbol: (row.ticker_symbol as string) ?? null,
+  ownership: (row.ownership as string) ?? null,
+  sicCode: (row.sic_code as string) ?? null,
   accountOwnerId: (row.account_owner_id as string) ?? null,
   accountOwnerName: (row.account_owner_name as string) ?? null,
   customFields:
@@ -399,6 +422,7 @@ export const createClient = async (
       website: sanitizeText(input.website ?? null),
       email: sanitizeText(input.email ?? null),
       phone: sanitizeText(input.phone ?? null),
+      fax: sanitizeText(input.fax ?? null),
       addressLine1: sanitizeText(input.addressLine1 ?? null),
       addressLine2: sanitizeText(input.addressLine2 ?? null),
       city: sanitizeText(input.city ?? null),
@@ -412,6 +436,12 @@ export const createClient = async (
       description: sanitizeText(input.description ?? null),
       category: sanitizeText(input.category ?? null),
       tags: sanitizeTags(input.tags),
+      accountSite: sanitizeText(input.accountSite ?? null),
+      parentClientId: input.parentClientId ?? null,
+      accountNumber: sanitizeText(input.accountNumber ?? null),
+      tickerSymbol: sanitizeText(input.tickerSymbol ?? null),
+      ownership: sanitizeText(input.ownership ?? null),
+      sicCode: sanitizeText(input.sicCode ?? null),
       accountOwnerId: input.accountOwnerId ?? userId,
       accountOwnerName: input.accountOwnerName ?? userName,
       customFields: input.customFields ?? {},
@@ -441,6 +471,7 @@ export const createClient = async (
     website: sanitizeText(input.website ?? null),
     email: sanitizeText(input.email ?? null),
     phone: sanitizeText(input.phone ?? null),
+    fax: sanitizeText(input.fax ?? null),
     address_line1: sanitizeText(input.addressLine1 ?? null),
     address_line2: sanitizeText(input.addressLine2 ?? null),
     city: sanitizeText(input.city ?? null),
@@ -454,6 +485,12 @@ export const createClient = async (
     description: sanitizeText(input.description ?? null),
     category: sanitizeText(input.category ?? null),
     tags: sanitizeTags(input.tags),
+    account_site: sanitizeText(input.accountSite ?? null),
+    parent_client_id: input.parentClientId ?? null,
+    account_number: sanitizeText(input.accountNumber ?? null),
+    ticker_symbol: sanitizeText(input.tickerSymbol ?? null),
+    ownership: sanitizeText(input.ownership ?? null),
+    sic_code: sanitizeText(input.sicCode ?? null),
     account_owner_id: input.accountOwnerId ?? userId,
     account_owner_name: input.accountOwnerName ?? userName,
     custom_fields: input.customFields ?? {},
@@ -571,6 +608,13 @@ export const updateClient = async (
     assign("description", input.description !== undefined ? sanitizeText(input.description) : undefined);
     assign("category", input.category !== undefined ? sanitizeText(input.category) : undefined);
     if (input.tags !== undefined) merged.tags = sanitizeTags(input.tags);
+    assign("fax", input.fax !== undefined ? sanitizeText(input.fax) : undefined);
+    assign("accountSite", input.accountSite !== undefined ? sanitizeText(input.accountSite) : undefined);
+    assign("parentClientId", input.parentClientId);
+    assign("accountNumber", input.accountNumber !== undefined ? sanitizeText(input.accountNumber) : undefined);
+    assign("tickerSymbol", input.tickerSymbol !== undefined ? sanitizeText(input.tickerSymbol) : undefined);
+    assign("ownership", input.ownership !== undefined ? sanitizeText(input.ownership) : undefined);
+    assign("sicCode", input.sicCode !== undefined ? sanitizeText(input.sicCode) : undefined);
     assign("accountOwnerId", input.accountOwnerId);
     assign("accountOwnerName", input.accountOwnerName);
     if (input.customFields !== undefined) merged.customFields = input.customFields;
@@ -603,6 +647,13 @@ export const updateClient = async (
   if (input.description !== undefined) update.description = sanitizeText(input.description);
   if (input.category !== undefined) update.category = sanitizeText(input.category);
   if (input.tags !== undefined) update.tags = sanitizeTags(input.tags);
+  if (input.fax !== undefined) update.fax = sanitizeText(input.fax);
+  if (input.accountSite !== undefined) update.account_site = sanitizeText(input.accountSite);
+  if (input.parentClientId !== undefined) update.parent_client_id = input.parentClientId;
+  if (input.accountNumber !== undefined) update.account_number = sanitizeText(input.accountNumber);
+  if (input.tickerSymbol !== undefined) update.ticker_symbol = sanitizeText(input.tickerSymbol);
+  if (input.ownership !== undefined) update.ownership = sanitizeText(input.ownership);
+  if (input.sicCode !== undefined) update.sic_code = sanitizeText(input.sicCode);
   if (input.accountOwnerId !== undefined) update.account_owner_id = input.accountOwnerId;
   if (input.accountOwnerName !== undefined) update.account_owner_name = input.accountOwnerName;
   if (input.customFields !== undefined) update.custom_fields = input.customFields;

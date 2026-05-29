@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Download, Loader2,
   Filter, Trash2, MoreVertical, TrendingUp,
-  ArrowRight, Pencil, ArrowLeft,
+  Pencil, ArrowLeft,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,8 @@ import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
+import { AccountsLanding } from '@/components/clients/AccountsLanding';
+import { AccountsHubCard } from '@/components/clients/AccountsHubCard';
 import { LeadsLanding } from '@/components/leads/LeadsLanding';
 import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
@@ -669,11 +671,38 @@ export const Clients: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="accounts" className="mt-4 space-y-6">
-              {showLanding ? (
+              {loading ? (
+                <Card>
+                  <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading accounts…
+                  </CardContent>
+                </Card>
+              ) : clients.length === 0 ? (
+                <AccountsLanding
+                  canCreate={canCreate}
+                  onCreate={() => setOpenCreate(true)}
+                  onImport={() => setOpenImport(true)}
+                />
+              ) : showLanding ? (
                 <CrmCategoryLanding clients={clients} onPick={exitLanding} />
               ) : (
               <>
-              <div>
+              <AccountsHubCard
+                accountsCount={clients.length}
+                contactsCount={contacts.length}
+                leadsCount={leads.length}
+                canCreate={canCreate}
+                scopeLabel={isAllWorkspaces
+                  ? 'All workspaces'
+                  : selectedWorkspace?.name ?? 'Current workspace'}
+                onCreateAccount={() => setOpenCreate(true)}
+                onImportAccounts={() => setOpenImport(true)}
+                onGoToContacts={() => setActiveTab('contacts')}
+                onGoToLeads={() => setActiveTab('leads')}
+                onGoToPipeline={() => setActiveTab('pipeline')}
+                onGoToTasks={() => setActiveTab('tasks')}
+              />
+              <div className="pt-2">
                 <h2 className="text-lg font-semibold">Accounts</h2>
                 <p className="text-sm text-muted-foreground">
                   Your main accounts list. Search, filter, open a record, or add/import more accounts.
@@ -808,36 +837,11 @@ export const Clients: React.FC = () => {
             </Card>
           )}
 
-          {/* Excel-style table */}
-          {loading ? (
-            <Card>
-              <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
-                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading accounts…
-              </CardContent>
-            </Card>
-          ) : clients.length === 0 ? (
-            <Card>
-              <CardContent className="py-10 text-center space-y-2">
-                <Building2 className="w-10 h-10 mx-auto text-muted-foreground/60" />
-                <p className="text-sm text-muted-foreground">
-                  No accounts yet. Add one account if you only have a name, or import a spreadsheet if you already have a list.
-                </p>
-                {canCreate && (
-                  <div className="flex flex-wrap justify-center gap-2 pt-2">
-                    <Button onClick={() => setOpenCreate(true)}>
-                      <Plus className="w-4 h-4 mr-2" /> New account
-                    </Button>
-                    <Button variant="outline" onClick={() => setOpenImport(true)}>
-                      <Upload className="w-4 h-4 mr-2" /> Import
-                    </Button>
-                    <Button variant="ghost" onClick={() => setActiveTab('pipeline')}>
-                      Learn pipeline <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
+          {/* Excel-style table — the outer branches already handled
+              `loading` and the zero-clients empty state above. By the time
+              we reach here we have rows to show, so render the table
+              directly. */}
+          {(
             <ClientsTable
               rows={filtered}
               selectedIds={selectedClientIds}
