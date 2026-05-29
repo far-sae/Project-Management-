@@ -17,7 +17,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { GitBranch, ListTodo } from 'lucide-react';
+import { GitBranch, ListTodo, Home as HomeIcon } from 'lucide-react';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { DealDetailDrawer } from '@/components/clients/DealDetailDrawer';
 import { useDeals } from '@/hooks/useDeals';
@@ -38,6 +38,7 @@ import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
+import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
@@ -98,7 +99,7 @@ export const Clients: React.FC = () => {
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'accounts' | 'pipeline' | 'tasks' | 'forecast'>('accounts');
+  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
 
   // Category landing gate. Users see a tile picker first; clicking a tile
   // (or "All accounts") lands them in the full CRM view filtered to that
@@ -368,7 +369,7 @@ export const Clients: React.FC = () => {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {!showLanding && (
+              {activeTab === 'accounts' && !showLanding && (
                 <Button variant="outline" onClick={backToLanding}>
                   <ArrowLeft className="w-4 h-4 mr-2" /> Categories
                 </Button>
@@ -392,12 +393,6 @@ export const Clients: React.FC = () => {
             </div>
           </div>
 
-          {showLanding && (
-            <CrmCategoryLanding clients={clients} onPick={exitLanding} />
-          )}
-
-          {!showLanding && (
-          <>
           <Card>
             <CardContent className="pt-5">
               <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -472,6 +467,9 @@ export const Clients: React.FC = () => {
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
             <TabsList>
+              <TabsTrigger value="home">
+                <HomeIcon className="w-4 h-4 mr-1.5" /> Home
+              </TabsTrigger>
               <TabsTrigger value="accounts">
                 <Building2 className="w-4 h-4 mr-1.5" /> Accounts
               </TabsTrigger>
@@ -486,7 +484,24 @@ export const Clients: React.FC = () => {
               </TabsTrigger>
             </TabsList>
 
+            <TabsContent value="home" className="mt-4">
+              <CrmHomeDashboard
+                clients={clients}
+                deals={allDeals}
+                workspaceClientIds={workspaceClientIds}
+                workspaceName={selectedWorkspace?.name ?? null}
+                displayCurrency={effectivePipelineCurrency}
+                onOpenAccount={(c) => setSelected(c)}
+                onOpenDeal={(d) => setSelectedDealId(d.dealId)}
+                onGoToTab={(t) => setActiveTab(t)}
+              />
+            </TabsContent>
+
             <TabsContent value="accounts" className="mt-4 space-y-6">
+              {showLanding ? (
+                <CrmCategoryLanding clients={clients} onPick={exitLanding} />
+              ) : (
+              <>
               <div>
                 <h2 className="text-lg font-semibold">Accounts</h2>
                 <p className="text-sm text-muted-foreground">
@@ -665,6 +680,8 @@ export const Clients: React.FC = () => {
               }}
             />
           )}
+              </>
+              )}
             </TabsContent>
 
             <TabsContent value="pipeline" className="mt-4 space-y-4">
@@ -754,8 +771,6 @@ export const Clients: React.FC = () => {
               />
             </TabsContent>
           </Tabs>
-          </>
-          )}
         </div>
       </main>
 
