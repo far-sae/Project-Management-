@@ -17,7 +17,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { GitBranch, ListTodo, Home as HomeIcon } from 'lucide-react';
+import { GitBranch, ListTodo, Home as HomeIcon, UserPlus } from 'lucide-react';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { DealDetailDrawer } from '@/components/clients/DealDetailDrawer';
 import { useDeals } from '@/hooks/useDeals';
@@ -39,6 +39,14 @@ import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
+import { LeadsLanding } from '@/components/leads/LeadsLanding';
+import { LeadsTable } from '@/components/leads/LeadsTable';
+import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
+import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
+import { LeadConvertDialog } from '@/components/leads/LeadConvertDialog';
+import { useLeads } from '@/hooks/useLeads';
+import type { Lead } from '@/services/supabase/leads';
+import { leadDisplayName } from '@/services/supabase/leads';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
@@ -99,7 +107,43 @@ export const Clients: React.FC = () => {
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'leads' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
+
+  // ─── Leads state ────────────────────────────────────────────────────────
+  const {
+    leads, allLeads, loading: leadsLoading,
+    create: createLeadSvc, update: updateLeadSvc, remove: removeLeadSvc, convert: convertLeadSvc,
+    canCreate: canCreateLead, canManage: canManageLead,
+  } = useLeads();
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [openCreateLead, setOpenCreateLead] = useState(false);
+  const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
+  const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
+  const [deletingLead, setDeletingLead] = useState(false);
+
+  // Keep the open drawer reactive to realtime updates. Look up against the
+  // workspace-filtered list first so the user always sees the "current"
+  // version; fall back to the org-wide list (allLeads) so a lead that lives
+  // in another workspace still hydrates while the drawer is open; finally
+  // return null so the drawer unmounts if the lead was deleted out from
+  // under us (rather than rendering a ghost the user can act on).
+  const liveSelectedLead = useMemo(() => {
+    if (!selectedLead) return null;
+    return leads.find((l) => l.leadId === selectedLead.leadId)
+        ?? allLeads.find((l) => l.leadId === selectedLead.leadId)
+        ?? null;
+  }, [leads, allLeads, selectedLead]);
+
+  // Drop a stale open drawer when the selected lead vanishes (deleted in
+  // another tab / never made it after the realtime feed refreshed).
+  useEffect(() => {
+    if (selectedLead && liveSelectedLead === null) {
+      setSelectedLead(null);
+    }
+  }, [selectedLead, liveSelectedLead]);
+
+  const isLocalOrg = !!organizationId?.startsWith('local-');
 
   // Category landing gate. Users see a tile picker first; clicking a tile
   // (or "All accounts") lands them in the full CRM view filtered to that
@@ -470,6 +514,12 @@ export const Clients: React.FC = () => {
               <TabsTrigger value="home">
                 <HomeIcon className="w-4 h-4 mr-1.5" /> Home
               </TabsTrigger>
+              <TabsTrigger value="leads">
+                <UserPlus className="w-4 h-4 mr-1.5" /> Leads
+                {leads.length > 0 && (
+                  <Badge variant="outline" className="ml-1.5 text-[9px]">{leads.length}</Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="accounts">
                 <Building2 className="w-4 h-4 mr-1.5" /> Accounts
               </TabsTrigger>
@@ -495,6 +545,42 @@ export const Clients: React.FC = () => {
                 onOpenDeal={(d) => setSelectedDealId(d.dealId)}
                 onGoToTab={(t) => setActiveTab(t)}
               />
+            </TabsContent>
+
+            <TabsContent value="leads" className="mt-4 space-y-4">
+              {leadsLoading ? (
+                <Card>
+                  <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading leads…
+                  </CardContent>
+                </Card>
+              ) : leads.length === 0 ? (
+                <LeadsLanding
+                  canCreate={canCreateLead}
+                  onCreate={() => setOpenCreateLead(true)}
+                  onImport={() => toast.info('Lead CSV import is coming next — for now create leads one at a time.')}
+                />
+              ) : (
+                <>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <h2 className="text-lg font-semibold">Leads</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Prospects you haven't qualified yet. Convert a lead to promote it into a real Account + Contact.
+                      </p>
+                    </div>
+                    {canCreateLead && (
+                      <Button onClick={() => setOpenCreateLead(true)}>
+                        <Plus className="w-4 h-4 mr-2" /> Create Lead
+                      </Button>
+                    )}
+                  </div>
+                  <LeadsTable
+                    rows={leads}
+                    onOpen={(l) => setSelectedLead(l)}
+                  />
+                </>
+              )}
             </TabsContent>
 
             <TabsContent value="accounts" className="mt-4 space-y-6">
@@ -838,6 +924,204 @@ export const Clients: React.FC = () => {
           onDelete={(c) => setConfirmDelete(c)}
         />
       )}
+
+      {/* Lead dialogs and drawer */}
+      <LeadFormDialog
+        open={openCreateLead || !!editingLead}
+        onOpenChange={(o) => {
+          if (!o) {
+            setOpenCreateLead(false);
+            setEditingLead(null);
+          }
+        }}
+        lead={editingLead}
+        onSubmit={async (input) => {
+          try {
+            if (editingLead) {
+              await updateLeadSvc(editingLead.leadId, input);
+              toast.success(`Updated lead ${editingLead.leadNumber}`);
+              setEditingLead(null);
+            } else {
+              const created = await createLeadSvc(input);
+              toast.success(`Created lead ${created.leadNumber}`);
+              void recordAuditEvent(
+                organizationId,
+                { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+                {
+                  action: 'lead_created',
+                  targetType: 'lead',
+                  targetId: created.leadId,
+                  targetLabel: `${leadDisplayName(created)} — ${created.company}`,
+                  metadata: { leadNumber: created.leadNumber, workspaceId: created.workspaceId },
+                },
+              );
+              setOpenCreateLead(false);
+            }
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to save lead');
+            throw err;
+          }
+        }}
+      />
+
+      {liveSelectedLead && (
+        <LeadDetailDrawer
+          lead={liveSelectedLead}
+          organizationId={organizationId}
+          canManage={canManageLead}
+          canConvert={!isLocalOrg}
+          onClose={() => setSelectedLead(null)}
+          onEdit={(l) => setEditingLead(l)}
+          onDelete={(l) => setConfirmDeleteLead(l)}
+          onConvert={(l) => {
+            if (isLocalOrg) {
+              toast.info('Lead conversion needs a Supabase-backed org. Connect Supabase, then try again.');
+              return;
+            }
+            setConvertingLead(l);
+          }}
+          onClone={async (l) => {
+            try {
+              const cloned = await createLeadSvc({
+                // Pin the clone to the SOURCE lead's workspace, not whichever
+                // workspace the sidebar happens to be on at click time.
+                workspaceId: l.workspaceId,
+                salutation: l.salutation,
+                firstName: l.firstName,
+                lastName: l.lastName,
+                title: l.title,
+                email: l.email,
+                phone: l.phone,
+                mobile: l.mobile,
+                fax: l.fax,
+                website: l.website,
+                skypeId: l.skypeId,
+                twitter: l.twitter,
+                linkedinUrl: l.linkedinUrl,
+                company: l.company,
+                industry: l.industry,
+                annualRevenue: l.annualRevenue,
+                noOfEmployees: l.noOfEmployees,
+                street: l.street,
+                city: l.city,
+                state: l.state,
+                postalCode: l.postalCode,
+                country: l.country,
+                leadSource: l.leadSource,
+                leadStatus: 'new',
+                rating: l.rating,
+                emailOptOut: l.emailOptOut,
+                description: l.description,
+                tags: l.tags,
+              });
+              toast.success(`Cloned to ${cloned.leadNumber}`);
+              setSelectedLead(cloned);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'Clone failed');
+            }
+          }}
+          onSendEmail={(l) => {
+            if (!l.email) {
+              toast.error('This lead has no email on file.');
+              return;
+            }
+            window.location.href = `mailto:${l.email}`;
+          }}
+          onStatusChange={async (l, next) => {
+            await updateLeadSvc(l.leadId, { leadStatus: next });
+          }}
+        />
+      )}
+
+      <LeadConvertDialog
+        open={!!convertingLead}
+        onOpenChange={(o) => { if (!o) setConvertingLead(null); }}
+        lead={convertingLead}
+        existingClients={allClients}
+        onConvert={async (l, input) => {
+          const result = await convertLeadSvc(l, input);
+          void recordAuditEvent(
+            organizationId,
+            { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+            {
+              action: 'lead_converted',
+              targetType: 'lead',
+              targetId: l.leadId,
+              targetLabel: `${leadDisplayName(l)} — ${l.company}`,
+              metadata: {
+                leadNumber: l.leadNumber,
+                clientId: result.clientId,
+                contactId: result.contactId,
+                dealId: result.dealId,
+                warnings: result.warnings,
+              },
+            },
+          );
+          return result;
+        }}
+        onConverted={(result) => {
+          setSelectedLead(null);
+          const acct = allClients.find((c) => c.clientId === result.clientId);
+          if (acct) setSelected(acct);
+        }}
+      />
+
+      <AlertDialog
+        open={!!confirmDeleteLead}
+        onOpenChange={(o) => { if (!o) setConfirmDeleteLead(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDeleteLead && (
+                <>
+                  Permanently remove <strong>{leadDisplayName(confirmDeleteLead)}</strong>
+                  {' '}({confirmDeleteLead.leadNumber}) and any notes attached to it.
+                  This cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingLead}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingLead}
+              onClick={async () => {
+                if (!confirmDeleteLead) return;
+                setDeletingLead(true);
+                try {
+                  await removeLeadSvc(confirmDeleteLead.leadId);
+                  void recordAuditEvent(
+                    organizationId,
+                    { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+                    {
+                      action: 'lead_deleted',
+                      targetType: 'lead',
+                      targetId: confirmDeleteLead.leadId,
+                      targetLabel: `${leadDisplayName(confirmDeleteLead)} — ${confirmDeleteLead.company}`,
+                      metadata: { leadNumber: confirmDeleteLead.leadNumber },
+                    },
+                  );
+                  toast.success('Lead deleted');
+                  if (selectedLead?.leadId === confirmDeleteLead.leadId) {
+                    setSelectedLead(null);
+                  }
+                  setConfirmDeleteLead(null);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Delete failed');
+                } finally {
+                  setDeletingLead(false);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingLead && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Deal detail drawer — HubSpot-style 3-column view */}
       {(() => {
