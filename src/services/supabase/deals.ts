@@ -59,6 +59,12 @@ export interface Deal {
   closedBy?: string | null;
   pipelineId: string;
   stageId: string;
+  // Zoho-style fields (migration 107).
+  dealType?: string | null;        // new business | existing | renewal | …
+  nextStep?: string | null;
+  contactId?: string | null;
+  leadSource?: string | null;
+  campaignSource?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -78,6 +84,11 @@ export interface CreateDealInput {
   ownerName?: string | null;
   source?: string | null;
   tags?: string[];
+  dealType?: string | null;
+  nextStep?: string | null;
+  contactId?: string | null;
+  leadSource?: string | null;
+  campaignSource?: string | null;
 }
 
 export interface UpdateDealInput {
@@ -99,6 +110,11 @@ export interface UpdateDealInput {
   lossReason?: string | null;
   pipelineId?: string;
   stageId?: string;
+  dealType?: string | null;
+  nextStep?: string | null;
+  contactId?: string | null;
+  leadSource?: string | null;
+  campaignSource?: string | null;
 }
 
 const isLocalOrg = (orgId: string) => orgId.startsWith("local-");
@@ -133,6 +149,11 @@ const mapDeal = (row: Record<string, unknown>): Deal => ({
   closedBy: (row.closed_by as string) ?? null,
   pipelineId: row.pipeline_id as string,
   stageId: row.stage_id as string,
+  dealType: (row.deal_type as string) ?? null,
+  nextStep: (row.next_step as string) ?? null,
+  contactId: (row.contact_id as string) ?? null,
+  leadSource: (row.lead_source as string) ?? null,
+  campaignSource: (row.campaign_source as string) ?? null,
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
 });
@@ -398,6 +419,11 @@ export const createDeal = async (
       closedBy: null,
       pipelineId: "",
       stageId: "",
+      dealType: input.dealType ?? null,
+      nextStep: input.nextStep ?? null,
+      contactId: input.contactId ?? null,
+      leadSource: input.leadSource ?? input.source ?? null,
+      campaignSource: input.campaignSource ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -425,6 +451,13 @@ export const createDeal = async (
     position: Date.now(),
     created_by: createdBy,
     created_by_name: createdByName,
+    // Migration 107 fields. Older DBs without the columns will reject these
+    // with code 42703 (undefined column) — we propagate that as a clear error.
+    deal_type: input.dealType ?? null,
+    next_step: input.nextStep ?? null,
+    contact_id: input.contactId ?? null,
+    lead_source: input.leadSource ?? input.source ?? null,
+    campaign_source: input.campaignSource ?? null,
   };
 
   if (input.pipelineId) {
@@ -506,6 +539,11 @@ export const updateDeal = async (
       ...(input.lossReason !== undefined ? { lossReason: input.lossReason } : {}),
       ...(input.pipelineId !== undefined ? { pipelineId: input.pipelineId } : {}),
       ...(input.stageId !== undefined ? { stageId: input.stageId } : {}),
+      ...(input.dealType !== undefined ? { dealType: input.dealType } : {}),
+      ...(input.nextStep !== undefined ? { nextStep: input.nextStep } : {}),
+      ...(input.contactId !== undefined ? { contactId: input.contactId } : {}),
+      ...(input.leadSource !== undefined ? { leadSource: input.leadSource } : {}),
+      ...(input.campaignSource !== undefined ? { campaignSource: input.campaignSource } : {}),
       updatedAt: new Date(),
     };
     all[idx] = merged;
@@ -551,6 +589,11 @@ export const updateDeal = async (
   }
   if (input.stageId !== undefined) update.stage_id = input.stageId;
   if (input.pipelineId !== undefined) update.pipeline_id = input.pipelineId;
+  if (input.dealType !== undefined) update.deal_type = input.dealType;
+  if (input.nextStep !== undefined) update.next_step = input.nextStep;
+  if (input.contactId !== undefined) update.contact_id = input.contactId;
+  if (input.leadSource !== undefined) update.lead_source = input.leadSource;
+  if (input.campaignSource !== undefined) update.campaign_source = input.campaignSource;
 
   const updateViaDirectPatch = () => supabase
     .from("deals")
