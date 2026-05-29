@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,6 +74,9 @@ export const DealVerifyDetailsDialog: React.FC<DealVerifyDetailsDialogProps> = (
       <DialogContent className="w-[95vw] max-w-md">
         <DialogHeader>
           <DialogTitle>Verify Details</DialogTitle>
+          <DialogDescription>
+            Confirm the amount, closing date, and stage before moving the deal.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

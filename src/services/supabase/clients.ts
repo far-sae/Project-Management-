@@ -537,8 +537,11 @@ export const createClient = async (
   }
 
   if (error) {
-    const code = (error as { code?: string }).code;
-    const msg = String((error as { message?: string }).message ?? "");
+    const e = error as { code?: string; message?: string; details?: string; hint?: string };
+    const code = e.code ?? "";
+    const msg = String(e.message ?? "");
+    const details = String(e.details ?? "");
+    const hint = String(e.hint ?? "");
     if (code === "42501" || /row-level security|permission denied/i.test(msg)) {
       throw createClientPermissionError();
     }
@@ -554,8 +557,31 @@ export const createClient = async (
         );
       }
     }
-    logger.error("Failed to create client:", error);
-    throw error;
+    if (code === "23514" || /name is required/i.test(msg)) {
+      throw new Error("Account name is required.");
+    }
+    if (code === "22P02" || /invalid input syntax for type uuid/i.test(msg)) {
+      throw new Error(
+        "One of the UUID fields (account_owner_id / parent_client_id / workspace_id) is malformed. Re-pick it and try again.",
+      );
+    }
+    if (code === "23503" || /violates foreign key/i.test(msg)) {
+      throw new Error(
+        "A linked record (parent account, workspace, or owner) doesn't exist anymore. Refresh and pick a current one.",
+      );
+    }
+    if (code === "23502" || /no workspace yet|not-null/i.test(msg)) {
+      throw new Error(
+        "This organization has no workspace yet. Ask an owner to create one in Settings before importing accounts.",
+      );
+    }
+    // Log the full error shape so the console actually shows the reason
+    // instead of "Failed to create client: Object". Don't drop hint/details.
+    logger.error("Failed to create client:", { code, message: msg, details, hint, raw: error });
+    const composed = [msg, details, hint && `(hint: ${hint})`, code && `[${code}]`]
+      .filter(Boolean)
+      .join(" — ");
+    throw new Error(composed || "Failed to create client (no reason returned by the server).");
   }
   return mapClient(data as Record<string, unknown>);
 };
