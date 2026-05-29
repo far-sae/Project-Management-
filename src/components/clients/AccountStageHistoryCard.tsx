@@ -5,7 +5,8 @@ import {
   DealStageHistoryEntry,
   listAccountStageHistory,
 } from '@/services/supabase/dealRelations';
-import { DEAL_STAGES, formatDealMoney } from '@/services/supabase/deals';
+import { DEAL_STAGES } from '@/services/supabase/deals';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 
 interface AccountStageHistoryCardProps {
   organizationId: string | null;
@@ -23,6 +24,7 @@ interface AccountStageHistoryCardProps {
 export const AccountStageHistoryCard: React.FC<AccountStageHistoryCardProps> = ({
   organizationId, clientId, currency = 'USD',
 }) => {
+  const fmtMoney = useFormatMoney();
   const [rows, setRows] = useState<DealStageHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -65,7 +67,7 @@ export const AccountStageHistoryCard: React.FC<AccountStageHistoryCardProps> = (
                 <span className="font-medium">{from} → {to}</span>
                 {h.amount != null && (
                   <span className="text-muted-foreground tabular-nums">
-                    · {formatDealMoney(h.amount, currency)}
+                    · {fmtMoney(h.amount, currency)}
                   </span>
                 )}
                 <span className="text-muted-foreground ml-auto">{format(h.changedAt, 'MMM d, yyyy · HH:mm')}</span>

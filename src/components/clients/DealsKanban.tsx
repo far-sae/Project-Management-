@@ -43,6 +43,7 @@ import {
 } from '@/services/supabase/deals';
 import { PipelineStage } from '@/services/supabase/pipelines';
 import { Client } from '@/services/supabase/clients';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { toast } from 'sonner';
 import { NewDealDialog } from './NewDealDialog';
 import { DealWonModal } from './DealWonModal';
@@ -94,6 +95,7 @@ const DealCard: React.FC<{
   displayCurrency?: string;
   rates: Record<string, number>;
 }> = ({ deal, onSelect, onEdit, onMove, stages, displayCurrency, rates }) => {
+  const fmtMoney = useFormatMoney();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.dealId,
     data: { type: 'deal', deal },
@@ -134,7 +136,7 @@ const DealCard: React.FC<{
                   convertAmount(deal.value, deal.currency, displayCurrency, rates),
                   displayCurrency,
                 )
-              : formatDealMoney(deal.value, deal.currency)}
+              : fmtMoney(deal.value, deal.currency)}
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -239,6 +241,7 @@ const StageColumn: React.FC<{
   displayCurrency,
   rates,
 }) => {
+  const fmtMoney = useFormatMoney();
   const { setNodeRef, isOver } = useDroppable({
     id: `stage:${stage.id}`,
     data: { type: 'stage', stage: stage.id },
@@ -281,7 +284,7 @@ const StageColumn: React.FC<{
           </Badge>
         </div>
         <span className="text-xs font-mono text-muted-foreground tabular-nums">
-          {formatDealMoney(total, totalCurrency)}
+          {fmtMoney(total, totalCurrency)}
         </span>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[12rem] max-h-[calc(100vh-16rem)]">

@@ -18,8 +18,9 @@ import { useClients } from '@/hooks/useClients';
 import { useContacts } from '@/hooks/useContacts';
 import { useDealRelations } from '@/hooks/useDealRelations';
 import {
-  DEAL_STAGES, DealStage, STAGE_DEFAULT_PROBABILITY, formatDealMoney,
+  DEAL_STAGES, DealStage, STAGE_DEFAULT_PROBABILITY,
 } from '@/services/supabase/deals';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { DealStagePath } from '@/components/deals/DealStagePath';
 import { DealVerifyDetailsDialog } from '@/components/deals/DealVerifyDetailsDialog';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
@@ -89,6 +90,11 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
   const { deals, update, remove, loading, canManage, organizationId } = useDeals();
   const { clients } = useClients();
   const { contacts } = useContacts();
+  // Currency-aware money formatter. Falls back from the deal's saved
+  // currency to the org's preferred currency for legacy USD rows, so
+  // changing the org currency in Settings actually re-labels existing
+  // money values across the UI.
+  const fmtMoney = useFormatMoney();
 
   const deal = useMemo(() => deals.find((d) => d.dealId === dealId) ?? null, [deals, dealId]);
 
@@ -129,8 +135,13 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
       return;
     }
     const previousStage = deal.stage;
+    const label = DEAL_STAGES.find((s) => s.id === next)?.label ?? next;
+    // Loud loading toast so the rep sees the click registered even when the
+    // server round-trip takes a beat. Replaced with success / error on
+    // completion so it never lingers.
+    const toastId = toast.loading(`Moving to ${label}…`);
     try {
-      await update(deal.dealId, {
+      const updated = await update(deal.dealId, {
         stage: next,
         probability: STAGE_DEFAULT_PROBABILITY[next],
       });
@@ -144,9 +155,20 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
         changedBy: null,
         changedByName: null,
       });
-      toast.success(`Stage moved to ${DEAL_STAGES.find((s) => s.id === next)?.label ?? next}`);
+      // Surface the actual server-stored probability so the rep can tell
+      // when a DB trigger or custom rule overrode the stage default.
+      const expected = STAGE_DEFAULT_PROBABILITY[next];
+      const actual = updated?.probability ?? expected;
+      if (actual !== expected) {
+        toast.warning(
+          `Moved to ${label}. The server set probability to ${actual}% (stage default is ${expected}%) — a custom trigger or pipeline rule overrode it.`,
+          { id: toastId, duration: 8000 },
+        );
+      } else {
+        toast.success(`Moved to ${label} (probability ${actual}%)`, { id: toastId });
+      }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not move stage');
+      toast.error(err instanceof Error ? err.message : 'Could not move stage', { id: toastId });
     }
   };
 
@@ -253,7 +275,7 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Expected Revenue</p>
-            <p className="font-semibold tabular-nums">{formatDealMoney(expectedRevenue, deal.currency)}</p>
+            <p className="font-semibold tabular-nums">{fmtMoney(expectedRevenue, deal.currency)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Closing Date</p>
@@ -334,7 +356,7 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
                   <span className="font-medium">{from} → {to}</span>
                   {h.amount != null && (
                     <span className="text-muted-foreground tabular-nums">
-                      · {formatDealMoney(h.amount, deal.currency)}
+                      · {fmtMoney(h.amount, deal.currency)}
                     </span>
                   )}
                   <span className="text-muted-foreground ml-auto">{format(h.changedAt, 'MMM d, yyyy · HH:mm')}</span>
@@ -449,7 +471,7 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-semibold break-words">
               {deal.title}
-              <span className="text-muted-foreground font-medium ml-2">- {formatDealMoney(deal.value, deal.currency)}</span>
+              <span className="text-muted-foreground font-medium ml-2">- {fmtMoney(deal.value, deal.currency)}</span>
             </h1>
           </div>
           <div className="flex items-center gap-2 shrink-0">

@@ -5,18 +5,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { DEAL_STAGES, Deal, DealStage } from '@/services/supabase/deals';
-
-const fmtMoney = (v: number, currency: string) => {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: (currency || 'USD').toUpperCase(),
-      maximumFractionDigits: 0,
-    }).format(v);
-  } catch {
-    return `${currency} ${v.toLocaleString()}`;
-  }
-};
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 
 const fmtDate = (d: Date | null | undefined) =>
   d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -34,6 +23,7 @@ interface DealsListViewProps {
 export const DealsListView: React.FC<DealsListViewProps> = ({
   deals, onSelectDeal,
 }) => {
+  const fmtMoney = useFormatMoney();
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<'all' | DealStage>('all');
 
