@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ArrowLeft, Edit, Loader2, Phone,
-  Users, History, Swords,
+  ArrowLeft, Edit, Loader2, Phone, Mail,
+  Users, History, Swords, ListTodo,
   CheckCircle2, MessageSquare, Trash2,
 } from 'lucide-react';
 import { format, differenceInCalendarDays } from 'date-fns';
@@ -25,6 +25,7 @@ import { DealVerifyDetailsDialog } from '@/components/deals/DealVerifyDetailsDia
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { DealCompetitorsCard } from '@/components/deals/DealCompetitorsCard';
 import { DealContactRolesCard } from '@/components/deals/DealContactRolesCard';
+import { DealActivitySections } from '@/components/deals/DealActivitySections';
 import { recordLocalStageChange } from '@/services/supabase/dealRelations';
 
 const fmtDate = (d: Date | null | undefined) =>
@@ -49,7 +50,7 @@ export interface DealDetailViewProps {
 export const DealDetailView: React.FC<DealDetailViewProps> = ({
   dealId, onBack, showBack = true,
 }) => {
-  const { deals, update, remove, loading, canManage } = useDeals();
+  const { deals, update, remove, loading, canManage, organizationId } = useDeals();
   const { clients } = useClients();
   const { contacts } = useContacts();
 
@@ -163,11 +164,17 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
               <History className="w-3 h-3" /> Stage History
               {stageHistory.length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{stageHistory.length}</Badge>}
             </a>
-            <a href="#competitors" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><Swords className="w-3 h-3" /> Competitors</a>
+            <a href="#competitors" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5">
+              <Swords className="w-3 h-3" /> Competitors
+              {competitors.length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{competitors.length}</Badge>}
+            </a>
+            <a href="#open-activities" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><ListTodo className="w-3 h-3" /> Open Activities</a>
+            <a href="#closed-activities" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><CheckCircle2 className="w-3 h-3" /> Closed Activities</a>
             <a href="#contact-roles" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5">
               <Users className="w-3 h-3" /> Contact Roles
               {contactRoles.length > 0 && <Badge variant="outline" className="ml-1 text-[9px]">{contactRoles.length}</Badge>}
             </a>
+            <a href="#emails" className="block px-2 py-1 rounded hover:bg-muted text-muted-foreground inline-flex items-center gap-1.5"><Mail className="w-3 h-3" /> Emails</a>
           </nav>
         </div>
         <div className="border-t pt-3 space-y-1">
@@ -338,17 +345,12 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
           </CardContent>
         </Card>
 
-        <Card id="notes">
-          <CardContent className="pt-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-semibold">Notes</h3>
-            </div>
-            <p className="text-xs text-muted-foreground italic">
-              Notes, calls, meetings, and tasks for this deal live on the deal's drawer in the kanban — extending this section
-              with the ActivityTimeline is the next iteration.
-            </p>
-          </CardContent>
-        </Card>
+        <DealActivitySections
+          dealId={deal.dealId}
+          clientId={deal.clientId ?? null}
+          organizationId={organizationId}
+          canManage={canManage}
+        />
       </main>
 
       {editing && (

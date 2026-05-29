@@ -38,6 +38,7 @@ import {
   DEAL_STAGES,
   Deal,
   DealStage,
+  STAGE_DEFAULT_PROBABILITY,
   formatDealMoney,
 } from '@/services/supabase/deals';
 import { PipelineStage } from '@/services/supabase/pipelines';
@@ -79,6 +80,9 @@ interface EffectiveStage {
   color: string;
   isWon: boolean;
   isLost: boolean;
+  /** Per-stage probability (%) — shown in the column header next to the
+   *  stage name, matching Zoho's "Qualification 10%" style. */
+  defaultProbability: number;
 }
 
 const DealCard: React.FC<{
@@ -258,13 +262,20 @@ const StageColumn: React.FC<{
         isOver && 'ring-2 ring-primary/40 bg-primary/5',
       )}
     >
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
+      <div
+        className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border"
+        style={{ background: `${stage.color}14` }}
+      >
         <div className="flex items-center gap-2 min-w-0">
           <span
             className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{ background: stage.color }}
           />
           <span className="text-sm font-semibold truncate">{stage.label}</span>
+          {/* Zoho-style "·  10%" probability hint in the header. */}
+          <span className="text-[11px] font-medium text-muted-foreground tabular-nums shrink-0">
+            · {stage.defaultProbability}%
+          </span>
           <Badge variant="outline" className="text-[10px] px-1 py-0">
             {deals.length}
           </Badge>
@@ -349,6 +360,7 @@ export const DealsKanban: React.FC<Props> = ({
         color: s.color,
         isWon: s.isWon,
         isLost: s.isLost,
+        defaultProbability: s.defaultProbability ?? 0,
       }));
     }
     return DEAL_STAGES.map((s) => ({
@@ -358,6 +370,7 @@ export const DealsKanban: React.FC<Props> = ({
       color: s.color,
       isWon: s.id === 'won',
       isLost: s.id === 'lost',
+      defaultProbability: STAGE_DEFAULT_PROBABILITY[s.id] ?? 0,
     }));
   }, [stages]);
 
