@@ -135,16 +135,17 @@ export const ImportLeadsDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-4xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Upload className="w-5 h-5 text-primary" /> Import Leads from CSV
+          <DialogTitle className="flex items-center gap-2 break-words">
+            <Upload className="w-5 h-5 text-primary shrink-0" />
+            <span className="min-w-0">Import Leads from CSV</span>
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="break-words">
             Upload a spreadsheet of prospects. We recognize common Salesforce,
             HubSpot, and Apollo column names.
           </DialogDescription>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1 break-words">
             Leads will land in workspace{' '}
             <strong className="text-foreground">{workspaceName ?? 'Default'}</strong>.
             Switch workspace in the sidebar before importing to send them
@@ -302,13 +303,15 @@ const PreviewBlock: React.FC<{
     <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
       <div className="rounded-md border p-3 bg-muted/30">
         <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm font-medium truncate">{file?.name ?? 'Uploaded file'}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium truncate" title={file?.name ?? undefined}>
+              {file?.name ?? 'Uploaded file'}
+            </p>
             <p className="text-[11px] text-muted-foreground">
               {rowCount} row{rowCount === 1 ? '' : 's'} · {headers.length} column{headers.length === 1 ? '' : 's'}
             </p>
           </div>
-          <Button type="button" size="sm" variant="ghost" onClick={onReset}>
+          <Button type="button" size="sm" variant="ghost" onClick={onReset} className="shrink-0">
             <X className="w-3.5 h-3.5 mr-1" /> Different file
           </Button>
         </div>
@@ -319,8 +322,8 @@ const PreviewBlock: React.FC<{
           <p className="font-semibold text-destructive inline-flex items-center gap-1">
             <AlertTriangle className="w-3.5 h-3.5" /> Missing required column{missingRequired.length === 1 ? '' : 's'}
           </p>
-          <p className="mt-1">
-            We couldn't find: <code className="font-mono">{missingRequired.join(', ')}</code>.
+          <p className="mt-1 break-words">
+            We couldn't find: <code className="font-mono break-all">{missingRequired.join(', ')}</code>.
             Add the column (or rename an existing one) and try again.
           </p>
         </div>
@@ -331,8 +334,9 @@ const PreviewBlock: React.FC<{
           <p className="font-semibold text-amber-700 dark:text-amber-300 inline-flex items-center gap-1">
             <AlertTriangle className="w-3.5 h-3.5" /> Columns we'll ignore
           </p>
-          <p className="text-amber-700/80 dark:text-amber-300/80 mt-1">
-            We don't have a place for: <code className="font-mono">{unknownHeaders.join(', ')}</code>.
+          <p className="text-amber-700/80 dark:text-amber-300/80 mt-1 break-words">
+            We don't have a place for:{' '}
+            <code className="font-mono break-all">{unknownHeaders.join(', ')}</code>.
             The rows will still import, just without those values.
           </p>
         </div>

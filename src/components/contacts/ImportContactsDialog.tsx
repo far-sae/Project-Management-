@@ -276,17 +276,18 @@ export const ImportContactsDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-4xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Upload className="w-5 h-5 text-primary" /> Import Contacts from CSV
+          <DialogTitle className="flex items-center gap-2 break-words">
+            <Upload className="w-5 h-5 text-primary shrink-0" />
+            <span className="min-w-0">Import Contacts from CSV</span>
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="break-words">
             Upload a spreadsheet of contacts and match them to existing
             accounts by account name. Need an account first? Import accounts
             from the Accounts tab before bringing in contacts.
           </DialogDescription>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1 break-words">
             Contacts will attach to accounts in workspace{' '}
             <strong className="text-foreground">{workspaceName ?? 'Default'}</strong>.
           </p>
@@ -344,13 +345,15 @@ export const ImportContactsDialog: React.FC<Props> = ({
             <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
               <div className="rounded-md border p-3 bg-muted/30">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{file?.name ?? 'Uploaded file'}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate" title={file?.name ?? undefined}>
+                      {file?.name ?? 'Uploaded file'}
+                    </p>
                     <p className="text-[11px] text-muted-foreground">
                       {parsed.length} row{parsed.length === 1 ? '' : 's'} · {headers.length} column{headers.length === 1 ? '' : 's'}
                     </p>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={reset}>
+                  <Button size="sm" variant="ghost" onClick={reset} className="shrink-0">
                     <X className="w-3.5 h-3.5 mr-1" /> Different file
                   </Button>
                 </div>
@@ -358,20 +361,28 @@ export const ImportContactsDialog: React.FC<Props> = ({
 
               {precheck?.missingRequired.length! > 0 && (
                 <DiagBlock tone="destructive" title="Missing required columns">
-                  We couldn't find: <code className="font-mono">{precheck!.missingRequired.join(', ')}</code>.
+                  <span className="break-words">
+                    We couldn't find:{' '}
+                    <code className="font-mono break-all">{precheck!.missingRequired.join(', ')}</code>.
+                  </span>
                 </DiagBlock>
               )}
               {precheck?.unknownHeaders.length! > 0 && (
                 <DiagBlock tone="amber" title="Columns we'll ignore">
-                  <code className="font-mono">{precheck!.unknownHeaders.join(', ')}</code> — the rows still import, just without those values.
+                  <span className="break-words">
+                    <code className="font-mono break-all">{precheck!.unknownHeaders.join(', ')}</code>
+                    {' '}— the rows still import, just without those values.
+                  </span>
                 </DiagBlock>
               )}
               {duplicateHeaders.length > 0 && (
                 <DiagBlock tone="amber" title="Duplicate columns — only the rightmost wins">
                   <ul className="space-y-0.5">
                     {duplicateHeaders.map((d) => (
-                      <li key={d.canonical}>
-                        <code className="font-mono">{d.sources.join(', ')}</code> → <code className="font-mono">{d.canonical}</code>
+                      <li key={d.canonical} className="break-words">
+                        <code className="font-mono break-all">{d.sources.join(', ')}</code>
+                        {' → '}
+                        <code className="font-mono break-all">{d.canonical}</code>
                       </li>
                     ))}
                   </ul>

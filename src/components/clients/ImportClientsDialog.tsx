@@ -372,7 +372,7 @@ export const ImportClientsDialog: React.FC<Props> = ({
         if (!o) reset();
       }}
     >
-      <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import clients from CSV</DialogTitle>
           <DialogDescription>
