@@ -23,6 +23,12 @@ interface Props {
   organizationId: string | null;
   canManage: boolean;
   parentAccount?: Client | null;
+  /** Allow-list of client IDs in the current workspace. When provided, the
+   *  Reporting Contacts list filters edges to contacts whose parent
+   *  account is in this set, matching the workspace-scoping contract the
+   *  rest of the contacts UI honours. Pass null for cross-workspace
+   *  (All-workspaces) views. */
+  visibleClientIds?: string[] | null;
   onClose: () => void;
   onEdit: (c: ContactWithAccount) => void;
   onDelete: (c: ContactWithAccount) => void;
@@ -32,7 +38,7 @@ interface Props {
 }
 
 export const ContactDetailDrawer: React.FC<Props> = ({
-  contact, organizationId, canManage, parentAccount,
+  contact, organizationId, canManage, parentAccount, visibleClientIds,
   onClose, onEdit, onDelete, onClone, onSendEmail, onOpenAccount,
 }) => {
   const [showAllDetails, setShowAllDetails] = useState(false);
@@ -46,11 +52,13 @@ export const ContactDetailDrawer: React.FC<Props> = ({
     }
     let cancelled = false;
     setLoadingReports(true);
-    getReportingContacts(organizationId, contact.contactId)
+    getReportingContacts(organizationId, contact.contactId, {
+      allowedClientIds: visibleClientIds,
+    })
       .then((rows) => { if (!cancelled) setReportingContacts(rows); })
       .finally(() => { if (!cancelled) setLoadingReports(false); });
     return () => { cancelled = true; };
-  }, [contact?.contactId, organizationId]);
+  }, [contact?.contactId, organizationId, visibleClientIds]);
 
   if (!contact || !organizationId) return null;
 

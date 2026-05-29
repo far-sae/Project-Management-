@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ArrowUp, ArrowDown, ArrowUpDown, User as UserIcon, Building2, Star,
+  ArrowUp, ArrowDown, ArrowUpDown, User as UserIcon, Building2, Star, Search,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { ContactWithAccount, contactDisplayName } from '@/services/supabase/contacts';
 import { cn } from '@/lib/utils';
 
@@ -50,24 +51,49 @@ interface ContactsTableProps {
 export const ContactsTable: React.FC<ContactsTableProps> = ({ rows, onOpen }) => {
   const [sortKey, setSortKey] = useState<SortKey>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [query, setQuery] = useState('');
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(key); setSortDir('asc'); }
   };
 
+  // Filter + sort. Search hits the obvious identity fields and tags.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((c) => {
+      const haystack = [
+        contactDisplayName(c),
+        c.email,
+        c.secondaryEmail,
+        c.phone,
+        c.mobile,
+        c.title,
+        c.department,
+        c.clientName,
+        c.ownerName,
+        ...(c.tags ?? []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [rows, query]);
+
   const sorted = useMemo(() => {
     const valueFor = (c: ContactWithAccount): unknown => {
       if (sortKey === 'displayName') return contactDisplayName(c);
       return (c as unknown as Record<SortKey, unknown>)[sortKey];
     };
-    const copy = [...rows];
+    const copy = [...filtered];
     copy.sort((a, b) => {
       const cmp = compareValues(valueFor(a), valueFor(b));
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return copy;
-  }, [rows, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir]);
 
   const colSpan = COLUMNS.length;
 
@@ -79,6 +105,22 @@ export const ContactsTable: React.FC<ContactsTableProps> = ({ rows, onOpen }) =>
   };
 
   return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, email, account, title, tags…"
+            className="pl-8"
+            maxLength={200}
+          />
+        </div>
+        <span className="text-[11px] text-muted-foreground tabular-nums">
+          {sorted.length} of {rows.length}
+        </span>
+      </div>
     <div className="rounded-md border border-border overflow-auto bg-card max-h-[calc(100vh-22rem)]">
       <table className="w-full border-collapse text-sm">
         <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-sm">
@@ -191,6 +233,7 @@ export const ContactsTable: React.FC<ContactsTableProps> = ({ rows, onOpen }) =>
           )}
         </tbody>
       </table>
+    </div>
     </div>
   );
 };

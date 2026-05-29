@@ -37,6 +37,7 @@ export const useContacts = () => {
 
   const {
     isAllWorkspaces, isUnassignedWorkspace, clients, allClients,
+    loading: clientsLoading,
   } = useClients();
 
   const {
@@ -106,13 +107,33 @@ export const useContacts = () => {
     /** Cross-workspace accounts for the detail drawer (so it can hydrate a
      *  contact whose account lives in another workspace). */
     allAccounts: allClients,
-    loading,
+    // Loading composes both subscriptions because `contacts` is derived
+    // from `clients` (workspace filter). Returning early-true while the
+    // clients subscription is still resolving avoids a brief flash of
+    // the empty-state landing.
+    loading: loading || clientsLoading,
     create,
     update,
     remove,
     isOwner,
     isAdmin,
-    canCreate: Boolean(orgId && !orgId.startsWith("local-") && organization && !isViewer),
+    // Match the DB contract in 041_crm_clients.sql: client_contacts
+    // insert/update/delete policies require is_org_admin_or_owner. The
+    // viewer-only check (!isViewer) used to allow plain members through,
+    // which produced 42501 errors on save. Tightening here so the UI
+    // never offers the buttons when the DB would refuse them. If we want
+    // members to write contacts in the future, follow the migration 101
+    // pattern (members_insert_* + not_is_org_viewer).
+    canCreate: Boolean(
+      orgId
+        && !orgId.startsWith("local-")
+        && organization
+        && !isViewer
+        && (isOwner || isAdmin),
+    ),
     canManage: isOwner || isAdmin,
+    /** Set of client IDs the user can see in the active workspace, used by
+     *  the detail drawer to filter the Reporting Contacts related list. */
+    visibleClientIds: clients.map((c) => c.clientId),
   };
 };

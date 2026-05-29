@@ -143,6 +143,24 @@ const sanitizeTags = (tags: string[] | null | undefined): string[] => {
 
 const isLocalOrg = (orgId: string) => orgId.startsWith("local-");
 
+/** Build a Date at LOCAL midnight from a 'YYYY-MM-DD' string. `new Date(str)`
+ *  parses as UTC midnight which then shifts in negative-UTC timezones. */
+const parseLocalDate = (s: string): Date | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+};
+
+/** Inverse of parseLocalDate: produce 'YYYY-MM-DD' from a local-midnight
+ *  Date without going through toISOString (which would re-introduce the
+ *  UTC shift). */
+const formatLocalDate = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mappers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,7 +260,11 @@ const mapContactWithAccount = (
   reportingToName: reportingToName ?? null,
 
   leadSource: r.lead_source,
-  dateOfBirth: r.date_of_birth ? new Date(r.date_of_birth) : null,
+  // Postgres returns 'YYYY-MM-DD' for date columns. `new Date(str)` parses
+  // that as UTC midnight, which then renders as the previous local day in
+  // any negative-UTC timezone (all of the Americas). Build the Date from
+  // explicit local-time components so DOB doesn't drift on display.
+  dateOfBirth: r.date_of_birth ? parseLocalDate(r.date_of_birth) : null,
   emailOptOut: Boolean(r.email_opt_out),
   description: r.description,
   notes: r.notes,
@@ -380,14 +402,18 @@ export const getContact = async (
   return mapContactWithAccount(row, reportingToName);
 };
 
-/** Contacts who report to the given contact (org-scoped). Used by the
- *  detail drawer's "Reporting Contacts" related list. */
+/** Contacts who report to the given contact. Workspace-aware: callers pass
+ *  the set of client IDs visible in the current workspace so cross-workspace
+ *  reporting edges don't leak into the drawer when a parent account is
+ *  later moved to a different workspace. Passing `null` keeps the prior
+ *  org-wide behaviour for the All-workspaces view. */
 export const getReportingContacts = async (
   organizationId: string,
   contactId: string,
+  opts: { allowedClientIds?: string[] | null } = {},
 ): Promise<ContactWithAccount[]> => {
   if (isLocalOrg(organizationId)) return [];
-  const { data, error } = await supabase
+  let q = supabase
     .from("client_contacts")
     .select(`
       *,
@@ -397,6 +423,11 @@ export const getReportingContacts = async (
     `)
     .eq("organization_id", organizationId)
     .eq("reporting_to", contactId);
+  if (opts.allowedClientIds) {
+    if (opts.allowedClientIds.length === 0) return [];
+    q = q.in("client_id", opts.allowedClientIds);
+  }
+  const { data, error } = await q;
   if (error) {
     logger.error("getReportingContacts failed:", error);
     return [];
@@ -453,9 +484,7 @@ export const createContactFull = async (
     assistant: sanitize(input.assistant),
     reporting_to: input.reportingTo ?? null,
     lead_source: sanitize(input.leadSource),
-    date_of_birth: input.dateOfBirth
-      ? input.dateOfBirth.toISOString().slice(0, 10)
-      : null,
+    date_of_birth: input.dateOfBirth ? formatLocalDate(input.dateOfBirth) : null,
     email_opt_out: Boolean(input.emailOptOut),
     description: sanitize(input.description),
     notes: sanitize(input.notes),
@@ -469,14 +498,20 @@ export const createContactFull = async (
 
   // If this contact is flagged primary, demote other primaries on the
   // same client first so the partial unique index on (client_id) where
-  // is_primary is true isn't violated.
+  // is_primary is true isn't violated. Track which row we demoted so we
+  // can restore it if the subsequent insert fails — otherwise a failed
+  // insert leaves the account with NO primary contact.
+  let demotedContactId: string | null = null;
   if (input.isPrimary) {
-    await supabase
+    const { data: demoted } = await supabase
       .from("client_contacts")
       .update({ is_primary: false })
       .eq("organization_id", organizationId)
       .eq("client_id", input.clientId)
-      .eq("is_primary", true);
+      .eq("is_primary", true)
+      .select("contact_id")
+      .maybeSingle();
+    demotedContactId = (demoted as { contact_id?: string } | null)?.contact_id ?? null;
   }
 
   const { data, error } = await supabase
@@ -486,6 +521,20 @@ export const createContactFull = async (
     .single();
   if (error || !data) {
     logger.error("createContactFull failed:", error);
+    // Restore the previously-primary contact so the account isn't left
+    // with zero primaries because of a failed insert. Best-effort — if
+    // the restore itself fails we still want to surface the original
+    // insert error to the caller.
+    if (demotedContactId) {
+      try {
+        await supabase
+          .from("client_contacts")
+          .update({ is_primary: true })
+          .eq("contact_id", demotedContactId);
+      } catch (restoreErr) {
+        logger.warn("createContactFull: failed to restore primary after insert error:", restoreErr);
+      }
+    }
     throw error ?? new Error("Failed to create contact");
   }
   return mapContactWithAccount(data as ContactRow);
@@ -547,9 +596,7 @@ export const updateContactFull = async (
   if (input.reportingTo !== undefined) patch.reporting_to = input.reportingTo;
   if (input.leadSource !== undefined) patch.lead_source = sanitize(input.leadSource);
   if (input.dateOfBirth !== undefined) {
-    patch.date_of_birth = input.dateOfBirth
-      ? input.dateOfBirth.toISOString().slice(0, 10)
-      : null;
+    patch.date_of_birth = input.dateOfBirth ? formatLocalDate(input.dateOfBirth) : null;
   }
   if (input.emailOptOut !== undefined) patch.email_opt_out = Boolean(input.emailOptOut);
   if (input.description !== undefined) patch.description = sanitize(input.description);

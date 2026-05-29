@@ -112,7 +112,9 @@ const fromContact = (c: ContactWithAccount): FormState => ({
   skypeId: c.skypeId ?? '',
   twitter: c.twitter ?? '',
   linkedinUrl: c.linkedinUrl ?? '',
-  dateOfBirth: c.dateOfBirth ? c.dateOfBirth.toISOString().slice(0, 10) : '',
+  dateOfBirth: c.dateOfBirth
+    ? `${c.dateOfBirth.getFullYear()}-${String(c.dateOfBirth.getMonth() + 1).padStart(2, '0')}-${String(c.dateOfBirth.getDate()).padStart(2, '0')}`
+    : '',
   emailOptOut: c.emailOptOut,
   isPrimary: c.isPrimary,
   assistant: c.assistant ?? '',
@@ -188,6 +190,14 @@ export const ContactFormDialog: React.FC<Props> = ({
       return;
     }
     setBusy(true);
+    // Defensive: if the reportingTo no longer matches a contact on the
+    // currently-selected account, drop it before save. Protects against
+    // any state path that bypasses the onValueChange reset (e.g. someone
+    // editing initialState).
+    const reportingToOk = !form.reportingTo
+      || contactsForReportingTo.some(
+        (c) => c.contactId === form.reportingTo && c.clientId === form.clientId,
+      );
     try {
       const input: CreateContactWithAccountInput = {
         clientId: form.clientId,
@@ -196,7 +206,7 @@ export const ContactFormDialog: React.FC<Props> = ({
         lastName: form.lastName.trim(),
         title: form.title || null,
         department: form.department || null,
-        reportingTo: form.reportingTo || null,
+        reportingTo: reportingToOk ? (form.reportingTo || null) : null,
         leadSource: form.leadSource || null,
         email: form.email || null,
         secondaryEmail: form.secondaryEmail || null,
@@ -209,7 +219,13 @@ export const ContactFormDialog: React.FC<Props> = ({
         skypeId: form.skypeId || null,
         twitter: form.twitter || null,
         linkedinUrl: form.linkedinUrl || null,
-        dateOfBirth: form.dateOfBirth ? new Date(form.dateOfBirth) : null,
+        // Build at local midnight to avoid the UTC-shift round-trip bug.
+        dateOfBirth: form.dateOfBirth
+          ? (() => {
+              const [y, m, d] = form.dateOfBirth.split('-').map(Number);
+              return new Date(y, m - 1, d);
+            })()
+          : null,
         emailOptOut: form.emailOptOut,
         isPrimary: form.isPrimary,
         assistant: form.assistant || null,
@@ -282,7 +298,13 @@ export const ContactFormDialog: React.FC<Props> = ({
                 </Label>
                 <Select
                   value={form.clientId}
-                  onValueChange={(v) => set('clientId', v)}
+                  onValueChange={(v) => {
+                    // Reset reportingTo whenever the account changes —
+                    // otherwise we'd persist a contactId from a different
+                    // account, since the FK only enforces row existence
+                    // and not same-client membership.
+                    setForm((prev) => ({ ...prev, clientId: v, reportingTo: '' }));
+                  }}
                   disabled={!!lockedAccountId}
                 >
                   <SelectTrigger>

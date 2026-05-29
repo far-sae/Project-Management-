@@ -126,6 +126,7 @@ export const Clients: React.FC = () => {
   const {
     contacts, allContacts, loading: contactsLoading,
     accountsInScope: contactsAccountsInScope,
+    visibleClientIds: contactsVisibleClientIds,
     create: createContactSvc, update: updateContactSvc, remove: removeContactSvc,
     canCreate: canCreateContact, canManage: canManageContact,
   } = useContacts();
@@ -688,6 +689,7 @@ export const Clients: React.FC = () => {
                     contactsCount={contacts.length}
                     accountsCount={clients.length}
                     leadsCount={leads.length}
+                    primaryCount={contacts.filter((c) => c.isPrimary).length}
                     canCreate={canCreateContact && contactsAccountsInScope.length > 0}
                     scopeLabel={isAllWorkspaces
                       ? 'All workspaces'
@@ -697,10 +699,11 @@ export const Clients: React.FC = () => {
                     onGoToLeads={() => setActiveTab('leads')}
                     onGoToAccounts={() => setActiveTab('accounts')}
                     onGoToPipeline={() => setActiveTab('pipeline')}
-                    onSendEmail={() => {
-                      // Send-from-list isn't wired yet; nudge the rep to the
-                      // first contact's drawer where the Send Email action lives.
-                      toast.info('Open any contact and use Send Email from the drawer.');
+                    onShowPrimary={() => {
+                      // Surface the first primary contact's drawer — useful
+                      // when reps want to email the de-facto decision-maker.
+                      const first = contacts.find((c) => c.isPrimary);
+                      if (first) setSelectedContact(first);
                     }}
                   />
 
@@ -1128,6 +1131,7 @@ export const Clients: React.FC = () => {
           parentAccount={
             allClients.find((c) => c.clientId === liveSelectedContact.clientId) ?? null
           }
+          visibleClientIds={isAllWorkspaces ? null : contactsVisibleClientIds}
           onClose={() => setSelectedContact(null)}
           onEdit={(c) => setEditingContact(c)}
           onDelete={(c) => setConfirmDeleteContact(c)}

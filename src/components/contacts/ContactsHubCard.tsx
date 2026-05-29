@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Plus, Upload, Building2, UserPlus, GitBranch, Mail,
+  Plus, Upload, Building2, UserPlus, GitBranch, Star,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ interface ContactsHubCardProps {
   contactsCount: number;
   accountsCount: number;
   leadsCount: number;
+  primaryCount: number;
   canCreate: boolean;
   scopeLabel?: string | null;
 
@@ -17,7 +18,7 @@ interface ContactsHubCardProps {
   onGoToLeads: () => void;
   onGoToAccounts: () => void;
   onGoToPipeline: () => void;
-  onSendEmail: () => void;
+  onShowPrimary: () => void;
 }
 
 /**
@@ -26,9 +27,9 @@ interface ContactsHubCardProps {
  * want to do next" panel whichever module they enter through.
  */
 export const ContactsHubCard: React.FC<ContactsHubCardProps> = ({
-  contactsCount, accountsCount, leadsCount, canCreate, scopeLabel,
+  contactsCount, accountsCount, leadsCount, primaryCount, canCreate, scopeLabel,
   onCreateContact, onImportContacts, onGoToLeads, onGoToAccounts,
-  onGoToPipeline, onSendEmail,
+  onGoToPipeline, onShowPrimary,
 }) => (
   <Card>
     <CardContent className="pt-5">
@@ -77,11 +78,11 @@ export const ContactsHubCard: React.FC<ContactsHubCardProps> = ({
           />
         )}
         <HubTile
-          icon={Mail}
-          title="Send an email"
-          hint="Pick a template, fire off a personalised reply."
-          onClick={onSendEmail}
-          disabled={contactsCount === 0}
+          icon={Star}
+          title={`Show primary contacts (${primaryCount})`}
+          hint="Jump to the single point of contact at each account."
+          onClick={onShowPrimary}
+          disabled={primaryCount === 0}
         />
         <HubTile
           icon={UserPlus}
