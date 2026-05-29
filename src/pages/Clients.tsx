@@ -44,6 +44,7 @@ import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
 import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadConvertDialog } from '@/components/leads/LeadConvertDialog';
+import { LeadsHubCard } from '@/components/leads/LeadsHubCard';
 import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
 import { useLeads } from '@/hooks/useLeads';
 import type { Lead } from '@/services/supabase/leads';
@@ -565,7 +566,32 @@ export const Clients: React.FC = () => {
                 />
               ) : (
                 <>
-                  <div className="flex items-center justify-between flex-wrap gap-2">
+                  <LeadsHubCard
+                    leadsCount={leads.length}
+                    accountsCount={clients.length}
+                    canCreate={canCreateLead}
+                    scopeLabel={isAllWorkspaces
+                      ? 'All workspaces'
+                      : selectedWorkspace?.name ?? 'Current workspace'}
+                    onCreateLead={() => setOpenCreateLead(true)}
+                    onImportLeads={() => setOpenImportLead(true)}
+                    onGoToAccounts={() => setActiveTab('accounts')}
+                    onGoToPipeline={() => setActiveTab('pipeline')}
+                    onGoToTasks={() => setActiveTab('tasks')}
+                    onConvertHelp={() => {
+                      // Scroll the leads table into view so the rep can
+                      // pick which lead to convert. The Convert action
+                      // itself opens via the row drawer's Convert button.
+                      document.getElementById('leads-table-anchor')
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      toast.info('Pick a lead from the table below and click Convert in its drawer.');
+                    }}
+                  />
+
+                  <div
+                    id="leads-table-anchor"
+                    className="flex items-center justify-between flex-wrap gap-2 pt-2"
+                  >
                     <div>
                       <h2 className="text-lg font-semibold">Leads</h2>
                       <p className="text-sm text-muted-foreground">
