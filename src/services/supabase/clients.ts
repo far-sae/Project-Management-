@@ -533,8 +533,25 @@ export const createClient = async (
     })
     .single();
 
-  if (error && isMissingRpcError(error)) {
-    ({ data, error } = await createViaDirectInsert());
+  // Fall back to the direct insert path on:
+  //  - missing RPC (PGRST202 / 42883)
+  //  - PostgREST 400-class parse failures (PGRST*  / RPC signature drift)
+  //  - bad-jsonb errors (22P02) coming out of the security-definer body
+  // The direct insert hits RLS instead of the RPC's own owner/admin check,
+  // so it still won't silently bypass security — it just gives the rep a
+  // second chance to succeed when the deployed RPC is out of sync with the
+  // frontend payload.
+  if (error) {
+    const rpcCode = String((error as { code?: string }).code ?? "");
+    const rpcStartsWith = rpcCode.startsWith("PGRST");
+    if (isMissingRpcError(error) || rpcStartsWith || rpcCode === "22P02") {
+      logger.warn(
+        `crm_create_client RPC failed (${rpcCode || "unknown"}) — falling back to direct insert. `
+        + `Most likely cause: a recent migration that updated the RPC signature hasn't been applied. `
+        + `Run \`supabase db push\` to sync migrations 104/105/108/109/110/111.`,
+      );
+      ({ data, error } = await createViaDirectInsert());
+    }
   }
 
   if (error) {
@@ -576,12 +593,14 @@ export const createClient = async (
         "This organization has no workspace yet. Ask an owner to create one in Settings before importing accounts.",
       );
     }
-    // Log the full error shape so the console actually shows the reason
-    // instead of "Failed to create client: Object". Don't drop hint/details.
-    logger.error("Failed to create client:", { code, message: msg, details, hint, raw: error });
+    // Stringify the relevant fields into the message itself so the console
+    // shows the reason without needing the rep to expand the second arg.
+    // Some browsers / minified builds render the object as plain "Object".
     const composed = [msg, details, hint && `(hint: ${hint})`, code && `[${code}]`]
       .filter(Boolean)
       .join(" — ");
+    const inlineMessage = composed || "no reason returned by the server";
+    logger.error(`Failed to create client: ${inlineMessage}`, error);
     throw new Error(composed || "Failed to create client (no reason returned by the server).");
   }
   notifyClientsChanged(organizationId);
