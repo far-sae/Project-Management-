@@ -6,6 +6,8 @@ import {
 } from '@/components/ui/select';
 import { DEAL_STAGES, Deal, DealStage } from '@/services/supabase/deals';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 const fmtDate = (d: Date | null | undefined) =>
   d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -24,6 +26,13 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
   deals, onSelectDeal,
 }) => {
   const fmtMoney = useFormatMoney();
+  // Convert each row's amount to the org's display currency before
+  // formatting — otherwise useFormatMoney just RELABELS a USD value as
+  // the org currency (it treats USD as "no currency set"), which is why
+  // a $10,000 deal was rendering as £10,000 in this table while the
+  // Kanban/analytics cards correctly showed £7,440.
+  const orgCurrency = useOrgCurrency();
+  const { rates } = useFxRates();
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<'all' | DealStage>('all');
 
@@ -103,7 +112,14 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
                       {stageMeta?.label ?? d.stage}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(d.value, d.currency)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {fmtMoney(convertAmount(d.value, d.currency, orgCurrency, rates), orgCurrency)}
+                    {d.currency && d.currency.toUpperCase() !== orgCurrency.toUpperCase() && (
+                      <span className="ml-1 text-[10px] text-muted-foreground" title={`Original: ${d.value} ${d.currency.toUpperCase()}`}>
+                        ({d.currency.toUpperCase()})
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{d.probability}%</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(d.expectedCloseDate)}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{d.ownerName ?? '—'}</td>
