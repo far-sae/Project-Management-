@@ -244,7 +244,7 @@ const AUTOMATION_TEMPLATES: Array<{
 ];
 
 export const AutomationsSettingsTab: React.FC = () => {
-  const { organizationId, recipes, loading, canManage } = useAutomations();
+  const { organizationId, recipes, setRecipes, loading, canManage } = useAutomations();
   const [editing, setEditing] = useState<Recipe | "new" | null>(null);
   const [initialDraft, setInitialDraft] = useState<RecipeDraft | null>(null);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
@@ -256,10 +256,15 @@ export const AutomationsSettingsTab: React.FC = () => {
   if (!organizationId) return null;
 
   const toggle = async (recipe: Recipe, next: boolean) => {
+    // Optimistic update — flip the switch instantly so the rep doesn't
+    // see the lag of a server round-trip + subscription refetch. Roll
+    // back on failure.
+    setRecipes((prev) => prev.map((r) => (r.recipeId === recipe.recipeId ? { ...r, enabled: next } : r)));
     try {
       await setRecipeEnabled(recipe.recipeId, next);
       toast.success(next ? "Recipe enabled" : "Recipe disabled");
     } catch (err) {
+      setRecipes((prev) => prev.map((r) => (r.recipeId === recipe.recipeId ? { ...r, enabled: !next } : r)));
       toast.error(err instanceof Error ? err.message : "Toggle failed");
     }
   };

@@ -267,6 +267,35 @@ const mapRun = (row: Record<string, unknown>): RecipeRun => ({
   finishedAt: new Date(row.finished_at as string),
 });
 
+// Cross-instance sync (same pattern as deals/clients/leads). The toggle
+// switch in AutomationsSettingsTab needed a page reload before because
+// the realtime subscription on `automation_recipes` only fires when the
+// user's Supabase project has realtime enabled on that table — which it
+// usually isn't for automation tables. The CustomEvent now fires
+// alongside every successful upsert/toggle/delete so the same-tab
+// useAutomations subscriber refetches and the switch reflects the new
+// state without a refresh.
+const RECIPES_CHANGED_EVENT = "pm-automations-changed";
+
+export const notifyRecipesChanged = (organizationId: string) => {
+  try {
+    window.dispatchEvent(new CustomEvent(RECIPES_CHANGED_EVENT, { detail: { organizationId } }));
+  } catch { /* ignore */ }
+};
+
+export const subscribeToRecipeChanges = (
+  organizationId: string,
+  onChange: () => void,
+): (() => void) => {
+  const handler = (e: Event) => {
+    const ce = e as CustomEvent<{ organizationId: string }>;
+    if (ce.detail?.organizationId !== organizationId) return;
+    onChange();
+  };
+  window.addEventListener(RECIPES_CHANGED_EVENT, handler);
+  return () => window.removeEventListener(RECIPES_CHANGED_EVENT, handler);
+};
+
 export const listRecipes = async (organizationId: string): Promise<Recipe[]> => {
   const { data, error } = await supabase
     .from("automation_recipes")
@@ -300,13 +329,22 @@ export const upsertRecipe = async (
   }).single();
   if (error) throw error;
   void kickAutomationWorker({ force: true });
+  notifyRecipesChanged(organizationId);
   return mapRecipe(data as Record<string, unknown>);
 };
 
 export const deleteRecipe = async (recipeId: string): Promise<void> => {
+  // Look up the org first so we can dispatch the cross-instance event,
+  // since the RPC doesn't echo the recipe payload.
+  const { data: row } = await supabase
+    .from("automation_recipes")
+    .select("organization_id")
+    .eq("recipe_id", recipeId)
+    .maybeSingle();
   const { error } = await supabase.rpc("crm_delete_recipe", { p_recipe_id: recipeId });
   if (error) throw error;
   void kickAutomationWorker({ force: true });
+  if (row?.organization_id) notifyRecipesChanged(row.organization_id as string);
 };
 
 export const setRecipeEnabled = async (recipeId: string, enabled: boolean): Promise<void> => {

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useOrganization } from "@/context/OrganizationContext";
-import { Recipe, kickAutomationWorker, listRecipes } from "@/services/supabase/automations";
+import {
+  Recipe, kickAutomationWorker, listRecipes, subscribeToRecipeChanges,
+} from "@/services/supabase/automations";
 import { supabase } from "@/services/supabase/config";
 import { toast } from "sonner";
 
@@ -44,6 +46,13 @@ export const useAutomations = () => {
       }, () => listRecipes(orgId).then(setRecipes))
       .subscribe();
 
+    // Same-tab CustomEvent fallback. Fires for every upsert / toggle /
+    // delete the current page makes, so the switch reflects the new
+    // state even when Supabase realtime isn't enabled on this table.
+    const unsubscribeCe = subscribeToRecipeChanges(orgId, () => {
+      listRecipes(orgId).then(setRecipes);
+    });
+
     const runChannel = supabase
       .channel(`automation-runs-${orgId}-${Math.random().toString(36).slice(2, 9)}`)
       .on("postgres_changes", {
@@ -66,6 +75,7 @@ export const useAutomations = () => {
       cancelled = true;
       recipeChannel.unsubscribe();
       runChannel.unsubscribe();
+      unsubscribeCe();
     };
   }, [orgId]);
 
@@ -78,5 +88,14 @@ export const useAutomations = () => {
     return () => window.clearInterval(id);
   }, [orgId]);
 
-  return { organizationId: orgId, recipes, loading, canManage: isOwner || isAdmin };
+  // Expose the setter too so callers can apply optimistic updates (toggle
+  // switches feel laggy when they wait on a server round-trip + refetch
+  // before flipping the bound state).
+  return {
+    organizationId: orgId,
+    recipes,
+    setRecipes,
+    loading,
+    canManage: isOwner || isAdmin,
+  };
 };
