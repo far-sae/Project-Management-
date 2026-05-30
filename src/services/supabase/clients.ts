@@ -555,19 +555,30 @@ export const createClient = async (
   //  - missing RPC (PGRST202 / 42883)
   //  - PostgREST 400-class parse failures (PGRST*  / RPC signature drift)
   //  - bad-jsonb errors (22P02) coming out of the security-definer body
+  //  - 42703 raised INSIDE the RPC body — the deployed RPC hardcodes
+  //    columns the table doesn't have (e.g. `fax` without migration 103),
+  //    and no amount of stripping our jsonb payload helps because the
+  //    RPC's own INSERT statement references the missing column. The
+  //    direct path lets the strip loop below succeed by controlling the
+  //    column list ourselves.
   // The direct insert hits RLS instead of the RPC's own owner/admin check,
   // so it still won't silently bypass security — it just gives the rep a
   // second chance to succeed when the deployed RPC is out of sync with the
   // frontend payload.
   if (error) {
     const rpcCode = String((error as { code?: string }).code ?? "");
+    const rpcMsg = String((error as { message?: string }).message ?? "");
     const rpcStartsWith = rpcCode.startsWith("PGRST");
-    if (isMissingRpcError(error) || rpcStartsWith || rpcCode === "22P02") {
+    const isMissingColumn = rpcCode === "42703" || /does not exist/i.test(rpcMsg);
+    if (isMissingRpcError(error) || rpcStartsWith || rpcCode === "22P02" || isMissingColumn) {
       logger.warn(
         `crm_create_client RPC failed (${rpcCode || "unknown"}) — falling back to direct insert. `
         + `Most likely cause: a recent migration that updated the RPC signature hasn't been applied. `
-        + `Run \`supabase db push\` to sync migrations 104/105/108/109/110/111.`,
+        + `Run \`supabase db push\` to sync migrations 103/104/105/108/109/110/111.`,
       );
+      // Pre-strip on the way over: if the RPC told us a specific column
+      // is missing, drop it from `row` before the first direct attempt.
+      if (isMissingColumn) tryStripMissingColumn(error);
       ({ data, error } = await createViaDirectInsert());
     }
   }

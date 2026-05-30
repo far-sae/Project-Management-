@@ -842,22 +842,33 @@ export const convertLead = async (
       return { data, error };
     };
 
-    // Round 1: RPC. Round 2+: direct insert (RPC may be stale).
+    // Round 1: try the RPC. If it 42703s, the deployed RPC body
+    // hardcodes columns the table doesn't have yet — stripping our jsonb
+    // payload won't help because the RPC's own INSERT references them
+    // regardless. The only escape is to switch to the direct path where
+    // we control the column list, and keep stripping on each retry.
     let attempt = await tryRpc();
-    for (let i = 0; i < 8 && attempt.error; i++) {
-      const stripped = tryStripMissingColumn(attempt.error);
-      if (stripped) { attempt = await tryRpc(); continue; }
-      const rpcCode = (attempt.error as { code?: string } | null)?.code ?? "";
-      if (
-        rpcCode === "PGRST202" || rpcCode === "42883"
-        || rpcCode.startsWith("PGRST") || rpcCode === "22P02"
-      ) {
-        attempt = await tryDirect();
-        continue;
-      }
-      break;
+
+    // Switch to direct insert on missing-RPC, signature drift, bad jsonb,
+    // OR a 42703 from inside the RPC body.
+    const shouldFallBackToDirect = (err: unknown): boolean => {
+      const code = String((err as { code?: string } | null)?.code ?? "");
+      if (code === "PGRST202" || code === "42883" || code === "22P02") return true;
+      if (code.startsWith("PGRST")) return true;
+      if (code === "42703") return true; // RPC body references a missing column
+      return /does not exist/i.test(String((err as { message?: string } | null)?.message ?? ""));
+    };
+
+    if (attempt.error && shouldFallBackToDirect(attempt.error)) {
+      // Strip anything the RPC complained about before the first direct
+      // attempt, since we're about to use a payload-driven INSERT.
+      tryStripMissingColumn(attempt.error);
+      attempt = await tryDirect();
     }
-    // If we ended up on direct path, also keep stripping columns.
+
+    // Keep stripping + retrying on the direct path while 42703s keep
+    // coming back. Caps at 8 to avoid an infinite loop on a wildly
+    // mismatched schema.
     for (let i = 0; i < 8 && attempt.error; i++) {
       const stripped = tryStripMissingColumn(attempt.error);
       if (!stripped) break;
