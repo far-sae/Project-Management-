@@ -1,35 +1,57 @@
 import { useCallback } from 'react';
 import { useOrgCurrency } from './useOrgCurrency';
 import { formatMoney as formatMoneyRaw } from '@/services/supabase/payroll';
+import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 /**
- * React-aware money formatter that respects the org's preferred currency.
+ * React-aware money formatter that respects the org's preferred currency
+ * AND converts the value via live FX rates when the row's stored
+ * currency differs from the display currency.
  *
- * Why this exists: rows in the DB carry a `currency` column that's been
- * defaulting to 'USD' since long before the multi-currency Settings page
- * existed. Showing those legacy rows in $ even after the owner picks GBP is
- * the bug the user keeps hitting. So:
+ * History — why this matters:
  *
- *   • Row currency missing OR equal to 'USD' → use the org currency.
- *   • Row currency explicitly set to something other than 'USD' → keep it
- *     (otherwise a genuinely-EUR contract would silently relabel as GBP).
+ *   • DB rows carry their own `currency` column. Historically, when no
+ *     currency was supplied the column defaulted to 'USD', so a column
+ *     value of "USD" can mean either "this is genuinely a USD amount"
+ *     or "we didn't know, so we stored USD as a placeholder".
  *
- * If the org is itself in USD, this is a no-op — every row stays as it was.
+ *   • The old behaviour: if `rowCurrency` was unset OR equal to 'USD',
+ *     relabel as the org currency without converting. That made sense
+ *     for legacy rows with placeholder USD but it was WRONG for
+ *     deliberately-USD rows (a $10,000 deal rendered as £10,000 in a
+ *     GBP org). Several screens — DealsListView, DealDetailView, the
+ *     dashboards — were affected.
+ *
+ * New behaviour: always display in the org currency, and convert the
+ * value through `convertAmount` first when needed. Net effect:
+ *
+ *   • $10,000 deal in a GBP org → £7,440 (correct, at current rate).
+ *   • $10,000 deal in a USD org → $10,000 (no conversion needed).
+ *   • £500 expense in a USD org → ~$540 (converted to display currency).
+ *
+ * Callers that ALREADY convert before calling this (e.g. PipelineAnalyticsCard,
+ * the per-column deal kanban totals) are safe — they pass the already-
+ * converted amount with `rowCurrency = orgCurrency`, so the inner
+ * converter is a no-op.
  */
 export const useFormatMoney = () => {
   const orgCurrency = useOrgCurrency();
+  const { rates } = useFxRates();
   return useCallback(
     (amount: number, rowCurrency?: string | null): string => {
       // Defensive: callers occasionally bind this directly to library
       // formatters (e.g. Recharts tickFormatter) that pass a numeric tick
-      // index as the second arg. Treat anything non-string as "no
-      // currency override" so .trim() doesn't crash the render.
+      // index as the second arg. Treat anything non-string as "use the
+      // org currency directly" so .trim() doesn't crash the render and
+      // we don't try to FX-convert a chart tick.
       const raw = typeof rowCurrency === 'string' ? rowCurrency : '';
-      const trimmed = raw.trim().toUpperCase();
-      const useCurrency = trimmed && trimmed !== 'USD' ? trimmed : orgCurrency;
-      return formatMoneyRaw(amount, useCurrency);
+      const fromCurrency = raw.trim().toUpperCase() || orgCurrency;
+      const displayAmount = fromCurrency === orgCurrency
+        ? amount
+        : convertAmount(amount, fromCurrency, orgCurrency, rates);
+      return formatMoneyRaw(displayAmount, orgCurrency);
     },
-    [orgCurrency],
+    [orgCurrency, rates],
   );
 };
 

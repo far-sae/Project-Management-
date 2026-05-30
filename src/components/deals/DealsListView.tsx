@@ -7,7 +7,6 @@ import {
 import { DEAL_STAGES, Deal, DealStage } from '@/services/supabase/deals';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
-import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 const fmtDate = (d: Date | null | undefined) =>
   d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -26,13 +25,10 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
   deals, onSelectDeal,
 }) => {
   const fmtMoney = useFormatMoney();
-  // Convert each row's amount to the org's display currency before
-  // formatting — otherwise useFormatMoney just RELABELS a USD value as
-  // the org currency (it treats USD as "no currency set"), which is why
-  // a $10,000 deal was rendering as £10,000 in this table while the
-  // Kanban/analytics cards correctly showed £7,440.
+  // useFormatMoney now FX-converts at the hook level, so we just need
+  // orgCurrency here to drive the "(USD)" original-currency hint when
+  // the row and display currencies differ.
   const orgCurrency = useOrgCurrency();
-  const { rates } = useFxRates();
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<'all' | DealStage>('all');
 
@@ -113,7 +109,11 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {fmtMoney(convertAmount(d.value, d.currency, orgCurrency, rates), orgCurrency)}
+                    {/* useFormatMoney now FX-converts internally — pass
+                        the row's native currency and it returns the
+                        org-currency amount. The "(USD)" hint stays so
+                        the conversion is visible. */}
+                    {fmtMoney(d.value, d.currency)}
                     {d.currency && d.currency.toUpperCase() !== orgCurrency.toUpperCase() && (
                       <span className="ml-1 text-[10px] text-muted-foreground" title={`Original: ${d.value} ${d.currency.toUpperCase()}`}>
                         ({d.currency.toUpperCase()})
