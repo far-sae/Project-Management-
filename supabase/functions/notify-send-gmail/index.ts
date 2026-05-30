@@ -100,10 +100,13 @@ Deno.serve(async (req) => {
   const userId = auth.userId;
 
   try {
-    const result = await sendViaGmail(admin, {
-      userId,
+    // sendViaGmail takes a single object — `admin` and `senderUserId`
+    // are properties on it, not separate args. Earlier shape was wrong
+    // and the function 500'd before any send happened.
+    const result = await sendViaGmail({
+      admin,
+      senderUserId: userId,
       to: toEmail,
-      toName: body.toName,
       subject,
       bodyText,
       bodyHtml: body.bodyHtml ?? buildHtml(subject, bodyText, body.actionUrl),
@@ -112,8 +115,9 @@ Deno.serve(async (req) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "send_failed";
     // 412 mirrors the other Google-aware functions: caller can fall back
-    // to EmailJS (or just an in-app bell) when the rep hasn't connected.
-    const code = /not connected|no.*integration|metadata.email/i.test(message)
+    // to EmailJS (or just an in-app bell) when the rep hasn't connected
+    // their Gmail account specifically (not just the Google/Calendar one).
+    const code = /no active gmail integration|metadata has no email|reconnect|integration lookup failed/i.test(message)
       ? 412 : 502;
     return json({ error: "gmail_send_failed", message }, code);
   }

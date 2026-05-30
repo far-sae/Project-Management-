@@ -73,9 +73,16 @@ export const IntegrationsHealthCard: React.FC = () => {
       }
     }
 
-    // Fill in 'missing' for any we didn't get a row for
+    // Fill in 'missing' for any we didn't get a row for.
     for (const r of next) {
-      if (r.id !== 'automations' && r.status === 'unknown') {
+      if (r.id === 'gmail' && r.status === 'unknown') {
+        r.status = 'missing';
+        r.hint = 'Not connected. Task-assignment / due-date emails fall back to EmailJS without this. '
+          + 'Click Connect on the Gmail card below — this is SEPARATE from Google Meet, even though both use Google sign-in.';
+      } else if (r.id === 'google' && r.status === 'unknown') {
+        r.status = 'missing';
+        r.hint = 'Not connected. Without it, Meet links + Calendar sync are unavailable. Click Connect on the Google Meet card below.';
+      } else if (r.id !== 'automations' && r.status === 'unknown') {
         r.status = 'missing';
         r.hint = 'Not connected. Click Connect below to start the OAuth flow.';
       }
