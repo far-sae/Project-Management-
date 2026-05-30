@@ -2,6 +2,7 @@ import React from 'react';
 import { ProviderCard } from './ProviderCard';
 import { TelegramConnectCard } from './TelegramConnectCard';
 import { WhatsAppConnectCard } from './WhatsAppConnectCard';
+import { IntegrationsHealthCard } from './IntegrationsHealthCard';
 import { providerOrder, providerDisplay } from '@/services/integrations/providers';
 import { useOrganization } from '@/context/OrganizationContext';
 
@@ -18,6 +19,11 @@ export const IntegrationsTab: React.FC = () => {
           uses OAuth — TaskCalendar never sees your password.
         </p>
       </div>
+
+      {/* At-a-glance health for Gmail / Meet / Automations so the rep can
+          see whether the wiring is actually live without having to test
+          each one by triggering a real workflow. */}
+      <IntegrationsHealthCard />
       <div className="grid gap-3">
         {providerOrder.map((id) => {
           const display = providerDisplay[id];
