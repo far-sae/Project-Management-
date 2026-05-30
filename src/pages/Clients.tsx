@@ -508,7 +508,7 @@ export const Clients: React.FC = () => {
                 </Button>
               )}
               <Button variant="outline" asChild>
-                <Link to="/clients/activity">Recent activity</Link>
+                <Link to="/clients/activity">Activities</Link>
               </Button>
               <Button variant="outline" onClick={exportAll}>
                 <Download className="w-4 h-4 mr-2" /> Export CSV

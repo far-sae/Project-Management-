@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 
 export type ClientTaskType = "todo" | "call" | "email" | "meeting" | "followup";
 export type ClientTaskStatus = "pending" | "done" | "snoozed";
+export type ClientTaskPriority = "high" | "normal" | "low";
 
 export const TASK_TYPE_LABEL: Record<ClientTaskType, string> = {
   todo: "To-do",
@@ -31,6 +32,10 @@ export interface ClientTask {
   createdByName?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  // Activities-hub additions (migration 115). Optional in the type so
+  // pre-115 rows still map cleanly; the mapper defaults to 'normal'.
+  priority?: ClientTaskPriority;
+  repeatRule?: string | null;
 }
 
 export interface CreateClientTaskInput {
@@ -42,6 +47,8 @@ export interface CreateClientTaskInput {
   dueAt?: Date | null;
   assignedTo?: string | null;
   assignedToName?: string | null;
+  priority?: ClientTaskPriority;
+  repeatRule?: string | null;
 }
 
 export interface UpdateClientTaskInput {
@@ -54,6 +61,8 @@ export interface UpdateClientTaskInput {
   assignedToName?: string | null;
   clientId?: string | null;
   dealId?: string | null;
+  priority?: ClientTaskPriority;
+  repeatRule?: string | null;
 }
 
 const isLocalOrg = (orgId: string) => orgId.startsWith("local-");
@@ -78,6 +87,8 @@ const mapTask = (row: Record<string, unknown>): ClientTask => ({
   createdByName: (row.created_by_name as string) ?? null,
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
+  priority: ((row.priority as string) || "normal") as ClientTaskPriority,
+  repeatRule: (row.repeat_rule as string) ?? null,
 });
 
 const readLocal = (orgId: string): ClientTask[] => {
@@ -175,7 +186,7 @@ export const createClientTask = async (
     return task;
   }
 
-  const row = {
+  const row: Record<string, unknown> = {
     organization_id: organizationId,
     client_id: input.clientId ?? null,
     deal_id: input.dealId ?? null,
@@ -188,6 +199,20 @@ export const createClientTask = async (
     assigned_to_name: input.assignedToName ?? createdByName,
     created_by: createdBy,
     created_by_name: createdByName,
+    priority: input.priority ?? "normal",
+    repeat_rule: input.repeatRule ?? null,
+  };
+  // Same drift recovery the deals/clients services use: if the deployed
+  // DB doesn't have priority/repeat_rule yet (migration 115 not applied),
+  // 42703 on insert → strip the offending column and retry once.
+  const stripMissingColumn = (err: unknown): boolean => {
+    const e = err as { code?: string; message?: string } | null;
+    if (!e || (e.code !== "42703" && !/does not exist/i.test(String(e.message ?? "")))) return false;
+    const m = /column "([^"]+)" of relation/i.exec(String(e.message ?? ""));
+    const col = m?.[1];
+    if (!col || !(col in row)) return false;
+    delete row[col];
+    return true;
   };
   const createViaDirectInsert = () => supabase
     .from("client_tasks")
@@ -203,6 +228,12 @@ export const createClientTask = async (
     .single();
 
   if (error && isMissingRpcError(error)) {
+    ({ data, error } = await createViaDirectInsert());
+  }
+  // Drift loop: if the deployed DB is missing one of the new columns
+  // (priority / repeat_rule), drop it and retry. Up to 4 strips —
+  // beyond that something else is wrong and we bail to the real error.
+  for (let i = 0; i < 4 && error && stripMissingColumn(error); i++) {
     ({ data, error } = await createViaDirectInsert());
   }
 
@@ -280,13 +311,28 @@ export const updateClientTask = async (
       update.done_by_name = actor.displayName;
     }
   }
+  if (input.priority !== undefined) update.priority = input.priority;
+  if (input.repeatRule !== undefined) update.repeat_rule = input.repeatRule;
 
-  const { data, error } = await supabase
+  const tryUpdate = () => supabase
     .from("client_tasks")
     .update(update)
     .eq("task_id", taskId)
     .select()
     .single();
+
+  let { data, error } = await tryUpdate();
+  // Same column-drift recovery as createClientTask: drop priority /
+  // repeat_rule and retry if the DB hasn't applied migration 115 yet.
+  for (let i = 0; i < 4 && error; i++) {
+    const e = error as { code?: string; message?: string } | null;
+    if (!e || (e.code !== "42703" && !/does not exist/i.test(String(e.message ?? "")))) break;
+    const m = /column "([^"]+)" of relation/i.exec(String(e.message ?? ""));
+    const col = m?.[1];
+    if (!col || !(col in update)) break;
+    delete update[col];
+    ({ data, error } = await tryUpdate());
+  }
   if (error) {
     logger.error("Failed to update client task:", error);
     throw error;
