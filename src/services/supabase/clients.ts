@@ -526,6 +526,24 @@ export const createClient = async (
       .single();
   };
 
+  // Helper: detect "column X of relation Y does not exist" (code 42703)
+  // and strip the missing column from the row so a retry can succeed
+  // against a partially-migrated DB. Returns the stripped column name or
+  // null when the error wasn't a missing-column. Up to MAX_STRIP retries —
+  // beyond that we give up to avoid an infinite loop.
+  const MAX_STRIP = 8;
+  const tryStripMissingColumn = (err: unknown): string | null => {
+    const e = err as { code?: string; message?: string } | null;
+    if (!e || (e.code !== "42703" && !/does not exist/i.test(String(e.message ?? "")))) {
+      return null;
+    }
+    const m = /column "([^"]+)" of relation/i.exec(String(e.message ?? ""));
+    const col = m?.[1];
+    if (!col || !(col in row)) return null;
+    delete row[col];
+    return col;
+  };
+
   let { data, error } = await supabase
     .rpc("crm_create_client", {
       p_organization_id: organizationId,
@@ -552,6 +570,25 @@ export const createClient = async (
       );
       ({ data, error } = await createViaDirectInsert());
     }
+  }
+
+  // Schema drift recovery: if the deployed DB is missing the column we
+  // sent (e.g. fax / account_site / custom_fields when a Zoho-fields
+  // migration hasn't been applied yet), strip the offending column and
+  // retry the insert. The dropped values are lost but the account still
+  // gets created — far better than blocking the rep entirely.
+  const strippedCols: string[] = [];
+  for (let i = 0; i < MAX_STRIP && error; i++) {
+    const stripped = tryStripMissingColumn(error);
+    if (!stripped) break;
+    strippedCols.push(stripped);
+    ({ data, error } = await createViaDirectInsert());
+  }
+  if (strippedCols.length > 0) {
+    logger.warn(
+      `createClient: dropped ${strippedCols.length} column(s) the DB doesn't know about: `
+      + `${strippedCols.join(", ")}. Apply the latest CRM migrations to keep these values.`,
+    );
   }
 
   if (error) {

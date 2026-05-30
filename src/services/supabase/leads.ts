@@ -785,7 +785,7 @@ export const convertLead = async (
     // plain members can convert a lead into an account without tripping
     // the owner/admin-only RLS on direct clients INSERTs. The RPC checks
     // org membership + non-viewer role itself before inserting.
-    const clientPayload = {
+    const clientPayload: Record<string, unknown> = {
       organization_id: organizationId,
       workspace_id: lead.workspaceId,
       name: lead.company,
@@ -813,45 +813,76 @@ export const convertLead = async (
 
     let createdId: string | null = null;
     let lastError: unknown = null;
+    const strippedCols: string[] = [];
 
-    // Primary path: RPC. Most reps trip RLS without this.
-    const { data: rpcRow, error: rpcErr } = await supabase
-      .rpc("crm_create_client", {
-        p_organization_id: organizationId,
-        p_client: clientPayload,
-      })
-      .single();
-    if (!rpcErr && rpcRow) {
-      createdId = (rpcRow as { client_id: string }).client_id;
-    } else {
-      lastError = rpcErr;
-      // RPC missing on this project? Fall back to the direct insert path
-      // (admins / service role can still pass RLS).
-      const rpcCode = (rpcErr as { code?: string } | null)?.code ?? "";
-      const isMissingRpc = rpcCode === "PGRST202" || rpcCode === "42883";
-      if (isMissingRpc) {
-        const { data: clientRow, error: clientErr } = await supabase
-          .from("clients")
-          .insert(clientPayload)
-          .select("client_id")
-          .single();
-        if (!clientErr && clientRow) {
-          createdId = clientRow.client_id as string;
-          lastError = null;
-        } else {
-          lastError = clientErr;
-        }
+    // Strip 42703 "column X does not exist" errors and retry up to 8x so
+    // a partially-migrated DB (e.g. missing migration 103 → no `fax`
+    // column) still gets the account created without those columns.
+    const tryStripMissingColumn = (err: unknown): string | null => {
+      const e = err as { code?: string; message?: string } | null;
+      if (!e || (e.code !== "42703" && !/does not exist/i.test(String(e.message ?? "")))) return null;
+      const m = /column "([^"]+)" of relation/i.exec(String(e.message ?? ""));
+      const col = m?.[1];
+      if (!col || !(col in clientPayload)) return null;
+      delete clientPayload[col];
+      strippedCols.push(col);
+      return col;
+    };
+
+    // Primary path: RPC.
+    const tryRpc = async () => {
+      const { data, error } = await supabase
+        .rpc("crm_create_client", { p_organization_id: organizationId, p_client: clientPayload })
+        .single();
+      return { data, error };
+    };
+    const tryDirect = async () => {
+      const { data, error } = await supabase
+        .from("clients").insert(clientPayload).select("client_id").single();
+      return { data, error };
+    };
+
+    // Round 1: RPC. Round 2+: direct insert (RPC may be stale).
+    let attempt = await tryRpc();
+    for (let i = 0; i < 8 && attempt.error; i++) {
+      const stripped = tryStripMissingColumn(attempt.error);
+      if (stripped) { attempt = await tryRpc(); continue; }
+      const rpcCode = (attempt.error as { code?: string } | null)?.code ?? "";
+      if (
+        rpcCode === "PGRST202" || rpcCode === "42883"
+        || rpcCode.startsWith("PGRST") || rpcCode === "22P02"
+      ) {
+        attempt = await tryDirect();
+        continue;
       }
+      break;
+    }
+    // If we ended up on direct path, also keep stripping columns.
+    for (let i = 0; i < 8 && attempt.error; i++) {
+      const stripped = tryStripMissingColumn(attempt.error);
+      if (!stripped) break;
+      attempt = await tryDirect();
+    }
+
+    if (!attempt.error && attempt.data) {
+      createdId = (attempt.data as { client_id: string }).client_id;
+    } else {
+      lastError = attempt.error;
+    }
+
+    if (strippedCols.length > 0) {
+      logger.warn(
+        `convertLead: dropped ${strippedCols.length} column(s) the DB doesn't know about: `
+        + `${strippedCols.join(", ")}. Apply migrations 103–110 to keep these values.`,
+      );
     }
 
     if (!createdId) {
       const e = lastError as { code?: string; message?: string; details?: string; hint?: string } | null;
-      logger.error("convertLead: client insert failed:", {
-        code: e?.code, message: e?.message, details: e?.details, hint: e?.hint, raw: lastError,
-      });
       const composed = [e?.message, e?.details, e?.hint && `(hint: ${e.hint})`, e?.code && `[${e.code}]`]
         .filter(Boolean)
         .join(" — ");
+      logger.error(`convertLead: client insert failed: ${composed || "unknown reason"}`, lastError);
       throw new Error(
         composed
           || "Failed to create the account for this lead — usually a permissions issue. Make sure the latest CRM client-RPC migration is deployed and your role allows account creation.",
