@@ -990,6 +990,63 @@ export const createTask = async (
   }
   void kickAutomationWorker({ force: true });
 
+  // Fire notifications for the new assignees — this is what makes the
+  // bell light up + the email fire when a task is created with assignees
+  // (or assigned to someone else later). Previously createTask returned
+  // without firing anything, so reps wondered why "task created" emails
+  // never landed.
+  //
+  // Wrapped in try/catch + a void so a notification miss never blocks
+  // task creation. We look up the project name + actor display name
+  // best-effort; if either fails we still send with the IDs / "Someone".
+  const assigneesForNotify = Array.isArray(input.assignees) ? input.assignees : [];
+  if (assigneesForNotify.length > 0) {
+    (async () => {
+      try {
+        const [projectLookup, actorLookup] = await Promise.all([
+          supabase.from("projects").select("name").eq("project_id", input.projectId).maybeSingle(),
+          supabase.from("user_profiles").select("display_name, email").eq("user_id", userId).maybeSingle(),
+        ]);
+        const projectName = (projectLookup.data?.name as string) ?? "your project";
+        const actorName = (actorLookup.data?.display_name as string) ?? "Someone";
+        // Build an assignee→email lookup so the email path knows where
+        // to send. Pulls from user_profiles in one round-trip.
+        const assigneeIds = assigneesForNotify.map((a) => a.userId).filter(Boolean);
+        const emailMap = new Map<string, string>();
+        if (assigneeIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("user_profiles")
+            .select("user_id, email")
+            .in("user_id", assigneeIds);
+          for (const p of profiles ?? []) {
+            if (p.email) emailMap.set(p.user_id as string, p.email as string);
+          }
+        }
+        await createNotificationsForTaskUpdate({
+          taskId,
+          projectId: input.projectId,
+          projectName,
+          taskTitle: input.title,
+          previousAssignees: [],
+          newAssignees: assigneesForNotify.map((a) => ({
+            userId: a.userId,
+            displayName: a.displayName,
+          })),
+          previousStatus: undefined,
+          newStatus: input.status ?? "undefined",
+          previousUrgent: false,
+          newUrgent: Boolean(input.urgent),
+          actorUserId: userId,
+          actorDisplayName: actorName,
+          getAssigneeEmail: (uid) => emailMap.get(uid),
+          includeActor: true,
+        });
+      } catch (notifyErr) {
+        logger.warn("createTask: notification fan-out failed:", notifyErr);
+      }
+    })();
+  }
+
   return {
     taskId: data.task_id,
     projectId: data.project_id,
