@@ -485,6 +485,22 @@ export const createDeal = async (
       .single();
   };
 
+  // Strip-and-retry helper: when the DB rejects the insert with 42703
+  // "column X does not exist" (or the RPC body raises the same because
+  // it hardcodes columns the table doesn't have), drop the column from
+  // `row` and retry. Up to 8 columns — past that we give up to avoid
+  // an infinite loop. Critical for projects that haven't applied
+  // migrations 107 / 109 yet (deal_type, next_step, custom_fields, etc).
+  const tryStripMissingColumn = (err: unknown): string | null => {
+    const e = err as { code?: string; message?: string } | null;
+    if (!e || (e.code !== "42703" && !/does not exist/i.test(String(e.message ?? "")))) return null;
+    const m = /column "([^"]+)" of relation/i.exec(String(e.message ?? ""));
+    const col = m?.[1];
+    if (!col || !(col in row)) return null;
+    delete (row as Record<string, unknown>)[col];
+    return col;
+  };
+
   let { data, error } = await supabase
     .rpc("crm_create_deal", {
       p_organization_id: organizationId,
@@ -492,13 +508,58 @@ export const createDeal = async (
     })
     .single();
 
-  if (error && isMissingRpcError(error)) {
+  // Fall back to direct insert on:
+  //  - missing RPC (PGRST202 / 42883)
+  //  - PostgREST signature drift (PGRST* / 22P02)
+  //  - 42703 "column does not exist" raised INSIDE the RPC body — the
+  //    deployed RPC may hardcode columns the table doesn't have yet
+  //    (e.g. custom_fields without migration 109). The direct path lets
+  //    the strip loop below take over.
+  if (error) {
+    const rpcCode = String((error as { code?: string }).code ?? "");
+    const rpcMsg = String((error as { message?: string }).message ?? "");
+    const isMissingColumn = rpcCode === "42703" || /does not exist/i.test(rpcMsg);
+    const isRpcDrift = rpcCode.startsWith("PGRST") || rpcCode === "22P02";
+    if (isMissingRpcError(error) || isRpcDrift || isMissingColumn) {
+      logger.warn(
+        `crm_create_deal RPC failed (${rpcCode || "unknown"}: ${rpcMsg.slice(0, 200)}) — `
+        + `falling back to direct insert. Apply migrations 107/109 to sync the deals schema.`,
+      );
+      if (isMissingColumn) tryStripMissingColumn(error);
+      ({ data, error } = await createViaDirectInsert());
+    }
+  }
+
+  // Direct-path strip loop: keep dropping unknown columns and retrying.
+  const strippedCols: string[] = [];
+  for (let i = 0; i < 8 && error; i++) {
+    const stripped = tryStripMissingColumn(error);
+    if (!stripped) break;
+    strippedCols.push(stripped);
     ({ data, error } = await createViaDirectInsert());
+  }
+  if (strippedCols.length > 0) {
+    logger.warn(
+      `createDeal: dropped ${strippedCols.length} column(s) the DB doesn't know about: `
+      + `${strippedCols.join(", ")}. Apply migrations 107/109 to keep these values.`,
+    );
   }
 
   if (error) {
-    logger.error("Failed to create deal:", error);
-    throw friendlyDealCreateError(error);
+    // Inline the real Postgres reason so the import dialog shows a
+    // useful per-row error string instead of "Object" / generic text.
+    const e = error as { code?: string; message?: string; details?: string; hint?: string };
+    const composed = [e.message, e.details, e.hint && `(hint: ${e.hint})`, e.code && `[${e.code}]`]
+      .filter(Boolean)
+      .join(" — ");
+    logger.error(`Failed to create deal: ${composed || "no reason returned"}`, error);
+    // Keep the existing friendly-error mapper but make sure its fallback
+    // path now carries the composed string too.
+    const friendly = friendlyDealCreateError(error);
+    if (friendly.message && friendly.message !== "Failed to create deal" && !/object/i.test(friendly.message)) {
+      throw friendly;
+    }
+    throw new Error(composed || friendly.message || "Failed to create deal");
   }
   notifyDealsChanged(organizationId);
   return mapDeal(data as Record<string, unknown>);
