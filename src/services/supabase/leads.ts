@@ -781,40 +781,83 @@ export const convertLead = async (
     }
     clientId = input.existingClientId;
   } else {
-    const { data: clientRow, error: clientErr } = await supabase
-      .from("clients")
-      .insert({
-        organization_id: organizationId,
-        workspace_id: lead.workspaceId,
-        name: lead.company,
-        industry: lead.industry,
-        website: lead.website,
-        email: lead.email,
-        phone: lead.phone,
-        address_line1: lead.street,
-        city: lead.city,
-        state: lead.state,
-        postal_code: lead.postalCode,
-        country: lead.country,
-        annual_revenue: lead.annualRevenue,
-        employee_count: lead.noOfEmployees,
-        rating: lead.rating,
-        source: lead.leadSource,
-        description: lead.description,
-        tags: lead.tags,
-        account_owner_id: lead.leadOwnerId ?? userId,
-        account_owner_name: lead.leadOwnerName ?? userName,
-        custom_fields: lead.customFields,
-        created_by: userId,
-        created_by_name: userName,
+    // Route through the crm_create_client RPC (security definer) so that
+    // plain members can convert a lead into an account without tripping
+    // the owner/admin-only RLS on direct clients INSERTs. The RPC checks
+    // org membership + non-viewer role itself before inserting.
+    const clientPayload = {
+      organization_id: organizationId,
+      workspace_id: lead.workspaceId,
+      name: lead.company,
+      industry: lead.industry,
+      website: lead.website,
+      email: lead.email,
+      phone: lead.phone,
+      address_line1: lead.street,
+      city: lead.city,
+      state: lead.state,
+      postal_code: lead.postalCode,
+      country: lead.country,
+      annual_revenue: lead.annualRevenue,
+      employee_count: lead.noOfEmployees,
+      rating: lead.rating,
+      source: lead.leadSource,
+      description: lead.description,
+      tags: lead.tags,
+      account_owner_id: lead.leadOwnerId ?? userId,
+      account_owner_name: lead.leadOwnerName ?? userName,
+      custom_fields: lead.customFields,
+      created_by: userId,
+      created_by_name: userName,
+    };
+
+    let createdId: string | null = null;
+    let lastError: unknown = null;
+
+    // Primary path: RPC. Most reps trip RLS without this.
+    const { data: rpcRow, error: rpcErr } = await supabase
+      .rpc("crm_create_client", {
+        p_organization_id: organizationId,
+        p_client: clientPayload,
       })
-      .select("client_id")
       .single();
-    if (clientErr || !clientRow) {
-      logger.error("convertLead: client insert failed:", clientErr);
-      throw clientErr ?? new Error("Failed to create account");
+    if (!rpcErr && rpcRow) {
+      createdId = (rpcRow as { client_id: string }).client_id;
+    } else {
+      lastError = rpcErr;
+      // RPC missing on this project? Fall back to the direct insert path
+      // (admins / service role can still pass RLS).
+      const rpcCode = (rpcErr as { code?: string } | null)?.code ?? "";
+      const isMissingRpc = rpcCode === "PGRST202" || rpcCode === "42883";
+      if (isMissingRpc) {
+        const { data: clientRow, error: clientErr } = await supabase
+          .from("clients")
+          .insert(clientPayload)
+          .select("client_id")
+          .single();
+        if (!clientErr && clientRow) {
+          createdId = clientRow.client_id as string;
+          lastError = null;
+        } else {
+          lastError = clientErr;
+        }
+      }
     }
-    clientId = clientRow.client_id as string;
+
+    if (!createdId) {
+      const e = lastError as { code?: string; message?: string; details?: string; hint?: string } | null;
+      logger.error("convertLead: client insert failed:", {
+        code: e?.code, message: e?.message, details: e?.details, hint: e?.hint, raw: lastError,
+      });
+      const composed = [e?.message, e?.details, e?.hint && `(hint: ${e.hint})`, e?.code && `[${e.code}]`]
+        .filter(Boolean)
+        .join(" — ");
+      throw new Error(
+        composed
+          || "Failed to create the account for this lead — usually a permissions issue. Make sure the latest CRM client-RPC migration is deployed and your role allows account creation.",
+      );
+    }
+    clientId = createdId;
     createdClientId = clientId;
   }
 

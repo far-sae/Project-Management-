@@ -1149,7 +1149,20 @@ export const getDealNotes = async (
     .eq("deal_id", dealId)
     .order("occurred_at", { ascending: false });
   if (error) {
-    logger.error("Failed to load deal notes:", error);
+    const e = error as { code?: string; message?: string; details?: string };
+    const code = e.code ?? "";
+    // 42703 = undefined column. Means migration 089 (which added
+    // client_notes.deal_id) hasn't been applied on this project. Don't
+    // log "Object" — log the real reason so the operator can fix it.
+    if (code === "42703" || /column.*deal_id.*does not exist/i.test(String(e.message))) {
+      logger.warn(
+        "client_notes.deal_id column missing — apply migration 089 to enable deal-scoped notes. Returning empty list.",
+      );
+      return [];
+    }
+    logger.error("Failed to load deal notes:", {
+      code, message: e.message, details: e.details, raw: error,
+    });
     return [];
   }
   return (data || []).map(mapNote);
