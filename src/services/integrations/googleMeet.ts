@@ -104,3 +104,48 @@ export async function createMeetForCrm(
   }
   return res.json();
 }
+
+export interface CancelMeetResult {
+  ok: true;
+  cleared: boolean;
+  /** true = Calendar event deleted; false = Google rejected the delete;
+   *  "skipped" = no eventId stored, or user has no Google tokens (we
+   *  still cleared the row). */
+  calendarDeleted?: boolean | 'skipped';
+  calendarDetail?: string;
+  note?: string;
+}
+
+export type CancelMeetEntity = 'tasks' | CrmMeetEntity;
+
+/**
+ * Cancel a previously-attached Meet on any of the four entity types
+ * (project tasks, CRM notes/tasks/deals). Deletes the Google Calendar
+ * event and nulls google_meet_link + google_event_id on the row, so
+ * the UI stops showing the Join link. Idempotent — calling on a row
+ * with no meet attached is a no-op.
+ *
+ * Requires: `npx supabase functions deploy cancel-meet`.
+ */
+export async function cancelMeetForEntity(
+  entityType: CancelMeetEntity,
+  entityId: string,
+): Promise<CancelMeetResult> {
+  const res = await fetch(`${FUNCTIONS_URL}/cancel-meet`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+    body: JSON.stringify({ entityType, entityId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
+    throw new Error(body.message ?? body.error ?? `Meet cancel failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+/** Convenience wrappers so the call sites read naturally. */
+export const cancelMeetForTask = (taskId: string) =>
+  cancelMeetForEntity('tasks', taskId);
+
+export const cancelMeetForCrm = (entityType: CrmMeetEntity, entityId: string) =>
+  cancelMeetForEntity(entityType, entityId);

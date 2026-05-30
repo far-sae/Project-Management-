@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   MessageSquare, Phone, Mail, Calendar, ListTodo, Plus, Loader2,
-  CheckCircle2, Trash2, Send, Video, ExternalLink,
+  CheckCircle2, Trash2, Send, Video, VideoOff, ExternalLink,
 } from 'lucide-react';
-import { createMeetForCrm } from '@/services/integrations/googleMeet';
+import { cancelMeetForCrm, createMeetForCrm } from '@/services/integrations/googleMeet';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,6 +91,27 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
       window.open(result.meetLink, '_blank', 'noopener,noreferrer');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create Meet link');
+    } finally {
+      setMeetingBusyId(null);
+    }
+  };
+
+  // Tear down the Google Calendar event and clear google_meet_link /
+  // google_event_id on the note. Confirm first — once Calendar deletes
+  // the event, attendees lose access and the Meet room is gone.
+  const handleCancelMeet = async (noteId: string) => {
+    if (!window.confirm('Cancel this Google Meet? The Calendar event will be deleted and attendees will lose access.')) return;
+    setMeetingBusyId(noteId);
+    try {
+      const result = await cancelMeetForCrm('client_notes', noteId);
+      toast.success(
+        result.calendarDeleted === true
+          ? 'Meet cancelled — Calendar event deleted.'
+          : 'Meet link removed from this note.',
+      );
+      await reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not cancel Meet');
     } finally {
       setMeetingBusyId(null);
     }
@@ -229,6 +250,20 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
               {meetingBusyId === n.noteId
                 ? <Loader2 className="w-3 h-3 animate-spin" />
                 : <><Video className="w-3 h-3 mr-1" />Add Meet</>}
+            </Button>
+          )}
+          {isMeeting && n.googleMeetLink && canManage && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px] text-destructive hover:text-destructive border-destructive/40"
+              disabled={meetingBusyId === n.noteId}
+              onClick={() => handleCancelMeet(n.noteId)}
+              title="Cancel this Meet and delete the Calendar event"
+            >
+              {meetingBusyId === n.noteId
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <><VideoOff className="w-3 h-3 mr-1" />Cancel Meet</>}
             </Button>
           )}
           {canManage && (

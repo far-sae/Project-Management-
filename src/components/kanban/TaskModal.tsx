@@ -66,7 +66,7 @@ import {
   verifyTaskLockPin,
 } from '@/services/supabase/database';
 import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
-import { isGoogleConnected, createMeetForTask } from '@/services/integrations/googleMeet';
+import { isGoogleConnected, createMeetForTask, cancelMeetForTask } from '@/services/integrations/googleMeet';
 import { markOnboardingAi } from '@/components/onboarding/OnboardingChecklist';
 import { useTaskActivity } from '@/hooks/useActivity';
 import { ActivityEvent } from '@/types/activity';
@@ -402,6 +402,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       (task as Task).dueDate = combinedMeetingStart;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Meet creation failed', { id: toastId });
+    } finally {
+      setMeetAddInFlight(false);
+    }
+  };
+
+  // Tear down a previously-scheduled Meet from an existing task row.
+  // Calls the cancel-meet edge function, which deletes the Calendar
+  // event and nulls google_meet_link / google_event_id. We mirror the
+  // local task object so the UI flips from "Join" back to "Add Meet"
+  // without waiting for the parent refetch.
+  const handleCancelMeetForExisting = async () => {
+    if (!task?.taskId || !task.googleMeetLink) return;
+    if (!window.confirm('Cancel this Google Meet? The Calendar event will be deleted and attendees will lose access.')) return;
+    setMeetAddInFlight(true);
+    const toastId = toast.loading('Cancelling Google Meet...');
+    try {
+      const result = await cancelMeetForTask(task.taskId);
+      (task as Task).googleMeetLink = null;
+      toast.success(
+        result.calendarDeleted === true
+          ? 'Meet cancelled — Calendar event deleted.'
+          : 'Meet link removed from this task.',
+        { id: toastId },
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Meet cancel failed', { id: toastId });
     } finally {
       setMeetAddInFlight(false);
     }
@@ -2250,6 +2276,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   >
                     Copy
                   </button>
+                  {!readOnlyTask && (
+                    <button
+                      type="button"
+                      className="text-xs text-destructive hover:text-destructive/80 disabled:opacity-50"
+                      onClick={handleCancelMeetForExisting}
+                      disabled={meetAddInFlight}
+                      title="Cancel this Meet and delete the Calendar event"
+                    >
+                      {meetAddInFlight ? 'Cancelling…' : 'Cancel Meet'}
+                    </button>
+                  )}
                 </div>
               )}
 

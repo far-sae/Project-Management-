@@ -6,7 +6,8 @@
       "Bash(npm run lint)",
       "Bash(npm run preview)",
       "Bash(npx tsc *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(grep:*)"
     ]
   }
 }

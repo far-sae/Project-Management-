@@ -1,0 +1,57 @@
+[
+  {
+    "route": "login",
+    "file": "C:\\Users\\faraz\\task\\Project-Management-\\.snapshots\\login-390.png",
+    "overflow": {
+      "docW": 390,
+      "bodyW": 390,
+      "vpW": 390,
+      "hasHorizontalScroll": false
+    },
+    "errors": []
+  },
+  {
+    "route": "signup",
+    "file": "C:\\Users\\faraz\\task\\Project-Management-\\.snapshots\\signup-390.png",
+    "overflow": {
+      "docW": 390,
+      "bodyW": 390,
+      "vpW": 390,
+      "hasHorizontalScroll": false
+    },
+    "errors": []
+  },
+  {
+    "route": "landing",
+    "file": "C:\\Users\\faraz\\task\\Project-Management-\\.snapshots\\landing-390.png",
+    "overflow": {
+      "docW": 390,
+      "bodyW": 390,
+      "vpW": 390,
+      "hasHorizontalScroll": false
+    },
+    "errors": []
+  },
+  {
+    "route": "pricing",
+    "file": "C:\\Users\\faraz\\task\\Project-Management-\\.snapshots\\pricing-390.png",
+    "overflow": {
+      "docW": 390,
+      "bodyW": 390,
+      "vpW": 390,
+      "hasHorizontalScroll": false
+    },
+    "errors": []
+  },
+  {
+    "route": "about",
+    "file": "C:\\Users\\faraz\\task\\Project-Management-\\.snapshots\\about-390.png",
+    "overflow": {
+      "docW": 390,
+      "bodyW": 390,
+      "vpW": 390,
+      "hasHorizontalScroll": false
+    },
+    "errors": []
+  }
+]

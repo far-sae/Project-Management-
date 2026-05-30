@@ -1,0 +1,8 @@
+{
+  "name": "snapshots",
+  "private": true,
+  "version": "0.0.0",
+  "dependencies": {
+    "puppeteer-core": "^24.42.0"
+  }
+}
