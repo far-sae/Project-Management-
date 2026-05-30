@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, AlertCircle, RefreshCw, Video, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  ExternalCalendarEvent,
+  listExternalCalendarEvents,
+  syncGoogleCalendar,
+} from '@/services/integrations/googleCalendarSync';
 
 import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +50,13 @@ export const Calendar: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  // Google Calendar events synced via sync-google-calendar edge fn.
+  // Mirrored from the user's primary Google Calendar so Gmail-delivered
+  // meeting invites + scheduled meetings show up next to TaskCalendar
+  // tasks without flipping tabs.
+  const [externalEvents, setExternalEvents] = useState<ExternalCalendarEvent[]>([]);
+  const [syncingCal, setSyncingCal] = useState(false);
+  const [selectedExternal, setSelectedExternal] = useState<ExternalCalendarEvent | null>(null);
 
   const orgId =
     organization?.organizationId ||
@@ -128,6 +140,43 @@ export const Calendar: React.FC = () => {
     fetchTasks();
   }, [orgId, user]);
 
+  // Pull cached Google Calendar events for the current month ±. Reads
+  // only — the sync happens via the Sync button below (or automatically
+  // on first mount if the user has a real org).
+  const loadExternal = async () => {
+    if (!user || !orgId || orgId.startsWith('local-')) {
+      setExternalEvents([]);
+      return;
+    }
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month + 2, 0, 23, 59, 59);
+    const next = await listExternalCalendarEvents(start, end);
+    setExternalEvents(next);
+  };
+  useEffect(() => {
+    void loadExternal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.userId, orgId, currentDate]);
+
+  const handleSyncCalendar = async () => {
+    if (!orgId || orgId.startsWith('local-')) {
+      toast.error('Calendar sync needs a real organization. Connect Supabase first.');
+      return;
+    }
+    setSyncingCal(true);
+    try {
+      const result = await syncGoogleCalendar(orgId, { pastDays: 30, futureDays: 60 });
+      toast.success(`Synced ${result.inserted} calendar event${result.inserted === 1 ? '' : 's'} from Google`);
+      await loadExternal();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncingCal(false);
+    }
+  };
+
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -167,6 +216,18 @@ export const Calendar: React.FC = () => {
     });
   };
 
+  // Google Calendar mirror events for one day. Handles both timed
+  // events (start_at) and all-day events (start_date YYYY-MM-DD).
+  const getExternalForDay = (day: number) => {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    const sameDay = (d: Date | null) => d
+      && d.getDate() === date.getDate()
+      && d.getMonth() === date.getMonth()
+      && d.getFullYear() === date.getFullYear();
+    const yyyymmdd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return externalEvents.filter((e) => sameDay(e.startAt) || e.startDate === yyyymmdd);
+  };
+
   const getProjectName = (projectId: string) => {
     const p = projects.find((x) => x.projectId === projectId);
     return p?.name || 'Unknown';
@@ -197,6 +258,7 @@ export const Calendar: React.FC = () => {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const dayTasks = getTasksForDay(day);
+      const dayExternal = getExternalForDay(day);
 
       days.push(
         <div
@@ -243,6 +305,30 @@ export const Calendar: React.FC = () => {
               )}
             </div>
           )}
+
+          {dayExternal.length > 0 && (
+            <div className="mt-1 space-y-0.5">
+              {dayExternal.slice(0, 2).map((ev) => (
+                <div
+                  key={ev.id}
+                  className="flex cursor-pointer items-center gap-1 truncate rounded-md border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-1 text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedExternal(ev);
+                  }}
+                  title={`${ev.summary}${ev.organizerName ? ` · invited by ${ev.organizerName}` : ''}`}
+                >
+                  <CalendarIcon className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{ev.summary}</span>
+                </div>
+              ))}
+              {dayExternal.length > 2 && (
+                <div className="px-1 text-[11px] text-muted-foreground">
+                  +{dayExternal.length - 2} Google
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }
@@ -262,14 +348,26 @@ export const Calendar: React.FC = () => {
               <p className="mt-1 text-muted-foreground">View tasks by due date</p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setCurrentDate(new Date())}
-            className="rounded-lg bg-background/80"
-          >
-            <CalendarIcon className="w-4 h-4 mr-2" />
-            Today
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleSyncCalendar}
+              disabled={syncingCal}
+              className="rounded-lg bg-background/80"
+              title="Pull events from your connected Google Calendar"
+            >
+              {syncingCal ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+              Sync Google Calendar
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setCurrentDate(new Date())}
+              className="rounded-lg bg-background/80"
+            >
+              <CalendarIcon className="w-4 h-4 mr-2" />
+              Today
+            </Button>
+          </div>
         </div>
         <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-border/60 bg-background/70 p-3">
@@ -360,6 +458,77 @@ export const Calendar: React.FC = () => {
             }}>
               View in Project
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* External calendar (Google Meet / invite) details */}
+      <AlertDialog open={!!selectedExternal} onOpenChange={(open) => !open && setSelectedExternal(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CalendarIcon className="w-4 h-4 text-emerald-600" />
+              {selectedExternal?.summary ?? '(no title)'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <div className="space-y-2 mt-2 text-sm">
+                {selectedExternal?.startAt && (
+                  <p><strong>When:</strong> {selectedExternal.startAt.toLocaleString()}
+                    {selectedExternal.endAt ? ` → ${selectedExternal.endAt.toLocaleTimeString()}` : ''}
+                  </p>
+                )}
+                {!selectedExternal?.startAt && selectedExternal?.startDate && (
+                  <p><strong>When:</strong> {new Date(selectedExternal.startDate).toLocaleDateString()} (all day)</p>
+                )}
+                {selectedExternal?.organizerName && (
+                  <p><strong>Organizer:</strong> {selectedExternal.organizerName}
+                    {selectedExternal.organizerEmail ? ` <${selectedExternal.organizerEmail}>` : ''}
+                  </p>
+                )}
+                {selectedExternal && selectedExternal.attendees.length > 0 && (
+                  <p>
+                    <strong>{selectedExternal.attendees.length} attendee{selectedExternal.attendees.length === 1 ? '' : 's'}:</strong>
+                    {' '}
+                    <span className="text-muted-foreground">
+                      {selectedExternal.attendees.slice(0, 5).map((a) => a.displayName || a.email).filter(Boolean).join(', ')}
+                      {selectedExternal.attendees.length > 5 ? `, +${selectedExternal.attendees.length - 5} more` : ''}
+                    </span>
+                  </p>
+                )}
+                {selectedExternal?.location && (
+                  <p><strong>Location:</strong> {selectedExternal.location}</p>
+                )}
+                {selectedExternal?.description && (
+                  <p className="whitespace-pre-wrap break-words"><strong>Notes:</strong> {selectedExternal.description}</p>
+                )}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {selectedExternal?.meetLink && (
+                    <a
+                      href={selectedExternal.meetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
+                    >
+                      <Video className="w-3.5 h-3.5" /> Join Meet
+                      <ExternalLink className="w-3 h-3 opacity-70" />
+                    </a>
+                  )}
+                  {selectedExternal?.htmlLink && (
+                    <a
+                      href={selectedExternal.htmlLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted/40"
+                    >
+                      Open in Google Calendar <ExternalLink className="w-3 h-3 opacity-70" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setSelectedExternal(null)}>Close</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
