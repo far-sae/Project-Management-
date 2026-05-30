@@ -84,6 +84,10 @@ export interface ClientNote {
   occurredAt: Date;
   authorId?: string | null;
   authorName?: string | null;
+  /** Google Meet link (kind='meeting' notes only). Populated by the
+   *  crm-create-meet edge function (migration 113). */
+  googleMeetLink?: string | null;
+  googleEventId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -331,6 +335,8 @@ const mapNote = (row: Record<string, unknown>): ClientNote => ({
   occurredAt: new Date(row.occurred_at as string),
   authorId: (row.author_id as string) ?? null,
   authorName: (row.author_name as string) ?? null,
+  googleMeetLink: (row.google_meet_link as string) ?? null,
+  googleEventId: (row.google_event_id as string) ?? null,
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
 });

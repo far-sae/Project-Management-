@@ -59,3 +59,48 @@ export async function createMeetForTask(
   }
   return res.json();
 }
+
+export type CrmMeetEntity = 'client_notes' | 'client_tasks' | 'deals';
+
+export interface CreateCrmMeetOptions extends CreateMeetOptions {
+  /** Calendar event summary override. Defaults to the entity's title /
+   *  subject column. */
+  summary?: string;
+  description?: string;
+}
+
+/**
+ * Attach a Meet link to a CRM entity (meeting note, follow-up task, or
+ * deal). Backed by the crm-create-meet edge function (migration 113 +
+ * `supabase functions deploy crm-create-meet`). Same auth + Google
+ * OAuth requirements as createMeetForTask — surfaces 412
+ * "google_not_connected" so the UI can prompt the rep to connect.
+ */
+export async function createMeetForCrm(
+  entityType: CrmMeetEntity,
+  entityId: string,
+  opts: CreateCrmMeetOptions = {},
+): Promise<CreateMeetResult> {
+  const res = await fetch(`${FUNCTIONS_URL}/crm-create-meet`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+    body: JSON.stringify({
+      entityType,
+      entityId,
+      durationMinutes: opts.durationMinutes,
+      startTime: opts.startTime?.toISOString(),
+      summary: opts.summary,
+      description: opts.description,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string; message?: string; status?: number };
+    // Surface the most common error (412 google_not_connected) with a
+    // useful message so the UI can prompt the rep to connect.
+    if (res.status === 412) {
+      throw new Error('Google account not connected. Go to Settings → Integrations and click Connect on Google Meet.');
+    }
+    throw new Error(body.message ?? body.error ?? `Meet creation failed: ${res.status}`);
+  }
+  return res.json();
+}

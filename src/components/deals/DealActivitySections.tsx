@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   MessageSquare, Phone, Mail, Calendar, ListTodo, Plus, Loader2,
-  CheckCircle2, Trash2, Send,
+  CheckCircle2, Trash2, Send, Video, ExternalLink,
 } from 'lucide-react';
+import { createMeetForCrm } from '@/services/integrations/googleMeet';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,7 +74,27 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [meetingBusyId, setMeetingBusyId] = useState<string | null>(null);
   const [emailFilter, setEmailFilter] = useState<'sent' | 'all'>('sent');
+
+  // Spin up a Google Meet link for an existing meeting note. Uses the
+  // note's occurred_at as the meeting time; if the note has no time set,
+  // backend returns a friendly error which we surface via toast.
+  const handleAddMeet = async (noteId: string) => {
+    setMeetingBusyId(noteId);
+    try {
+      const result = await createMeetForCrm('client_notes', noteId, { durationMinutes: 30 });
+      toast.success('Meet link created — refreshing.');
+      // Refresh so the new link shows up in the row.
+      await reload();
+      // Open the link immediately for convenience.
+      window.open(result.meetLink, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not create Meet link');
+    } finally {
+      setMeetingBusyId(null);
+    }
+  };
 
   const reload = async () => {
     if (!organizationId || !dealId) return;
@@ -170,6 +191,7 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
   const renderRow = (n: ClientNote) => {
     const meta = KIND_META[n.kind];
     const Icon = meta.icon;
+    const isMeeting = n.kind === 'meeting';
     return (
       <li key={n.noteId} className="flex items-start gap-2 py-2 border-b last:border-b-0">
         <Icon className={cn('w-4 h-4 mt-0.5 shrink-0', meta.tone)} />
@@ -182,18 +204,45 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
             {n.authorName && <span className="text-[11px] text-muted-foreground">· {n.authorName}</span>}
           </div>
           {n.body && <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words mt-0.5">{n.body}</p>}
+          {isMeeting && n.googleMeetLink && (
+            <a
+              href={n.googleMeetLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex items-center gap-1 text-[12px] text-emerald-600 hover:text-emerald-700 font-medium"
+            >
+              <Video className="w-3.5 h-3.5" /> Join Google Meet
+              <ExternalLink className="w-3 h-3 opacity-70" />
+            </a>
+          )}
         </div>
-        {canManage && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive shrink-0"
-            disabled={removingId === n.noteId}
-            onClick={() => handleDelete(n.noteId)}
-          >
-            {removingId === n.noteId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-          </Button>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {isMeeting && !n.googleMeetLink && canManage && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px]"
+              disabled={meetingBusyId === n.noteId}
+              onClick={() => handleAddMeet(n.noteId)}
+              title="Create a Google Meet link tied to this meeting time"
+            >
+              {meetingBusyId === n.noteId
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <><Video className="w-3 h-3 mr-1" />Add Meet</>}
+            </Button>
+          )}
+          {canManage && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              disabled={removingId === n.noteId}
+              onClick={() => handleDelete(n.noteId)}
+            >
+              {removingId === n.noteId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </Button>
+          )}
+        </div>
       </li>
     );
   };
