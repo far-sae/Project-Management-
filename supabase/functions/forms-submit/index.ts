@@ -187,9 +187,20 @@ const validate = (fields: FormField[], body: Record<string, unknown>) => {
   return { cleaned, errors };
 };
 
-Deno.serve(async (req) => {
+// Top-level wrapper so an uncaught throw doesn't become a naked
+// 500-with-no-body in the browser. We log the full reason to function
+// logs (visible in Supabase dashboard) and return a request-scoped id
+// the user can paste back so we can correlate. The message is included
+// in the response too — this is a public form, but the alternative is
+// "submission failed" with zero diagnostics for the operator.
+const handle = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    console.error("forms-submit: SUPABASE_URL or SERVICE_KEY missing from env");
+    return json({ error: "server_misconfigured", message: "SUPABASE_URL / SERVICE_ROLE_KEY env vars are not set on the function." }, 500);
+  }
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -337,4 +348,22 @@ Deno.serve(async (req) => {
     message: form.thank_you_message,
     redirect_url: form.redirect_url ?? null,
   });
+};
+
+Deno.serve(async (req) => {
+  try {
+    return await handle(req);
+  } catch (err) {
+    // Make uncaught throws visible. Crypto random for the id so two
+    // simultaneous submissions don't collide.
+    const errorId = crypto.randomUUID().slice(0, 8);
+    const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error(`forms-submit unhandled error [${errorId}]:`, message, stack);
+    return json({
+      error: "internal_error",
+      error_id: errorId,
+      message: `Submission failed: ${message}`,
+    }, 500);
+  }
 });
