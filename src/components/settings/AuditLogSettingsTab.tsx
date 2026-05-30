@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Loader2, ShieldCheck, RefreshCw, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { AuditEvent, listAuditEvents } from '@/services/supabase/auditLog';
+import { AuditEvent, AuditLogError, listAuditEvents } from '@/services/supabase/auditLog';
 
 const ACTION_FILTERS: { value: string; label: string }[] = [
   { value: 'all',                       label: 'All events' },
@@ -48,15 +48,33 @@ export const AuditLogSettingsTab: React.FC = () => {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionFilter, setActionFilter] = useState<string>('all');
+  // Tracks WHY the list is empty so the rep sees "Apply migration 095"
+  // or "Only admins can view" instead of the generic "No audit events
+  // yet" which used to render in both real-empty and broken cases.
+  const [loadError, setLoadError] = useState<
+    | { reason: 'local_org' | 'table_missing' | 'permission_denied' | 'network' | 'unknown'; message: string }
+    | null
+  >(null);
 
   const load = async () => {
     if (!orgId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const next = await listAuditEvents(orgId, {
         actionFilter: actionFilter === 'all' ? null : actionFilter,
       });
       setEvents(next);
+    } catch (err) {
+      setEvents([]);
+      if (err instanceof AuditLogError) {
+        setLoadError({ reason: err.reason, message: err.message });
+      } else {
+        setLoadError({
+          reason: 'unknown',
+          message: err instanceof Error ? err.message : 'Could not load audit events.',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -111,6 +129,27 @@ export const AuditLogSettingsTab: React.FC = () => {
         {loading && events.length === 0 ? (
           <div className="py-10 text-center text-sm text-muted-foreground inline-flex items-center gap-2 w-full justify-center">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading audit log…
+          </div>
+        ) : loadError ? (
+          <div className={
+            'rounded-md border p-3 text-sm flex items-start gap-2 '
+            + (loadError.reason === 'permission_denied'
+              ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+              : 'border-destructive/40 bg-destructive/10 text-destructive')
+          }>
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold">
+                {loadError.reason === 'table_missing'
+                  ? 'Audit log table missing'
+                  : loadError.reason === 'permission_denied'
+                    ? 'Permission denied'
+                    : loadError.reason === 'local_org'
+                      ? 'Audit log is Supabase-only'
+                      : "Couldn't load audit events"}
+              </p>
+              <p className="text-xs mt-0.5 break-words">{loadError.message}</p>
+            </div>
           </div>
         ) : grouped.length === 0 ? (
           <div className="py-10 text-center text-sm text-muted-foreground">

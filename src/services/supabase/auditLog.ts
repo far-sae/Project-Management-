@@ -85,6 +85,26 @@ export const recordAuditEvent = async (
   }
 };
 
+/**
+ * Specific error class so the AuditLogSettingsTab can distinguish "table
+ * missing" / "RLS denied" / "local org" / "real failure" and show the
+ * right hint to the operator instead of swallowing to an empty list.
+ */
+export class AuditLogError extends Error {
+  constructor(
+    message: string,
+    public readonly reason:
+      | "local_org"
+      | "table_missing"
+      | "permission_denied"
+      | "network"
+      | "unknown",
+  ) {
+    super(message);
+    this.name = "AuditLogError";
+  }
+}
+
 export const listAuditEvents = async (
   organizationId: string,
   opts: {
@@ -92,7 +112,12 @@ export const listAuditEvents = async (
     limit?: number;
   } = {},
 ): Promise<AuditEvent[]> => {
-  if (isLocalOrg(organizationId)) return [];
+  if (isLocalOrg(organizationId)) {
+    throw new AuditLogError(
+      "Audit log isn't recorded in local-only mode. Connect Supabase to start capturing events.",
+      "local_org",
+    );
+  }
   let q = supabase
     .from("security_audit_log")
     .select("*")
@@ -102,8 +127,29 @@ export const listAuditEvents = async (
   if (opts.actionFilter) q = q.eq("action", opts.actionFilter);
   const { data, error } = await q;
   if (error) {
-    logger.error("failed to load audit events:", error);
-    return [];
+    const e = error as { code?: string; message?: string; details?: string; hint?: string };
+    const code = String(e.code ?? "");
+    const msg = String(e.message ?? "");
+    const composed = [e.message, e.details, e.hint && `(hint: ${e.hint})`, code && `[${code}]`]
+      .filter(Boolean)
+      .join(" — ");
+    logger.error(`failed to load audit events: ${composed || "no reason"}`, error);
+
+    // 42P01 = undefined_table → migration 095 not applied.
+    if (code === "42P01" || /relation .* does not exist/i.test(msg)) {
+      throw new AuditLogError(
+        "The security_audit_log table doesn't exist. Apply migration 095 (`supabase db push`) to create it.",
+        "table_missing",
+      );
+    }
+    // 42501 = permission denied (likely RLS — only owners/admins can read).
+    if (code === "42501" || /row-level security|permission denied/i.test(msg)) {
+      throw new AuditLogError(
+        "Only owners and admins can view the audit log. Ask an owner to change your role if you need access.",
+        "permission_denied",
+      );
+    }
+    throw new AuditLogError(composed || "Couldn't load audit events.", "unknown");
   }
   return (data ?? []).map(mapEvent);
 };
