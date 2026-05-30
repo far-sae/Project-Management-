@@ -924,33 +924,67 @@ export const convertLead = async (
   //    flagged the old behaviour — silently swallow contact failures —
   //    because it lets the lead be marked converted with contactId=null
   //    even though the rep explicitly opted in.
+  //
+  //    Schema notes:
+  //    - full_name on client_contacts is a STORED generated column
+  //      (migration 041). Writing it raises 428C9 / 400. We let the DB
+  //      compute it from first_name + last_name and never include it.
+  //    - Same strip-and-retry pattern as the client insert above so the
+  //      contact lands even on a partially-migrated DB (e.g. missing
+  //      `mobile`).
   let contactId: string | null = null;
   if (input.createContact !== false) {
-    const { data: contactRow, error: contactErr } = await supabase
-      .from("client_contacts")
-      .insert({
-        client_id: clientId,
-        organization_id: organizationId,
-        first_name: lead.firstName,
-        last_name: lead.lastName,
-        full_name: [lead.firstName, lead.lastName].filter(Boolean).join(" ") || null,
-        title: lead.title,
-        email: lead.email,
-        phone: lead.phone,
-        mobile: lead.mobile,
-        is_primary: !input.existingClientId,
-        created_by: userId,
-      })
-      .select("contact_id")
-      .single();
-    if (contactErr) {
-      logger.error("convertLead: contact insert failed:", contactErr);
-      await rollback(null, null);
-      throw new Error(
-        `Couldn't create the contact (${contactErr.message ?? "unknown"}). Lead was not converted.`,
+    const contactPayload: Record<string, unknown> = {
+      client_id: clientId,
+      organization_id: organizationId,
+      first_name: lead.firstName,
+      last_name: lead.lastName,
+      title: lead.title,
+      email: lead.email,
+      phone: lead.phone,
+      mobile: lead.mobile,
+      is_primary: !input.existingClientId,
+      created_by: userId,
+    };
+    const strippedContactCols: string[] = [];
+    const stripContactCol = (err: unknown): string | null => {
+      const e = err as { code?: string; message?: string } | null;
+      if (!e || (e.code !== "42703" && e.code !== "428C9" && !/does not exist|generated/i.test(String(e.message ?? "")))) return null;
+      const m = /column "([^"]+)"/i.exec(String(e.message ?? ""));
+      const col = m?.[1];
+      if (!col || !(col in contactPayload)) return null;
+      delete contactPayload[col];
+      strippedContactCols.push(col);
+      return col;
+    };
+    const tryContactInsert = async () =>
+      supabase.from("client_contacts").insert(contactPayload).select("contact_id").single();
+
+    let cAttempt = await tryContactInsert();
+    for (let i = 0; i < 8 && cAttempt.error; i++) {
+      const stripped = stripContactCol(cAttempt.error);
+      if (!stripped) break;
+      cAttempt = await tryContactInsert();
+    }
+    if (strippedContactCols.length > 0) {
+      logger.warn(
+        `convertLead: dropped contact column(s) the DB doesn't know about: ${strippedContactCols.join(", ")}. `
+        + `Apply migration 102 (Zoho contact fields) to keep these values.`,
       );
     }
-    contactId = contactRow.contact_id as string;
+
+    if (cAttempt.error) {
+      const e = cAttempt.error as { code?: string; message?: string; details?: string; hint?: string };
+      const composed = [e.message, e.details, e.hint && `(hint: ${e.hint})`, e.code && `[${e.code}]`]
+        .filter(Boolean)
+        .join(" — ");
+      logger.error(`convertLead: contact insert failed: ${composed || "unknown reason"}`, cAttempt.error);
+      await rollback(null, null);
+      throw new Error(
+        `Couldn't create the contact: ${composed || "unknown error"}. Lead was not converted.`,
+      );
+    }
+    contactId = (cAttempt.data as { contact_id: string }).contact_id;
   }
 
   // 3. Optional deal creation. If the caller asked for one and it fails, we
