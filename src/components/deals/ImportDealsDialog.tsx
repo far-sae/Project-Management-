@@ -514,14 +514,31 @@ export const ImportDealsDialog: React.FC<Props> = ({
           {(phase === 'pick' || phase === 'preview') && (
             <>
               <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
-              {phase === 'preview' && (
-                <Button
-                  onClick={handleImport}
-                  disabled={!precheck || precheck.missingRequired.length > 0 || !workspaceName || accounts.length === 0}
-                >
-                  Import {parsed.length} row{parsed.length === 1 ? '' : 's'}
-                </Button>
-              )}
+              {phase === 'preview' && (() => {
+                // Why each gate exists — surface to the user so a greyed-out
+                // button is never a mystery. Previously accounts.length === 0
+                // disabled the button silently, which blocked anyone trying
+                // to import deals before adding a single Account. The
+                // importer doesn't actually need a matching account row to
+                // create a deal (it falls back to clientName from the CSV),
+                // so that gate is gone.
+                const disabledReasons: string[] = [];
+                if (!precheck) disabledReasons.push('No CSV parsed yet.');
+                if (precheck && precheck.missingRequired.length > 0) {
+                  disabledReasons.push(`Missing required column: ${precheck.missingRequired.join(', ')}.`);
+                }
+                if (!parsed.length) disabledReasons.push('CSV has no rows to import.');
+                const isDisabled = disabledReasons.length > 0;
+                return (
+                  <Button
+                    onClick={handleImport}
+                    disabled={isDisabled}
+                    title={isDisabled ? disabledReasons.join(' ') : undefined}
+                  >
+                    Import {parsed.length} row{parsed.length === 1 ? '' : 's'}
+                  </Button>
+                );
+              })()}
             </>
           )}
           {phase === 'imported' && (
