@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Calendar as CalendarComp } from '@/components/ui/calendar';
@@ -43,6 +43,20 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
   disabled = false,
 }) => {
   const [open, setOpen] = useState(false);
+  // Controlled month state so the next/previous chevrons actually
+  // change what's visible. Previously we relied on react-day-picker's
+  // internal month + passed autoFocus, which combined with Radix
+  // Popover's focus rules re-snapped the visible month back to the
+  // selected day on every render — so clicking > advanced one frame
+  // then immediately reverted, which is what "I can't move months"
+  // looked like.
+  const [viewMonth, setViewMonth] = useState<Date>(value ?? new Date());
+  // When the popover opens, jump back to the selected day's month so
+  // the user sees their current selection in context. Otherwise keep
+  // whatever month they were last browsing.
+  useEffect(() => {
+    if (open) setViewMonth(value ?? new Date());
+  }, [open, value]);
   const isOverdue =
     value && new Date(value).getTime() < new Date().setHours(0, 0, 0, 0);
 
@@ -100,7 +114,14 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-auto p-0 max-w-[280px]"
+        // Width auto-sizes to fit the 7-column calendar grid + nav
+        // arrows. The previous max-w-[280px] cap was too tight: the
+        // calendar measured ~268px and the nav row got pinched, so
+        // the chevron buttons sat over the month label and were hard
+        // to click reliably. Letting it grow to ~320px gives the
+        // arrows breathing room without affecting the inline picker
+        // it sits next to.
+        className="w-auto p-0 max-w-[340px]"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="grid grid-cols-2 gap-1 px-2 pt-2 pb-1">
@@ -148,7 +169,11 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
             onChange(d ?? null);
             setOpen(false);
           }}
-          autoFocus
+          // Controlled month: lets the < / > chevrons advance freely
+          // without react-day-picker snapping back to the selected
+          // day's month on every re-render.
+          month={viewMonth}
+          onMonthChange={setViewMonth}
         />
       </PopoverContent>
     </Popover>
