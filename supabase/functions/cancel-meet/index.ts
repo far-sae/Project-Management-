@@ -69,25 +69,56 @@ Deno.serve(async (req) => {
   const admin = auth.supabase;
   const userId = auth.userId;
 
-  // 1. Load entity (pk + org + the two meet columns).
-  const { data: row, error: rowErr } = await admin
-    .from(cfg.table)
-    .select(`${cfg.pk}, organization_id, google_meet_link, google_event_id`)
-    .eq(cfg.pk, entityId)
-    .maybeSingle();
-  if (rowErr) return json({ error: rowErr.message }, 500);
+  // 1. Load entity (pk + org + the two meet columns). google_event_id
+  //    is only on tables that received migration 057 / 113 — on a
+  //    partially-migrated DB the SELECT 42703s and the whole cancel
+  //    bails. Fall back to selecting only the always-present columns;
+  //    in that case we can still null google_meet_link (which the row
+  //    must have, since the user clicked Cancel on a visible link),
+  //    we just can't call the Calendar API to delete the event.
+  let row: Record<string, unknown> | null = null;
+  let eventIdAvailable = true;
+  {
+    const { data, error } = await admin
+      .from(cfg.table)
+      .select(`${cfg.pk}, organization_id, google_meet_link, google_event_id`)
+      .eq(cfg.pk, entityId)
+      .maybeSingle();
+    if (error) {
+      const code = (error as { code?: string }).code ?? "";
+      const msg = (error as { message?: string }).message ?? "";
+      if (code === "42703" || /does not exist/i.test(msg)) {
+        eventIdAvailable = false;
+        const fallback = await admin
+          .from(cfg.table)
+          .select(`${cfg.pk}, organization_id, google_meet_link`)
+          .eq(cfg.pk, entityId)
+          .maybeSingle();
+        if (fallback.error) return json({ error: fallback.error.message }, 500);
+        row = fallback.data as Record<string, unknown> | null;
+      } else {
+        return json({ error: msg || "row_lookup_failed" }, 500);
+      }
+    } else {
+      row = data as Record<string, unknown> | null;
+    }
+  }
   if (!row) return json({ error: `${entityType}_not_found` }, 404);
 
   // 2. Org membership check — same pattern as crm-create-meet.
+  const orgId = row.organization_id as string;
+  const meetLink = row.google_meet_link as string | null;
+  const eventId = eventIdAvailable ? (row.google_event_id as string | null) : null;
+
   const { data: isMember, error: memErr } = await admin.rpc("is_org_member_for", {
-    p_user_id: userId, p_org_id: row.organization_id,
+    p_user_id: userId, p_org_id: orgId,
   });
   if (memErr || isMember !== true) return json({ error: "forbidden" }, 403);
 
   // 3. Nothing attached → still success (idempotent — the user clicked
   //    Cancel on a row whose link was already cleared). Avoids confusing
   //    "nothing to cancel" errors when two tabs race.
-  if (!row.google_meet_link && !row.google_event_id) {
+  if (!meetLink && !eventId) {
     return json({ ok: true, cleared: false, note: "no_meet_attached" });
   }
 
@@ -98,12 +129,12 @@ Deno.serve(async (req) => {
   let calendarDeleted: boolean | "skipped" = "skipped";
   let calendarDetail: string | undefined;
 
-  if (row.google_event_id) {
+  if (eventId) {
     try {
       const { accessToken } = await getProviderTokens(admin, userId, "google");
-      const eventId = encodeURIComponent(row.google_event_id);
+      const encoded = encodeURIComponent(eventId);
       const res = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`,
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encoded}`,
         { method: "DELETE", headers: { authorization: `Bearer ${accessToken}` } },
       );
       // 204 = deleted, 404/410 = already gone (treat as success).
@@ -120,17 +151,23 @@ Deno.serve(async (req) => {
       calendarDeleted = "skipped";
       calendarDetail = (err as Error).message;
     }
+  } else if (!eventIdAvailable) {
+    calendarDetail = "google_event_id column not on this table — apply migration 057 (tasks) or 113 (CRM) to enable Calendar-side cancel";
   }
 
   // 5. Null the row columns. This is the load-bearing bit — even if the
   //    Calendar delete failed, clearing the link makes the UI consistent.
+  //    Only include google_event_id in the UPDATE if the column exists,
+  //    otherwise PostgREST 42703s on the unknown column.
+  const updatePayload: Record<string, unknown> = {
+    google_meet_link: null,
+    updated_at: new Date().toISOString(),
+  };
+  if (eventIdAvailable) updatePayload.google_event_id = null;
+
   const { error: updateErr } = await admin
     .from(cfg.table)
-    .update({
-      google_meet_link: null,
-      google_event_id: null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq(cfg.pk, entityId);
 
   if (updateErr) return json({ error: updateErr.message }, 500);

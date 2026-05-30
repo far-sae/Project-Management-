@@ -137,6 +137,14 @@ export async function cancelMeetForEntity(
     body: JSON.stringify({ entityType, entityId }),
   });
   if (!res.ok) {
+    // The most common failure mode is "function not deployed yet" → 404
+    // from the Supabase gateway. Spell that out so the user knows the
+    // exact command to run instead of seeing a generic "404".
+    if (res.status === 404) {
+      throw new Error(
+        'cancel-meet edge function is not deployed. Run: npx supabase functions deploy cancel-meet',
+      );
+    }
     const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
     throw new Error(body.message ?? body.error ?? `Meet cancel failed: ${res.status}`);
   }

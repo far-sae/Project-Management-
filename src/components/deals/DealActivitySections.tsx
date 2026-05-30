@@ -5,6 +5,7 @@ import {
   CheckCircle2, Trash2, Send, Video, VideoOff, ExternalLink,
 } from 'lucide-react';
 import { cancelMeetForCrm, createMeetForCrm } from '@/services/integrations/googleMeet';
+import { DayPickerPopover } from '@/components/kanban/DayPickerPopover';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,16 +76,45 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
   const [busy, setBusy] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [meetingBusyId, setMeetingBusyId] = useState<string | null>(null);
+  // Per-note picked meeting date+time. When set, this overrides the
+  // note's occurred_at as the Meet's start time and is persisted back
+  // to occurred_at by the edge function. When null/empty, Add Meet
+  // falls back to the note's existing occurred_at. Keyed by noteId so
+  // multiple meeting notes can have independent pickers open.
+  const [meetingDateById, setMeetingDateById] = useState<Record<string, Date | null>>({});
+  const [meetingTimeById, setMeetingTimeById] = useState<Record<string, string>>({});
+  const [pickerOpenId, setPickerOpenId] = useState<string | null>(null);
   const [emailFilter, setEmailFilter] = useState<'sent' | 'all'>('sent');
 
-  // Spin up a Google Meet link for an existing meeting note. Uses the
-  // note's occurred_at as the meeting time; if the note has no time set,
-  // backend returns a friendly error which we surface via toast.
+  // Spin up a Google Meet link for an existing meeting note. If the
+  // user picked a date+time in the inline picker, that wins and is
+  // persisted back to occurred_at by the edge function. Otherwise we
+  // fall back to the note's existing occurred_at (which is what the
+  // backend does when no startTime is sent).
   const handleAddMeet = async (noteId: string) => {
     setMeetingBusyId(noteId);
     try {
-      const result = await createMeetForCrm('client_notes', noteId, { durationMinutes: 30 });
-      toast.success('Meet link created — refreshing.');
+      const pickedDate = meetingDateById[noteId] ?? null;
+      const pickedTime = meetingTimeById[noteId] ?? '';
+      let startTime: Date | undefined;
+      if (pickedDate) {
+        const [hh, mm] = (pickedTime || '10:00').split(':').map((n) => Number(n) || 0);
+        const composed = new Date(pickedDate);
+        composed.setHours(hh, mm, 0, 0);
+        startTime = composed;
+      }
+      const result = await createMeetForCrm('client_notes', noteId, {
+        durationMinutes: 30,
+        ...(startTime ? { startTime } : {}),
+      });
+      toast.success(
+        startTime
+          ? `Meet scheduled for ${startTime.toLocaleString()}.`
+          : 'Meet link created — refreshing.',
+      );
+      // Clear the inline picker once successfully used.
+      setPickerOpenId(null);
+      setMeetingDateById((m) => ({ ...m, [noteId]: null }));
       // Refresh so the new link shows up in the row.
       await reload();
       // Open the link immediately for convenience.
@@ -236,20 +266,71 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
               <ExternalLink className="w-3 h-3 opacity-70" />
             </a>
           )}
+          {isMeeting && !n.googleMeetLink && canManage && pickerOpenId === n.noteId && (
+            // Inline scheduler — picks the Meet's date/time independently
+            // of the note's occurred_at. The picked time is persisted back
+            // to occurred_at by the edge function so the note row stays in
+            // sync with the actual meeting time.
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 p-2">
+              <span className="text-[11px] text-muted-foreground">Schedule for</span>
+              <DayPickerPopover
+                value={meetingDateById[n.noteId] ?? null}
+                onChange={(d) => setMeetingDateById((m) => ({ ...m, [n.noteId]: d }))}
+              />
+              <span className="text-[11px] text-muted-foreground">at</span>
+              <Input
+                type="time"
+                value={meetingTimeById[n.noteId] ?? '10:00'}
+                onChange={(e) => setMeetingTimeById((m) => ({ ...m, [n.noteId]: e.target.value }))}
+                className="h-7 w-24 text-xs"
+              />
+              <Button
+                size="sm"
+                className="h-7 text-[11px]"
+                disabled={meetingBusyId === n.noteId || !meetingDateById[n.noteId]}
+                onClick={() => handleAddMeet(n.noteId)}
+              >
+                {meetingBusyId === n.noteId
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <><Video className="w-3 h-3 mr-1" />Schedule Meet</>}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-[11px]"
+                onClick={() => setPickerOpenId(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {isMeeting && !n.googleMeetLink && canManage && (
+          {isMeeting && !n.googleMeetLink && canManage && pickerOpenId !== n.noteId && (
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-[11px]"
-              disabled={meetingBusyId === n.noteId}
-              onClick={() => handleAddMeet(n.noteId)}
-              title="Create a Google Meet link tied to this meeting time"
+              onClick={() => {
+                // Open the inline picker so the rep can choose a different
+                // date/time than the note's occurred_at before scheduling.
+                setPickerOpenId(n.noteId);
+                if (!meetingDateById[n.noteId]) {
+                  setMeetingDateById((m) => ({
+                    ...m,
+                    [n.noteId]: n.occurredAt instanceof Date ? n.occurredAt : new Date(n.occurredAt),
+                  }));
+                }
+                if (!meetingTimeById[n.noteId]) {
+                  const seed = n.occurredAt instanceof Date ? n.occurredAt : new Date(n.occurredAt);
+                  const hh = String(seed.getHours()).padStart(2, '0');
+                  const mm = String(seed.getMinutes()).padStart(2, '0');
+                  setMeetingTimeById((m) => ({ ...m, [n.noteId]: `${hh}:${mm}` }));
+                }
+              }}
+              title="Schedule a Google Meet (pick any date/time, not tied to the note's date)"
             >
-              {meetingBusyId === n.noteId
-                ? <Loader2 className="w-3 h-3 animate-spin" />
-                : <><Video className="w-3 h-3 mr-1" />Add Meet</>}
+              <Video className="w-3 h-3 mr-1" />Add Meet
             </Button>
           )}
           {isMeeting && n.googleMeetLink && canManage && (
