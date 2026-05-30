@@ -135,7 +135,18 @@ export const CrmHomeDashboard: React.FC<CrmHomeDashboardProps> = ({
       const raw = localStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed as Widget[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // De-dupe by widget type on load so any historical layout with
+          // accidental duplicates (e.g. two "Today's New Accounts") collapses
+          // to a single instance on next render.
+          const seen = new Set<string>();
+          const unique = (parsed as Widget[]).filter((w) => {
+            if (!w?.type || seen.has(w.type)) return false;
+            seen.add(w.type);
+            return true;
+          });
+          if (unique.length > 0) return unique;
+        }
       }
     } catch { /* ignore */ }
     return DEFAULT_WIDGETS;
@@ -256,6 +267,7 @@ export const CrmHomeDashboard: React.FC<CrmHomeDashboardProps> = ({
                 displayCurrency={displayCurrency}
                 onOpenAccount={onOpenAccount}
                 onOpenDeal={onOpenDeal}
+                onGoToTab={onGoToTab}
               />
             </WidgetFrame>
           ))}
@@ -343,6 +355,9 @@ interface BodyProps {
   displayCurrency: string;
   onOpenAccount: (c: Client) => void;
   onOpenDeal: (d: Deal) => void;
+  /** Lets empty states offer a one-click jump to the relevant tab so the
+   *  rep can create the missing data without hunting for it. */
+  onGoToTab: (tab: 'accounts' | 'pipeline' | 'tasks' | 'forecast') => void;
 }
 
 const WidgetBody: React.FC<BodyProps> = (props) => {
@@ -357,13 +372,24 @@ const WidgetBody: React.FC<BodyProps> = (props) => {
   }
 };
 
-const EmptyHint: React.FC<{ message: string }> = ({ message }) => (
-  <div className="h-full grid place-items-center text-center">
+const EmptyHint: React.FC<{
+  message: string;
+  /** Optional action — when supplied, the empty state offers a one-click
+   *  way to fill the widget (e.g. "Add a task" → opens the Tasks tab). */
+  actionLabel?: string;
+  onAction?: () => void;
+}> = ({ message, actionLabel, onAction }) => (
+  <div className="h-full grid place-items-center text-center gap-2">
     <p className="text-sm text-muted-foreground">{message}</p>
+    {actionLabel && onAction && (
+      <Button size="sm" variant="outline" onClick={onAction}>
+        {actionLabel}
+      </Button>
+    )}
   </div>
 );
 
-const OpenTasksBody: React.FC<BodyProps> = ({ workspaceClientIds, clients }) => {
+const OpenTasksBody: React.FC<BodyProps> = ({ workspaceClientIds, clients, onGoToTab }) => {
   const { tasks, loading } = useClientTasks();
   const visible = useMemo(() => {
     const inWs = workspaceClientIds
@@ -372,7 +398,15 @@ const OpenTasksBody: React.FC<BodyProps> = ({ workspaceClientIds, clients }) => 
     return inWs.filter((t) => t.status === 'pending').slice(0, 10);
   }, [tasks, workspaceClientIds]);
   if (loading) return <Loading />;
-  if (visible.length === 0) return <EmptyHint message={CATALOG.open_tasks.emptyHint} />;
+  if (visible.length === 0) {
+    return (
+      <EmptyHint
+        message={CATALOG.open_tasks.emptyHint}
+        actionLabel="Open Tasks tab"
+        onAction={() => onGoToTab('tasks')}
+      />
+    );
+  }
   return (
     <ul className="space-y-1">
       {visible.map((t) => {
@@ -427,12 +461,24 @@ const ThisWeekTasksBody: React.FC<BodyProps> = ({ workspaceClientIds, clients })
   );
 };
 
-const TodaysNewAccountsBody: React.FC<BodyProps> = ({ clients, onOpenAccount }) => {
+const TodaysNewAccountsBody: React.FC<BodyProps> = ({ clients, onOpenAccount, onGoToTab }) => {
   const visible = useMemo(
     () => clients.filter((c) => isToday(c.createdAt)).slice(0, 10),
     [clients],
   );
-  if (visible.length === 0) return <EmptyHint message={CATALOG.todays_new_accounts.emptyHint} />;
+  if (visible.length === 0) {
+    return (
+      <EmptyHint
+        message={
+          clients.length > 0
+            ? `No accounts added today. You have ${clients.length} in total — switch this widget to "Recent Accounts" for the full list.`
+            : CATALOG.todays_new_accounts.emptyHint
+        }
+        actionLabel={clients.length > 0 ? 'Open Accounts tab' : 'Add an account'}
+        onAction={() => onGoToTab('accounts')}
+      />
+    );
+  }
   return (
     <ul className="space-y-1">
       {visible.map((c) => (
@@ -503,7 +549,7 @@ const TopAccountsBody: React.FC<BodyProps> = ({ clients, onOpenAccount }) => {
 };
 
 const ClosingThisMonthBody: React.FC<BodyProps> = ({
-  deals, workspaceClientIds, displayCurrency, onOpenDeal,
+  deals, workspaceClientIds, displayCurrency, onOpenDeal, onGoToTab,
 }) => {
   const visible = useMemo(() => {
     const start = startOfMonth(new Date());
@@ -521,7 +567,19 @@ const ClosingThisMonthBody: React.FC<BodyProps> = ({
       .slice(0, 10);
   }, [deals, workspaceClientIds]);
 
-  if (visible.length === 0) return <EmptyHint message={CATALOG.closing_this_month.emptyHint} />;
+  if (visible.length === 0) {
+    return (
+      <EmptyHint
+        message={
+          deals.length > 0
+            ? `No deals closing this month. You have ${deals.length} open — check the Pipeline tab.`
+            : CATALOG.closing_this_month.emptyHint
+        }
+        actionLabel="Open Pipeline"
+        onAction={() => onGoToTab('pipeline')}
+      />
+    );
+  }
 
   const total = visible.reduce((s, d) => s + d.value, 0);
   return (
@@ -608,10 +666,20 @@ const AddComponentDialog: React.FC<{
   const [type, setType] = useState<WidgetType>('open_tasks');
   const [name, setName] = useState('');
 
-  const choicesForModule = useMemo(
-    () => Object.values(CATALOG).filter((c) => c.module === module),
-    [module],
+  // Hide widget types already on the dashboard. Without this, reps would
+  // double-add the same widget (e.g. two "Today's New Accounts" tiles) and
+  // the duplicate would silently shadow the original.
+  const existingTypes = useMemo(
+    () => new Set(existing.map((w) => w.type)),
+    [existing],
   );
+  const choicesForModule = useMemo(
+    () => Object.values(CATALOG).filter(
+      (c) => c.module === module && !existingTypes.has(c.type),
+    ),
+    [module, existingTypes],
+  );
+  const noFreeChoices = choicesForModule.length === 0;
 
   useEffect(() => {
     if (!open) return;
@@ -666,6 +734,11 @@ const AddComponentDialog: React.FC<{
                 {choicesForModule.map((c) => (
                   <SelectItem key={c.type} value={c.type}>{c.defaultName}</SelectItem>
                 ))}
+                {noFreeChoices && (
+                  <SelectItem value="__none__" disabled>
+                    Every {module} widget is already on your home
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -673,15 +746,15 @@ const AddComponentDialog: React.FC<{
             <Label className="text-xs">Component Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
           </div>
-          {existing.some((w) => w.type === type) && (
+          {noFreeChoices && (
             <p className="text-[11px] text-amber-600 dark:text-amber-400">
-              A widget of this type is already on your home — adding will create a second copy.
+              All {module} widgets are already on your dashboard. Pick a different module.
             </p>
           )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave} disabled={noFreeChoices}>Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
