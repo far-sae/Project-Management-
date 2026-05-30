@@ -340,10 +340,17 @@ export const AutomationsSettingsTab: React.FC = () => {
                     key={template.title}
                     type="button"
                     onClick={() => openTemplateBuilder(template.draft)}
-                    className="rounded-lg border bg-background p-3 text-left hover:border-primary/50 hover:bg-muted/40 transition-colors"
+                    disabled={!canManage}
+                    className="group rounded-lg border bg-background p-3 text-left hover:border-primary/60 hover:bg-primary/5 hover:shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={canManage ? 'Click to set up this automation' : 'Only admins can create automations'}
                   >
-                    <Icon className="w-4 h-4 text-primary mb-2" />
-                    <p className="text-sm font-medium">{template.title}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <Icon className="w-4 h-4 text-primary" />
+                      <span className="text-[10px] text-muted-foreground group-hover:text-primary font-medium uppercase tracking-wide">
+                        Use template →
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium mt-2">{template.title}</p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {template.description}
                     </p>

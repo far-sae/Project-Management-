@@ -315,7 +315,11 @@ export const upsertRecipe = async (
   draft: RecipeDraft,
 ): Promise<Recipe> => {
   validateRecipeDraft(draft);
-  const { data, error } = await supabase.rpc("crm_upsert_recipe", {
+
+  // Primary path: the security-definer RPC. Handles auth + org check
+  // server-side so members can save without tripping the admin-only RLS
+  // on automation_recipes.
+  let { data, error } = await supabase.rpc("crm_upsert_recipe", {
     p_recipe_id: recipeId,
     p_organization_id: organizationId,
     p_name: draft.name,
@@ -327,7 +331,60 @@ export const upsertRecipe = async (
     p_enabled: draft.enabled,
     p_send_window: draft.sendWindow ?? null,
   }).single();
-  if (error) throw error;
+
+  // Fallback: if the RPC isn't deployed (PGRST202 / 42883) or returns a
+  // PostgREST 400-class signature drift, try a direct upsert. RLS still
+  // applies — admins can pass, members can't — so security isn't bypassed.
+  if (error) {
+    const e = error as { code?: string; message?: string };
+    const code = String(e.code ?? "");
+    const isMissingRpc = code === "PGRST202" || code === "42883";
+    const isRpcDrift = code.startsWith("PGRST") || code === "22P02";
+    if (isMissingRpc || isRpcDrift) {
+      const composed = `${e.message ?? "unknown"} [${code || "unknown"}]`;
+      logger.warn(
+        `crm_upsert_recipe RPC failed (${composed}) — falling back to direct upsert. `
+        + `Apply migration 065 if the function is genuinely missing.`,
+      );
+      const payload: Record<string, unknown> = {
+        organization_id: organizationId,
+        name: draft.name,
+        description: draft.description ?? null,
+        trigger_type: draft.trigger.type,
+        trigger_config: draft.trigger.config,
+        conditions: draft.conditions,
+        actions: draft.actions,
+        enabled: draft.enabled,
+        send_window: draft.sendWindow ?? null,
+      };
+      if (recipeId) (payload as Record<string, unknown>).recipe_id = recipeId;
+      const direct = recipeId
+        ? await supabase.from("automation_recipes")
+            .update(payload)
+            .eq("recipe_id", recipeId)
+            .eq("organization_id", organizationId)
+            .select()
+            .single()
+        : await supabase.from("automation_recipes")
+            .insert(payload)
+            .select()
+            .single();
+      data = direct.data;
+      error = direct.error;
+    }
+  }
+
+  if (error) {
+    const e = error as { code?: string; message?: string; details?: string; hint?: string };
+    const composed = [e.message, e.details, e.hint && `(hint: ${e.hint})`, e.code && `[${e.code}]`]
+      .filter(Boolean)
+      .join(" — ");
+    logger.error(`upsertRecipe failed: ${composed || "no reason returned"}`, error);
+    throw new Error(
+      composed
+        || "Failed to save the automation. Make sure migration 065 is applied (crm_upsert_recipe RPC) and your role is admin/owner.",
+    );
+  }
   void kickAutomationWorker({ force: true });
   notifyRecipesChanged(organizationId);
   return mapRecipe(data as Record<string, unknown>);
