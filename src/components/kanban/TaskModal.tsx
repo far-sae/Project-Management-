@@ -144,13 +144,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
-  // Google Meet — checkbox + meeting-time picker.
-  // The DayPickerPopover only sets a calendar day; we keep meetingTime
-  // separately as an "HH:MM" string and combine the two when handing the
-  // start to the Meet edge function.
+  // Google Meet — checkbox + independent meeting date/time picker.
+  // The Meet schedule used to require the task's dueDate, which made
+  // reps think they had to set a deadline just to spin up a meeting.
+  // meetingDate is now a separate state that defaults to dueDate when
+  // dueDate is set, otherwise to "tomorrow" so the rep can schedule a
+  // meeting on any day independent of when the task is due.
   const [addGoogleMeet, setAddGoogleMeet] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [meetingTime, setMeetingTime] = useState<string>('10:00');
+  const [meetingDate, setMeetingDate] = useState<Date | null>(null);
 
   const [aiLoading, setAiLoading] = useState<{ description?: boolean; suggestions?: boolean }>({});
   const [aiError, setAiError] = useState<string | null>(null);
@@ -287,11 +290,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setSubtasks(task.subtasks?.length ? task.subtasks : []);
       // Seed meetingTime from the task's saved due_date time (if non-midnight),
       // otherwise leave the default '10:00' so the picker still feels useful.
+      // Seed meetingDate from the due_date too so the rep doesn't have to
+      // re-pick a day if the task already has one — but they can still
+      // change it independently after.
       if (task.dueDate) {
         const d = new Date(task.dueDate);
         if (d.getHours() !== 0 || d.getMinutes() !== 0) {
           setMeetingTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
         }
+        setMeetingDate(d);
+      } else {
+        setMeetingDate(null);
       }
     } else {
       setTitle('');
@@ -307,6 +316,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setSubtasks([]);
       setAddGoogleMeet(false);
       setMeetingTime('10:00');
+      setMeetingDate(null);
     }
     setAiError(null);
     setSaveError(null);
@@ -346,19 +356,29 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return () => { cancelled = true; };
   }, [open]);
 
-  // Combine the user-picked calendar day (dueDate) and the meeting time
-  // (HH:MM) into a single Date. Returns null if either piece is missing.
+  // Combine the picked meeting day + time into a single Date. The
+  // meeting day is independent of the task's dueDate (reps wanted to
+  // schedule a meet without first setting a deadline). Resolution
+  // order: meetingDate → dueDate → tomorrow.
+  const effectiveMeetingDate = React.useMemo<Date>(() => {
+    if (meetingDate) return meetingDate;
+    if (dueDate) return dueDate;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    return tomorrow;
+  }, [meetingDate, dueDate]);
+
   const combinedMeetingStart = React.useMemo<Date | null>(() => {
-    if (!dueDate) return null;
     const match = /^(\d{1,2}):(\d{2})$/.exec(meetingTime.trim());
     if (!match) return null;
     const h = Number(match[1]);
     const m = Number(match[2]);
     if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-    const combined = new Date(dueDate);
+    const combined = new Date(effectiveMeetingDate);
     combined.setHours(h, m, 0, 0);
     return combined;
-  }, [dueDate, meetingTime]);
+  }, [effectiveMeetingDate, meetingTime]);
 
   const [meetAddInFlight, setMeetAddInFlight] = useState(false);
   const handleAddMeetToExisting = async () => {
@@ -2147,23 +2167,46 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <>
                   <label
                     className={`mt-2 flex items-center gap-2 text-sm cursor-pointer select-none ${
-                      dueDate ? '' : 'opacity-50 cursor-not-allowed'
+                      ''
                     }`}
-                    title={dueDate ? '' : 'Set a due date to enable Google Meet'}
+                    title="Schedule a Google Meet — pick any day, not tied to the due date"
                   >
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-input"
-                      checked={addGoogleMeet && Boolean(dueDate)}
-                      disabled={!dueDate || readOnlyTask}
-                      onChange={(e) => setAddGoogleMeet(e.target.checked)}
+                      checked={addGoogleMeet}
+                      disabled={readOnlyTask}
+                      onChange={(e) => {
+                        setAddGoogleMeet(e.target.checked);
+                        // When the rep first checks "Add Meet" and they
+                        // haven't picked a meeting day yet, default it to
+                        // the due date (if any) so the existing flow keeps
+                        // working without a click. Else default to tomorrow
+                        // so they can adjust.
+                        if (e.target.checked && !meetingDate) {
+                          if (dueDate) {
+                            setMeetingDate(dueDate);
+                          } else {
+                            const tomorrow = new Date();
+                            tomorrow.setDate(tomorrow.getDate() + 1);
+                            tomorrow.setHours(0, 0, 0, 0);
+                            setMeetingDate(tomorrow);
+                          }
+                        }
+                      }}
                     />
                     <Video className="h-4 w-4 text-emerald-600" />
                     <span>Add Google Meet link</span>
                   </label>
-                  {addGoogleMeet && dueDate && (
-                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>Meeting time:</span>
+                  {addGoogleMeet && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>Meeting on:</span>
+                      <DayPickerPopover
+                        value={meetingDate ?? effectiveMeetingDate}
+                        onChange={(d) => setMeetingDate(d)}
+                        disabled={readOnlyTask}
+                      />
+                      <span>at</span>
                       <Input
                         type="time"
                         value={meetingTime}
@@ -2171,7 +2214,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         className="h-8 w-28"
                         disabled={readOnlyTask}
                       />
-                      <span className="text-[11px]">on {dueDate.toLocaleDateString()}</span>
+                      {dueDate && meetingDate && meetingDate.toDateString() !== dueDate.toDateString() && (
+                        <span className="text-[11px] text-amber-600">
+                          (different from the {dueDate.toLocaleDateString()} due date)
+                        </span>
+                      )}
                     </div>
                   )}
                 </>
@@ -2208,26 +2255,28 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
               {isEditing && !task?.googleMeetLink && googleConnected && !readOnlyTask && (
                 <div className="mt-2 space-y-2">
-                  {dueDate && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>Meeting time:</span>
-                      <Input
-                        type="time"
-                        value={meetingTime}
-                        onChange={(e) => setMeetingTime(e.target.value)}
-                        className="h-8 w-28"
-                      />
-                      <span className="text-[11px]">on {dueDate.toLocaleDateString()}</span>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>Meeting on:</span>
+                    <DayPickerPopover
+                      value={meetingDate ?? effectiveMeetingDate}
+                      onChange={(d) => setMeetingDate(d)}
+                    />
+                    <span>at</span>
+                    <Input
+                      type="time"
+                      value={meetingTime}
+                      onChange={(e) => setMeetingTime(e.target.value)}
+                      className="h-8 w-28"
+                    />
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-8 gap-2"
                     onClick={handleAddMeetToExisting}
-                    disabled={!dueDate || meetAddInFlight}
-                    title={dueDate ? '' : 'Set a due date first'}
+                    disabled={!combinedMeetingStart || meetAddInFlight}
+                    title={combinedMeetingStart ? 'Schedule a Google Meet for this task' : 'Pick a meeting time first'}
                   >
                     {meetAddInFlight ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
