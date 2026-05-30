@@ -61,3 +61,18 @@ verify_jwt = false
 
 [functions.gmail-inbound]
 verify_jwt = false
+
+# OAuth + integrations endpoints called without a Supabase JWT:
+#  - oauth-callback: reached by Google/Slack redirect after consent. No
+#    Authorization header — function authenticates via HMAC-signed `state` param.
+#  - integrations-webhook: provider-initiated POSTs. Function verifies signature
+#    headers (Slack/Google etc.) before acting.
+# Without verify_jwt=false here the Supabase gateway 401s with
+# UNAUTHORIZED_NO_AUTH_HEADER before the function code runs, which manifests
+# in the browser as "{"code":"UNAUTHORIZED_NO_AUTH_HEADER",
+# "message":"Missing authorization header"}" right after Gmail/Google connect.
+[functions.oauth-callback]
+verify_jwt = false
+
+[functions.integrations-webhook]
+verify_jwt = false
