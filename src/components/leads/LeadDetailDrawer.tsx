@@ -4,7 +4,7 @@ import {
   X, Edit, Trash2, Loader2, Mail,
   User as UserIcon, MoreVertical, ChevronDown, ChevronUp,
   Copy, Printer, FileSearch, RefreshCw, Repeat, FileText, Paperclip,
-  CheckCircle2, Briefcase,
+  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ import {
 } from '@/services/supabase/leads';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
 
 interface Props {
   lead: Lead | null;
@@ -371,34 +372,45 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               />
             </div>
 
-            {/* Placeholders for related sections (parity with Zoho's layout). */}
+            {/* Attachments — file upload UI isn't wired yet; honest empty
+                state instead of a misleading "No attachments yet". */}
             <div id="lead-attachments-section">
               <RelatedPlaceholder
                 icon={Paperclip}
                 title="Attachments"
-                empty="No Attachment"
+                empty="File attachments aren't enabled on lead records yet."
               />
             </div>
+            {/* Activities — real sections now, wired to client_tasks /
+                meetings / calls. Quick-create buttons open the dialogs
+                we already ship for the Activities hub. */}
             <div id="lead-open-activities-section">
-              <RelatedPlaceholder
-                icon={Briefcase}
-                title="Open Activities"
-                empty="No records found"
-                ctas={['Task', 'Meeting', 'Call']}
+              <EntityActivitiesSection
+                entityKind="lead"
+                entityName={leadDisplayName(lead)}
+                entityId={lead.leadId}
+                clientId={lead.convertedToClientId ?? null}
+                dealId={lead.convertedToDealId ?? null}
+                mode="open"
+                readOnly={isConverted || !canManage}
               />
             </div>
             <div id="lead-closed-activities-section">
-              <RelatedPlaceholder
-                icon={CheckCircle2}
-                title="Closed Activities"
-                empty="No records found"
+              <EntityActivitiesSection
+                entityKind="lead"
+                entityName={leadDisplayName(lead)}
+                entityId={lead.leadId}
+                clientId={lead.convertedToClientId ?? null}
+                dealId={lead.convertedToDealId ?? null}
+                mode="closed"
+                readOnly
               />
             </div>
             <div id="lead-emails-section">
               <RelatedPlaceholder
                 icon={Mail}
                 title="Emails"
-                empty="No records found"
+                empty="Use Send Email above to email this lead. A per-lead email log will appear here in a future build."
               />
             </div>
           </section>
@@ -569,33 +581,21 @@ const NotesSection: React.FC<NotesSectionProps> = ({
   );
 };
 
+// Placeholder for related-list slots whose feature isn't wired yet.
+// Deliberately no CTA buttons — the previous version rendered disabled
+// "+ Task / + Meeting / + Call" placeholders that looked clickable but
+// did nothing. The user's whole complaint was "no fake buttons", so
+// everything live now goes through EntityActivitiesSection / the real
+// composers; placeholders are strictly informational empty states.
 const RelatedPlaceholder: React.FC<{
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   empty: string;
-  ctas?: string[];
-}> = ({ icon: Icon, title, empty, ctas }) => (
+}> = ({ icon: Icon, title, empty }) => (
   <div>
     <h3 className="text-sm font-semibold flex items-center gap-2 border-b pb-1.5 mb-2">
       <Icon className="w-4 h-4 text-muted-foreground" /> {title}
     </h3>
-    <div className="flex items-center justify-between text-xs text-muted-foreground">
-      <span>{empty}</span>
-      {ctas && (
-        <div className="flex items-center gap-2">
-          {ctas.map((cta) => (
-            <button
-              key={cta}
-              type="button"
-              disabled
-              className="text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Coming soon"
-            >
-              + {cta}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <p className="text-xs text-muted-foreground">{empty}</p>
   </div>
 );

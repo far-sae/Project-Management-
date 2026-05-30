@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import {
   X, Edit, Trash2, Mail, MoreVertical, ChevronDown, ChevronUp,
-  Copy, Printer, FileSearch, RefreshCw, FileText, Paperclip,
-  CheckCircle2, Briefcase, User as UserIcon, Building2,
+  Copy, Printer, FileSearch, RefreshCw, Paperclip,
+  Briefcase, User as UserIcon, Building2,
   ExternalLink, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,8 @@ import {
   getReportingContacts,
 } from '@/services/supabase/contacts';
 import type { Client } from '@/services/supabase/clients';
+import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
+import { AccountNotesSection } from '@/components/activities/AccountNotesSection';
 
 interface Props {
   contact: ContactWithAccount | null;
@@ -311,19 +313,21 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               </div>
             )}
 
-            {/* Related lists (Zoho's vertical sections) */}
+            {/* Related lists (Zoho's vertical sections) — wired to
+                real data wherever the underlying tables exist. */}
             <div id="contact-notes-section">
-              <RelatedPlaceholder
-                icon={FileText}
-                title="Notes"
-                empty="Notes attached to the parent account show here. Open the account record to add a note."
+              <AccountNotesSection
+                organizationId={organizationId}
+                clientId={contact.clientId ?? null}
+                canCompose={canManage}
+                entityLabel="this contact"
               />
             </div>
             <div id="contact-attachments-section">
               <RelatedPlaceholder
                 icon={Paperclip}
                 title="Attachments"
-                empty="No attachments yet."
+                empty="File attachments aren't enabled on contact records yet."
               />
             </div>
             <div id="contact-deals-section">
@@ -334,11 +338,13 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               />
             </div>
             <div id="contact-open-activities-section">
-              <RelatedPlaceholder
-                icon={Briefcase}
-                title="Open Activities"
-                empty="No records found"
-                ctas={['Task', 'Meeting', 'Call']}
+              <EntityActivitiesSection
+                entityKind="contact"
+                entityName={contactDisplayName(contact)}
+                entityId={contact.contactId}
+                clientId={contact.clientId ?? null}
+                mode="open"
+                readOnly={!canManage}
               />
             </div>
             <div id="contact-reporting-section">
@@ -348,17 +354,20 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               />
             </div>
             <div id="contact-closed-activities-section">
-              <RelatedPlaceholder
-                icon={CheckCircle2}
-                title="Closed Activities"
-                empty="No records found"
+              <EntityActivitiesSection
+                entityKind="contact"
+                entityName={contactDisplayName(contact)}
+                entityId={contact.contactId}
+                clientId={contact.clientId ?? null}
+                mode="closed"
+                readOnly
               />
             </div>
             <div id="contact-emails-section">
               <RelatedPlaceholder
                 icon={Mail}
                 title="Emails"
-                empty="No records found"
+                empty="Use Send Email above to email this contact. A per-contact email log will appear here in a future build."
               />
             </div>
           </section>
@@ -377,34 +386,20 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
   </div>
 );
 
+// Strictly informational empty-state for related-list slots whose
+// feature isn't wired yet. No fake CTAs — the user's complaint was
+// "no fake buttons", so anything live goes through a real section
+// component (AccountNotesSection / EntityActivitiesSection).
 const RelatedPlaceholder: React.FC<{
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   empty: string;
-  ctas?: string[];
-}> = ({ icon: Icon, title, empty, ctas }) => (
+}> = ({ icon: Icon, title, empty }) => (
   <div>
     <h3 className="text-sm font-semibold flex items-center gap-2 border-b pb-1.5 mb-2">
       <Icon className="w-4 h-4 text-muted-foreground" /> {title}
     </h3>
-    <div className="flex items-center justify-between text-xs text-muted-foreground">
-      <span>{empty}</span>
-      {ctas && (
-        <div className="flex items-center gap-2">
-          {ctas.map((cta) => (
-            <button
-              key={cta}
-              type="button"
-              disabled
-              className="text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Coming soon"
-            >
-              + {cta}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <p className="text-xs text-muted-foreground">{empty}</p>
   </div>
 );
 
