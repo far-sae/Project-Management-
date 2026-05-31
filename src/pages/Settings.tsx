@@ -525,7 +525,15 @@ export const Settings: React.FC = () => {
               {/* ───── Workspace ───── */}
               <SettingsSectionLabel>Workspace</SettingsSectionLabel>
               <SettingsTab value="capacity" icon={Activity}>Capacity</SettingsTab>
-              <SettingsTab value="integrations" icon={Plug}>Integrations</SettingsTab>
+              {/* Integrations is Advanced/Premium-gated — all the
+                  providers it surfaces (Gmail/Meet/Calendar for CRM
+                  notifications, Slack for automations, Telegram +
+                  WhatsApp bots, Twilio SMS, SendGrid sequences) feed
+                  CRM-tier features. Basic + Starter users would just
+                  see a card grid they can't actually use. */}
+              {hasCrm && (
+                <SettingsTab value="integrations" icon={Plug}>Integrations</SettingsTab>
+              )}
               {canManageSettings && (
                 <SettingsTab value="organization" icon={Building2}>Organization</SettingsTab>
               )}
@@ -581,10 +589,15 @@ export const Settings: React.FC = () => {
             <CapacitySettings />
           </TabsContent>
 
-          {/* INTEGRATIONS TAB */}
-          <TabsContent value="integrations">
-            <IntegrationsTab />
-          </TabsContent>
+          {/* INTEGRATIONS TAB — Advanced/Premium only. Wrapped (not
+              just the trigger) so /settings?tab=integrations on
+              Starter/Basic shows nothing instead of leaking the
+              provider grid. */}
+          {hasCrm && (
+            <TabsContent value="integrations">
+              <IntegrationsTab />
+            </TabsContent>
+          )}
 
           {/* PIPELINES TAB — admin/owner only (defines deal stages
               everyone else has to live by). */}
