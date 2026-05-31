@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  GitBranch, ListTodo, Home as HomeIcon, UserPlus, Users as UsersIcon,
+  GitBranch, Home as HomeIcon, UserPlus, Users as UsersIcon,
   LayoutGrid, List, Activity as ActivityIcon,
 } from 'lucide-react';
 import { ActivitiesHubPanel } from '@/components/activities/ActivitiesHubPanel';
@@ -30,7 +30,6 @@ import { DealsListView } from '@/components/deals/DealsListView';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { ImportDealsDialog } from '@/components/deals/ImportDealsDialog';
 import { useDeals } from '@/hooks/useDeals';
-import { ClientTasksList } from '@/components/clients/ClientTasksList';
 import { ForecastTab } from '@/components/clients/ForecastTab';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
 import { PipelineSelector } from '@/components/clients/PipelineSelector';
@@ -139,7 +138,14 @@ export const Clients: React.FC = () => {
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
+  // 'tasks' is retained in the union for backwards compat — if a
+  // saved bookmark or onGoToTasks callback fires with 'tasks', the
+  // useEffect below silently redirects it to 'activities' (where
+  // tasks now live).
   const [activeTab, setActiveTab] = useState<'home' | 'leads' | 'contacts' | 'accounts' | 'pipeline' | 'tasks' | 'activities' | 'forecast'>('home');
+  useEffect(() => {
+    if (activeTab === 'tasks') setActiveTab('activities');
+  }, [activeTab]);
 
   // ─── Contacts state ─────────────────────────────────────────────────────
   const {
@@ -551,13 +557,10 @@ export const Clients: React.FC = () => {
               <TabsTrigger value="pipeline">
                 <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
               </TabsTrigger>
-              <TabsTrigger value="tasks">
-                <ListTodo className="w-4 h-4 mr-1.5" /> Tasks
-              </TabsTrigger>
-              {/* Activities = the Zoho-style hub (Tasks + Meetings + Calls
-                  with kanban/list views and 21 filter presets). Distinct
-                  from the Tasks tab, which keeps the existing simple
-                  account-scoped task list reps already learned. */}
+              {/* Tasks + Meetings + Calls all live in the Activities tab
+                  now — same underlying tables, same filter views, plus
+                  the drag-droppable status kanban. The old Tasks tab was
+                  redundant (also read client_tasks) and confused reps. */}
               <TabsTrigger value="activities">
                 <ActivityIcon className="w-4 h-4 mr-1.5" /> Activities
               </TabsTrigger>
@@ -1094,27 +1097,6 @@ export const Clients: React.FC = () => {
                   </>
                 );
               })()}
-            </TabsContent>
-
-            <TabsContent value="tasks" className="mt-4 space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold">Tasks</h2>
-                <p className="text-sm text-muted-foreground">
-                  A simple follow-up list for calls, emails, meetings, and account reminders.
-                  Need the full Activities view (with Meetings + Calls + filter presets)? Open the{' '}
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('activities')}
-                    className="text-primary hover:underline font-medium"
-                  >
-                    Activities tab
-                  </button>.
-                </p>
-              </div>
-              <ClientTasksList
-                clients={clients}
-                restrictToClientIds={workspaceClientIds}
-              />
             </TabsContent>
 
             <TabsContent value="activities" className="mt-4">

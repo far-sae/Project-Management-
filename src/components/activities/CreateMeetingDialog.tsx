@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -198,6 +199,11 @@ export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
             <DialogTitle className="flex items-center gap-2">
               <Video className="w-5 h-5 text-violet-600" /> {isEditing ? 'Edit Meeting' : 'Meeting Information'}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              {isEditing
+                ? 'Edit the meeting title, time, location, host, participants, and description.'
+                : 'Schedule a meeting with title, from/to time, host, participants, and an optional location and description.'}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">

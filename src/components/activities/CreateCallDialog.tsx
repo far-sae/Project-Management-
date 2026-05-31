@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -173,6 +174,9 @@ export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
           <DialogTitle className="flex items-center gap-2">
             <Phone className="w-5 h-5 text-emerald-600" /> {isEditing ? 'Edit Call' : completed ? 'Log a Call' : 'Schedule a Call'}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {isEditing ? 'Edit a logged or scheduled call.' : 'Schedule or log a call with subject, direction, status, caller, and outcome.'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-[140px,1fr] gap-3 items-center">

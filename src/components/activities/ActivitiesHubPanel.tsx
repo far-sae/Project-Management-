@@ -31,7 +31,6 @@ import { getOrganizationClients } from '@/services/supabase/clients';
 import { ActivitiesKanban } from './ActivitiesKanban';
 import { ActivitiesStatusKanban } from './ActivitiesStatusKanban';
 import { ActivitiesList } from './ActivitiesList';
-import { ActivityDetailDialog } from './ActivityDetailDialog';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { CreateMeetingDialog } from './CreateMeetingDialog';
 import { CreateCallDialog } from './CreateCallDialog';
@@ -70,7 +69,23 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
   const [taskOpen, setTaskOpen] = useState(false);
   const [meetingOpen, setMeetingOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
-  const [detail, setDetail] = useState<Activity | null>(null);
+  // Edit-mode prefills — when set, the matching dialog opens with the
+  // row prefilled instead of starting blank. Clicking a card jumps
+  // straight here so the user lands in the full editor (matching the
+  // project kanban TaskModal experience) instead of a smaller read
+  // dialog they then have to click "Edit" on.
+  const [editTask, setEditTask] = useState<import('@/services/supabase/clientTasks').ClientTask | null>(null);
+  const [editMeeting, setEditMeeting] = useState<import('@/services/supabase/meetings').Meeting | null>(null);
+  const [editCall, setEditCall] = useState<import('@/services/supabase/calls').Call | null>(null);
+
+  // Card-click handler: routes to the full edit dialog (the same one
+  // + Task / + Meeting / + Call open) so reps land in an editable
+  // form with every field, instead of a smaller read view.
+  const openEditor = (a: Activity) => {
+    if (a.source.kind === 'task')         setEditTask(a.source.row);
+    else if (a.source.kind === 'meeting') setEditMeeting(a.source.row);
+    else                                   setEditCall(a.source.row);
+  };
 
   useEffect(() => {
     if (!orgId) return;
@@ -218,22 +233,35 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
       ) : viewMode === 'status' ? (
         <ActivitiesStatusKanban
           activities={filtered}
-          onSelect={setDetail}
+          onSelect={openEditor}
           onChanged={onAnyCreated}
         />
       ) : viewMode === 'category' ? (
-        <ActivitiesKanban activities={filtered} onSelect={setDetail} />
+        <ActivitiesKanban activities={filtered} onSelect={openEditor} />
       ) : (
-        <ActivitiesList activities={filtered} onSelect={setDetail} />
+        <ActivitiesList activities={filtered} onSelect={openEditor} />
       )}
 
+      {/* Create dialogs (blank state). */}
       <CreateTaskDialog open={taskOpen} onOpenChange={setTaskOpen} onCreated={onAnyCreated} />
       <CreateMeetingDialog open={meetingOpen} onOpenChange={setMeetingOpen} onCreated={onAnyCreated} />
       <CreateCallDialog open={callOpen} onOpenChange={setCallOpen} onCreated={onAnyCreated} />
-      <ActivityDetailDialog
-        activity={detail}
-        onOpenChange={(open) => { if (!open) setDetail(null); }}
-        onChanged={onAnyCreated}
+      {/* Edit dialogs (prefilled with the clicked row). Same components
+          as the create flow — the editX prop flips them into edit mode. */}
+      <CreateTaskDialog
+        open={!!editTask}
+        onOpenChange={(o) => { if (!o) { setEditTask(null); onAnyCreated(); } }}
+        editTask={editTask}
+      />
+      <CreateMeetingDialog
+        open={!!editMeeting}
+        onOpenChange={(o) => { if (!o) { setEditMeeting(null); onAnyCreated(); } }}
+        editMeeting={editMeeting}
+      />
+      <CreateCallDialog
+        open={!!editCall}
+        onOpenChange={(o) => { if (!o) { setEditCall(null); onAnyCreated(); } }}
+        editCall={editCall}
       />
     </div>
   );

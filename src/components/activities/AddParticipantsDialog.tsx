@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -131,6 +132,9 @@ export const AddParticipantsDialog: React.FC<AddParticipantsDialogProps> = ({
             <Users className="w-4 h-4 text-primary" />
             Add Participants
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Pick contacts or team members for the meeting, or paste raw email addresses to invite people not in the CRM.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center gap-2">

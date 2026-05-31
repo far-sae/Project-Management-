@@ -104,8 +104,12 @@ export const ActivitiesStatusKanban: React.FC<ActivitiesStatusKanbanProps> = ({
   const { user } = useAuth();
   const [dragging, setDragging] = useState<Activity | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Distance: 8px so a clean click registers as click (opens detail)
+  // and a drag-intent gesture registers as drag. Sweet spot — too low
+  // and the user can't click without accidentally starting a drag; too
+  // high and the drag feels unresponsive.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
   const grouped = useMemo(() => {
@@ -233,28 +237,27 @@ const DraggableCard: React.FC<{
     data: { activity },
   });
 
+  // Whole card is now draggable (not just a tiny grip on the left
+  // edge). The sensor activation distance (8px) disambiguates a
+  // click-to-open from a drag-to-move: small clicks register as
+  // clicks and open the detail; ≥8px pointer movement starts a drag.
+  // A small grip icon on the left still appears on hover as an
+  // affordance so reps know the card is draggable.
   return (
     <div
       ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={() => onSelect(activity)}
       className={cn(
-        'relative group',
+        'relative group cursor-grab active:cursor-grabbing',
         isDragging && 'opacity-30',
       )}
     >
-      {/* Drag handle — keeps the click-to-open behaviour of the card
-          intact (clicking the body opens the detail dialog), while the
-          handle on the left edge is the drag target. */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute left-0 top-0 bottom-0 w-5 cursor-grab active:cursor-grabbing flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Drag to move"
-      >
-        <GripVertical className="w-3 h-3 text-muted-foreground" />
-      </div>
-      <div className="pl-3">
-        <ActivityCard activity={activity} onClick={onSelect} compact />
-      </div>
+      <ActivityCard activity={activity} compact />
+      <GripVertical
+        className="absolute left-0 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none"
+      />
       {saving && (
         <div className="absolute inset-0 grid place-items-center bg-background/60 rounded-md">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />

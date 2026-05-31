@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -178,6 +179,14 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
           <DialogTitle className="flex items-center gap-2">
             <ListTodo className="w-5 h-5 text-rose-600" /> {isEditing ? 'Edit Task' : 'Create Task'}
           </DialogTitle>
+          {/* Screen-reader description — silences the Radix
+              "Missing Description" warning + helps non-sighted users
+              understand the dialog's purpose. Visually hidden. */}
+          <DialogDescription className="sr-only">
+            {isEditing
+              ? 'Edit the task title, due date, priority, assignee, and other fields.'
+              : 'Create a new task with subject, due date, priority, assignee, and optional repeat rule.'}
+          </DialogDescription>
         </DialogHeader>
 
         <section className="space-y-4">

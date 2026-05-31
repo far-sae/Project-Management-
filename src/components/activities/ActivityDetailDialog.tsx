@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -257,6 +257,9 @@ export const ActivityDetailDialog: React.FC<ActivityDetailDialogProps> = ({
                 </span>
                 <div className="min-w-0 flex-1">
                   <DialogTitle className="text-lg leading-tight break-words">{activity.title}</DialogTitle>
+                  <DialogDescription className="sr-only">
+                    {activity.kind} detail — change status, edit fields, or delete.
+                  </DialogDescription>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <Badge variant="secondary" className="capitalize text-[10px]">{activity.kind}</Badge>
                     {activity.overdue && (

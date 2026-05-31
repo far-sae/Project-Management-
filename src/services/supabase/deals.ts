@@ -261,7 +261,13 @@ const friendlyDealWonError = (error: unknown): Error => {
   if (e?.code === "23502" || e?.code === "23503" || /not-null|foreign key/i.test(combined)) {
     return new Error("The won-deal project could not be created because required project data is missing.");
   }
-  return error instanceof Error ? error : new Error(msg || "Failed to close deal to won");
+  // Last resort: surface code + message + details so the user can
+  // at least see what went wrong instead of the generic "Failed to
+  // close deal to won" we used to throw.
+  const composed = [e?.code && `[${e.code}]`, msg, details].filter(Boolean).join(" — ");
+  return error instanceof Error
+    ? error
+    : new Error(composed || "Failed to close deal to won");
 };
 
 const resolveDealStageTarget = async (
@@ -867,7 +873,35 @@ export const closeDealToWon = async (
     },
   });
   if (error) {
-    logger.error("Failed to close deal to won:", error);
+    // The previous logger call rendered the error object as the
+    // literal string "Object" in production logs, which made these
+    // 400s impossible to debug. Inline the useful fields explicitly.
+    const e = error as { code?: string; message?: string; details?: string; hint?: string };
+    const composed = [e.code && `[${e.code}]`, e.message, e.details, e.hint && `(hint: ${e.hint})`]
+      .filter(Boolean).join(" ");
+    logger.error(`Failed to close deal to won: ${composed || "no reason returned"}`, error);
+
+    // Missing RPC (PGRST202 / 42883) → the deployed DB doesn't have
+    // the crm_close_deal_to_won function. Skip-mode is the safe
+    // fallback: flip the stage directly via the existing update path
+    // so the user's "mark won" still works even on partially-migrated
+    // databases. Project creation requires the RPC and isn't
+    // available in this fallback path.
+    if (isMissingRpcError(error)) {
+      try {
+        const { data: updated, error: updErr } = await supabase
+          .from("deals")
+          .update({ stage: "won", probability: 100, closed_at: new Date().toISOString(), actual_close_date: new Date().toISOString().slice(0, 10) })
+          .eq("deal_id", dealId)
+          .select("deal_id")
+          .single();
+        if (updErr) throw updErr;
+        return { dealId: (updated as { deal_id: string }).deal_id, projectId: null };
+      } catch (fallbackErr) {
+        logger.error("Direct deals UPDATE fallback failed:", fallbackErr);
+        // fall through to friendly error below
+      }
+    }
     throw friendlyDealWonError(error);
   }
   return {
