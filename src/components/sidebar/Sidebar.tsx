@@ -152,6 +152,11 @@ export const Sidebar: React.FC = () => {
     ? ([
         { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
         { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
+        // Activities hub — Zoho-style aggregation of Tasks / Meetings / Calls.
+        // Same /clients/activity route the CRM Accounts page links to; a
+        // dedicated sidebar entry just makes it discoverable without
+        // drilling into CRM first.
+        { icon: Activity, label: 'Activities', href: '/clients/activity', feature: 'crm' as const },
         { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
