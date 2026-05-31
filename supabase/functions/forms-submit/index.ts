@@ -104,13 +104,6 @@ const rateLimitOk = async (
   return { ok: true, retryAfter: 0 };
 };
 
-const normalizeEmail = (e: string): string =>
-  e.trim().toLowerCase().replace(/\+[^@]*(?=@)/, "");
-
-const SUFFIX_RE = /\b(inc|llc|ltd|gmbh|s\.a\.|pty|co|corp|corporation)\.?\b/g;
-const normalizeCompany = (n: string): string =>
-  n.toLowerCase().replace(SUFFIX_RE, "").replace(/\s+/g, " ").trim();
-
 const textValue = (body: Record<string, unknown>, keys: string[]): string | null => {
   for (const key of keys) {
     const value = body[key];
@@ -118,40 +111,11 @@ const textValue = (body: Record<string, unknown>, keys: string[]): string | null
   }
   return null;
 };
-
-const findExistingClient = async (
-  admin: ReturnType<typeof createClient>,
-  organizationId: string,
-  email: string | null,
-  company: string | null,
-  country: string | null,
-): Promise<string | null> => {
-  if (email) {
-    const { data: existing } = await admin
-      .from("clients")
-      .select("client_id, email")
-      .eq("organization_id", organizationId);
-    for (const c of existing ?? []) {
-      const r = c as Record<string, string>;
-      if (r.email && normalizeEmail(r.email) === email) return r.client_id;
-    }
-  }
-
-  if (company) {
-    const { data: existing } = await admin
-      .from("clients")
-      .select("client_id, name, country")
-      .eq("organization_id", organizationId);
-    for (const c of existing ?? []) {
-      const r = c as Record<string, string>;
-      if (normalizeCompany(r.name) === normalizeCompany(company) && (r.country ?? "") === (country ?? "")) {
-        return r.client_id;
-      }
-    }
-  }
-
-  return null;
-};
+// Removed: findExistingClient + normalizeEmail/normalizeCompany.
+// They were only used to dedupe inside the auto-Account-creation
+// path, which the lead-only flow no longer takes. The convertLead
+// service handles dedupe at conversion time (when the rep clicks
+// Convert from the Lead drawer).
 
 const validate = (fields: FormField[], body: Record<string, unknown>) => {
   const cleaned: Record<string, unknown> = {};
@@ -291,94 +255,32 @@ const handle = async (req: Request): Promise<Response> => {
     return json({ error: "validation", fields: errors }, 422);
   }
 
-  // 5. Duplicate-aware insert
+  // 5. Extract canonical fields from the cleaned payload.
   const emailRaw = textValue(cleaned, ["email", "emailAddress", "email_address", "workEmail"]);
-  const email = emailRaw ? normalizeEmail(emailRaw) : null;
   const leadName = textValue(cleaned, ["name", "fullName", "full_name", "contactName"]);
   const company = textValue(cleaned, ["company", "orgName", "org_name", "organization", "organization_name"]) ?? leadName;
   const country = textValue(cleaned, ["country", "orgCountry", "org_country"]);
   const phone = textValue(cleaned, ["phone", "phoneNumber", "phone_number"]);
   const website = textValue(cleaned, ["website", "orgWebsite", "org_website"]);
 
-  let clientId: string | null = await findExistingClient(admin, form.organization_id, email, company, country);
-  if (!clientId) {
-    const { data: created, error: cErr } = await admin.from("clients").insert({
-      organization_id: form.organization_id,
-      name: company || leadName || "Unnamed lead",
-      legal_name: company || null,
-      email: emailRaw,
-      phone,
-      website,
-      country: country,
-      type: "prospect", status: "active",
-      source: form.title,
-      created_by_name: `Lead form: ${form.title}`,
-      tags: ["dup_override"], // bypass insert-time dup index (we already searched)
-    }).select("client_id").single();
-    if (cErr) {
-      clientId = await findExistingClient(admin, form.organization_id, email, company, country);
-      if (!clientId) {
-        const payload = { ...body }; delete payload._hp;
-        await admin.from("form_submissions").insert({
-          form_id: form.form_id, organization_id: form.organization_id,
-          form_slug: form.slug, form_title: form.title,
-          raw_payload: payload,
-          ip_hash: ipHash,
-          user_agent: req.headers.get("user-agent") ?? null,
-          turnstile_token_verified: turnstileVerified,
-          rejected_reason: `client_create_failed: ${cErr.message}`,
-        });
-        console.error("lead form client create failed:", cErr);
-        return json({ error: "client_create_failed" }, 500);
-      }
-    } else {
-      clientId = (created as { client_id: string }).client_id;
-    }
-  }
-
-  // Find the first stage of the form's pipeline.
-  const { data: firstStage } = await admin
-    .from("pipeline_stages")
-    .select("stage_id")
-    .eq("pipeline_id", form.pipeline_id)
-    .order("position", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
+  // ───────────────────────────────────────────────────────────────────────
+  // Lead-only flow (default): create a Lead row with lead_status='new'.
+  // The rep manually clicks Convert from CRM → Leads when they're
+  // ready to spawn the Account + Deal. This matches the standard
+  // Zoho/Salesforce/HubSpot lead-capture pattern and gives the rep
+  // qualification time before a deal lands in the pipeline.
+  //
+  // The previous behaviour (auto-create Account + Deal alongside a
+  // converted Lead) was confusing reps: forms were silently producing
+  // open deals in the pipeline that nobody had triaged, and "Convert"
+  // on the Lead drawer felt redundant because the conversion was
+  // already done.
+  //
+  // form_submissions still gets a row for audit; clientId / dealId
+  // stay null since we're not auto-creating those any more.
+  // ───────────────────────────────────────────────────────────────────────
+  let clientId: string | null = null;
   let dealId: string | null = null;
-  if (firstStage) {
-    const { data: dealRow } = await admin.from("deals").insert({
-      organization_id: form.organization_id,
-      pipeline_id: form.pipeline_id,
-      stage_id: (firstStage as { stage_id: string }).stage_id,
-      client_id: clientId,
-      client_name: company || leadName || null,
-      title: `${company || leadName || "Lead"} inquiry`,
-      owner_id: form.created_by,
-      owner_name: null,
-      currency: "USD",
-      value: 0,
-    }).select("deal_id").single();
-    dealId = (dealRow as { deal_id: string } | null)?.deal_id ?? null;
-  }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // ALSO insert a Lead row so the submission appears in CRM → Leads.
-  //
-  // The form was already creating an Account (clients) + Deal, but reps
-  // expect a "lead form" to produce a "lead" — they kept asking where
-  // their form submissions went. The Lead row points at the freshly-
-  // created account + deal via the conversion columns, marked as
-  // already-converted (lead_status='converted'), so it shows in the
-  // Leads tab with a "Converted" badge instead of looking like a
-  // duplicate to re-convert.
-  //
-  // Schema-drift defensive: strip-and-retry like convertLead does, so
-  // a DB missing migration 100 (leads table) doesn't break the whole
-  // submission. We swallow leads insert errors entirely — the account
-  // + deal + form_submission have already landed, so the rep still
-  // gets the data; only the Leads-tab visibility is missing.
-  // ───────────────────────────────────────────────────────────────────────
   let leadId: string | null = null;
   try {
     // Best-effort lead_number lookup. If the RPC is missing, fall back
@@ -430,10 +332,10 @@ const handle = async (req: Request): Promise<Response> => {
       website,
       country,
       lead_source: form.title,
-      lead_status: "converted",
-      converted_at: new Date().toISOString(),
-      converted_to_client_id: clientId,
-      converted_to_deal_id: dealId,
+      // Stays unconverted so the rep can qualify before clicking
+      // Convert. The Lead drawer's "Convert" button then spawns the
+      // Account + Contact + Deal explicitly.
+      lead_status: "new",
       description: `Submitted via lead form "${form.title}".`,
       created_by: form.created_by,
       created_by_name: `Lead form: ${form.title}`,
