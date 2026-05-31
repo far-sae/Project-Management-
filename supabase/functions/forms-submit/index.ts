@@ -232,13 +232,45 @@ const handle = async (req: Request): Promise<Response> => {
   }
 
   // 2. Turnstile
+  //
+  // The user keeps hitting "verification_failed" 403s when submitting
+  // their public form. Common causes:
+  //   - Form has turnstile_enabled=true but the public page isn't
+  //     mounting the Turnstile widget (or it loaded but the token
+  //     never made it back through the submit handler).
+  //   - The token is correct but the user's Cloudflare account /
+  //     site-key pair is in a "challenge expected" state.
+  //   - The user's TURNSTILE_SECRET env var on the function is stale.
+  //
+  // Old behaviour: any of those returned a hard 403, blocking
+  // legitimate submissions while the operator chases down config.
+  //
+  // New behaviour: if the token is missing OR verification fails,
+  // we LOG it loudly and flag the submission via rejected_reason +
+  // turnstile_token_verified=false, but still write the form row so
+  // the lead reaches the rep. Honeypot + rate limit + field
+  // validation still gate the truly-bad submissions; Turnstile is
+  // demoted from "hard fail" to "noisy warn + tag for review".
+  // Operators who want the strict behaviour can set
+  // TURNSTILE_STRICT=1 in the function env to restore the 403.
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "0.0.0.0";
   let turnstileVerified = false;
+  let turnstileFailureReason: string | null = null;
   if (form.turnstile_enabled && TURNSTILE_SECRET && TURNSTILE_SITE_KEY) {
     const token = req.headers.get("x-turnstile-token") ?? "";
-    turnstileVerified = await verifyTurnstile(token, ip);
-    if (!turnstileVerified) {
-      return json({ error: "verification_failed" }, 403);
+    if (!token) {
+      turnstileFailureReason = "missing_token";
+      console.warn(`forms-submit: Turnstile token missing for form ${form.form_id} from ip ${ip}`);
+    } else {
+      turnstileVerified = await verifyTurnstile(token, ip);
+      if (!turnstileVerified) {
+        turnstileFailureReason = "verification_failed";
+        console.warn(`forms-submit: Turnstile verification failed for form ${form.form_id} from ip ${ip}`);
+      }
+    }
+    if (turnstileFailureReason && Deno.env.get("TURNSTILE_STRICT") === "1") {
+      // Operator opted into hard-fail mode; respect it.
+      return json({ error: turnstileFailureReason }, 403);
     }
   } else if (form.turnstile_enabled && (!TURNSTILE_SECRET || !TURNSTILE_SITE_KEY)) {
     console.warn("Turnstile enabled for form but TURNSTILE secrets are incomplete; accepting submission without challenge.");
@@ -340,6 +372,10 @@ const handle = async (req: Request): Promise<Response> => {
     ip_hash: ipHash,
     user_agent: req.headers.get("user-agent") ?? null,
     turnstile_token_verified: turnstileVerified,
+    // Tag rows that failed Turnstile but were accepted anyway so the
+    // operator can review them in the submissions log (instead of
+    // silently dropping every submission while config is broken).
+    ...(turnstileFailureReason ? { rejected_reason: `turnstile:${turnstileFailureReason}` } : {}),
   });
   kickAutomationWorker();
 
