@@ -30,12 +30,13 @@ import { getOrganizationDeals } from '@/services/supabase/deals';
 import { getOrganizationClients } from '@/services/supabase/clients';
 import { ActivitiesKanban } from './ActivitiesKanban';
 import { ActivitiesStatusKanban } from './ActivitiesStatusKanban';
+import { ActivitiesKindKanban } from './ActivitiesKindKanban';
 import { ActivitiesList } from './ActivitiesList';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { CreateMeetingDialog } from './CreateMeetingDialog';
 import { CreateCallDialog } from './CreateCallDialog';
 
-type ViewMode = 'status' | 'category' | 'list';
+type ViewMode = 'status' | 'kind' | 'category' | 'list';
 
 interface ActivitiesHubPanelProps {
   /** Initial filter view. Useful when the panel is mounted on a
@@ -190,13 +191,14 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
           {filtered.length} of {activities.length}
         </span>
 
-        {/* Three view modes:
+        {/* Four view modes:
               status   — drag-droppable Not Started / In Progress / Done /
                          Cancelled. Default — most intuitive for reps
                          actually working through their queue.
+              kind     — Tasks / Meetings / Calls columns. "Show me every
+                         meeting on my plate" / "every call this week".
               category — Customers / Open Deals / Leads-Contacts / Others.
-                         Useful for "what do I owe each kind of account"
-                         scanning but read-only.
+                         Zoho-style entity grouping.
               list     — sortable flat table. */}
         <div className="ml-auto inline-flex rounded-md border p-0.5 text-xs">
           <button
@@ -206,6 +208,14 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
             title="Status board (drag to change status)"
           >
             <LayoutGrid className="w-3.5 h-3.5" /> Status
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('kind')}
+            className={`px-2 py-1 rounded inline-flex items-center gap-1 ${viewMode === 'kind' ? 'bg-muted' : 'opacity-60 hover:opacity-100'}`}
+            title="Group by Tasks / Meetings / Calls"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" /> Kind
           </button>
           <button
             type="button"
@@ -236,6 +246,8 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
           onSelect={openEditor}
           onChanged={onAnyCreated}
         />
+      ) : viewMode === 'kind' ? (
+        <ActivitiesKindKanban activities={filtered} onSelect={openEditor} />
       ) : viewMode === 'category' ? (
         <ActivitiesKanban activities={filtered} onSelect={openEditor} />
       ) : (
