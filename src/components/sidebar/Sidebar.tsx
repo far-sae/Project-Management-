@@ -151,12 +151,10 @@ export const Sidebar: React.FC = () => {
   const bottomMenuItems = canSeePeopleOps
     ? ([
         { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
+        // Activities lives inside CRM as a top tab (CRM → Activities),
+        // not as a separate sidebar entry, so reps see one consolidated
+        // CRM nav instead of two near-duplicate links.
         { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
-        // Activities hub — Zoho-style aggregation of Tasks / Meetings / Calls.
-        // Same /clients/activity route the CRM Accounts page links to; a
-        // dedicated sidebar entry just makes it discoverable without
-        // drilling into CRM first.
-        { icon: Activity, label: 'Activities', href: '/clients/activity', feature: 'crm' as const },
         { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
@@ -181,14 +179,11 @@ export const Sidebar: React.FC = () => {
         ] as const)
       : ([
           // Members see Timeline + personal Files + the customer-facing
-          // CRM surfaces (CRM, Activities, AI Agent). Per-row RLS keeps
-          // them inside their org/workspace; only org-management
+          // CRM surfaces (CRM, AI Agent). Activities is a CRM tab so
+          // it's not duplicated in the sidebar. Per-row RLS keeps
+          // members inside their org/workspace; only org-management
           // surfaces (Team, Audit log, Subscription) stay admin/owner.
-          // Files is per-user personal storage (no sharing) and is
-          // baseline — not gated on the owner's subscription — so any
-          // non-viewer can keep personal documents regardless of plan.
           { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
-          { icon: Activity, label: 'Activities', href: '/clients/activity', feature: 'crm' as const },
           { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
           { icon: FileText, label: 'Files', href: '/files', feature: null },
