@@ -476,3 +476,29 @@ export const listSlackChannels = async (): Promise<SlackChannel[]> => {
   const channels = ((data as { channels?: SlackChannel[] })?.channels ?? []);
   return channels;
 };
+
+/**
+ * Manually enrol a record into an automation / sequence recipe by
+ * inserting a synthetic event of the recipe's trigger_type. The
+ * background worker picks it up on its next tick.
+ *
+ * Backed by enroll_in_automation RPC (migration 120). Returns the
+ * event_id so the caller can correlate with automation_runs in the
+ * health card.
+ */
+export const enrollInAutomation = async (params: {
+  recipeId: string;
+  clientId?: string | null;
+  dealId?: string | null;
+}): Promise<string> => {
+  const { data, error } = await supabase.rpc("enroll_in_automation", {
+    p_recipe_id: params.recipeId,
+    p_client_id: params.clientId ?? null,
+    p_deal_id: params.dealId ?? null,
+  });
+  if (error) {
+    logger.error("enrollInAutomation failed:", error);
+    throw new Error(error.message);
+  }
+  return String(data ?? "");
+};

@@ -25,6 +25,8 @@ import { cn } from '@/lib/utils';
 import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
 import { EntityAttachmentsSection } from '@/components/activities/EntityAttachmentsSection';
 import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
+import { EnrollAutomationDialog } from '@/components/activities/EnrollAutomationDialog';
+import { Zap } from 'lucide-react';
 
 interface Props {
   lead: Lead | null;
@@ -64,6 +66,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [showAllDetails, setShowAllDetails] = useState(false);
+  const [enrolOpen, setEnrolOpen] = useState(false);
 
   useEffect(() => {
     if (!lead || !organizationId) return;
@@ -158,6 +161,19 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem onClick={() => onClone(lead)} disabled={!canManage}>
                   <Copy className="w-4 h-4 mr-2" /> Clone
+                </DropdownMenuItem>
+                {/* Run automation — synthesises a trigger event so an
+                    enabled recipe fires against this lead (after it
+                    becomes a client via convertedToClientId, or via
+                    a 'scheduled' / 'agent_intake' generic trigger). */}
+                <DropdownMenuItem
+                  onClick={() => setEnrolOpen(true)}
+                  disabled={!canManage || !lead.convertedToClientId}
+                  title={!lead.convertedToClientId
+                    ? 'Convert the lead first — recipes target the resulting client'
+                    : 'Run an enabled automation against this lead'}
+                >
+                  <Zap className="w-4 h-4 mr-2" /> Run automation
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => onDelete(lead)}
@@ -421,6 +437,13 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           </section>
         </div>
       </aside>
+
+      <EnrollAutomationDialog
+        open={enrolOpen}
+        onOpenChange={setEnrolOpen}
+        clientId={lead.convertedToClientId ?? null}
+        entityName={leadDisplayName(lead)}
+      />
     </div>
   );
 };

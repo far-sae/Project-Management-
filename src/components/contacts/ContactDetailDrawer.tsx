@@ -22,6 +22,8 @@ import { AccountNotesSection } from '@/components/activities/AccountNotesSection
 import { AccountDealsSection } from '@/components/activities/AccountDealsSection';
 import { EntityAttachmentsSection } from '@/components/activities/EntityAttachmentsSection';
 import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
+import { EnrollAutomationDialog } from '@/components/activities/EnrollAutomationDialog';
+import { Zap } from 'lucide-react';
 
 interface Props {
   contact: ContactWithAccount | null;
@@ -48,6 +50,7 @@ export const ContactDetailDrawer: React.FC<Props> = ({
 }) => {
   const [showAllDetails, setShowAllDetails] = useState(false);
   const [reportingContacts, setReportingContacts] = useState<ContactWithAccount[]>([]);
+  const [enrolOpen, setEnrolOpen] = useState(false);
   const [loadingReports, setLoadingReports] = useState(false);
 
   useEffect(() => {
@@ -121,6 +124,15 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem onClick={() => onClone(contact)} disabled={!canManage}>
                   <Copy className="w-4 h-4 mr-2" /> Clone
+                </DropdownMenuItem>
+                {/* Manual enrolment into any enabled automation /
+                    sequence recipe that targets clients. Filtered to
+                    recipes that fit a contact in the picker. */}
+                <DropdownMenuItem
+                  onClick={() => setEnrolOpen(true)}
+                  disabled={!canManage || !contact.clientId}
+                >
+                  <Zap className="w-4 h-4 mr-2" /> Run automation
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => onDelete(contact)}
@@ -379,6 +391,13 @@ export const ContactDetailDrawer: React.FC<Props> = ({
           </section>
         </div>
       </aside>
+
+      <EnrollAutomationDialog
+        open={enrolOpen}
+        onOpenChange={setEnrolOpen}
+        clientId={contact.clientId ?? null}
+        entityName={displayName}
+      />
     </div>
   );
 };
