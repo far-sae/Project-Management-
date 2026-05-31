@@ -19,8 +19,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   GitBranch, ListTodo, Home as HomeIcon, UserPlus, Users as UsersIcon,
-  LayoutGrid, List,
+  LayoutGrid, List, Activity as ActivityIcon,
 } from 'lucide-react';
+import { ActivitiesHubPanel } from '@/components/activities/ActivitiesHubPanel';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { DealDetailDrawer } from '@/components/clients/DealDetailDrawer';
 import { DealDetailView } from '@/components/deals/DealDetailView';
@@ -137,7 +138,7 @@ export const Clients: React.FC = () => {
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'home' | 'leads' | 'contacts' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'leads' | 'contacts' | 'accounts' | 'pipeline' | 'tasks' | 'activities' | 'forecast'>('home');
 
   // ─── Contacts state ─────────────────────────────────────────────────────
   const {
@@ -551,6 +552,13 @@ export const Clients: React.FC = () => {
               </TabsTrigger>
               <TabsTrigger value="tasks">
                 <ListTodo className="w-4 h-4 mr-1.5" /> Tasks
+              </TabsTrigger>
+              {/* Activities = the Zoho-style hub (Tasks + Meetings + Calls
+                  with kanban/list views and 21 filter presets). Distinct
+                  from the Tasks tab, which keeps the existing simple
+                  account-scoped task list reps already learned. */}
+              <TabsTrigger value="activities">
+                <ActivityIcon className="w-4 h-4 mr-1.5" /> Activities
               </TabsTrigger>
               <TabsTrigger value="forecast">
                 <TrendingUp className="w-4 h-4 mr-1.5" /> Forecast
@@ -1092,12 +1100,27 @@ export const Clients: React.FC = () => {
                 <h2 className="text-lg font-semibold">Tasks</h2>
                 <p className="text-sm text-muted-foreground">
                   A simple follow-up list for calls, emails, meetings, and account reminders.
+                  Need the full Activities view (with Meetings + Calls + filter presets)? Open the{' '}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('activities')}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    Activities tab
+                  </button>.
                 </p>
               </div>
               <ClientTasksList
                 clients={clients}
                 restrictToClientIds={workspaceClientIds}
               />
+            </TabsContent>
+
+            <TabsContent value="activities" className="mt-4">
+              {/* Embeds the same hub the standalone /clients/activity page
+                  renders — Tasks + Meetings + Calls in one filterable
+                  view, with kanban + list toggle and quick-create dialogs. */}
+              <ActivitiesHubPanel bounded={false} />
             </TabsContent>
 
             <TabsContent value="forecast" className="mt-4 space-y-4">

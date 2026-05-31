@@ -11,6 +11,8 @@ import { useClients } from '@/hooks/useClients';
 import { useDeals } from '@/hooks/useDeals';
 import { useClientTasks } from '@/hooks/useClientTasks';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 import { KpiTile } from '@/components/dashboards/KpiTile';
 import { ChartCard } from '@/components/dashboards/ChartCard';
@@ -49,6 +51,18 @@ export const ClientsDashboard: React.FC = () => {
   const { deals, loading: dealsLoading } = useDeals();
   const { allTasks: clientTasks } = useClientTasks();
   const fmtMoney = useFormatMoney();
+  // Pre-convert each deal's value to the org currency before summing.
+  // Without this, openValue / wonValue sum a mash-up of native USD/GBP/EUR
+  // amounts and the resulting £-labelled total is meaningless — a
+  // $10,000 USD deal contributed 10000 to a GBP total, which is what
+  // made the CRM analytics card show "10k like dollar" in the user's
+  // report. useFormatMoney handles per-row conversion fine but it can
+  // only see one currency at a time, so the sum has to happen post-
+  // conversion.
+  const orgCurrency = useOrgCurrency();
+  const { rates } = useFxRates();
+  const toOrg = (amount: number, currency: string | null | undefined) =>
+    convertAmount(amount, currency ?? orgCurrency, orgCurrency, rates);
 
   const [range, setRange] = useState<Range>('30d');
   const rs = rangeStart(range);
@@ -57,7 +71,7 @@ export const ClientsDashboard: React.FC = () => {
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const openDeals = deals.filter((d) => OPEN_STAGES.has(d.stage));
-  const openValue = openDeals.reduce((s, d) => s + (d.value || 0), 0);
+  const openValue = openDeals.reduce((s, d) => s + toOrg(d.value || 0, d.currency), 0);
 
   const wonInRange = deals.filter(
     (d) => d.stage === 'won' && d.closedAt && d.closedAt >= rs,
@@ -65,8 +79,8 @@ export const ClientsDashboard: React.FC = () => {
   const wonInPrev = deals.filter(
     (d) => d.stage === 'won' && d.closedAt && d.closedAt >= prevStart && d.closedAt < rs,
   );
-  const wonValue = wonInRange.reduce((s, d) => s + (d.value || 0), 0);
-  const wonValuePrev = wonInPrev.reduce((s, d) => s + (d.value || 0), 0);
+  const wonValue = wonInRange.reduce((s, d) => s + toOrg(d.value || 0, d.currency), 0);
+  const wonValuePrev = wonInPrev.reduce((s, d) => s + toOrg(d.value || 0, d.currency), 0);
   const wonValueDelta =
     wonValuePrev === 0 ? null : ((wonValue - wonValuePrev) / wonValuePrev) * 100;
 
@@ -104,12 +118,15 @@ export const ClientsDashboard: React.FC = () => {
         const i = findIdx(deal.closedAt);
         if (i >= 0) {
           out[i].wonCount += 1;
-          out[i].wonValue += deal.value || 0;
+          out[i].wonValue += toOrg(deal.value || 0, deal.currency);
         }
       }
     }
     return out;
-  }, [deals, sparkDays]);
+    // toOrg is recomputed every render but is value-stable for a given
+    // (orgCurrency, rates) pair, so listing rates here is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deals, sparkDays, orgCurrency, rates]);
 
   const sparkOpenDeals = useMemo(
     () => Array(sparkDays).fill(null).map(() => ({ value: openDeals.length })),
@@ -129,10 +146,11 @@ export const ClientsDashboard: React.FC = () => {
       return {
         stage: STAGE_LABEL[stage],
         count: rows.length,
-        value: rows.reduce((s, d) => s + (d.value || 0), 0),
+        value: rows.reduce((s, d) => s + toOrg(d.value || 0, d.currency), 0),
       };
     });
-  }, [deals]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deals, orgCurrency, rates]);
 
   // ── Forecast by month (next 6 months, weighted by probability) ────────────
   const forecastData: TrendDatum[] = useMemo(() => {
@@ -148,19 +166,20 @@ export const ClientsDashboard: React.FC = () => {
       const key = format(d.expectedCloseDate, 'MMM yyyy');
       if (months[key]) {
         const prob = d.probability ?? 0;
-        months[key].value += (d.value || 0) * (prob / 100);
+        months[key].value += toOrg(d.value || 0, d.currency) * (prob / 100);
       }
     }
     // "compare" = last year's actual won for same month (very rough proxy).
     for (const d of deals) {
       if (d.stage !== 'won' || !d.closedAt) continue;
       const key = format(new Date(d.closedAt.getFullYear() + 1, d.closedAt.getMonth(), 1), 'MMM yyyy');
-      if (months[key]) months[key].compare += d.value || 0;
+      if (months[key]) months[key].compare += toOrg(d.value || 0, d.currency);
     }
     return Object.entries(months).map(([label, v]) => ({
       label, value: Math.round(v.value), compare: Math.round(v.compare),
     }));
-  }, [deals]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deals, orgCurrency, rates]);
 
   // ── Lead score distribution ───────────────────────────────────────────────
   const scoreData: DonutDatum[] = useMemo(() => {
@@ -180,7 +199,7 @@ export const ClientsDashboard: React.FC = () => {
       const key = d.ownerName || d.ownerId || 'Unassigned';
       const row = map.get(key) ?? { name: key, wonCount: 0, wonValue: 0 };
       row.wonCount += 1;
-      row.wonValue += d.value || 0;
+      row.wonValue += toOrg(d.value || 0, d.currency);
       map.set(key, row);
     }
     return Array.from(map.values())
@@ -385,7 +404,7 @@ export const ClientsDashboard: React.FC = () => {
                         )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0 tabular-nums">
-                        <span className="text-foreground">{fmtMoney(d.value)}</span>
+                        <span className="text-foreground">{fmtMoney(d.value, d.currency)}</span>
                         <span className="text-muted-foreground">{daysStalled}d</span>
                       </div>
                     </div>
