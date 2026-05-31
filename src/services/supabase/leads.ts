@@ -934,15 +934,52 @@ export const convertLead = async (
   //      `mobile`).
   let contactId: string | null = null;
   if (input.createContact !== false) {
+    // Carry EVERY lead field that has a matching client_contacts
+    // column. Before this expansion the conversion was dropping
+    // salutation, fax, skype, twitter, linkedin, mailing address,
+    // description, tags, etc., leaving the resulting Contact card
+    // looking almost empty even when the lead form had captured
+    // those values. The strip-and-retry loop below drops any column
+    // the deployed DB doesn't have, so a partially-migrated DB still
+    // gets the contact created with whatever fields it does have.
     const contactPayload: Record<string, unknown> = {
       client_id: clientId,
       organization_id: organizationId,
+
+      // Identity
+      salutation: lead.salutation,
       first_name: lead.firstName,
       last_name: lead.lastName,
       title: lead.title,
+
+      // Contact channels
       email: lead.email,
       phone: lead.phone,
       mobile: lead.mobile,
+      fax: lead.fax,
+      skype_id: lead.skypeId,
+      twitter: lead.twitter,
+      linkedin_url: lead.linkedinUrl,
+
+      // Mailing address (leads call them street/city/etc; contacts
+      // prefix them with mailing_ to distinguish from the optional
+      // other_ block).
+      mailing_street: lead.street,
+      mailing_city: lead.city,
+      mailing_state: lead.state,
+      mailing_zip: lead.postalCode,
+      mailing_country: lead.country,
+
+      // Provenance + content
+      lead_source: lead.leadSource,
+      description: lead.description,
+      tags: lead.tags,
+      owner_id: lead.leadOwnerId ?? userId,
+      owner_name: lead.leadOwnerName ?? userName,
+      email_opt_out: lead.emailOptOut,
+      photo_url: lead.imageUrl,
+      custom_fields: lead.customFields,
+
       is_primary: !input.existingClientId,
       created_by: userId,
     };
