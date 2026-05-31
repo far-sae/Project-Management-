@@ -29,13 +29,14 @@ import { onMeetingsChanged } from '@/services/supabase/meetings';
 import { getOrganizationDeals } from '@/services/supabase/deals';
 import { getOrganizationClients } from '@/services/supabase/clients';
 import { ActivitiesKanban } from './ActivitiesKanban';
+import { ActivitiesStatusKanban } from './ActivitiesStatusKanban';
 import { ActivitiesList } from './ActivitiesList';
 import { ActivityDetailDialog } from './ActivityDetailDialog';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { CreateMeetingDialog } from './CreateMeetingDialog';
 import { CreateCallDialog } from './CreateCallDialog';
 
-type ViewMode = 'kanban' | 'list';
+type ViewMode = 'status' | 'category' | 'list';
 
 interface ActivitiesHubPanelProps {
   /** Initial filter view. Useful when the panel is mounted on a
@@ -59,7 +60,11 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [filterView, setFilterView] = useState<ActivityFilterView>(initialFilter);
-  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
+  // Default to status mode (drag-droppable Open / In Progress / Done /
+  // Cancelled) — the category mode (Customers / Open Deals / etc) was
+  // confusing reps because activity cards sat in entity-named columns
+  // and couldn't be dragged through their lifecycle.
+  const [viewMode, setViewMode] = useState<ViewMode>('status');
   const [search, setSearch] = useState('');
 
   const [taskOpen, setTaskOpen] = useState(false);
@@ -170,22 +175,38 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
           {filtered.length} of {activities.length}
         </span>
 
-        <div className="ml-auto inline-flex rounded-md border p-0.5">
+        {/* Three view modes:
+              status   — drag-droppable Not Started / In Progress / Done /
+                         Cancelled. Default — most intuitive for reps
+                         actually working through their queue.
+              category — Customers / Open Deals / Leads-Contacts / Others.
+                         Useful for "what do I owe each kind of account"
+                         scanning but read-only.
+              list     — sortable flat table. */}
+        <div className="ml-auto inline-flex rounded-md border p-0.5 text-xs">
           <button
             type="button"
-            onClick={() => setViewMode('list')}
-            className={`px-2 py-1 rounded ${viewMode === 'list' ? 'bg-muted' : 'opacity-60 hover:opacity-100'}`}
-            title="List view"
+            onClick={() => setViewMode('status')}
+            className={`px-2 py-1 rounded inline-flex items-center gap-1 ${viewMode === 'status' ? 'bg-muted' : 'opacity-60 hover:opacity-100'}`}
+            title="Status board (drag to change status)"
           >
-            <List className="w-3.5 h-3.5" />
+            <LayoutGrid className="w-3.5 h-3.5" /> Status
           </button>
           <button
             type="button"
-            onClick={() => setViewMode('kanban')}
-            className={`px-2 py-1 rounded ${viewMode === 'kanban' ? 'bg-muted' : 'opacity-60 hover:opacity-100'}`}
-            title="Kanban view"
+            onClick={() => setViewMode('category')}
+            className={`px-2 py-1 rounded inline-flex items-center gap-1 ${viewMode === 'category' ? 'bg-muted' : 'opacity-60 hover:opacity-100'}`}
+            title="Group by linked entity (Customer / Deal / Lead)"
           >
-            <LayoutGrid className="w-3.5 h-3.5" />
+            <LayoutGrid className="w-3.5 h-3.5" /> Category
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-2 py-1 rounded inline-flex items-center gap-1 ${viewMode === 'list' ? 'bg-muted' : 'opacity-60 hover:opacity-100'}`}
+            title="List view"
+          >
+            <List className="w-3.5 h-3.5" /> List
           </button>
         </div>
       </div>
@@ -194,7 +215,13 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
         <div className="rounded-md border p-12 flex items-center justify-center text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading activities…
         </div>
-      ) : viewMode === 'kanban' ? (
+      ) : viewMode === 'status' ? (
+        <ActivitiesStatusKanban
+          activities={filtered}
+          onSelect={setDetail}
+          onChanged={onAnyCreated}
+        />
+      ) : viewMode === 'category' ? (
         <ActivitiesKanban activities={filtered} onSelect={setDetail} />
       ) : (
         <ActivitiesList activities={filtered} onSelect={setDetail} />

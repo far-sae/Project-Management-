@@ -7,6 +7,12 @@ import {
   listExternalCalendarEvents,
   syncGoogleCalendar,
 } from '@/services/integrations/googleCalendarSync';
+import {
+  listActivities, type Activity as CrmActivity,
+} from '@/services/supabase/activities';
+import { onMeetingsChanged } from '@/services/supabase/meetings';
+import { onCallsChanged } from '@/services/supabase/calls';
+import { ActivityDetailDialog } from '@/components/activities/ActivityDetailDialog';
 
 import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,6 +63,12 @@ export const Calendar: React.FC = () => {
   const [externalEvents, setExternalEvents] = useState<ExternalCalendarEvent[]>([]);
   const [syncingCal, setSyncingCal] = useState(false);
   const [selectedExternal, setSelectedExternal] = useState<ExternalCalendarEvent | null>(null);
+  // CRM activities (client_tasks + meetings + calls) — pulled via the
+  // same aggregator the Activities hub uses, then placed on the
+  // calendar by whenAt so reps see one date-keyed view of everything
+  // they're scheduled for / have to follow up on.
+  const [crmActivities, setCrmActivities] = useState<CrmActivity[]>([]);
+  const [selectedCrm, setSelectedCrm] = useState<CrmActivity | null>(null);
 
   const orgId =
     organization?.organizationId ||
@@ -160,6 +172,37 @@ export const Calendar: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.userId, orgId, currentDate]);
 
+  // Pull CRM activities (Tasks + Meetings + Calls) so they appear on
+  // the calendar alongside project tasks + Google Calendar events.
+  // Independent of the project-tasks fetch so a failure in one
+  // doesn't blank the other.
+  useEffect(() => {
+    if (!orgId || orgId.startsWith('local-')) { setCrmActivities([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listActivities(orgId, {
+          openDealIds: new Set(),
+          customerClientIds: new Set(),
+        });
+        if (!cancelled) setCrmActivities(rows);
+      } catch {
+        if (!cancelled) setCrmActivities([]);
+      }
+    })();
+    // Cross-tab sync: refetch when a meeting or call gets created
+    // anywhere in the app.
+    const off1 = onMeetingsChanged((o) => { if (o === orgId) void (async () => {
+      const next = await listActivities(orgId, { openDealIds: new Set(), customerClientIds: new Set() });
+      if (!cancelled) setCrmActivities(next);
+    })(); });
+    const off2 = onCallsChanged((o) => { if (o === orgId) void (async () => {
+      const next = await listActivities(orgId, { openDealIds: new Set(), customerClientIds: new Set() });
+      if (!cancelled) setCrmActivities(next);
+    })(); });
+    return () => { cancelled = true; off1(); off2(); };
+  }, [orgId]);
+
   const handleSyncCalendar = async () => {
     if (!orgId || orgId.startsWith('local-')) {
       toast.error('Calendar sync needs a real organization. Connect Supabase first.');
@@ -228,6 +271,20 @@ export const Calendar: React.FC = () => {
     return externalEvents.filter((e) => sameDay(e.startAt) || e.startDate === yyyymmdd);
   };
 
+  // CRM activities (Task/Meeting/Call) bound to one day via whenAt.
+  // Activities without a date (no due_at / no start_at) don't appear
+  // here — they're still visible on the Activities hub.
+  const getCrmForDay = (day: number) => {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    return crmActivities.filter((a) => {
+      if (!a.whenAt) return false;
+      const d = a.whenAt;
+      return d.getDate() === date.getDate()
+        && d.getMonth() === date.getMonth()
+        && d.getFullYear() === date.getFullYear();
+    });
+  };
+
   const getProjectName = (projectId: string) => {
     const p = projects.find((x) => x.projectId === projectId);
     return p?.name || 'Unknown';
@@ -259,6 +316,7 @@ export const Calendar: React.FC = () => {
     for (let day = 1; day <= daysInMonth; day++) {
       const dayTasks = getTasksForDay(day);
       const dayExternal = getExternalForDay(day);
+      const dayCrm = getCrmForDay(day);
 
       days.push(
         <div
@@ -325,6 +383,38 @@ export const Calendar: React.FC = () => {
               {dayExternal.length > 2 && (
                 <div className="px-1 text-[11px] text-muted-foreground">
                   +{dayExternal.length - 2} Google
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CRM activities — tinted per kind so reps tell at a glance
+              whether a date holds a task / meeting / call.   */}
+          {dayCrm.length > 0 && (
+            <div className="mt-1 space-y-0.5">
+              {dayCrm.slice(0, 2).map((a) => {
+                const cls = a.kind === 'meeting'
+                  ? 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300 hover:bg-violet-500/20'
+                  : a.kind === 'call'
+                    ? 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/20'
+                    : 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20';
+                return (
+                  <div
+                    key={a.id}
+                    className={`flex cursor-pointer items-center gap-1 truncate rounded-md border px-1.5 py-1 text-xs ${cls}`}
+                    onClick={(e) => { e.stopPropagation(); setSelectedCrm(a); }}
+                    title={`${a.kind[0].toUpperCase()}${a.kind.slice(1)}: ${a.title}`}
+                  >
+                    <span className="text-[10px] uppercase tracking-wide opacity-70">
+                      {a.kind === 'meeting' ? 'M' : a.kind === 'call' ? 'C' : 'T'}
+                    </span>
+                    <span className="truncate">{a.title}</span>
+                  </div>
+                );
+              })}
+              {dayCrm.length > 2 && (
+                <div className="px-1 text-[11px] text-muted-foreground">
+                  +{dayCrm.length - 2} CRM
                 </div>
               )}
             </div>
@@ -532,6 +622,22 @@ export const Calendar: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Click a CRM pill on a calendar cell → opens the full Activities
+          detail dialog. Mark-closed / Edit / Delete actions all work
+          here too, since it's the same component the Activities hub uses. */}
+      <ActivityDetailDialog
+        activity={selectedCrm}
+        onOpenChange={(open) => { if (!open) setSelectedCrm(null); }}
+        onChanged={() => {
+          // Refetch so closing / editing reflects on the calendar.
+          if (orgId && !orgId.startsWith('local-')) {
+            void listActivities(orgId, {
+              openDealIds: new Set(), customerClientIds: new Set(),
+            }).then(setCrmActivities);
+          }
+        }}
+      />
     </>
   );
 };
