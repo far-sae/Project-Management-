@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import {
   X, Edit, Trash2, Mail, MoreVertical, ChevronDown, ChevronUp,
   Copy, Printer, FileSearch, RefreshCw, Paperclip,
-  Briefcase, User as UserIcon, Building2,
+  User as UserIcon, Building2,
   ExternalLink, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import {
 import type { Client } from '@/services/supabase/clients';
 import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
 import { AccountNotesSection } from '@/components/activities/AccountNotesSection';
+import { AccountDealsSection } from '@/components/activities/AccountDealsSection';
 
 interface Props {
   contact: ContactWithAccount | null;
@@ -153,6 +154,11 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Related list
               </p>
+              {/* Removed: Invited Meetings / Campaigns / Social — none had
+                  underlying tables or wiring; rendering greyed-out entries
+                  in the nav list was misleading the user into thinking
+                  they were just empty when they were actually never built.
+                  Re-add when each gets a real implementation. */}
               {[
                 { label: 'Notes',              anchor: 'contact-notes-section' },
                 { label: 'Attachments',        anchor: 'contact-attachments-section' },
@@ -160,10 +166,7 @@ export const ContactDetailDrawer: React.FC<Props> = ({
                 { label: 'Open Activities',    anchor: 'contact-open-activities-section' },
                 { label: 'Reporting Contacts', anchor: 'contact-reporting-section', count: reportingContacts.length },
                 { label: 'Closed Activities',  anchor: 'contact-closed-activities-section' },
-                { label: 'Invited Meetings',   anchor: null as string | null },
                 { label: 'Emails',             anchor: 'contact-emails-section' },
-                { label: 'Campaigns',          anchor: null as string | null },
-                { label: 'Social',             anchor: null as string | null },
               ].map((row) => {
                 const wired = row.anchor != null;
                 const cls = wired
@@ -331,10 +334,10 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               />
             </div>
             <div id="contact-deals-section">
-              <RelatedPlaceholder
-                icon={Briefcase}
-                title="Deals"
-                empty="Deals on the parent account will be linked here in a future build. Open the account to see its pipeline."
+              <AccountDealsSection
+                organizationId={organizationId}
+                clientId={contact.clientId ?? null}
+                entityLabel="this contact"
               />
             </div>
             <div id="contact-open-activities-section">

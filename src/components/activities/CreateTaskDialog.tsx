@@ -26,6 +26,10 @@ interface CreateTaskDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Optional pre-fill — useful when launched from a deal/account page. */
   defaultRelatedTo?: RelatedTo | null;
+  /** When set, the dialog opens in EDIT mode: prefilled from the task,
+   *  title becomes "Edit Task", and Save calls updateClientTask
+   *  instead of createClientTask. Pass null to stay in Create mode. */
+  editTask?: import('@/services/supabase/clientTasks').ClientTask | null;
   onCreated?: () => void;
 }
 
@@ -39,8 +43,9 @@ interface CreateTaskDialogProps {
  * uses — no separate table, no double-write.
  */
 export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
-  open, onOpenChange, defaultRelatedTo = null, onCreated,
+  open, onOpenChange, defaultRelatedTo = null, editTask = null, onCreated,
 }) => {
+  const isEditing = !!editTask;
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
@@ -59,20 +64,35 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Reset on open so reopening doesn't leak stale state.
+  // Reset on open. In Create mode we blank the form; in Edit mode we
+  // prefill from the supplied task so the user lands on a complete
+  // editable snapshot of the row.
   useEffect(() => {
     if (!open) return;
-    setOwnerId(user?.userId ?? '');
-    setSubject('');
-    setDueDate(null);
-    setRelatedTo(defaultRelatedTo);
-    setStatus('pending');
-    setPriority('normal');
-    setTaskType('todo');
-    setRepeatOn(false);
-    setRepeatRule('FREQ=WEEKLY');
-    setDescription('');
-  }, [open, user?.userId, defaultRelatedTo]);
+    if (editTask) {
+      setOwnerId(editTask.assignedTo ?? user?.userId ?? '');
+      setSubject(editTask.title);
+      setDueDate(editTask.dueAt ?? null);
+      setRelatedTo(null); // Don't try to re-resolve — user can update if needed.
+      setStatus(editTask.status);
+      setPriority(editTask.priority ?? 'normal');
+      setTaskType(editTask.type);
+      setRepeatOn(!!editTask.repeatRule);
+      setRepeatRule(editTask.repeatRule ?? 'FREQ=WEEKLY');
+      setDescription(editTask.description ?? '');
+    } else {
+      setOwnerId(user?.userId ?? '');
+      setSubject('');
+      setDueDate(null);
+      setRelatedTo(defaultRelatedTo);
+      setStatus('pending');
+      setPriority('normal');
+      setTaskType('todo');
+      setRepeatOn(false);
+      setRepeatRule('FREQ=WEEKLY');
+      setDescription('');
+    }
+  }, [open, user?.userId, defaultRelatedTo, editTask]);
 
   const handleSave = async (saveAndNew: boolean) => {
     if (!orgId) { toast.error('No active organization'); return; }
@@ -81,35 +101,56 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
     setSaving(true);
     try {
       const owner = members.find((m) => m.userId === ownerId);
-      const created = await createClientTask(
-        orgId,
-        user?.userId ?? '',
-        user?.displayName ?? user?.email ?? '',
-        {
-          title: subject.trim(),
-          description: description.trim() || null,
-          type: taskType,
-          dueAt: dueDate,
-          assignedTo: ownerId || null,
-          assignedToName: owner?.displayName ?? null,
-          clientId: relatedTo?.clientId ?? null,
-          dealId: relatedTo?.dealId ?? null,
-          priority,
-          repeatRule: repeatOn ? repeatRule : null,
-        },
-      );
-      // createClientTask always inserts with status='pending'. If the
-      // user picked 'snoozed' or 'done' in the modal, follow up with an
-      // updateClientTask so the row reflects their choice.
-      if (status !== 'pending') {
+      if (editTask) {
+        // Edit mode — single update with every field the form exposed.
         await updateClientTask(
           orgId,
-          created.taskId,
-          { status },
+          editTask.taskId,
+          {
+            title: subject.trim(),
+            description: description.trim() || null,
+            type: taskType,
+            status,
+            dueAt: dueDate,
+            assignedTo: ownerId || null,
+            assignedToName: owner?.displayName ?? null,
+            priority,
+            repeatRule: repeatOn ? repeatRule : null,
+          },
           { userId: user?.userId ?? '', displayName: user?.displayName ?? user?.email ?? '' },
         );
+        toast.success(`Task "${subject.trim()}" updated`);
+      } else {
+        const created = await createClientTask(
+          orgId,
+          user?.userId ?? '',
+          user?.displayName ?? user?.email ?? '',
+          {
+            title: subject.trim(),
+            description: description.trim() || null,
+            type: taskType,
+            dueAt: dueDate,
+            assignedTo: ownerId || null,
+            assignedToName: owner?.displayName ?? null,
+            clientId: relatedTo?.clientId ?? null,
+            dealId: relatedTo?.dealId ?? null,
+            priority,
+            repeatRule: repeatOn ? repeatRule : null,
+          },
+        );
+        // createClientTask always inserts with status='pending'. If the
+        // user picked 'snoozed' or 'done' in the modal, follow up with an
+        // updateClientTask so the row reflects their choice.
+        if (status !== 'pending') {
+          await updateClientTask(
+            orgId,
+            created.taskId,
+            { status },
+            { userId: user?.userId ?? '', displayName: user?.displayName ?? user?.email ?? '' },
+          );
+        }
+        toast.success(`Task "${subject.trim()}" created`);
       }
-      toast.success(`Task "${subject.trim()}" created`);
       onCreated?.();
       if (saveAndNew) {
         // Keep the dialog open, blank the title for the next entry.
@@ -130,7 +171,7 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ListTodo className="w-5 h-5 text-rose-600" /> Create Task
+            <ListTodo className="w-5 h-5 text-rose-600" /> {isEditing ? 'Edit Task' : 'Create Task'}
           </DialogTitle>
         </DialogHeader>
 
@@ -236,12 +277,15 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="outline" onClick={() => handleSave(true)} disabled={saving}>
-            Save and New
-          </Button>
+          {/* "Save and New" only makes sense for create mode. */}
+          {!isEditing && (
+            <Button variant="outline" onClick={() => handleSave(true)} disabled={saving}>
+              Save and New
+            </Button>
+          )}
           <Button onClick={() => handleSave(false)} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-            Save
+            {isEditing ? 'Update' : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>

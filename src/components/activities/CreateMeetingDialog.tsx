@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
-  createMeeting, type MeetingParticipant,
+  createMeeting, updateMeeting, type Meeting, type MeetingParticipant,
 } from '@/services/supabase/meetings';
 import { DayPickerPopover } from '@/components/kanban/DayPickerPopover';
 import { RelatedToPicker, type RelatedTo } from './RelatedToPicker';
@@ -27,6 +27,9 @@ interface CreateMeetingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultRelatedTo?: RelatedTo | null;
+  /** When set, dialog opens in EDIT mode — prefilled from the meeting,
+   *  Save calls updateMeeting instead of createMeeting. */
+  editMeeting?: Meeting | null;
   onCreated?: () => void;
 }
 
@@ -45,8 +48,9 @@ interface CreateMeetingDialogProps {
  * integration connected.
  */
 export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
-  open, onOpenChange, defaultRelatedTo = null, onCreated,
+  open, onOpenChange, defaultRelatedTo = null, editMeeting = null, onCreated,
 }) => {
+  const isEditing = !!editMeeting;
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
@@ -73,21 +77,36 @@ export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    setTitle('');
-    setLocation('');
-    setAllDay(false);
-    // Default to "today + tomorrow same time" so the form is one-click usable.
-    const now = new Date();
-    setFromDate(now);
-    setFromTime(`${String(now.getHours()).padStart(2, '0')}:00`);
-    setToDate(now);
-    setToTime(`${String((now.getHours() + 1) % 24).padStart(2, '0')}:00`);
-    setHostId(user?.userId ?? '');
-    setParticipants([]);
-    setRelatedTo(defaultRelatedTo);
-    setDescription('');
-    setShowMoreDetails(false);
-  }, [open, user?.userId, defaultRelatedTo]);
+    if (editMeeting) {
+      setTitle(editMeeting.title);
+      setLocation(editMeeting.location ?? '');
+      setAllDay(editMeeting.allDay);
+      setFromDate(editMeeting.startAt);
+      setFromTime(`${String(editMeeting.startAt.getHours()).padStart(2, '0')}:${String(editMeeting.startAt.getMinutes()).padStart(2, '0')}`);
+      setToDate(editMeeting.endAt);
+      setToTime(`${String(editMeeting.endAt.getHours()).padStart(2, '0')}:${String(editMeeting.endAt.getMinutes()).padStart(2, '0')}`);
+      setHostId(editMeeting.hostUserId ?? user?.userId ?? '');
+      setParticipants(editMeeting.participants);
+      setRelatedTo(null);
+      setDescription(editMeeting.description ?? '');
+      setShowMoreDetails(!!editMeeting.description);
+    } else {
+      setTitle('');
+      setLocation('');
+      setAllDay(false);
+      // Default to "today + tomorrow same time" so the form is one-click usable.
+      const now = new Date();
+      setFromDate(now);
+      setFromTime(`${String(now.getHours()).padStart(2, '0')}:00`);
+      setToDate(now);
+      setToTime(`${String((now.getHours() + 1) % 24).padStart(2, '0')}:00`);
+      setHostId(user?.userId ?? '');
+      setParticipants([]);
+      setRelatedTo(defaultRelatedTo);
+      setDescription('');
+      setShowMoreDetails(false);
+    }
+  }, [open, user?.userId, defaultRelatedTo, editMeeting]);
 
   const composeDateTime = (date: Date | null, hhmm: string): Date | null => {
     if (!date) return null;
@@ -110,29 +129,44 @@ export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
     setSaving(true);
     try {
       const host = members.find((m) => m.userId === hostId);
-      await createMeeting({
-        organizationId: orgId,
-        title: title.trim(),
-        location: location.trim() || null,
-        allDay,
-        startAt, endAt,
-        hostUserId: hostId || null,
-        hostName: host?.displayName ?? null,
-        relatedToType: relatedTo?.type ?? null,
-        relatedToId: relatedTo?.id ?? null,
-        clientId: relatedTo?.clientId ?? null,
-        dealId: relatedTo?.dealId ?? null,
-        participants,
-        description: description.trim() || null,
-        sendInvites,
-        createdBy: user?.userId ?? null,
-        createdByName: user?.displayName ?? user?.email ?? null,
-      });
-      toast.success(
-        sendInvites && participants.length > 0
-          ? `Meeting created — invites queued for ${participants.length} guest${participants.length === 1 ? '' : 's'}`
-          : 'Meeting created',
-      );
+      if (editMeeting) {
+        await updateMeeting(editMeeting.meetingId, {
+          title: title.trim(),
+          location: location.trim() || null,
+          allDay,
+          startAt, endAt,
+          hostUserId: hostId || null,
+          hostName: host?.displayName ?? null,
+          participants,
+          description: description.trim() || null,
+          sendInvites,
+        });
+        toast.success('Meeting updated');
+      } else {
+        await createMeeting({
+          organizationId: orgId,
+          title: title.trim(),
+          location: location.trim() || null,
+          allDay,
+          startAt, endAt,
+          hostUserId: hostId || null,
+          hostName: host?.displayName ?? null,
+          relatedToType: relatedTo?.type ?? null,
+          relatedToId: relatedTo?.id ?? null,
+          clientId: relatedTo?.clientId ?? null,
+          dealId: relatedTo?.dealId ?? null,
+          participants,
+          description: description.trim() || null,
+          sendInvites,
+          createdBy: user?.userId ?? null,
+          createdByName: user?.displayName ?? user?.email ?? null,
+        });
+        toast.success(
+          sendInvites && participants.length > 0
+            ? `Meeting created — invites queued for ${participants.length} guest${participants.length === 1 ? '' : 's'}`
+            : 'Meeting created',
+        );
+      }
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
@@ -161,7 +195,7 @@ export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Video className="w-5 h-5 text-violet-600" /> Meeting Information
+              <Video className="w-5 h-5 text-violet-600" /> {isEditing ? 'Edit Meeting' : 'Meeting Information'}
             </DialogTitle>
           </DialogHeader>
 
@@ -268,7 +302,7 @@ export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
             </Button>
             <Button onClick={handleSaveClick} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Save
+              {isEditing ? 'Update' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

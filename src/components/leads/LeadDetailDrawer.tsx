@@ -191,15 +191,16 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Related list
               </p>
+              {/* Removed: Invited Meetings / Campaigns / Social — no
+                  underlying tables, no wiring. Greyed-out nav entries
+                  were misleading reps; better to drop them until each
+                  ships a real implementation. */}
               {[
                 { label: 'Notes',            anchor: 'lead-notes-section',     count: notes.length },
                 { label: 'Attachments',      anchor: 'lead-attachments-section' },
                 { label: 'Open Activities',  anchor: 'lead-open-activities-section' },
                 { label: 'Closed Activities',anchor: 'lead-closed-activities-section' },
                 { label: 'Emails',           anchor: 'lead-emails-section' },
-                { label: 'Invited Meetings', anchor: null as string | null },
-                { label: 'Campaigns',        anchor: null as string | null },
-                { label: 'Social',           anchor: null as string | null },
               ].map((row) => {
                 const wired = row.anchor != null;
                 const cls = wired

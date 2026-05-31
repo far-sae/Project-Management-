@@ -13,7 +13,9 @@ import { Phone, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { createCall, type CallStatus, type CallType } from '@/services/supabase/calls';
+import {
+  createCall, updateCall, type Call, type CallStatus, type CallType,
+} from '@/services/supabase/calls';
 import { DayPickerPopover } from '@/components/kanban/DayPickerPopover';
 import { RelatedToPicker, type RelatedTo } from './RelatedToPicker';
 
@@ -21,6 +23,9 @@ interface CreateCallDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultRelatedTo?: RelatedTo | null;
+  /** When set, dialog opens in EDIT mode — prefilled from the call,
+   *  Save calls updateCall instead of createCall. */
+  editCall?: Call | null;
   onCreated?: () => void;
 }
 
@@ -33,8 +38,9 @@ interface CreateCallDialogProps {
  * so the form matches the mental model the rep is in.
  */
 export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
-  open, onOpenChange, defaultRelatedTo = null, onCreated,
+  open, onOpenChange, defaultRelatedTo = null, editCall = null, onCreated,
 }) => {
+  const isEditing = !!editCall;
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
@@ -56,20 +62,40 @@ export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    setSubject('');
-    setCallType('outbound');
-    setCallStatus('scheduled');
-    const now = new Date();
-    setCallDate(now);
-    setCallTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-    setDurationMin('5');
-    setCallerId(user?.userId ?? '');
-    setContactName('');
-    setContactPhone('');
-    setDescription('');
-    setOutcome('');
-    setRelatedTo(defaultRelatedTo);
-  }, [open, user?.userId, defaultRelatedTo]);
+    if (editCall) {
+      setSubject(editCall.subject);
+      setCallType(editCall.callType);
+      setCallStatus(editCall.callStatus);
+      if (editCall.callStartAt) {
+        setCallDate(editCall.callStartAt);
+        setCallTime(`${String(editCall.callStartAt.getHours()).padStart(2, '0')}:${String(editCall.callStartAt.getMinutes()).padStart(2, '0')}`);
+      } else {
+        setCallDate(null);
+        setCallTime('10:00');
+      }
+      setDurationMin(String(Math.round((editCall.callDurationSeconds ?? 0) / 60)));
+      setCallerId(editCall.callerUserId ?? user?.userId ?? '');
+      setContactName(editCall.contactName ?? '');
+      setContactPhone(editCall.contactPhone ?? '');
+      setDescription(editCall.description ?? '');
+      setOutcome(editCall.outcome ?? '');
+      setRelatedTo(null);
+    } else {
+      setSubject('');
+      setCallType('outbound');
+      setCallStatus('scheduled');
+      const now = new Date();
+      setCallDate(now);
+      setCallTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+      setDurationMin('5');
+      setCallerId(user?.userId ?? '');
+      setContactName('');
+      setContactPhone('');
+      setDescription('');
+      setOutcome('');
+      setRelatedTo(defaultRelatedTo);
+    }
+  }, [open, user?.userId, defaultRelatedTo, editCall]);
 
   const composeStart = (): Date | null => {
     if (!callDate) return null;
@@ -88,29 +114,46 @@ export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
       const caller = members.find((m) => m.userId === callerId);
       const start = composeStart();
       const durSeconds = callStatus === 'completed' ? Math.max(0, Number(durationMin) || 0) * 60 : null;
-      await createCall({
-        organizationId: orgId,
-        subject: subject.trim(),
-        callType,
-        callStatus,
-        callStartAt: start,
-        callDurationSeconds: durSeconds,
-        callerUserId: callerId || null,
-        callerName: caller?.displayName ?? null,
-        relatedToType: relatedTo?.type ?? null,
-        relatedToId: relatedTo?.id ?? null,
-        clientId: relatedTo?.clientId ?? null,
-        dealId: relatedTo?.dealId ?? null,
-        contactName: contactName.trim() || null,
-        contactPhone: contactPhone.trim() || null,
-        description: description.trim() || null,
-        outcome: outcome.trim() || null,
-        createdBy: user?.userId ?? null,
-        createdByName: user?.displayName ?? user?.email ?? null,
-      });
-      toast.success(
-        callStatus === 'completed' ? 'Call logged' : 'Call scheduled',
-      );
+      if (editCall) {
+        await updateCall(editCall.callId, {
+          subject: subject.trim(),
+          callType,
+          callStatus,
+          callStartAt: start,
+          callDurationSeconds: durSeconds,
+          callerUserId: callerId || null,
+          callerName: caller?.displayName ?? null,
+          contactName: contactName.trim() || null,
+          contactPhone: contactPhone.trim() || null,
+          description: description.trim() || null,
+          outcome: outcome.trim() || null,
+        });
+        toast.success('Call updated');
+      } else {
+        await createCall({
+          organizationId: orgId,
+          subject: subject.trim(),
+          callType,
+          callStatus,
+          callStartAt: start,
+          callDurationSeconds: durSeconds,
+          callerUserId: callerId || null,
+          callerName: caller?.displayName ?? null,
+          relatedToType: relatedTo?.type ?? null,
+          relatedToId: relatedTo?.id ?? null,
+          clientId: relatedTo?.clientId ?? null,
+          dealId: relatedTo?.dealId ?? null,
+          contactName: contactName.trim() || null,
+          contactPhone: contactPhone.trim() || null,
+          description: description.trim() || null,
+          outcome: outcome.trim() || null,
+          createdBy: user?.userId ?? null,
+          createdByName: user?.displayName ?? user?.email ?? null,
+        });
+        toast.success(
+          callStatus === 'completed' ? 'Call logged' : 'Call scheduled',
+        );
+      }
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
@@ -127,7 +170,7 @@ export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Phone className="w-5 h-5 text-emerald-600" /> {completed ? 'Log a Call' : 'Schedule a Call'}
+            <Phone className="w-5 h-5 text-emerald-600" /> {isEditing ? 'Edit Call' : completed ? 'Log a Call' : 'Schedule a Call'}
           </DialogTitle>
         </DialogHeader>
 
@@ -237,7 +280,7 @@ export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
           </Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-            Save
+            {isEditing ? 'Update' : 'Save'}
           </Button>
         </DialogFooter>
       </DialogContent>
