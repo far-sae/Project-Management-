@@ -2,6 +2,7 @@
 // Public submission endpoint. Order of operations:
 //   honeypot → turnstile → rate limit → field validation → dup-aware insert.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { notifyOrgAdmins } from "../_shared/notifyOrgAdmins.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -481,6 +482,37 @@ const handle = async (req: Request): Promise<Response> => {
     ...(turnstileFailureReason ? { rejected_reason: `turnstile:${turnstileFailureReason}` } : {}),
   });
   kickAutomationWorker();
+
+  // Email owner + admins of the org so they see new lead submissions
+  // without having to refresh the CRM. EdgeRuntime.waitUntil keeps
+  // the public form's 200 response fast — fanout runs after the
+  // response is sent. Failures are logged inside the helper, never
+  // re-raised, so they can't break the submission.
+  const notifyPromise = (async () => {
+    const subject = `New lead from "${form.title}"`;
+    const niceName = leadName || company || emailRaw || "(unknown)";
+    const where = [niceName, company && niceName !== company ? company : null, country].filter(Boolean).join(" · ");
+    const bodyHtml = `
+      <p>A new submission just arrived through your lead form <strong>${form.title}</strong>.</p>
+      <ul>
+        <li><strong>Lead:</strong> ${where || niceName}</li>
+        ${emailRaw  ? `<li><strong>Email:</strong> <a href="mailto:${emailRaw}">${emailRaw}</a></li>` : ""}
+        ${phone     ? `<li><strong>Phone:</strong> ${phone}</li>` : ""}
+        ${website   ? `<li><strong>Website:</strong> ${website}</li>` : ""}
+      </ul>
+      <p>Open it in CRM → Leads to follow up.</p>
+    `;
+    try {
+      await notifyOrgAdmins({
+        admin, organizationId: form.organization_id,
+        subject, bodyHtml, source: "forms-submit",
+      });
+    } catch (err) {
+      console.warn("forms-submit: org notification failed:", err);
+    }
+  })();
+  (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
+    .EdgeRuntime?.waitUntil?.(notifyPromise);
 
   return json({
     ok: true,
