@@ -478,6 +478,75 @@ export const listSlackChannels = async (): Promise<SlackChannel[]> => {
 };
 
 /**
+ * Health snapshot of the automation queue for the org. Counts pending
+ * events, recent runs, and the timestamp of the last successful run
+ * — surfaced on the Automations settings tab so reps can tell at a
+ * glance whether the worker is keeping up.
+ */
+export interface AutomationHealth {
+  pendingEvents: number;
+  runsLast24h: number;
+  successLast24h: number;
+  failuresLast24h: number;
+  lastRunAt: Date | null;
+  lastEventAt: Date | null;
+}
+
+export const getAutomationHealth = async (organizationId: string): Promise<AutomationHealth> => {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [pending, runs, successes, failures, lastRun, lastEvent] = await Promise.all([
+    supabase.from("automation_events").select("event_id", { count: "exact", head: true })
+      .eq("organization_id", organizationId).is("processed_at", null),
+    supabase.from("automation_runs").select("run_id", { count: "exact", head: true })
+      .eq("organization_id", organizationId).gte("created_at", since),
+    supabase.from("automation_runs").select("run_id", { count: "exact", head: true })
+      .eq("organization_id", organizationId).eq("status", "success").gte("created_at", since),
+    supabase.from("automation_runs").select("run_id", { count: "exact", head: true })
+      .eq("organization_id", organizationId).eq("status", "failure").gte("created_at", since),
+    supabase.from("automation_runs").select("finished_at, started_at, created_at")
+      .eq("organization_id", organizationId).order("created_at", { ascending: false })
+      .limit(1).maybeSingle(),
+    supabase.from("automation_events").select("enqueued_at")
+      .eq("organization_id", organizationId).order("enqueued_at", { ascending: false })
+      .limit(1).maybeSingle(),
+  ]);
+  const lastRunData = (lastRun.data ?? null) as { finished_at?: string | null; started_at?: string | null; created_at?: string | null } | null;
+  const lastEventData = (lastEvent.data ?? null) as { enqueued_at?: string | null } | null;
+  return {
+    pendingEvents: pending.count ?? 0,
+    runsLast24h: runs.count ?? 0,
+    successLast24h: successes.count ?? 0,
+    failuresLast24h: failures.count ?? 0,
+    lastRunAt: lastRunData
+      ? new Date(lastRunData.finished_at ?? lastRunData.started_at ?? lastRunData.created_at ?? Date.now())
+      : null,
+    lastEventAt: lastEventData?.enqueued_at ? new Date(lastEventData.enqueued_at) : null,
+  };
+};
+
+/**
+ * Insert a no-op automation_events row so the rep can verify the
+ * worker is alive and the RLS gate isn't blocking inserts. The event
+ * uses a synthetic event_type ('manual_test') that no recipe matches
+ * — it just sits in the queue, gets processed-but-no-op'd by the
+ * worker, and increments the runs counter.
+ *
+ * Calls send_test_automation_event RPC (migration 121) — a direct
+ * INSERT from the client would fail because automation_events has
+ * no INSERT policy for authenticated roles. The RPC is SECURITY
+ * DEFINER + checks org membership.
+ */
+export const sendTestAutomationEvent = async (organizationId: string): Promise<string> => {
+  const { data, error } = await supabase
+    .rpc("send_test_automation_event", { p_organization_id: organizationId });
+  if (error) {
+    logger.error("sendTestAutomationEvent failed:", error);
+    throw new Error(error.message);
+  }
+  return String(data ?? "");
+};
+
+/**
  * Manually enrol a record into an automation / sequence recipe by
  * inserting a synthetic event of the recipe's trigger_type. The
  * background worker picks it up on its next tick.

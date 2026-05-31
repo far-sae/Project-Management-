@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { formatDistanceToNow } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,11 @@ import {
   Tag,
   Flame,
   MessageSquare,
+  Activity,
+  CheckCircle2,
+  XCircle,
+  Send,
+  Loader2,
 } from "lucide-react";
 import { useAutomations } from "@/hooks/useAutomations";
 import {
@@ -27,6 +33,9 @@ import {
   kickAutomationWorker,
   setRecipeEnabled,
   summarizeRecipe,
+  getAutomationHealth,
+  sendTestAutomationEvent,
+  type AutomationHealth,
 } from "@/services/supabase/automations";
 import { RecipeBuilder } from "./RecipeBuilder";
 import { RecipeRunsList } from "./RecipeRunsList";
@@ -249,6 +258,21 @@ export const AutomationsSettingsTab: React.FC = () => {
   const [initialDraft, setInitialDraft] = useState<RecipeDraft | null>(null);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
   const [runningNow, setRunningNow] = useState(false);
+  // Health snapshot — pending events / runs / last run. Refreshes
+  // when the "Run pending" or "Send test event" buttons fire so the
+  // user immediately sees the effect.
+  const [health, setHealth] = useState<AutomationHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [testingEvent, setTestingEvent] = useState(false);
+
+  const reloadHealth = React.useCallback(async () => {
+    if (!organizationId) return;
+    setHealthLoading(true);
+    try { setHealth(await getAutomationHealth(organizationId)); }
+    finally { setHealthLoading(false); }
+  }, [organizationId]);
+
+  useEffect(() => { void reloadHealth(); }, [reloadHealth]);
 
   if (!canManage) {
     return <p className="text-sm text-muted-foreground">Only admins can manage automations.</p>;
@@ -302,8 +326,26 @@ export const AutomationsSettingsTab: React.FC = () => {
       const processed = result?.processed ?? 0;
       const pendings = result?.pendings_drained ?? 0;
       toast.success(`Automation runner checked ${processed + pendings} pending item${processed + pendings === 1 ? "" : "s"}`);
+      void reloadHealth();
     } finally {
       setRunningNow(false);
+    }
+  };
+
+  const sendTestEvent = async () => {
+    if (!organizationId) return;
+    setTestingEvent(true);
+    try {
+      await sendTestAutomationEvent(organizationId);
+      toast.success("Test event queued — running worker now");
+      // Kick the worker immediately so the rep sees the counters move
+      // without waiting for the next pg_cron tick.
+      await kickAutomationWorker({ force: true });
+      await reloadHealth();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Test event failed");
+    } finally {
+      setTestingEvent(false);
     }
   };
 
@@ -321,7 +363,62 @@ export const AutomationsSettingsTab: React.FC = () => {
           <Button variant="outline" onClick={runPendingNow} disabled={runningNow}>
             <PlayCircle className="w-4 h-4 mr-1" /> {runningNow ? "Running..." : "Run pending"}
           </Button>
+          <Button
+            variant="outline" onClick={sendTestEvent} disabled={testingEvent}
+            title="Drop a no-op test event in the queue so you can verify the worker is alive"
+          >
+            {testingEvent ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
+            Test event
+          </Button>
         </div>
+
+        {/* Health snapshot — shows pending queue depth + last 24h
+            success/failure counts so reps can tell at a glance whether
+            the worker is keeping up. Refreshes after Run pending / Send
+            test event so the effect is visible immediately. */}
+        <Card>
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Activity className="w-4 h-4 text-primary" />
+              <p className="text-sm font-medium">Worker health</p>
+              {healthLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <HealthTile
+                label="Pending"
+                value={health ? String(health.pendingEvents) : "—"}
+                tone={health && health.pendingEvents > 50 ? 'warn' : 'default'}
+                hint={health?.lastEventAt
+                  ? `Last event ${formatDistanceToNow(health.lastEventAt, { addSuffix: true })}`
+                  : 'No events yet'}
+              />
+              <HealthTile
+                label="Runs (24h)"
+                value={health ? String(health.runsLast24h) : "—"}
+                hint={health?.lastRunAt
+                  ? `Last run ${formatDistanceToNow(health.lastRunAt, { addSuffix: true })}`
+                  : 'No runs yet'}
+              />
+              <HealthTile
+                label="Success (24h)"
+                value={health ? String(health.successLast24h) : "—"}
+                tone="good"
+                icon={<CheckCircle2 className="w-3 h-3" />}
+              />
+              <HealthTile
+                label="Failures (24h)"
+                value={health ? String(health.failuresLast24h) : "—"}
+                tone={health && health.failuresLast24h > 0 ? 'bad' : 'default'}
+                icon={<XCircle className="w-3 h-3" />}
+              />
+            </div>
+            {health && health.pendingEvents > 0 && health.runsLast24h === 0 && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-2">
+                ⚠ Events are queueing but the worker hasn&apos;t run in 24h. Click <strong>Run pending</strong>; if that doesn&apos;t drain them, confirm the <code>crm-run-automations</code> edge function is deployed and the pg_cron job from migration 111 is active.
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="py-4 space-y-3">
@@ -435,6 +532,31 @@ export const AutomationsSettingsTab: React.FC = () => {
           }}
         />
       )}
+    </div>
+  );
+};
+
+// Small KPI tile used in the worker-health panel above. Kept private
+// to this file; not worth a separate module yet.
+const HealthTile: React.FC<{
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: 'default' | 'good' | 'warn' | 'bad';
+  icon?: React.ReactNode;
+}> = ({ label, value, hint, tone = 'default', icon }) => {
+  const valueClass =
+    tone === 'good' ? 'text-emerald-600 dark:text-emerald-400'
+    : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
+    : tone === 'bad' ? 'text-destructive'
+    : 'text-foreground';
+  return (
+    <div className="rounded-md border bg-muted/20 px-2.5 py-2">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+        {icon} {label}
+      </p>
+      <p className={`text-lg font-semibold tabular-nums ${valueClass}`}>{value}</p>
+      {hint && <p className="text-[10px] text-muted-foreground truncate">{hint}</p>}
     </div>
   );
 };
