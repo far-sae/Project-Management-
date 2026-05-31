@@ -75,6 +75,22 @@ export const validateRuleInput = (input: RuleInput): void => {
 export const bandFromScore = (score: number, t: Thresholds): ScoreBand =>
   score >= t.hot ? "hot" : score >= t.warm ? "warm" : "cold";
 
+/**
+ * Re-runs the scoring rules against every client in the org. Auto-
+ * recompute already fires on each row's INSERT/UPDATE; this RPC
+ * (migration 119) covers the "edited rules → existing rows stayed
+ * stale" case. Returns the number of clients recomputed.
+ */
+export const recomputeAllScores = async (organizationId: string): Promise<number> => {
+  const { data, error } = await supabase
+    .rpc("recompute_all_client_scores", { p_organization_id: organizationId });
+  if (error) {
+    logger.error("recomputeAllScores failed:", error);
+    throw new Error(error.message);
+  }
+  return Number(data ?? 0);
+};
+
 export const getRules = async (organizationId: string): Promise<LeadScoringRule[]> => {
   const { data, error } = await supabase
     .from("lead_scoring_rules")

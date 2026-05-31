@@ -7,10 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useLeadScoringRules } from "@/hooks/useLeadScoringRules";
 import {
-  createRule, updateRule, deleteRule, saveThresholds,
+  createRule, updateRule, deleteRule, saveThresholds, recomputeAllScores,
   ScoringField, ScoringOperator,
 } from "@/services/supabase/leadScoring";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, RefreshCw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const FIELDS: ScoringField[] = [
@@ -23,10 +23,24 @@ export const LeadScoringSettingsTab: React.FC = () => {
   const { organizationId, rules, thresholds, canManage } = useLeadScoringRules();
   const [draftThresholds, setDraftThresholds] = useState(thresholds);
   const [adding, setAdding] = useState(false);
+  const [recomputing, setRecomputing] = useState(false);
   const [newRule, setNewRule] = useState({
     label: "", field: "annual_revenue" as ScoringField, operator: "gte" as ScoringOperator,
     value: "1000000", points: 10,
   });
+
+  const handleRecomputeAll = async () => {
+    if (!organizationId) return;
+    setRecomputing(true);
+    try {
+      const n = await recomputeAllScores(organizationId);
+      toast.success(`Recomputed ${n} client${n === 1 ? '' : 's'}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Recompute failed");
+    } finally {
+      setRecomputing(false);
+    }
+  };
 
   React.useEffect(() => setDraftThresholds(thresholds), [thresholds]);
 
@@ -75,6 +89,20 @@ export const LeadScoringSettingsTab: React.FC = () => {
           try { await saveThresholds(organizationId, draftThresholds); toast.success("Thresholds saved"); }
           catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
         }}>Save thresholds</Button>
+        {/* New rules / edited rules don't retroactively re-band
+            existing accounts (the auto-recompute trigger only fires
+            on row changes). This button runs every rule against every
+            client in the org via recompute_all_client_scores (RPC
+            from migration 119). Safe to spam — it's idempotent. */}
+        <Button
+          variant="outline" onClick={handleRecomputeAll} disabled={recomputing}
+          title="Re-run scoring rules against every existing client in this org"
+        >
+          {recomputing
+            ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+            : <RefreshCw className="w-4 h-4 mr-1.5" />}
+          Recompute all
+        </Button>
       </div>
 
       <div className="space-y-2">
