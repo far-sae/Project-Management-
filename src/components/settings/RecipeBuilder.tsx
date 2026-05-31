@@ -148,6 +148,23 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
     }));
   };
 
+  // Quick-add: append a specific action kind with sensible defaults so a
+  // rep can build "create task → notify → assign owner" with one click
+  // per action, no dropdown chooser per row. Mirrors the layout the
+  // reference design uses (create task / log activity / add tag /
+  // notify / assign owner / ai draft email).
+  const QUICK_ADD: Array<{ type: ActionType; label: string; defaults: Record<string, unknown> }> = [
+    { type: "create_task",    label: "+ create task",    defaults: { title: "Follow up", assignee: "deal_owner", due_in_days: 3 } },
+    { type: "add_note",       label: "+ log activity",   defaults: { body: "" } },
+    { type: "tag",            label: "+ add tag",        defaults: { tag: "" } },
+    { type: "send_email",     label: "+ notify",         defaults: { to: "owner", subject: "", body: "" } },
+    { type: "change_owner",   label: "+ assign owner",   defaults: { owner_id: "" } },
+    { type: "ai_draft_email", label: "+ ai draft email", defaults: { prompt: "Draft a follow-up email about this deal." } },
+  ];
+  const quickAddAction = (type: ActionType, defaults: Record<string, unknown>) => {
+    setDraft((d) => ({ ...d, actions: [...d.actions, { type, config: defaults }] }));
+  };
+
   const updateAction = (i: number, patch: Partial<RecipeAction>) => {
     setDraft((d) => ({
       ...d,
@@ -575,8 +592,25 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
                     />
                   </div>
                 ))}
-                <Button variant="outline" size="sm" onClick={addAction}>
-                  <Plus className="w-3 h-3 mr-1" /> Add action
+                {/* Quick-add buttons — one click per common action,
+                    each pre-fills sensible defaults. Power users still
+                    get the generic "Add custom action" below for
+                    rarer types (webhook, move_deal_stage, set_field,
+                    AI extract/translate, wait, create_workspace, etc.). */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {QUICK_ADD.map((q) => (
+                    <Button
+                      key={q.type}
+                      variant="outline" size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => quickAddAction(q.type, q.defaults)}
+                    >
+                      {q.label}
+                    </Button>
+                  ))}
+                </div>
+                <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={addAction}>
+                  <Plus className="w-3 h-3 mr-1" /> Add custom action
                 </Button>
               </div>
             </div>
