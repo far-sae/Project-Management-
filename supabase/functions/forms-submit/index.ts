@@ -361,6 +361,109 @@ const handle = async (req: Request): Promise<Response> => {
     dealId = (dealRow as { deal_id: string } | null)?.deal_id ?? null;
   }
 
+  // ───────────────────────────────────────────────────────────────────────
+  // ALSO insert a Lead row so the submission appears in CRM → Leads.
+  //
+  // The form was already creating an Account (clients) + Deal, but reps
+  // expect a "lead form" to produce a "lead" — they kept asking where
+  // their form submissions went. The Lead row points at the freshly-
+  // created account + deal via the conversion columns, marked as
+  // already-converted (lead_status='converted'), so it shows in the
+  // Leads tab with a "Converted" badge instead of looking like a
+  // duplicate to re-convert.
+  //
+  // Schema-drift defensive: strip-and-retry like convertLead does, so
+  // a DB missing migration 100 (leads table) doesn't break the whole
+  // submission. We swallow leads insert errors entirely — the account
+  // + deal + form_submission have already landed, so the rep still
+  // gets the data; only the Leads-tab visibility is missing.
+  // ───────────────────────────────────────────────────────────────────────
+  let leadId: string | null = null;
+  try {
+    // Best-effort lead_number lookup. If the RPC is missing, fall back
+    // to a synthetic timestamp-based number so the NOT NULL constraint
+    // on lead_number is satisfied.
+    let leadNumber: string;
+    const { data: numData, error: numErr } = await admin
+      .rpc("next_lead_number", { p_organization_id: form.organization_id });
+    if (numErr || !numData) {
+      leadNumber = `L-FORM-${Date.now().toString(36).toUpperCase()}`;
+    } else {
+      leadNumber = String(numData);
+    }
+
+    // Workspace: forms don't bind to a specific workspace today; use
+    // the organization's first workspace as a sane default so the
+    // workspace_id NOT NULL passes.
+    const { data: ws } = await admin
+      .from("workspaces")
+      .select("workspace_id")
+      .eq("organization_id", form.organization_id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const workspaceId = (ws as { workspace_id?: string } | null)?.workspace_id ?? null;
+
+    // Field-name flexibility — the form might collect firstName /
+    // first_name / contactFirstName, etc. textValue picks whichever
+    // is present.
+    const firstName = textValue(cleaned, ["firstName", "first_name", "contactFirstName"]);
+    const lastName  = textValue(cleaned, ["lastName", "last_name", "contactLastName", "surname"])
+                   ?? (leadName ? leadName.split(/\s+/).slice(-1)[0] : null)
+                   ?? company
+                   ?? "Lead";
+    const title     = textValue(cleaned, ["title", "jobTitle", "job_title", "role"]);
+    const industry  = textValue(cleaned, ["industry"]);
+
+    const leadPayload: Record<string, unknown> = {
+      organization_id: form.organization_id,
+      workspace_id: workspaceId,
+      lead_number: leadNumber,
+      first_name: firstName,
+      last_name: lastName,
+      title,
+      email: emailRaw,
+      phone,
+      company: company || leadName || "Lead form submission",
+      industry,
+      website,
+      country,
+      lead_source: form.title,
+      lead_status: "converted",
+      converted_at: new Date().toISOString(),
+      converted_to_client_id: clientId,
+      converted_to_deal_id: dealId,
+      description: `Submitted via lead form "${form.title}".`,
+      created_by: form.created_by,
+      created_by_name: `Lead form: ${form.title}`,
+    };
+
+    const tryInsertLead = () =>
+      admin.from("leads").insert(leadPayload).select("lead_id").single();
+
+    let { data: leadRow, error: leadErr } = await tryInsertLead();
+    // Same drift loop — drop columns the DB doesn't have, up to 8x.
+    for (let i = 0; i < 8 && leadErr; i++) {
+      const e = leadErr as { code?: string; message?: string };
+      if (e.code !== "42703" && !/does not exist/i.test(String(e.message ?? ""))) break;
+      const m = /column "([^"]+)" of relation/i.exec(String(e.message ?? ""));
+      const col = m?.[1];
+      if (!col || !(col in leadPayload)) break;
+      delete leadPayload[col];
+      ({ data: leadRow, error: leadErr } = await tryInsertLead());
+    }
+    if (!leadErr && leadRow) {
+      leadId = (leadRow as { lead_id: string }).lead_id;
+    } else if (leadErr) {
+      // Don't fail the whole submission — the account + deal already
+      // landed. Log so the operator can fix the schema drift but the
+      // form still 200s for the public user.
+      console.warn("forms-submit: leads insert failed (account+deal still saved):", leadErr);
+    }
+  } catch (e) {
+    console.warn("forms-submit: leads insert threw (account+deal still saved):", e);
+  }
+
   // Strip the honeypot so it doesn't end up in the raw_payload.
   const payload = { ...body }; delete payload._hp;
 
@@ -383,6 +486,11 @@ const handle = async (req: Request): Promise<Response> => {
     ok: true,
     message: form.thank_you_message,
     redirect_url: form.redirect_url ?? null,
+    // Echo back the records we created so the form host page can
+    // link the rep directly to /clients?lead=<id> etc.
+    client_id: clientId,
+    deal_id: dealId,
+    lead_id: leadId,
   });
 };
 
