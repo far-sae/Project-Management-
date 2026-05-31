@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   CreditCard, CheckCircle2, AlertCircle, ExternalLink, Copy, RefreshCw, Loader2, Clock,
+  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -18,60 +19,65 @@ const STRIPE_ENV_VARS = [
 ] as const;
 
 /**
- * Stripe wiring smoke for the Subscription settings tab.
- * Three things at a glance:
- *   1. Is stripe-webhook deployed and reachable? (probe with GET → 405)
- *   2. Has a real webhook event landed recently? (latest
- *      subscriptions.updated_at across the org)
- *   3. Are the two required env vars set on the function? (env probe
- *      via POST with an invalid signature — the function returns
- *      500 "Server configuration error" when secrets are missing,
- *      400 "Missing stripe-signature" / "Invalid signature" when
- *      they're set)
+ * Stripe wiring smoke + actionable diagnostic for the Subscription
+ * settings tab. v2 — answers the "I set the secrets but it still
+ * doesn't work" question with the most-likely causes spelled out.
  *
- * Read-only — actual credential changes happen in the Supabase
- * dashboard. This card just answers "is my Stripe setup alive?".
+ * Probes (in order, each independently):
+ *   1. Webhook reachable    — GET → expect 405
+ *   2. Checkout reachable   — GET → expect 405/401
+ *   3. Env vars set         — POST stripe-webhook with bogus sig.
+ *                              500 'configuration' → missing secrets
+ *                              400 'signature'     → secrets present
+ *   4. Webhook URL          — surfaces the exact URL to paste into
+ *                              Stripe Dashboard → Developers → Webhooks
+ *   5. Last activity        — subscriptions.updated_at for this user
+ *                              (proxy for "webhook actually fired")
+ *
+ * Common gotchas accordion explains the four reasons users typically
+ * hit this dead-end after setting secrets:
+ *   - secrets set but function not redeployed (cold start cache)
+ *   - wrong env var names (typo / wrong case)
+ *   - webhook endpoint never registered in Stripe Dashboard
+ *   - whsec_ value pasted from wrong webhook endpoint
  */
 export const StripeHealthCard: React.FC = () => {
   const { user } = useAuth();
   const [webhookProbe, setWebhookProbe] = useState<ProbeState>('unknown');
   const [checkoutProbe, setCheckoutProbe] = useState<ProbeState>('unknown');
   const [envState, setEnvState] = useState<'unknown' | 'configured' | 'missing'>('unknown');
-  const [envDetail, setEnvDetail] = useState<string | null>(null);
+  const [envRawResponse, setEnvRawResponse] = useState<string | null>(null);
+  const [envHttpStatus, setEnvHttpStatus] = useState<number | null>(null);
   const [lastWebhookAt, setLastWebhookAt] = useState<Date | null>(null);
   const [probing, setProbing] = useState(false);
+  const [showGotchas, setShowGotchas] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
 
   const base = (import.meta as { env?: { VITE_SUPABASE_URL?: string } }).env?.VITE_SUPABASE_URL ?? '';
+  const webhookUrl = base ? `${base}/functions/v1/stripe-webhook` : '';
 
   const probe = async () => {
     if (!base) return;
     setProbing(true);
     try {
-      // 1. Webhook reachability — GET should return 405 "Method not
-      //    allowed" if the function is deployed. Anything else (404,
-      //    network failure) means not deployed / DNS issue.
+      // 1. Webhook reachability — GET should return 405.
       try {
         const res = await fetch(`${base}/functions/v1/stripe-webhook`, { method: 'GET' });
         setWebhookProbe(res.status === 405 ? 'reachable' : 'unreachable');
-      } catch {
-        setWebhookProbe('unreachable');
-      }
+      } catch { setWebhookProbe('unreachable'); }
 
-      // 2. Checkout-session reachability — same pattern.
+      // 2. Checkout reachability.
       try {
         const res = await fetch(`${base}/functions/v1/create-checkout-session`, { method: 'GET' });
-        // create-checkout-session is verify_jwt=false but POST-only,
-        // so GET should hit a 405 or 401 wrapper.
         setCheckoutProbe(res.status === 405 || res.status === 401 ? 'reachable' : 'unreachable');
-      } catch {
-        setCheckoutProbe('unreachable');
-      }
+      } catch { setCheckoutProbe('unreachable'); }
 
-      // 3. Env-var probe — POST a deliberately invalid signature.
-      //    The function checks env presence first and returns 500
-      //    "Server configuration error" if missing; otherwise 400 with
-      //    a signature error. The distinction tells us whether
-      //    secrets are configured.
+      // 3. Env-var probe. Stripe-webhook checks env presence BEFORE
+      //    signature validation, so:
+      //      500 + "configuration" → secrets missing on the function
+      //      400 + "signature"     → secrets present (function got
+      //                              past the env check, only the
+      //                              fake sig is rejected)
       try {
         const res = await fetch(`${base}/functions/v1/stripe-webhook`, {
           method: 'POST',
@@ -79,22 +85,24 @@ export const StripeHealthCard: React.FC = () => {
           body: '{}',
         });
         const text = await res.text();
+        setEnvHttpStatus(res.status);
+        setEnvRawResponse(text.slice(0, 400));
         if (res.status === 500 && /configuration/i.test(text)) {
           setEnvState('missing');
-          setEnvDetail(text);
-        } else {
-          // 400 from signature verification = secrets ARE set
+        } else if (res.status === 400 || /signature/i.test(text)) {
           setEnvState('configured');
-          setEnvDetail('Function got past the env check (signature rejection is expected).');
+        } else {
+          // Unexpected — neither classic missing-env nor classic
+          // bad-sig. Most likely a project paused / different function
+          // bug. Flag as missing so the user troubleshoots.
+          setEnvState('missing');
         }
       } catch (err) {
         setEnvState('missing');
-        setEnvDetail(err instanceof Error ? err.message : 'env probe failed');
+        setEnvRawResponse(err instanceof Error ? err.message : 'probe failed');
       }
 
-      // 4. Last webhook timestamp — use the user's own subscription
-      //    row as a proxy. Webhooks update updated_at when they
-      //    process a Stripe event for this user.
+      // 4. Last activity timestamp — user's own subscriptions.updated_at.
       if (user?.userId) {
         const { data } = await supabase
           .from('subscriptions')
@@ -158,6 +166,23 @@ export const StripeHealthCard: React.FC = () => {
           )}
         </div>
 
+        {/* Webhook URL — the most-forgotten step. Paste this into
+            Stripe Dashboard → Developers → Webhooks → Add endpoint. */}
+        {webhookUrl && (
+          <div className="rounded-md border bg-muted/30 p-2.5 space-y-1">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Webhook URL (paste into Stripe)</p>
+            <div className="flex items-center gap-2">
+              <code className="text-xs font-mono break-all flex-1">{webhookUrl}</code>
+              <button type="button" onClick={() => copy(webhookUrl)} className="text-muted-foreground hover:text-foreground" title="Copy">
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Subscribe at minimum to: <code>checkout.session.completed</code>, <code>customer.subscription.created</code>, <code>customer.subscription.updated</code>, <code>customer.subscription.deleted</code>.
+            </p>
+          </div>
+        )}
+
         {lastWebhookAt && (
           <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
             <Clock className="w-3 h-3" />
@@ -198,27 +223,112 @@ export const StripeHealthCard: React.FC = () => {
           </p>
         )}
 
+        {/* "I set the secrets but it still doesn't work" — the four
+            classic gotchas. Collapsed by default; expands so reps
+            actually read them when they hit the dead-end. */}
+        <button
+          type="button" onClick={() => setShowGotchas((s) => !s)}
+          className="flex items-center gap-1 text-xs text-primary hover:underline w-full text-left"
+        >
+          {showGotchas ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          Set the secrets but it&apos;s still not working?
+        </button>
+        {showGotchas && (
+          <div className="rounded-md border border-dashed p-2.5 space-y-2 text-xs">
+            <Gotcha
+              n={1}
+              title="Did you redeploy the functions after setting the secrets?"
+              detail={
+                <>Edge functions cache env on cold start. New secrets only take effect on a fresh deploy or after a few minutes of inactivity. Run{' '}
+                <code>npx supabase functions deploy stripe-webhook create-checkout-session</code>
+                {' '}to force it.</>
+              }
+            />
+            <Gotcha
+              n={2}
+              title="Are the env var names exactly STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET?"
+              detail={
+                <>Common typos: <code>STRIPE_KEY</code>, <code>STRIPE_API_KEY</code>, <code>WEBHOOK_SECRET</code>. Case matters. Trailing spaces / newlines from copy-paste matter. Re-set them and click Refresh above.</>
+              }
+            />
+            <Gotcha
+              n={3}
+              title="Is the webhook endpoint registered in Stripe Dashboard?"
+              detail={
+                <>Setting <code>STRIPE_WEBHOOK_SECRET</code> in Supabase only configures the function to <em>verify</em> incoming events. You still have to <strong>add the endpoint URL</strong> (shown above) in Stripe Dashboard → Developers → Webhooks → Add endpoint, AND subscribe to the four <code>checkout.*</code> / <code>customer.subscription.*</code> events listed there.</>
+              }
+            />
+            <Gotcha
+              n={4}
+              title="Did you copy the whsec_ value from the same endpoint?"
+              detail={
+                <>Each webhook endpoint in Stripe has its own signing secret. If you have multiple endpoints (e.g. test + live, or staging + prod) and you paste the wrong one, every event fails signature verification with <code>StripeSignatureVerificationError</code>. Click the endpoint in Stripe → Reveal → re-copy.</>
+              }
+            />
+            <Gotcha
+              n={5}
+              title="Are you using the right mode (test vs live)?"
+              detail={
+                <>If <code>STRIPE_SECRET_KEY</code> starts with <code>sk_test_</code>, the webhook endpoint also needs to be in the <em>test</em> dashboard (and the <code>whsec_</code> from there). Mixing test + live keys gives signature failures.</>
+              }
+            />
+            <Gotcha
+              n={6}
+              title="Check the function logs for the actual error"
+              detail={
+                <>Supabase Dashboard → Edge Functions → <code>stripe-webhook</code> → Logs. The function logs each rejection reason (missing config, bad signature, unknown event type, RLS error on subscriptions update). Far faster than guessing.</>
+              }
+            />
+          </div>
+        )}
+
+        {/* Raw env-probe response — for the truly stuck. */}
+        {envRawResponse && (
+          <button
+            type="button" onClick={() => setShowRaw((s) => !s)}
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            {showRaw ? '− hide' : '+ show'} raw env-probe response
+          </button>
+        )}
+        {showRaw && envRawResponse && (
+          <pre className="text-[10px] bg-muted/40 rounded p-2 overflow-x-auto">
+{`HTTP ${envHttpStatus ?? '?'}
+${envRawResponse}`}
+          </pre>
+        )}
+
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <a
             href="https://dashboard.stripe.com/test/webhooks"
             target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-primary hover:underline"
           >
-            Stripe webhooks <ExternalLink className="w-3 h-3" />
+            Stripe webhooks (test) <ExternalLink className="w-3 h-3" />
+          </a>
+          <a
+            href="https://dashboard.stripe.com/webhooks"
+            target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:underline"
+          >
+            Stripe webhooks (live) <ExternalLink className="w-3 h-3" />
           </a>
           <a
             href="https://supabase.com/docs/guides/functions/secrets"
             target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-primary hover:underline ml-auto"
           >
             Set Supabase secrets <ExternalLink className="w-3 h-3" />
           </a>
         </div>
-
-        {envDetail && envState === 'configured' && (
-          <p className="text-[11px] text-muted-foreground">{envDetail}</p>
-        )}
       </CardContent>
     </Card>
   );
 };
+
+const Gotcha: React.FC<{ n: number; title: string; detail: React.ReactNode }> = ({ n, title, detail }) => (
+  <div className="rounded border bg-background/50 p-2">
+    <p className="font-medium">{n}. {title}</p>
+    <p className="text-muted-foreground leading-relaxed mt-0.5">{detail}</p>
+  </div>
+);
