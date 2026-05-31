@@ -71,6 +71,19 @@ const PrivacyPolicyPage = () => {
             notifications, and other content you or your colleagues submit to the Service.
           </li>
           <li>
+            <strong className="text-foreground">Sales CRM data</strong> (Advanced and Premium tiers).
+            Leads, Contacts, Accounts, Deals, sales Pipeline state, CRM Activities (Tasks,
+            Meetings, Calls, Notes), email templates and merge tokens, file attachments on CRM
+            records, email events (outbound and inbound) tied to a record, scoring rules and the
+            scores they produce, lead-form submissions, and automation / sequence enrolment and
+            run records. CRM contact information typically includes third-party personal data
+            (your leads&apos; / customers&apos; names, emails, phone numbers, etc.) that{' '}
+            <strong className="text-foreground">you control</strong> — your organisation is the
+            controller of that data and you are responsible for the lawful basis under which it
+            was collected. We process it as your processor under{' '}
+            <Link to="/terms" className="text-primary underline underline-offset-2">our Terms</Link>.
+          </li>
+          <li>
             <strong className="text-foreground">Billing and subscription data.</strong> Where you
             purchase a paid plan, our payment processor may collect billing contact details and
             payment method metadata; we typically receive limited information needed for invoicing
@@ -346,6 +359,79 @@ const PrivacyPolicyPage = () => {
           not bulk-export or otherwise archive Slack content. The Slack OAuth token is encrypted at
           rest. Disconnecting from <strong className="text-foreground">Settings &rarr; Integrations</strong>{' '}
           revokes the token and stops all posts and event handling.
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          Twilio (SMS)
+        </h3>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          When an organisation owner configures Twilio credentials
+          (<code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code>, <code>TWILIO_FROM_NUMBER</code>)
+          as server-side function secrets, {LEGAL_PRODUCT_NAME} can send SMS messages via Twilio&apos;s
+          REST API on your behalf. We store outbound SMS records (recipient phone number, message body,
+          status, provider message ID) so the conversation appears in the recipient&apos;s CRM
+          timeline. Twilio processes the message itself; see{' '}
+          <a
+            href="https://www.twilio.com/legal/privacy"
+            className="text-primary underline underline-offset-2"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Twilio&apos;s privacy notice
+          </a>
+          . You are responsible for ensuring each recipient has provided lawful consent (TCPA in the
+          US, PECR in the UK, equivalent regimes elsewhere). Credentials are not stored in our
+          database; they live only as environment variables on our edge functions.
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          SendGrid (sequence email and inbound reply tracking)
+        </h3>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          For Sequences (Advanced and Premium tiers), {LEGAL_PRODUCT_NAME} may send email via
+          SendGrid using your organisation&apos;s configured sender domain, and may receive inbound
+          replies via a SendGrid Inbound Parse webhook so a reply automatically pauses the
+          recipient&apos;s sequence. We store outbound message metadata (recipient, subject,
+          message ID, send/delivery/bounce status) and inbound reply metadata (sender, subject, body
+          preview) on a per-organisation basis. See{' '}
+          <a
+            href="https://www.twilio.com/en-us/legal/privacy"
+            className="text-primary underline underline-offset-2"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            SendGrid&apos;s privacy notice
+          </a>
+          {' '}(SendGrid is a Twilio company). API keys live only as edge-function secrets.
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          Inbound Gmail (gmail-inbound)
+        </h3>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          Where an organisation enables inbound Gmail processing, a configured Gmail address forwards
+          messages to a {LEGAL_PRODUCT_NAME} webhook. We parse the From address, subject, and body
+          preview and write them to the matching CRM record&apos;s email timeline; we do not
+          permanently archive full message bodies or attachments inside {LEGAL_PRODUCT_NAME}. This
+          integration is opt-in per organisation and is gated by the same Limited-Use posture as the
+          outbound Gmail send.
+        </p>
+
+        <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
+          AI processing (OpenAI / Anthropic via {LEGAL_COMPANY_NAME} routing)
+        </h3>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          AI-powered features — AI Sales Agent, AI Blocks inside automations, AI-drafted emails, AI
+          summaries of records, AI classification of inbound enquiries — send the relevant CRM
+          fragment (typically a few records or message bodies) to a large-language-model API to
+          generate a response. Requests are made server-side; the recipient providers operate under
+          enterprise-grade API terms that, as of the &quot;last updated&quot; date above, do not use
+          submitted content to train their generalised models. We do not send your data to any
+          AI provider for advertising or unrelated training purposes. We do not enrich CRM records
+          with data sourced from outside your organisation without an explicit action by a member
+          (e.g. clicking &quot;enrich&quot; on a contact). You can disable AI features
+          organisation-wide from <strong className="text-foreground">Settings &rarr; AI Usage</strong>{' '}
+          (owners / admins only).
         </p>
 
         <h3 className="text-base font-semibold text-foreground mt-6 mb-2">

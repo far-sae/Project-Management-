@@ -49,6 +49,48 @@ const TermsPage = () => {
           not guarantee uninterrupted or error-free operation. Planned maintenance, third-party
           outages, and events outside our reasonable control may affect availability.
         </p>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          The Service currently includes the following capability areas, with availability gated by
+          your subscription tier:
+        </p>
+        <ul className="list-disc pl-5 space-y-1 text-muted-foreground mb-4 leading-relaxed text-sm">
+          <li>
+            <strong className="text-foreground">Project management</strong> — projects, tasks,
+            subtasks, kanban + timeline views, file attachments, comments, time tracking, calendar
+            sync with Google Calendar.
+          </li>
+          <li>
+            <strong className="text-foreground">Sales CRM</strong> (Advanced and Premium tiers) —
+            Leads, Contacts, Accounts, Deals + sales Pipeline, Activities hub (Tasks, Meetings,
+            Calls with notes + attachments), CRM analytics, lead scoring, lead forms, email
+            templates with merge tokens.
+          </li>
+          <li>
+            <strong className="text-foreground">Automations and Sequences</strong> (Advanced and
+            Premium) — triggered recipes that perform actions on the user&apos;s behalf
+            (send_email, create_task, tag, change_owner, wait, AI blocks, etc.) when CRM events
+            occur, with manual enrolment on records.
+          </li>
+          <li>
+            <strong className="text-foreground">AI Sales Agent</strong> (Advanced and Premium) — an
+            assistant that proposes follow-ups, drafts emails, and summarises records using
+            large-language-model APIs.
+          </li>
+          <li>
+            <strong className="text-foreground">Integrations</strong> — optional connections to
+            Gmail (sending and inbound), Google Calendar, Google Meet, Slack, Telegram, WhatsApp,
+            Twilio (SMS), and SendGrid (sequence email and inbound reply tracking).
+          </li>
+          <li>
+            <strong className="text-foreground">Team operations</strong> — Team, Contracts,
+            Expenses, HR, Payroll, file storage, audit log.
+          </li>
+        </ul>
+        <p className="text-muted-foreground mb-4 leading-relaxed text-sm">
+          Specific feature availability per tier is described on the pricing page and may change
+          from time to time. We will not remove a feature you actively use without reasonable notice
+          and a migration path where one is required.
+        </p>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">2. Accounts and eligibility</h2>
         <p className="text-muted-foreground mb-4 leading-relaxed">
@@ -220,12 +262,27 @@ const TermsPage = () => {
         </p>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           <strong className="text-foreground">AI features.</strong> Parts of the Service use
-          large-language-model APIs to generate suggestions (e.g. task descriptions, lead scoring,
-          intent parsing for the Telegram bot, AI Blocks in automations, AI sales agent
-          recommendations). AI output is probabilistic and may be inaccurate, incomplete, biased, or
-          out of date. You are responsible for reviewing any AI output before relying on it for
-          business, financial, legal, or other decisions. We do not warrant that AI output is fit for
-          any particular purpose.
+          large-language-model APIs to generate suggestions — including task descriptions, lead
+          scoring rationale, intent parsing for the Telegram bot, AI Blocks inside automations and
+          sequences, AI Sales Agent recommendations, AI-drafted emails, AI summaries of records, and
+          AI classification of inbound enquiries. AI output is probabilistic and may be inaccurate,
+          incomplete, biased, out of date, or fabricated. You are responsible for reviewing any AI
+          output before relying on it for business, financial, legal, or other decisions, and for
+          sending it to a third party (e.g. an AI-drafted email to a customer). We do not warrant
+          that AI output is fit for any particular purpose. Where the Service performs an action on
+          your behalf (sending an email, creating a record, posting to Slack), responsibility for
+          the action rests with you and your organisation; see also Section 4 (Acceptable use).
+        </p>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          <strong className="text-foreground">Outbound communications.</strong> When you connect
+          Gmail, Twilio (SMS), SendGrid, Telegram, WhatsApp, or Slack, the Service can send
+          messages on your behalf — including notification emails, sequence steps, SMS, chat-bot
+          replies, and ad-hoc messages composed in the app. You are responsible for ensuring that
+          every recipient has appropriate lawful basis to receive those messages (opt-in,
+          legitimate-interest, business-customer relationship, etc.) and that the content complies
+          with applicable marketing, anti-spam, and accessibility laws (including but not limited
+          to GDPR, the UK PECR, the US CAN-SPAM Act, and the US TCPA for SMS). We may rate-limit or
+          disable outbound channels if abuse is detected.
         </p>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           <strong className="text-foreground">Chat-bot integrations.</strong> Optional integrations

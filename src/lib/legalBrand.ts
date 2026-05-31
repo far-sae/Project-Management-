@@ -2,4 +2,4 @@
 export const LEGAL_PRODUCT_NAME = 'TaskCalendar';
 export const LEGAL_COMPANY_NAME = 'Securovix';
 export const LEGAL_CONTACT_EMAIL = 'info@securovix.com';
-export const LEGAL_LAST_UPDATED = '20 May 2026';
+export const LEGAL_LAST_UPDATED = '31 May 2026';
