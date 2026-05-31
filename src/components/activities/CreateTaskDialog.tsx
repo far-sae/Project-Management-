@@ -11,12 +11,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ListTodo, Loader2 } from 'lucide-react';
+import { ListTodo, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
-  createClientTask, updateClientTask,
+  createClientTask, updateClientTask, deleteClientTask,
   type ClientTaskPriority, type ClientTaskType, type ClientTaskStatus,
 } from '@/services/supabase/clientTasks';
 import { DayPickerPopover } from '@/components/kanban/DayPickerPopover';
@@ -288,6 +288,34 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
         </section>
 
         <DialogFooter className="flex flex-row gap-2">
+          {/* Delete is only visible in EDIT mode — there's nothing to
+              delete during creation. Confirms first because deletion
+              of a task that's tagged to a deal/contact removes it from
+              every drawer's Open/Closed Activities section too. */}
+          {isEditing && editTask && (
+            <Button
+              variant="ghost" size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10 mr-auto"
+              disabled={saving}
+              onClick={async () => {
+                if (!window.confirm(`Delete task "${editTask.title}"? This can't be undone.`)) return;
+                if (!orgId) return;
+                setSaving(true);
+                try {
+                  await deleteClientTask(orgId, editTask.taskId);
+                  toast.success('Task deleted');
+                  onCreated?.();
+                  onOpenChange(false);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Delete failed');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              <Trash2 className="w-4 h-4 mr-1.5" /> Delete
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>

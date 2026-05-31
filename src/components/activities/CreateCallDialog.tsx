@@ -10,12 +10,13 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Phone, Loader2 } from 'lucide-react';
+import { Phone, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
-  createCall, updateCall, type Call, type CallStatus, type CallType,
+  createCall, updateCall, deleteCall,
+  type Call, type CallStatus, type CallType,
 } from '@/services/supabase/calls';
 import { DayPickerPopover } from '@/components/kanban/DayPickerPopover';
 import { RelatedToPicker, type RelatedTo } from './RelatedToPicker';
@@ -280,6 +281,30 @@ export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
         </div>
 
         <DialogFooter>
+          {isEditing && editCall && (
+            <Button
+              variant="ghost" size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10 mr-auto"
+              disabled={saving}
+              onClick={async () => {
+                if (!window.confirm(`Delete call "${editCall.subject}"? This can't be undone.`)) return;
+                if (!orgId) return;
+                setSaving(true);
+                try {
+                  await deleteCall(editCall.callId, orgId);
+                  toast.success('Call deleted');
+                  onCreated?.();
+                  onOpenChange(false);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Delete failed');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              <Trash2 className="w-4 h-4 mr-1.5" /> Delete
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>

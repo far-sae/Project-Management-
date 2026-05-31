@@ -12,12 +12,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Video, Loader2, Plus, X } from 'lucide-react';
+import { Video, Loader2, Plus, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
-  createMeeting, updateMeeting, type Meeting, type MeetingParticipant,
+  createMeeting, updateMeeting, deleteMeeting,
+  type Meeting, type MeetingParticipant,
 } from '@/services/supabase/meetings';
 import { DayPickerPopover } from '@/components/kanban/DayPickerPopover';
 import { RelatedToPicker, type RelatedTo } from './RelatedToPicker';
@@ -304,6 +305,32 @@ export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
           </div>
 
           <DialogFooter>
+            {/* Delete only in EDIT mode — confirms before removing
+                because cancelled invites can't be un-sent. */}
+            {isEditing && editMeeting && (
+              <Button
+                variant="ghost" size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 mr-auto"
+                disabled={saving}
+                onClick={async () => {
+                  if (!window.confirm(`Delete meeting "${editMeeting.title}"? Participants won't be re-notified.`)) return;
+                  if (!orgId) return;
+                  setSaving(true);
+                  try {
+                    await deleteMeeting(editMeeting.meetingId, orgId);
+                    toast.success('Meeting deleted');
+                    onCreated?.();
+                    onOpenChange(false);
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : 'Delete failed');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              >
+                <Trash2 className="w-4 h-4 mr-1.5" /> Delete
+              </Button>
+            )}
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
