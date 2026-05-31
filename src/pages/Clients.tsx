@@ -77,7 +77,7 @@ import { COMMON_CURRENCIES } from '@/lib/countries';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import { useFxRates } from '@/lib/fxRates';
 import { Coins } from 'lucide-react';
-import { logManualOutboundEmail } from '@/services/supabase/emailEvents';
+import { SendEmailDialog, type SendEmailRecipient } from '@/components/activities/SendEmailDialog';
 
 const TYPE_OPTIONS: { value: ClientType | 'all'; label: string }[] = [
   { value: 'all', label: 'All types' },
@@ -156,6 +156,12 @@ export const Clients: React.FC = () => {
     canCreate: canCreateContact, canManage: canManageContact,
   } = useContacts();
   const [selectedContact, setSelectedContact] = useState<ContactWithAccount | null>(null);
+  // Send-email composer state. The Send Email button on Contact / Lead
+  // drawers used to open mailto: directly; now it opens this in-app
+  // composer that picks a saved template, expands merge tokens, sends
+  // via notify-send-gmail (which logs to email_events), and only falls
+  // back to mailto if Gmail isn't connected.
+  const [emailRecipient, setEmailRecipient] = useState<SendEmailRecipient | null>(null);
   const [editingContact, setEditingContact] = useState<ContactWithAccount | null>(null);
   const [openCreateContact, setOpenCreateContact] = useState(false);
   const [openImportContact, setOpenImportContact] = useState(false);
@@ -1335,23 +1341,15 @@ export const Clients: React.FC = () => {
               toast.error('This contact has no email on file.');
               return;
             }
-            // Log a manual outbound event so the Emails section on the
-            // drawer shows the rep tried to email. The actual mailto
-            // delivery is outside our control (rep's own client) so
-            // status='sent' is best-effort.
-            if (organizationId) {
-              void logManualOutboundEmail({
-                organizationId,
-                entityType: 'contact',
-                entityId: c.contactId,
-                toEmail: c.email,
-                subject: '(sent from external email client)',
-                body: '',
-                senderUserId: user?.userId ?? null,
-                senderName: user?.displayName ?? user?.email ?? null,
-              });
-            }
-            window.location.href = `mailto:${c.email}`;
+            // Opens the in-app composer with the contact's parent
+            // account context populated for {{client.*}} merge tokens.
+            setEmailRecipient({
+              entityType: 'contact',
+              entityId: c.contactId,
+              name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email,
+              email: c.email,
+              accountOwnerName: c.clientName ?? null,
+            });
           }}
           onOpenAccount={(clientId) => {
             setSelectedContact(null);
@@ -1360,6 +1358,16 @@ export const Clients: React.FC = () => {
           }}
         />
       )}
+
+      {/* In-app email composer — opened by the Send Email button on
+          Contact and Lead drawers. Templates from Settings → Email
+          templates get listed in the picker; merge tokens
+          ({{client.name}} / {{user.name}}) are auto-expanded. */}
+      <SendEmailDialog
+        open={!!emailRecipient}
+        onOpenChange={(o) => { if (!o) setEmailRecipient(null); }}
+        recipient={emailRecipient}
+      />
 
       <ImportContactsDialog
         open={openImportContact}
@@ -1608,19 +1616,13 @@ export const Clients: React.FC = () => {
               toast.error('This lead has no email on file.');
               return;
             }
-            if (organizationId) {
-              void logManualOutboundEmail({
-                organizationId,
-                entityType: 'lead',
-                entityId: l.leadId,
-                toEmail: l.email,
-                subject: '(sent from external email client)',
-                body: '',
-                senderUserId: user?.userId ?? null,
-                senderName: user?.displayName ?? user?.email ?? null,
-              });
-            }
-            window.location.href = `mailto:${l.email}`;
+            setEmailRecipient({
+              entityType: 'lead',
+              entityId: l.leadId,
+              name: [l.firstName, l.lastName].filter(Boolean).join(' ') || l.email,
+              email: l.email,
+              accountOwnerName: l.company ?? null,
+            });
           }}
           onStatusChange={async (l, next) => {
             await updateLeadSvc(l.leadId, { leadStatus: next });
