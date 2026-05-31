@@ -143,6 +143,7 @@ export const CreateCallDialog: React.FC<CreateCallDialogProps> = ({
           relatedToId: relatedTo?.id ?? null,
           clientId: relatedTo?.clientId ?? null,
           dealId: relatedTo?.dealId ?? null,
+          leadId: relatedTo?.leadId ?? null,
           contactName: contactName.trim() || null,
           contactPhone: contactPhone.trim() || null,
           description: description.trim() || null,

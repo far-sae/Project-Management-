@@ -134,6 +134,11 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
             assignedToName: owner?.displayName ?? null,
             clientId: relatedTo?.clientId ?? null,
             dealId: relatedTo?.dealId ?? null,
+            // Polymorphic anchor — keeps Lead Open/Closed Activities
+            // populated even when the lead isn't converted yet.
+            relatedToType: relatedTo?.type ?? null,
+            relatedToId: relatedTo?.id ?? null,
+            leadId: relatedTo?.leadId ?? null,
             priority,
             repeatRule: repeatOn ? repeatRule : null,
           },

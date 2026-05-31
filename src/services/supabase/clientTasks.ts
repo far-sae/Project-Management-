@@ -36,6 +36,13 @@ export interface ClientTask {
   // pre-115 rows still map cleanly; the mapper defaults to 'normal'.
   priority?: ClientTaskPriority;
   repeatRule?: string | null;
+  // Polymorphic relation (migration 117) — lets a Task link to a Lead /
+  // Contact / Client / Deal the same way meetings + calls do. Without
+  // these the per-record Open/Closed Activities sections couldn't find
+  // a task back from a lead or orphan contact.
+  relatedToType?: 'lead' | 'contact' | 'client' | 'deal' | 'account' | null;
+  relatedToId?: string | null;
+  leadId?: string | null;
 }
 
 export interface CreateClientTaskInput {
@@ -49,6 +56,9 @@ export interface CreateClientTaskInput {
   assignedToName?: string | null;
   priority?: ClientTaskPriority;
   repeatRule?: string | null;
+  relatedToType?: 'lead' | 'contact' | 'client' | 'deal' | 'account' | null;
+  relatedToId?: string | null;
+  leadId?: string | null;
 }
 
 export interface UpdateClientTaskInput {
@@ -63,6 +73,9 @@ export interface UpdateClientTaskInput {
   dealId?: string | null;
   priority?: ClientTaskPriority;
   repeatRule?: string | null;
+  relatedToType?: 'lead' | 'contact' | 'client' | 'deal' | 'account' | null;
+  relatedToId?: string | null;
+  leadId?: string | null;
 }
 
 const isLocalOrg = (orgId: string) => orgId.startsWith("local-");
@@ -89,6 +102,9 @@ const mapTask = (row: Record<string, unknown>): ClientTask => ({
   updatedAt: new Date(row.updated_at as string),
   priority: ((row.priority as string) || "normal") as ClientTaskPriority,
   repeatRule: (row.repeat_rule as string) ?? null,
+  relatedToType: (row.related_to_type as ClientTask["relatedToType"]) ?? null,
+  relatedToId: (row.related_to_id as string) ?? null,
+  leadId: (row.lead_id as string) ?? null,
 });
 
 const readLocal = (orgId: string): ClientTask[] => {
@@ -201,6 +217,13 @@ export const createClientTask = async (
     created_by_name: createdByName,
     priority: input.priority ?? "normal",
     repeat_rule: input.repeatRule ?? null,
+    // Polymorphic anchor — set so the Open/Closed Activities filter
+    // on per-record drawers (Lead/Contact/Deal) finds the task back.
+    // Stripped by the drift loop below if the DB hasn't applied
+    // migration 117 yet.
+    related_to_type: input.relatedToType ?? null,
+    related_to_id: input.relatedToId ?? null,
+    lead_id: input.leadId ?? null,
   };
   // Same drift recovery the deals/clients services use: if the deployed
   // DB doesn't have priority/repeat_rule yet (migration 115 not applied),
@@ -313,6 +336,9 @@ export const updateClientTask = async (
   }
   if (input.priority !== undefined) update.priority = input.priority;
   if (input.repeatRule !== undefined) update.repeat_rule = input.repeatRule;
+  if (input.relatedToType !== undefined) update.related_to_type = input.relatedToType;
+  if (input.relatedToId !== undefined) update.related_to_id = input.relatedToId;
+  if (input.leadId !== undefined) update.lead_id = input.leadId;
 
   const tryUpdate = () => supabase
     .from("client_tasks")

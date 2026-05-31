@@ -35,6 +35,7 @@ export interface Meeting {
   relatedToId: string | null;
   clientId: string | null;
   dealId: string | null;
+  leadId: string | null;
   participants: MeetingParticipant[];
   description: string | null;
   status: MeetingStatus;
@@ -61,6 +62,7 @@ export interface CreateMeetingInput {
   relatedToId?: string | null;
   clientId?: string | null;
   dealId?: string | null;
+  leadId?: string | null;
   participants?: MeetingParticipant[];
   description?: string | null;
   sendInvites?: boolean;
@@ -100,6 +102,7 @@ const mapMeeting = (row: Record<string, unknown>): Meeting => ({
   relatedToId: (row.related_to_id as string | null) ?? null,
   clientId: (row.client_id as string | null) ?? null,
   dealId: (row.deal_id as string | null) ?? null,
+  leadId: (row.lead_id as string | null) ?? null,
   participants: Array.isArray(row.participants) ? row.participants as MeetingParticipant[] : [],
   description: (row.description as string | null) ?? null,
   status: ((row.status as MeetingStatus) ?? "scheduled"),
@@ -144,6 +147,7 @@ export const createMeeting = async (input: CreateMeetingInput): Promise<Meeting>
     related_to_id: input.relatedToId ?? null,
     client_id: input.clientId ?? null,
     deal_id: input.dealId ?? null,
+    lead_id: input.leadId ?? null,
     participants: input.participants ?? [],
     description: input.description ?? null,
     send_invites: input.sendInvites ?? false,
@@ -175,6 +179,7 @@ export const updateMeeting = async (
   if (patch.relatedToId !== undefined) row.related_to_id = patch.relatedToId;
   if (patch.clientId !== undefined) row.client_id = patch.clientId;
   if (patch.dealId !== undefined) row.deal_id = patch.dealId;
+  if (patch.leadId !== undefined) row.lead_id = patch.leadId;
   if (patch.participants !== undefined) row.participants = patch.participants;
   if (patch.description !== undefined) row.description = patch.description;
   if (patch.status !== undefined) row.status = patch.status;

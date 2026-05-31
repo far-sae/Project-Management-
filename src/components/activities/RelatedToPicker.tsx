@@ -17,11 +17,14 @@ export interface RelatedTo {
   type: RelatedToType;
   id: string;
   label: string;
-  /** Convenience: when the picked thing maps to a client or deal row,
-   *  surface its id too so the calling form can populate client_id /
-   *  deal_id directly (saves the parent another lookup). */
+  /** Convenience: when the picked thing maps to a client / deal / lead
+   *  row, surface its id too so the calling form can populate the
+   *  matching column directly (saves the parent another lookup). For
+   *  leads this is the new `lead_id` column added in migration 117 —
+   *  it makes the per-record Open Activities filter work. */
   clientId?: string | null;
   dealId?: string | null;
+  leadId?: string | null;
 }
 
 interface RelatedToPickerProps {
@@ -78,13 +81,13 @@ export const RelatedToPicker: React.FC<RelatedToPickerProps> = ({
       return deals
         .filter((d) => !q || d.title.toLowerCase().includes(q) || (d.clientName ?? '').toLowerCase().includes(q))
         .slice(0, 50)
-        .map((d) => ({ id: d.dealId, label: d.title, sub: d.clientName ?? '—', clientId: d.clientId, dealId: d.dealId }));
+        .map((d) => ({ id: d.dealId, label: d.title, sub: d.clientName ?? '—', clientId: d.clientId, dealId: d.dealId, leadId: null }));
     }
     if (type === 'client' || type === 'account') {
       return clients
         .filter((c) => !q || c.name.toLowerCase().includes(q) || (c.email ?? '').toLowerCase().includes(q))
         .slice(0, 50)
-        .map((c) => ({ id: c.clientId, label: c.name, sub: c.email ?? c.industry ?? '—', clientId: c.clientId, dealId: null }));
+        .map((c) => ({ id: c.clientId, label: c.name, sub: c.email ?? c.industry ?? '—', clientId: c.clientId, dealId: null, leadId: null }));
     }
     if (type === 'contact' || type === 'lead') {
       return contacts
@@ -99,6 +102,7 @@ export const RelatedToPicker: React.FC<RelatedToPickerProps> = ({
           sub: c.clientName ?? c.email ?? '—',
           clientId: c.clientId ?? null,
           dealId: null,
+          leadId: null,
         }));
     }
     return [];
@@ -157,6 +161,7 @@ export const RelatedToPicker: React.FC<RelatedToPickerProps> = ({
                   type, id: r.id, label: r.label,
                   clientId: r.clientId ?? null,
                   dealId: r.dealId ?? null,
+                  leadId: r.leadId ?? null,
                 });
                 setOpen(false);
               }}

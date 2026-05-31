@@ -24,6 +24,7 @@ export interface Call {
   relatedToId: string | null;
   clientId: string | null;
   dealId: string | null;
+  leadId: string | null;
   contactPhone: string | null;
   contactName: string | null;
   description: string | null;
@@ -48,6 +49,7 @@ export interface CreateCallInput {
   relatedToId?: string | null;
   clientId?: string | null;
   dealId?: string | null;
+  leadId?: string | null;
   contactPhone?: string | null;
   contactName?: string | null;
   description?: string | null;
@@ -88,6 +90,7 @@ const mapCall = (row: Record<string, unknown>): Call => ({
   relatedToId: (row.related_to_id as string | null) ?? null,
   clientId: (row.client_id as string | null) ?? null,
   dealId: (row.deal_id as string | null) ?? null,
+  leadId: (row.lead_id as string | null) ?? null,
   contactPhone: (row.contact_phone as string | null) ?? null,
   contactName: (row.contact_name as string | null) ?? null,
   description: (row.description as string | null) ?? null,
@@ -132,6 +135,7 @@ export const createCall = async (input: CreateCallInput): Promise<Call> => {
     related_to_id: input.relatedToId ?? null,
     client_id: input.clientId ?? null,
     deal_id: input.dealId ?? null,
+    lead_id: input.leadId ?? null,
     contact_phone: input.contactPhone ?? null,
     contact_name: input.contactName ?? null,
     description: input.description ?? null,
@@ -164,6 +168,7 @@ export const updateCall = async (
   if (patch.relatedToId !== undefined) row.related_to_id = patch.relatedToId;
   if (patch.clientId !== undefined) row.client_id = patch.clientId;
   if (patch.dealId !== undefined) row.deal_id = patch.dealId;
+  if (patch.leadId !== undefined) row.lead_id = patch.leadId;
   if (patch.contactPhone !== undefined) row.contact_phone = patch.contactPhone;
   if (patch.contactName !== undefined) row.contact_name = patch.contactName;
   if (patch.description !== undefined) row.description = patch.description;

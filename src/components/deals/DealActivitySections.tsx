@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   MessageSquare, Phone, Mail, Calendar, ListTodo, Plus, Loader2,
-  CheckCircle2, Trash2, Send, Video, VideoOff, ExternalLink,
+  Trash2, Send, Video, VideoOff, ExternalLink,
 } from 'lucide-react';
 import { cancelMeetForCrm, createMeetForCrm } from '@/services/integrations/googleMeet';
 import { DayPickerPopover } from '@/components/kanban/DayPickerPopover';
+import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +14,6 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -36,7 +36,6 @@ interface DealActivitySectionsProps {
   visible?: 'notes' | 'open-activities' | 'closed-activities' | 'emails';
 }
 
-type ActivityKind = Extract<ClientNoteKind, 'task' | 'meeting' | 'call'>;
 
 const KIND_META: Record<ClientNoteKind, { label: string; icon: typeof MessageSquare; tone: string }> = {
   note:    { label: 'Note',    icon: MessageSquare, tone: 'text-sky-600' },
@@ -169,21 +168,21 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
 
   // Split activity rows the way Zoho does: future tasks/meetings/calls are
   // "Open", past ones are "Closed". Notes and Emails get their own sections.
-  const { openActivities, closedActivities, justNotes, emails } = useMemo(() => {
-    const now = Date.now();
-    const open: ClientNote[] = [];
-    const closed: ClientNote[] = [];
+  // The Open/Closed Activities sections now read from the new
+  // client_tasks/meetings/calls tables via EntityActivitiesSection, so
+  // we only need to split client_notes into Notes (kind='note') and
+  // Emails (kind='email') for the legacy two sections below. The
+  // task/meeting/call kinds on client_notes are leftover from the
+  // pre-Activities-hub composer; they stay hidden so reps don't see
+  // duplicate cards.
+  const { justNotes, emails } = useMemo(() => {
     const ns: ClientNote[] = [];
     const es: ClientNote[] = [];
     for (const n of notes) {
       if (n.kind === 'note') ns.push(n);
       else if (n.kind === 'email') es.push(n);
-      else if (n.kind === 'task' || n.kind === 'meeting' || n.kind === 'call') {
-        const ts = n.occurredAt instanceof Date ? n.occurredAt.getTime() : new Date(n.occurredAt).getTime();
-        (ts > now ? open : closed).push(n);
-      }
     }
-    return { openActivities: open, closedActivities: closed, justNotes: ns, emails: es };
+    return { justNotes: ns, emails: es };
   }, [notes]);
 
   const openComposer = (kind: ClientNoteKind) => {
@@ -430,48 +429,42 @@ export const DealActivitySections: React.FC<DealActivitySectionsProps> = ({
         </CardContent>
       </Card>}
 
-      {/* ─── Open Activities ────────────────────────────────────────────── */}
+      {/* ─── Open Activities ──────────────────────────────────────────────
+          Previously this section read from client_notes rows with
+          kind='task'/'meeting'/'call' and split open/closed by
+          occurredAt vs now. That meant: (a) it only saw activities
+          created via the legacy in-deal composer below, NOT the ones
+          created from the Activities hub or any other drawer, and
+          (b) "closed" was defined by clock time, not by row status.
+          Replaced with EntityActivitiesSection so the deal sees the
+          same client_tasks / meetings / calls the rest of the CRM
+          uses, with the same drag-droppable status semantics. */}
       {show('open-activities') && <Card id="open-activities">
-        <CardContent className="pt-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold">Open Activities</h3>
-            {canManage && (
-              <div className="flex items-center gap-1">
-                <Button size="sm" variant="outline" onClick={() => openComposer('task')}>
-                  <Plus className="w-3.5 h-3.5 mr-1" /> Task
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => openComposer('meeting')}>
-                  <Plus className="w-3.5 h-3.5 mr-1" /> Meeting
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => openComposer('call')}>
-                  <Plus className="w-3.5 h-3.5 mr-1" /> Call
-                </Button>
-              </div>
-            )}
-          </div>
-          {composer && (['task', 'meeting', 'call'] as ActivityKind[]).includes(composer.kind as ActivityKind) && <Composer />}
-          {openActivities.length === 0 ? (
-            emptyHint('No upcoming tasks, meetings, or calls — book the next step from above.')
-          ) : (
-            <ul className="space-y-0">{openActivities.map(renderRow)}</ul>
-          )}
+        <CardContent className="pt-5">
+          <EntityActivitiesSection
+            entityKind="deal"
+            entityName="this deal"
+            entityId={dealId}
+            clientId={clientId}
+            dealId={dealId}
+            mode="open"
+            readOnly={!canManage}
+          />
         </CardContent>
       </Card>}
 
       {/* ─── Closed Activities ──────────────────────────────────────────── */}
       {show('closed-activities') && <Card id="closed-activities">
-        <CardContent className="pt-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold">Closed Activities</h3>
-            <Badge variant="outline" className="text-[10px]">
-              <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" /> {closedActivities.length}
-            </Badge>
-          </div>
-          {closedActivities.length === 0 ? (
-            emptyHint('Nothing completed yet.')
-          ) : (
-            <ul className="space-y-0">{closedActivities.map(renderRow)}</ul>
-          )}
+        <CardContent className="pt-5">
+          <EntityActivitiesSection
+            entityKind="deal"
+            entityName="this deal"
+            entityId={dealId}
+            clientId={clientId}
+            dealId={dealId}
+            mode="closed"
+            readOnly
+          />
         </CardContent>
       </Card>}
 

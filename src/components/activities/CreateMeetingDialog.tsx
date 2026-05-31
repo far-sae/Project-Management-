@@ -155,6 +155,7 @@ export const CreateMeetingDialog: React.FC<CreateMeetingDialogProps> = ({
           relatedToId: relatedTo?.id ?? null,
           clientId: relatedTo?.clientId ?? null,
           dealId: relatedTo?.dealId ?? null,
+          leadId: relatedTo?.leadId ?? null,
           participants,
           description: description.trim() || null,
           sendInvites,

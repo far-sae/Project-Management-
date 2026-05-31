@@ -69,19 +69,19 @@ export const EntityActivitiesSection: React.FC<EntityActivitiesSectionProps> = (
   const [callOpen, setCallOpen] = useState(false);
   const [detail, setDetail] = useState<Activity | null>(null);
 
-  // The Related To we want pre-filled on the create dialogs.
-  // We can only pre-fill if the entity has a real picker-supported
-  // record (account/client/deal/contact) — leads aren't yet a
-  // pickable type, so leave undefined for a non-converted lead.
+  // Related To pre-fill for the create dialogs. Now also handles leads
+  // — the new lead_id column (migration 117) lets activities link back
+  // to a Lead row even when the lead hasn't been converted yet.
   const defaultRelatedTo: RelatedTo | null = useMemo(() => {
-    if (entityKind === 'lead') return null;
     const type: RelatedToType =
       entityKind === 'contact' ? 'contact' :
       entityKind === 'deal'    ? 'deal'    :
+      entityKind === 'lead'    ? 'lead'    :
       'client';
     return {
       type, id: entityId, label: entityName,
       clientId, dealId,
+      leadId: entityKind === 'lead' ? entityId : null,
     };
   }, [entityKind, entityId, entityName, clientId, dealId]);
 
@@ -114,27 +114,46 @@ export const EntityActivitiesSection: React.FC<EntityActivitiesSectionProps> = (
     return () => { off1(); off2(); };
   }, [orgId]);
 
-  // Pick the rows that touch this entity. We match on clientId and
-  // dealId because those are the only relational columns the source
-  // tables currently carry. A row touches the entity if either id
-  // matches one of ours (the contact case typically has just clientId;
-  // the deal case has dealId).
+  // Pick the rows that touch this entity. Match on every relational
+  // column the source row carries: client_id, deal_id, lead_id, plus
+  // polymorphic related_to_type / related_to_id. A row "touches" the
+  // entity if any of these point at us. The lead_id + related_to
+  // columns came from migration 117 — pre-migration databases won't
+  // populate them, so we keep the legacy clientId/dealId checks as
+  // fallback.
   const filtered = useMemo(() => {
     const rows = activities.filter((a) => {
-      const src = a.source.kind === 'task' ? a.source.row
-        : a.source.kind === 'meeting' ? a.source.row
-        : a.source.row;
-      const rowClient = (src as { clientId?: string | null }).clientId ?? null;
-      const rowDeal = (src as { dealId?: string | null }).dealId ?? null;
+      // Direct foreign-key matches via per-row shortcut columns. All
+      // three source row types (ClientTask / Meeting / Call) carry
+      // these fields, but TS sees them as a union — cast through
+      // unknown so we can read them uniformly.
+      const src = a.source.row as unknown as {
+        clientId?: string | null;
+        dealId?: string | null;
+        leadId?: string | null;
+        relatedToType?: string | null;
+        relatedToId?: string | null;
+      };
+      const rowClient = src.clientId ?? null;
+      const rowDeal = src.dealId ?? null;
+      const rowLead = src.leadId ?? null;
+      const rowRelType = src.relatedToType ?? null;
+      const rowRelId = src.relatedToId ?? null;
+
       if (clientId && rowClient === clientId) return true;
       if (dealId && rowDeal === dealId) return true;
-      // For Contact, also match meetings whose related_to_id is our contactId.
-      if (entityKind === 'contact' && a.source.kind === 'meeting'
-        && a.source.row.relatedToType === 'contact'
-        && a.source.row.relatedToId === entityId) return true;
-      if (entityKind === 'contact' && a.source.kind === 'call'
-        && a.source.row.relatedToType === 'contact'
-        && a.source.row.relatedToId === entityId) return true;
+
+      // Per-entity polymorphic matches — works for all three kinds
+      // (task / meeting / call) now that client_tasks also carries the
+      // related_to columns.
+      if (entityKind === 'lead' && (rowLead === entityId
+        || (rowRelType === 'lead' && rowRelId === entityId))) return true;
+      if (entityKind === 'contact' && rowRelType === 'contact' && rowRelId === entityId) return true;
+      if (entityKind === 'deal' && (rowDeal === entityId
+        || (rowRelType === 'deal' && rowRelId === entityId))) return true;
+      if (entityKind === 'account' && (rowClient === entityId
+        || (rowRelType === 'client' && rowRelId === entityId))) return true;
+
       return false;
     });
     return rows.filter((a) => mode === 'open' ? a.open : !a.open);
