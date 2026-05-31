@@ -84,6 +84,9 @@ const TIER_LIMITS = {
 } as const;
 
 // ── Shared features text ──────────────────────────────────────────────
+// Reflects what's actually wired today: CRM (Accounts, Leads, Contacts,
+// Pipeline, Activities), AI Agent, Automations + Sequences land on
+// Advanced and up. Starter + Basic are pure project management.
 const TIER_FEATURES = {
   starter: [
     "3 Projects",
@@ -99,7 +102,7 @@ const TIER_FEATURES = {
     "3 Workspaces",
     "Up to 3 team members",
     "5GB File storage",
-    "AI assistant",
+    "AI assistant (project tasks)",
     "Time tracking & tags",
     "Task dependencies & subtasks",
     "Email support",
@@ -114,6 +117,13 @@ const TIER_FEATURES = {
     "Team collaboration",
     "Advanced analytics",
     "Timeline & Contracts",
+    // CRM stack — gated by hasFeature('crm') across the app.
+    "CRM: Leads, Contacts, Accounts, Pipeline",
+    "CRM Activities hub (Tasks, Meetings, Calls)",
+    "AI Sales Agent",
+    "Automations & Sequences",
+    "Email templates & merge tokens",
+    "Lead scoring & lead forms",
     "Priority support",
   ],
   premium: [
@@ -122,6 +132,8 @@ const TIER_FEATURES = {
     "Unlimited team members",
     "Unlimited storage",
     "Everything in Advanced",
+    "API access",
+    "Custom integrations",
   ],
 };
 
