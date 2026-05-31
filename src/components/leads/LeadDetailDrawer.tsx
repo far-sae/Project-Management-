@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import {
   X, Edit, Trash2, Loader2, Mail,
   User as UserIcon, MoreVertical, ChevronDown, ChevronUp,
-  Copy, Printer, FileSearch, RefreshCw, Repeat, FileText, Paperclip,
+  Copy, Printer, FileSearch, RefreshCw, Repeat, FileText,
   CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,8 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
+import { EntityAttachmentsSection } from '@/components/activities/EntityAttachmentsSection';
+import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
 
 interface Props {
   lead: Lead | null;
@@ -373,13 +375,15 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               />
             </div>
 
-            {/* Attachments — file upload UI isn't wired yet; honest empty
-                state instead of a misleading "No attachments yet". */}
+            {/* Attachments — wired to attachments table + Storage
+                bucket (migration 116). Upload / list / download / delete
+                all work end-to-end. */}
             <div id="lead-attachments-section">
-              <RelatedPlaceholder
-                icon={Paperclip}
-                title="Attachments"
-                empty="File attachments aren't enabled on lead records yet."
+              <EntityAttachmentsSection
+                organizationId={organizationId}
+                entityType="lead"
+                entityId={lead.leadId}
+                canManage={canManage && !isConverted}
               />
             </div>
             {/* Activities — real sections now, wired to client_tasks /
@@ -408,10 +412,10 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               />
             </div>
             <div id="lead-emails-section">
-              <RelatedPlaceholder
-                icon={Mail}
-                title="Emails"
-                empty="Use Send Email above to email this lead. A per-lead email log will appear here in a future build."
+              <EntityEmailsSection
+                organizationId={organizationId}
+                entityType="lead"
+                entityId={lead.leadId}
               />
             </div>
           </section>
@@ -582,21 +586,3 @@ const NotesSection: React.FC<NotesSectionProps> = ({
   );
 };
 
-// Placeholder for related-list slots whose feature isn't wired yet.
-// Deliberately no CTA buttons — the previous version rendered disabled
-// "+ Task / + Meeting / + Call" placeholders that looked clickable but
-// did nothing. The user's whole complaint was "no fake buttons", so
-// everything live now goes through EntityActivitiesSection / the real
-// composers; placeholders are strictly informational empty states.
-const RelatedPlaceholder: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  empty: string;
-}> = ({ icon: Icon, title, empty }) => (
-  <div>
-    <h3 className="text-sm font-semibold flex items-center gap-2 border-b pb-1.5 mb-2">
-      <Icon className="w-4 h-4 text-muted-foreground" /> {title}
-    </h3>
-    <p className="text-xs text-muted-foreground">{empty}</p>
-  </div>
-);

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import {
   X, Edit, Trash2, Mail, MoreVertical, ChevronDown, ChevronUp,
-  Copy, Printer, FileSearch, RefreshCw, Paperclip,
+  Copy, Printer, FileSearch, RefreshCw,
   User as UserIcon, Building2,
   ExternalLink, Loader2,
 } from 'lucide-react';
@@ -20,6 +20,8 @@ import type { Client } from '@/services/supabase/clients';
 import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
 import { AccountNotesSection } from '@/components/activities/AccountNotesSection';
 import { AccountDealsSection } from '@/components/activities/AccountDealsSection';
+import { EntityAttachmentsSection } from '@/components/activities/EntityAttachmentsSection';
+import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
 
 interface Props {
   contact: ContactWithAccount | null;
@@ -327,10 +329,11 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               />
             </div>
             <div id="contact-attachments-section">
-              <RelatedPlaceholder
-                icon={Paperclip}
-                title="Attachments"
-                empty="File attachments aren't enabled on contact records yet."
+              <EntityAttachmentsSection
+                organizationId={organizationId}
+                entityType="contact"
+                entityId={contact.contactId}
+                canManage={canManage}
               />
             </div>
             <div id="contact-deals-section">
@@ -367,10 +370,10 @@ export const ContactDetailDrawer: React.FC<Props> = ({
               />
             </div>
             <div id="contact-emails-section">
-              <RelatedPlaceholder
-                icon={Mail}
-                title="Emails"
-                empty="Use Send Email above to email this contact. A per-contact email log will appear here in a future build."
+              <EntityEmailsSection
+                organizationId={organizationId}
+                entityType="contact"
+                entityId={contact.contactId}
               />
             </div>
           </section>
@@ -386,23 +389,6 @@ const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, val
     <span className="text-foreground truncate">
       {value == null || value === '' ? <span className="text-muted-foreground">—</span> : value}
     </span>
-  </div>
-);
-
-// Strictly informational empty-state for related-list slots whose
-// feature isn't wired yet. No fake CTAs — the user's complaint was
-// "no fake buttons", so anything live goes through a real section
-// component (AccountNotesSection / EntityActivitiesSection).
-const RelatedPlaceholder: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  empty: string;
-}> = ({ icon: Icon, title, empty }) => (
-  <div>
-    <h3 className="text-sm font-semibold flex items-center gap-2 border-b pb-1.5 mb-2">
-      <Icon className="w-4 h-4 text-muted-foreground" /> {title}
-    </h3>
-    <p className="text-xs text-muted-foreground">{empty}</p>
   </div>
 );
 

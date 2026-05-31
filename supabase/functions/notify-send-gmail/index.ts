@@ -45,6 +45,13 @@ interface NotifyRequest {
   /** Optional URL the recipient should land on. Renders as a CTA in the
    *  HTML body when provided. */
   actionUrl?: string;
+  /** Optional CRM context — when present, the function writes a row
+   *  to public.email_events so the per-entity timeline (Lead/Contact
+   *  drawer Emails section) picks the send up. Missing context is
+   *  fine; the email still sends, we just skip the timeline log. */
+  organizationId?: string;
+  entityType?: "lead" | "contact" | "client" | "deal";
+  entityId?: string;
 }
 
 // Tiny inline HTML shell so notifications don't look like text/plain in
@@ -99,6 +106,36 @@ Deno.serve(async (req) => {
   const admin = auth.supabase;
   const userId = auth.userId;
 
+  // Best-effort timeline logger. Failures here MUST NOT block the
+  // send result — the email already went out (or already failed for
+  // its own reasons) and the caller cares about the send status, not
+  // whether we logged it.
+  const logEmailEvent = async (
+    status: "sent" | "failed",
+    extras: { gmailId?: string; threadId?: string; messageId?: string; errorMessage?: string } = {},
+  ) => {
+    if (!body.organizationId || !body.entityType || !body.entityId) return;
+    try {
+      await admin.from("email_events").insert({
+        organization_id: body.organizationId,
+        entity_type: body.entityType,
+        entity_id: body.entityId,
+        direction: "outbound",
+        status,
+        subject,
+        snippet: bodyText.slice(0, 200),
+        to_emails: [toEmail],
+        sender_user_id: userId,
+        message_id: extras.messageId ?? null,
+        thread_id: extras.threadId ?? null,
+        gmail_id: extras.gmailId ?? null,
+        metadata: extras.errorMessage ? { error: extras.errorMessage } : {},
+      });
+    } catch (logErr) {
+      console.warn("email_events insert failed (non-fatal):", logErr);
+    }
+  };
+
   try {
     // sendViaGmail takes a single object — `admin` and `senderUserId`
     // are properties on it, not separate args. Earlier shape was wrong
@@ -111,9 +148,14 @@ Deno.serve(async (req) => {
       bodyText,
       bodyHtml: body.bodyHtml ?? buildHtml(subject, bodyText, body.actionUrl),
     });
+    const r = result as { id?: string; threadId?: string; messageId?: string };
+    await logEmailEvent("sent", {
+      gmailId: r.id, threadId: r.threadId, messageId: r.messageId,
+    });
     return json({ ok: true, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "send_failed";
+    await logEmailEvent("failed", { errorMessage: message });
     // 412 mirrors the other Google-aware functions: caller can fall back
     // to EmailJS (or just an in-app bell) when the rep hasn't connected
     // their Gmail account specifically (not just the Google/Calendar one).

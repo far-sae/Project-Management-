@@ -78,6 +78,7 @@ import { COMMON_CURRENCIES } from '@/lib/countries';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import { useFxRates } from '@/lib/fxRates';
 import { Coins } from 'lucide-react';
+import { logManualOutboundEmail } from '@/services/supabase/emailEvents';
 
 const TYPE_OPTIONS: { value: ClientType | 'all'; label: string }[] = [
   { value: 'all', label: 'All types' },
@@ -1352,6 +1353,22 @@ export const Clients: React.FC = () => {
               toast.error('This contact has no email on file.');
               return;
             }
+            // Log a manual outbound event so the Emails section on the
+            // drawer shows the rep tried to email. The actual mailto
+            // delivery is outside our control (rep's own client) so
+            // status='sent' is best-effort.
+            if (organizationId) {
+              void logManualOutboundEmail({
+                organizationId,
+                entityType: 'contact',
+                entityId: c.contactId,
+                toEmail: c.email,
+                subject: '(sent from external email client)',
+                body: '',
+                senderUserId: user?.userId ?? null,
+                senderName: user?.displayName ?? user?.email ?? null,
+              });
+            }
             window.location.href = `mailto:${c.email}`;
           }}
           onOpenAccount={(clientId) => {
@@ -1608,6 +1625,18 @@ export const Clients: React.FC = () => {
             if (!l.email) {
               toast.error('This lead has no email on file.');
               return;
+            }
+            if (organizationId) {
+              void logManualOutboundEmail({
+                organizationId,
+                entityType: 'lead',
+                entityId: l.leadId,
+                toEmail: l.email,
+                subject: '(sent from external email client)',
+                body: '',
+                senderUserId: user?.userId ?? null,
+                senderName: user?.displayName ?? user?.email ?? null,
+              });
             }
             window.location.href = `mailto:${l.email}`;
           }}
