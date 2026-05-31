@@ -10,6 +10,15 @@ export type AgentActionType =
   | "create_task"
   | "create_client"
   | "create_client_task"
+  // CRM-side intents — let reps run the full sales workflow from
+  // Telegram / WhatsApp, not just project tasks. Each one writes to
+  // the matching CRM table via the service-role admin client.
+  | "create_lead"
+  | "create_contact"
+  | "create_deal"
+  | "create_meeting"
+  | "create_call"
+  | "log_note"
   | "switch_org"
   | "list_orgs"
   | "help"
@@ -25,6 +34,17 @@ export interface Intent {
   name?: string | null;
   description?: string | null;
   due?: string | null;          // ISO 8601
+  // CRM extras — every field is optional; the LLM fills in what it
+  // can pull from the message.
+  email?: string | null;        // lead/contact email
+  phone?: string | null;        // lead/contact phone
+  company?: string | null;      // lead's company (when distinct from client name)
+  stage?: string | null;        // deal stage (Lead / Qualified / Proposal / Negotiation)
+  value?: number | null;        // deal value
+  currency?: string | null;     // ISO currency code, defaults to org currency
+  deal?: string | null;         // free-form deal name reference for meetings/calls
+  outcome?: string | null;      // call outcome / meeting notes summary
+  body?: string | null;         // note body
   confidence?: number;
 }
 

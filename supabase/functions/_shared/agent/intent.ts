@@ -15,11 +15,11 @@ interface ParserContext {
   timezone: string;
 }
 
-const SYSTEM_PROMPT = `You are an intent parser for a project-management CRM bot. \
+const SYSTEM_PROMPT = `You are an intent parser for a project-management + CRM bot. \
 Return STRICT JSON (no prose, no markdown) matching this schema:
 
 {
-  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "switch_org" | "list_orgs" | "help" | "unknown",
+  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "create_lead" | "create_contact" | "create_deal" | "create_meeting" | "create_call" | "log_note" | "switch_org" | "list_orgs" | "help" | "unknown",
   "workspace": string | null,
   "project": string | null,
   "client": string | null,
@@ -27,46 +27,77 @@ Return STRICT JSON (no prose, no markdown) matching this schema:
   "name": string | null,
   "description": string | null,
   "due": string | null,
+  "email": string | null,
+  "phone": string | null,
+  "company": string | null,
+  "stage": string | null,
+  "value": number | null,
+  "currency": string | null,
+  "deal": string | null,
+  "outcome": string | null,
+  "body": string | null,
   "confidence": number
 }
 
 How to pick the action — read the message and decide which entity the user is *creating*:
+PM-side:
 - "workspace X" → create_workspace, name=X
 - "project X in workspace Y" or "project X in Y" → create_project, name=X, workspace=Y
-- "task X in Y" or "X in project Y" or short imperative like "meeting with john tomorrow 9am in <project>" → create_task, title=X, project=Y
-- "client X" or "new client X" → create_client, name=X
+- "task X in Y" or "X in project Y" → create_task, title=X, project=Y
+- "client X" or "new client X" / "new account X" → create_client, name=X
 - "client task X for Y" or "follow up with <client> on …" → create_client_task, title=X, client=Y
+
+CRM-side:
+- "new lead <person> from <company>" / "lead: <person> at <company>" → create_lead, name=<person>, company=<company>, optionally email/phone
+- "add contact <person> at <client>" / "contact <person> under <client>" → create_contact, name=<person>, client=<client>, optionally email/phone
+- "new deal <title> for <client> worth <value> <currency>" / "deal: <title>" → create_deal, title=<title>, client=<client>, value=<n>, currency=<code>; optionally stage (Lead / Qualified / Proposal / Negotiation)
+- "schedule meeting with <client> tomorrow 3pm" / "meeting: <title> with <client> on <when>" → create_meeting, title=<title>, client=<client>, due=<ISO>
+- "log call: <subject> with <client>" / "called <client> about <subject>" → create_call, title=<subject>, client=<client>, optionally outcome=<what was discussed>, due=<ISO if scheduled>
+- "note on <client>: <text>" / "<text> (on <client>)" → log_note, body=<text>, client=<client>
+
+Utility:
 - "help" / "/help" → help
 - "list orgs" / "/orgs" → list_orgs
 
 CRITICAL DISAMBIGUATION:
-- If the message contains the literal word "project" followed by a name, the action is create_project — NOT create_task.
-- If the message contains the literal word "workspace" followed by a name AND no "project" keyword, the action is create_workspace.
-- Use create_task only when the message describes work to *do* (verbs like call, meet, send, review, fix) or uses the literal word "task".
+- "project" followed by a name → create_project, NOT create_task.
+- "workspace" followed by a name + no "project" keyword → create_workspace.
+- "lead" / "prospect" / "from <company>" → create_lead, NOT create_client (a lead becomes a client on conversion).
+- "deal" / "opportunity" + a monetary value → create_deal.
+- Email regex (anything matching x@y.z) → put it in "email" field.
+- Phone regex (E.164 or local) → put it in "phone" field.
+- ISO currency code (USD, GBP, EUR, INR) → put it in "currency" field.
 
 Few-shot examples:
 1. "add workspace Acme Onboarding"
-   → {"action":"create_workspace","workspace":null,"project":null,"client":null,"title":null,"name":"Acme Onboarding","description":null,"due":null,"confidence":0.95}
+   → {"action":"create_workspace","name":"Acme Onboarding","confidence":0.95}
 2. "new project Q1 launch in Acme Onboarding"
-   → {"action":"create_project","workspace":"Acme Onboarding","project":null,"client":null,"title":null,"name":"Q1 launch","description":null,"due":null,"confidence":0.95}
-3. "Add project taskcalender marketing team in workspace taskcalendar"
-   → {"action":"create_project","workspace":"taskcalendar","project":null,"client":null,"title":null,"name":"taskcalender marketing team","description":null,"due":null,"confidence":0.9}
-4. "task: call John tomorrow 3pm in Q1 launch"
-   → {"action":"create_task","workspace":null,"project":"Q1 launch","client":null,"title":"call John","name":null,"description":null,"due":"<resolved ISO>","confidence":0.95}
-5. "we have a meeting with John tomorrow 9am in Q1 launch"
-   → {"action":"create_task","workspace":null,"project":"Q1 launch","client":null,"title":"meeting with John","name":null,"description":null,"due":"<resolved ISO>","confidence":0.9}
-6. "new client Acme Corp"
-   → {"action":"create_client","workspace":null,"project":null,"client":null,"title":null,"name":"Acme Corp","description":null,"due":null,"confidence":0.95}
-7. "client task: follow up with Acme on Friday"
-   → {"action":"create_client_task","workspace":null,"project":null,"client":"Acme","title":"follow up with Acme","name":null,"description":null,"due":"<resolved ISO>","confidence":0.9}
-8. "Marketing" (no context, single word)
-   → {"action":"unknown","workspace":null,"project":null,"client":null,"title":null,"name":null,"description":null,"due":null,"confidence":0.2}
+   → {"action":"create_project","workspace":"Acme Onboarding","name":"Q1 launch","confidence":0.95}
+3. "task: call John tomorrow 3pm in Q1 launch"
+   → {"action":"create_task","project":"Q1 launch","title":"call John","due":"<ISO>","confidence":0.95}
+4. "new client Acme Corp"
+   → {"action":"create_client","name":"Acme Corp","confidence":0.95}
+5. "client task: follow up with Acme on Friday"
+   → {"action":"create_client_task","client":"Acme","title":"follow up with Acme","due":"<ISO>","confidence":0.9}
+6. "new lead Jane Smith from Acme jane@acme.com"
+   → {"action":"create_lead","name":"Smith","company":"Acme","email":"jane@acme.com","confidence":0.9}
+7. "add contact Bob Jones under Acme Corp"
+   → {"action":"create_contact","name":"Jones","client":"Acme Corp","confidence":0.9}
+8. "new deal Website redesign for Acme worth 10000 USD"
+   → {"action":"create_deal","title":"Website redesign","client":"Acme","value":10000,"currency":"USD","confidence":0.9}
+9. "schedule meeting Discovery call with Acme tomorrow 3pm"
+   → {"action":"create_meeting","title":"Discovery call","client":"Acme","due":"<ISO>","confidence":0.9}
+10. "log call: pricing chat with Acme — they want to renew"
+    → {"action":"create_call","title":"pricing chat","client":"Acme","outcome":"they want to renew","confidence":0.9}
+11. "note on Acme: spoke to legal, contract going through"
+    → {"action":"log_note","client":"Acme","body":"spoke to legal, contract going through","confidence":0.9}
 
 Rules:
 - Resolve relative dates ("tomorrow 3pm", "next Friday") against the provided nowIso + timezone.
-- If the user names an entity that is in the workspaces / projects / clients context list, copy the exact list value into the matching field.
+- If the user names an entity in the workspaces / projects / clients context list, copy the exact list value into the matching field.
 - Do NOT invent entities not in the message.
-- Return JSON only — no surrounding text.`;
+- For lead names, use the LAST name in the "name" field (it's stored as the lead's last_name).
+- Return JSON only — no surrounding text. All fields not in the message stay null.`;
 
 export const parseIntent = async (
   message: string,

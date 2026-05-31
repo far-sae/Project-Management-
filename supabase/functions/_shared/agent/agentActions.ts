@@ -242,6 +242,141 @@ export const resolveIntent = async (
       const dueBit = intent.due ? ` due *${intent.due}*` : "";
       return { kind: "confirm", summary: `Create client task *${title}*${onBit}${dueBit}?`, pendingActionId: pendingId };
     }
+
+    // ─── CRM intents ──────────────────────────────────────────────────
+    case "create_lead": {
+      // A lead needs a last_name + a company; the LLM fills both via
+      // the `name` (last name) + `company` fields. Prompt for whatever
+      // the user didn't supply.
+      const lastName = (intent.name ?? "").trim();
+      const company = (intent.company ?? "").trim();
+      if (!lastName) {
+        await queueConvo(admin, provider, account, chatId, "name", intent);
+        return { kind: "text", text: "What's the lead's name?" };
+      }
+      if (!company) {
+        await queueConvo(admin, provider, account, chatId, "company", intent);
+        return { kind: "text", text: `Got *${lastName}* — what company are they from?` };
+      }
+      await clearConvo(admin, provider, chatId);
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, {});
+      const emailBit = intent.email ? ` (${intent.email})` : "";
+      return { kind: "confirm", summary: `Create lead *${lastName}* at *${company}*${emailBit}?`, pendingActionId: pendingId };
+    }
+
+    case "create_contact": {
+      const lastName = (intent.name ?? "").trim();
+      if (!lastName) {
+        await queueConvo(admin, provider, account, chatId, "name", intent);
+        return { kind: "text", text: "What's the contact's name?" };
+      }
+      let clientId: string | null = null;
+      if (intent.client) {
+        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
+        if (matches.length === 0) return { kind: "text", text: `No client called *${intent.client}*.` };
+        if (matches.length > 1) {
+          return {
+            kind: "choices",
+            prompt: `Multiple clients match *${intent.client}*. Pick one:`,
+            choices: matches.map((m) => ({ label: m.name, callback: `pickclient:${m.id}` })),
+          };
+        }
+        clientId = matches[0].id;
+      } else {
+        return { kind: "text", text: `Which client does *${lastName}* belong to?` };
+      }
+      await clearConvo(admin, provider, chatId);
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, { client_id: clientId });
+      return { kind: "confirm", summary: `Add contact *${lastName}* under *${intent.client}*?`, pendingActionId: pendingId };
+    }
+
+    case "create_deal": {
+      const title = (intent.title ?? intent.name ?? "").trim();
+      if (!title) {
+        await queueConvo(admin, provider, account, chatId, "title", intent);
+        return { kind: "text", text: "What's the deal title?" };
+      }
+      let clientId: string | null = null;
+      if (intent.client) {
+        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
+        if (matches.length === 1) clientId = matches[0].id;
+        else if (matches.length > 1) {
+          return {
+            kind: "choices",
+            prompt: `Multiple clients match *${intent.client}*. Pick one:`,
+            choices: matches.map((m) => ({ label: m.name, callback: `pickclient:${m.id}` })),
+          };
+        }
+      }
+      await clearConvo(admin, provider, chatId);
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, clientId ? { client_id: clientId } : {});
+      const valueBit = intent.value ? ` worth *${intent.value} ${intent.currency ?? ""}*`.trim() : "";
+      const clientBit = intent.client ? ` for *${intent.client}*` : "";
+      return { kind: "confirm", summary: `Create deal *${title}*${clientBit}${valueBit}?`, pendingActionId: pendingId };
+    }
+
+    case "create_meeting": {
+      const title = (intent.title ?? "").trim();
+      if (!title) {
+        await queueConvo(admin, provider, account, chatId, "title", intent);
+        return { kind: "text", text: "What should the meeting be called?" };
+      }
+      if (!intent.due) {
+        await queueConvo(admin, provider, account, chatId, "due", intent);
+        return { kind: "text", text: `When is *${title}*? (e.g. tomorrow 3pm)` };
+      }
+      // Optional client resolution — meetings can be standalone.
+      let clientId: string | null = null;
+      if (intent.client) {
+        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
+        if (matches.length === 1) clientId = matches[0].id;
+      }
+      await clearConvo(admin, provider, chatId);
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, clientId ? { client_id: clientId } : {});
+      return { kind: "confirm", summary: `Schedule meeting *${title}* at *${intent.due}*?`, pendingActionId: pendingId };
+    }
+
+    case "create_call": {
+      const subject = (intent.title ?? intent.name ?? "").trim();
+      if (!subject) {
+        await queueConvo(admin, provider, account, chatId, "title", intent);
+        return { kind: "text", text: "What's the call about?" };
+      }
+      let clientId: string | null = null;
+      if (intent.client) {
+        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
+        if (matches.length === 1) clientId = matches[0].id;
+      }
+      await clearConvo(admin, provider, chatId);
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, clientId ? { client_id: clientId } : {});
+      const whenBit = intent.due ? ` for *${intent.due}*` : intent.outcome ? " (completed)" : "";
+      return { kind: "confirm", summary: `Log call *${subject}*${whenBit}?`, pendingActionId: pendingId };
+    }
+
+    case "log_note": {
+      const body = (intent.body ?? intent.description ?? "").trim();
+      if (!body) {
+        await queueConvo(admin, provider, account, chatId, "body", intent);
+        return { kind: "text", text: "What's the note?" };
+      }
+      let clientId: string | null = null;
+      if (intent.client) {
+        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
+        if (matches.length === 1) clientId = matches[0].id;
+        else if (matches.length === 0) return { kind: "text", text: `No client called *${intent.client}*.` };
+        else return {
+          kind: "choices",
+          prompt: `Multiple clients match *${intent.client}*. Pick one:`,
+          choices: matches.map((m) => ({ label: m.name, callback: `pickclient:${m.id}` })),
+        };
+      } else {
+        return { kind: "text", text: "Which client is the note for?" };
+      }
+      await clearConvo(admin, provider, chatId);
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, { client_id: clientId });
+      const preview = body.length > 60 ? `${body.slice(0, 60)}…` : body;
+      return { kind: "confirm", summary: `Add note *"${preview}"* on *${intent.client}*?`, pendingActionId: pendingId };
+    }
   }
 };
 
@@ -326,6 +461,155 @@ export const executePending = async (
         if (e) throw e;
         return `✅ Client task *${data.title}* created.`;
       }
+
+      // ─── CRM intent execution ────────────────────────────────────────
+      // Use direct INSERTs (admin client = service role) rather than
+      // adding new agent_*_as RPCs for every entity. The existing
+      // org-membership check happens above (loadAccount in the calling
+      // webhooks); we trust that boundary.
+      case "create_lead": {
+        // workspace_id required by RLS — pick the org's first workspace.
+        const { data: ws } = await admin
+          .from("workspaces").select("workspace_id")
+          .eq("organization_id", row.org_id)
+          .order("created_at", { ascending: true })
+          .limit(1).maybeSingle();
+        const workspaceId = (ws as { workspace_id?: string } | null)?.workspace_id ?? null;
+        // lead_number from RPC or synthetic fallback.
+        let leadNumber: string;
+        const { data: numData } = await admin
+          .rpc("next_lead_number", { p_organization_id: row.org_id });
+        leadNumber = numData ? String(numData) : `L-BOT-${Date.now().toString(36).toUpperCase()}`;
+
+        const { data, error: e } = await admin.from("leads").insert({
+          organization_id: row.org_id,
+          workspace_id: workspaceId,
+          lead_number: leadNumber,
+          last_name: (a.name ?? "").trim() || "Lead",
+          company: (a.company ?? "").trim() || "Bot-created lead",
+          email: a.email ?? null,
+          phone: a.phone ?? null,
+          description: a.description ?? null,
+          lead_source: "Chat bot",
+          created_by: row.user_id,
+        }).select("lead_number, last_name, company").single();
+        if (e) throw e;
+        const r = data as { lead_number: string; last_name: string; company: string };
+        return `✅ Lead *${r.last_name}* at *${r.company}* created (${r.lead_number}).`;
+      }
+
+      case "create_contact": {
+        const clientId = a.resolved_ids?.client_id ?? null;
+        if (!clientId) throw new Error("Contact needs a parent client.");
+        const { data, error: e } = await admin.from("client_contacts").insert({
+          organization_id: row.org_id,
+          client_id: clientId,
+          last_name: (a.name ?? "").trim() || "Contact",
+          email: a.email ?? null,
+          phone: a.phone ?? null,
+          mobile: a.phone ?? null,
+          created_by: row.user_id,
+        }).select("last_name").single();
+        if (e) throw e;
+        return `✅ Contact *${(data as { last_name: string }).last_name}* added.`;
+      }
+
+      case "create_deal": {
+        const clientId = a.resolved_ids?.client_id ?? null;
+        const title = (a.title ?? a.name ?? "").trim() || "New deal";
+        // Pick the default pipeline + first stage so the deal lands
+        // somewhere sensible even when the bot doesn't know about
+        // pipelines.
+        const { data: pipeline } = await admin
+          .from("pipelines").select("pipeline_id")
+          .eq("organization_id", row.org_id)
+          .order("created_at", { ascending: true })
+          .limit(1).maybeSingle();
+        const pipelineId = (pipeline as { pipeline_id?: string } | null)?.pipeline_id ?? null;
+        let stageId: string | null = null;
+        if (pipelineId) {
+          const { data: stage } = await admin
+            .from("pipeline_stages").select("stage_id")
+            .eq("pipeline_id", pipelineId)
+            .order("position", { ascending: true })
+            .limit(1).maybeSingle();
+          stageId = (stage as { stage_id?: string } | null)?.stage_id ?? null;
+        }
+        const { data, error: e } = await admin.from("deals").insert({
+          organization_id: row.org_id,
+          pipeline_id: pipelineId,
+          stage_id: stageId,
+          client_id: clientId,
+          title,
+          owner_id: row.user_id,
+          value: a.value ?? 0,
+          currency: (a.currency ?? "USD").toUpperCase(),
+          stage: a.stage ?? "lead",
+          expected_close_date: a.due ? a.due.slice(0, 10) : null,
+        }).select("title").single();
+        if (e) throw e;
+        return `✅ Deal *${(data as { title: string }).title}* created.`;
+      }
+
+      case "create_meeting": {
+        const clientId = a.resolved_ids?.client_id ?? null;
+        const title = (a.title ?? "").trim() || "Meeting";
+        const startAt = a.due ? new Date(a.due) : new Date(Date.now() + 60 * 60 * 1000);
+        const endAt = new Date(startAt.getTime() + 30 * 60 * 1000);
+        const { data, error: e } = await admin.from("meetings").insert({
+          organization_id: row.org_id,
+          title,
+          start_at: startAt.toISOString(),
+          end_at: endAt.toISOString(),
+          host_user_id: row.user_id,
+          client_id: clientId,
+          related_to_type: clientId ? "client" : null,
+          related_to_id: clientId,
+          description: a.description ?? null,
+          created_by: row.user_id,
+        }).select("title").single();
+        if (e) throw e;
+        return `✅ Meeting *${(data as { title: string }).title}* scheduled.`;
+      }
+
+      case "create_call": {
+        const clientId = a.resolved_ids?.client_id ?? null;
+        const subject = (a.title ?? a.name ?? "Call").trim();
+        const completed = !!a.outcome;
+        const { data, error: e } = await admin.from("calls").insert({
+          organization_id: row.org_id,
+          subject,
+          call_status: completed ? "completed" : "scheduled",
+          call_type: completed ? "outbound" : "scheduled",
+          call_start_at: a.due ? new Date(a.due).toISOString() : null,
+          caller_user_id: row.user_id,
+          client_id: clientId,
+          related_to_type: clientId ? "client" : null,
+          related_to_id: clientId,
+          outcome: a.outcome ?? null,
+          description: a.description ?? null,
+          created_by: row.user_id,
+        }).select("subject").single();
+        if (e) throw e;
+        return `✅ Call *${(data as { subject: string }).subject}* logged.`;
+      }
+
+      case "log_note": {
+        const clientId = a.resolved_ids?.client_id ?? null;
+        if (!clientId) throw new Error("Note needs a client.");
+        const body = (a.body ?? a.description ?? "").trim();
+        const { error: e } = await admin.from("client_notes").insert({
+          organization_id: row.org_id,
+          client_id: clientId,
+          kind: "note",
+          body,
+          occurred_at: new Date().toISOString(),
+          author_id: row.user_id,
+        });
+        if (e) throw e;
+        const preview = body.length > 50 ? `${body.slice(0, 50)}…` : body;
+        return `✅ Note *"${preview}"* logged.`;
+      }
       default:
         throw new Error("Unsupported pending action.");
     }
@@ -336,14 +620,22 @@ export const executePending = async (
 
 const HELP_TEXT = `*TaskCalendar bot — natural-language commands*
 
-Examples:
+*Projects + tasks*
 • \`add workspace Acme Onboarding\`
 • \`new project Q1 launch in Acme Onboarding\`
 • \`task: call John tomorrow 3pm in Q1 launch\`
+
+*CRM*
 • \`new client Acme Corp\`
+• \`new lead Jane Smith from Acme jane@acme.com\`
+• \`add contact Bob Jones under Acme Corp\`
+• \`new deal Website redesign for Acme worth 10000 USD\`
+• \`schedule meeting Discovery call with Acme tomorrow 3pm\`
+• \`log call: pricing chat with Acme — they want to renew\`
+• \`note on Acme: spoke to legal, contract going through\`
 • \`client task: follow up with Acme on Friday\`
 
-Commands:
+*Commands*
 • \`/orgs\` — list your orgs
 • \`/switchorg <name>\` — switch current org
 • \`/cancel\` — drop a pending prompt
