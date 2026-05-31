@@ -52,6 +52,7 @@ import { PipelinesSettingsTab } from "@/components/settings/PipelinesSettingsTab
 import { LeadScoringSettingsTab } from "@/components/settings/LeadScoringSettingsTab";
 import { LeadFormsSettingsTab } from "@/components/settings/LeadFormsSettingsTab";
 import { AutomationsSettingsTab } from "@/components/settings/AutomationsSettingsTab";
+import { StripeHealthCard } from "@/components/settings/StripeHealthCard";
 import { SequencesSettingsTab } from "@/components/settings/SequencesSettingsTab";
 import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
 import { EmailTemplatesSettingsTab } from "@/components/settings/EmailTemplatesSettingsTab";
@@ -899,7 +900,12 @@ export const Settings: React.FC = () => {
               /settings?tab=subscription show nothing for members
               instead of leaking plan + payment details. */}
           {canManageSettings && (
-          <TabsContent value="subscription">
+          <TabsContent value="subscription" className="space-y-3">
+            {/* Stripe wiring smoke — at-a-glance health for the
+                webhook + checkout functions + env secrets. Lets the
+                owner tell whether billing is actually live without
+                attempting a real test charge. */}
+            <StripeHealthCard />
             <Card>
               <CardHeader>
                 <CardTitle>Subscription</CardTitle>
