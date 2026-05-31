@@ -7,6 +7,12 @@ verify_jwt = false
 [functions.stripe-webhook]
 verify_jwt = false
 
+# Diagnostic-only — invoked from the in-app StripeHealthCard. Reports
+# env-var presence + the webhook URL the user pastes into Stripe.
+# Browser-callable, so verify_jwt off + CORS headers in the function.
+[functions.stripe-health]
+verify_jwt = false
+
 # Cancel-now validates JWT inside the function; disable gateway JWT so we return clear 401 body
 [functions.cancel-subscription-now]
 verify_jwt = false

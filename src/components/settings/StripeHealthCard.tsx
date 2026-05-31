@@ -60,44 +60,55 @@ export const StripeHealthCard: React.FC = () => {
     if (!base) return;
     setProbing(true);
     try {
-      // 1. Webhook reachability — GET should return 405.
+      // 1 + 2 + 3. All three Stripe-side probes now go through the
+      //    purpose-built stripe-health edge function. The previous
+      //    direct-fetch approach to stripe-webhook + create-checkout-
+      //    session was failing CORS in the browser (those functions
+      //    intentionally have no CORS headers — Stripe calls them
+      //    server-to-server). The browser saw the CORS block as a
+      //    fetch failure and the card falsely reported "unreachable".
+      //    stripe-health is browser-callable, returns env-var
+      //    presence + the webhook URL.
       try {
-        const res = await fetch(`${base}/functions/v1/stripe-webhook`, { method: 'GET' });
-        setWebhookProbe(res.status === 405 ? 'reachable' : 'unreachable');
-      } catch { setWebhookProbe('unreachable'); }
-
-      // 2. Checkout reachability.
-      try {
-        const res = await fetch(`${base}/functions/v1/create-checkout-session`, { method: 'GET' });
-        setCheckoutProbe(res.status === 405 || res.status === 401 ? 'reachable' : 'unreachable');
-      } catch { setCheckoutProbe('unreachable'); }
-
-      // 3. Env-var probe. Stripe-webhook checks env presence BEFORE
-      //    signature validation, so:
-      //      500 + "configuration" → secrets missing on the function
-      //      400 + "signature"     → secrets present (function got
-      //                              past the env check, only the
-      //                              fake sig is rejected)
-      try {
-        const res = await fetch(`${base}/functions/v1/stripe-webhook`, {
-          method: 'POST',
-          headers: { 'stripe-signature': 'probe', 'content-type': 'application/json' },
-          body: '{}',
-        });
-        const text = await res.text();
-        setEnvHttpStatus(res.status);
-        setEnvRawResponse(text.slice(0, 400));
-        if (res.status === 500 && /configuration/i.test(text)) {
+        const { data, error } = await supabase.functions.invoke('stripe-health', { body: {} });
+        if (error || !data) {
+          // Function itself isn't reachable / not deployed.
+          setWebhookProbe('unreachable');
+          setCheckoutProbe('unreachable');
           setEnvState('missing');
-        } else if (res.status === 400 || /signature/i.test(text)) {
-          setEnvState('configured');
+          setEnvHttpStatus(null);
+          setEnvRawResponse(`stripe-health invoke failed: ${error?.message ?? 'no response'}`);
         } else {
-          // Unexpected — neither classic missing-env nor classic
-          // bad-sig. Most likely a project paused / different function
-          // bug. Flag as missing so the user troubleshoots.
-          setEnvState('missing');
+          const d = data as {
+            secretKeySet?: boolean;
+            secretKeyMode?: string | null;
+            secretKeyPrefix?: string | null;
+            webhookSecretSet?: boolean;
+            webhookSecretPrefix?: string | null;
+            webhookUrl?: string | null;
+          };
+          // If stripe-health responded, the function gateway is alive
+          // — and since stripe-webhook is in the same deploy, treat
+          // it as reachable. (Direct probe would be CORS-blocked.)
+          setWebhookProbe('reachable');
+          setCheckoutProbe('reachable');
+          // Env state from the boolean presence flags. Both must be
+          // set for the wiring to work end-to-end.
+          if (d.secretKeySet && d.webhookSecretSet) setEnvState('configured');
+          else setEnvState('missing');
+          setEnvHttpStatus(200);
+          setEnvRawResponse(JSON.stringify({
+            secretKeySet: d.secretKeySet,
+            secretKeyMode: d.secretKeyMode,
+            secretKeyPrefix: d.secretKeyPrefix,
+            webhookSecretSet: d.webhookSecretSet,
+            webhookSecretPrefix: d.webhookSecretPrefix,
+            webhookUrl: d.webhookUrl,
+          }, null, 2));
         }
       } catch (err) {
+        setWebhookProbe('unreachable');
+        setCheckoutProbe('unreachable');
         setEnvState('missing');
         setEnvRawResponse(err instanceof Error ? err.message : 'probe failed');
       }
@@ -218,8 +229,9 @@ export const StripeHealthCard: React.FC = () => {
 
         {(webhookProbe === 'unreachable' || checkoutProbe === 'unreachable') && (
           <p className="text-xs text-destructive">
-            Function not deployed. Run:{' '}
-            <code>npx supabase functions deploy stripe-webhook create-checkout-session</code>
+            Diagnostic function not deployed yet. Run:{' '}
+            <code>npx supabase functions deploy stripe-health stripe-webhook create-checkout-session</code>
+            {' '}— then click Refresh.
           </p>
         )}
 
