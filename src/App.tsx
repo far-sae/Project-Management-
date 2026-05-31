@@ -307,27 +307,34 @@ const router = createBrowserRouter(
             },
             {
               // Org-wide CRM activity feed. Listed BEFORE `/clients` so the
-              // more specific path matches first.
+              // more specific path matches first. Open to members
+              // (previously admin-only) — RLS on client_notes / meetings
+              // / calls / tasks already enforces per-org isolation, and
+              // reps need to log + close their own activities from here.
               path: '/clients/activity',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin requireFeature="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm">
                   {lazyAppRoute(<ClientsActivity />)}
                 </ProtectedRoute>
               ),
             },
             {
-              // CRM clients — owner/admin only.
+              // CRM clients page — open to members. Per-row RLS handles
+              // workspace + org gating; admin-only mutations (delete
+              // account, bulk edit) are gated inside the page itself.
               path: '/clients',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin requireFeature="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm">
                   {lazyAppRoute(<ClientsPage />)}
                 </ProtectedRoute>
               ),
             },
             {
+              // AI Agent — open to members so reps can use the assistant
+              // on their own deals/contacts.
               path: '/ai-agent',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin requireFeature="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm">
                   {lazyAppRoute(<AIAgentPage />)}
                 </ProtectedRoute>
               ),

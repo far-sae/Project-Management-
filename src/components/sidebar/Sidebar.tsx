@@ -180,12 +180,16 @@ export const Sidebar: React.FC = () => {
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
         ] as const)
       : ([
-          // Members see Timeline + their personal Files page. Clients/CRM,
-          // Team, Contracts, Comments, etc. stay admin/owner-only. Files
-          // is per-user personal storage (no sharing) and is treated as a
-          // baseline feature — not gated on the owner's subscription —
-          // because every non-viewer should be able to keep personal
-          // documents regardless of plan tier.
+          // Members see Timeline + personal Files + the customer-facing
+          // CRM surfaces (CRM, Activities, AI Agent). Per-row RLS keeps
+          // them inside their org/workspace; only org-management
+          // surfaces (Team, Audit log, Subscription) stay admin/owner.
+          // Files is per-user personal storage (no sharing) and is
+          // baseline — not gated on the owner's subscription — so any
+          // non-viewer can keep personal documents regardless of plan.
+          { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
+          { icon: Activity, label: 'Activities', href: '/clients/activity', feature: 'crm' as const },
+          { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
           { icon: FileText, label: 'Files', href: '/files', feature: null },
         ] as const);

@@ -512,9 +512,14 @@ export const Settings: React.FC = () => {
               <SettingsTab value="notifications" icon={Bell}>Notifications</SettingsTab>
               <SettingsTab value="security" icon={Shield}>Security</SettingsTab>
 
-              {/* ───── Billing ───── */}
-              <SettingsSectionLabel>Billing</SettingsSectionLabel>
-              <SettingsTab value="subscription" icon={CreditCard}>Subscription</SettingsTab>
+              {/* ───── Billing ───── (admin/owner only — members
+                  shouldn't see plan / payment details) */}
+              {canManageSettings && (
+                <>
+                  <SettingsSectionLabel>Billing</SettingsSectionLabel>
+                  <SettingsTab value="subscription" icon={CreditCard}>Subscription</SettingsTab>
+                </>
+              )}
 
               {/* ───── Workspace ───── */}
               <SettingsSectionLabel>Workspace</SettingsSectionLabel>
@@ -528,24 +533,36 @@ export const Settings: React.FC = () => {
               )}
               <SettingsTab value="mfa" icon={Shield}>Two-factor</SettingsTab>
 
-              {/* ───── CRM (Advanced plan and up) ───── */}
+              {/* ───── CRM (Advanced plan and up) ─────
+                  Pipelines is admin/owner-only (it defines the deal
+                  stages everyone else has to live by). Lead scoring,
+                  Lead forms, Email templates are surface-level
+                  authoring tools reps need day-to-day, so they're
+                  visible to members too. */}
               {hasCrm && (
                 <>
                   <SettingsSectionLabel>CRM</SettingsSectionLabel>
-                  <SettingsTab value="pipelines" icon={GitBranch}>Pipelines</SettingsTab>
+                  {canManageSettings && (
+                    <SettingsTab value="pipelines" icon={GitBranch}>Pipelines</SettingsTab>
+                  )}
                   <SettingsTab value="lead-scoring" icon={Target}>Lead scoring</SettingsTab>
                   <SettingsTab value="lead-forms" icon={ClipboardList}>Lead forms</SettingsTab>
                   <SettingsTab value="email-templates" icon={Mail}>Email templates</SettingsTab>
                 </>
               )}
 
-              {/* ───── Automation (Advanced plan and up) ───── */}
+              {/* ───── Automation (Advanced plan and up) ─────
+                  Automations + Sequences are member-visible (reps
+                  trigger them on their own deals). AI Usage is the
+                  org-wide spend dashboard — admin/owner only. */}
               {hasCrm && (
                 <>
                   <SettingsSectionLabel>Automation</SettingsSectionLabel>
                   <SettingsTab value="automations" icon={Zap}>Automations</SettingsTab>
                   <SettingsTab value="sequences" icon={MailPlus}>Sequences</SettingsTab>
-                  <SettingsTab value="ai-usage" icon={Sparkles}>AI Usage</SettingsTab>
+                  {canManageSettings && (
+                    <SettingsTab value="ai-usage" icon={Sparkles}>AI Usage</SettingsTab>
+                  )}
                 </>
               )}
             </TabsList>
@@ -568,14 +585,17 @@ export const Settings: React.FC = () => {
             <IntegrationsTab />
           </TabsContent>
 
-          {/* PIPELINES TAB */}
-          <TabsContent value="pipelines">
-            <SettingsHelp
-              title="Pipelines"
-              description="Set up the sales stages your team moves deals through, from first conversation to won or lost."
-            />
-            <PipelinesSettingsTab />
-          </TabsContent>
+          {/* PIPELINES TAB — admin/owner only (defines deal stages
+              everyone else has to live by). */}
+          {canManageSettings && (
+            <TabsContent value="pipelines">
+              <SettingsHelp
+                title="Pipelines"
+                description="Set up the sales stages your team moves deals through, from first conversation to won or lost."
+              />
+              <PipelinesSettingsTab />
+            </TabsContent>
+          )}
 
           {/* LEAD SCORING TAB */}
           <TabsContent value="lead-scoring">
@@ -595,10 +615,12 @@ export const Settings: React.FC = () => {
             <LeadFormsSettingsTab />
           </TabsContent>
 
-          {/* AUDIT LOG TAB */}
-          <TabsContent value="audit-log">
-            <AuditLogSettingsTab />
-          </TabsContent>
+          {/* AUDIT LOG TAB — admin/owner only. */}
+          {canManageSettings && (
+            <TabsContent value="audit-log">
+              <AuditLogSettingsTab />
+            </TabsContent>
+          )}
 
           {/* MFA TAB */}
           <TabsContent value="mfa">
@@ -632,14 +654,16 @@ export const Settings: React.FC = () => {
             <SequencesSettingsTab />
           </TabsContent>
 
-          {/* AI USAGE TAB */}
-          <TabsContent value="ai-usage">
-            <SettingsHelp
-              title="AI usage"
-              description="Control AI limits and review which automations or agent actions are using credits."
-            />
-            <AiUsageSettingsTab />
-          </TabsContent>
+          {/* AI USAGE TAB — admin/owner only (org-wide spend dashboard). */}
+          {canManageSettings && (
+            <TabsContent value="ai-usage">
+              <SettingsHelp
+                title="AI usage"
+                description="Control AI limits and review which automations or agent actions are using credits."
+              />
+              <AiUsageSettingsTab />
+            </TabsContent>
+          )}
 
           {/* ORGANIZATION TAB — owner/admin only */}
           {canManageSettings && (
@@ -870,7 +894,11 @@ export const Settings: React.FC = () => {
             </Card>
           </TabsContent>
 
-          {/* SUBSCRIPTION TAB */}
+          {/* SUBSCRIPTION TAB — admin/owner only. Wrapping the panel
+              (not just the tab trigger) so deep-links like
+              /settings?tab=subscription show nothing for members
+              instead of leaking plan + payment details. */}
+          {canManageSettings && (
           <TabsContent value="subscription">
             <Card>
               <CardHeader>
@@ -972,6 +1000,7 @@ export const Settings: React.FC = () => {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           {/* SECURITY TAB */}
           <TabsContent value="security">
