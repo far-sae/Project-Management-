@@ -6,6 +6,7 @@ import {
   executePending as _executePending,
   loadConvo as _loadConvo,
   clearConvo as _clearConvo,
+  resumeDisambiguation as _resumeDisambiguation,
 } from "../_shared/agent/agentActions.ts";
 import type {
   AgentReply, Intent, LinkedAccount,
@@ -27,3 +28,9 @@ export const clearConvo = (admin: SupabaseClient, chatId: string) =>
   _clearConvo(admin, "telegram", chatId);
 
 export const executePending = _executePending;
+
+export const resumeDisambiguation = (
+  admin: SupabaseClient,
+  chatId: string,
+  callback: string,
+) => _resumeDisambiguation(admin, "telegram", chatId, callback);

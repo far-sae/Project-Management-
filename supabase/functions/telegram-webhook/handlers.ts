@@ -3,7 +3,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendMessage, answerCallbackQuery, type InlineButton } from "./telegram.ts";
 import { parseIntent } from "./intent.ts";
-import { resolveIntent, executePending, loadConvo, clearConvo } from "./agentActions.ts";
+import { resolveIntent, executePending, loadConvo, clearConvo, resumeDisambiguation } from "./agentActions.ts";
 import type { AgentReply, Intent, LinkedAccount } from "./types.ts";
 
 const sha256Hex = async (s: string): Promise<string> => {
@@ -187,8 +187,8 @@ export const handleNaturalLanguage = async (
   //    through the LLM. Saves a round-trip and is robust to single-word replies
   //    like "Marketing" that OpenAI would otherwise classify as unknown.
   const convo = await loadConvo(admin, String(chatId));
-  if (convo) {
-    const filled: Intent = { ...convo.partial_intent, [convo.awaiting_field]: text.trim() };
+  if (convo && !convo.awaiting_field.startsWith("__")) {
+    const filled = { ...convo.partial_intent, [convo.awaiting_field]: text.trim() } as Intent;
     const reply = await resolveIntent(admin, account, String(chatId), filled);
     await sendReply(chatId, reply);
     return;
@@ -284,8 +284,8 @@ export const handleCallbackQuery = async (
     await sendMessage(chatId, "🛑 Cancelled.");
     return;
   }
-  // Disambiguation callbacks (pickws:/pickproj:/pickclient:) — left as a v1.1
-  // follow-up. For v1, treat as no-op + nudge user to rephrase.
+  // Disambiguation choice tap.
   await answerCallbackQuery(callbackQueryId);
-  await sendMessage(chatId, "Please rephrase the message with the full workspace/project/client name.");
+  const reply = await resumeDisambiguation(admin, String(chatId), data);
+  await sendReply(chatId, reply);
 };
