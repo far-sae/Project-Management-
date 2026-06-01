@@ -13,7 +13,7 @@ import type { AgentProvider, AgentReply, Intent, LinkedAccount } from "./types.t
 const PENDING_TTL_MIN = 10;
 const CONVO_TTL_MIN = 5;
 
-export type AwaitingField = "name" | "title" | "project" | "client" | "workspace";
+export type AwaitingField = "name" | "title" | "project" | "client" | "workspace" | "company" | "due" | "body";
 
 export interface LoadedConvo {
   awaiting_field: AwaitingField;
@@ -87,7 +87,7 @@ const findByName = async (
     .select(`${pkCol}, ${nameCol}`)
     .eq("organization_id", orgId)
     .ilike(nameCol, needle);
-  const rows = (data ?? []) as Array<Record<string, string>>;
+  const rows = (data ?? []) as unknown as Array<Record<string, string>>;
   return {
     matches: rows.map((r) => ({ id: r[pkCol], name: r[nameCol] })),
   };
