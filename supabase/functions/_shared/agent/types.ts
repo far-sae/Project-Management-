@@ -45,6 +45,10 @@ export interface Intent {
   deal?: string | null;         // free-form deal name reference for meetings/calls
   outcome?: string | null;      // call outcome / meeting notes summary
   body?: string | null;         // note body
+  /** Internal: ids resolved via disambiguation, keyed by "<entity>_id"
+   *  (e.g. project_id, client_id). Carried through a choice tap so
+   *  resolveIntent can skip the name lookup. Never set by the parser. */
+  resolved_ids?: Record<string, string>;
   confidence?: number;
 }
 

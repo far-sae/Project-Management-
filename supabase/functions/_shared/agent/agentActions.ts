@@ -10,6 +10,26 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { AgentProvider, AgentReply, Intent, LinkedAccount } from "./types.ts";
 
+// Maps a choice-button callback prefix to the Intent.resolved_ids field it fills.
+const PICK_FIELD: Record<string, string> = {
+  pickws: "workspace_id",
+  pickproj: "project_id",
+  pickclient: "client_id",
+};
+
+/** Parses a "pick<prefix>:<uuid>" choice callback. Returns null for anything
+ *  that isn't a known, non-empty pick callback (e.g. confirm:/cancel:). */
+export const parsePickCallback = (
+  cb: string,
+): { idField: string; id: string } | null => {
+  const idx = cb.indexOf(":");
+  if (idx < 0) return null;
+  const idField = PICK_FIELD[cb.slice(0, idx)];
+  const id = cb.slice(idx + 1);
+  if (!idField || !id) return null;
+  return { idField, id };
+};
+
 const PENDING_TTL_MIN = 10;
 const CONVO_TTL_MIN = 5;
 
