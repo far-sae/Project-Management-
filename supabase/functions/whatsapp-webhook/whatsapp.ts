@@ -81,6 +81,41 @@ export const sendButtons = async (
   });
 };
 
+export interface ListRow {
+  /** Row id <= 200 chars, echoed back as interactive.list_reply.id. */
+  id: string;
+  /** Row title (max 24 chars). */
+  title: string;
+}
+
+/** Interactive list message — up to 10 rows. Used for disambiguation when
+ *  there are more candidates than WhatsApp's 3-button cap allows. */
+export const sendList = async (
+  to: string,
+  body: string,
+  rows: ListRow[],
+): Promise<void> => {
+  const capped = rows.slice(0, 10);
+  await post("/messages", {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: stripMarkdown(body) },
+      action: {
+        button: "Choose",
+        sections: [{
+          rows: capped.map((r) => ({
+            id: r.id.slice(0, 200),
+            title: r.title.slice(0, 24),
+          })),
+        }],
+      },
+    },
+  });
+};
+
 /** Acknowledges that we've read a message — purely a UX nicety (the
  *  user sees a blue tick faster). Failure is non-fatal. */
 export const markRead = async (messageId: string): Promise<void> => {

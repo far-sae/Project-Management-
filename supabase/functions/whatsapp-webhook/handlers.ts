@@ -1,13 +1,14 @@
 // supabase/functions/whatsapp-webhook/handlers.ts
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { sendMessage, sendButtons, type InteractiveButton } from "./whatsapp.ts";
+import { sendMessage, sendButtons, sendList, type InteractiveButton } from "./whatsapp.ts";
 import { parseIntent } from "../_shared/agent/intent.ts";
 import {
   resolveIntent as sharedResolveIntent,
   executePending,
   loadConvo as sharedLoadConvo,
   clearConvo as sharedClearConvo,
+  resumeDisambiguation as sharedResume,
 } from "../_shared/agent/agentActions.ts";
 import type { AgentReply, Intent, LinkedAccount } from "../_shared/agent/types.ts";
 
@@ -179,11 +180,18 @@ const sendReply = async (phoneNumber: string, reply: AgentReply): Promise<void> 
     ];
     return sendButtons(phoneNumber, reply.summary, buttons);
   }
-  // choices — WhatsApp interactive buttons cap at 3.
-  const buttons: InteractiveButton[] = reply.choices.slice(0, 3).map((c) => ({
-    id: c.callback, title: c.label,
-  }));
-  return sendButtons(phoneNumber, reply.prompt, buttons);
+  // choices — WhatsApp buttons cap at 3; use an interactive list beyond that.
+  if (reply.choices.length <= 3) {
+    const buttons: InteractiveButton[] = reply.choices.map((c) => ({
+      id: c.callback, title: c.label,
+    }));
+    return sendButtons(phoneNumber, reply.prompt, buttons);
+  }
+  return sendList(
+    phoneNumber,
+    reply.prompt,
+    reply.choices.map((c) => ({ id: c.callback, title: c.label })),
+  );
 };
 
 export const handleHelp = async (phoneNumber: string): Promise<void> => {
@@ -235,8 +243,8 @@ export const handleNaturalLanguage = async (
 ): Promise<void> => {
   const phoneNumber = account.external_id;
   const convo = await loadConvo(admin, phoneNumber);
-  if (convo) {
-    const filled: Intent = { ...convo.partial_intent, [convo.awaiting_field]: text.trim() };
+  if (convo && !convo.awaiting_field.startsWith("__")) {
+    const filled = { ...convo.partial_intent, [convo.awaiting_field]: text.trim() } as Intent;
     const reply = await resolveIntent(admin, account, phoneNumber, filled);
     await sendReply(phoneNumber, reply);
     return;
@@ -279,6 +287,7 @@ export const handleInteractiveReply = async (
     await sendMessage(phoneNumber, "🛑 Cancelled.");
     return;
   }
-  // Disambiguation callbacks left as v1.1 polish, same as telegram.
-  await sendMessage(phoneNumber, "Please rephrase the message with the full name.");
+  // Disambiguation choice (button tap or list selection).
+  const reply = await sharedResume(admin, PROVIDER, phoneNumber, buttonId);
+  await sendReply(phoneNumber, reply);
 };
