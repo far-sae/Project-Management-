@@ -212,6 +212,44 @@ const queuePending = async (
   return data!.id as string;
 };
 
+// Handle a choice-button tap. Loads the persisted partial intent, injects the
+// chosen id into resolved_ids, clears the disambiguation state, and re-runs
+// resolveIntent (which now skips the name search). The conversation row also
+// holds user_id/org_id, so we can rebuild the account without a fresh lookup.
+export const resumeDisambiguation = async (
+  admin: SupabaseClient,
+  provider: AgentProvider,
+  chatId: string,
+  callback: string,
+): Promise<AgentReply> => {
+  const pick = parsePickCallback(callback);
+  if (!pick) {
+    return { kind: "text", text: "Please rephrase the message with the full name." };
+  }
+  const { data } = await admin
+    .from("agent_conversation_state")
+    .select("partial_intent, user_id, org_id, expires_at")
+    .eq("provider", provider)
+    .eq("chat_id", chatId)
+    .maybeSingle();
+  if (!data || new Date(data.expires_at as string).getTime() < Date.now()) {
+    await clearConvo(admin, provider, chatId);
+    return { kind: "text", text: "That choice expired — please resend the command." };
+  }
+  const account: LinkedAccount = {
+    user_id: data.user_id as string,
+    current_org_id: data.org_id as string,
+    external_id: chatId,
+  };
+  const base = data.partial_intent as Intent;
+  const intent: Intent = {
+    ...base,
+    resolved_ids: { ...(base.resolved_ids ?? {}), [pick.idField]: pick.id },
+  };
+  await clearConvo(admin, provider, chatId);
+  return resolveIntent(admin, provider, account, chatId, intent);
+};
+
 export const resolveIntent = async (
   admin: SupabaseClient,
   provider: AgentProvider,

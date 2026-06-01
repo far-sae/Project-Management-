@@ -63,3 +63,62 @@ Deno.test("resolveIntent uses resolved_ids and skips the name lookup", async () 
   assertEquals(reply.kind, "confirm");
   assert(!calls.includes("ilike:projects"), "should not search projects when id is pre-resolved");
 });
+
+import { resumeDisambiguation } from "./agentActions.ts";
+
+// Fake whose agent_conversation_state row holds a create_task partial intent.
+function makeAdminWithConvo() {
+  const calls: string[] = [];
+  const builder = (table: string) => {
+    const b: Record<string, unknown> = {};
+    const chain = () => b;
+    b.select = chain;
+    b.eq = chain;
+    b.lt = chain;
+    b.is = chain;
+    b.filter = chain;
+    b.order = chain;
+    b.limit = chain;
+    b.delete = () => { calls.push(`delete:${table}`); return b; };
+    b.upsert = () => Promise.resolve({ data: null, error: null });
+    b.ilike = () => { calls.push(`ilike:${table}`); return b; };
+    b.insert = chain;
+    b.single = () =>
+      table === "agent_pending_actions"
+        ? Promise.resolve({ data: { id: "pa-2" }, error: null })
+        : Promise.resolve({ data: null, error: null });
+    b.maybeSingle = () => {
+      if (table === "agent_conversation_state") {
+        return Promise.resolve({
+          data: {
+            awaiting_field: "__pick:project_id",
+            partial_intent: { action: "create_task", title: "Ship it", project: "Acme" },
+            user_id: "u1",
+            org_id: "org1",
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+          },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    };
+    return b;
+  };
+  return { admin: { from: builder, rpc: () => Promise.resolve({ data: null, error: null }) }, calls };
+}
+
+Deno.test("resumeDisambiguation injects the picked id and returns confirm", async () => {
+  const { admin, calls } = makeAdminWithConvo();
+  // deno-lint-ignore no-explicit-any
+  const reply = await resumeDisambiguation(admin as any, "telegram", "chat1", "pickproj:p-9");
+  assertEquals(reply.kind, "confirm");
+  assert(!calls.includes("ilike:projects"), "picked id should skip the project search");
+  assert(calls.includes("delete:agent_conversation_state"), "convo state should be cleared");
+});
+
+Deno.test("resumeDisambiguation handles a bad callback gracefully", async () => {
+  const { admin } = makeAdminWithConvo();
+  // deno-lint-ignore no-explicit-any
+  const reply = await resumeDisambiguation(admin as any, "telegram", "chat1", "confirm:x");
+  assertEquals(reply.kind, "text");
+});
