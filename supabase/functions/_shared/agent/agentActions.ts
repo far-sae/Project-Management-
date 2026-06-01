@@ -137,6 +137,55 @@ const findByName = async (
   };
 };
 
+type RefResult =
+  | { status: "resolved"; id: string }
+  | { status: "missing" }
+  | { status: "ambiguous"; matches: Array<{ id: string; name: string }> };
+
+// Resolve an entity reference: prefer a pre-resolved id (from a prior choice
+// tap), else search by name. "missing" means no id and no/zero-match needle;
+// the caller decides whether that's an error or "proceed without it".
+const resolveRef = async (
+  admin: SupabaseClient,
+  orgId: string,
+  intent: Intent,
+  idField: string,
+  needle: string | null | undefined,
+  table: string,
+  nameCol: string,
+  pkCol: string,
+): Promise<RefResult> => {
+  const pre = intent.resolved_ids?.[idField];
+  if (pre) return { status: "resolved", id: pre };
+  const n = (needle ?? "").trim();
+  if (!n) return { status: "missing" };
+  const { matches } = await findByName(admin, table, nameCol, pkCol, orgId, n);
+  if (matches.length === 0) return { status: "missing" };
+  if (matches.length > 1) return { status: "ambiguous", matches };
+  return { status: "resolved", id: matches[0].id };
+};
+
+// Persist the in-flight intent and return a choices reply. The tap callback
+// "<pickPrefix>:<id>" will be resolved by resumeDisambiguation into idField.
+const ambiguate = async (
+  admin: SupabaseClient,
+  provider: AgentProvider,
+  account: LinkedAccount,
+  chatId: string,
+  intent: Intent,
+  idField: string,
+  matches: Array<{ id: string; name: string }>,
+  prompt: string,
+  pickPrefix: string,
+): Promise<AgentReply> => {
+  await queueDisambiguation(admin, provider, account, chatId, idField, intent);
+  return {
+    kind: "choices",
+    prompt,
+    choices: matches.map((m) => ({ label: m.name, callback: `${pickPrefix}:${m.id}` })),
+  };
+};
+
 const queuePending = async (
   admin: SupabaseClient,
   provider: AgentProvider,
@@ -198,19 +247,15 @@ export const resolveIntent = async (
         return { kind: "text", text: "What should the project be called?" };
       }
       let workspaceId: string | null = null;
-      if (intent.workspace) {
-        const { matches } = await findByName(admin, "workspaces", "name", "workspace_id", account.current_org_id, intent.workspace);
-        if (matches.length === 0) {
+      if (intent.resolved_ids?.workspace_id || intent.workspace) {
+        const ref = await resolveRef(admin, account.current_org_id, intent, "workspace_id", intent.workspace, "workspaces", "name", "workspace_id");
+        if (ref.status === "missing") {
           return { kind: "text", text: `No workspace called *${intent.workspace}*. Create it first or omit the workspace.` };
         }
-        if (matches.length > 1) {
-          return {
-            kind: "choices",
-            prompt: `Multiple workspaces match *${intent.workspace}*. Pick one:`,
-            choices: matches.map((m) => ({ label: m.name, callback: `pickws:${m.id}` })),
-          };
+        if (ref.status === "ambiguous") {
+          return ambiguate(admin, provider, account, chatId, intent, "workspace_id", ref.matches, `Multiple workspaces match *${intent.workspace}*. Pick one:`, "pickws");
         }
-        workspaceId = matches[0].id;
+        workspaceId = ref.id;
       }
       await clearConvo(admin, provider, chatId);
       const pendingId = await queuePending(admin, provider, account, chatId, intent, workspaceId ? { workspace_id: workspaceId } : {});
@@ -227,25 +272,21 @@ export const resolveIntent = async (
         await queueConvo(admin, provider, account, chatId, "title", intent);
         return { kind: "text", text: "What's the task title?" };
       }
-      if (!intent.project) {
+      if (!intent.resolved_ids?.project_id && !intent.project) {
         await queueConvo(admin, provider, account, chatId, "project", intent);
         return { kind: "text", text: "Which project? e.g. `task: X in Q1 launch`." };
       }
-      const { matches } = await findByName(admin, "projects", "name", "project_id", account.current_org_id, intent.project);
-      if (matches.length === 0) {
+      const ref = await resolveRef(admin, account.current_org_id, intent, "project_id", intent.project, "projects", "name", "project_id");
+      if (ref.status === "missing") {
         return { kind: "text", text: `No project called *${intent.project}*.` };
       }
-      if (matches.length > 1) {
-        return {
-          kind: "choices",
-          prompt: `Multiple projects match *${intent.project}*. Pick one:`,
-          choices: matches.map((m) => ({ label: m.name, callback: `pickproj:${m.id}` })),
-        };
+      if (ref.status === "ambiguous") {
+        return ambiguate(admin, provider, account, chatId, intent, "project_id", ref.matches, `Multiple projects match *${intent.project}*. Pick one:`, "pickproj");
       }
       await clearConvo(admin, provider, chatId);
-      const pendingId = await queuePending(admin, provider, account, chatId, intent, { project_id: matches[0].id });
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, { project_id: ref.id });
       const dueBit = intent.due ? ` due *${intent.due}*` : "";
-      return { kind: "confirm", summary: `Create task *${title}* in *${matches[0].name}*${dueBit}?`, pendingActionId: pendingId };
+      return { kind: "confirm", summary: `Create task *${title}* in *${intent.project ?? "project"}*${dueBit}?`, pendingActionId: pendingId };
     }
 
     case "create_client": {
@@ -266,19 +307,15 @@ export const resolveIntent = async (
         return { kind: "text", text: "What's the task title?" };
       }
       let clientId: string | null = null;
-      if (intent.client) {
-        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
-        if (matches.length === 0) {
+      if (intent.resolved_ids?.client_id || intent.client) {
+        const ref = await resolveRef(admin, account.current_org_id, intent, "client_id", intent.client, "clients", "name", "client_id");
+        if (ref.status === "missing") {
           return { kind: "text", text: `No client called *${intent.client}*.` };
         }
-        if (matches.length > 1) {
-          return {
-            kind: "choices",
-            prompt: `Multiple clients match *${intent.client}*. Pick one:`,
-            choices: matches.map((m) => ({ label: m.name, callback: `pickclient:${m.id}` })),
-          };
+        if (ref.status === "ambiguous") {
+          return ambiguate(admin, provider, account, chatId, intent, "client_id", ref.matches, `Multiple clients match *${intent.client}*. Pick one:`, "pickclient");
         }
-        clientId = matches[0].id;
+        clientId = ref.id;
       }
       await clearConvo(admin, provider, chatId);
       const pendingId = await queuePending(admin, provider, account, chatId, intent, clientId ? { client_id: clientId } : {});
@@ -314,24 +351,19 @@ export const resolveIntent = async (
         await queueConvo(admin, provider, account, chatId, "name", intent);
         return { kind: "text", text: "What's the contact's name?" };
       }
-      let clientId: string | null = null;
-      if (intent.client) {
-        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
-        if (matches.length === 0) return { kind: "text", text: `No client called *${intent.client}*.` };
-        if (matches.length > 1) {
-          return {
-            kind: "choices",
-            prompt: `Multiple clients match *${intent.client}*. Pick one:`,
-            choices: matches.map((m) => ({ label: m.name, callback: `pickclient:${m.id}` })),
-          };
-        }
-        clientId = matches[0].id;
-      } else {
+      if (!intent.resolved_ids?.client_id && !intent.client) {
         return { kind: "text", text: `Which client does *${lastName}* belong to?` };
       }
+      const ref = await resolveRef(admin, account.current_org_id, intent, "client_id", intent.client, "clients", "name", "client_id");
+      if (ref.status === "missing") {
+        return { kind: "text", text: `No client called *${intent.client}*.` };
+      }
+      if (ref.status === "ambiguous") {
+        return ambiguate(admin, provider, account, chatId, intent, "client_id", ref.matches, `Multiple clients match *${intent.client}*. Pick one:`, "pickclient");
+      }
       await clearConvo(admin, provider, chatId);
-      const pendingId = await queuePending(admin, provider, account, chatId, intent, { client_id: clientId });
-      return { kind: "confirm", summary: `Add contact *${lastName}* under *${intent.client}*?`, pendingActionId: pendingId };
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, { client_id: ref.id });
+      return { kind: "confirm", summary: `Add contact *${lastName}* under *${intent.client ?? "client"}*?`, pendingActionId: pendingId };
     }
 
     case "create_deal": {
@@ -341,16 +373,13 @@ export const resolveIntent = async (
         return { kind: "text", text: "What's the deal title?" };
       }
       let clientId: string | null = null;
-      if (intent.client) {
-        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
-        if (matches.length === 1) clientId = matches[0].id;
-        else if (matches.length > 1) {
-          return {
-            kind: "choices",
-            prompt: `Multiple clients match *${intent.client}*. Pick one:`,
-            choices: matches.map((m) => ({ label: m.name, callback: `pickclient:${m.id}` })),
-          };
+      if (intent.resolved_ids?.client_id || intent.client) {
+        const ref = await resolveRef(admin, account.current_org_id, intent, "client_id", intent.client, "clients", "name", "client_id");
+        if (ref.status === "ambiguous") {
+          return ambiguate(admin, provider, account, chatId, intent, "client_id", ref.matches, `Multiple clients match *${intent.client}*. Pick one:`, "pickclient");
         }
+        if (ref.status === "resolved") clientId = ref.id;
+        // "missing" → create the deal without a client, as before.
       }
       await clearConvo(admin, provider, chatId);
       const pendingId = await queuePending(admin, provider, account, chatId, intent, clientId ? { client_id: clientId } : {});
@@ -403,23 +432,20 @@ export const resolveIntent = async (
         await queueConvo(admin, provider, account, chatId, "body", intent);
         return { kind: "text", text: "What's the note?" };
       }
-      let clientId: string | null = null;
-      if (intent.client) {
-        const { matches } = await findByName(admin, "clients", "name", "client_id", account.current_org_id, intent.client);
-        if (matches.length === 1) clientId = matches[0].id;
-        else if (matches.length === 0) return { kind: "text", text: `No client called *${intent.client}*.` };
-        else return {
-          kind: "choices",
-          prompt: `Multiple clients match *${intent.client}*. Pick one:`,
-          choices: matches.map((m) => ({ label: m.name, callback: `pickclient:${m.id}` })),
-        };
-      } else {
+      if (!intent.resolved_ids?.client_id && !intent.client) {
         return { kind: "text", text: "Which client is the note for?" };
       }
+      const ref = await resolveRef(admin, account.current_org_id, intent, "client_id", intent.client, "clients", "name", "client_id");
+      if (ref.status === "missing") {
+        return { kind: "text", text: `No client called *${intent.client}*.` };
+      }
+      if (ref.status === "ambiguous") {
+        return ambiguate(admin, provider, account, chatId, intent, "client_id", ref.matches, `Multiple clients match *${intent.client}*. Pick one:`, "pickclient");
+      }
       await clearConvo(admin, provider, chatId);
-      const pendingId = await queuePending(admin, provider, account, chatId, intent, { client_id: clientId });
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, { client_id: ref.id });
       const preview = body.length > 60 ? `${body.slice(0, 60)}…` : body;
-      return { kind: "confirm", summary: `Add note *"${preview}"* on *${intent.client}*?`, pendingActionId: pendingId };
+      return { kind: "confirm", summary: `Add note *"${preview}"* on *${intent.client ?? "client"}*?`, pendingActionId: pendingId };
     }
   }
 };
