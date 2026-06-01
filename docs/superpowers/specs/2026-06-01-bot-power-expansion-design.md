@@ -132,12 +132,14 @@ Path: `<org_id>/<entity_type>/<entity_id>/<attachment_id>-<file_name>`. The bot 
 row + uploads bytes with the service-role client.
 
 ### Timezone (migration + frontend)
-- **Migration** `<next>_profiles_timezone.sql` (next sequential number; current max is `122`): `alter table public.profiles add column if not exists timezone text;`
-  IANA string (e.g. `Europe/London`); `null` ⇒ treat as `UTC`.
-- **Frontend**: timezone `<select>` (IANA list) in profile/account settings (exact component
-  located during planning; [Settings.tsx](../../src/pages/Settings.tsx) is the likely home),
-  persisting to `profiles.timezone`.
-- **Bot**: `handleNaturalLanguage` loads `profiles.timezone` for `account.user_id` and passes
+- **Migration** `<next>_user_profiles_timezone.sql` (next sequential number; current max is `122`): `alter table public.user_profiles add column if not exists timezone text;`
+  IANA string (e.g. `Europe/London`); `null` ⇒ treat as `UTC`. (Profile data lives in
+  `public.user_profiles`, PK `id` → `auth.users`.)
+- **Frontend**: timezone `<select>` (IANA list, `@/components/ui/select`) in the Profile tab of
+  [Settings.tsx](../../src/pages/Settings.tsx) (~L726–758), wired through `updateUserProfile` /
+  `getUserProfile` in [auth.ts](../../src/services/supabase/auth.ts) and the `User` type in
+  [user.ts](../../src/types/user.ts).
+- **Bot**: `handleNaturalLanguage` loads `user_profiles.timezone` for `account.user_id` and passes
   it to `parseIntent` (replacing the hardcoded `"UTC"`); the same value drives `format.ts`.
 
 ## Data flow
