@@ -36,7 +36,7 @@ const CONVO_TTL_MIN = 5;
 export type AwaitingField = "name" | "title" | "project" | "client" | "workspace" | "company" | "due" | "body";
 
 export interface LoadedConvo {
-  awaiting_field: AwaitingField;
+  awaiting_field: string;   // an AwaitingField, or "__pick:<id_field>" for disambiguation
   partial_intent: Intent;
 }
 
@@ -55,6 +55,30 @@ const queueConvo = async (
     user_id: account.user_id,
     org_id: account.current_org_id,
     awaiting_field: awaitingField,
+    partial_intent: partialIntent,
+    expires_at: expiresAt,
+  }, { onConflict: "provider,chat_id" });
+};
+
+// Persist the in-flight intent while we wait for the user to tap a choice
+// button. awaiting_field encodes which resolved_ids key the tap will fill,
+// e.g. "__pick:project_id". Reuses the (provider, chat_id) conversation row
+// and its 5-minute TTL.
+const queueDisambiguation = async (
+  admin: SupabaseClient,
+  provider: AgentProvider,
+  account: LinkedAccount,
+  chatId: string,
+  idField: string,
+  partialIntent: Intent,
+): Promise<void> => {
+  const expiresAt = new Date(Date.now() + CONVO_TTL_MIN * 60_000).toISOString();
+  await admin.from("agent_conversation_state").upsert({
+    provider,
+    chat_id: chatId,
+    user_id: account.user_id,
+    org_id: account.current_org_id,
+    awaiting_field: `__pick:${idField}`,
     partial_intent: partialIntent,
     expires_at: expiresAt,
   }, { onConflict: "provider,chat_id" });
@@ -89,7 +113,7 @@ export const loadConvo = async (
     return null;
   }
   return {
-    awaiting_field: data.awaiting_field as AwaitingField,
+    awaiting_field: data.awaiting_field as string,
     partial_intent: data.partial_intent as Intent,
   };
 };
