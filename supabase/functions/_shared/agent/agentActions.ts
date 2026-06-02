@@ -798,6 +798,39 @@ export const executePending = async (
         const preview = body.length > 50 ? `${body.slice(0, 50)}…` : body;
         return `✅ Note *"${preview}"* logged.`;
       }
+      case "update": {
+        const cfg = a.entity ? EDIT_CFG[a.entity] : undefined;
+        if (!cfg) throw new Error("Unknown entity to update.");
+        const targetId = a.resolved_ids?.[cfg.idField];
+        if (!targetId) throw new Error("Target record not resolved.");
+        const nowIso = new Date().toISOString();
+        const patch = buildPatch(cfg.entity, a, nowIso);
+
+        if (cfg.entity === "deal" && a.stage) {
+          const { data: deal } = await admin.from("deals")
+            .select("pipeline_id").eq("deal_id", targetId).eq("organization_id", row.org_id).maybeSingle();
+          const pipelineId = (deal as { pipeline_id?: string } | null)?.pipeline_id ?? null;
+          if (pipelineId) {
+            const { data: stage } = await admin.from("pipeline_stages")
+              .select("stage_id, default_probability, is_won")
+              .eq("pipeline_id", pipelineId).eq("key", a.stage.toLowerCase()).maybeSingle();
+            const st = stage as { stage_id?: string; default_probability?: number; is_won?: boolean } | null;
+            if (st?.stage_id) {
+              patch.stage_id = st.stage_id;
+              if (typeof st.default_probability === "number") patch.probability = st.default_probability;
+              if (st.is_won) patch.actual_close_date = nowIso.slice(0, 10);
+            }
+          }
+        }
+
+        if (Object.keys(patch).length === 0) throw new Error("Nothing to update.");
+        const { error: e } = await admin.from(cfg.table)
+          .update(patch)
+          .eq(cfg.pkCol, targetId)
+          .eq("organization_id", row.org_id);
+        if (e) throw e;
+        return `✅ Updated ${cfg.label}.`;
+      }
       default:
         throw new Error("Unsupported pending action.");
     }
