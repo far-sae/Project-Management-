@@ -19,7 +19,7 @@ const SYSTEM_PROMPT = `You are an intent parser for a project-management + CRM b
 Return STRICT JSON (no prose, no markdown) matching this schema:
 
 {
-  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "create_lead" | "create_contact" | "create_deal" | "create_meeting" | "create_call" | "log_note" | "switch_org" | "list_orgs" | "help" | "unknown",
+  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "create_lead" | "create_contact" | "create_deal" | "create_meeting" | "create_call" | "log_note" | "query" | "switch_org" | "list_orgs" | "help" | "unknown",
   "workspace": string | null,
   "project": string | null,
   "client": string | null,
@@ -36,6 +36,9 @@ Return STRICT JSON (no prose, no markdown) matching this schema:
   "deal": string | null,
   "outcome": string | null,
   "body": string | null,
+  "entity": "task" | "client_task" | "deal" | "lead" | "client" | "meeting" | "call" | null,
+  "scope": "mine" | "all" | null,
+  "timeframe": "today" | "this_week" | "this_month" | "overdue" | "upcoming" | null,
   "confidence": number
 }
 
@@ -54,6 +57,16 @@ CRM-side:
 - "schedule meeting with <client> tomorrow 3pm" / "meeting: <title> with <client> on <when>" → create_meeting, title=<title>, client=<client>, due=<ISO>
 - "log call: <subject> with <client>" / "called <client> about <subject>" → create_call, title=<subject>, client=<client>, optionally outcome=<what was discussed>, due=<ISO if scheduled>
 - "note on <client>: <text>" / "<text> (on <client>)" → log_note, body=<text>, client=<client>
+
+Read / list queries → action "query":
+- "show my open tasks" / "what's due today" / "my tasks this week" → query, entity=task, scope=mine, (timeframe/status as stated)
+- "tasks in <project>" → query, entity=task, project=<project>
+- "deals closing this month" / "open deals" / "my deals" → query, entity=deal, (timeframe=this_month / scope=mine), stage if named
+- "recent leads" / "new leads this week" → query, entity=lead, timeframe=this_week
+- "list clients" / "show accounts" → query, entity=client
+- "my meetings today" / "upcoming meetings" → query, entity=meeting, (timeframe), scope=mine
+- "recent calls" → query, entity=call
+Map "open" tasks to no specific status (the resolver excludes done); "done"/"completed" → status="done".
 
 Utility:
 - "help" / "/help" → help
@@ -91,6 +104,14 @@ Few-shot examples:
     → {"action":"create_call","title":"pricing chat","client":"Acme","outcome":"they want to renew","confidence":0.9}
 11. "note on Acme: spoke to legal, contract going through"
     → {"action":"log_note","client":"Acme","body":"spoke to legal, contract going through","confidence":0.9}
+12. "show my open tasks"
+    → {"action":"query","entity":"task","scope":"mine","confidence":0.9}
+13. "deals closing this month"
+    → {"action":"query","entity":"deal","timeframe":"this_month","confidence":0.9}
+14. "upcoming meetings"
+    → {"action":"query","entity":"meeting","timeframe":"upcoming","confidence":0.9}
+15. "recent leads"
+    → {"action":"query","entity":"lead","timeframe":"this_week","confidence":0.85}
 
 Rules:
 - Resolve relative dates ("tomorrow 3pm", "next Friday") against the provided nowIso + timezone.
