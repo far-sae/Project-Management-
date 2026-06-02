@@ -52,6 +52,7 @@ export interface Intent {
     | null;
   scope?: "mine" | "all" | null;
   timeframe?: "today" | "this_week" | "this_month" | "overdue" | "upcoming" | null;
+  status?: string | null;       // filter for query: e.g. "done", "todo", "inprogress"
   /** Internal: ids resolved via disambiguation, keyed by "<entity>_id"
    *  (e.g. project_id, client_id). Carried through a choice tap so
    *  resolveIntent can skip the name lookup. Never set by the parser. */
