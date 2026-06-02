@@ -19,6 +19,7 @@ export type AgentActionType =
   | "create_meeting"
   | "create_call"
   | "log_note"
+  | "query"
   | "switch_org"
   | "list_orgs"
   | "help"
@@ -45,6 +46,12 @@ export interface Intent {
   deal?: string | null;         // free-form deal name reference for meetings/calls
   outcome?: string | null;      // call outcome / meeting notes summary
   body?: string | null;         // note body
+  // Query (read) fields.
+  entity?:
+    | "task" | "client_task" | "deal" | "lead" | "client" | "meeting" | "call"
+    | null;
+  scope?: "mine" | "all" | null;
+  timeframe?: "today" | "this_week" | "this_month" | "overdue" | "upcoming" | null;
   /** Internal: ids resolved via disambiguation, keyed by "<entity>_id"
    *  (e.g. project_id, client_id). Carried through a choice tap so
    *  resolveIntent can skip the name lookup. Never set by the parser. */
