@@ -116,6 +116,29 @@ export const sendList = async (
   });
 };
 
+export interface DownloadedMedia {
+  bytes: Uint8Array;
+  mimeType: string;
+  fileName: string;
+}
+
+/** Resolve a WhatsApp media id to a temporary URL, then download the bytes.
+ *  Both calls require the bearer token. */
+export const downloadMedia = async (
+  mediaId: string,
+  fileNameHint: string,
+): Promise<DownloadedMedia> => {
+  const metaRes = await fetch(`https://graph.facebook.com/${API_VERSION}/${mediaId}`, {
+    headers: { authorization: `Bearer ${ACCESS_TOKEN}` },
+  });
+  if (!metaRes.ok) throw new Error(`whatsapp media meta failed: ${metaRes.status}`);
+  const meta = await metaRes.json() as { url: string; mime_type: string };
+  const binRes = await fetch(meta.url, { headers: { authorization: `Bearer ${ACCESS_TOKEN}` } });
+  if (!binRes.ok) throw new Error(`whatsapp media download failed: ${binRes.status}`);
+  const bytes = new Uint8Array(await binRes.arrayBuffer());
+  return { bytes, mimeType: meta.mime_type || "application/octet-stream", fileName: fileNameHint || `file-${mediaId}` };
+};
+
 /** Acknowledges that we've read a message — purely a UX nicety (the
  *  user sees a blue tick faster). Failure is non-fatal. */
 export const markRead = async (messageId: string): Promise<void> => {
