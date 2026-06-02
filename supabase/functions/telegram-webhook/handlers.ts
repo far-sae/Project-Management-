@@ -3,6 +3,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendMessage, answerCallbackQuery, type InlineButton } from "./telegram.ts";
 import { parseIntent } from "./intent.ts";
+import { loadUserTimezone } from "../_shared/agent/format.ts";
 import { resolveIntent, executePending, loadConvo, clearConvo, resumeDisambiguation } from "./agentActions.ts";
 import type { AgentReply, Intent, LinkedAccount } from "./types.ts";
 
@@ -194,20 +195,21 @@ export const handleNaturalLanguage = async (
     return;
   }
 
-  // 2. Fresh command. Compact context for the parser. We don't have a per-user
-  //    timezone column, so default to UTC — passing the org's country code as
-  //    a tz misparses relative dates (the prior bug).
-  const [{ data: wsData }, { data: projData }, { data: clData }] = await Promise.all([
+  // 2. Fresh command. Compact context for the parser. Load the user's IANA
+  //    timezone from user_profiles so relative dates ("tomorrow 3pm") resolve
+  //    correctly in their local time.
+  const [{ data: wsData }, { data: projData }, { data: clData }, tz] = await Promise.all([
     admin.from("workspaces").select("name").eq("organization_id", account.current_org_id).limit(50),
     admin.from("projects").select("name").eq("organization_id", account.current_org_id).limit(50),
     admin.from("clients").select("name").eq("organization_id", account.current_org_id).limit(50),
+    loadUserTimezone(admin, account.user_id),
   ]);
   const intent = await parseIntent(text, {
     workspaces: (wsData ?? []).map((r) => (r as { name: string }).name),
     projects: (projData ?? []).map((r) => (r as { name: string }).name),
     clients: (clData ?? []).map((r) => (r as { name: string }).name),
     nowIso: new Date().toISOString(),
-    timezone: "UTC",
+    timezone: tz,
   });
   const reply = await resolveIntent(admin, account, String(chatId), intent);
   await sendReply(chatId, reply);

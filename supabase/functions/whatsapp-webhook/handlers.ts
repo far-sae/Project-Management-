@@ -3,6 +3,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendMessage, sendButtons, sendList, type InteractiveButton } from "./whatsapp.ts";
 import { parseIntent } from "../_shared/agent/intent.ts";
+import { loadUserTimezone } from "../_shared/agent/format.ts";
 import {
   resolveIntent as sharedResolveIntent,
   executePending,
@@ -250,17 +251,18 @@ export const handleNaturalLanguage = async (
     return;
   }
 
-  const [{ data: wsData }, { data: projData }, { data: clData }] = await Promise.all([
+  const [{ data: wsData }, { data: projData }, { data: clData }, tz] = await Promise.all([
     admin.from("workspaces").select("name").eq("organization_id", account.current_org_id).limit(50),
     admin.from("projects").select("name").eq("organization_id", account.current_org_id).limit(50),
     admin.from("clients").select("name").eq("organization_id", account.current_org_id).limit(50),
+    loadUserTimezone(admin, account.user_id),
   ]);
   const intent = await parseIntent(text, {
     workspaces: (wsData ?? []).map((r) => (r as { name: string }).name),
     projects: (projData ?? []).map((r) => (r as { name: string }).name),
     clients: (clData ?? []).map((r) => (r as { name: string }).name),
     nowIso: new Date().toISOString(),
-    timezone: "UTC",
+    timezone: tz,
   });
   const reply = await resolveIntent(admin, account, phoneNumber, intent);
   await sendReply(phoneNumber, reply);
