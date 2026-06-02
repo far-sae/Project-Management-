@@ -18,7 +18,7 @@ import { sendMessage, markRead } from "./whatsapp.ts";
 import {
   findLinkedAccount, handleStart, handleUnlink, handleSwitchOrg,
   handleNaturalLanguage, handleInteractiveReply, handleHelp, handleListOrgs,
-  handleCancel,
+  handleCancel, handleMedia,
 } from "./handlers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -70,6 +70,9 @@ interface InboundChange {
         list_reply?: { id: string; title: string };
       };
       button?: { payload?: string; text?: string };
+      image?: { id: string; mime_type?: string; caption?: string };
+      audio?: { id: string; mime_type?: string; voice?: boolean };
+      document?: { id: string; mime_type?: string; filename?: string; caption?: string };
     }>;
   };
 }
@@ -153,6 +156,20 @@ const handleOne = async (
   // Legacy button (template button responses also arrive as type:'button')
   if (m.type === "button" && m.button?.payload) {
     await handleInteractiveReply(admin, phoneNumber, m.button.payload);
+    return;
+  }
+
+  // Media messages — handled before the text guard.
+  if (m.type === "audio" && m.audio) {
+    await handleMedia(admin, phoneNumber, { kind: "audio", mediaId: m.audio.id, mime: m.audio.mime_type ?? "audio/ogg", name: "voice.ogg" }, undefined);
+    return;
+  }
+  if (m.type === "image" && m.image) {
+    await handleMedia(admin, phoneNumber, { kind: "image", mediaId: m.image.id, mime: m.image.mime_type ?? "image/jpeg", name: "image.jpg" }, m.image.caption);
+    return;
+  }
+  if (m.type === "document" && m.document) {
+    await handleMedia(admin, phoneNumber, { kind: "document", mediaId: m.document.id, mime: m.document.mime_type ?? "application/octet-stream", name: m.document.filename ?? "file" }, m.document.caption);
     return;
   }
 

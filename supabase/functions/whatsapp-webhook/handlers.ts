@@ -1,7 +1,8 @@
 // supabase/functions/whatsapp-webhook/handlers.ts
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { sendMessage, sendButtons, sendList, type InteractiveButton } from "./whatsapp.ts";
+import { sendMessage, sendButtons, sendList, type InteractiveButton, downloadMedia } from "./whatsapp.ts";
+import { transcribeAudio, attachToEntity, loadLastEntity, ATTACH_ENTITY_TYPES } from "../_shared/agent/media.ts";
 import { parseIntent } from "../_shared/agent/intent.ts";
 import { loadUserTimezone } from "../_shared/agent/format.ts";
 import {
@@ -266,6 +267,50 @@ export const handleNaturalLanguage = async (
   });
   const reply = await resolveIntent(admin, account, phoneNumber, intent);
   await sendReply(phoneNumber, reply);
+};
+
+type WaMedia = { kind: "audio" | "image" | "document"; mediaId: string; mime: string; name: string };
+
+export const handleMedia = async (
+  admin: SupabaseClient,
+  phoneNumber: string,
+  media: WaMedia,
+  caption: string | undefined,
+): Promise<void> => {
+  const account = await findLinkedAccount(admin, phoneNumber);
+  if (!account) {
+    await sendMessage(phoneNumber, "🔗 This number isn't linked. Send /start <code> first.");
+    return;
+  }
+  const dl = await downloadMedia(media.mediaId, media.name);
+
+  if (media.kind === "audio") {
+    let transcript = "";
+    try {
+      transcript = await transcribeAudio(dl.bytes, dl.mimeType);
+    } catch {
+      await sendMessage(phoneNumber, "Couldn't transcribe that voice note — try typing it.");
+      return;
+    }
+    if (!transcript) {
+      await sendMessage(phoneNumber, "I couldn't hear anything in that clip.");
+      return;
+    }
+    await handleNaturalLanguage(admin, account, transcript);
+    return;
+  }
+
+  const target = await loadLastEntity(admin, PROVIDER, account.user_id);
+  if (!target || !ATTACH_ENTITY_TYPES.has(target.type)) {
+    await sendMessage(phoneNumber, "I don't know what to attach this to yet. Create or open a record first (e.g. new client Acme), then resend the file.");
+    return;
+  }
+  try {
+    await attachToEntity(admin, account.current_org_id, account.user_id, target.type, target.id, dl.bytes, dl.mimeType, dl.fileName);
+    await sendMessage(phoneNumber, `📎 Attached ${dl.fileName} to ${target.type} ${target.label}.`);
+  } catch (err) {
+    await sendMessage(phoneNumber, `❌ Couldn't attach that: ${(err as Error).message}`);
+  }
 };
 
 export const handleInteractiveReply = async (
