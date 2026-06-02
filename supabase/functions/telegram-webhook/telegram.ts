@@ -59,3 +59,23 @@ export const editMessageText = async (
     parse_mode: "Markdown",
   });
 };
+
+export interface DownloadedMedia {
+  bytes: Uint8Array;
+  mimeType: string;
+  fileName: string;
+}
+
+/** Fetch a Telegram file by file_id: getFile → download from the file API. */
+export const downloadMedia = async (
+  fileId: string,
+  mimeHint: string,
+  fileNameHint: string,
+): Promise<DownloadedMedia> => {
+  const file = await tg("getFile", { file_id: fileId }); // { file_path, ... }
+  const path = (file as { file_path: string }).file_path;
+  const res = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${path}`);
+  if (!res.ok) throw new Error(`telegram file download failed: ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return { bytes, mimeType: mimeHint || "application/octet-stream", fileName: fileNameHint || path.split("/").pop() || "file" };
+};
