@@ -12,6 +12,7 @@ import type { AgentProvider, AgentReply, Intent, LinkedAccount } from "./types.t
 import { runQuery } from "./query.ts";
 import { loadUserTimezone } from "./format.ts";
 import { EDIT_CFG, buildPatch } from "./editConfig.ts";
+import { setLastEntity, ATTACH_ENTITY_TYPES, type LastEntity } from "./media.ts";
 
 // Maps a choice-button callback prefix to the Intent.resolved_ids field it fills.
 const PICK_FIELD: Record<string, string> = {
@@ -584,6 +585,7 @@ export const executePending = async (
   }
 
   const a = row.action as Intent & { resolved_ids?: Record<string, string> };
+  let lastEntity: LastEntity | null = null;
 
   try {
     switch (a.action) {
@@ -621,6 +623,7 @@ export const executePending = async (
           p_description: a.description ?? null,
         });
         if (e) throw e;
+        lastEntity = { type: "task", id: (data as { task_id: string }).task_id, label: (data as { title: string }).title };
         return `✅ Task *${data.title}* created.`;
       }
       case "create_client": {
@@ -631,6 +634,7 @@ export const executePending = async (
           p_client: { name },
         });
         if (e) throw e;
+        lastEntity = { type: "client", id: (data as { client_id: string }).client_id, label: (data as { name: string }).name };
         return `✅ Client *${data.name}* created.`;
       }
       case "create_client_task": {
@@ -680,9 +684,10 @@ export const executePending = async (
           description: a.description ?? null,
           lead_source: "Chat bot",
           created_by: row.user_id,
-        }).select("lead_number, last_name, company").single();
+        }).select("lead_id, lead_number, last_name, company").single();
         if (e) throw e;
-        const r = data as { lead_number: string; last_name: string; company: string };
+        const r = data as { lead_id: string; lead_number: string; last_name: string; company: string };
+        lastEntity = { type: "lead", id: r.lead_id, label: `${r.last_name} (${r.company})` };
         return `✅ Lead *${r.last_name}* at *${r.company}* created (${r.lead_number}).`;
       }
 
@@ -697,8 +702,9 @@ export const executePending = async (
           phone: a.phone ?? null,
           mobile: a.phone ?? null,
           created_by: row.user_id,
-        }).select("last_name").single();
+        }).select("contact_id, last_name").single();
         if (e) throw e;
+        lastEntity = { type: "contact", id: (data as { contact_id: string }).contact_id, label: (data as { last_name: string }).last_name };
         return `✅ Contact *${(data as { last_name: string }).last_name}* added.`;
       }
 
@@ -734,8 +740,9 @@ export const executePending = async (
           currency: (a.currency ?? "USD").toUpperCase(),
           stage: a.stage ?? "lead",
           expected_close_date: a.due ? a.due.slice(0, 10) : null,
-        }).select("title").single();
+        }).select("deal_id, title").single();
         if (e) throw e;
+        lastEntity = { type: "deal", id: (data as { deal_id: string }).deal_id, label: (data as { title: string }).title };
         return `✅ Deal *${(data as { title: string }).title}* created.`;
       }
 
@@ -755,8 +762,9 @@ export const executePending = async (
           related_to_id: clientId,
           description: a.description ?? null,
           created_by: row.user_id,
-        }).select("title").single();
+        }).select("meeting_id, title").single();
         if (e) throw e;
+        lastEntity = { type: "meeting", id: (data as { meeting_id: string }).meeting_id, label: (data as { title: string }).title };
         return `✅ Meeting *${(data as { title: string }).title}* scheduled.`;
       }
 
@@ -777,8 +785,9 @@ export const executePending = async (
           outcome: a.outcome ?? null,
           description: a.description ?? null,
           created_by: row.user_id,
-        }).select("subject").single();
+        }).select("call_id, subject").single();
         if (e) throw e;
+        lastEntity = { type: "call", id: (data as { call_id: string }).call_id, label: (data as { subject: string }).subject };
         return `✅ Call *${(data as { subject: string }).subject}* logged.`;
       }
 
@@ -829,12 +838,19 @@ export const executePending = async (
           .eq(cfg.pkCol, targetId)
           .eq("organization_id", row.org_id);
         if (e) throw e;
+        if (ATTACH_ENTITY_TYPES.has(cfg.entity)) {
+          lastEntity = { type: cfg.entity, id: targetId, label: cfg.label };
+        }
         return `✅ Updated ${cfg.label}.`;
       }
       default:
         throw new Error("Unsupported pending action.");
     }
   } finally {
+    if (lastEntity) {
+      try { await setLastEntity(admin, row.provider as AgentProvider, row.user_id, lastEntity); }
+      catch (e) { console.warn("setLastEntity failed:", e); }
+    }
     await admin.from("agent_pending_actions").delete().eq("id", pendingId);
   }
 };
