@@ -13,7 +13,7 @@
 //   WHATSAPP_API_VERSION        — optional, default v20.0
 //   OPENAI_API_KEY              — existing secret reused for intent parsing
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendMessage, markRead } from "./whatsapp.ts";
 import {
   findLinkedAccount, handleStart, handleUnlink, handleSwitchOrg,
@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
 });
 
 const handleOne = async (
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   m: NonNullable<NonNullable<InboundChange["value"]>["messages"]>[number],
 ): Promise<void> => {
   const phoneNumber = m.from;
