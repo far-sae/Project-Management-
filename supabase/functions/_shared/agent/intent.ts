@@ -19,7 +19,7 @@ const SYSTEM_PROMPT = `You are an intent parser for a project-management + CRM b
 Return STRICT JSON (no prose, no markdown) matching this schema:
 
 {
-  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "create_lead" | "create_contact" | "create_deal" | "create_meeting" | "create_call" | "log_note" | "query" | "switch_org" | "list_orgs" | "help" | "unknown",
+  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "create_lead" | "create_contact" | "create_deal" | "create_meeting" | "create_call" | "log_note" | "query" | "update" | "switch_org" | "list_orgs" | "help" | "unknown",
   "workspace": string | null,
   "project": string | null,
   "client": string | null,
@@ -39,6 +39,8 @@ Return STRICT JSON (no prose, no markdown) matching this schema:
   "entity": "task" | "client_task" | "deal" | "lead" | "client" | "meeting" | "call" | null,
   "scope": "mine" | "all" | null,
   "timeframe": "today" | "this_week" | "this_month" | "overdue" | "upcoming" | null,
+  "target": string | null,
+  "priority": string | null,
   "confidence": number
 }
 
@@ -67,6 +69,19 @@ Read / list queries → action "query":
 - "my meetings today" / "upcoming meetings" → query, entity=meeting, (timeframe), scope=mine
 - "recent calls" → query, entity=call
 Map "open" tasks to no specific status (the resolver excludes done); "done"/"completed" → status="done".
+
+Edit / update an existing record → action "update":
+- "mark <task> done" / "complete <task>" → update, entity=task, target=<task>, status="done"
+- "reschedule <task> to <when>" / "move <task> to Friday" → update, entity=task, target=<task>, due=<ISO>
+- "rename <task> to <new>" → update, entity=task, target=<task>, title=<new>
+- "set <task> priority to high" → update, entity=task, target=<task>, priority="high"
+- "move <deal> to Won" / "mark <deal> lost" → update, entity=deal, target=<deal>, stage="won"|"lost"
+- "set <deal> value to 20000" → update, entity=deal, target=<deal>, value=20000
+- "mark follow-up <x> done" → update, entity=client_task, target=<x>, status="done"
+- "set lead <name> to contacted" → update, entity=lead, target=<name>, status="contacted"
+- "cancel meeting <title>" → update, entity=meeting, target=<title>, status="cancelled"
+- "reschedule meeting <title> to <when>" → update, entity=meeting, target=<title>, due=<ISO>
+target = the existing record's name/title to look up; never invent it.
 
 Utility:
 - "help" / "/help" → help
@@ -112,6 +127,12 @@ Few-shot examples:
     → {"action":"query","entity":"meeting","timeframe":"upcoming","confidence":0.9}
 15. "recent leads"
     → {"action":"query","entity":"lead","timeframe":"this_week","confidence":0.85}
+16. "mark Deploy v2 done"
+    → {"action":"update","entity":"task","target":"Deploy v2","status":"done","confidence":0.9}
+17. "move the Acme Website deal to Won"
+    → {"action":"update","entity":"deal","target":"Acme Website","stage":"won","confidence":0.9}
+18. "reschedule Discovery call to tomorrow 4pm"
+    → {"action":"update","entity":"meeting","target":"Discovery call","due":"<ISO>","confidence":0.85}
 
 Rules:
 - Resolve relative dates ("tomorrow 3pm", "next Friday") against the provided nowIso + timezone.
