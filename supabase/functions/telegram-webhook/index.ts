@@ -17,7 +17,7 @@ import { sendMessage } from "./telegram.ts";
 import {
   findLinkedAccount, handleStart, handleUnlink, handleSwitchOrg,
   handleNaturalLanguage, handleCallbackQuery, handleHelp, handleListOrgs,
-  handleCancel,
+  handleCancel, handleMedia,
 } from "./handlers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -29,6 +29,11 @@ interface TgUpdate {
     chat: { id: number };
     from?: { id: number; username?: string };
     text?: string;
+    caption?: string;
+    voice?: { file_id: string; mime_type?: string };
+    audio?: { file_id: string; mime_type?: string; file_name?: string };
+    document?: { file_id: string; mime_type?: string; file_name?: string };
+    photo?: Array<{ file_id: string }>;
   };
   callback_query?: {
     id: string;
@@ -70,22 +75,24 @@ Deno.serve(async (req) => {
     }
 
     const msg = body.message;
-    if (!msg?.from || !msg.text) return new Response("ok");
+    if (!msg?.from) return new Response("ok");
 
     const chatId = msg.chat.id;
     const tgUserId = msg.from.id;
     const username = msg.from.username;
-    const text = msg.text.trim();
 
-    // Slash commands first.
-    if (text.startsWith("/start")) {
-      const arg = text.slice("/start".length).trim() || undefined;
-      await handleStart(admin, chatId, tgUserId, username, arg);
-      return new Response("ok");
-    }
-    if (text === "/unlink") {
-      await handleUnlink(admin, chatId, tgUserId);
-      return new Response("ok");
+    // Text-only slash commands that don't require a linked account.
+    if (msg.text) {
+      const text = msg.text.trim();
+      if (text.startsWith("/start")) {
+        const arg = text.slice("/start".length).trim() || undefined;
+        await handleStart(admin, chatId, tgUserId, username, arg);
+        return new Response("ok");
+      }
+      if (text === "/unlink") {
+        await handleUnlink(admin, chatId, tgUserId);
+        return new Response("ok");
+      }
     }
 
     // Everything else requires a linked account.
@@ -94,6 +101,25 @@ Deno.serve(async (req) => {
       await sendMessage(chatId, "🔗 This chat isn't linked. In TaskCalendar: Settings → Integrations → Telegram → Connect, then send `/start <code>`.");
       return new Response("ok");
     }
+
+    // Media messages (voice, audio, document, photo) — handle before text routing.
+    const media = msg.voice
+      ? { kind: "voice" as const, fileId: msg.voice.file_id, mime: msg.voice.mime_type ?? "audio/ogg", name: "voice.ogg" }
+      : msg.audio
+      ? { kind: "audio" as const, fileId: msg.audio.file_id, mime: msg.audio.mime_type ?? "audio/mpeg", name: msg.audio.file_name ?? "audio.mp3" }
+      : msg.document
+      ? { kind: "document" as const, fileId: msg.document.file_id, mime: msg.document.mime_type ?? "application/octet-stream", name: msg.document.file_name ?? "file" }
+      : (msg.photo && msg.photo.length)
+      ? { kind: "photo" as const, fileId: msg.photo[msg.photo.length - 1].file_id, mime: "image/jpeg", name: "photo.jpg" }
+      : null;
+    if (media) {
+      await handleMedia(admin, chatId, account, media, msg.caption);
+      return new Response("ok");
+    }
+
+    // Non-media, non-text messages (stickers, location, etc.) — ignore.
+    if (!msg.text) return new Response("ok");
+    const text = msg.text.trim();
 
     if (text === "/help") {
       await handleHelp(chatId);

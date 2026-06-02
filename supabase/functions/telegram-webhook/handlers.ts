@@ -1,7 +1,8 @@
 // supabase/functions/telegram-webhook/handlers.ts
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { sendMessage, answerCallbackQuery, type InlineButton } from "./telegram.ts";
+import { sendMessage, answerCallbackQuery, type InlineButton, downloadMedia } from "./telegram.ts";
+import { transcribeAudio, attachToEntity, loadLastEntity, ATTACH_ENTITY_TYPES } from "../_shared/agent/media.ts";
 import { parseIntent } from "./intent.ts";
 import { loadUserTimezone } from "../_shared/agent/format.ts";
 import { resolveIntent, executePending, loadConvo, clearConvo, resumeDisambiguation } from "./agentActions.ts";
@@ -260,6 +261,46 @@ Slash commands:
 • \`/cancel\` — drop the current "what's the X?" prompt
 • \`/unlink\` — disconnect this chat
 • \`/help\` — show this message`;
+
+type TgMedia = { kind: "voice" | "audio" | "document" | "photo"; fileId: string; mime: string; name: string };
+
+export const handleMedia = async (
+  admin: SupabaseClient,
+  chatId: number,
+  account: LinkedAccount,
+  media: TgMedia,
+  caption: string | undefined,
+): Promise<void> => {
+  const dl = await downloadMedia(media.fileId, media.mime, media.name);
+
+  if (media.kind === "voice" || media.kind === "audio") {
+    let transcript = "";
+    try {
+      transcript = await transcribeAudio(dl.bytes, dl.mimeType);
+    } catch {
+      await sendMessage(chatId, "Couldn't transcribe that voice note — try typing it.");
+      return;
+    }
+    if (!transcript) {
+      await sendMessage(chatId, "I couldn't hear anything in that clip.");
+      return;
+    }
+    await handleNaturalLanguage(admin, chatId, account, transcript);
+    return;
+  }
+
+  const target = await loadLastEntity(admin, "telegram", account.user_id);
+  if (!target || !ATTACH_ENTITY_TYPES.has(target.type)) {
+    await sendMessage(chatId, "I don't know what to attach this to yet. Create or open a record first (e.g. `new client Acme`), then resend the file.");
+    return;
+  }
+  try {
+    await attachToEntity(admin, account.current_org_id, account.user_id, target.type, target.id, dl.bytes, dl.mimeType, dl.fileName);
+    await sendMessage(chatId, `📎 Attached *${dl.fileName}* to ${target.type} *${target.label}*.`);
+  } catch (err) {
+    await sendMessage(chatId, `❌ Couldn't attach that: ${(err as Error).message}`);
+  }
+};
 
 export const handleCallbackQuery = async (
   admin: SupabaseClient,
