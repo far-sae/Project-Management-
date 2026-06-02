@@ -11,12 +11,18 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { AgentProvider, AgentReply, Intent, LinkedAccount } from "./types.ts";
 import { runQuery } from "./query.ts";
 import { loadUserTimezone } from "./format.ts";
+import { EDIT_CFG, buildPatch } from "./editConfig.ts";
 
 // Maps a choice-button callback prefix to the Intent.resolved_ids field it fills.
 const PICK_FIELD: Record<string, string> = {
   pickws: "workspace_id",
   pickproj: "project_id",
   pickclient: "client_id",
+  picktask: "task_id",
+  pickctask: "client_task_id",
+  pickdeal: "deal_id",
+  picklead: "lead_id",
+  pickmeeting: "meeting_id",
 };
 
 /** Parses a "pick<prefix>:<uuid>" choice callback. Returns null for anything
@@ -35,7 +41,7 @@ export const parsePickCallback = (
 const PENDING_TTL_MIN = 10;
 const CONVO_TTL_MIN = 5;
 
-export type AwaitingField = "name" | "title" | "project" | "client" | "workspace" | "company" | "due" | "body";
+export type AwaitingField = "name" | "title" | "project" | "client" | "workspace" | "company" | "due" | "body" | "target";
 
 export interface LoadedConvo {
   awaiting_field: string;   // an AwaitingField, or "__pick:<id_field>" for disambiguation
@@ -137,6 +143,26 @@ const findByName = async (
   return {
     matches: rows.map((r) => ({ id: r[pkCol], name: r[nameCol] })),
   };
+};
+
+// Like findByName but matches a substring (case-insensitive) — used to find
+// an edit target the user named loosely ("Deploy v2", "Acme Website").
+const findByTitle = async (
+  admin: SupabaseClient,
+  table: string,
+  searchCol: string,
+  pkCol: string,
+  orgId: string,
+  needle: string,
+): Promise<Array<{ id: string; name: string }>> => {
+  const { data } = await admin
+    .from(table)
+    .select(`${pkCol}, ${searchCol}`)
+    .eq("organization_id", orgId)
+    .ilike(searchCol, `%${needle}%`)
+    .limit(6);
+  const rows = (data ?? []) as unknown as Array<Record<string, string>>;
+  return rows.map((r) => ({ id: r[pkCol], name: r[searchCol] }));
 };
 
 type RefResult =
@@ -250,6 +276,22 @@ export const resumeDisambiguation = async (
   };
   await clearConvo(admin, provider, chatId);
   return resolveIntent(admin, provider, account, chatId, intent);
+};
+
+// One-line human summary of an edit, for the confirm prompt.
+const editSummary = (
+  cfg: { entity: string; label: string },
+  intent: Intent,
+  targetName: string,
+): string => {
+  const name = targetName || intent.target || "it";
+  if (cfg.entity === "deal" && intent.stage) return `Move deal *${name}* to *${intent.stage}*?`;
+  if (intent.status) return `Set ${cfg.label} *${name}* to *${intent.status}*?`;
+  if (intent.due) return `Reschedule ${cfg.label} *${name}* to *${intent.due}*?`;
+  if (intent.title) return `Rename ${cfg.label} *${name}* to *${intent.title}*?`;
+  if (typeof intent.value === "number") return `Set ${cfg.label} *${name}* value to *${intent.value} ${intent.currency ?? ""}*?`.trim().replace(/ \?$/, "?");
+  if (intent.priority) return `Set ${cfg.label} *${name}* priority to *${intent.priority}*?`;
+  return `Update ${cfg.label} *${name}*?`;
 };
 
 export const resolveIntent = async (
@@ -491,6 +533,37 @@ export const resolveIntent = async (
       const pendingId = await queuePending(admin, provider, account, chatId, intent, { client_id: ref.id });
       const preview = body.length > 60 ? `${body.slice(0, 60)}…` : body;
       return { kind: "confirm", summary: `Add note *"${preview}"* on *${intent.client ?? "client"}*?`, pendingActionId: pendingId };
+    }
+
+    case "update": {
+      const cfg = intent.entity ? EDIT_CFG[intent.entity] : undefined;
+      if (!cfg) {
+        return { kind: "text", text: "I can update tasks, follow-ups, deals, leads or meetings. Try `mark Deploy v2 done`." };
+      }
+      const patch = buildPatch(cfg.entity, intent, new Date().toISOString());
+      const wantsStage = cfg.entity === "deal" && !!intent.stage;
+      if (Object.keys(patch).length === 0 && !wantsStage) {
+        return { kind: "text", text: `What should I change on that ${cfg.label}? e.g. mark it done, reschedule it, or set a value.` };
+      }
+      let targetId = intent.resolved_ids?.[cfg.idField] ?? null;
+      let targetName = intent.target ?? "";
+      if (!targetId) {
+        const needle = (intent.target ?? "").trim();
+        if (!needle) {
+          await queueConvo(admin, provider, account, chatId, "target", intent);
+          return { kind: "text", text: `Which ${cfg.label}?` };
+        }
+        const matches = await findByTitle(admin, cfg.table, cfg.searchCol, cfg.pkCol, account.current_org_id, needle);
+        if (matches.length === 0) return { kind: "text", text: `No ${cfg.label} matching *${needle}*.` };
+        if (matches.length > 1) {
+          return ambiguate(admin, provider, account, chatId, intent, cfg.idField, matches, `Multiple ${cfg.label}s match *${needle}*. Pick one:`, cfg.pickPrefix);
+        }
+        targetId = matches[0].id;
+        targetName = matches[0].name;
+      }
+      await clearConvo(admin, provider, chatId);
+      const pendingId = await queuePending(admin, provider, account, chatId, intent, { [cfg.idField]: targetId });
+      return { kind: "confirm", summary: editSummary(cfg, intent, targetName), pendingActionId: pendingId };
     }
   }
 };
