@@ -428,6 +428,7 @@ export const getUserProfile = async (userId: string): Promise<User | null> => {
       photoURL: data.photo_url || "",
       provider: "email",
       country: "US",
+      timezone: (data as { timezone?: string }).timezone || "UTC",
       role: data.role || "user",
       organizationId: data.organization_id || `local-${userId}`,
       organizationRole: null,
@@ -466,6 +467,7 @@ export const updateUserProfile = async (
   if (data.displayName) updateData.display_name = data.displayName;
   if (data.photoURL) updateData.photo_url = data.photoURL;
   if (data.organizationId) updateData.organization_id = data.organizationId;
+  if (data.timezone) updateData.timezone = data.timezone;
 
   await supabase.from("user_profiles").update(updateData).eq("id", userId);
 };

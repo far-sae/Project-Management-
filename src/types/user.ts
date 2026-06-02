@@ -15,6 +15,7 @@ export interface User {
   photoURL: string;
   provider: "email" | "google" | "apple";
   country: string;
+  timezone?: string;            // IANA timezone, e.g. "Europe/London"
   role: "user" | "admin";
   organizationId: string | null;
   organizationRole: "owner" | "admin" | "member" | null;

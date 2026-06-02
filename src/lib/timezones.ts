@@ -1,0 +1,25 @@
+// A curated IANA timezone list for the profile picker. Kept short and
+// practical rather than exhaustive; "UTC" is always first as the default.
+export const TIMEZONES: string[] = [
+  "UTC",
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Moscow",
+  "Africa/Lagos",
+  "Africa/Johannesburg",
+  "Asia/Dubai",
+  "Asia/Karachi",
+  "Asia/Kolkata",
+  "Asia/Dhaka",
+  "Asia/Singapore",
+  "Asia/Shanghai",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];

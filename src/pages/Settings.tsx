@@ -45,6 +45,8 @@ import {
   Mail,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TIMEZONES } from "@/lib/timezones";
 import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { CapacitySettings } from "@/components/settings/CapacitySettings";
@@ -90,6 +92,7 @@ export const Settings: React.FC = () => {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelNowLoading, setCancelNowLoading] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || "");
+  const [timezone, setTimezone] = useState(user?.timezone || "UTC");
   const [email] = useState(user?.email || "");
   const [profileLoading, setProfileLoading] = useState(false);
   const [photoLoading, setPhotoLoading] = useState(false);
@@ -116,6 +119,7 @@ export const Settings: React.FC = () => {
 
   useEffect(() => {
     setDisplayName(user?.displayName || "");
+    setTimezone(user?.timezone || "UTC");
   }, [user?.displayName]);
 
   useEffect(() => {
@@ -233,7 +237,7 @@ export const Settings: React.FC = () => {
     setProfileLoading(true);
     const toastId = toast.loading("Saving profile...");
     try {
-      await updateUserProfile(user.userId, { displayName });
+      await updateUserProfile(user.userId, { displayName, timezone });
       await refreshUser();
       toast.success("Profile updated successfully", { id: toastId });
     } catch (err) {
@@ -730,6 +734,19 @@ export const Settings: React.FC = () => {
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Timezone</Label>
+                    <Select value={timezone} onValueChange={setTimezone}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TIMEZONES.map((tz) => (
+                          <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Email</Label>
