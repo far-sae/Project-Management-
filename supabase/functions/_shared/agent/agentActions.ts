@@ -9,6 +9,8 @@
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { AgentProvider, AgentReply, Intent, LinkedAccount } from "./types.ts";
+import { runQuery } from "./query.ts";
+import { loadUserTimezone } from "./format.ts";
 
 // Maps a choice-button callback prefix to the Intent.resolved_ids field it fills.
 const PICK_FIELD: Record<string, string> = {
@@ -262,6 +264,11 @@ export const resolveIntent = async (
       return { kind: "text", text: HELP_TEXT };
     case "list_orgs":
       return { kind: "text", text: await formatOrgs(admin, account) };
+    case "query": {
+      const tz = await loadUserTimezone(admin, account.user_id);
+      const text = await runQuery(admin, account, intent, tz, new Date().toISOString());
+      return { kind: "text", text };
+    }
     case "switch_org":
       return { kind: "text", text: "Use `/switchorg <name>` (e.g. `/switchorg Acme Corp`)." };
     case "unknown":
