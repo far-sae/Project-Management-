@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Activity, Mail, Video, CheckCircle2, AlertCircle, Loader2, RefreshCw, Workflow,
 } from 'lucide-react';
+import { FEATURES } from '@/config/featureFlags';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,7 +39,7 @@ export const IntegrationsHealthCard: React.FC = () => {
   const load = async () => {
     setLoading(true);
     const next: Row[] = [
-      { id: 'gmail',       label: 'Gmail',        status: 'unknown', hint: '', icon: Mail },
+      ...(FEATURES.gmail ? [{ id: 'gmail' as const, label: 'Gmail', status: 'unknown' as Status, hint: '', icon: Mail }] : []),
       { id: 'google',      label: 'Google Meet',  status: 'unknown', hint: '', icon: Video },
       { id: 'automations', label: 'Automations',  status: 'unknown', hint: '', icon: Workflow },
     ];
