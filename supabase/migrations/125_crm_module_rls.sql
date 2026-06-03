@@ -14,6 +14,11 @@ drop policy if exists "members_create_deals"        on public.deals;
 drop policy if exists "deal_owner_edit_own"         on public.deals;
 drop policy if exists "owner_or_admin_edit_deals"   on public.deals;
 drop policy if exists "owner_or_admin_delete_deals" on public.deals;
+-- new names too, so this migration is safely re-runnable:
+drop policy if exists "deals_view"   on public.deals;
+drop policy if exists "deals_insert" on public.deals;
+drop policy if exists "deals_update" on public.deals;
+drop policy if exists "deals_delete" on public.deals;
 
 create policy "deals_view" on public.deals for select to authenticated
   using (public.has_module_access(auth.uid(), organization_id, 'deals', false));
@@ -44,6 +49,10 @@ drop policy if exists "members_view_leads"          on public.leads;
 drop policy if exists "members_insert_leads"         on public.leads;
 drop policy if exists "author_or_admin_update_leads" on public.leads;
 drop policy if exists "author_or_admin_delete_leads" on public.leads;
+drop policy if exists "leads_view"   on public.leads;
+drop policy if exists "leads_insert" on public.leads;
+drop policy if exists "leads_update" on public.leads;
+drop policy if exists "leads_delete" on public.leads;
 
 create policy "leads_view" on public.leads for select to authenticated
   using (public.has_module_access(auth.uid(), organization_id, 'leads', false));
@@ -59,6 +68,10 @@ drop policy if exists "members_view_lead_notes"          on public.lead_notes;
 drop policy if exists "members_insert_lead_notes"         on public.lead_notes;
 drop policy if exists "author_or_admin_update_lead_notes" on public.lead_notes;
 drop policy if exists "author_or_admin_delete_lead_notes" on public.lead_notes;
+drop policy if exists "lead_notes_view"   on public.lead_notes;
+drop policy if exists "lead_notes_insert" on public.lead_notes;
+drop policy if exists "lead_notes_update" on public.lead_notes;
+drop policy if exists "lead_notes_delete" on public.lead_notes;
 
 create policy "lead_notes_view" on public.lead_notes for select to authenticated
   using (public.has_module_access(auth.uid(), organization_id, 'leads', false));
