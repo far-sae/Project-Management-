@@ -20,6 +20,7 @@ import {
   handleNaturalLanguage, handleInteractiveReply, handleHelp, handleListOrgs,
   handleCancel, handleMedia,
 } from "./handlers.ts";
+import { matchUtilityCommand, isLinkCode } from "../_shared/agent/commands.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -191,9 +192,13 @@ const handleOne = async (
   // Everything else requires a linked account.
   const account = await findLinkedAccount(admin, phoneNumber);
   if (!account) {
+    if (isLinkCode(text)) {
+      await handleStart(admin, phoneNumber, text.trim());
+      return;
+    }
     await sendMessage(
       phoneNumber,
-      "🔗 This number isn't linked. In TaskCalendar: Settings → Integrations → WhatsApp → Connect, then reply: /start <code>",
+      "🔗 This number isn't linked. Send me the 6-digit code from TaskCalendar → Settings → Integrations → WhatsApp to connect.",
     );
     return;
   }
@@ -214,6 +219,13 @@ const handleOne = async (
     await handleCancel(admin, phoneNumber);
     return;
   }
+
+  const util = matchUtilityCommand(text);
+  if (util.kind === "help") { await handleHelp(phoneNumber); return; }
+  if (util.kind === "orgs") { await handleListOrgs(admin, account); return; }
+  if (util.kind === "cancel") { await handleCancel(admin, phoneNumber); return; }
+  if (util.kind === "unlink") { await handleUnlink(admin, phoneNumber); return; }
+  if (util.kind === "switchorg") { await handleSwitchOrg(admin, account, util.name); return; }
 
   await handleNaturalLanguage(admin, account, text);
 };
