@@ -62,33 +62,39 @@ $$;
 ```
 - Requires a 2-arg `is_org_admin_or_owner_for(p_user_id, p_org_id)` (a user-explicit variant of the existing `is_org_admin_or_owner()` which uses `auth.uid()`). Add it alongside the migration-083 `is_org_member_for` pattern. RLS policies call `has_module_access(auth.uid(), organization_id, '<module>', <bool>)`.
 
-### 3. RLS rewrite (Deals + Leads tables)
-For each Deals table (`deals`, `pipelines`, `pipeline_stages`) and Leads table (`leads`, `lead_forms`, `lead_scoring_rules`, + related):
-- **SELECT**: replace `is_org_member(organization_id)` → `has_module_access(auth.uid(), organization_id, '<module>', false)`.
-- **INSERT/UPDATE/DELETE**: replace `is_org_admin_or_owner(organization_id)` → `has_module_access(auth.uid(), organization_id, '<module>', true)`.
-- `anon` deny policies unchanged.
-- The `crm_update_deal` RPC (migration 076) and any lead-mutating RPCs: swap their `is_org_member`/`is_org_viewer` gate for `has_module_access(auth.uid(), p_organization_id, 'deals'|'leads', true)`.
-- **Service-role paths are unaffected** — the bot's `executePending` and `agent_*`/`crm_*_as` RPCs use the service-role client / SECURITY DEFINER and bypass RLS, so the bot keeps working regardless of grants. (Documented, intentional.)
+### 3. RLS rewrite (Deals + Leads tables) — full inventory
+
+**Deals module** tables + current policies to replace (verbatim inventory from the codebase):
+- `deals` (migration 045): `members_view_deals` (SELECT, is_org_member), `members_create_deals` (INSERT, is_org_member + own), `deal_owner_edit_own` (UPDATE, owner_id=auth.uid()), `owner_or_admin_edit_deals` (UPDATE), `owner_or_admin_delete_deals` (DELETE). → **SELECT** → `has_module_access(auth.uid(), organization_id, 'deals', false)`; **INSERT/UPDATE/DELETE** → `has_module_access(..., 'deals', true)`. The per-record `deal_owner_edit_own` and member `members_create_deals` policies are **dropped** (replaced by the module-level edit grant — intended behavior change: editing is module-level, not per-record).
+- `pipelines`, `pipeline_stages`, `crm_project_templates` (migration 058): READ policies (is_org_member) → `has_module_access(..., 'deals', false)`. Writes already go through SECURITY DEFINER funcs (admin-gated) — leave writes as-is.
+
+**Leads module** tables + current policies to replace:
+- `leads` (migration 100, overridden by 101): `members_view_leads` (SELECT) → view; `members_insert_leads` / `author_or_admin_update_leads` / `author_or_admin_delete_leads` (with the 101 `not is_org_viewer` override) → edit. Drop the author/owner per-record conditions.
+- `lead_notes` (migration 100/101): same SELECT→view, INSERT/UPDATE/DELETE→edit rewrite.
+- `lead_forms` + `form_submissions` (migration 062): READ (is_org_member) → view. `lead_forms` admin-write policy stays (config is admin-only). `form_submissions` insert is SECURITY DEFINER edge function only — unchanged.
+- `lead_scoring_rules`, `lead_scoring_thresholds` (migration 060): READ → view; writes are service-func/admin — unchanged.
+
+**General rules:** `anon_no_*` deny policies unchanged. The `crm_update_deal` RPC (migration 076) swaps its `is_org_member`/viewer gate for `has_module_access(auth.uid(), p_organization_id, 'deals', true)`. **Service-role paths are unaffected** — the bot's `executePending` and `agent_*`/`crm_*_as`/SECURITY DEFINER RPCs bypass RLS, so the bot keeps working regardless of grants (documented, intentional).
 
 ### 4. Frontend
-- **`src/services/supabase/crmGrants.ts`** (new): `listOrgGrants(orgId)`, `setModuleGrant(orgId, userId, module, level | null)` (null = revoke/delete row).
-- **`OrganizationContext`**: load the current user's grant rows; expose `moduleGrants: { deals?: 'view'|'edit'; leads?: 'view'|'edit' }` and helpers `canViewModule(m)`, `canEditModule(m)` (owner/admin → always true).
-- **`ProtectedRoute`**: add a `requireModule?: 'deals'|'leads'` prop (min view). Wrap the Deals and Leads routes in `App.tsx`. On deny → render an "You don't have access to this module" panel (not a blank page).
-- **Sidebar** (`src/components/sidebar/Sidebar.tsx`): show Deals/Leads nav entries only when `canViewModule(...)`.
-- **Edit affordances**: on Deals/Leads pages, hide/disable create/edit/delete controls when the user has only `view` (`!canEditModule(...)`).
-- **Members settings matrix**: in the existing Members/Team settings screen, add a per-member grid (rows: Deals, Leads; cell: None/View/Edit select) for owner/admin. Owner/admin rows show "Full (admin)" and are not editable. Writes call `setModuleGrant`.
+**Reality check:** Deals and Leads are **tabs inside `src/pages/Clients.tsx`** (the `/clients` route, gated by `requireFeature="crm"`), not separate routes. The single "CRM" sidebar entry → `/clients` stays. Gating is **tab-level**, not route-level.
+
+- **`src/services/supabase/crmGrants.ts`** (new): `listOrgGrants(orgId)`, `setModuleGrant(orgId, userId, module, level | null)` (null = delete the row to revoke). Direct table read/write — the table's RLS enforces admin-only writes, so no RPC needed.
+- **`OrganizationContext`**: load the current user's grant rows after the org loads; expose `moduleGrants: { deals?: 'view'|'edit'; leads?: 'view'|'edit' }` and helpers `canViewModule(m)`, `canEditModule(m)` (owner/admin → always true).
+- **Clients page tab gating** (`src/pages/Clients.tsx`): render the **Deals** tab only when `canViewModule('deals')`, the **Leads** tab only when `canViewModule('leads')`. If the active tab resolves to one the user can't view (deep-link / stale state), fall back to the Clients tab with a small "You don't have access to <module>" notice. Hide/disable create/edit/delete controls on each tab when `!canEditModule(<module>)` (Deal create ~L983/1035 + DealFormDialog/DealDetailDrawer; Lead create ~L601/613/643 + LeadFormDialog/LeadDetailDrawer — exact spots in the plan).
+- **Team page "Organization access" section** (`src/pages/Team.tsx`): a new owner/admin-only section listing org members (`organization.members`) with two selectors per row — Deals and Leads = None/View/Edit. Owner/admin rows render a read-only "Full (admin)" chip. Changing a selector calls `setModuleGrant`. (Team.tsx today is project-scoped; this adds the first org-member access UI.)
 
 ### 5. Defaults & rollout
 - Migration ships the empty table → on deploy, members/viewers lose the previously-open Deals/Leads **read** access. Owner/admin unaffected.
 - **Rollout note (in the PR):** after deploy, an owner/admin must grant Deals/Leads to any member who legitimately needs them. This is the intended tightening.
 
 ## Data flow
-- **Read a CRM page:** route `requireModule` → `canViewModule` (context) gates render; the data fetch hits RLS → `has_module_access(view)` → rows or empty.
+- **Open a CRM tab:** `canViewModule` (context) decides whether the Deals/Leads tab renders; the data fetch hits RLS → `has_module_access(view)` → rows or empty.
 - **Edit:** UI hides controls unless `canEditModule`; the write hits RLS / `crm_update_deal` → `has_module_access(edit)`.
 - **Admin sets a grant:** matrix → `setModuleGrant` → upsert/delete `crm_module_grants` (RLS: admin only) → affected member's next load reflects it.
 
 ## Error handling
-- RLS denials surface as empty result sets / permission errors; the UI gates *before* fetching via `requireModule` + `canViewModule`, so users see a clear "no access" panel, not an error.
+- RLS denials surface as empty result sets / permission errors; the UI gates *before* fetching via the tab `canViewModule` check, so users see a clear "no access" notice, not an error.
 - Revoking a grant mid-session: the member keeps the stale UI until reload; the DB already denies, so no data leaks. Acceptable for v1 (no live revocation push).
 - Owner/admin can never lock themselves out (bypass is unconditional).
 
@@ -101,6 +107,6 @@ For each Deals table (`deals`, `pipelines`, `pipeline_stages`) and Leads table (
 1. Migration: `crm_module_grants` + `has_module_access` + `is_org_admin_or_owner_for`.
 2. RLS rewrite for Deals + Leads tables + RPC updates.
 3. Frontend: grants service + context helpers.
-4. Frontend: `requireModule` route gating + sidebar + edit-affordance hiding.
+4. Frontend: Clients.tsx tab gating + edit-affordance hiding.
 5. Members settings matrix UI.
 Each step is independently testable; the migration + RLS (1–2) is the security-critical core.
