@@ -19,6 +19,7 @@ import {
   handleNaturalLanguage, handleCallbackQuery, handleHelp, handleListOrgs,
   handleCancel, handleMedia,
 } from "./handlers.ts";
+import { matchUtilityCommand, isLinkCode } from "../_shared/agent/commands.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -98,7 +99,11 @@ Deno.serve(async (req) => {
     // Everything else requires a linked account.
     const account = await findLinkedAccount(admin, tgUserId);
     if (!account) {
-      await sendMessage(chatId, "🔗 This chat isn't linked. In TaskCalendar: Settings → Integrations → Telegram → Connect, then send `/start <code>`.");
+      if (msg.text && isLinkCode(msg.text)) {
+        await handleStart(admin, chatId, tgUserId, username, msg.text.trim());
+        return new Response("ok");
+      }
+      await sendMessage(chatId, "🔗 This chat isn't linked. Send me the 6-digit code from TaskCalendar → Settings → Integrations → Telegram to connect.");
       return new Response("ok");
     }
 
@@ -137,6 +142,13 @@ Deno.serve(async (req) => {
       await handleSwitchOrg(admin, chatId, account, text.slice("/switchorg".length).trim());
       return new Response("ok");
     }
+
+    const util = matchUtilityCommand(text);
+    if (util.kind === "help") { await handleHelp(chatId); return new Response("ok"); }
+    if (util.kind === "orgs") { await handleListOrgs(admin, chatId, account); return new Response("ok"); }
+    if (util.kind === "cancel") { await handleCancel(admin, chatId); return new Response("ok"); }
+    if (util.kind === "unlink") { await handleUnlink(admin, chatId, tgUserId); return new Response("ok"); }
+    if (util.kind === "switchorg") { await handleSwitchOrg(admin, chatId, account, util.name); return new Response("ok"); }
 
     await handleNaturalLanguage(admin, chatId, account, text);
     return new Response("ok");

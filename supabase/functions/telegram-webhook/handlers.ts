@@ -112,7 +112,7 @@ export const handleStart = async (
     .eq("organization_id", codeRow.org_id)
     .maybeSingle();
   const orgName = (orgRow?.name as string | undefined) ?? "your org";
-  await sendMessage(chatId, `✅ Linked in *${orgName}*. Try \`add workspace Sales\` or \`task: call John tomorrow 3pm in Q1 launch\`. Send /help for more.`);
+  await sendMessage(chatId, `✅ Linked in *${orgName}*. Try \`add workspace Sales\` or \`task: call John tomorrow 3pm in Q1 launch\`. Say *help* for more.`);
 };
 
 export const handleUnlink = async (
@@ -246,21 +246,22 @@ export const handleListOrgs = async (
   await sendMessage(chatId, lines.join("\n"));
 };
 
-const HELP_TEXT = `*TaskCalendar bot — natural-language commands*
+const HELP_TEXT = `*TaskCalendar bot — just type in plain English*
 
 Examples:
 • \`add workspace Acme Onboarding\`
 • \`new project Q1 launch in Acme Onboarding\`
 • \`task: call John tomorrow 3pm in Q1 launch\`
 • \`new client Acme Corp\`
-• \`client task: follow up with Acme on Friday\`
+• \`show my open tasks\`
+• \`mark Deploy v2 done\`
 
-Slash commands:
-• \`/orgs\` — list your orgs
-• \`/switchorg <name>\` — switch current org
-• \`/cancel\` — drop the current "what's the X?" prompt
-• \`/unlink\` — disconnect this chat
-• \`/help\` — show this message`;
+Handy words:
+• \`my orgs\` — list your orgs
+• \`switch to <name>\` — change current org
+• \`cancel\` — drop the current question
+• \`unlink\` — disconnect this chat
+• \`help\` — show this message`;
 
 type TgMedia = { kind: "voice" | "audio" | "document" | "photo"; fileId: string; mime: string; name: string };
 
