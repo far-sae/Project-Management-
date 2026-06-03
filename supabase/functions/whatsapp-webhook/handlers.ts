@@ -76,7 +76,7 @@ export const handleStart = async (
   if (!arg) {
     const existing = await findLinkedAccount(admin, phoneNumber);
     if (existing) {
-      await sendMessage(phoneNumber, "✅ Already linked. Try: add task call John tomorrow 3pm in My Project. Send /help for more.");
+      await sendMessage(phoneNumber, "✅ Already linked. Try: add task call John tomorrow 3pm in My Project. Say help for more.");
     } else {
       await sendMessage(
         phoneNumber,
@@ -125,7 +125,7 @@ export const handleStart = async (
   const orgName = (orgRow?.name as string | undefined) ?? "your org";
   await sendMessage(
     phoneNumber,
-    `✅ Linked in ${orgName}. Try: add workspace Sales, or: task: call John tomorrow 3pm in Q1 launch. Send /help for more.`,
+    `✅ Linked in ${orgName}. Try: add workspace Sales, or: task: call John tomorrow 3pm in Q1 launch. Say help for more.`,
   );
 };
 
@@ -199,19 +199,20 @@ const sendReply = async (phoneNumber: string, reply: AgentReply): Promise<void> 
 export const handleHelp = async (phoneNumber: string): Promise<void> => {
   await sendMessage(
     phoneNumber,
-    "TaskCalendar bot — natural-language commands\n\n" +
+    "TaskCalendar bot — just type in plain English\n\n" +
       "Examples:\n" +
       "• add workspace Acme Onboarding\n" +
       "• new project Q1 launch in Acme Onboarding\n" +
       "• task: call John tomorrow 3pm in Q1 launch\n" +
       "• new client Acme Corp\n" +
-      "• client task: follow up with Acme on Friday\n\n" +
-      "Commands:\n" +
-      "/orgs — list your orgs\n" +
-      "/switchorg <name> — switch current org\n" +
-      "/cancel — drop a pending prompt\n" +
-      "/unlink — disconnect this chat\n" +
-      "/help — show this message",
+      "• show my open tasks\n" +
+      "• mark Deploy v2 done\n\n" +
+      "Handy words:\n" +
+      "my orgs — list your orgs\n" +
+      "switch to <name> — change current org\n" +
+      "cancel — drop the current question\n" +
+      "unlink — disconnect this chat\n" +
+      "help — show this message",
   );
 };
 

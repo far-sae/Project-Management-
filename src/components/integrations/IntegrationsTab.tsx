@@ -4,7 +4,8 @@ import { TelegramConnectCard } from './TelegramConnectCard';
 import { WhatsAppConnectCard } from './WhatsAppConnectCard';
 import { IntegrationsHealthCard } from './IntegrationsHealthCard';
 import { TwilioSmsConfigCard } from './TwilioSmsConfigCard';
-import { providerOrder, providerDisplay } from '@/services/integrations/providers';
+import { providerOrder, providerDisplay, visibleProviders } from '@/services/integrations/providers';
+import { FEATURES } from '@/config/featureFlags';
 import { useOrganization } from '@/context/OrganizationContext';
 
 export const IntegrationsTab: React.FC = () => {
@@ -26,7 +27,7 @@ export const IntegrationsTab: React.FC = () => {
           each one by triggering a real workflow. */}
       <IntegrationsHealthCard />
       <div className="grid gap-3">
-        {providerOrder.map((id) => {
+        {visibleProviders(providerOrder, FEATURES).map((id) => {
           const display = providerDisplay[id];
           // Org-level providers (Slack) can only be connected by admins.
           // Non-admins still see the card so they know the connection exists,
@@ -42,7 +43,7 @@ export const IntegrationsTab: React.FC = () => {
           );
         })}
         <TelegramConnectCard />
-        <WhatsAppConnectCard />
+        {FEATURES.whatsapp && <WhatsAppConnectCard />}
         {/* Twilio (SMS) — credentials are server-side env vars, not
             in-app fields, so this card surfaces the exact var names +
             a probe button instead of a Connect flow. */}

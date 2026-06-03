@@ -44,3 +44,9 @@ export const providerDisplay: Record<ProviderId, ProviderDisplay> = {
 };
 
 export const providerOrder: ProviderId[] = ['google', 'gmail', 'slack'];
+
+/** Filter the provider list by feature flags. Gmail is hidden unless enabled. */
+export const visibleProviders = (
+  order: ProviderId[],
+  features: { gmail: boolean },
+): ProviderId[] => order.filter((id) => id !== "gmail" || features.gmail);
