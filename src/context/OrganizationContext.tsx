@@ -3,6 +3,7 @@ import { useAuth } from './AuthContext';
 import { Organization, OrganizationMember } from '@/types/organization';
 import { getOrganization } from '@/services/supabase/organizations';
 import { supabase } from '@/services/supabase/config';
+import { listOrgGrants, computeModuleAccess, type GrantRow, type CrmModule } from "@/services/supabase/crmGrants";
 
 interface OrganizationContextType {
   organization: Organization | null;
@@ -17,6 +18,8 @@ interface OrganizationContextType {
   canInviteMembers: boolean;
   canManageBilling: boolean;
   canManageSettings: boolean;
+  canViewModule: (m: CrmModule) => boolean;
+  canEditModule: (m: CrmModule) => boolean;
 }
 
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
@@ -26,6 +29,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [grants, setGrants] = useState<GrantRow[]>([]);
 
   // ============================================
   // Helper Functions
@@ -270,7 +274,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     }
   }, [user?.userId, user?.organizationId, authLoading]);
 
-  // Refetch when tab becomes visible — silent so we don’t flash loading across the app.
+  // Refetch when tab becomes visible — silent so we don't flash loading across the app.
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'visible' && user) void fetchOrganization({ silent: true });
@@ -279,23 +283,46 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [user?.userId]);
 
+  // Load current user's CRM module grants when org + user are known.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (organization?.organizationId && user?.userId) {
+          const all = await listOrgGrants(organization.organizationId);
+          if (!cancelled) setGrants(all.filter((g) => g.user_id === user.userId));
+        } else if (!cancelled) {
+          setGrants([]);
+        }
+      } catch {
+        if (!cancelled) setGrants([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [organization?.organizationId, user?.userId]);
+
   // ============================================
   // Provider value
   // ============================================
 
-  const value = useMemo(() => ({
-    organization,
-    loading,
-    error,
-    refreshOrganization: fetchOrganization,
-    isOwner,
-    isAdmin,
-    isViewer,
-    canInviteMembers,
-    canManageBilling,
-    canManageSettings,
+  const value = useMemo(() => {
+    const moduleAccess = computeModuleAccess(isAdmin, grants);
+    return {
+      organization,
+      loading,
+      error,
+      refreshOrganization: fetchOrganization,
+      isOwner,
+      isAdmin,
+      isViewer,
+      canInviteMembers,
+      canManageBilling,
+      canManageSettings,
+      canViewModule: moduleAccess.canView,
+      canEditModule: moduleAccess.canEdit,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings]);
+  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, grants]);
 
   return (
     <OrganizationContext.Provider value={value}>
