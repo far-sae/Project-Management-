@@ -80,12 +80,15 @@ export const Team: React.FC = () => {
     }
   }, [organization?.organizationId, isAdmin]);
 
-  const levelFor = (userId: string, module: CrmModule): GrantLevel | "none" =>
-    orgGrants.find((g) => g.user_id === userId && g.module === module)?.level ?? "none";
+  // View is the default for every member, so the only stored grant is "edit".
+  // A row with level 'edit' → Edit; no row (or a stale 'view' row) → View.
+  const levelFor = (userId: string, module: CrmModule): GrantLevel =>
+    orgGrants.find((g) => g.user_id === userId && g.module === module)?.level === "edit" ? "edit" : "view";
 
-  const onChangeGrant = async (userId: string, module: CrmModule, value: GrantLevel | "none") => {
+  const onChangeGrant = async (userId: string, module: CrmModule, value: GrantLevel) => {
     if (!organization?.organizationId) return;
-    await setModuleGrant(organization.organizationId, userId, module, value === "none" ? null : value);
+    // "edit" stores a grant row; "view" (the default) removes it.
+    await setModuleGrant(organization.organizationId, userId, module, value === "edit" ? "edit" : null);
     const all = await listOrgGrants(organization.organizationId);
     setOrgGrants(all);
   };
@@ -779,7 +782,7 @@ export const Team: React.FC = () => {
         {isAdmin && (
           <section className="mt-8">
             <h3 className="text-lg font-semibold mb-1">Organization access</h3>
-            <p className="text-sm text-muted-foreground mb-4">Control who can see and edit Deals and Leads. Owners and admins always have full access.</p>
+            <p className="text-sm text-muted-foreground mb-4">Everyone can view Deals and Leads by default. Grant <strong>Edit</strong> to let a member change records. Owners and admins always have full access.</p>
             <div className="space-y-2">
               {(organization?.members ?? []).map((m) => {
                 const isPrivileged = m.role === "owner" || m.role === "admin";
@@ -796,10 +799,9 @@ export const Team: React.FC = () => {
                             <select
                               className="rounded border border-border bg-background px-1 py-0.5"
                               value={levelFor(m.userId, mod)}
-                              onChange={(e) => onChangeGrant(m.userId, mod, e.target.value as GrantLevel | "none")}
+                              onChange={(e) => onChangeGrant(m.userId, mod, e.target.value as GrantLevel)}
                             >
-                              <option value="none">None</option>
-                              <option value="view">View</option>
+                              <option value="view">View (default)</option>
                               <option value="edit">Edit</option>
                             </select>
                           </label>

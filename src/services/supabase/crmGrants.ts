@@ -11,14 +11,17 @@ export interface ModuleAccess {
 }
 
 /** Pure: derive view/edit booleans from the admin flag + the current user's
- *  grant rows. Owner/admin -> full access on everything. */
+ *  grant rows. View is the org DEFAULT for every member (no benchmarked CRM
+ *  defaults a member to no access), so canView is always true here — RLS lets
+ *  any org member read Deals/Leads. Edit is least-privilege: owner/admin, or
+ *  an explicit 'edit' grant. */
 export const computeModuleAccess = (
   isAdminOrOwner: boolean,
   grants: Pick<GrantRow, "module" | "level">[],
 ): ModuleAccess => {
   const byModule = new Map<CrmModule, GrantLevel>();
   for (const g of grants) byModule.set(g.module, g.level);
-  const canView = (m: CrmModule) => isAdminOrOwner || byModule.has(m);
+  const canView = (_m: CrmModule) => true;
   const canEdit = (m: CrmModule) => isAdminOrOwner || byModule.get(m) === "edit";
   return { canView, canEdit };
 };
