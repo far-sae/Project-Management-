@@ -9,6 +9,19 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { supabase } from '@/services/supabase/config';
 import { useDeals } from '@/hooks/useDeals';
 import { DEAL_STAGES, DealStage, STAGE_DEFAULT_PROBABILITY } from '@/services/supabase/deals';
+import { createDeal, updateDeal } from '@/services/supabase/deals';
+import { createLead, updateLead } from '@/services/supabase/leads';
+import { createClient, createContact, createNote } from '@/services/supabase/clients';
+import { createClientTask } from '@/services/supabase/clientTasks';
+import { createTask } from '@/services/supabase/database';
+import { createWorkspace } from '@/services/supabase/workspaces';
+import { createMeeting } from '@/services/supabase/meetings';
+import { createCall } from '@/services/supabase/calls';
+import {
+  ProposedAction,
+  ActionPerms,
+  canRunAction,
+} from '@/services/agent/agentActions';
 import { cn } from '@/lib/utils';
 
 interface ChatMessage {
@@ -17,12 +30,6 @@ interface ChatMessage {
   content: string;
   proposedActions?: ProposedAction[];
   pending?: boolean;
-}
-
-interface ProposedAction {
-  type: 'draft_email' | 'create_task' | 'move_deal_stage' | 'classify_lead';
-  label: string;
-  payload: Record<string, unknown>;
 }
 
 const QUICK_PROMPTS = [
@@ -36,21 +43,29 @@ const QUICK_PROMPTS = [
  * Conversational CRM assistant for the AI Agent page. Posts to the
  * crm-assistant edge function which dispatches Claude with read tools
  * (pipeline summary, overdue tasks, hot leads, deal detail) and write-
- * proposal tools (draft email, move stage). Write actions are NEVER
- * executed silently — they come back as proposed_actions and the user
- * confirms here before any change lands in the CRM.
+ * proposal tools (draft email, move stage, create/update records). Write
+ * actions are NEVER executed silently — they come back as proposed_actions
+ * and the user confirms here before any change lands in the CRM.
  *
  * Role gating: the edge function authorises the caller and includes the
  * role in Claude's system prompt; the chat panel also gates confirm
- * buttons on canManage so members can't trigger admin-only writes.
+ * buttons on canRunAction so members can't trigger writes they lack
+ * permission for.
  */
 export const CrmAssistantChat: React.FC = () => {
   const { user } = useAuth();
-  const { organization, isOwner, isAdmin } = useOrganization();
+  const { organization, isOwner, isAdmin, canEditModule } = useOrganization();
   const orgId = organization?.organizationId ?? user?.organizationId ?? null;
   const role = isOwner ? 'owner' : isAdmin ? 'admin' : 'member';
-  const canWrite = isOwner || isAdmin;
-  const { update: updateDeal } = useDeals();
+  const { update: updateDealHook } = useDeals();
+
+  const uid = user?.userId ?? '';
+  const uname = user?.displayName ?? '';
+
+  const perms: ActionPerms = useMemo(
+    () => ({ isAdmin: isOwner || isAdmin, canEditModule }),
+    [isOwner, isAdmin, canEditModule],
+  );
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -125,32 +140,260 @@ export const CrmAssistantChat: React.FC = () => {
   };
 
   const handleAction = async (action: ProposedAction) => {
+    if (!canRunAction(action.type, perms)) {
+      toast.error("You don't have access to do that");
+      return;
+    }
+    if (!orgId || !uid) {
+      toast.error('Not signed in or missing organization');
+      return;
+    }
+
     const id = `${action.type}-${JSON.stringify(action.payload)}`;
     setActingActionId(id);
     try {
-      if (action.type === 'move_deal_stage') {
-        const dealId = String(action.payload.deal_id ?? '');
-        const newStage = String(action.payload.new_stage ?? '') as DealStage;
-        if (!dealId || !DEAL_STAGES.some((s) => s.id === newStage)) {
-          toast.error('Bad action payload');
-          return;
+      const p = action.payload;
+
+      switch (action.type) {
+        // ── Deal actions ──────────────────────────────────────────────────
+        case 'move_deal_stage': {
+          const dealId = String(p.deal_id ?? '');
+          const newStage = String(p.new_stage ?? '') as DealStage;
+          if (!dealId || !DEAL_STAGES.some((s) => s.id === newStage)) {
+            toast.error('Bad action payload');
+            return;
+          }
+          await updateDealHook(dealId, {
+            stage: newStage,
+            probability: STAGE_DEFAULT_PROBABILITY[newStage],
+          });
+          toast.success(`Moved deal to ${DEAL_STAGES.find((s) => s.id === newStage)?.label ?? newStage}`);
+          break;
         }
-        await updateDeal(dealId, {
-          stage: newStage,
-          probability: STAGE_DEFAULT_PROBABILITY[newStage],
-        });
-        toast.success(`Moved deal to ${DEAL_STAGES.find((s) => s.id === newStage)?.label ?? newStage}`);
-      } else if (action.type === 'draft_email') {
-        // The full email-send flow lives in the agent queue; here we just
-        // copy the draft prompt to the clipboard so the rep can paste it
-        // into their email client or our SendEmailDialog.
-        const summary = `Draft email goal:\n${String(action.payload.goal ?? '')}\n\n(Open the deal/contact, hit Email, and paste this as the starting point.)`;
-        try { await navigator.clipboard.writeText(summary); } catch { /* ignore */ }
-        toast.info('Draft prompt copied to your clipboard. Open the contact and paste into Email.');
-      } else {
-        toast.info(`Action "${action.type}" isn't wired to a UI handler yet — payload logged.`);
-        // eslint-disable-next-line no-console
-        console.info('AI proposed action', action);
+
+        case 'create_deal': {
+          const title = String(p.title ?? '');
+          if (!title) { toast.error('Deal title is required'); return; }
+          await createDeal(orgId, uid, uname, {
+            title,
+            clientId: p.client_id ? String(p.client_id) : null,
+            clientName: p.client_name ? String(p.client_name) : null,
+            value: p.value != null ? Number(p.value) : 0,
+            currency: p.currency ? String(p.currency) : 'USD',
+            stage: (p.stage as DealStage) ?? 'lead',
+            expectedCloseDate: p.expected_close_date
+              ? new Date(String(p.expected_close_date))
+              : null,
+          });
+          toast.success(`Deal "${title}" created`);
+          break;
+        }
+
+        case 'update_deal': {
+          const dealId = String(p.deal_id ?? '');
+          if (!dealId) { toast.error('deal_id is required'); return; }
+          await updateDeal(orgId, dealId, {
+            title: p.title ? String(p.title) : undefined,
+            value: p.value != null ? Number(p.value) : undefined,
+            stage: p.stage ? (p.stage as DealStage) : undefined,
+            expectedCloseDate: p.expected_close_date
+              ? new Date(String(p.expected_close_date))
+              : undefined,
+          });
+          toast.success('Deal updated');
+          break;
+        }
+
+        // ── Lead actions ──────────────────────────────────────────────────
+        case 'create_lead': {
+          const lastName = String(p.last_name ?? p.lastName ?? '');
+          const company = String(p.company ?? '');
+          if (!lastName || !company) {
+            toast.error('last_name and company are required for a lead');
+            return;
+          }
+          await createLead(orgId, uid, uname, {
+            firstName: p.first_name ? String(p.first_name) : null,
+            lastName,
+            company,
+            email: p.email ? String(p.email) : null,
+            phone: p.phone ? String(p.phone) : null,
+            leadStatus: (p.lead_status as Parameters<typeof createLead>[3]['leadStatus']) ?? 'new',
+          });
+          toast.success(`Lead "${lastName}" created`);
+          break;
+        }
+
+        case 'update_lead_status': {
+          const leadId = String(p.lead_id ?? '');
+          if (!leadId) { toast.error('lead_id is required'); return; }
+          await updateLead(orgId, leadId, {
+            leadStatus: p.lead_status as Parameters<typeof updateLead>[2]['leadStatus'],
+          });
+          toast.success('Lead status updated');
+          break;
+        }
+
+        // ── Client / Contact / Note actions ──────────────────────────────
+        case 'create_client': {
+          const name = String(p.name ?? '');
+          if (!name) { toast.error('Client name is required'); return; }
+          await createClient(orgId, uid, uname, {
+            name,
+            email: p.email ? String(p.email) : undefined,
+            phone: p.phone ? String(p.phone) : undefined,
+            industry: p.industry ? String(p.industry) : undefined,
+          });
+          toast.success(`Client "${name}" created`);
+          break;
+        }
+
+        case 'create_contact': {
+          const clientId = String(p.client_id ?? '');
+          const lastName = String(p.last_name ?? p.lastName ?? '');
+          if (!clientId || !lastName) {
+            toast.error('client_id and last_name are required for a contact');
+            return;
+          }
+          await createContact(orgId, clientId, uid, {
+            firstName: p.first_name ? String(p.first_name) : undefined,
+            lastName,
+            email: p.email ? String(p.email) : undefined,
+            phone: p.phone ? String(p.phone) : undefined,
+          });
+          toast.success(`Contact "${lastName}" created`);
+          break;
+        }
+
+        case 'log_note': {
+          const clientId = String(p.client_id ?? '');
+          const body = String(p.body ?? p.note ?? '');
+          if (!clientId || !body) {
+            toast.error('client_id and body are required to log a note');
+            return;
+          }
+          await createNote(orgId, clientId, uid, uname, {
+            subject: p.subject ? String(p.subject) : null,
+            body,
+          });
+          toast.success('Note logged');
+          break;
+        }
+
+        // ── Task actions ──────────────────────────────────────────────────
+        case 'create_client_task': {
+          const title = String(p.title ?? '');
+          if (!title) { toast.error('Task title is required'); return; }
+          await createClientTask(orgId, uid, uname, {
+            title,
+            clientId: p.client_id ? String(p.client_id) : null,
+            dueAt: p.due_at ? new Date(String(p.due_at)) : null,
+            assignedTo: p.assigned_to ? String(p.assigned_to) : null,
+            assignedToName: p.assigned_to_name ? String(p.assigned_to_name) : null,
+          });
+          toast.success(`Task "${title}" created`);
+          break;
+        }
+
+        case 'create_pm_task':
+        case 'assign_task': {
+          const title = String(p.title ?? '');
+          const projectId = String(p.project_id ?? '');
+          if (!title || !projectId) {
+            toast.error('title and project_id are required for a PM task');
+            return;
+          }
+          await createTask(uid, {
+            title,
+            projectId,
+            dueDate: p.due_date ? new Date(String(p.due_date)) : null,
+            assignees: Array.isArray(p.assignees)
+              ? (p.assignees as Array<{ userId: string; displayName: string }>)
+              : [],
+          }, orgId);
+          toast.success(`PM task "${title}" created`);
+          break;
+        }
+
+        // ── Project / Workspace actions ───────────────────────────────────
+        case 'create_project': {
+          const name = String(p.name ?? '');
+          if (!name) { toast.error('Project name is required'); return; }
+          const { createProject } = await import('@/services/supabase/database');
+          await createProject(uid, '', uname, '', {
+            name,
+            description: p.description ? String(p.description) : '',
+            coverColor: p.cover_color ? String(p.cover_color) : '#6366f1',
+          }, orgId);
+          toast.success(`Project "${name}" created`);
+          break;
+        }
+
+        case 'create_workspace': {
+          const name = String(p.name ?? '');
+          if (!name) { toast.error('Workspace name is required'); return; }
+          await createWorkspace({ name, organizationId: orgId });
+          toast.success(`Workspace "${name}" created`);
+          break;
+        }
+
+        // ── Meeting / Call actions ────────────────────────────────────────
+        case 'create_meeting': {
+          const title = String(p.title ?? '');
+          const startAt = p.start_at ? new Date(String(p.start_at)) : null;
+          const endAt = p.end_at ? new Date(String(p.end_at)) : null;
+          if (!title || !startAt || !endAt) {
+            toast.error('title, start_at, and end_at are required for a meeting');
+            return;
+          }
+          await createMeeting({
+            organizationId: orgId,
+            title,
+            startAt,
+            endAt,
+            hostUserId: uid,
+            hostName: uname,
+            clientId: p.client_id ? String(p.client_id) : null,
+            dealId: p.deal_id ? String(p.deal_id) : null,
+            description: p.description ? String(p.description) : null,
+          });
+          toast.success(`Meeting "${title}" scheduled`);
+          break;
+        }
+
+        case 'create_call': {
+          const subject = String(p.subject ?? '');
+          if (!subject) { toast.error('Call subject is required'); return; }
+          await createCall({
+            organizationId: orgId,
+            subject,
+            callType: p.call_type ? (p.call_type as Parameters<typeof createCall>[0]['callType']) : 'outbound',
+            callStatus: p.call_status ? (p.call_status as Parameters<typeof createCall>[0]['callStatus']) : 'scheduled',
+            callerUserId: uid,
+            callerName: uname,
+            clientId: p.client_id ? String(p.client_id) : null,
+            dealId: p.deal_id ? String(p.deal_id) : null,
+            description: p.description ? String(p.description) : null,
+          });
+          toast.success(`Call "${subject}" logged`);
+          break;
+        }
+
+        // ── Email draft ───────────────────────────────────────────────────
+        case 'draft_email': {
+          const summary = `Draft email goal:\n${String(p.goal ?? '')}\n\n(Open the deal/contact, hit Email, and paste this as the starting point.)`;
+          try { await navigator.clipboard.writeText(summary); } catch { /* ignore */ }
+          toast.info('Draft prompt copied to your clipboard. Open the contact and paste into Email.');
+          break;
+        }
+
+        default: {
+          const exhaustive: never = action.type as never;
+          toast.info(`Action "${exhaustive}" isn't wired to a UI handler yet — payload logged.`);
+          // eslint-disable-next-line no-console
+          console.info('AI proposed action', action);
+          break;
+        }
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Action failed');
@@ -194,17 +437,17 @@ export const CrmAssistantChat: React.FC = () => {
                       const id = `${a.type}-${JSON.stringify(a.payload)}`;
                       const Icon = a.type === 'draft_email' ? Mail
                         : a.type === 'move_deal_stage' ? MoveRight
-                        : a.type === 'create_task' ? ListTodo
+                        : a.type === 'create_client_task' || a.type === 'create_pm_task' || a.type === 'assign_task' ? ListTodo
                         : CheckCircle2;
-                      const writeAction = a.type === 'move_deal_stage' || a.type === 'classify_lead';
-                      const disabled = writeAction && !canWrite;
+                      const allowed = canRunAction(a.type, perms);
+                      const disabled = !allowed;
                       return (
                         <div key={i} className="rounded-md border bg-card/80 px-2 py-1.5 flex items-center gap-2 text-foreground">
                           <Icon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                           <span className="text-xs flex-1 min-w-0 truncate">{a.label}</span>
                           {disabled ? (
                             <span className="inline-flex items-center gap-1 text-[10px] text-amber-600">
-                              <AlertTriangle className="w-3 h-3" /> admin only
+                              <AlertTriangle className="w-3 h-3" /> no access
                             </span>
                           ) : (
                             <Button
@@ -212,7 +455,7 @@ export const CrmAssistantChat: React.FC = () => {
                               variant="outline"
                               className="h-6 text-[11px] px-2"
                               disabled={actingActionId === id}
-                              onClick={() => handleAction(a)}
+                              onClick={() => void handleAction(a)}
                             >
                               {actingActionId === id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirm'}
                             </Button>
