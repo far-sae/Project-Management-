@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Send, Sparkles, Loader2, CheckCircle2, AlertTriangle, Mail, MoveRight, ListTodo } from 'lucide-react';
+import { Send, Sparkles, Loader2, CheckCircle2, AlertTriangle, Mail, MoveRight, ListTodo, Paperclip } from 'lucide-react';
+import { uploadAttachment, type AttachmentEntityType } from "@/services/supabase/attachments";
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -79,6 +80,9 @@ export const CrmAssistantChat: React.FC = () => {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [actingActionId, setActingActionId] = useState<string | null>(null);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [lastEntity, setLastEntity] = useState<{ type: AttachmentEntityType; id: string; label: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -174,7 +178,7 @@ export const CrmAssistantChat: React.FC = () => {
         case 'create_deal': {
           const title = String(p.title ?? '');
           if (!title) { toast.error('Deal title is required'); return; }
-          await createDeal(orgId, uid, uname, {
+          const created = await createDeal(orgId, uid, uname, {
             title,
             clientId: p.client_id ? String(p.client_id) : null,
             clientName: p.client_name ? String(p.client_name) : null,
@@ -185,6 +189,7 @@ export const CrmAssistantChat: React.FC = () => {
               ? new Date(String(p.expected_close_date))
               : null,
           });
+          setLastEntity({ type: 'deal', id: created.dealId, label: created.title });
           toast.success(`Deal "${title}" created`);
           break;
         }
@@ -212,7 +217,7 @@ export const CrmAssistantChat: React.FC = () => {
             toast.error('last_name and company are required for a lead');
             return;
           }
-          await createLead(orgId, uid, uname, {
+          const created = await createLead(orgId, uid, uname, {
             firstName: p.first_name ? String(p.first_name) : null,
             lastName,
             company,
@@ -220,6 +225,7 @@ export const CrmAssistantChat: React.FC = () => {
             phone: p.phone ? String(p.phone) : null,
             leadStatus: (p.lead_status as Parameters<typeof createLead>[3]['leadStatus']) ?? 'new',
           });
+          setLastEntity({ type: 'lead', id: created.leadId, label: created.lastName ?? created.company });
           toast.success(`Lead "${lastName}" created`);
           break;
         }
@@ -238,12 +244,13 @@ export const CrmAssistantChat: React.FC = () => {
         case 'create_client': {
           const name = String(p.name ?? '');
           if (!name) { toast.error('Client name is required'); return; }
-          await createClient(orgId, uid, uname, {
+          const created = await createClient(orgId, uid, uname, {
             name,
             email: p.email ? String(p.email) : undefined,
             phone: p.phone ? String(p.phone) : undefined,
             industry: p.industry ? String(p.industry) : undefined,
           });
+          setLastEntity({ type: 'client', id: created.clientId, label: created.name });
           toast.success(`Client "${name}" created`);
           break;
         }
@@ -255,12 +262,13 @@ export const CrmAssistantChat: React.FC = () => {
             toast.error('client_id and last_name are required for a contact');
             return;
           }
-          await createContact(orgId, clientId, uid, {
+          const created = await createContact(orgId, clientId, uid, {
             firstName: p.first_name ? String(p.first_name) : undefined,
             lastName,
             email: p.email ? String(p.email) : undefined,
             phone: p.phone ? String(p.phone) : undefined,
           });
+          setLastEntity({ type: 'contact', id: created.contactId, label: created.lastName ?? lastName });
           toast.success(`Contact "${lastName}" created`);
           break;
         }
@@ -303,7 +311,7 @@ export const CrmAssistantChat: React.FC = () => {
             toast.error('title and project_id are required for a PM task');
             return;
           }
-          await createTask(uid, {
+          const created = await createTask(uid, {
             title,
             projectId,
             dueDate: p.due_date ? new Date(String(p.due_date)) : null,
@@ -311,6 +319,9 @@ export const CrmAssistantChat: React.FC = () => {
               ? (p.assignees as Array<{ userId: string; displayName: string }>)
               : [],
           }, orgId);
+          if (action.type === 'create_pm_task') {
+            setLastEntity({ type: 'task', id: created.taskId, label: created.title });
+          }
           toast.success(`PM task "${title}" created`);
           break;
         }
@@ -346,7 +357,7 @@ export const CrmAssistantChat: React.FC = () => {
             toast.error('title, start_at, and end_at are required for a meeting');
             return;
           }
-          await createMeeting({
+          const created = await createMeeting({
             organizationId: orgId,
             title,
             startAt,
@@ -357,6 +368,7 @@ export const CrmAssistantChat: React.FC = () => {
             dealId: p.deal_id ? String(p.deal_id) : null,
             description: p.description ? String(p.description) : null,
           });
+          setLastEntity({ type: 'meeting', id: created.meetingId, label: created.title });
           toast.success(`Meeting "${title}" scheduled`);
           break;
         }
@@ -364,7 +376,7 @@ export const CrmAssistantChat: React.FC = () => {
         case 'create_call': {
           const subject = String(p.subject ?? '');
           if (!subject) { toast.error('Call subject is required'); return; }
-          await createCall({
+          const created = await createCall({
             organizationId: orgId,
             subject,
             callType: p.call_type ? (p.call_type as Parameters<typeof createCall>[0]['callType']) : 'outbound',
@@ -375,6 +387,7 @@ export const CrmAssistantChat: React.FC = () => {
             dealId: p.deal_id ? String(p.deal_id) : null,
             description: p.description ? String(p.description) : null,
           });
+          setLastEntity({ type: 'call', id: created.callId, label: created.subject });
           toast.success(`Call "${subject}" logged`);
           break;
         }
@@ -400,6 +413,23 @@ export const CrmAssistantChat: React.FC = () => {
     } finally {
       setActingActionId(null);
     }
+  };
+
+  const onPickFile = async (file: File) => {
+    if (!organization?.organizationId) return;
+    if (!lastEntity) { toast.info("Create or open a record first (e.g. 'create deal Acme'), then attach the file to it."); return; }
+    setUploadPct(0);
+    try {
+      await uploadAttachment({
+        organizationId: organization.organizationId,
+        entityType: lastEntity.type, entityId: lastEntity.id,
+        file, uploadedBy: user?.userId ?? null, uploadedByName: user?.displayName ?? null,
+        onProgress: setUploadPct,
+      });
+      toast.success(`Attached ${file.name} to ${lastEntity.type} "${lastEntity.label}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally { setUploadPct(null); }
   };
 
   return (
@@ -501,6 +531,10 @@ export const CrmAssistantChat: React.FC = () => {
               className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
               disabled={busy}
             />
+            <input ref={fileRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickFile(f); e.currentTarget.value = ""; }} />
+            <Button type="button" size="sm" variant="outline" disabled={busy || uploadPct !== null} onClick={() => fileRef.current?.click()} title="Attach a file to the last record">
+              {uploadPct !== null ? <span className="text-[11px]">{uploadPct}%</span> : <Paperclip className="w-4 h-4" />}
+            </Button>
             <Button onClick={() => void send()} disabled={busy || !input.trim()} size="sm">
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
