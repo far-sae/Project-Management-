@@ -50,8 +50,8 @@ const features: Feature[] = [
   },
   {
     icon: MessageCircle,
-    title: "Telegram and WhatsApp bots",
-    description: "Text either bot in plain English: 'add task call John tomorrow 3pm in Q1 launch'. It confirms, you tap Yes.",
+    title: "Telegram bot",
+    description: "Text the bot in plain English: 'add task call John tomorrow 3pm in Q1 launch'. It confirms, you tap Yes.",
     accentClass: "bg-sky-500/15 text-sky-500",
     visual: <TelegramVisual />,
   },
@@ -72,7 +72,7 @@ const features: Feature[] = [
   {
     icon: Plug,
     title: "Integrations done right",
-    description: "Google Calendar / Meet / Gmail, Slack triggers and posts, Cloudflare Turnstile on lead forms. OAuth tokens encrypted at rest.",
+    description: "Google Calendar / Meet, Slack triggers and posts, Cloudflare Turnstile on lead forms. OAuth tokens encrypted at rest.",
     accentClass: "bg-indigo-500/15 text-indigo-500",
     visual: <IntegrationsVisual />,
   },
@@ -281,7 +281,7 @@ function CrmVisual() {
 function IntegrationsVisual() {
   return (
     <div className="grid grid-cols-3 gap-2 h-full place-items-center text-[10px]">
-      {['Google', 'Slack', 'Gmail', 'Meet', 'Telegram', 'Stripe'].map((n) => (
+      {['Google', 'Slack', 'Meet', 'Telegram', 'Stripe'].map((n) => (
         <div key={n} className="rounded bg-card border border-border/60 px-2 py-1 text-foreground/85">{n}</div>
       ))}
     </div>

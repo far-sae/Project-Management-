@@ -40,7 +40,7 @@ const HeroSection = () => {
               className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 backdrop-blur px-3 py-1 text-xs text-muted-foreground mb-6"
             >
               <Sparkles className="h-3 w-3 text-orange-500" />
-              <span>New: Telegram &amp; WhatsApp bots, CRM dashboards &amp; Google Meet</span>
+              <span>New: Telegram bot, CRM dashboards &amp; Google Meet</span>
             </motion.div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.05] tracking-tight mb-6">
