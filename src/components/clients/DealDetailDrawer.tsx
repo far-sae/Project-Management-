@@ -44,6 +44,8 @@ interface Props {
   client: Client | null;
   organizationId: string | null;
   canManage: boolean;
+  /** When true, hides/disables all save and delete controls regardless of canManage. */
+  readOnly?: boolean;
   onClose: () => void;
   onEdit: (deal: Deal) => void;
   onDelete: (deal: Deal) => void;
@@ -59,7 +61,7 @@ const stageInfo = (stage: string) =>
   DEAL_STAGES.find((s) => s.id === stage) ?? DEAL_STAGES[0];
 
 export const DealDetailDrawer: React.FC<Props> = ({
-  deal, client, organizationId, canManage, onClose, onEdit, onDelete, onOpenClient,
+  deal, client, organizationId, canManage, readOnly = false, onClose, onEdit, onDelete, onOpenClient,
   pipelineStages, onStageChange,
 }) => {
   const { user } = useAuth();
@@ -131,7 +133,7 @@ export const DealDetailDrawer: React.FC<Props> = ({
             <span className="text-sm font-semibold text-foreground truncate">{deal.title}</span>
           </div>
           <div className="ml-auto flex items-center gap-1">
-            {canManage && (
+            {canManage && !readOnly && (
               <>
                 <Button variant="outline" size="sm" onClick={() => onEdit(deal)}>
                   <Edit className="w-3.5 h-3.5 mr-1" /> Edit

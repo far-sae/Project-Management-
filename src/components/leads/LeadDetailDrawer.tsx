@@ -32,6 +32,8 @@ interface Props {
   lead: Lead | null;
   organizationId: string | null;
   canManage: boolean;
+  /** When true, hides/disables all save and delete controls regardless of canManage. */
+  readOnly?: boolean;
   /** When false the Convert button is hidden — typically because the
    *  caller is in local-org mode where the convert service isn't supported. */
   canConvert?: boolean;
@@ -58,7 +60,7 @@ const STATUS_TONE: Record<LeadStatus, string> = {
 };
 
 export const LeadDetailDrawer: React.FC<Props> = ({
-  lead, organizationId, canManage, canConvert = true,
+  lead, organizationId, canManage, readOnly = false, canConvert = true,
   onClose, onEdit, onDelete, onConvert,
   onSendEmail, onClone, onStatusChange,
 }) => {
@@ -133,7 +135,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
             </Badge>
           </div>
           <div className="ml-auto flex items-center gap-1">
-            {canManage && !isConverted && (
+            {canManage && !isConverted && !readOnly && (
               <>
                 <Button variant="outline" size="sm" onClick={() => onSendEmail(lead)}>
                   <Mail className="w-3.5 h-3.5 mr-1" /> Send Email
@@ -177,7 +179,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => onDelete(lead)}
-                  disabled={!canManage}
+                  disabled={!canManage || readOnly}
                   className="text-destructive focus:text-destructive"
                 >
                   <Trash2 className="w-4 h-4 mr-2" /> Delete
