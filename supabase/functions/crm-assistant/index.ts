@@ -40,7 +40,13 @@ interface AssistantRequest {
 }
 
 interface ProposedAction {
-  type: "draft_email" | "create_task" | "move_deal_stage" | "classify_lead";
+  type:
+    | "draft_email" | "move_deal_stage"
+    | "create_client" | "create_lead" | "create_contact" | "create_deal"
+    | "create_meeting" | "create_call" | "log_note"
+    | "update_deal" | "update_lead_status"
+    | "create_client_task" | "create_pm_task" | "assign_task"
+    | "create_project" | "create_workspace";
   label: string;
   payload: Record<string, unknown>;
 }
@@ -145,16 +151,63 @@ const TOOLS = [
       required: ["deal_id", "new_stage"],
     },
   },
+  { name: "list_org_members", description: "List org members (user_id + name + role) so you can resolve 'assign to <name>'. Read-only.",
+    input_schema: { type: "object", properties: {}, required: [] } },
+  { name: "find_records", description: "Find clients/deals/leads/projects/contacts by name. Returns up to 6 {id,label}. If more than one matches, ask the user which one. Read-only.",
+    input_schema: { type: "object", properties: {
+      entity: { type: "string", enum: ["client","deal","lead","project","contact"] },
+      query: { type: "string" } }, required: ["entity","query"] } },
+  { name: "propose_create_client", description: "Propose creating a client/account.",
+    input_schema: { type: "object", properties: { name: { type: "string" }, email: { type: "string" }, phone: { type: "string" }, industry: { type: "string" } }, required: ["name"] } },
+  { name: "propose_create_lead", description: "Propose creating a lead.",
+    input_schema: { type: "object", properties: { first_name: { type: "string" }, last_name: { type: "string" }, company: { type: "string" }, email: { type: "string" }, phone: { type: "string" } }, required: ["last_name","company"] } },
+  { name: "propose_create_contact", description: "Propose adding a contact under a client (use find_records to get client_id).",
+    input_schema: { type: "object", properties: { client_id: { type: "string" }, first_name: { type: "string" }, last_name: { type: "string" }, email: { type: "string" }, phone: { type: "string" } }, required: ["client_id","last_name"] } },
+  { name: "propose_create_deal", description: "Propose creating a deal.",
+    input_schema: { type: "object", properties: { title: { type: "string" }, client_id: { type: "string" }, value: { type: "number" }, currency: { type: "string" }, stage: { type: "string", enum: ["lead","qualified","proposal","negotiation","won","lost"] } }, required: ["title"] } },
+  { name: "propose_create_meeting", description: "Propose scheduling a meeting (ISO start).",
+    input_schema: { type: "object", properties: { title: { type: "string" }, start_at: { type: "string" }, client_id: { type: "string" } }, required: ["title","start_at"] } },
+  { name: "propose_create_call", description: "Propose logging a call.",
+    input_schema: { type: "object", properties: { subject: { type: "string" }, client_id: { type: "string" }, outcome: { type: "string" } }, required: ["subject"] } },
+  { name: "propose_log_note", description: "Propose a note on a client (use find_records for client_id).",
+    input_schema: { type: "object", properties: { client_id: { type: "string" }, body: { type: "string" } }, required: ["client_id","body"] } },
+  { name: "propose_update_deal", description: "Propose editing a deal's value/currency/close date.",
+    input_schema: { type: "object", properties: { deal_id: { type: "string" }, value: { type: "number" }, currency: { type: "string" }, expected_close_date: { type: "string" } }, required: ["deal_id"] } },
+  { name: "propose_update_lead_status", description: "Propose changing a lead's status.",
+    input_schema: { type: "object", properties: { lead_id: { type: "string" }, lead_status: { type: "string" } }, required: ["lead_id","lead_status"] } },
+  { name: "propose_create_client_task", description: "Propose a CRM follow-up task; optional assignee_id (use list_org_members).",
+    input_schema: { type: "object", properties: { title: { type: "string" }, client_id: { type: "string" }, due_at: { type: "string" }, assignee_id: { type: "string" }, assignee_name: { type: "string" } }, required: ["title"] } },
+  { name: "propose_create_pm_task", description: "Propose a project task (needs project_id via find_records); optional assignee.",
+    input_schema: { type: "object", properties: { title: { type: "string" }, project_id: { type: "string" }, due_date: { type: "string" }, assignee_id: { type: "string" }, assignee_name: { type: "string" } }, required: ["title","project_id"] } },
+  { name: "propose_assign_task", description: "Propose assigning an existing task to a member.",
+    input_schema: { type: "object", properties: { task_kind: { type: "string", enum: ["client","pm"] }, task_id: { type: "string" }, assignee_id: { type: "string" }, assignee_name: { type: "string" } }, required: ["task_kind","task_id","assignee_id"] } },
+  { name: "propose_create_project", description: "Propose creating a project.",
+    input_schema: { type: "object", properties: { name: { type: "string" }, workspace_id: { type: "string" } }, required: ["name"] } },
+  { name: "propose_create_workspace", description: "Propose creating a workspace.",
+    input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
 ] as const;
+
+// Gate Deals/Leads READ tools by the #4 module grant (the admin client bypasses
+// RLS, so we must check explicitly). owner/admin pass via the helper. A
+// service-role caller (no userId) passes.
+const canRead = async (admin: SupabaseClient, userId: string | undefined, orgId: string, module: "deals" | "leads"): Promise<boolean> => {
+  if (!userId) return true;
+  const { data } = await admin.rpc("has_module_access", {
+    p_user_id: userId, p_org_id: orgId, p_module: module, p_need_edit: false,
+  });
+  return data === true;
+};
 
 const runTool = async (
   admin: SupabaseClient,
   orgId: string,
+  userId: string | undefined,
   name: string,
   input: Record<string, unknown>,
 ): Promise<{ result: unknown; proposed?: ProposedAction }> => {
   switch (name) {
     case "summarize_pipeline": {
+      if (!(await canRead(admin, userId, orgId, "deals"))) return { result: { error: "no access" } };
       const { data } = await admin
         .from("deals")
         .select("stage, value, probability")
@@ -183,6 +236,7 @@ const runTool = async (
       return { result: data ?? [] };
     }
     case "list_hot_leads": {
+      if (!(await canRead(admin, userId, orgId, "leads"))) return { result: { error: "no access" } };
       const limit = Math.min(50, Math.max(1, Number((input.limit ?? 10) as number)));
       const { data } = await admin
         .from("leads")
@@ -193,6 +247,7 @@ const runTool = async (
       return { result: data ?? [] };
     }
     case "deal_detail": {
+      if (!(await canRead(admin, userId, orgId, "deals"))) return { result: { error: "no access" } };
       const dealId = String(input.deal_id ?? "");
       if (!dealId) return { result: { error: "deal_id required" } };
       const { data: deal } = await admin
@@ -231,6 +286,57 @@ const runTool = async (
         },
       };
     }
+    case "list_org_members": {
+      const { data: org } = await admin.from("organizations").select("owner_id, members").eq("organization_id", orgId).maybeSingle();
+      const members = (Array.isArray(org?.members) ? org!.members : []) as Array<Record<string, unknown>>;
+      return { result: members.map((m) => ({ user_id: m.userId ?? m.user_id, name: m.displayName ?? m.email, role: m.role ?? "member" })) };
+    }
+    case "find_records": {
+      const entity = String(input.entity ?? "");
+      const q = `%${String(input.query ?? "").trim()}%`;
+      type CfgEntry = { table: string; pk: string; col: string };
+      const cfgMap: { [k: string]: CfgEntry } = {
+        client: { table: "clients", pk: "client_id", col: "name" },
+        deal: { table: "deals", pk: "deal_id", col: "title" },
+        lead: { table: "leads", pk: "lead_id", col: "last_name" },
+        project: { table: "projects", pk: "project_id", col: "name" },
+        contact: { table: "client_contacts", pk: "contact_id", col: "last_name" },
+      };
+      const cfg: CfgEntry | undefined = cfgMap[entity];
+      if (!cfg) return { result: { error: "bad entity" } };
+      if ((entity === "deal") && !(await canRead(admin, userId, orgId, "deals"))) return { result: { error: "no access" } };
+      if ((entity === "lead") && !(await canRead(admin, userId, orgId, "leads"))) return { result: { error: "no access" } };
+      const { data } = await admin.from(cfg.table as string).select(`${cfg.pk}, ${cfg.col}`).eq("organization_id", orgId).ilike(cfg.col, q).limit(6);
+      return { result: (data ?? []).map((r) => { const row = r as unknown as Record<string,string>; return { id: row[cfg.pk], label: row[cfg.col] }; }) };
+    }
+    case "propose_create_deal":
+      return { result: { status: "proposed" }, proposed: { type: "create_deal", label: `Create deal "${String(input.title ?? "")}"`, payload: input } };
+    case "propose_create_client":
+      return { result: { status: "proposed" }, proposed: { type: "create_client", label: `Create client "${String(input.name ?? "")}"`, payload: input } };
+    case "propose_create_lead":
+      return { result: { status: "proposed" }, proposed: { type: "create_lead", label: `Create lead ${String(input.last_name ?? "")} (${String(input.company ?? "")})`, payload: input } };
+    case "propose_create_contact":
+      return { result: { status: "proposed" }, proposed: { type: "create_contact", label: `Add contact ${String(input.last_name ?? "")}`, payload: input } };
+    case "propose_create_meeting":
+      return { result: { status: "proposed" }, proposed: { type: "create_meeting", label: `Schedule "${String(input.title ?? "")}"`, payload: input } };
+    case "propose_create_call":
+      return { result: { status: "proposed" }, proposed: { type: "create_call", label: `Log call "${String(input.subject ?? "")}"`, payload: input } };
+    case "propose_log_note":
+      return { result: { status: "proposed" }, proposed: { type: "log_note", label: `Add note`, payload: input } };
+    case "propose_update_deal":
+      return { result: { status: "proposed" }, proposed: { type: "update_deal", label: `Update deal`, payload: input } };
+    case "propose_update_lead_status":
+      return { result: { status: "proposed" }, proposed: { type: "update_lead_status", label: `Set lead status → ${String(input.lead_status ?? "")}`, payload: input } };
+    case "propose_create_client_task":
+      return { result: { status: "proposed" }, proposed: { type: "create_client_task", label: `Task "${String(input.title ?? "")}"${input.assignee_name ? ` → ${String(input.assignee_name)}` : ""}`, payload: input } };
+    case "propose_create_pm_task":
+      return { result: { status: "proposed" }, proposed: { type: "create_pm_task", label: `Project task "${String(input.title ?? "")}"`, payload: input } };
+    case "propose_assign_task":
+      return { result: { status: "proposed" }, proposed: { type: "assign_task", label: `Assign → ${String(input.assignee_name ?? input.assignee_id)}`, payload: input } };
+    case "propose_create_project":
+      return { result: { status: "proposed" }, proposed: { type: "create_project", label: `Create project "${String(input.name ?? "")}"`, payload: input } };
+    case "propose_create_workspace":
+      return { result: { status: "proposed" }, proposed: { type: "create_workspace", label: `Create workspace "${String(input.name ?? "")}"`, payload: input } };
     default:
       return { result: { error: `Unknown tool: ${name}` } };
   }
@@ -265,7 +371,8 @@ Rules:
 - For reads: call the read-only tools (summarize_pipeline / list_overdue_tasks / list_hot_leads / deal_detail) before answering with numbers or facts. Never invent figures.
 - For writes (email drafts, stage moves): use the propose_* tools so the user can review + confirm in the UI. Never claim you sent something.
 - If the user is a "member" and asks for an admin-only change (e.g., delete a deal), tell them so and stop.
-- Keep replies under 6 sentences unless the user explicitly asks for more.`;
+- Keep replies under 6 sentences unless the user explicitly asks for more.
+- You can create and edit records (clients, leads, contacts, deals, meetings, calls, notes, tasks, projects, workspaces) and assign tasks. ALWAYS resolve ids first with find_records / list_org_members, then call the matching propose_* tool. Never invent an id. If find_records returns more than one match, ask the user which one. Propose only — the user confirms in the UI before anything is written.`;
 
   const history = Array.isArray(body.history) ? body.history.slice(-MAX_TURNS) : [];
   const messages: Anthropic.MessageParam[] = [
@@ -293,7 +400,7 @@ Rules:
     messages.push({ role: "assistant", content: response.content });
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const t of toolUses) {
-      const out = await runTool(admin, body.organization_id, t.name, t.input as Record<string, unknown>);
+      const out = await runTool(admin, body.organization_id, auth.userId, t.name, t.input as Record<string, unknown>);
       if (out.proposed) proposed.push(out.proposed);
       toolResults.push({
         type: "tool_result",
