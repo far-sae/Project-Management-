@@ -72,6 +72,7 @@ import type { Lead } from '@/services/supabase/leads';
 import { leadDisplayName } from '@/services/supabase/leads';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { toast } from 'sonner';
 import { COMMON_CURRENCIES } from '@/lib/countries';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
@@ -109,6 +110,7 @@ const downloadFile = (filename: string, content: string, mime: string) => {
 
 export const Clients: React.FC = () => {
   const { user } = useAuth();
+  const { canViewModule, canEditModule } = useOrganization();
   const {
     organizationId, workspaceId: activeWorkspaceId,
     clients, allClients, loading, create, update, remove,
@@ -146,6 +148,12 @@ export const Clients: React.FC = () => {
   useEffect(() => {
     if (activeTab === 'tasks') setActiveTab('activities');
   }, [activeTab]);
+
+  // Guard: if the active tab requires a module the user can't view, fall back to home.
+  useEffect(() => {
+    if (activeTab === 'pipeline' && !canViewModule('deals')) setActiveTab('home');
+    if (activeTab === 'leads' && !canViewModule('leads')) setActiveTab('home');
+  }, [activeTab, canViewModule]);
 
   // ─── Contacts state ─────────────────────────────────────────────────────
   const {
@@ -545,12 +553,14 @@ export const Clients: React.FC = () => {
               <TabsTrigger value="home">
                 <HomeIcon className="w-4 h-4 mr-1.5" /> Home
               </TabsTrigger>
-              <TabsTrigger value="leads">
-                <UserPlus className="w-4 h-4 mr-1.5" /> Leads
-                {leads.length > 0 && (
-                  <Badge variant="outline" className="ml-1.5 text-[9px]">{leads.length}</Badge>
-                )}
-              </TabsTrigger>
+              {canViewModule('leads') && (
+                <TabsTrigger value="leads">
+                  <UserPlus className="w-4 h-4 mr-1.5" /> Leads
+                  {leads.length > 0 && (
+                    <Badge variant="outline" className="ml-1.5 text-[9px]">{leads.length}</Badge>
+                  )}
+                </TabsTrigger>
+              )}
               <TabsTrigger value="contacts">
                 <UsersIcon className="w-4 h-4 mr-1.5" /> Contacts
                 {contacts.length > 0 && (
@@ -560,9 +570,11 @@ export const Clients: React.FC = () => {
               <TabsTrigger value="accounts">
                 <Building2 className="w-4 h-4 mr-1.5" /> Accounts
               </TabsTrigger>
-              <TabsTrigger value="pipeline">
-                <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
-              </TabsTrigger>
+              {canViewModule('deals') && (
+                <TabsTrigger value="pipeline">
+                  <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
+                </TabsTrigger>
+              )}
               {/* Tasks + Meetings + Calls all live in the Activities tab
                   now — same underlying tables, same filter views, plus
                   the drag-droppable status kanban. The old Tasks tab was
@@ -589,7 +601,9 @@ export const Clients: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="leads" className="mt-4 space-y-4">
-              {leadsLoading ? (
+              {!canViewModule('leads') ? (
+                <div className="p-6 text-sm text-muted-foreground">You don't have access to Leads. Ask an admin for access.</div>
+              ) : leadsLoading ? (
                 <Card>
                   <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading leads…
@@ -597,7 +611,7 @@ export const Clients: React.FC = () => {
                 </Card>
               ) : leads.length === 0 ? (
                 <LeadsLanding
-                  canCreate={canCreateLead}
+                  canCreate={canCreateLead && canEditModule('leads')}
                   onCreate={() => setOpenCreateLead(true)}
                   onImport={() => setOpenImportLead(true)}
                 />
@@ -635,7 +649,7 @@ export const Clients: React.FC = () => {
                         Prospects you haven't qualified yet. Convert a lead to promote it into a real Account + Contact.
                       </p>
                     </div>
-                    {canCreateLead && (
+                    {canCreateLead && canEditModule('leads') && (
                       <div className="flex items-center gap-2">
                         <Button variant="outline" onClick={() => setOpenImportLead(true)}>
                           <Upload className="w-4 h-4 mr-2" /> Import Leads
@@ -934,6 +948,11 @@ export const Clients: React.FC = () => {
 
             <TabsContent value="pipeline" className="mt-4 space-y-4">
               {(() => {
+                if (!canViewModule('deals')) {
+                  return (
+                    <div className="p-6 text-sm text-muted-foreground">You don't have access to Deals. Ask an admin for access.</div>
+                  );
+                }
                 // Deals visible in the current Pipeline tab scope: workspace
                 // clients only (or all when on All-workspaces) + optional
                 // pipeline filter. Determines whether we render the empty
@@ -979,7 +998,7 @@ export const Clients: React.FC = () => {
                               Show all pipelines
                             </Button>
                           )}
-                          {canManage && (
+                          {canManage && canEditModule('deals') && (
                             <Button size="sm" onClick={() => setOpenCreateDeal(true)}>
                               <Plus className="w-3.5 h-3.5 mr-1" /> Create Deal here
                             </Button>
@@ -990,7 +1009,7 @@ export const Clients: React.FC = () => {
                   }
                   return (
                     <DealsEmptyState
-                      canManage={canManage}
+                      canManage={canManage && canEditModule('deals')}
                       onCreate={() => setOpenCreateDeal(true)}
                       onImport={() => setOpenImportDeals(true)}
                     />
@@ -1027,7 +1046,7 @@ export const Clients: React.FC = () => {
                             <LayoutGrid className="w-4 h-4" />
                           </Button>
                         </div>
-                        {canManage && (
+                        {canManage && canEditModule('deals') && (
                           <>
                             <Button size="sm" variant="outline" onClick={() => setOpenImportDeals(true)}>
                               <Upload className="w-3.5 h-3.5 mr-1" /> Import
@@ -1560,6 +1579,7 @@ export const Clients: React.FC = () => {
           lead={liveSelectedLead}
           organizationId={organizationId}
           canManage={canManageLead}
+          readOnly={!canEditModule('leads')}
           canConvert={!isLocalOrg}
           onClose={() => setSelectedLead(null)}
           onEdit={(l) => setEditingLead(l)}
@@ -1740,6 +1760,7 @@ export const Clients: React.FC = () => {
             client={linkedClient}
             organizationId={organizationId}
             canManage={canManage}
+            readOnly={!canEditModule('deals')}
             pipelineStages={stagesForDeal}
             onStageChange={async (d, stage) => {
               try {

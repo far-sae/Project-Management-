@@ -8,6 +8,7 @@
 
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
+import { resumableUpload, MAX_ATTACHMENT_BYTES } from "./resumableUpload";
 
 export type AttachmentEntityType =
   | "lead" | "contact" | "client" | "deal"
@@ -77,6 +78,7 @@ export const uploadAttachment = async (params: {
   file: File;
   uploadedBy: string | null;
   uploadedByName: string | null;
+  onProgress?: (pct: number) => void;
 }): Promise<Attachment> => {
   const { organizationId, entityType, entityId, file, uploadedBy, uploadedByName } = params;
   // Stable per-row prefix keeps blobs grouped + makes signed-URL
@@ -86,16 +88,17 @@ export const uploadAttachment = async (params: {
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");
   const storagePath = `${organizationId}/${entityType}/${entityId}/${rand}-${safeName}`;
 
-  const { error: uploadErr } = await supabase
-    .storage.from(BUCKET)
-    .upload(storagePath, file, {
-      cacheControl: "3600",
-      upsert: false,
-      contentType: file.type || undefined,
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`File exceeds the ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)}MB limit`);
+  }
+  try {
+    await resumableUpload({
+      bucket: BUCKET, path: storagePath, file,
+      contentType: file.type || undefined, onProgress: params.onProgress,
     });
-  if (uploadErr) {
+  } catch (uploadErr) {
     logger.error("attachment upload failed:", uploadErr);
-    throw new Error(uploadErr.message);
+    throw new Error(uploadErr instanceof Error ? uploadErr.message : "Upload failed");
   }
 
   const { data, error: insertErr } = await supabase

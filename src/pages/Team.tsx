@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { listOrgGrants, setModuleGrant, type GrantRow, type CrmModule, type GrantLevel } from '@/services/supabase/crmGrants';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useProjects } from '@/hooks/useProjects';
 import { useSubscription } from '@/context/SubscriptionContext';
@@ -34,7 +35,7 @@ import { SUPPORT_EMAIL } from '@/lib/support-email';
 
 export const Team: React.FC = () => {
   const { user } = useAuth();
-  const { organization, refreshOrganization } = useOrganization();
+  const { organization, refreshOrganization, isAdmin } = useOrganization();
   const { projects, refreshProjects } = useProjects();
   const { hasFeature, currentTier, pricing } = useSubscription();
   const navigate = useNavigate();
@@ -70,6 +71,24 @@ export const Team: React.FC = () => {
     max: null,
   });
   const [addSeatLoading, setAddSeatLoading] = useState(false);
+
+  // ─── CRM module grants ───────────────────────────────────────────────────
+  const [orgGrants, setOrgGrants] = useState<GrantRow[]>([]);
+  useEffect(() => {
+    if (organization?.organizationId && isAdmin) {
+      listOrgGrants(organization.organizationId).then(setOrgGrants).catch(() => setOrgGrants([]));
+    }
+  }, [organization?.organizationId, isAdmin]);
+
+  const levelFor = (userId: string, module: CrmModule): GrantLevel | "none" =>
+    orgGrants.find((g) => g.user_id === userId && g.module === module)?.level ?? "none";
+
+  const onChangeGrant = async (userId: string, module: CrmModule, value: GrantLevel | "none") => {
+    if (!organization?.organizationId) return;
+    await setModuleGrant(organization.organizationId, userId, module, value === "none" ? null : value);
+    const all = await listOrgGrants(organization.organizationId);
+    setOrgGrants(all);
+  };
 
   // ✅ Check feature access
   const canUseTeam = hasFeature('team_collaboration');
@@ -756,6 +775,43 @@ export const Team: React.FC = () => {
             </Card>
           )}
         </div>
+
+        {isAdmin && (
+          <section className="mt-8">
+            <h3 className="text-lg font-semibold mb-1">Organization access</h3>
+            <p className="text-sm text-muted-foreground mb-4">Control who can see and edit Deals and Leads. Owners and admins always have full access.</p>
+            <div className="space-y-2">
+              {(organization?.members ?? []).map((m) => {
+                const isPrivileged = m.role === "owner" || m.role === "admin";
+                return (
+                  <div key={m.userId} className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
+                    <div className="text-sm"><span className="font-medium">{m.displayName || m.email}</span> <span className="text-muted-foreground">· {m.role}</span></div>
+                    {isPrivileged ? (
+                      <span className="text-xs rounded bg-muted px-2 py-1 text-muted-foreground">Full (admin)</span>
+                    ) : (
+                      <div className="flex gap-2">
+                        {(["deals", "leads"] as CrmModule[]).map((mod) => (
+                          <label key={mod} className="flex items-center gap-1 text-xs">
+                            <span className="capitalize text-muted-foreground">{mod}</span>
+                            <select
+                              className="rounded border border-border bg-background px-1 py-0.5"
+                              value={levelFor(m.userId, mod)}
+                              onChange={(e) => onChangeGrant(m.userId, mod, e.target.value as GrantLevel | "none")}
+                            >
+                              <option value="none">None</option>
+                              <option value="view">View</option>
+                              <option value="edit">Edit</option>
+                            </select>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
           <DialogContent aria-describedby={undefined}>
