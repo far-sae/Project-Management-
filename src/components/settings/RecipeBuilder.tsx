@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -63,6 +64,8 @@ const ACTION_LABEL: Record<ActionType, string> = {
   webhook: "call webhook",
   slack_post: "post to Slack",
   send_email: "send email",
+  send_sms: "send SMS",
+  notify: "notify a user in-app",
   ai_summarize: "AI: summarize",
   ai_classify_lead: "AI: classify lead",
   ai_draft_email: "AI: draft email",
@@ -245,6 +248,14 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
       if (action.type === "send_email") {
         if (!(action.config.to as string)?.trim()) return "Add an email recipient.";
         if (!(action.config.subject as string)?.trim()) return "Add an email subject.";
+      }
+      if (action.type === "send_sms") {
+        if (!(action.config.to as string)?.trim()) return "Add a phone number or template for the SMS recipient.";
+        if (!(action.config.body as string)?.trim()) return "Add a message body for the SMS.";
+      }
+      if (action.type === "notify") {
+        if (!(action.config.user as string)?.trim()) return "Choose who should receive the in-app notification.";
+        if (!(action.config.title as string)?.trim()) return "Add a title for the notification.";
       }
     }
     return null;
@@ -1146,6 +1157,89 @@ const ActionConfigEditor: React.FC<{
           </p>
         </div>
       );
+
+    case "send_sms":
+      return (
+        <div className="grid grid-cols-1 gap-2 text-sm">
+          <div>
+            <Label>To</Label>
+            <Input
+              value={(cfg.to as string) ?? ""}
+              onChange={(e) => set({ to: e.target.value })}
+              placeholder="client_phone | +15551234567 | {{deal.phone}}"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Use <code>client_phone</code> to look up the client's phone, an E.164 number, or a{" "}
+              <code>{"{{template}}"}</code>.
+            </p>
+          </div>
+          <div>
+            <Label>Message</Label>
+            <Textarea
+              value={(cfg.body as string) ?? ""}
+              onChange={(e) => set({ body: e.target.value })}
+              placeholder="Hi {{deal.client_name}}, just a quick note from {{recipe.name}}…"
+              rows={3}
+            />
+          </div>
+        </div>
+      );
+
+    case "notify": {
+      const notifyUser = (cfg.user as string) ?? "deal_owner";
+      const isKeyword = notifyUser === "deal_owner" || notifyUser === "client_owner";
+      const selectValue = isKeyword ? notifyUser : "specific";
+      return (
+        <div className="grid grid-cols-1 gap-2 text-sm">
+          <div>
+            <Label>Notify</Label>
+            <Select
+              value={selectValue}
+              onValueChange={(v) => {
+                if (v === "deal_owner" || v === "client_owner") {
+                  set({ user: v });
+                } else {
+                  // Keep existing UUID if already set, else blank to prompt entry
+                  set({ user: isKeyword ? "" : notifyUser });
+                }
+              }}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="deal_owner">Deal owner</SelectItem>
+                <SelectItem value="client_owner">Client account owner</SelectItem>
+                <SelectItem value="specific">Specific member (enter user ID)</SelectItem>
+              </SelectContent>
+            </Select>
+            {!isKeyword && (
+              <Input
+                className="mt-1"
+                value={notifyUser}
+                onChange={(e) => set({ user: e.target.value })}
+                placeholder="User UUID"
+              />
+            )}
+          </div>
+          <div>
+            <Label>Title</Label>
+            <Input
+              value={(cfg.title as string) ?? ""}
+              onChange={(e) => set({ title: e.target.value })}
+              placeholder="e.g. Deal updated: {{deal.name}}"
+            />
+          </div>
+          <div>
+            <Label>Message (optional)</Label>
+            <Textarea
+              value={(cfg.body as string) ?? ""}
+              onChange={(e) => set({ body: e.target.value })}
+              placeholder="{{deal.name}} moved to a new stage. Check the deal for details."
+              rows={2}
+            />
+          </div>
+        </div>
+      );
+    }
 
     default:
       return null;

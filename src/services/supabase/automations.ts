@@ -36,6 +36,8 @@ export const ACTION_TYPES = [
   "webhook",
   "slack_post",
   "send_email",
+  "send_sms",
+  "notify",
   "ai_summarize",
   "ai_classify_lead",
   "ai_draft_email",
@@ -185,6 +187,16 @@ export const validateRecipeDraft = (draft: RecipeDraft): void => {
         throw new Error("send_email requires `to` and `subject`");
       }
     }
+    if (a.type === "send_sms") {
+      const cfg = a.config as Record<string, unknown> | undefined;
+      if (!(cfg?.to as string)?.trim()) throw new Error("send_sms requires a `to` phone / template");
+      if (!(cfg?.body as string)?.trim()) throw new Error("send_sms requires a `body` message");
+    }
+    if (a.type === "notify") {
+      const cfg = a.config as Record<string, unknown> | undefined;
+      if (!(cfg?.user as string)?.trim()) throw new Error("notify requires a `user` recipient");
+      if (!(cfg?.title as string)?.trim()) throw new Error("notify requires a `title`");
+    }
   }
 };
 
@@ -223,6 +235,8 @@ const ACTION_LABELS: Record<ActionType, string> = {
   webhook: "call webhook",
   slack_post: "post to Slack",
   send_email: "send email",
+  send_sms: "send SMS",
+  notify: "notify a user in-app",
   ai_summarize: "AI: summarize",
   ai_classify_lead: "AI: classify lead",
   ai_draft_email: "AI: draft email",
