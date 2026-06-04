@@ -40,4 +40,8 @@ export const ACTION_REGISTRY: Record<ActionType, ActionHandler> = {
   ai_extract: aiExtract,
   ai_translate: aiTranslate,
   wait,
+  // branch is handled inline in runRecipe / executeActionsResume; this
+  // no-op placeholder keeps the Record<ActionType, ActionHandler> exhaustive.
+  // deno-lint-ignore require-await
+  branch: async () => ({ type: "branch" as const, status: "success" as const }),
 };
