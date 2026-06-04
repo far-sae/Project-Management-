@@ -1,12 +1,16 @@
 import { TRIGGER_TYPES, ACTION_TYPES, type RecipeDraft, type TriggerType, type ActionType } from "./automations";
 
-const TRIGGERS = new Set<string>(TRIGGER_TYPES as readonly string[]);
-const ACTIONS = new Set<string>(ACTION_TYPES as readonly string[]);
-
 /** Validate + clean an AI-produced draft. Drops unknown action types; returns
  *  null if the trigger is unknown or no valid actions remain. Defensive against
- *  arbitrary JSON. */
+ *  arbitrary JSON.
+ *
+ *  NOTE: the Sets are built INSIDE the function, not at module top level. This
+ *  module and ./automations import each other; reading TRIGGER_TYPES/ACTION_TYPES
+ *  during module init hit a temporal-dead-zone in the bundle ("Cannot access …
+ *  before initialization"). Deferring the read to call-time avoids it. */
 export const sanitizeDraft = (raw: unknown): RecipeDraft | null => {
+  const TRIGGERS = new Set<string>(TRIGGER_TYPES as readonly string[]);
+  const ACTIONS = new Set<string>(ACTION_TYPES as readonly string[]);
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, any>;
   const triggerType = r.trigger?.type;
