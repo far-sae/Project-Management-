@@ -37,6 +37,7 @@ import { ActivitiesTimeline } from './ActivitiesTimeline';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { CreateMeetingDialog } from './CreateMeetingDialog';
 import { CreateCallDialog } from './CreateCallDialog';
+import { QuickLogComposer } from './QuickLogComposer';
 
 type ViewMode = 'status' | 'kind' | 'category' | 'list' | 'timeline';
 
@@ -249,6 +250,11 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Quick-log composer — hub use, no fixed entity (user picks client/lead). */}
+      {viewMode === 'timeline' && (
+        <QuickLogComposer onPosted={() => setReloadKey((k) => k + 1)} />
+      )}
 
       {loading ? (
         <div className="rounded-md border p-12 flex items-center justify-center text-muted-foreground">
