@@ -17,6 +17,7 @@ import { AlertTriangle, Plus, Sparkles, Trash2 } from "lucide-react";
 import {
   ACTION_TYPES, TRIGGER_TYPES,
   Recipe, RecipeAction, RecipeCondition, RecipeDraft, TriggerType, ActionType,
+  BranchConfig,
   upsertRecipe,
   listSlackChannels, SlackChannel,
 } from "@/services/supabase/automations";
@@ -259,6 +260,17 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
       if (action.type === "notify") {
         if (!(action.config.user as string)?.trim()) return "Choose who should receive the in-app notification.";
         if (!(action.config.title as string)?.trim()) return "Add a title for the notification.";
+      }
+      if (action.type === "branch") {
+        const cfg = action.config as Partial<BranchConfig>;
+        if (!Array.isArray(cfg.conditions) || cfg.conditions.length === 0) {
+          return "Add at least one condition to the If / Else branch.";
+        }
+        const thenLen = Array.isArray(cfg.then) ? cfg.then.length : 0;
+        const elseLen = Array.isArray(cfg.else) ? cfg.else.length : 0;
+        if (thenLen === 0 && elseLen === 0) {
+          return "Add at least one action to the 'Then' or 'Else' side of the branch.";
+        }
       }
     }
     return null;
@@ -1294,7 +1306,153 @@ const ActionConfigEditor: React.FC<{
       );
     }
 
+    case "branch": {
+      return <BranchConfigEditor config={action.config} onChange={onChange} />;
+    }
+
     default:
       return null;
   }
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// Branch config editor — conditions + then/else sub-action lists.
+// v1: nested actions may not be branch or wait.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Action types that are legal inside a branch (v1: no branch, no wait). */
+const BRANCH_SAFE_TYPES = ACTION_TYPES.filter(
+  (t) => t !== "branch" && t !== "wait",
+) as ActionType[];
+
+const BRANCH_DEFAULT_SUB_ACTION: RecipeAction = {
+  type: "create_task",
+  config: { title: "", assignee: "deal_owner", due_in_days: 3 },
+};
+
+const BranchSubActionList: React.FC<{
+  label: string;
+  actions: RecipeAction[];
+  onChange: (actions: RecipeAction[]) => void;
+}> = ({ label, actions, onChange }) => {
+  const add = () => onChange([...actions, { ...BRANCH_DEFAULT_SUB_ACTION, config: { ...BRANCH_DEFAULT_SUB_ACTION.config } }]);
+  const remove = (i: number) => onChange(actions.filter((_, ai) => ai !== i));
+  const updateType = (i: number, type: ActionType) =>
+    onChange(actions.map((a, ai) => (ai === i ? { type, config: {} } : a)));
+  const updateConfig = (i: number, cfg: Record<string, unknown>) =>
+    onChange(actions.map((a, ai) => (ai === i ? { ...a, config: cfg } : a)));
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+      {actions.map((a, i) => (
+        <div key={i} className="border rounded-md p-2 space-y-2 bg-background">
+          <div className="flex items-center gap-2">
+            <Select
+              value={a.type}
+              onValueChange={(v) => updateType(i, v as ActionType)}
+            >
+              <SelectTrigger className="h-8 text-xs w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {BRANCH_SAFE_TYPES.map((t) => (
+                  <SelectItem key={t} value={t} className="text-xs">{ACTION_LABEL[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => remove(i)}>
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </div>
+          <ActionConfigEditor action={a} onChange={(cfg) => updateConfig(i, cfg)} />
+        </div>
+      ))}
+      {actions.length === 0 && (
+        <p className="text-xs text-muted-foreground">No actions — this path will be a no-op.</p>
+      )}
+      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={add}>
+        <Plus className="w-3 h-3 mr-1" /> Add action
+      </Button>
+    </div>
+  );
+};
+
+const BranchConfigEditor: React.FC<{
+  config: Record<string, unknown>;
+  onChange: (cfg: Record<string, unknown>) => void;
+}> = ({ config, onChange }) => {
+  const cfg = config as Partial<BranchConfig>;
+  const conditions: RecipeCondition[] = Array.isArray(cfg.conditions) ? (cfg.conditions as RecipeCondition[]) : [];
+  const thenActions: RecipeAction[] = Array.isArray(cfg.then) ? (cfg.then as RecipeAction[]) : [];
+  const elseActions: RecipeAction[] = Array.isArray(cfg.else) ? (cfg.else as RecipeAction[]) : [];
+
+  const setConditions = (next: RecipeCondition[]) => onChange({ ...config, conditions: next });
+  const setThen = (next: RecipeAction[]) => onChange({ ...config, then: next });
+  const setElse = (next: RecipeAction[]) => onChange({ ...config, else: next });
+
+  const addCondition = () =>
+    setConditions([...conditions, { field: "deal.value", operator: "gte", value: 0 }]);
+  const updateCondition = (i: number, patch: Partial<RecipeCondition>) =>
+    setConditions(conditions.map((c, ci) => (ci === i ? { ...c, ...patch } : c)));
+  const removeCondition = (i: number) => setConditions(conditions.filter((_, ci) => ci !== i));
+
+  return (
+    <div className="space-y-3 pt-1">
+      {/* Condition rows */}
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Conditions (all must match)</p>
+        {conditions.map((c, i) => (
+          <div key={i} className="flex items-center gap-2 flex-wrap">
+            <Input
+              value={c.field}
+              onChange={(e) => updateCondition(i, { field: e.target.value })}
+              className="h-8 w-[160px] text-xs"
+              placeholder="deal.value"
+            />
+            <Select
+              value={c.operator}
+              onValueChange={(v) => updateCondition(i, { operator: v as RecipeCondition["operator"] })}
+            >
+              <SelectTrigger className="h-8 w-[90px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {OPERATORS.map((o) => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input
+              value={typeof c.value === "string" ? c.value : JSON.stringify(c.value)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                let v: unknown = raw;
+                try { v = JSON.parse(raw); } catch { /* keep raw */ }
+                updateCondition(i, { value: v });
+              }}
+              className="h-8 flex-1 min-w-[80px] text-xs"
+              placeholder='1000 or "VIP"'
+            />
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeCondition(i)}>
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </div>
+        ))}
+        {conditions.length === 0 && (
+          <p className="text-xs text-muted-foreground">Add at least one condition for the If check.</p>
+        )}
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addCondition}>
+          <Plus className="w-3 h-3 mr-1" /> Add condition
+        </Button>
+      </div>
+
+      {/* Then / Else sub-action lists */}
+      <div className="grid grid-cols-1 gap-3 border-t pt-2 sm:grid-cols-2">
+        <div className="rounded-md border border-green-200 bg-green-50/50 p-2 space-y-2">
+          <BranchSubActionList label="Then (conditions match)" actions={thenActions} onChange={setThen} />
+        </div>
+        <div className="rounded-md border border-orange-200 bg-orange-50/50 p-2 space-y-2">
+          <BranchSubActionList label="Else (conditions don't match)" actions={elseActions} onChange={setElse} />
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        v1: nested branch or wait actions are not allowed inside a branch block.
+      </p>
+    </div>
+  );
 };
