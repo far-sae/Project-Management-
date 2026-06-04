@@ -14,6 +14,7 @@ export type ActionType =
   | "create_project_task" | "assign_task" | "create_google_meet"
   | "tag" | "set_field" | "change_owner"
   | "add_note" | "move_deal_stage" | "webhook" | "slack_post" | "send_email"
+  | "send_sms" | "notify"
   | "ai_summarize" | "ai_classify_lead" | "ai_draft_email"
   | "ai_extract" | "ai_translate"
   | "wait";

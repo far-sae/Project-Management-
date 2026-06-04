@@ -12,6 +12,8 @@ import { moveDealStage } from "./moveDealStage.ts";
 import { webhook } from "./webhook.ts";
 import { slackPost } from "./slackPost.ts";
 import { sendEmail } from "./sendEmail.ts";
+import { sendSms } from "./sendSms.ts";
+import { notify } from "./notify.ts";
 import { aiSummarize, aiClassifyLead, aiDraftEmail, aiExtract, aiTranslate } from "./ai.ts";
 import { wait } from "./wait.ts";
 
@@ -30,6 +32,8 @@ export const ACTION_REGISTRY: Record<ActionType, ActionHandler> = {
   webhook,
   slack_post: slackPost,
   send_email: sendEmail,
+  send_sms: sendSms,
+  notify,
   ai_summarize: aiSummarize,
   ai_classify_lead: aiClassifyLead,
   ai_draft_email: aiDraftEmail,
