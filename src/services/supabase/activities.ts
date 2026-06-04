@@ -9,8 +9,9 @@
 import { getOrganizationClientTasks, type ClientTask, type ClientTaskPriority } from "./clientTasks";
 import { listMeetings, type Meeting } from "./meetings";
 import { listCalls, type Call, type CallStatus } from "./calls";
+import { supabase } from "./config";
 
-export type ActivityKind = "task" | "meeting" | "call";
+export type ActivityKind = "task" | "meeting" | "call" | "note" | "email";
 
 /** Zoho-style filter views on the Activities page dropdown. Each
  *  resolves to a predicate the page applies after the union fetch. */
@@ -35,7 +36,9 @@ export type ActivityFilterView =
   | "attended_calls"
   | "cancelled_calls"
   | "incoming_calls"
-  | "missed_calls";
+  | "missed_calls"
+  | "my_today"
+  | "overdue";
 
 export interface ActivityFilterOption {
   value: ActivityFilterView;
@@ -47,6 +50,8 @@ export interface ActivityFilterOption {
 // roughly — frequent ones first, then call sub-views grouped together.
 export const ACTIVITY_FILTERS: ActivityFilterOption[] = [
   { value: "all",                       label: "All Activities",            group: "all" },
+  { value: "my_today",                  label: "Due Today",                 group: "all" },
+  { value: "overdue",                   label: "Overdue",                   group: "all" },
   { value: "my_activities",             label: "My Activities",             group: "all" },
   { value: "my_open_activities",        label: "My Open Activities",        group: "all" },
   { value: "closed_activities",         label: "Closed Activities",         group: "all" },
@@ -115,7 +120,9 @@ export interface Activity {
   source:
     | { kind: "task";    row: ClientTask }
     | { kind: "meeting"; row: Meeting }
-    | { kind: "call";    row: Call };
+    | { kind: "call";    row: Call }
+    | { kind: "note";    row: NoteRow }
+    | { kind: "email";   row: EmailEventRow };
 }
 
 interface BuildContext {
@@ -211,20 +218,129 @@ const callToActivity = (c: Call, ctx: BuildContext): Activity => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Note + email row types and mapping functions
+// ---------------------------------------------------------------------------
+
+export interface NoteRow {
+  id: string; organization_id: string;
+  client_id: string | null; lead_id: string | null; deal_id: string | null;
+  kind: string | null; subject: string | null; body: string | null;
+  occurred_at: string; author_id: string | null; author_name: string | null;
+}
+
+export interface EmailEventRow {
+  event_id: string; organization_id: string;
+  entity_type: string | null; entity_id: string | null;
+  direction: string; subject: string | null; snippet: string | null;
+  from_email: string | null; occurred_at: string;
+}
+
+const trim = (s: string | null, n = 80) => {
+  const t = (s ?? "").replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+
+export const noteToActivity = (r: NoteRow): Activity => ({
+  id: `note:${r.id}`,
+  kind: "note",
+  organizationId: r.organization_id,
+  workspaceId: null,
+  title: trim(r.subject || r.body) || "Note",
+  description: r.body ?? null,
+  whenAt: r.occurred_at ? new Date(r.occurred_at) : null,
+  overdue: false,
+  open: false,
+  ownerUserId: r.author_id ?? null,
+  ownerName: r.author_name ?? null,
+  priority: "normal",
+  category: "others",
+  relatedToLabel: null,
+  source: { kind: "note", row: r },
+});
+
+export const emailToActivity = (r: EmailEventRow): Activity => ({
+  id: `email:${r.event_id}`,
+  kind: "email",
+  organizationId: r.organization_id,
+  workspaceId: null,
+  title: `${r.direction === "inbound" ? "↙" : "↗"} ${trim(r.subject) || "Email"}`,
+  description: r.snippet ?? null,
+  whenAt: r.occurred_at ? new Date(r.occurred_at) : null,
+  overdue: false,
+  open: false,
+  ownerUserId: null,
+  ownerName: r.from_email ?? null,
+  priority: "normal",
+  category: "others",
+  relatedToLabel: null,
+  source: { kind: "email", row: r },
+});
+
+// ---------------------------------------------------------------------------
+// Note + email fetchers
+// client_notes PK: note_id; columns: note_id, organization_id, client_id, deal_id, kind, subject, body, occurred_at, author_id, author_name
+// lead_notes PK: note_id; columns: note_id, organization_id, lead_id, kind, subject, body, occurred_at, author_id, author_name
+// email_events PK: event_id; columns: event_id, organization_id, entity_type, entity_id, direction, subject, snippet, from_email, occurred_at
+// ---------------------------------------------------------------------------
+
+const listOrgNotes = async (orgId: string): Promise<NoteRow[]> => {
+  const [clientNotes, leadNotes] = await Promise.all([
+    supabase
+      .from("client_notes")
+      .select("note_id, organization_id, client_id, deal_id, kind, subject, body, occurred_at, author_id, author_name")
+      .eq("organization_id", orgId)
+      .order("occurred_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("lead_notes")
+      .select("note_id, organization_id, lead_id, kind, subject, body, occurred_at, author_id, author_name")
+      .eq("organization_id", orgId)
+      .order("occurred_at", { ascending: false })
+      .limit(200),
+  ]);
+  const c = (clientNotes.data ?? []).map((r) => ({
+    ...(r as Record<string, unknown>),
+    id: (r as Record<string, string>).note_id,
+    lead_id: null,
+  } as unknown as NoteRow));
+  const l = (leadNotes.data ?? []).map((r) => ({
+    ...(r as Record<string, unknown>),
+    id: (r as Record<string, string>).note_id,
+    client_id: null,
+    deal_id: null,
+  } as unknown as NoteRow));
+  return [...c, ...l];
+};
+
+const listOrgEmailEvents = async (orgId: string): Promise<EmailEventRow[]> => {
+  const { data } = await supabase
+    .from("email_events")
+    .select("event_id, organization_id, entity_type, entity_id, direction, subject, snippet, from_email, occurred_at")
+    .eq("organization_id", orgId)
+    .order("occurred_at", { ascending: false })
+    .limit(200);
+  return (data ?? []) as EmailEventRow[];
+};
+
 /** Pull all three sources in parallel + map into the unified shape. */
 export const listActivities = async (
   organizationId: string,
   ctx: BuildContext,
 ): Promise<Activity[]> => {
-  const [tasks, meetings, calls] = await Promise.all([
+  const [tasks, meetings, calls, notes, emails] = await Promise.all([
     getOrganizationClientTasks(organizationId).catch(() => [] as ClientTask[]),
     listMeetings(organizationId).catch(() => [] as Meeting[]),
     listCalls(organizationId).catch(() => [] as Call[]),
+    listOrgNotes(organizationId).catch(() => [] as NoteRow[]),
+    listOrgEmailEvents(organizationId).catch(() => [] as EmailEventRow[]),
   ]);
   const out: Activity[] = [
     ...tasks.map((t) => taskToActivity(t, ctx)),
     ...meetings.map((m) => meetingToActivity(m, ctx)),
     ...calls.map((c) => callToActivity(c, ctx)),
+    ...notes.map((n) => noteToActivity(n)),
+    ...emails.map((e) => emailToActivity(e)),
   ];
   // Open + nearest first; closed sorted newest first; nulls last.
   out.sort((a, b) => {
@@ -309,6 +425,10 @@ export const applyActivityFilter = (
       return activities.filter((a) => isCallType(a, "inbound"));
     case "missed_calls":
       return activities.filter((a) => isCallStatus(a, "missed"));
+    case "my_today":
+      return activities.filter((a) => mine(a) && a.open && isToday(a.whenAt));
+    case "overdue":
+      return activities.filter((a) => a.open && a.overdue);
     default:
       return activities;
   }
@@ -322,3 +442,31 @@ export const groupByCategory = (activities: Activity[]): Record<ActivityCategory
   for (const a of activities) out[a.category].push(a);
   return out;
 };
+
+// ---------------------------------------------------------------------------
+// Pure day-bucket + today/overdue helpers
+// ---------------------------------------------------------------------------
+
+export type DayBucket = "Today" | "Yesterday" | "This week" | "Earlier";
+
+/** Returns midnight UTC on the given date as a timestamp. */
+const startOfDayUtc = (d: Date): number =>
+  Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+
+/** Coarse day bucket of `when` relative to `now` (UTC calendar day). Null → "Earlier". */
+export const dayBucket = (when: Date | null, now: Date = new Date()): DayBucket => {
+  if (!when) return "Earlier";
+  const day = startOfDayUtc(now);
+  const w = startOfDayUtc(when);
+  const DAY = 86400000;
+  if (w === day) return "Today";
+  if (w === day - DAY) return "Yesterday";
+  if (w < day && w >= day - 6 * DAY) return "This week";
+  return "Earlier";
+};
+
+export const isToday = (when: Date | null, now: Date = new Date()): boolean =>
+  !!when && startOfDayUtc(when) === startOfDayUtc(now);
+
+export const isOverdue = (when: Date | null, open: boolean, now: Date = new Date()): boolean =>
+  !!when && open && when.getTime() < now.getTime();
