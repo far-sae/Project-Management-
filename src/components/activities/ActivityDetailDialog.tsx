@@ -11,7 +11,7 @@ import {
 import {
   Calendar, ListTodo, Phone, MapPin, User, Clock, Trash2,
   CheckCircle2, Loader2, RotateCcw, Video, Edit3, Copy, ExternalLink,
-  ArrowDownLeft, ArrowUpRight, AlertTriangle,
+  ArrowDownLeft, ArrowUpRight, AlertTriangle, StickyNote, Mail,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -35,11 +35,13 @@ interface ActivityDetailDialogProps {
   onChanged: () => void;
 }
 
-const KIND_THEME = {
-  task:    { Icon: ListTodo, accent: 'rose',    label: 'Task' },
-  meeting: { Icon: Calendar, accent: 'violet',  label: 'Meeting' },
-  call:    { Icon: Phone,    accent: 'emerald', label: 'Call' },
-} as const;
+const KIND_THEME: Record<import('@/services/supabase/activities').ActivityKind, { Icon: typeof Calendar; accent: string; label: string }> = {
+  task:    { Icon: ListTodo,   accent: 'rose',    label: 'Task' },
+  meeting: { Icon: Calendar,   accent: 'violet',  label: 'Meeting' },
+  call:    { Icon: Phone,      accent: 'emerald', label: 'Call' },
+  note:    { Icon: StickyNote, accent: 'amber',   label: 'Note' },
+  email:   { Icon: Mail,       accent: 'sky',     label: 'Email' },
+};
 
 const PRIORITY_DOT: Record<ClientTaskPriority, string> = {
   high: 'bg-rose-500',
@@ -53,12 +55,16 @@ const KIND_BANNER: Record<Activity['kind'], string> = {
   task:    'from-rose-500/15 via-rose-500/5 to-transparent',
   meeting: 'from-violet-500/15 via-violet-500/5 to-transparent',
   call:    'from-emerald-500/15 via-emerald-500/5 to-transparent',
+  note:    'from-amber-500/15 via-amber-500/5 to-transparent',
+  email:   'from-sky-500/15 via-sky-500/5 to-transparent',
 };
 
 const KIND_ICON_BG: Record<Activity['kind'], string> = {
   task:    'bg-rose-500/15 text-rose-600 dark:text-rose-300',
   meeting: 'bg-violet-500/15 text-violet-600 dark:text-violet-300',
   call:    'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
+  note:    'bg-amber-500/15 text-amber-600 dark:text-amber-300',
+  email:   'bg-sky-500/15 text-sky-600 dark:text-sky-300',
 };
 
 const TASK_STATUS_OPTS: ClientTaskStatus[] = ['pending', 'snoozed', 'done'];
@@ -176,7 +182,8 @@ export const ActivityDetailDialog: React.FC<ActivityDetailDialogProps> = ({
     try {
       if (activity.source.kind === 'task')         await deleteClientTask(activity.organizationId, activity.source.row.taskId);
       else if (activity.source.kind === 'meeting') await deleteMeeting(activity.source.row.meetingId, activity.organizationId);
-      else                                          await deleteCall(activity.source.row.callId, activity.organizationId);
+      else if (activity.source.kind === 'call')    await deleteCall(activity.source.row.callId, activity.organizationId);
+      else { toast.error('Notes and emails cannot be deleted from here.'); setBusy(false); return; }
       toast.success(`${activity.kind[0].toUpperCase()}${activity.kind.slice(1)} deleted`);
       onChanged();
       onOpenChange(false);
@@ -223,15 +230,19 @@ export const ActivityDetailDialog: React.FC<ActivityDetailDialogProps> = ({
         </Select>
       );
     }
-    const cur = activity.source.row.callStatus;
-    return (
-      <Select value={cur} onValueChange={(v) => setCallStatus(v as CallStatus)} disabled={busy}>
-        <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {CALL_STATUS_OPTS.map((s) => <SelectItem key={s} value={s}>{CALL_STATUS_LABEL[s]}</SelectItem>)}
-        </SelectContent>
-      </Select>
-    );
+    if (activity.source.kind === 'call') {
+      const cur = activity.source.row.callStatus;
+      return (
+        <Select value={cur} onValueChange={(v) => setCallStatus(v as CallStatus)} disabled={busy}>
+          <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {CALL_STATUS_OPTS.map((s) => <SelectItem key={s} value={s}>{CALL_STATUS_LABEL[s]}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      );
+    }
+    // note / email — no editable status
+    return <Badge variant="outline" className="text-xs">Logged</Badge>;
   })();
 
   const copyMeetLink = async () => {
@@ -436,9 +447,10 @@ export const ActivityDetailDialog: React.FC<ActivityDetailDialogProps> = ({
             </Button>
             <Button
               size="sm" onClick={() => {
-                if (activity.source.kind === 'task')         setTaskStatus(activity.open ? 'done'      : 'pending');
-                else if (activity.source.kind === 'meeting') setMeetingStatus(activity.open ? 'held'   : 'scheduled');
-                else                                          setCallStatus(activity.open ? 'completed' : 'scheduled');
+                if (activity.source.kind === 'task')         setTaskStatus(activity.open ? 'done'       : 'pending');
+                else if (activity.source.kind === 'meeting') setMeetingStatus(activity.open ? 'held'    : 'scheduled');
+                else if (activity.source.kind === 'call')    setCallStatus(activity.open ? 'completed'  : 'scheduled');
+                // note / email are always logged — no status change needed
                 onOpenChange(false);
               }}
               disabled={busy}

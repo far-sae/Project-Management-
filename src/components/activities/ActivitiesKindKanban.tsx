@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { ListTodo, Calendar, Phone } from 'lucide-react';
+import { ListTodo, Calendar, Phone, StickyNote, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Activity } from '@/services/supabase/activities';
 import { ActivityCard } from './ActivityCard';
@@ -10,12 +10,15 @@ interface ActivitiesKindKanbanProps {
   onSelect: (a: Activity) => void;
 }
 
-const KIND_ORDER: Activity['kind'][] = ['task', 'meeting', 'call'];
+type PrimaryKind = 'task' | 'meeting' | 'call' | 'note' | 'email';
+const KIND_ORDER: PrimaryKind[] = ['task', 'meeting', 'call', 'note', 'email'];
 
-const KIND_META: Record<Activity['kind'], { label: string; icon: typeof ListTodo; accent: string }> = {
-  task:    { label: 'Tasks',    icon: ListTodo, accent: 'border-t-rose-500/40' },
-  meeting: { label: 'Meetings', icon: Calendar, accent: 'border-t-violet-500/40' },
-  call:    { label: 'Calls',    icon: Phone,    accent: 'border-t-emerald-500/40' },
+const KIND_META: Record<PrimaryKind, { label: string; icon: typeof ListTodo; accent: string }> = {
+  task:    { label: 'Tasks',    icon: ListTodo,   accent: 'border-t-rose-500/40' },
+  meeting: { label: 'Meetings', icon: Calendar,   accent: 'border-t-violet-500/40' },
+  call:    { label: 'Calls',    icon: Phone,      accent: 'border-t-emerald-500/40' },
+  note:    { label: 'Notes',    icon: StickyNote, accent: 'border-t-amber-500/40' },
+  email:   { label: 'Emails',   icon: Mail,       accent: 'border-t-sky-500/40' },
 };
 
 /**
@@ -32,13 +35,13 @@ export const ActivitiesKindKanban: React.FC<ActivitiesKindKanbanProps> = ({
   activities, onSelect,
 }) => {
   const grouped = useMemo(() => {
-    const out: Record<Activity['kind'], Activity[]> = { task: [], meeting: [], call: [] };
+    const out: Record<PrimaryKind, Activity[]> = { task: [], meeting: [], call: [], note: [], email: [] };
     for (const a of activities) out[a.kind].push(a);
     return out;
   }, [activities]);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-3">
       {KIND_ORDER.map((kind) => {
         const meta = KIND_META[kind];
         const items = grouped[kind];

@@ -9,7 +9,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Search, LayoutGrid, List, Plus, Phone, Calendar, ListTodo, Loader2,
+  Search, LayoutGrid, List, Plus, Phone, Calendar, ListTodo, Loader2, Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
   listActivities, applyActivityFilter, ACTIVITY_FILTERS,
+  isToday,
   type Activity, type ActivityFilterView,
 } from '@/services/supabase/activities';
 import { onCallsChanged } from '@/services/supabase/calls';
@@ -32,11 +33,12 @@ import { ActivitiesKanban } from './ActivitiesKanban';
 import { ActivitiesStatusKanban } from './ActivitiesStatusKanban';
 import { ActivitiesKindKanban } from './ActivitiesKindKanban';
 import { ActivitiesList } from './ActivitiesList';
+import { ActivitiesTimeline } from './ActivitiesTimeline';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { CreateMeetingDialog } from './CreateMeetingDialog';
 import { CreateCallDialog } from './CreateCallDialog';
 
-type ViewMode = 'status' | 'kind' | 'category' | 'list';
+type ViewMode = 'status' | 'kind' | 'category' | 'list' | 'timeline';
 
 interface ActivitiesHubPanelProps {
   /** Initial filter view. Useful when the panel is mounted on a
@@ -60,11 +62,10 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [filterView, setFilterView] = useState<ActivityFilterView>(initialFilter);
-  // Default to status mode (drag-droppable Open / In Progress / Done /
-  // Cancelled) — the category mode (Customers / Open Deals / etc) was
-  // confusing reps because activity cards sat in entity-named columns
-  // and couldn't be dragged through their lifecycle.
-  const [viewMode, setViewMode] = useState<ViewMode>('status');
+  // Default to timeline mode — chronological unified feed (upcoming +
+  // day-grouped logged) including notes + emails. The status/kind/category/list
+  // modes are still accessible via the view switcher.
+  const [viewMode, setViewMode] = useState<ViewMode>('timeline');
   const [search, setSearch] = useState('');
 
   const [taskOpen, setTaskOpen] = useState(false);
@@ -82,10 +83,12 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
   // Card-click handler: routes to the full edit dialog (the same one
   // + Task / + Meeting / + Call open) so reps land in an editable
   // form with every field, instead of a smaller read view.
+  // Notes and emails are read-only logged items — no edit dialog available.
   const openEditor = (a: Activity) => {
     if (a.source.kind === 'task')         setEditTask(a.source.row);
     else if (a.source.kind === 'meeting') setEditMeeting(a.source.row);
-    else                                   setEditCall(a.source.row);
+    else if (a.source.kind === 'call')    setEditCall(a.source.row);
+    // note / email — no edit dialog; clicking them is a no-op for now
   };
 
   useEffect(() => {
@@ -190,6 +193,9 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
         <span className="text-xs text-muted-foreground">
           {filtered.length} of {activities.length}
         </span>
+        <span className="text-xs text-muted-foreground">
+          {filtered.filter((a) => a.open && isToday(a.whenAt)).length} due today · {filtered.filter((a) => a.open && a.overdue).length} overdue
+        </span>
 
         {/* Four view modes:
               status   — drag-droppable Not Started / In Progress / Done /
@@ -201,6 +207,14 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
                          Zoho-style entity grouping.
               list     — sortable flat table. */}
         <div className="ml-auto inline-flex rounded-md border p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setViewMode('timeline')}
+            className={`px-2 py-1 rounded inline-flex items-center gap-1 ${viewMode === 'timeline' ? 'bg-muted' : 'opacity-60 hover:opacity-100'}`}
+            title="Timeline (chronological unified feed)"
+          >
+            <Clock className="w-3.5 h-3.5" /> Timeline
+          </button>
           <button
             type="button"
             onClick={() => setViewMode('status')}
@@ -240,6 +254,8 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
         <div className="rounded-md border p-12 flex items-center justify-center text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading activities…
         </div>
+      ) : viewMode === 'timeline' ? (
+        <ActivitiesTimeline activities={filtered} onOpen={openEditor} />
       ) : viewMode === 'status' ? (
         <ActivitiesStatusKanban
           activities={filtered}

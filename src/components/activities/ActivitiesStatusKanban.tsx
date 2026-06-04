@@ -54,12 +54,15 @@ const bucketOf = (a: Activity): StatusBucket => {
     if (s === 'no_show')   return 'cancelled';
     return 'open'; // scheduled
   }
-  // call
-  const s = a.source.row.callStatus;
-  if (s === 'completed') return 'done';
-  if (s === 'cancelled') return 'cancelled';
-  if (s === 'missed')    return 'cancelled';
-  return 'open'; // scheduled
+  if (a.source.kind === 'call') {
+    const s = a.source.row.callStatus;
+    if (s === 'completed') return 'done';
+    if (s === 'cancelled') return 'cancelled';
+    if (s === 'missed')    return 'cancelled';
+    return 'open'; // scheduled
+  }
+  // note / email — always logged (done)
+  return 'done';
 };
 
 // Drag target → status payload for the matching update API. We pick
@@ -144,8 +147,12 @@ export const ActivitiesStatusKanban: React.FC<ActivitiesStatusKanbanProps> = ({
         );
       } else if (a.source.kind === 'meeting') {
         await updateMeeting(a.source.row.meetingId, { status: meetingStatusFor(target) });
-      } else {
+      } else if (a.source.kind === 'call') {
         await updateCall(a.source.row.callId, { callStatus: callStatusFor(target) });
+      } else {
+        // note / email — read-only, cannot be moved between status columns
+        toast.error('Notes and emails cannot be moved between status columns');
+        return;
       }
       toast.success(`Moved "${a.title}" to ${STATUS_META[target].label}`);
       onChanged();
