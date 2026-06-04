@@ -74,6 +74,7 @@ const ACTION_LABEL: Record<ActionType, string> = {
   ai_extract: "AI: extract fields",
   ai_translate: "AI: translate",
   wait: "Wait",
+  branch: "If / Else",
 };
 
 const OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in", "contains", "exists"] as const;

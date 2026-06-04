@@ -47,6 +47,7 @@ export const ACTION_TYPES = [
   "ai_extract",
   "ai_translate",
   "wait",
+  "branch",
 ] as const;
 
 export type TriggerType = (typeof TRIGGER_TYPES)[number];
@@ -56,6 +57,13 @@ export interface RecipeCondition {
   field: string;
   operator: "eq" | "neq" | "gte" | "lte" | "gt" | "lt" | "in" | "contains" | "exists";
   value: unknown;
+}
+
+/** Config shape for a branch action. */
+export interface BranchConfig {
+  conditions: RecipeCondition[];
+  then: RecipeAction[];
+  else: RecipeAction[];
 }
 
 export interface RecipeAction {
@@ -149,6 +157,50 @@ export const kickAutomationWorker = async (
   return workerKickInFlight;
 };
 
+/** Validate the required fields for a single non-branch action. Throws on error. */
+const validateAction = (a: RecipeAction, context = "action"): void => {
+  if (!ACTION_TYPES.includes(a.type)) {
+    throw new Error(`Unknown action type: ${a.type}`);
+  }
+  if (a.type === "create_task" && !(a.config?.title as string)?.trim()) {
+    throw new Error(`create_task requires a title (${context})`);
+  }
+  if (a.type === "create_workspace" && !(a.config?.name as string)?.trim()) {
+    throw new Error(`create_workspace requires a name (${context})`);
+  }
+  if (a.type === "create_project" && !(a.config?.name as string)?.trim()) {
+    throw new Error(`create_project requires a name (${context})`);
+  }
+  if (a.type === "create_project_task" && !(a.config?.title as string)?.trim()) {
+    throw new Error(`create_project_task requires a title (${context})`);
+  }
+  if (a.type === "assign_task" && !(a.config?.assignee_id as string)?.trim()) {
+    throw new Error(`assign_task requires an assignee_id (${context})`);
+  }
+  if (a.type === "webhook" && !(a.config?.url as string)) {
+    throw new Error(`webhook requires a url (${context})`);
+  }
+  if (a.type === "slack_post" && !(a.config?.channel_id as string)) {
+    throw new Error(`slack_post requires a channel_id (${context})`);
+  }
+  if (a.type === "send_email") {
+    const cfg = a.config as Record<string, unknown> | undefined;
+    if (!cfg?.to || !cfg?.subject) {
+      throw new Error(`send_email requires \`to\` and \`subject\` (${context})`);
+    }
+  }
+  if (a.type === "send_sms") {
+    const cfg = a.config as Record<string, unknown> | undefined;
+    if (!(cfg?.to as string)?.trim()) throw new Error(`send_sms requires a \`to\` phone / template (${context})`);
+    if (!(cfg?.body as string)?.trim()) throw new Error(`send_sms requires a \`body\` message (${context})`);
+  }
+  if (a.type === "notify") {
+    const cfg = a.config as Record<string, unknown> | undefined;
+    if (!(cfg?.user as string)?.trim()) throw new Error(`notify requires a \`user\` recipient (${context})`);
+    if (!(cfg?.title as string)?.trim()) throw new Error(`notify requires a \`title\` (${context})`);
+  }
+};
+
 export const validateRecipeDraft = (draft: RecipeDraft): void => {
   if (!draft.name || !draft.name.trim()) {
     throw new Error("Recipe name is required");
@@ -163,43 +215,32 @@ export const validateRecipeDraft = (draft: RecipeDraft): void => {
     if (!ACTION_TYPES.includes(a.type)) {
       throw new Error(`Unknown action type: ${a.type}`);
     }
-    if (a.type === "create_task" && !(a.config?.title as string)?.trim()) {
-      throw new Error("create_task requires a title");
-    }
-    if (a.type === "create_workspace" && !(a.config?.name as string)?.trim()) {
-      throw new Error("create_workspace requires a name");
-    }
-    if (a.type === "create_project" && !(a.config?.name as string)?.trim()) {
-      throw new Error("create_project requires a name");
-    }
-    if (a.type === "create_project_task" && !(a.config?.title as string)?.trim()) {
-      throw new Error("create_project_task requires a title");
-    }
-    if (a.type === "assign_task" && !(a.config?.assignee_id as string)?.trim()) {
-      throw new Error("assign_task requires an assignee_id");
-    }
-    if (a.type === "webhook" && !(a.config?.url as string)) {
-      throw new Error("webhook requires a url");
-    }
-    if (a.type === "slack_post" && !(a.config?.channel_id as string)) {
-      throw new Error("slack_post requires a channel_id");
-    }
-    if (a.type === "send_email") {
-      const cfg = a.config as Record<string, unknown> | undefined;
-      if (!cfg?.to || !cfg?.subject) {
-        throw new Error("send_email requires `to` and `subject`");
+    if (a.type === "branch") {
+      const cfg = a.config as Partial<BranchConfig>;
+      // Must have at least one condition
+      if (!Array.isArray(cfg.conditions) || cfg.conditions.length === 0) {
+        throw new Error("branch action requires at least one condition");
       }
+      // Must have at least one action in then or else
+      const thenLen = Array.isArray(cfg.then) ? cfg.then.length : 0;
+      const elseLen = Array.isArray(cfg.else) ? cfg.else.length : 0;
+      if (thenLen === 0 && elseLen === 0) {
+        throw new Error("branch action must have at least one action in 'then' or 'else'");
+      }
+      // v1: sub-actions may not be branch or wait
+      const allSub = [...(cfg.then ?? []), ...(cfg.else ?? [])];
+      for (const sub of allSub) {
+        if (sub.type === "branch") {
+          throw new Error("Nested branch actions are not supported (v1 limit)");
+        }
+        if (sub.type === "wait") {
+          throw new Error("wait actions are not allowed inside a branch (v1 limit)");
+        }
+        validateAction(sub, `inside branch ${sub.type}`);
+      }
+      continue;
     }
-    if (a.type === "send_sms") {
-      const cfg = a.config as Record<string, unknown> | undefined;
-      if (!(cfg?.to as string)?.trim()) throw new Error("send_sms requires a `to` phone / template");
-      if (!(cfg?.body as string)?.trim()) throw new Error("send_sms requires a `body` message");
-    }
-    if (a.type === "notify") {
-      const cfg = a.config as Record<string, unknown> | undefined;
-      if (!(cfg?.user as string)?.trim()) throw new Error("notify requires a `user` recipient");
-      if (!(cfg?.title as string)?.trim()) throw new Error("notify requires a `title`");
-    }
+    validateAction(a);
   }
 };
 
@@ -248,12 +289,23 @@ const ACTION_LABELS: Record<ActionType, string> = {
   ai_extract: "AI: extract fields",
   ai_translate: "AI: translate",
   wait: "Wait",
+  branch: "If / Else",
+};
+
+const summarizeAction = (x: RecipeAction): string => {
+  if (x.type === "branch") {
+    const cfg = x.config as Partial<BranchConfig>;
+    const thenLen = Array.isArray(cfg.then) ? cfg.then.length : 0;
+    const elseLen = Array.isArray(cfg.else) ? cfg.else.length : 0;
+    return `If … then ${thenLen} action${thenLen !== 1 ? "s" : ""}, else ${elseLen} action${elseLen !== 1 ? "s" : ""}`;
+  }
+  return ACTION_LABELS[x.type] ?? x.type;
 };
 
 export const summarizeRecipe = (r: Pick<Recipe, "triggerType" | "actions">): string => {
   const triggerType = (r.triggerType ?? (r as unknown as { trigger_type?: TriggerType }).trigger_type) as TriggerType;
   const t = TRIGGER_LABELS[triggerType] ?? triggerType;
-  const a = r.actions.map((x) => ACTION_LABELS[x.type] ?? x.type).join(", ");
+  const a = r.actions.map(summarizeAction).join(", ");
   return `When ${t}, then ${a}`;
 };
 
