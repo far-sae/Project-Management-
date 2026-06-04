@@ -24,10 +24,19 @@ const TWILIO_SID = Deno.env.get("TWILIO_ACCOUNT_SID") ?? "";
 const TWILIO_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";
 const TWILIO_FROM = Deno.env.get("TWILIO_FROM_NUMBER") ?? "";
 
+// Browser calls this cross-origin (app domain → *.supabase.co) with an
+// Authorization header, which triggers a CORS preflight. Without these headers
+// + an OPTIONS responder the preflight fails ("does not have HTTP ok status").
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
+  "access-control-allow-methods": "POST, OPTIONS",
+};
+
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { ...corsHeaders, "content-type": "application/json" },
   });
 
 const sendViaTwilio = async (
@@ -57,6 +66,7 @@ const sendViaTwilio = async (
 };
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
   if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM) {
     return json(503, {
@@ -100,15 +110,18 @@ Deno.serve(async (req: Request) => {
   const userId = userRes?.user?.id ?? null;
   if (!userId) return json(401, { ok: false, error: "Not signed in" });
 
-  const { data: membership } = await supabase
-    .from("organization_members")
-    .select("role")
-    .eq("organization_id", organizationId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!membership) return json(403, { ok: false, error: "Not a member of this organization" });
-
   const adminSupabase = createClient(SUPABASE_URL, SERVICE_KEY);
+  // Membership lives in organizations.members (jsonb) + owner_id — there is no
+  // organization_members table. Check both (matches crm-assistant).
+  const { data: org } = await adminSupabase
+    .from("organizations")
+    .select("owner_id, members")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  const members = Array.isArray(org?.members) ? (org!.members as Array<Record<string, unknown>>) : [];
+  const isMember = org?.owner_id === userId
+    || members.some((m) => (m.userId ?? m.user_id ?? m.id) === userId);
+  if (!isMember) return json(403, { ok: false, error: "Not a member of this organization" });
 
   let sid = "";
   let providerStatus = "queued";
