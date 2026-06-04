@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -16,6 +17,7 @@ import { AlertTriangle, Plus, Sparkles, Trash2 } from "lucide-react";
 import {
   ACTION_TYPES, TRIGGER_TYPES,
   Recipe, RecipeAction, RecipeCondition, RecipeDraft, TriggerType, ActionType,
+  BranchConfig,
   upsertRecipe,
   listSlackChannels, SlackChannel,
 } from "@/services/supabase/automations";
@@ -46,6 +48,8 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
   agent_intake: "AI agent: draft outreach for new lead",
   slack_message_received: "a Slack message is posted",
   slack_reaction_added: "an emoji reaction is added to a message",
+  date_relative: "a date is N days away (deal)",
+  deal_inactive: "a deal goes quiet for N days",
 };
 
 const ACTION_LABEL: Record<ActionType, string> = {
@@ -63,12 +67,15 @@ const ACTION_LABEL: Record<ActionType, string> = {
   webhook: "call webhook",
   slack_post: "post to Slack",
   send_email: "send email",
+  send_sms: "send SMS",
+  notify: "notify a user in-app",
   ai_summarize: "AI: summarize",
   ai_classify_lead: "AI: classify lead",
   ai_draft_email: "AI: draft email",
   ai_extract: "AI: extract fields",
   ai_translate: "AI: translate",
   wait: "Wait",
+  branch: "If / Else",
 };
 
 const OPERATORS = ["eq", "neq", "gte", "lte", "gt", "lt", "in", "contains", "exists"] as const;
@@ -246,6 +253,25 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
         if (!(action.config.to as string)?.trim()) return "Add an email recipient.";
         if (!(action.config.subject as string)?.trim()) return "Add an email subject.";
       }
+      if (action.type === "send_sms") {
+        if (!(action.config.to as string)?.trim()) return "Add a phone number or template for the SMS recipient.";
+        if (!(action.config.body as string)?.trim()) return "Add a message body for the SMS.";
+      }
+      if (action.type === "notify") {
+        if (!(action.config.user as string)?.trim()) return "Choose who should receive the in-app notification.";
+        if (!(action.config.title as string)?.trim()) return "Add a title for the notification.";
+      }
+      if (action.type === "branch") {
+        const cfg = action.config as Partial<BranchConfig>;
+        if (!Array.isArray(cfg.conditions) || cfg.conditions.length === 0) {
+          return "Add at least one condition to the If / Else branch.";
+        }
+        const thenLen = Array.isArray(cfg.then) ? cfg.then.length : 0;
+        const elseLen = Array.isArray(cfg.else) ? cfg.else.length : 0;
+        if (thenLen === 0 && elseLen === 0) {
+          return "Add at least one action to the 'Then' or 'Else' side of the branch.";
+        }
+      }
     }
     return null;
   };
@@ -367,6 +393,56 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
                 </Select>
               )}
             </div>
+
+            {/* date_relative trigger config */}
+            {draft.trigger.type === "date_relative" && (
+              <div className="ml-16 space-y-2 border-l pl-3 -mt-1">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Date field</Label>
+                  <Select
+                    value={(draft.trigger.config.date_field as string) ?? "expected_close_date"}
+                    onValueChange={(v) => setTriggerConfig({ date_field: v })}
+                  >
+                    <SelectTrigger className="w-[240px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="expected_close_date">Expected close date</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Offset days</Label>
+                  <Input
+                    type="number"
+                    className="w-[120px]"
+                    value={Number(draft.trigger.config.offset_days ?? 0)}
+                    onChange={(e) => setTriggerConfig({ offset_days: Number(e.target.value) })}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Negative = before the date (e.g. −3 fires 3 days before close).
+                    Positive = after the date. 0 = on the date itself.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* deal_inactive trigger config */}
+            {draft.trigger.type === "deal_inactive" && (
+              <div className="ml-16 space-y-2 border-l pl-3 -mt-1">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Inactive for (days)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    className="w-[120px]"
+                    value={Number(draft.trigger.config.days ?? 14)}
+                    onChange={(e) => setTriggerConfig({ days: Number(e.target.value) })}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Fire when a deal's last update is older than this many days (default 14).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Slack trigger: channel multi-select + optional keyword filter */}
             {draft.trigger.type === "slack_message_received" && (
@@ -1147,7 +1223,236 @@ const ActionConfigEditor: React.FC<{
         </div>
       );
 
+    case "send_sms":
+      return (
+        <div className="grid grid-cols-1 gap-2 text-sm">
+          <div>
+            <Label>To</Label>
+            <Input
+              value={(cfg.to as string) ?? ""}
+              onChange={(e) => set({ to: e.target.value })}
+              placeholder="client_phone | +15551234567 | {{deal.phone}}"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Use <code>client_phone</code> to look up the client's phone, an E.164 number, or a{" "}
+              <code>{"{{template}}"}</code>.
+            </p>
+          </div>
+          <div>
+            <Label>Message</Label>
+            <Textarea
+              value={(cfg.body as string) ?? ""}
+              onChange={(e) => set({ body: e.target.value })}
+              placeholder="Hi {{deal.client_name}}, just a quick note from {{recipe.name}}…"
+              rows={3}
+            />
+          </div>
+        </div>
+      );
+
+    case "notify": {
+      const notifyUser = (cfg.user as string) ?? "deal_owner";
+      const isKeyword = notifyUser === "deal_owner" || notifyUser === "client_owner";
+      const selectValue = isKeyword ? notifyUser : "specific";
+      return (
+        <div className="grid grid-cols-1 gap-2 text-sm">
+          <div>
+            <Label>Notify</Label>
+            <Select
+              value={selectValue}
+              onValueChange={(v) => {
+                if (v === "deal_owner" || v === "client_owner") {
+                  set({ user: v });
+                } else {
+                  // Keep existing UUID if already set, else blank to prompt entry
+                  set({ user: isKeyword ? "" : notifyUser });
+                }
+              }}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="deal_owner">Deal owner</SelectItem>
+                <SelectItem value="client_owner">Client account owner</SelectItem>
+                <SelectItem value="specific">Specific member (enter user ID)</SelectItem>
+              </SelectContent>
+            </Select>
+            {!isKeyword && (
+              <Input
+                className="mt-1"
+                value={notifyUser}
+                onChange={(e) => set({ user: e.target.value })}
+                placeholder="User UUID"
+              />
+            )}
+          </div>
+          <div>
+            <Label>Title</Label>
+            <Input
+              value={(cfg.title as string) ?? ""}
+              onChange={(e) => set({ title: e.target.value })}
+              placeholder="e.g. Deal updated: {{deal.name}}"
+            />
+          </div>
+          <div>
+            <Label>Message (optional)</Label>
+            <Textarea
+              value={(cfg.body as string) ?? ""}
+              onChange={(e) => set({ body: e.target.value })}
+              placeholder="{{deal.name}} moved to a new stage. Check the deal for details."
+              rows={2}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    case "branch": {
+      return <BranchConfigEditor config={action.config} onChange={onChange} />;
+    }
+
     default:
       return null;
   }
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// Branch config editor — conditions + then/else sub-action lists.
+// v1: nested actions may not be branch or wait.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Action types that are legal inside a branch (v1: no branch, no wait). */
+const BRANCH_SAFE_TYPES = ACTION_TYPES.filter(
+  (t) => t !== "branch" && t !== "wait",
+) as ActionType[];
+
+const BRANCH_DEFAULT_SUB_ACTION: RecipeAction = {
+  type: "create_task",
+  config: { title: "", assignee: "deal_owner", due_in_days: 3 },
+};
+
+const BranchSubActionList: React.FC<{
+  label: string;
+  actions: RecipeAction[];
+  onChange: (actions: RecipeAction[]) => void;
+}> = ({ label, actions, onChange }) => {
+  const add = () => onChange([...actions, { ...BRANCH_DEFAULT_SUB_ACTION, config: { ...BRANCH_DEFAULT_SUB_ACTION.config } }]);
+  const remove = (i: number) => onChange(actions.filter((_, ai) => ai !== i));
+  const updateType = (i: number, type: ActionType) =>
+    onChange(actions.map((a, ai) => (ai === i ? { type, config: {} } : a)));
+  const updateConfig = (i: number, cfg: Record<string, unknown>) =>
+    onChange(actions.map((a, ai) => (ai === i ? { ...a, config: cfg } : a)));
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+      {actions.map((a, i) => (
+        <div key={i} className="border rounded-md p-2 space-y-2 bg-background">
+          <div className="flex items-center gap-2">
+            <Select
+              value={a.type}
+              onValueChange={(v) => updateType(i, v as ActionType)}
+            >
+              <SelectTrigger className="h-8 text-xs w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {BRANCH_SAFE_TYPES.map((t) => (
+                  <SelectItem key={t} value={t} className="text-xs">{ACTION_LABEL[t]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => remove(i)}>
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </div>
+          <ActionConfigEditor action={a} onChange={(cfg) => updateConfig(i, cfg)} />
+        </div>
+      ))}
+      {actions.length === 0 && (
+        <p className="text-xs text-muted-foreground">No actions — this path will be a no-op.</p>
+      )}
+      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={add}>
+        <Plus className="w-3 h-3 mr-1" /> Add action
+      </Button>
+    </div>
+  );
+};
+
+const BranchConfigEditor: React.FC<{
+  config: Record<string, unknown>;
+  onChange: (cfg: Record<string, unknown>) => void;
+}> = ({ config, onChange }) => {
+  const cfg = config as Partial<BranchConfig>;
+  const conditions: RecipeCondition[] = Array.isArray(cfg.conditions) ? (cfg.conditions as RecipeCondition[]) : [];
+  const thenActions: RecipeAction[] = Array.isArray(cfg.then) ? (cfg.then as RecipeAction[]) : [];
+  const elseActions: RecipeAction[] = Array.isArray(cfg.else) ? (cfg.else as RecipeAction[]) : [];
+
+  const setConditions = (next: RecipeCondition[]) => onChange({ ...config, conditions: next });
+  const setThen = (next: RecipeAction[]) => onChange({ ...config, then: next });
+  const setElse = (next: RecipeAction[]) => onChange({ ...config, else: next });
+
+  const addCondition = () =>
+    setConditions([...conditions, { field: "deal.value", operator: "gte", value: 0 }]);
+  const updateCondition = (i: number, patch: Partial<RecipeCondition>) =>
+    setConditions(conditions.map((c, ci) => (ci === i ? { ...c, ...patch } : c)));
+  const removeCondition = (i: number) => setConditions(conditions.filter((_, ci) => ci !== i));
+
+  return (
+    <div className="space-y-3 pt-1">
+      {/* Condition rows */}
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Conditions (all must match)</p>
+        {conditions.map((c, i) => (
+          <div key={i} className="flex items-center gap-2 flex-wrap">
+            <Input
+              value={c.field}
+              onChange={(e) => updateCondition(i, { field: e.target.value })}
+              className="h-8 w-[160px] text-xs"
+              placeholder="deal.value"
+            />
+            <Select
+              value={c.operator}
+              onValueChange={(v) => updateCondition(i, { operator: v as RecipeCondition["operator"] })}
+            >
+              <SelectTrigger className="h-8 w-[90px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {OPERATORS.map((o) => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input
+              value={typeof c.value === "string" ? c.value : JSON.stringify(c.value)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                let v: unknown = raw;
+                try { v = JSON.parse(raw); } catch { /* keep raw */ }
+                updateCondition(i, { value: v });
+              }}
+              className="h-8 flex-1 min-w-[80px] text-xs"
+              placeholder='1000 or "VIP"'
+            />
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeCondition(i)}>
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </div>
+        ))}
+        {conditions.length === 0 && (
+          <p className="text-xs text-muted-foreground">Add at least one condition for the If check.</p>
+        )}
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addCondition}>
+          <Plus className="w-3 h-3 mr-1" /> Add condition
+        </Button>
+      </div>
+
+      {/* Then / Else sub-action lists */}
+      <div className="grid grid-cols-1 gap-3 border-t pt-2 sm:grid-cols-2">
+        <div className="rounded-md border border-green-200 bg-green-50/50 p-2 space-y-2">
+          <BranchSubActionList label="Then (conditions match)" actions={thenActions} onChange={setThen} />
+        </div>
+        <div className="rounded-md border border-orange-200 bg-orange-50/50 p-2 space-y-2">
+          <BranchSubActionList label="Else (conditions don't match)" actions={elseActions} onChange={setElse} />
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        v1: nested branch or wait actions are not allowed inside a branch block.
+      </p>
+    </div>
+  );
 };

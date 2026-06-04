@@ -1,9 +1,13 @@
 // supabase/functions/crm-run-automations/triggers/cron.ts
 // Enqueues task_overdue + scheduled events that aren't fired by DB row changes.
 
+import { targetDateFor } from "./dateMatch.ts";
+
 export const enqueueCronEvents = async (admin: any): Promise<void> => {
   await enqueueTaskOverdue(admin);
   await enqueueScheduledRecipes(admin);
+  await enqueueDateRelative(admin);
+  await enqueueDealInactive(admin);
 };
 
 const enqueueTaskOverdue = async (admin: any): Promise<void> => {
@@ -69,4 +73,112 @@ const shouldFireSchedule = (config: Record<string, unknown>, now: Date): boolean
   if (minute !== undefined && now.getUTCMinutes() !== minute) return false;
   // If none provided, fire every minute (probably not desired but explicit).
   return weekday !== undefined || hour !== undefined || minute !== undefined;
+};
+
+// ── Shared dedup helper ────────────────────────────────────────────────────
+// Returns true if an event of eventType for sourceId was already enqueued
+// within the last 20 hours, preventing duplicates across daily cron runs.
+const alreadyEnqueued = async (
+  admin: any,
+  eventType: string,
+  sourceId: string,
+): Promise<boolean> => {
+  const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+  const { data } = await admin
+    .from("automation_events")
+    .select("event_id")
+    .eq("event_type", eventType)
+    .eq("source_id", sourceId)
+    .gt("enqueued_at", since)
+    .maybeSingle();
+  return !!data;
+};
+
+// ── date_relative ─────────────────────────────────────────────────────────
+// For each enabled date_relative recipe, scan deals whose expected_close_date
+// matches today offset by the recipe's offset_days, then enqueue one event
+// per deal (deduped within a 20h window so a re-run doesn't double-fire).
+const enqueueDateRelative = async (admin: any): Promise<void> => {
+  const { data: recipes } = await admin
+    .from("automation_recipes")
+    .select("recipe_id, organization_id, trigger_config")
+    .eq("trigger_type", "date_relative")
+    .eq("enabled", true);
+
+  for (const r of recipes ?? []) {
+    const cfg = (r.trigger_config ?? {}) as { date_field?: string; offset_days?: number };
+    const field = cfg.date_field || "expected_close_date";
+    if (field !== "expected_close_date") continue; // v1: deals.expected_close_date only
+
+    const target = targetDateFor(Number(cfg.offset_days ?? 0));
+
+    const { data: deals } = await admin
+      .from("deals")
+      .select("deal_id, organization_id, title, client_id, expected_close_date")
+      .eq("organization_id", r.organization_id)
+      .eq("expected_close_date", target)
+      .limit(500);
+
+    for (const d of deals ?? []) {
+      if (await alreadyEnqueued(admin, "date_relative", d.deal_id)) continue;
+      await admin.from("automation_events").insert({
+        organization_id: d.organization_id,
+        event_type: "date_relative",
+        payload: {
+          deal_id: d.deal_id,
+          client_id: d.client_id,
+          title: d.title,
+          recipe_id: r.recipe_id,
+          date_field: field,
+        },
+        source_table: "deals",
+        source_id: d.deal_id,
+      });
+    }
+  }
+};
+
+// ── deal_inactive ──────────────────────────────────────────────────────────
+// For each enabled deal_inactive recipe, scan deals whose updated_at is older
+// than the configured inactivity window (default 14 days), then enqueue one
+// event per deal (deduped within a 20h window).
+//
+// v1 staleness proxy: deals.updated_at (the deal row updates on stage/field/
+// note changes). A true last-activity join across comments+tasks is a future
+// refinement.
+const enqueueDealInactive = async (admin: any): Promise<void> => {
+  const { data: recipes } = await admin
+    .from("automation_recipes")
+    .select("recipe_id, organization_id, trigger_config")
+    .eq("trigger_type", "deal_inactive")
+    .eq("enabled", true);
+
+  for (const r of recipes ?? []) {
+    const days = Number((r.trigger_config as { days?: number })?.days ?? 14);
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+
+    const { data: deals } = await admin
+      .from("deals")
+      .select("deal_id, organization_id, title, client_id, updated_at")
+      .eq("organization_id", r.organization_id)
+      .lt("updated_at", cutoff)
+      .limit(500);
+
+    for (const d of deals ?? []) {
+      if (await alreadyEnqueued(admin, "deal_inactive", d.deal_id)) continue;
+      await admin.from("automation_events").insert({
+        organization_id: d.organization_id,
+        event_type: "deal_inactive",
+        payload: {
+          deal_id: d.deal_id,
+          client_id: d.client_id,
+          title: d.title,
+          recipe_id: r.recipe_id,
+          inactive_days: days,
+        },
+        source_table: "deals",
+        source_id: d.deal_id,
+      });
+    }
+  }
 };

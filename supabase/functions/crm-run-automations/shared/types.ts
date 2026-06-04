@@ -7,16 +7,35 @@ export type TriggerType =
   | "task_overdue" | "scheduled"
   | "agent_intake"
   | "slack_message_received"
-  | "slack_reaction_added";
+  | "slack_reaction_added"
+  | "date_relative"
+  | "deal_inactive";
 
 export type ActionType =
   | "create_task" | "create_workspace" | "create_project"
   | "create_project_task" | "assign_task" | "create_google_meet"
   | "tag" | "set_field" | "change_owner"
   | "add_note" | "move_deal_stage" | "webhook" | "slack_post" | "send_email"
+  | "send_sms" | "notify"
   | "ai_summarize" | "ai_classify_lead" | "ai_draft_email"
   | "ai_extract" | "ai_translate"
-  | "wait";
+  | "wait"
+  | "branch";
+
+/** Config carried inside a branch action's `config` field. */
+export interface BranchConfig {
+  conditions: Array<{ field: string; operator: string; value: unknown }>;
+  then: Array<{ type: ActionType; config: Record<string, unknown> }>;
+  else: Array<{ type: ActionType; config: Record<string, unknown> }>;
+}
+
+export type RecipeCondition = { field: string; operator: string; value: unknown };
+
+/** A single action in a recipe's action list (engine-side). */
+export interface RecipeAction {
+  type: ActionType;
+  config: Record<string, unknown>;
+}
 
 export type RunStatus = "success" | "failure" | "skipped" | "partial";
 

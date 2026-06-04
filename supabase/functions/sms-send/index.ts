@@ -81,6 +81,12 @@ Deno.serve(async (req: Request) => {
     return json(401, { ok: false, error: "Missing bearer token" });
   }
 
+  // Trusted server-to-server caller (e.g. crm-run-automations engine).
+  // The service-role key carries no JWT user, so skip the getUser +
+  // membership check and proceed directly to Twilio + db insert.
+  const incomingToken = authHeader.slice("bearer ".length).trim();
+  const isServiceRoleCaller = SERVICE_KEY && incomingToken === SERVICE_KEY;
+
   let payload: {
     organizationId?: string;
     to?: string;
@@ -102,26 +108,37 @@ Deno.serve(async (req: Request) => {
     return json(400, { ok: false, error: "`to` must be an E.164 phone number, e.g. +15551234567" });
   }
 
-  // Confirm the caller is a member of the org they claim to send from.
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
-    global: { headers: { authorization: authHeader } },
-  });
-  const { data: userRes } = await supabase.auth.getUser();
-  const userId = userRes?.user?.id ?? null;
-  if (!userId) return json(401, { ok: false, error: "Not signed in" });
-
+  // For browser callers: confirm the JWT belongs to a member of the claimed org.
+  // For trusted server-to-server callers (service-role bearer): skip the user
+  // lookup — auth.getUser() returns null for service-role tokens, which would
+  // incorrectly 401. The SERVICE_KEY check above is sufficient for trust.
+  let userId: string | null = null;
   const adminSupabase = createClient(SUPABASE_URL, SERVICE_KEY);
-  // Membership lives in organizations.members (jsonb) + owner_id — there is no
-  // organization_members table. Check both (matches crm-assistant).
-  const { data: org } = await adminSupabase
-    .from("organizations")
-    .select("owner_id, members")
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  const members = Array.isArray(org?.members) ? (org!.members as Array<Record<string, unknown>>) : [];
-  const isMember = org?.owner_id === userId
-    || members.some((m) => (m.userId ?? m.user_id ?? m.id) === userId);
-  if (!isMember) return json(403, { ok: false, error: "Not a member of this organization" });
+
+  if (isServiceRoleCaller) {
+    // Trusted server caller — no user context, org membership already implicitly
+    // enforced by the calling worker which already belongs to the org.
+    userId = null; // recorded as null in sms_messages.sent_by
+  } else {
+    const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+      global: { headers: { authorization: authHeader } },
+    });
+    const { data: userRes } = await supabase.auth.getUser();
+    userId = userRes?.user?.id ?? null;
+    if (!userId) return json(401, { ok: false, error: "Not signed in" });
+
+    // Membership lives in organizations.members (jsonb) + owner_id — there is no
+    // organization_members table. Check both (matches crm-assistant).
+    const { data: org } = await adminSupabase
+      .from("organizations")
+      .select("owner_id, members")
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    const members = Array.isArray(org?.members) ? (org!.members as Array<Record<string, unknown>>) : [];
+    const isMember = org?.owner_id === userId
+      || members.some((m) => (m.userId ?? m.user_id ?? m.id) === userId);
+    if (!isMember) return json(403, { ok: false, error: "Not a member of this organization" });
+  }
 
   let sid = "";
   let providerStatus = "queued";
