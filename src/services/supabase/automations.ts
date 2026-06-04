@@ -1,5 +1,6 @@
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
+import { sanitizeDraft } from "./automationDraft";
 
 export const TRIGGER_TYPES = [
   "deal_stage_entered",
@@ -588,4 +589,29 @@ export const enrollInAutomation = async (params: {
     throw new Error(error.message);
   }
   return String(data ?? "");
+};
+
+/**
+ * Call the `automation-author` edge function with a plain-English description
+ * and return a sanitized RecipeDraft ready to be pre-filled in the builder.
+ *
+ * The edge fn returns `{ draft }` (raw JSON from Claude). We run it through
+ * sanitizeDraft() to validate types and drop any unknown trigger/action values.
+ * Throws a user-visible error if the draft can't be made valid.
+ */
+export const draftAutomationFromText = async (
+  organizationId: string,
+  description: string,
+): Promise<RecipeDraft> => {
+  const { data, error } = await supabase.functions.invoke("automation-author", {
+    body: { organization_id: organizationId, description },
+  });
+  if (error) throw error;
+  const draft = sanitizeDraft((data as { draft?: unknown })?.draft);
+  if (!draft) {
+    throw new Error(
+      "Couldn't turn that into a valid automation — try describing the trigger and the action(s).",
+    );
+  }
+  return draft;
 };

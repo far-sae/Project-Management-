@@ -24,6 +24,7 @@ import {
   XCircle,
   Send,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useAutomations } from "@/hooks/useAutomations";
 import {
@@ -35,6 +36,7 @@ import {
   summarizeRecipe,
   getAutomationHealth,
   sendTestAutomationEvent,
+  draftAutomationFromText,
   type AutomationHealth,
 } from "@/services/supabase/automations";
 import { RecipeBuilder } from "./RecipeBuilder";
@@ -264,6 +266,23 @@ export const AutomationsSettingsTab: React.FC = () => {
   const [health, setHealth] = useState<AutomationHealth | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [testingEvent, setTestingEvent] = useState(false);
+  const [describeText, setDescribeText] = useState("");
+  const [drafting, setDrafting] = useState(false);
+
+  const handleDescribeSubmit = async () => {
+    if (!describeText.trim() || !organizationId) return;
+    setDrafting(true);
+    try {
+      const d = await draftAutomationFromText(organizationId, describeText.trim());
+      setInitialDraft(d);
+      setEditing("new");
+      setDescribeText("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "AI draft failed — try again");
+    } finally {
+      setDrafting(false);
+    }
+  };
 
   const reloadHealth = React.useCallback(async () => {
     if (!organizationId) return;
@@ -417,6 +436,42 @@ export const AutomationsSettingsTab: React.FC = () => {
                 ⚠ Events are queueing but the worker hasn&apos;t run in 24h. Click <strong>Run pending</strong>; if that doesn&apos;t drain them, confirm the <code>crm-run-automations</code> edge function is deployed and the pg_cron job from migration 111 is active.
               </p>
             )}
+          </CardContent>
+        </Card>
+
+        {/* AI-authored automation — describe in plain English */}
+        <Card>
+          <CardContent className="py-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Describe an automation
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Tell the AI what you want, e.g. "when a new client is created, send them a welcome email and notify the deal owner."
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <textarea
+                className="flex-1 min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:opacity-50"
+                placeholder="Describe the trigger and action(s) in plain English…"
+                value={describeText}
+                onChange={(e) => setDescribeText(e.target.value)}
+                disabled={drafting || !canManage}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void handleDescribeSubmit();
+                }}
+              />
+              <Button
+                onClick={() => void handleDescribeSubmit()}
+                disabled={drafting || !describeText.trim() || !canManage}
+                className="self-end"
+                title={canManage ? "Draft automation with AI (Cmd/Ctrl+Enter)" : "Only admins can create automations"}
+              >
+                {drafting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {drafting ? "Drafting…" : "Draft"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
