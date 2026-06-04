@@ -39,6 +39,7 @@ import {
 } from '@/services/supabase/activities';
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
 import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
+import { NextBestAction } from '@/components/activities/NextBestAction';
 import { SendEmailDialog } from './SendEmailDialog';
 import { SendSmsDialog } from './SendSmsDialog';
 import { InvoicesPanel } from './InvoicesPanel';
@@ -301,6 +302,10 @@ export const ClientDetailDrawer: React.FC<Props> = ({
 
               {tab === 'activity' && (
                 <>
+                  {/* AI next-best-action for this client */}
+                  <div className="mb-3">
+                    <NextBestAction entity={{ type: 'client', id: client.clientId, label: client.name }} />
+                  </div>
                   <QuickLogComposer
                     entity={{ type: 'client', id: client.clientId, label: client.name }}
                     onPosted={() => setActivitiesKey((k) => k + 1)}

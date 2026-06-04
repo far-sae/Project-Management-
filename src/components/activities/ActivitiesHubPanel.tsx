@@ -38,6 +38,7 @@ import { CreateTaskDialog } from './CreateTaskDialog';
 import { CreateMeetingDialog } from './CreateMeetingDialog';
 import { CreateCallDialog } from './CreateCallDialog';
 import { QuickLogComposer } from './QuickLogComposer';
+import { NextBestAction } from './NextBestAction';
 
 type ViewMode = 'status' | 'kind' | 'category' | 'list' | 'timeline';
 
@@ -140,6 +141,8 @@ export const ActivitiesHubPanel: React.FC<ActivitiesHubPanelProps> = ({
     <div className={bounded ? 'max-w-7xl mx-auto space-y-4' : 'space-y-4'}>
       <header className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl md:text-2xl font-bold flex-1 min-w-0">Activities</h1>
+        {/* AI next-best-action — hub-level (no entity → pipeline-wide suggestion) */}
+        <NextBestAction />
         <Button size="sm" variant="outline" onClick={() => setTaskOpen(true)}>
           <Plus className="w-3.5 h-3.5 mr-1" /> <ListTodo className="w-3.5 h-3.5 mr-1 text-rose-600" /> Task
         </Button>

@@ -33,6 +33,7 @@ import {
 } from '@/services/supabase/activities';
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
 import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
+import { NextBestAction } from '@/components/activities/NextBestAction';
 
 interface Props {
   lead: Lead | null;
@@ -410,6 +411,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               <h3 className="text-sm font-semibold border-b pb-1.5 flex items-center gap-2">
                 Activity Timeline
               </h3>
+              {/* AI next-best-action for this lead, above the timeline */}
+              <NextBestAction entity={{ type: 'lead', id: lead.leadId, label: displayName }} />
               <QuickLogComposer
                 entity={{ type: 'lead', id: lead.leadId, label: displayName }}
                 onPosted={() => setActivitiesKey((k) => k + 1)}

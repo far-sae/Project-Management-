@@ -32,6 +32,7 @@ import {
 } from '@/services/supabase/activities';
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
 import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
+import { NextBestAction } from '@/components/activities/NextBestAction';
 import { QuoteBuilderDialog } from './QuoteBuilderDialog';
 
 type DealTab = 'activity' | 'notes' | 'emails' | 'calls' | 'meetings' | 'tasks';
@@ -320,6 +321,10 @@ export const DealDetailDrawer: React.FC<Props> = ({
 
               {tab === 'activity' && (
                 <>
+                  {/* AI next-best-action for this deal */}
+                  <div className="mb-3">
+                    <NextBestAction entity={{ type: 'deal', id: deal.dealId, label: deal.title }} />
+                  </div>
                   <QuickLogComposer
                     entity={client ? { type: 'client', id: client.clientId, label: deal.title } : undefined}
                     onPosted={() => setActivitiesKey((k) => k + 1)}
