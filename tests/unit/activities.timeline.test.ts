@@ -27,7 +27,7 @@ describe("isToday / isOverdue", () => {
   });
 });
 
-import { noteToActivity, emailToActivity } from "@/services/supabase/activities";
+import { noteToActivity, emailToActivity, filterByEntity } from "@/services/supabase/activities";
 
 describe("note/email mapping", () => {
   it("maps a note to a logged activity", () => {
@@ -50,5 +50,56 @@ describe("note/email mapping", () => {
     expect(a.kind).toBe("email");
     expect(a.open).toBe(false);
     expect(a.title).toContain("Proposal");
+  });
+});
+
+describe("filterByEntity", () => {
+  const clientNote = noteToActivity({
+    id: "n1", organization_id: "o1", client_id: "c1", lead_id: null, deal_id: null,
+    kind: "note", subject: "client note", body: null, occurred_at: "2026-06-04T10:00:00Z",
+    author_id: "u1", author_name: "Sam",
+  });
+  const dealNote = noteToActivity({
+    id: "n2", organization_id: "o1", client_id: "c1", lead_id: null, deal_id: "d1",
+    kind: "note", subject: "deal note", body: null, occurred_at: "2026-06-04T10:00:00Z",
+    author_id: "u1", author_name: "Sam",
+  });
+  const leadNote = noteToActivity({
+    id: "n3", organization_id: "o1", client_id: null, lead_id: "l1", deal_id: null,
+    kind: "note", subject: "lead note", body: null, occurred_at: "2026-06-04T10:00:00Z",
+    author_id: "u1", author_name: "Sam",
+  });
+  const clientEmail = emailToActivity({
+    event_id: "e1", organization_id: "o1", entity_type: "client", entity_id: "c1",
+    direction: "inbound", subject: "Hello", snippet: null, from_email: "a@b.com",
+    occurred_at: "2026-06-04T10:00:00Z",
+  });
+  const dealEmail = emailToActivity({
+    event_id: "e2", organization_id: "o1", entity_type: "deal", entity_id: "d1",
+    direction: "outbound", subject: "Proposal", snippet: null, from_email: "me@b.com",
+    occurred_at: "2026-06-04T10:00:00Z",
+  });
+
+  const all = [clientNote, dealNote, leadNote, clientEmail, dealEmail];
+
+  it("filters to a specific client", () => {
+    const result = filterByEntity(all, "client", "c1");
+    expect(result.map((a) => a.id)).toEqual(
+      expect.arrayContaining(["note:n1", "note:n2", "email:e1"]),
+    );
+    expect(result.find((a) => a.id === "note:n3")).toBeUndefined();
+  });
+
+  it("filters to a specific deal", () => {
+    const result = filterByEntity(all, "deal", "d1");
+    expect(result.map((a) => a.id)).toEqual(
+      expect.arrayContaining(["note:n2", "email:e2"]),
+    );
+    expect(result.find((a) => a.id === "note:n1")).toBeUndefined();
+  });
+
+  it("filters to a specific lead", () => {
+    const result = filterByEntity(all, "lead", "l1");
+    expect(result.map((a) => a.id)).toEqual(["note:n3"]);
   });
 });

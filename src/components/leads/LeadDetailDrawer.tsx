@@ -27,6 +27,12 @@ import { EntityAttachmentsSection } from '@/components/activities/EntityAttachme
 import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
 import { EnrollAutomationDialog } from '@/components/activities/EnrollAutomationDialog';
 import { Zap } from 'lucide-react';
+import { useOrganization } from '@/context/OrganizationContext';
+import {
+  listActivities, filterByEntity, type Activity,
+} from '@/services/supabase/activities';
+import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
+import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
 
 interface Props {
   lead: Lead | null;
@@ -65,10 +71,25 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   onSendEmail, onClone, onStatusChange,
 }) => {
   const { user } = useAuth();
+  const { organization: _org } = useOrganization(); // satisfies hook order
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [showAllDetails, setShowAllDetails] = useState(false);
   const [enrolOpen, setEnrolOpen] = useState(false);
+
+  // Unified activity timeline for the per-lead Activity section.
+  const [leadActivities, setLeadActivities] = useState<Activity[]>([]);
+  const [activitiesKey, setActivitiesKey] = useState(0);
+  useEffect(() => {
+    if (!lead || !organizationId) return;
+    let cancelled = false;
+    listActivities(organizationId, { openDealIds: new Set(), customerClientIds: new Set() })
+      .then((all) => {
+        if (!cancelled) setLeadActivities(filterByEntity(all, 'lead', lead.leadId));
+      })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [lead?.leadId, organizationId, activitiesKey]);
 
   useEffect(() => {
     if (!lead || !organizationId) return;
@@ -206,7 +227,12 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               user knows the affordance is intentional, not broken. */}
           <aside className="border-r border-border bg-card/40 overflow-y-auto p-3 space-y-3 text-sm">
             <p className="font-semibold text-foreground">Info</p>
-            <p className="text-muted-foreground opacity-50 cursor-not-allowed" title="Coming soon">Timeline</p>
+            <p
+              className="text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={() => document.getElementById('lead-activity-timeline')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              Timeline
+            </p>
             <div className="border-t border-border pt-2 space-y-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Related list
@@ -378,6 +404,18 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 )}
               </div>
             )}
+
+            {/* Activity timeline + quick-log */}
+            <div id="lead-activity-timeline" className="space-y-2">
+              <h3 className="text-sm font-semibold border-b pb-1.5 flex items-center gap-2">
+                Activity Timeline
+              </h3>
+              <QuickLogComposer
+                entity={{ type: 'lead', id: lead.leadId, label: displayName }}
+                onPosted={() => setActivitiesKey((k) => k + 1)}
+              />
+              <ActivitiesTimeline activities={leadActivities} />
+            </div>
 
             {/* Notes */}
             <div id="lead-notes-section">

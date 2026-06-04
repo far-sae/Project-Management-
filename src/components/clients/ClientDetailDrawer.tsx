@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import {
   Building2, X, Mail, Phone, Globe, MapPin, Star, User, Plus,
   FileText, Trash2, Loader2, Paperclip, ExternalLink, MessageSquare,
-  Calendar as CalendarIcon, PhoneCall, Mailbox, Edit, Activity,
+  Calendar as CalendarIcon, PhoneCall, Mailbox, Edit, Activity as ActivityIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,7 +33,12 @@ import {
   uploadClientAttachment,
 } from '@/services/supabase/clients';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
-import { ActivityTimeline } from './ActivityTimeline';
+import { useOrganization } from '@/context/OrganizationContext';
+import {
+  listActivities, filterByEntity, type Activity,
+} from '@/services/supabase/activities';
+import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
+import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
 import { SendEmailDialog } from './SendEmailDialog';
 import { SendSmsDialog } from './SendSmsDialog';
 import { InvoicesPanel } from './InvoicesPanel';
@@ -80,6 +85,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   allAccounts, onOpenAccount,
 }) => {
   const { user } = useAuth();
+  const { organization: _org } = useOrganization(); // satisfies hook order
   const [tab, setTab] = useState<MainTab>('activity');
   const [openEmail, setOpenEmail] = useState(false);
   const [openSms, setOpenSms] = useState(false);
@@ -88,6 +94,20 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [attachments, setAttachments] = useState<ClientAttachment[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Unified activity feed for the Activity tab — filtered to this client.
+  const [clientActivities, setClientActivities] = useState<Activity[]>([]);
+  const [activitiesKey, setActivitiesKey] = useState(0);
+  useEffect(() => {
+    if (!client || !organizationId || tab !== 'activity') return;
+    let cancelled = false;
+    listActivities(organizationId, { openDealIds: new Set(), customerClientIds: new Set() })
+      .then((all) => {
+        if (!cancelled) setClientActivities(filterByEntity(all, 'client', client.clientId));
+      })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [client?.clientId, organizationId, tab, activitiesKey]);
 
   // Reload everything when the open client changes.
   useEffect(() => {
@@ -249,7 +269,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
             <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)} className="px-4 pt-3">
               <TabsList className="bg-transparent border-b border-border rounded-none w-full justify-start gap-1 h-auto p-0">
                 {([
-                  { v: 'activity', label: 'Activity', icon: Activity },
+                  { v: 'activity', label: 'Activity', icon: ActivityIcon },
                   { v: 'notes', label: 'Notes' },
                   { v: 'emails', label: 'Emails' },
                   { v: 'calls', label: 'Calls' },
@@ -280,10 +300,15 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               )}
 
               {tab === 'activity' && (
-                <ActivityTimeline
-                  clientId={client.clientId}
-                  emptyHint="No timeline events yet. Notes, deal moves, tasks, and form submissions will appear here automatically."
-                />
+                <>
+                  <QuickLogComposer
+                    entity={{ type: 'client', id: client.clientId, label: client.name }}
+                    onPosted={() => setActivitiesKey((k) => k + 1)}
+                  />
+                  <div className="mt-3">
+                    <ActivitiesTimeline activities={clientActivities} />
+                  </div>
+                </>
               )}
 
               {(tab === 'notes' || tab === 'calls' || tab === 'emails' || tab === 'meetings' || tab === 'tasks') && (

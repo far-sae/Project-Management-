@@ -470,3 +470,29 @@ export const isToday = (when: Date | null, now: Date = new Date()): boolean =>
 
 export const isOverdue = (when: Date | null, open: boolean, now: Date = new Date()): boolean =>
   !!when && open && when.getTime() < now.getTime();
+
+// ---------------------------------------------------------------------------
+// Per-record timeline filter
+// ---------------------------------------------------------------------------
+
+/** Filter loaded activities to those linked to a specific entity. */
+export const filterByEntity = (
+  activities: Activity[], type: "client" | "deal" | "lead", id: string,
+): Activity[] => activities.filter((a) => {
+  const s = a.source;
+  if (type === "deal") return (
+    ((s.kind === "task" || s.kind === "meeting" || s.kind === "call") && (s.row as { dealId?: string }).dealId === id) ||
+    (s.kind === "note" && s.row.deal_id === id) ||
+    (s.kind === "email" && s.row.entity_type === "deal" && s.row.entity_id === id)
+  );
+  if (type === "client") return (
+    ((s.kind === "task" || s.kind === "meeting" || s.kind === "call") && (s.row as { clientId?: string }).clientId === id) ||
+    (s.kind === "note" && s.row.client_id === id) ||
+    (s.kind === "email" && s.row.entity_type === "client" && s.row.entity_id === id)
+  );
+  // lead
+  return (
+    (s.kind === "note" && s.row.lead_id === id) ||
+    (s.kind === "email" && s.row.entity_type === "lead" && s.row.entity_id === id)
+  );
+});

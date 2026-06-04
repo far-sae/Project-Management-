@@ -23,10 +23,15 @@ import {
   Deal, DEAL_STAGES, formatDealMoney,
 } from '@/services/supabase/deals';
 import type { PipelineStage } from '@/services/supabase/pipelines';
-import { ActivityTimeline } from './ActivityTimeline';
 import {
   Quote, listQuotesForDeal, deleteQuote,
 } from '@/services/supabase/quotes';
+import { useOrganization } from '@/context/OrganizationContext';
+import {
+  listActivities, filterByEntity, type Activity,
+} from '@/services/supabase/activities';
+import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
+import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
 import { QuoteBuilderDialog } from './QuoteBuilderDialog';
 
 type DealTab = 'activity' | 'notes' | 'emails' | 'calls' | 'meetings' | 'tasks';
@@ -65,12 +70,27 @@ export const DealDetailDrawer: React.FC<Props> = ({
   pipelineStages, onStageChange,
 }) => {
   const { user } = useAuth();
+  useOrganization(); // consumed only to satisfy hook ordering; data not needed here
   const [tab, setTab] = useState<DealTab>('activity');
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [loading, setLoading] = useState(false);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [openQuoteBuilder, setOpenQuoteBuilder] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
+
+  // Unified activity feed for the Activity tab — filtered to this deal.
+  const [dealActivities, setDealActivities] = useState<Activity[]>([]);
+  const [activitiesKey, setActivitiesKey] = useState(0);
+  useEffect(() => {
+    if (!deal || !organizationId || tab !== 'activity') return;
+    let cancelled = false;
+    listActivities(organizationId, { openDealIds: new Set(), customerClientIds: new Set() })
+      .then((all) => {
+        if (!cancelled) setDealActivities(filterByEntity(all, 'deal', deal.dealId));
+      })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [deal?.dealId, organizationId, tab, activitiesKey]);
 
   const reloadQuotes = async () => {
     if (!deal || !organizationId) return;
@@ -299,14 +319,15 @@ export const DealDetailDrawer: React.FC<Props> = ({
               )}
 
               {tab === 'activity' && (
-                <ActivityTimeline
-                  clientId={client?.clientId}
-                  emptyHint={
-                    client
-                      ? `No activity for ${client.name} yet. Stage moves, notes, and tasks against this deal will appear here.`
-                      : 'Link this deal to a client to see activity here.'
-                  }
-                />
+                <>
+                  <QuickLogComposer
+                    entity={client ? { type: 'client', id: client.clientId, label: deal.title } : undefined}
+                    onPosted={() => setActivitiesKey((k) => k + 1)}
+                  />
+                  <div className="mt-3">
+                    <ActivitiesTimeline activities={dealActivities} />
+                  </div>
+                </>
               )}
 
               {tab !== 'activity' && (
