@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { CreateTaskDialog } from './CreateTaskDialog';
 import { CreateMeetingDialog } from './CreateMeetingDialog';
 import { CreateCallDialog } from './CreateCallDialog';
+import type { RelatedTo } from './RelatedToPicker';
 
 interface ActivityDetailDialogProps {
   activity: Activity | null;
@@ -117,6 +118,13 @@ export const ActivityDetailDialog: React.FC<ActivityDetailDialogProps> = ({
   const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  // Follow-up task state — opened by the nudge toast when a call completes.
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [followUpPrefill, setFollowUpPrefill] = useState<{
+    subject: string;
+    relatedTo: RelatedTo | null;
+    dueAt: Date;
+  } | null>(null);
 
   if (!activity) return null;
   const { Icon } = KIND_THEME[activity.kind];
@@ -171,6 +179,33 @@ export const ActivityDetailDialog: React.FC<ActivityDetailDialogProps> = ({
       await updateCall(activity.source.row.callId, { callStatus: next });
       toast.success(`Call → ${CALL_STATUS_LABEL[next].toLowerCase()}`);
       onChanged();
+
+      // Follow-up nudge — show an actionable toast when a call is marked completed.
+      if (next === 'completed') {
+        const callRow = activity.source.row;
+        const dueAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // now + 3 days
+        // Build the minimal RelatedTo the CreateTaskDialog understands.
+        const relatedTo: RelatedTo | null = callRow.dealId
+          ? { type: 'deal', id: callRow.dealId, label: callRow.subject || 'Deal', dealId: callRow.dealId, clientId: callRow.clientId ?? null }
+          : callRow.clientId
+          ? { type: 'client', id: callRow.clientId, label: callRow.subject || 'Account', clientId: callRow.clientId }
+          : null;
+        const prefill = {
+          subject: `Follow up: ${callRow.subject || 'Call'}`,
+          relatedTo,
+          dueAt,
+        };
+        toast('Call done — create a follow-up?', {
+          action: {
+            label: 'Create task',
+            onClick: () => {
+              setFollowUpPrefill(prefill);
+              setFollowUpOpen(true);
+            },
+          },
+          duration: 8000,
+        });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not update status');
     } finally { setBusy(false); }
@@ -486,6 +521,20 @@ export const ActivityDetailDialog: React.FC<ActivityDetailDialogProps> = ({
           editCall={activity.source.row}
         />
       )}
+
+      {/* ── Follow-up task dialog — opened by the nudge toast after a
+          call is completed. Prefilled with title "Follow up: <subject>"
+          and due date 3 days out. */}
+      <CreateTaskDialog
+        open={followUpOpen}
+        onOpenChange={(o) => {
+          setFollowUpOpen(o);
+          if (!o) { setFollowUpPrefill(null); onChanged(); }
+        }}
+        defaultRelatedTo={followUpPrefill?.relatedTo ?? null}
+        defaultSubject={followUpPrefill?.subject ?? ''}
+        defaultDueAt={followUpPrefill?.dueAt ?? null}
+      />
     </>
   );
 };

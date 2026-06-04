@@ -27,6 +27,10 @@ interface CreateTaskDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Optional pre-fill — useful when launched from a deal/account page. */
   defaultRelatedTo?: RelatedTo | null;
+  /** Pre-fill the subject field (create mode only). */
+  defaultSubject?: string;
+  /** Pre-fill the due date (create mode only). */
+  defaultDueAt?: Date | null;
   /** When set, the dialog opens in EDIT mode: prefilled from the task,
    *  title becomes "Edit Task", and Save calls updateClientTask
    *  instead of createClientTask. Pass null to stay in Create mode. */
@@ -44,7 +48,7 @@ interface CreateTaskDialogProps {
  * uses — no separate table, no double-write.
  */
 export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
-  open, onOpenChange, defaultRelatedTo = null, editTask = null, onCreated,
+  open, onOpenChange, defaultRelatedTo = null, defaultSubject = '', defaultDueAt = null, editTask = null, onCreated,
 }) => {
   const isEditing = !!editTask;
   const { user } = useAuth();
@@ -83,8 +87,8 @@ export const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
       setDescription(editTask.description ?? '');
     } else {
       setOwnerId(user?.userId ?? '');
-      setSubject('');
-      setDueDate(null);
+      setSubject(defaultSubject);
+      setDueDate(defaultDueAt ?? null);
       setRelatedTo(defaultRelatedTo);
       setStatus('pending');
       setPriority('normal');
