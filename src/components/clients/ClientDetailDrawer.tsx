@@ -443,6 +443,15 @@ const QuickAction: React.FC<{
 
 // ─── Overview tab ────────────────────────────────────────────────────────────
 
+/** Make a user-entered website safe to link to. A value like "www.foo.com" has
+ *  no scheme, so the browser treats it as a relative path (→ our own app).
+ *  Prepend https:// unless an http(s)/mailto/tel scheme is already present. */
+const toExternalUrl = (raw: string | null | undefined): string | undefined => {
+  const v = raw?.trim();
+  if (!v) return undefined;
+  return /^(https?:|mailto:|tel:)/i.test(v) ? v : `https://${v}`;
+};
+
 const OverviewTab: React.FC<{ client: Client; fullAddress: string }> = ({
   client, fullAddress,
 }) => (
@@ -450,7 +459,7 @@ const OverviewTab: React.FC<{ client: Client; fullAddress: string }> = ({
     <div className="grid grid-cols-2 gap-3">
       <Field icon={Mail} label="Email" value={client.email} href={client.email ? `mailto:${client.email}` : undefined} />
       <Field icon={Phone} label="Phone" value={client.phone} href={client.phone ? `tel:${client.phone}` : undefined} />
-      <Field icon={Globe} label="Website" value={client.website} href={client.website ?? undefined} external />
+      <Field icon={Globe} label="Website" value={client.website} href={toExternalUrl(client.website)} external />
       <Field icon={User} label="Owner" value={client.accountOwnerName} />
       <Field
         icon={MapPin} label="Address"

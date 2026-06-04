@@ -120,8 +120,7 @@ export const SendSmsDialog: React.FC<SendSmsDialogProps> = ({
             <MessageSquare className="w-5 h-5 text-primary" /> Send SMS to {client.name}
           </DialogTitle>
           <DialogDescription>
-            Sent via Twilio. Needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and
-            TWILIO_FROM_NUMBER to be set on the sms-send edge function.
+            Send a text message to this contact. Standard SMS charges apply.
           </DialogDescription>
         </DialogHeader>
 
