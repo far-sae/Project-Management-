@@ -888,6 +888,33 @@ export const convertLead = async (
       );
     }
 
+    // Duplicate email (ux_clients_email_per_org, 23505): a client with this
+    // lead's email already exists in the org. Instead of failing the
+    // conversion, reuse that account — but only when it's in the lead's
+    // workspace (we never cross-link workspaces; see the existingClientId path
+    // above). Reused accounts must NOT be rolled back later.
+    let reusedExisting = false;
+    if (!createdId && lead.email) {
+      const e = lastError as { code?: string; message?: string } | null;
+      const isDupEmail = e?.code === "23505" || /ux_clients_email_per_org/i.test(String(e?.message ?? ""));
+      if (isDupEmail) {
+        const { data: dup } = await supabase
+          .from("clients")
+          .select("client_id, workspace_id")
+          .eq("organization_id", organizationId)
+          .ilike("email", lead.email)
+          .maybeSingle();
+        const d = dup as { client_id?: string; workspace_id?: string } | null;
+        if (d?.client_id && d.workspace_id === lead.workspaceId) {
+          createdId = d.client_id;
+          reusedExisting = true;
+          warnings.push(`A client with email ${lead.email} already existed — linked this lead to that account instead of creating a duplicate.`);
+        } else if (d?.client_id) {
+          throw new Error(`A client with email ${lead.email} already exists in another workspace. Convert into that account from its workspace, or change the lead's email.`);
+        }
+      }
+    }
+
     if (!createdId) {
       const e = lastError as { code?: string; message?: string; details?: string; hint?: string } | null;
       const composed = [e?.message, e?.details, e?.hint && `(hint: ${e.hint})`, e?.code && `[${e.code}]`]
@@ -900,7 +927,7 @@ export const convertLead = async (
       );
     }
     clientId = createdId;
-    createdClientId = clientId;
+    createdClientId = reusedExisting ? null : createdId; // only roll back accounts we created
   }
 
   // Compensating rollback when a downstream step fails. Only deletes things
