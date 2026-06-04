@@ -8,6 +8,7 @@ import { nextSendableTime, SendWindow } from "./triggers/sendWindow.ts";
 import { ACTION_REGISTRY } from "./actions/index.ts";
 import { AutomationEvent, Recipe, ActionResult } from "./shared/types.ts";
 import { matchesSlackTrigger, matchesSlackReaction } from "./triggers/slackMatch.ts";
+import { runBranch } from "./runBranch.ts";
 
 // Look up the Slack bot_user_id for an org (cached in integration metadata
 // at OAuth time). Returns null if no Slack integration or no bot_user_id.
@@ -174,6 +175,27 @@ const runRecipe = async (admin: any, recipe: Recipe, event: AutomationEvent): Pr
 
   for (let i = 0; i < recipe.actions.length; i++) {
     const actionSpec = recipe.actions[i];
+
+    // Inline branch handling — evaluated before the normal handler lookup so
+    // the branch action never hits ACTION_REGISTRY's no-op placeholder.
+    if (actionSpec.type === "branch") {
+      const baseCtx = {
+        admin,
+        orgId: event.organization_id,
+        event,
+        recipeId: recipe.recipe_id,
+        recipeName: recipe.name,
+        runStartedAt: started,
+        recipeRunId,
+        nextActionIndex: i,
+      };
+      // deno-lint-ignore no-explicit-any
+      const subResults = await runBranch(baseCtx, (actionSpec.config ?? {}) as any, event, ctx, aiOutputs);
+      results.push(...subResults);
+      if (subResults.some((r) => r.status === "failure")) break;
+      continue;
+    }
+
     const handler = ACTION_REGISTRY[actionSpec.type];
     const t0 = Date.now();
     if (!handler) {
@@ -229,8 +251,31 @@ const executeActionsResume = async (
   const aiOutputs = { ...initialAiOutputs };
   const results: ActionResult[] = [];
 
+  // Entity context is needed by runBranch's condition evaluator; compute once.
+  const ctx = await loadEntityContext(admin, event);
+
   for (let i = startIndex; i < recipe.actions.length; i++) {
     const actionSpec = recipe.actions[i];
+
+    // Inline branch handling — mirrors runRecipe's loop.
+    if (actionSpec.type === "branch") {
+      const baseCtx = {
+        admin,
+        orgId: event.organization_id,
+        event,
+        recipeId: recipe.recipe_id,
+        recipeName: recipe.name,
+        runStartedAt: started,
+        recipeRunId: existingRunId,
+        nextActionIndex: i,
+      };
+      // deno-lint-ignore no-explicit-any
+      const subResults = await runBranch(baseCtx, (actionSpec.config ?? {}) as any, event, ctx, aiOutputs);
+      results.push(...subResults);
+      if (subResults.some((r) => r.status === "failure")) break;
+      continue;
+    }
+
     const handler = ACTION_REGISTRY[actionSpec.type];
     const t0 = Date.now();
     if (!handler) {
