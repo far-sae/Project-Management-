@@ -47,6 +47,8 @@ const TRIGGER_LABEL: Record<TriggerType, string> = {
   agent_intake: "AI agent: draft outreach for new lead",
   slack_message_received: "a Slack message is posted",
   slack_reaction_added: "an emoji reaction is added to a message",
+  date_relative: "a date is N days away (deal)",
+  deal_inactive: "a deal goes quiet for N days",
 };
 
 const ACTION_LABEL: Record<ActionType, string> = {
@@ -378,6 +380,56 @@ export const RecipeBuilder: React.FC<Props> = ({ organizationId, recipe, initial
                 </Select>
               )}
             </div>
+
+            {/* date_relative trigger config */}
+            {draft.trigger.type === "date_relative" && (
+              <div className="ml-16 space-y-2 border-l pl-3 -mt-1">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Date field</Label>
+                  <Select
+                    value={(draft.trigger.config.date_field as string) ?? "expected_close_date"}
+                    onValueChange={(v) => setTriggerConfig({ date_field: v })}
+                  >
+                    <SelectTrigger className="w-[240px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="expected_close_date">Expected close date</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Offset days</Label>
+                  <Input
+                    type="number"
+                    className="w-[120px]"
+                    value={Number(draft.trigger.config.offset_days ?? 0)}
+                    onChange={(e) => setTriggerConfig({ offset_days: Number(e.target.value) })}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Negative = before the date (e.g. −3 fires 3 days before close).
+                    Positive = after the date. 0 = on the date itself.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* deal_inactive trigger config */}
+            {draft.trigger.type === "deal_inactive" && (
+              <div className="ml-16 space-y-2 border-l pl-3 -mt-1">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Inactive for (days)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    className="w-[120px]"
+                    value={Number(draft.trigger.config.days ?? 14)}
+                    onChange={(e) => setTriggerConfig({ days: Number(e.target.value) })}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Fire when a deal's last update is older than this many days (default 14).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Slack trigger: channel multi-select + optional keyword filter */}
             {draft.trigger.type === "slack_message_received" && (

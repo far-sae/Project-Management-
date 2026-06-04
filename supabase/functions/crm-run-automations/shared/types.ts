@@ -7,7 +7,9 @@ export type TriggerType =
   | "task_overdue" | "scheduled"
   | "agent_intake"
   | "slack_message_received"
-  | "slack_reaction_added";
+  | "slack_reaction_added"
+  | "date_relative"
+  | "deal_inactive";
 
 export type ActionType =
   | "create_task" | "create_workspace" | "create_project"

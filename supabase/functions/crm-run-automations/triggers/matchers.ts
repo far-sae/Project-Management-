@@ -39,6 +39,13 @@ export const triggerConfigMatches = (
     case "scheduled":
       return true;
 
+    // date_relative and deal_inactive events are pre-filtered at enqueue time
+    // (one event per recipe+deal), so any event that reaches the matcher is
+    // already the right match for the recipe that triggered it.
+    case "date_relative":
+    case "deal_inactive":
+      return true;
+
     default:
       return false;
   }
