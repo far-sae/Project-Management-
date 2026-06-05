@@ -283,3 +283,11 @@ export const listOrgInvoices = async (
   }
   return (data ?? []).map(mapInvoice);
 };
+
+// Implemented in Task 9 (Phase 2). Stub keeps the Billing page compiling.
+export const sendInvoice = async (
+  _organizationId: string,
+  _invoiceId: string,
+): Promise<string | null> => {
+  throw new Error('Sending is enabled after Phase 2 is deployed.');
+};
