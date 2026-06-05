@@ -74,7 +74,6 @@ export const Billing: React.FC = () => {
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
     return invoices.filter((i) => {
-      const effStatus = isOverdue(i) && i.status !== 'overdue' ? 'overdue' : i.status;
       if (statusFilter !== 'all') {
         if (statusFilter === 'overdue') { if (!isOverdue(i)) return false; }
         else if (i.status !== statusFilter) return false;
@@ -84,7 +83,6 @@ export const Billing: React.FC = () => {
         if (!hay.includes(term)) return false;
       }
       return true;
-      void effStatus;
     });
   }, [invoices, statusFilter, search, clientName]);
 
@@ -101,8 +99,8 @@ export const Billing: React.FC = () => {
   const send = async (inv: Invoice) => {
     setBusyId(inv.invoiceId);
     try {
-      const url = await sendInvoice(orgId, inv.invoiceId);
-      toast.success(`Sent ${inv.invoiceNumber}${url ? '' : ''}`);
+      await sendInvoice(orgId, inv.invoiceId);
+      toast.success(`Emailed ${inv.invoiceNumber} to the client`);
       await load();
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Send failed'); }
     finally { setBusyId(null); }

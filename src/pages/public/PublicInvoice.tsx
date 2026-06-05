@@ -38,7 +38,7 @@ export const PublicInvoice: React.FC = () => {
     const asInvoice = {
       invoiceNumber: inv.invoiceNumber, currency: inv.currency, subtotal: inv.subtotal,
       taxAmount: inv.taxAmount, discount: inv.discount, total: inv.total, amountPaid: inv.amountPaid,
-      lineItems: inv.lineItems, notes: inv.notes, terms: inv.terms, issuedAt: inv.issuedAt, dueAt: inv.dueAt,
+      lineItems: inv.lineItems, notes: null, terms: inv.terms, issuedAt: inv.issuedAt, dueAt: inv.dueAt,
     } as unknown as Invoice;
     void downloadInvoicePdf(asInvoice, { name: inv.orgName }, inv.clientName);
   };

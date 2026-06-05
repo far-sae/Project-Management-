@@ -7,12 +7,13 @@
 \set MEMBER '00000000-0000-0000-0000-000000000000'
 
 -- owner/admin bypass: true regardless of grants
-select 'admin view' as case, public.has_module_access(:'ADMIN', :'ORG', 'deals', false) as got, true as want;
+select 'admin vi
+ew' as case, public.has_module_access(:'ADMIN', :'ORG', 'deals', false) as got, true as want;
 select 'admin edit' as case, public.has_module_access(:'ADMIN', :'ORG', 'deals', true)  as got, true as want;
 
--- member with no grant (after mig 127): VIEW is the default → true; edit → false
+-- member with no grant: false
 delete from public.crm_module_grants where organization_id = :'ORG' and user_id = :'MEMBER';
-select 'member none view' as case, public.has_module_access(:'MEMBER', :'ORG', 'deals', false) as got, true  as want;
+select 'member none view' as case, public.has_module_access(:'MEMBER', :'ORG', 'deals', false) as got, false as want;
 select 'member none edit' as case, public.has_module_access(:'MEMBER', :'ORG', 'deals', true)  as got, false as want;
 
 -- member with view grant: view true, edit false

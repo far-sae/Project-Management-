@@ -11,9 +11,10 @@ UPDATE public.invoices SET public_token = gen_random_uuid() WHERE public_token I
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_invoices_public_token ON public.invoices (public_token);
 
--- Public, unauthenticated, read-only view of a single non-void invoice by token.
+-- Public, unauthenticated, read-only view of a single issued invoice by token.
 -- SECURITY DEFINER so it bypasses RLS, but it ONLY returns the fields needed to
--- render the hosted page and ONLY for non-void invoices.
+-- render the hosted page (no internal notes / ids) and ONLY for issued
+-- invoices (drafts and voids are never publicly viewable).
 CREATE OR REPLACE FUNCTION public.get_public_invoice(p_token uuid)
 RETURNS jsonb
 LANGUAGE sql
@@ -31,7 +32,6 @@ AS $$
     'total', i.total,
     'amount_paid', i.amount_paid,
     'line_items', i.line_items,
-    'notes', i.notes,
     'terms', i.terms,
     'issued_at', i.issued_at,
     'due_at', i.due_at,
@@ -42,7 +42,7 @@ AS $$
   JOIN public.organizations o ON o.organization_id = i.organization_id
   LEFT JOIN public.clients c ON c.client_id = i.client_id
   WHERE i.public_token = p_token
-    AND i.status <> 'void'
+    AND i.status NOT IN ('void', 'draft')
   LIMIT 1;
 $$;
 

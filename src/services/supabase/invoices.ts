@@ -295,7 +295,8 @@ export interface PublicInvoiceView {
   total: number;
   amountPaid: number;
   lineItems: QuoteLineItem[];
-  notes: string | null;
+  // Internal `notes` are deliberately NOT exposed on the public view — only
+  // client-facing `terms`. The RPC does not return notes.
   terms: string | null;
   issuedAt: Date;
   dueAt: Date | null;
@@ -321,7 +322,6 @@ export const getPublicInvoice = async (token: string): Promise<PublicInvoiceView
     total: Number(r.total ?? 0),
     amountPaid: Number(r.amount_paid ?? 0),
     lineItems: Array.isArray(r.line_items) ? (r.line_items as QuoteLineItem[]) : [],
-    notes: (r.notes as string) ?? null,
     terms: (r.terms as string) ?? null,
     issuedAt: new Date(r.issued_at as string),
     dueAt: r.due_at ? new Date(r.due_at as string) : null,
@@ -384,12 +384,18 @@ export const sendInvoice = async (
     throw new Error('Could not send the email. Connect Gmail in Settings, or download the PDF and send it manually.');
   }
 
-  // Mark sent + stamp last_sent_at.
-  await supabase
+  // Mark sent + stamp last_sent_at. The email already went out, so a failure
+  // here shouldn't be silent — surface it so the UI doesn't claim "Sent" while
+  // the row is still a draft.
+  const { error: updErr } = await supabase
     .from('invoices')
     .update({ status: 'sent', sent_at: new Date().toISOString(), last_sent_at: new Date().toISOString() })
     .eq('organization_id', organizationId)
     .eq('invoice_id', invoiceId);
+  if (updErr) {
+    logger.error('sendInvoice: email sent but status update failed:', updErr);
+    throw new Error('The email was sent, but updating the invoice status failed — refresh and check the status.');
+  }
 
   return url;
 };
