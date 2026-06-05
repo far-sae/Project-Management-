@@ -20,6 +20,8 @@ import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { downloadInvoicePdf } from '@/components/billing/invoicePdf';
 import { listOrgSchedules, deleteSchedule, updateSchedule, type InvoiceSchedule } from '@/services/supabase/invoiceSchedules';
 import { RecurringScheduleDialog } from '@/components/billing/RecurringScheduleDialog';
+import { listOrgBills, billTotals, isBillOverdue, updateBill, deleteBill, type Bill, type BillStatus } from '@/services/supabase/bills';
+import { BillEditor } from '@/components/billing/BillEditor';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -33,13 +35,21 @@ const STATUS_TONE: Record<InvoiceStatus, string> = {
 
 const STATUSES: (InvoiceStatus | 'all')[] = ['all', 'draft', 'sent', 'paid', 'overdue', 'void'];
 
+const BILL_STATUS_TONE: Record<BillStatus, string> = {
+  draft:   'bg-muted text-muted-foreground border-border',
+  open:    'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
+  paid:    'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+  overdue: 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30',
+  void:    'bg-muted text-muted-foreground border-border line-through',
+};
+
 export const Billing: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const fmt = useFormatMoney();
   const orgId = organization?.organizationId ?? '';
 
-  const [tab, setTab] = useState<'invoices' | 'recurring'>('invoices');
+  const [tab, setTab] = useState<'invoices' | 'recurring' | 'bills'>('invoices');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [schedules, setSchedules] = useState<InvoiceSchedule[]>([]);
@@ -51,6 +61,9 @@ export const Billing: React.FC = () => {
   const [openEditor, setOpenEditor] = useState(false);
   const [editing, setEditing] = useState<Invoice | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [openBill, setOpenBill] = useState(false);
+  const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
   const clientName = useMemo(() => {
     const m = new Map<string, string>();
@@ -70,6 +83,7 @@ export const Billing: React.FC = () => {
       setClients(cls);
       const sched = await listOrgSchedules(orgId);
       setSchedules(sched);
+      setBills(await listOrgBills(orgId));
     } finally {
       setLoading(false);
     }
@@ -78,6 +92,7 @@ export const Billing: React.FC = () => {
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [orgId]);
 
   const totals = useMemo(() => invoiceTotals(invoices, new Date()), [invoices]);
+  const bTotals = useMemo(() => billTotals(bills, new Date()), [bills]);
 
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -135,7 +150,7 @@ export const Billing: React.FC = () => {
           <h1 className="text-xl font-bold flex items-center gap-2">
             <Receipt className="w-5 h-5 text-primary" /> Billing
           </h1>
-          <p className="text-sm text-muted-foreground">All invoices across your accounts.</p>
+          <p className="text-sm text-muted-foreground">Invoices, recurring billing, and bills you owe.</p>
         </div>
         {tab === 'invoices' && (
           <Button onClick={() => { setEditing(null); setOpenEditor(true); }}>
@@ -147,14 +162,19 @@ export const Billing: React.FC = () => {
             <Plus className="w-4 h-4 mr-1.5" /> New recurring invoice
           </Button>
         )}
+        {tab === 'bills' && (
+          <Button onClick={() => { setEditingBill(null); setOpenBill(true); }}>
+            <Plus className="w-4 h-4 mr-1.5" /> New bill
+          </Button>
+        )}
       </div>
 
       <div className="flex gap-1 border-b">
-        {(['invoices', 'recurring'] as const).map((t) => (
+        {(['invoices', 'recurring', 'bills'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={cn('px-3 py-2 text-sm font-medium border-b-2 -mb-px capitalize',
               tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}>
-            {t === 'invoices' ? 'Invoices' : 'Recurring'}
+            {t === 'invoices' ? 'Invoices' : t === 'recurring' ? 'Recurring' : 'Bills'}
           </button>
         ))}
       </div>
@@ -325,6 +345,96 @@ export const Billing: React.FC = () => {
         </>
       )}
 
+      {tab === 'bills' && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KpiTile label="Payable" value={fmt(bTotals.payable)} accent />
+            <KpiTile label="Overdue" value={fmt(bTotals.overdue)} />
+            <KpiTile label="Paid (30d)" value={fmt(bTotals.paidLast30)} />
+            <KpiTile label="Drafts" value={bTotals.counts.draft.toLocaleString()} />
+          </div>
+          {loading ? (
+            <div className="py-10 text-sm text-muted-foreground inline-flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading bills…
+            </div>
+          ) : bills.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+              No bills yet. Create one with "New bill".
+            </div>
+          ) : (
+            <div className="rounded-lg border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-[11px] uppercase text-muted-foreground">
+                  <tr>
+                    <th className="text-left font-semibold px-3 py-2">Bill #</th>
+                    <th className="text-left font-semibold px-3 py-2">Vendor</th>
+                    <th className="text-left font-semibold px-3 py-2">Status</th>
+                    <th className="text-left font-semibold px-3 py-2">Issued</th>
+                    <th className="text-left font-semibold px-3 py-2">Due</th>
+                    <th className="text-right font-semibold px-3 py-2">Total</th>
+                    <th className="text-right font-semibold px-3 py-2">Balance</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {bills.map((b) => {
+                    const overdueBill = isBillOverdue(b);
+                    const shownStatus: BillStatus = overdueBill && b.status !== 'void' && b.status !== 'paid' ? 'overdue' : b.status;
+                    const balance = Math.max(0, b.total - b.amountPaid);
+                    return (
+                      <tr key={b.billId} className="hover:bg-muted/30">
+                        <td className="px-3 py-2">
+                          <button className="font-medium hover:underline" onClick={() => { setEditingBill(b); setOpenBill(true); }}>
+                            {b.billNumber}
+                          </button>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{b.vendorName}</td>
+                        <td className="px-3 py-2">
+                          <Badge className={cn('text-[10px] capitalize', BILL_STATUS_TONE[shownStatus])}>{shownStatus}</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{format(b.issuedAt, 'PP')}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{b.dueAt ? format(b.dueAt, 'PP') : '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{fmt(b.total, b.currency)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{balance > 0 ? fmt(balance, b.currency) : '—'}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-end gap-1">
+                            {b.status !== 'paid' && b.status !== 'void' && (
+                              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={async () => {
+                                setBusyId(b.billId);
+                                try {
+                                  await updateBill(orgId, b.billId, { status: 'paid', amountPaid: b.total });
+                                  toast.success(`Marked ${b.billNumber} paid`);
+                                  await load();
+                                } catch (e) { toast.error(e instanceof Error ? e.message : 'Update failed'); }
+                                finally { setBusyId(null); }
+                              }} disabled={busyId === b.billId}>
+                                Mark paid
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setEditingBill(b); setOpenBill(true); }} disabled={busyId === b.billId}>
+                              Edit
+                            </Button>
+                            <button className="text-muted-foreground hover:text-destructive p-1" title="Delete" onClick={async () => {
+                              if (!confirm(`Delete ${b.billNumber}? This cannot be undone.`)) return;
+                              setBusyId(b.billId);
+                              try { await deleteBill(orgId, b.billId); await load(); }
+                              catch (e) { toast.error(e instanceof Error ? e.message : 'Delete failed'); }
+                              finally { setBusyId(null); }
+                            }} disabled={busyId === b.billId}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
       <InvoiceEditor
         open={openEditor}
         onOpenChange={(o) => { setOpenEditor(o); if (!o) setEditing(null); }}
@@ -341,6 +451,15 @@ export const Billing: React.FC = () => {
         organizationId={orgId}
         clients={clients}
         existing={editingSchedule}
+        userId={user?.userId ?? null}
+        userName={user?.displayName ?? null}
+        onSaved={load}
+      />
+      <BillEditor
+        open={openBill}
+        onOpenChange={(o) => { setOpenBill(o); if (!o) setEditingBill(null); }}
+        organizationId={orgId}
+        existing={editingBill}
         userId={user?.userId ?? null}
         userName={user?.displayName ?? null}
         onSaved={load}
