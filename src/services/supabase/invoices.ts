@@ -284,6 +284,52 @@ export const listOrgInvoices = async (
   return (data ?? []).map(mapInvoice);
 };
 
+export interface PublicInvoiceView {
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  currency: string;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  discount: number;
+  total: number;
+  amountPaid: number;
+  lineItems: QuoteLineItem[];
+  notes: string | null;
+  terms: string | null;
+  issuedAt: Date;
+  dueAt: Date | null;
+  orgName: string;
+  clientName: string;
+}
+
+export const getPublicInvoice = async (token: string): Promise<PublicInvoiceView | null> => {
+  const { data, error } = await supabase.rpc('get_public_invoice', { p_token: token });
+  if (error || !data) {
+    if (error) logger.warn('get_public_invoice failed:', error);
+    return null;
+  }
+  const r = data as Record<string, unknown>;
+  return {
+    invoiceNumber: r.invoice_number as string,
+    status: ((r.status as string) || 'sent') as InvoiceStatus,
+    currency: ((r.currency as string) || 'USD').toUpperCase(),
+    subtotal: Number(r.subtotal ?? 0),
+    taxRate: Number(r.tax_rate ?? 0),
+    taxAmount: Number(r.tax_amount ?? 0),
+    discount: Number(r.discount ?? 0),
+    total: Number(r.total ?? 0),
+    amountPaid: Number(r.amount_paid ?? 0),
+    lineItems: Array.isArray(r.line_items) ? (r.line_items as QuoteLineItem[]) : [],
+    notes: (r.notes as string) ?? null,
+    terms: (r.terms as string) ?? null,
+    issuedAt: new Date(r.issued_at as string),
+    dueAt: r.due_at ? new Date(r.due_at as string) : null,
+    orgName: (r.org_name as string) ?? 'Company',
+    clientName: (r.client_name as string) ?? '',
+  };
+};
+
 // Implemented in Task 9 (Phase 2). Stub keeps the Billing page compiling.
 export const sendInvoice = async (
   _organizationId: string,

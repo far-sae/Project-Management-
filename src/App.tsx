@@ -34,6 +34,7 @@ const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ 
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const BillingPage = React.lazy(() => import('@/pages/Billing').then((m) => ({ default: m.Billing })));
+const PublicInvoicePage = React.lazy(() => import('@/pages/public/PublicInvoice').then((m) => ({ default: m.PublicInvoice })));
 const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
 const AIAgentPage = React.lazy(() => import('@/pages/AIAgent').then((m) => ({ default: m.AIAgent })));
 const ClientsActivity = React.lazy(() => import('@/pages/ClientsActivity').then((m) => ({ default: m.ClientsActivity })));
@@ -155,6 +156,7 @@ const router = createBrowserRouter(
         // Public lead-capture form pages — mounted OUTSIDE the authenticated
         // AppLayout so they render with no sidebar / no auth guard. Placed
         // first so they match before any catch-alls.
+        { path: '/invoice/:token', element: lazyRoute(<PublicInvoicePage />) },
         { path: '/forms/:slug', element: <PublicLeadForm /> },
         { path: '/forms/:slug/embed', element: <PublicLeadForm embed /> },
         { path: '/login', element: <Login /> },
