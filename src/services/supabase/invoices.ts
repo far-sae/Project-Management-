@@ -29,6 +29,7 @@ export interface Invoice {
   sentAt: Date | null;
   paidAt: Date | null;
   voidedAt: Date | null;
+  publicToken: string | null;
   createdBy: string | null;
   createdByName: string | null;
   createdAt: Date;
@@ -81,6 +82,7 @@ const mapInvoice = (r: Record<string, unknown>): Invoice => ({
   sentAt: r.sent_at ? new Date(r.sent_at as string) : null,
   paidAt: r.paid_at ? new Date(r.paid_at as string) : null,
   voidedAt: r.voided_at ? new Date(r.voided_at as string) : null,
+  publicToken: (r.public_token as string) ?? null,
   createdBy: (r.created_by as string) ?? null,
   createdByName: (r.created_by_name as string) ?? null,
   createdAt: new Date(r.created_at as string),
@@ -217,6 +219,66 @@ export const listClientInvoices = async (
     .order("issued_at", { ascending: false });
   if (error) {
     logger.error("listClientInvoices failed:", error);
+    return [];
+  }
+  return (data ?? []).map(mapInvoice);
+};
+
+export interface InvoiceTotals {
+  outstanding: number;
+  overdue: number;
+  paidLast30: number;
+  counts: Record<InvoiceStatus, number>;
+}
+
+/** Display-only overdue: unpaid + not void + has a due date in the past.
+ *  Never mutates the stored status. */
+export const isOverdue = (i: Invoice, today: Date = new Date()): boolean => {
+  if (i.status === 'paid' || i.status === 'void') return false;
+  if (!i.dueAt) return false;
+  return i.dueAt.getTime() < today.getTime();
+};
+
+/** Dashboard aggregates over a list of invoices. Void invoices are ignored
+ *  for money totals but still counted in `counts`. */
+export const invoiceTotals = (list: Invoice[], today: Date = new Date()): InvoiceTotals => {
+  const counts: Record<InvoiceStatus, number> = { draft: 0, sent: 0, paid: 0, overdue: 0, void: 0 };
+  let outstanding = 0, overdue = 0, paidLast30 = 0;
+  const cutoff = today.getTime() - 30 * 24 * 60 * 60 * 1000;
+  for (const i of list) {
+    counts[i.status] = (counts[i.status] ?? 0) + 1;
+    if (i.status === 'void') continue;
+    const balance = Math.max(0, i.total - i.amountPaid);
+    if (i.status !== 'paid' && i.status !== 'draft') {
+      outstanding += balance;
+      if (isOverdue(i, today)) overdue += balance;
+    }
+    if (i.paidAt && i.paidAt.getTime() >= cutoff) paidLast30 += i.amountPaid;
+  }
+  return { outstanding, overdue, paidLast30, counts };
+};
+
+export interface OrgInvoiceFilters {
+  status?: InvoiceStatus;
+  clientId?: string;
+}
+
+/** All invoices for the org, newest first. Filtering by free-text/search is
+ *  done client-side on the Billing page; this applies the cheap server filters. */
+export const listOrgInvoices = async (
+  organizationId: string,
+  filters: OrgInvoiceFilters = {},
+): Promise<Invoice[]> => {
+  let q = supabase
+    .from('invoices')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .order('issued_at', { ascending: false });
+  if (filters.status) q = q.eq('status', filters.status);
+  if (filters.clientId) q = q.eq('client_id', filters.clientId);
+  const { data, error } = await q;
+  if (error) {
+    logger.error('listOrgInvoices failed:', error);
     return [];
   }
   return (data ?? []).map(mapInvoice);
