@@ -53,6 +53,42 @@ serve(async (req) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
+
+        // Invoice payment (Billing Phase 3) — a one-time payment carrying an
+        // invoice_id in metadata. Mark that invoice paid and stop; this is not
+        // a subscription checkout.
+        const paidInvoiceId = session.metadata?.invoice_id as string | undefined;
+        if (paidInvoiceId && session.mode === "payment") {
+          // Trust the invoice's OWN organization_id from the DB (not the
+          // metadata) for scoping — invoice_id is a unique uuid, so this is the
+          // authoritative row. Missing row => log and ack.
+          const { data: invRow } = await supabase
+            .from("invoices")
+            .select("total, organization_id")
+            .eq("invoice_id", paidInvoiceId)
+            .maybeSingle();
+          if (!invRow) {
+            console.error("invoice payment: no invoice found for", paidInvoiceId);
+            return new Response("OK", { status: 200 });
+          }
+          // We charged the full outstanding balance, so the invoice is now
+          // fully paid. Idempotent: re-delivery just re-sets the same values.
+          const upd = await supabase
+            .from("invoices")
+            .update({
+              status: "paid",
+              amount_paid: Number(invRow.total ?? 0),
+              paid_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("invoice_id", paidInvoiceId)
+            .eq("organization_id", invRow.organization_id)
+            .select("invoice_id");
+          if (upd.error) console.error("invoice payment update error:", upd.error);
+          else if (!upd.data || upd.data.length === 0) console.error("invoice payment update matched 0 rows for", paidInvoiceId);
+          return new Response("OK", { status: 200 });
+        }
+
         const subId = session.subscription as string;
         const userId = session.client_reference_id || (session.metadata?.userId as string);
         const isExtraSeat = session.metadata?.extraSeat === "true";

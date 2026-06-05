@@ -164,6 +164,7 @@ export const Sidebar: React.FC = () => {
         { icon: Receipt, label: 'Expenses', href: '/expenses', feature: null },
         { icon: UserCircle, label: 'HR', href: '/hr', feature: null },
         { icon: Wallet, label: 'Payroll', href: '/payroll', feature: null },
+        { icon: Receipt, label: 'Billing', href: '/billing', feature: null },
       ] as const)
     : isViewer
       ? ([
