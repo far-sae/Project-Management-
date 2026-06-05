@@ -29,7 +29,11 @@ interface EditorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   organizationId: string;
-  client: Client;
+  /** Fixed account (client drawer). Omit on the hub and pass `clients` instead. */
+  client?: Client | null;
+  /** Selectable accounts for the hub "New invoice" flow (ignored when editing
+   *  or when a fixed `client` is given). */
+  clients?: Pick<Client, 'clientId' | 'name' | 'workspaceId'>[];
   existing: Invoice | null;
   userId: string | null;
   userName: string | null;
@@ -39,7 +43,7 @@ interface EditorProps {
 const blankLine = (): QuoteLineItem => ({ description: '', qty: 1, unitPrice: 0, lineTotal: 0 });
 
 export const InvoiceEditor: React.FC<EditorProps> = ({
-  open, onOpenChange, organizationId, client, existing, userId, userName, onSaved,
+  open, onOpenChange, organizationId, client, clients, existing, userId, userName, onSaved,
 }) => {
   const [title, setTitle] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -53,6 +57,16 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
   const [status, setStatus] = useState<InvoiceStatus>('draft');
   const [amountPaid, setAmountPaid] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [pickedClientId, setPickedClientId] = useState('');
+
+  // The account this invoice belongs to: the fixed prop, the existing
+  // invoice's client, or the hub-picked one.
+  const effectiveClientId =
+    client?.clientId ?? existing?.clientId ?? pickedClientId;
+  const effectiveWorkspaceId =
+    client?.workspaceId ??
+    clients?.find((c) => c.clientId === pickedClientId)?.workspaceId ??
+    null;
 
   useEffect(() => {
     if (!open) return;
@@ -80,6 +94,7 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
       setTerms('Payment due upon receipt.');
       setStatus('draft');
       setAmountPaid(0);
+      setPickedClientId('');
     }
   }, [open, existing]);
 
@@ -99,30 +114,21 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
 
   const handleSave = async () => {
     const valid = lines.filter((l) => l.description.trim() && l.qty > 0);
-    if (valid.length === 0) {
-      toast.error('Add at least one line item');
-      return;
-    }
+    if (valid.length === 0) { toast.error('Add at least one line item'); return; }
+    if (!existing && !effectiveClientId) { toast.error('Pick an account for this invoice'); return; }
     setBusy(true);
     try {
       if (existing) {
         await updateInvoice(organizationId, existing.invoiceId, {
           title, currency, lineItems: valid, taxRate, discount, notes, terms,
-          dueAt: dueAt ? new Date(dueAt) : null,
-          status, amountPaid,
+          dueAt: dueAt ? new Date(dueAt) : null, status, amountPaid,
         });
       } else {
         await createInvoice(organizationId, userId, userName, {
-          clientId: client.clientId,
-          workspaceId: client.workspaceId,
-          title: title || null,
-          currency,
-          lineItems: valid,
-          taxRate,
-          discount,
-          notes,
-          terms,
-          issuedAt: new Date(issuedAt),
+          clientId: effectiveClientId,
+          workspaceId: effectiveWorkspaceId,
+          title: title || null, currency, lineItems: valid, taxRate, discount,
+          notes, terms, issuedAt: new Date(issuedAt),
           dueAt: dueAt ? new Date(dueAt) : null,
         });
       }
@@ -145,12 +151,25 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
             {existing ? `Edit ${existing.invoiceNumber}` : 'New invoice'}
           </DialogTitle>
           <DialogDescription>
-            For account <strong>{client.name}</strong>. Totals recompute from
-            the line items.
+            {client ? <>For account <strong>{client.name}</strong>. </> : null}
+            Totals recompute from the line items.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+          {!existing && !client && clients && (
+            <div>
+              <Label className="text-xs">Account</Label>
+              <Select value={pickedClientId} onValueChange={setPickedClientId} disabled={busy}>
+                <SelectTrigger><SelectValue placeholder="Select an account…" /></SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c.clientId} value={c.clientId}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid grid-cols-[1fr_100px_140px_140px] gap-2">
             <div>
               <Label className="text-xs">Title (optional)</Label>
