@@ -7,8 +7,7 @@
 \set MEMBER '00000000-0000-0000-0000-000000000000'
 
 -- owner/admin bypass: true regardless of grants
-select 'admin vi
-ew' as case, public.has_module_access(:'ADMIN', :'ORG', 'deals', false) as got, true as want;
+select 'admin view' as case, public.has_module_access(:'ADMIN', :'ORG', 'deals', false) as got, true as want;
 select 'admin edit' as case, public.has_module_access(:'ADMIN', :'ORG', 'deals', true)  as got, true as want;
 
 -- member with no grant: false

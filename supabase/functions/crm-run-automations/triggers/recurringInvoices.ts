@@ -4,7 +4,9 @@
 interface Line { description?: string; qty?: number; unitPrice?: number; lineTotal?: number }
 
 // Port of computeQuoteTotals (src/services/supabase/quotes.ts) — keep in sync.
-const round2 = (n: number) => Math.round(n * 100) / 100;
+// Use toFixed (not Math.round) to match computeQuoteTotals' rounding exactly,
+// so a generated invoice's totals equal the preview the user saw.
+const round2 = (n: number) => +n.toFixed(2);
 const totalsFor = (lines: Line[], taxRate: number, discount: number) => {
   const subtotal = lines.reduce((s, li) => s + (Number(li.lineTotal) || 0), 0);
   const afterDiscount = Math.max(0, subtotal - (discount || 0));
@@ -50,14 +52,31 @@ export const runDueInvoiceSchedules = async (admin: any): Promise<number> => {
   let created = 0;
   for (const s of due ?? []) {
     try {
+      // ADVANCE FIRST (idempotency): claim this period by moving next_run_date
+      // forward before creating the invoice. If the insert below fails or the
+      // worker dies, the next tick won't re-select this schedule for the same
+      // period, so we never auto-issue a DUPLICATE invoice. The .lte() guard
+      // means only a still-due row is claimed (defensive vs. replay).
+      const nextRun = advance(new Date(s.next_run_date + "T00:00:00Z"), s.frequency);
+      const { data: claimed, error: claimErr } = await admin
+        .from("invoice_schedules")
+        .update({
+          next_run_date: ymd(nextRun),
+          last_run_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("schedule_id", s.schedule_id)
+        .lte("next_run_date", today)
+        .select("schedule_id");
+      if (claimErr || !claimed || claimed.length === 0) continue; // not ours / already advanced
+
       const lines: Line[] = Array.isArray(s.line_items) ? s.line_items : [];
       const t = totalsFor(lines, Number(s.tax_rate ?? 0), Number(s.discount ?? 0));
-      const number = await nextNumber(admin, s.organization_id);
       const issued = new Date();
       const dueAt = new Date(issued);
       dueAt.setUTCDate(dueAt.getUTCDate() + Number(s.due_days ?? 14));
 
-      const { data: inv, error } = await admin.from("invoices").insert({
+      const insertRow = (number: string) => admin.from("invoices").insert({
         organization_id: s.organization_id,
         client_id: s.client_id,
         workspace_id: s.workspace_id,
@@ -79,15 +98,23 @@ export const runDueInvoiceSchedules = async (admin: any): Promise<number> => {
         created_by: s.created_by,
         created_by_name: s.created_by_name,
       }).select("invoice_id").single();
-      if (error) { console.error("recurring invoice insert failed:", error); continue; }
 
-      const nextRun = advance(new Date(s.next_run_date + "T00:00:00Z"), s.frequency);
-      await admin.from("invoice_schedules").update({
-        next_run_date: ymd(nextRun),
-        last_invoice_id: inv?.invoice_id ?? null,
-        last_run_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("schedule_id", s.schedule_id);
+      // Insert with one retry: ux_invoices_org_number (23505) can collide with
+      // a concurrent manual invoice using the same INV- number; recompute + retry.
+      let inv: { invoice_id?: string } | null = null;
+      for (let attempt = 0; attempt < 2 && !inv; attempt++) {
+        const number = await nextNumber(admin, s.organization_id);
+        const { data, error } = await insertRow(number);
+        if (!error) { inv = data; break; }
+        if (attempt === 0 && (error as { code?: string }).code === "23505") continue;
+        console.error("recurring invoice insert failed:", error);
+        break;
+      }
+      if (!inv) continue; // period already advanced; admin can create manually if needed
+
+      await admin.from("invoice_schedules")
+        .update({ last_invoice_id: inv.invoice_id ?? null })
+        .eq("schedule_id", s.schedule_id);
       created++;
     } catch (err) {
       console.error("runDueInvoiceSchedules error for schedule", s.schedule_id, err);
