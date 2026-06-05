@@ -330,6 +330,27 @@ export const getPublicInvoice = async (token: string): Promise<PublicInvoiceView
   };
 };
 
+/** Start an online payment for a public invoice. Returns the Stripe Checkout
+ *  URL to redirect to, or null if payments aren't configured. Throws on other
+ *  errors. */
+export const payInvoice = async (token: string): Promise<string | null> => {
+  const { data, error } = await supabase.functions.invoke('invoice-pay', {
+    body: { token, origin: window.location.origin },
+  });
+  if (error) {
+    // Supabase wraps non-2xx as an error; try to read the payload for the
+    // "not configured" case so the UI can hide the button gracefully.
+    const ctx = (error as { context?: { body?: unknown } }).context;
+    const msg = String((ctx?.body as { error?: string })?.error ?? '');
+    if (msg === 'not_configured') return null;
+    throw new Error('Could not start the payment. Please try again or contact us.');
+  }
+  const d = data as { url?: string; error?: string };
+  if (d?.error === 'not_configured') return null;
+  if (!d?.url) throw new Error('Could not start the payment.');
+  return d.url;
+};
+
 /** Email the client a link to the hosted invoice page and mark it `sent`.
  *  Reuses the notify-send-gmail edge function (sends from the caller's
  *  connected Gmail). Returns the public URL on success. Throws a friendly

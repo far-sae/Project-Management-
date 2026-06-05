@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Loader2, FileDown } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { getPublicInvoice, type PublicInvoiceView, type Invoice } from '@/services/supabase/invoices';
+import { getPublicInvoice, payInvoice, type PublicInvoiceView, type Invoice } from '@/services/supabase/invoices';
 import { downloadInvoicePdf } from '@/components/billing/invoicePdf';
 
 const money = (n: number, c: string) => {
@@ -15,6 +15,8 @@ export const PublicInvoice: React.FC = () => {
   const { token } = useParams<{ token: string }>();
   const [inv, setInv] = useState<PublicInvoiceView | null>(null);
   const [loading, setLoading] = useState(true);
+  const paidFlag = new URLSearchParams(window.location.search).get('paid') === '1';
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -41,6 +43,20 @@ export const PublicInvoice: React.FC = () => {
       lineItems: inv.lineItems, notes: null, terms: inv.terms, issuedAt: inv.issuedAt, dueAt: inv.dueAt,
     } as unknown as Invoice;
     void downloadInvoicePdf(asInvoice, { name: inv.orgName }, inv.clientName);
+  };
+
+  const payNow = async () => {
+    if (!inv) return;
+    setPaying(true);
+    try {
+      const url = await payInvoice(token!);
+      if (!url) { alert('Online payment is not available for this invoice.'); return; }
+      window.location.href = url;
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Payment could not be started.');
+    } finally {
+      setPaying(false);
+    }
   };
 
   return (
@@ -87,9 +103,18 @@ export const PublicInvoice: React.FC = () => {
 
         {inv.terms && <p className="text-xs text-muted-foreground mt-8">{inv.terms}</p>}
 
+        {paidFlag && (
+          <div className="mt-6 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-4 py-3 text-sm">
+            Payment received — thank you! It may take a moment to reflect here.
+          </div>
+        )}
         <div className="mt-8 flex justify-end gap-2">
           <Button variant="outline" onClick={downloadPdf}><FileDown className="w-4 h-4 mr-1.5" /> Download PDF</Button>
-          {/* Pay now button is added in Phase 3 (Stripe). */}
+          {inv.status !== 'paid' && inv.status !== 'void' && (inv.total - inv.amountPaid) > 0 && (
+            <Button onClick={payNow} disabled={paying}>
+              {paying ? 'Starting…' : `Pay ${money(inv.total - inv.amountPaid, inv.currency)}`}
+            </Button>
+          )}
         </div>
       </div>
     </div>
