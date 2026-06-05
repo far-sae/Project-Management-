@@ -762,6 +762,11 @@ export const convertLead = async (
   //    lead so a tampered API call can't cross-link to another workspace.
   let clientId: string;
   let createdClientId: string | null = null;   // for rollback on later failure
+  // True when we're converting INTO an account that already exists — either the
+  // caller picked it, or we reused one by matching email below. A pre-existing
+  // account usually already has a primary contact, so a new contact for it must
+  // NOT be inserted as primary (ux_client_contacts_primary).
+  let clientPreexisted = !!input.existingClientId;
   if (input.existingClientId) {
     const { data: existing, error: existingErr } = await supabase
       .from("clients")
@@ -908,6 +913,7 @@ export const convertLead = async (
         if (d?.client_id && d.workspace_id === lead.workspaceId) {
           createdId = d.client_id;
           reusedExisting = true;
+          clientPreexisted = true;
           warnings.push(`A client with email ${lead.email} already existed — linked this lead to that account instead of creating a duplicate.`);
         } else if (d?.client_id) {
           throw new Error(`A client with email ${lead.email} already exists in another workspace. Convert into that account from its workspace, or change the lead's email.`);
@@ -1007,7 +1013,7 @@ export const convertLead = async (
       photo_url: lead.imageUrl,
       custom_fields: lead.customFields,
 
-      is_primary: !input.existingClientId,
+      is_primary: !clientPreexisted,
       created_by: userId,
     };
     const strippedContactCols: string[] = [];
@@ -1037,7 +1043,33 @@ export const convertLead = async (
       );
     }
 
-    if (cAttempt.error) {
+    // A pre-existing/reused account may already have a primary contact
+    // (ux_client_contacts_primary) or this exact person. Don't fail the
+    // conversion: first retry as a non-primary contact, then fall back to
+    // linking the existing contact that matches this lead's email.
+    let contactResolved = false;
+    if (cAttempt.error && (cAttempt.error as { code?: string }).code === "23505") {
+      if (contactPayload.is_primary) {
+        contactPayload.is_primary = false;
+        cAttempt = await tryContactInsert();
+      }
+      if (cAttempt.error && (cAttempt.error as { code?: string }).code === "23505" && lead.email) {
+        const { data: existingContact } = await supabase
+          .from("client_contacts")
+          .select("contact_id")
+          .eq("client_id", clientId)
+          .ilike("email", lead.email)
+          .maybeSingle();
+        const ec = existingContact as { contact_id?: string } | null;
+        if (ec?.contact_id) {
+          contactId = ec.contact_id;
+          contactResolved = true;
+          warnings.push(`This account already had a contact with email ${lead.email} — linked to it instead of creating a duplicate.`);
+        }
+      }
+    }
+
+    if (cAttempt.error && !contactResolved) {
       const e = cAttempt.error as { code?: string; message?: string; details?: string; hint?: string };
       const composed = [e.message, e.details, e.hint && `(hint: ${e.hint})`, e.code && `[${e.code}]`]
         .filter(Boolean)
@@ -1048,7 +1080,9 @@ export const convertLead = async (
         `Couldn't create the contact: ${composed || "unknown error"}. Lead was not converted.`,
       );
     }
-    contactId = (cAttempt.data as { contact_id: string }).contact_id;
+    if (!contactResolved) {
+      contactId = (cAttempt.data as { contact_id: string }).contact_id;
+    }
   }
 
   // 3. Optional deal creation. If the caller asked for one and it fails, we

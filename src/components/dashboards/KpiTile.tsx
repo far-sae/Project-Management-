@@ -24,7 +24,7 @@ export const KpiTile: React.FC<Props> = ({
     deltaPct == null ? '' : deltaPct >= 0 ? 'text-emerald-600' : 'text-rose-600';
   const deltaPrefix = deltaPct == null ? '' : deltaPct > 0 ? '+' : '';
   return (
-    <Card className={cn(accent && 'border-orange-200 bg-orange-50/40')}>
+    <Card className={cn(accent && 'border-orange-200 bg-orange-50/40 dark:border-orange-500/30 dark:bg-orange-500/10')}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
