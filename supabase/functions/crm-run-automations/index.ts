@@ -4,6 +4,7 @@ import { writeRun, createRun, finalizeRun, finalizeResumedRun } from "./shared/r
 import { triggerConfigMatches } from "./triggers/matchers.ts";
 import { evaluateConditions } from "./conditions/evaluator.ts";
 import { enqueueCronEvents } from "./triggers/cron.ts";
+import { runDueInvoiceSchedules } from "./triggers/recurringInvoices.ts";
 import { nextSendableTime, SendWindow } from "./triggers/sendWindow.ts";
 import { ACTION_REGISTRY } from "./actions/index.ts";
 import { AutomationEvent, Recipe, ActionResult } from "./shared/types.ts";
@@ -426,6 +427,13 @@ Deno.serve(async (req) => {
   try {
     pendingsDrained = await processPendingActions(admin);
     await enqueueCronEvents(admin);
+
+    try {
+      const made = await runDueInvoiceSchedules(admin);
+      if (made > 0) console.log(`recurring invoices created: ${made}`);
+    } catch (err) {
+      console.error("runDueInvoiceSchedules failed:", err);
+    }
 
     // Drain a few batches in one invocation so chained automations keep moving:
     // workspace_created -> create_project -> project_created -> create_task.
