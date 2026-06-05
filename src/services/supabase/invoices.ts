@@ -330,10 +330,66 @@ export const getPublicInvoice = async (token: string): Promise<PublicInvoiceView
   };
 };
 
-// Implemented in Task 9 (Phase 2). Stub keeps the Billing page compiling.
+/** Email the client a link to the hosted invoice page and mark it `sent`.
+ *  Reuses the notify-send-gmail edge function (sends from the caller's
+ *  connected Gmail). Returns the public URL on success. Throws a friendly
+ *  error if the client has no email or Gmail isn't connected. */
 export const sendInvoice = async (
-  _organizationId: string,
-  _invoiceId: string,
-): Promise<string | null> => {
-  throw new Error('Sending is enabled after Phase 2 is deployed.');
+  organizationId: string,
+  invoiceId: string,
+): Promise<string> => {
+  // Load invoice (token + number + client + currency + total).
+  const { data: invRow, error: invErr } = await supabase
+    .from('invoices')
+    .select('public_token, invoice_number, client_id, currency, total')
+    .eq('organization_id', organizationId)
+    .eq('invoice_id', invoiceId)
+    .single();
+  if (invErr || !invRow) throw invErr ?? new Error('Invoice not found');
+
+  const token = invRow.public_token as string | null;
+  if (!token) throw new Error('This invoice has no shareable link yet. Apply migration 128 and try again.');
+
+  // Client email + name.
+  const { data: clientRow } = await supabase
+    .from('clients')
+    .select('name, email')
+    .eq('organization_id', organizationId)
+    .eq('client_id', invRow.client_id)
+    .single();
+  const toEmail = (clientRow?.email as string) ?? '';
+  if (!toEmail) throw new Error('This account has no email address — add one to send the invoice.');
+
+  const url = `${window.location.origin}/invoice/${token}`;
+  const number = invRow.invoice_number as string;
+  const amountFormatted = new Intl.NumberFormat(undefined, { style: 'currency', currency: String(invRow.currency ?? 'USD') }).format(Number(invRow.total ?? 0));
+  const body =
+    `Hi ${clientRow?.name ?? ''},\n\n` +
+    `Please find invoice ${number} for ${amountFormatted}.\n` +
+    `You can view and download it here: ${url}\n\nThank you.`;
+
+  const { error: sendErr } = await supabase.functions.invoke('notify-send-gmail', {
+    body: {
+      toEmail,
+      toName: clientRow?.name ?? undefined,
+      subject: `Invoice ${number}`,
+      body,
+      actionUrl: url,
+      organizationId,
+      entityType: 'client',
+      entityId: invRow.client_id,
+    },
+  });
+  if (sendErr) {
+    throw new Error('Could not send the email. Connect Gmail in Settings, or download the PDF and send it manually.');
+  }
+
+  // Mark sent + stamp last_sent_at.
+  await supabase
+    .from('invoices')
+    .update({ status: 'sent', sent_at: new Date().toISOString(), last_sent_at: new Date().toISOString() })
+    .eq('organization_id', organizationId)
+    .eq('invoice_id', invoiceId);
+
+  return url;
 };
