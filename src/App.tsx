@@ -33,6 +33,7 @@ const TimeTracking = React.lazy(() => import('@/pages/TimeTracking').then((m) =>
 const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ default: m.Expenses })));
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
+const BillingPage = React.lazy(() => import('@/pages/Billing').then((m) => ({ default: m.Billing })));
 const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
 const AIAgentPage = React.lazy(() => import('@/pages/AIAgent').then((m) => ({ default: m.AIAgent })));
 const ClientsActivity = React.lazy(() => import('@/pages/ClientsActivity').then((m) => ({ default: m.ClientsActivity })));
@@ -302,6 +303,14 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireOrgAdmin>
                   {lazyAppRoute(<PayrollPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/billing',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<BillingPage />)}
                 </ProtectedRoute>
               ),
             },
