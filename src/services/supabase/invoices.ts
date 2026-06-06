@@ -11,6 +11,7 @@ export interface Invoice {
   dealId: string | null;
   quoteId: string | null;
   workspaceId: string | null;
+  projectId: string | null;
   invoiceNumber: string;
   title: string | null;
   status: InvoiceStatus;
@@ -41,6 +42,7 @@ export interface CreateInvoiceInput {
   dealId?: string | null;
   quoteId?: string | null;
   workspaceId?: string | null;
+  projectId?: string | null;
   title?: string | null;
   currency?: string;
   taxRate?: number;
@@ -64,6 +66,7 @@ const mapInvoice = (r: Record<string, unknown>): Invoice => ({
   dealId: (r.deal_id as string) ?? null,
   quoteId: (r.quote_id as string) ?? null,
   workspaceId: (r.workspace_id as string) ?? null,
+  projectId: (r.project_id as string) ?? null,
   invoiceNumber: r.invoice_number as string,
   title: (r.title as string) ?? null,
   status: ((r.status as string) || "draft") as InvoiceStatus,
@@ -119,6 +122,7 @@ export const createInvoice = async (
       deal_id: input.dealId ?? null,
       quote_id: input.quoteId ?? null,
       workspace_id: input.workspaceId ?? null,
+      project_id: input.projectId ?? null,
       invoice_number: number,
       title: input.title ?? null,
       currency: (input.currency ?? "USD").toUpperCase(),
@@ -179,6 +183,7 @@ export const updateInvoice = async (
       patch.amount_paid = Math.min(input.amountPaid, totals.total);
     }
   }
+  if (input.projectId !== undefined) patch.project_id = input.projectId;
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.terms !== undefined) patch.terms = input.terms;
   if (input.dueAt !== undefined) {

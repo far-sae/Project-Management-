@@ -80,6 +80,7 @@ export const runDueInvoiceSchedules = async (admin: any): Promise<number> => {
         organization_id: s.organization_id,
         client_id: s.client_id,
         workspace_id: s.workspace_id,
+        project_id: s.project_id,
         invoice_number: number,
         title: s.title,
         status: "sent", // auto-issued recurring invoices go out as sent

@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { Invoice, listOrgInvoices } from '@/services/supabase/invoices';
 import { getOrganizationClients, type Client } from '@/services/supabase/clients';
 import { listOrgSchedules, type InvoiceSchedule } from '@/services/supabase/invoiceSchedules';
@@ -14,6 +17,8 @@ import { BillsTab } from '@/components/billing/tabs/BillsTab';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useProjects } from '@/hooks/useProjects';
 import { cn } from '@/lib/utils';
 
 type Tab = 'invoices' | 'recurring' | 'bills';
@@ -23,8 +28,12 @@ export const Billing: React.FC = () => {
   const { organization } = useOrganization();
   const fmt = useFormatMoney();
   const orgId = organization?.organizationId ?? '';
+  const { workspaces } = useWorkspaces();
+  const { projects } = useProjects();
 
   const [tab, setTab] = useState<Tab>('invoices');
+  const [wsFilter, setWsFilter] = useState<string>('all');
+  const [projFilter, setProjFilter] = useState<string>('all');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [schedules, setSchedules] = useState<InvoiceSchedule[]>([]);
@@ -66,6 +75,31 @@ export const Billing: React.FC = () => {
     bills: { label: 'New bill', onClick: () => { setEditingBill(null); setOpenBill(true); } },
   };
 
+  // Normalize Project[] (workspaceId is optional on the type) to the shape
+  // the editors expect: { projectId, name, workspaceId: string }.
+  const editorProjects = useMemo(
+    () => projects
+      .filter((p): p is typeof p & { workspaceId: string } => !!p.workspaceId)
+      .map((p) => ({ projectId: p.projectId, name: p.name, workspaceId: p.workspaceId })),
+    [projects],
+  );
+
+  const projectOptions = useMemo(
+    () => (wsFilter === 'all' ? editorProjects : editorProjects.filter((p) => p.workspaceId === wsFilter)),
+    [editorProjects, wsFilter],
+  );
+
+  const matchScope = (row: { workspaceId: string | null; projectId: string | null }) =>
+    (wsFilter === 'all' || row.workspaceId === wsFilter) &&
+    (projFilter === 'all' || row.projectId === projFilter);
+
+  const filteredInvoices = useMemo(() => invoices.filter(matchScope), [invoices, wsFilter, projFilter]);
+  const filteredSchedules = useMemo(() => schedules.filter(matchScope), [schedules, wsFilter, projFilter]);
+  const filteredBills = useMemo(() => bills.filter(matchScope), [bills, wsFilter, projFilter]);
+
+  const defaultWorkspaceId = wsFilter === 'all' ? null : wsFilter;
+  const defaultProjectId = projFilter === 'all' ? null : projFilter;
+
   return (
     <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
       <div className="flex items-center justify-between gap-3">
@@ -90,23 +124,56 @@ export const Billing: React.FC = () => {
         ))}
       </div>
 
+      {(workspaces.length > 0 || editorProjects.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {workspaces.length > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground">Workspace:</span>
+              <Select value={wsFilter} onValueChange={(v) => { setWsFilter(v); setProjFilter('all'); }}>
+                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All workspaces</SelectItem>
+                  {workspaces.map((w) => (
+                    <SelectItem key={w.workspaceId} value={w.workspaceId}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+          {editorProjects.length > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground">Project:</span>
+              <Select value={projFilter} onValueChange={setProjFilter}>
+                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All projects</SelectItem>
+                  {projectOptions.map((p) => (
+                    <SelectItem key={p.projectId} value={p.projectId}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+        </div>
+      )}
+
       {tab === 'invoices' && (
         <InvoicesTab
-          invoices={invoices} loading={loading} orgId={orgId}
+          invoices={filteredInvoices} loading={loading} orgId={orgId}
           orgName={organization?.name ?? 'Company'} clientName={clientName} fmt={fmt}
           onEdit={(inv) => { setEditing(inv); setOpenEditor(true); }} onChanged={load}
         />
       )}
       {tab === 'recurring' && (
         <RecurringTab
-          schedules={schedules} loading={loading} orgId={orgId} clientName={clientName} fmt={fmt}
+          schedules={filteredSchedules} loading={loading} orgId={orgId} clientName={clientName} fmt={fmt}
           onEdit={(s) => { setEditingSchedule(s); setOpenSchedule(true); }}
           onNew={newAction.recurring.onClick} onChanged={load}
         />
       )}
       {tab === 'bills' && (
         <BillsTab
-          bills={bills} loading={loading} orgId={orgId} fmt={fmt}
+          bills={filteredBills} loading={loading} orgId={orgId} fmt={fmt}
           onEdit={(b) => { setEditingBill(b); setOpenBill(true); }} onChanged={load}
         />
       )}
@@ -116,18 +183,22 @@ export const Billing: React.FC = () => {
         onOpenChange={(o) => { setOpenEditor(o); if (!o) setEditing(null); }}
         organizationId={orgId} clients={clients} existing={editing}
         userId={user?.userId ?? null} userName={user?.displayName ?? null} onSaved={load}
+        projects={editorProjects} defaultProjectId={defaultProjectId}
       />
       <RecurringScheduleDialog
         open={openSchedule}
         onOpenChange={(o) => { setOpenSchedule(o); if (!o) setEditingSchedule(null); }}
         organizationId={orgId} clients={clients} existing={editingSchedule}
         userId={user?.userId ?? null} userName={user?.displayName ?? null} onSaved={load}
+        projects={editorProjects} defaultProjectId={defaultProjectId}
       />
       <BillEditor
         open={openBill}
         onOpenChange={(o) => { setOpenBill(o); if (!o) setEditingBill(null); }}
         organizationId={orgId} existing={editingBill}
         userId={user?.userId ?? null} userName={user?.displayName ?? null} onSaved={load}
+        workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}
+        projects={editorProjects} defaultProjectId={defaultProjectId}
       />
     </div>
   );

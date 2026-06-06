@@ -148,6 +148,7 @@ export const InvoicesTab: React.FC<Props> = ({ invoices, loading, orgId, orgName
                             Mark paid
                           </Button>
                         )}
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onEdit(inv)} disabled={busy}>Edit</Button>
                         <button className="text-muted-foreground hover:text-destructive p-1" title="Delete" onClick={() => { if (confirm(`Delete ${inv.invoiceNumber}? This cannot be undone.`)) void run(inv.invoiceId, () => deleteInvoice(orgId, inv.invoiceId)); }} disabled={busy}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
