@@ -103,11 +103,26 @@ const ENTITY: Record<string, EntityCfg> = {
     ownerCol: "caller_user_id", order: { col: "call_start_at", asc: false },
     line: (r, tz) => `• ${s(r.subject)} — ${s(r.call_status)}${r.call_start_at ? ` · ${formatLocal(s(r.call_start_at), tz)}` : ""}`,
   },
+  // Workspaces are org-wide (no per-user owner column), so the list_workspaces
+  // handler passes scope=undefined; ownerCol is a harmless fallback.
+  workspace: {
+    table: "workspaces", cols: "name, is_default, created_at", dateCol: "created_at",
+    ownerCol: "organization_id", order: { col: "name", asc: true },
+    line: (r) => `• ${s(r.name)}${r.is_default ? " _(default)_" : ""}`,
+  },
+  project: {
+    table: "projects", cols: "name, created_at", dateCol: "created_at",
+    ownerCol: "owner_id", order: { col: "created_at", asc: false },
+    line: (r) => `• ${s(r.name)}`,
+    // Narrow to a workspace when the handler resolved one ("projects in Sales").
+    extraFilters: (i) => i.resolved_ids?.workspace_id ? [["eq", "workspace_id", i.resolved_ids.workspace_id]] : [],
+  },
 };
 
 const LABEL: Record<string, string> = {
   task: "tasks", client_task: "follow-ups", deal: "deals", lead: "leads",
   client: "clients", meeting: "meetings", call: "calls",
+  workspace: "workspaces", project: "projects",
 };
 
 export const runQuery = async (

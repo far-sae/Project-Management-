@@ -19,7 +19,7 @@ const SYSTEM_PROMPT = `You are an intent parser for a project-management + CRM b
 Return STRICT JSON (no prose, no markdown) matching this schema:
 
 {
-  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "create_lead" | "create_contact" | "create_deal" | "create_meeting" | "create_call" | "log_note" | "query" | "update" | "switch_org" | "list_orgs" | "help" | "unknown",
+  "action": "create_workspace" | "create_project" | "create_task" | "create_client" | "create_client_task" | "create_lead" | "create_contact" | "create_deal" | "create_meeting" | "create_call" | "log_note" | "query" | "list_workspaces" | "list_projects" | "update" | "switch_org" | "list_orgs" | "help" | "unknown",
   "workspace": string | null,
   "project": string | null,
   "client": string | null,
@@ -69,6 +69,11 @@ Read / list queries → action "query":
 - "my meetings today" / "upcoming meetings" → query, entity=meeting, (timeframe), scope=mine
 - "recent calls" → query, entity=call
 Map "open" tasks to no specific status (the resolver excludes done); "done"/"completed" → status="done".
+
+List workspaces / projects (their own actions, NOT "query"):
+- "list workspaces" / "show my workspaces" / "what workspaces do I have" → list_workspaces
+- "list projects" / "show projects" / "my projects" → list_projects (scope="mine" only if the user says "my")
+- "projects in <workspace>" / "show projects under <workspace>" → list_projects, workspace=<workspace>
 
 Edit / update an existing record → action "update":
 - "mark <task> done" / "complete <task>" → update, entity=task, target=<task>, status="done"
@@ -133,6 +138,12 @@ Few-shot examples:
     → {"action":"update","entity":"deal","target":"Acme Website","stage":"won","confidence":0.9}
 18. "reschedule Discovery call to tomorrow 4pm"
     → {"action":"update","entity":"meeting","target":"Discovery call","due":"<ISO>","confidence":0.85}
+19. "list workspaces"
+    → {"action":"list_workspaces","confidence":0.95}
+20. "show my projects"
+    → {"action":"list_projects","scope":"mine","confidence":0.9}
+21. "projects in Sales"
+    → {"action":"list_projects","workspace":"Sales","confidence":0.9}
 
 Rules:
 - Resolve relative dates ("tomorrow 3pm", "next Friday") against the provided nowIso + timezone.

@@ -20,6 +20,8 @@ export type AgentActionType =
   | "create_call"
   | "log_note"
   | "query"
+  | "list_workspaces"
+  | "list_projects"
   | "update"
   | "switch_org"
   | "list_orgs"
@@ -50,6 +52,7 @@ export interface Intent {
   // Query (read) fields.
   entity?:
     | "task" | "client_task" | "deal" | "lead" | "client" | "meeting" | "call"
+    | "workspace" | "project"
     | null;
   scope?: "mine" | "all" | null;
   timeframe?: "today" | "this_week" | "this_month" | "overdue" | "upcoming" | null;

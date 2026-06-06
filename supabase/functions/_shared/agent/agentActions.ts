@@ -312,6 +312,32 @@ export const resolveIntent = async (
       const text = await runQuery(admin, account, intent, tz, new Date().toISOString());
       return { kind: "text", text };
     }
+    case "list_workspaces": {
+      await clearConvo(admin, provider, chatId);
+      const tz = await loadUserTimezone(admin, account.user_id);
+      // Workspaces are org-wide (no per-user owner), so never scope to "mine".
+      const text = await runQuery(admin, account, { ...intent, entity: "workspace", scope: undefined }, tz, new Date().toISOString());
+      return { kind: "text", text };
+    }
+    case "list_projects": {
+      await clearConvo(admin, provider, chatId);
+      const tz = await loadUserTimezone(admin, account.user_id);
+      const next: Intent = { ...intent, entity: "project" };
+      // "projects in <workspace>" → resolve the workspace name to an id to filter.
+      if (intent.workspace) {
+        const { data: ws } = await admin
+          .from("workspaces")
+          .select("workspace_id")
+          .eq("organization_id", account.current_org_id)
+          .ilike("name", intent.workspace)
+          .limit(1)
+          .maybeSingle();
+        const wsId = (ws as { workspace_id?: string } | null)?.workspace_id;
+        if (wsId) next.resolved_ids = { ...(intent.resolved_ids ?? {}), workspace_id: wsId };
+      }
+      const text = await runQuery(admin, account, next, tz, new Date().toISOString());
+      return { kind: "text", text };
+    }
     case "switch_org":
       return { kind: "text", text: "Use `/switchorg <name>` (e.g. `/switchorg Acme Corp`)." };
     case "unknown":
@@ -861,6 +887,7 @@ const HELP_TEXT = `*TaskCalendar bot — natural-language commands*
 • \`add workspace Acme Onboarding\`
 • \`new project Q1 launch in Acme Onboarding\`
 • \`task: call John tomorrow 3pm in Q1 launch\`
+• \`list workspaces\`, \`show my projects\`, or \`projects in Acme\` to see them
 
 *CRM*
 • \`new client Acme Corp\`
