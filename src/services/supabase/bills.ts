@@ -8,6 +8,7 @@ export interface Bill {
   billId: string;
   organizationId: string;
   workspaceId: string | null;
+  projectId: string | null;
   vendorName: string;
   vendorEmail: string | null;
   billNumber: string;
@@ -36,6 +37,7 @@ export interface CreateBillInput {
   vendorName: string;
   vendorEmail?: string | null;
   workspaceId?: string | null;
+  projectId?: string | null;
   reference?: string | null;
   currency?: string;
   taxRate?: number;
@@ -55,6 +57,7 @@ const mapBill = (r: Record<string, unknown>): Bill => ({
   billId: r.bill_id as string,
   organizationId: r.organization_id as string,
   workspaceId: (r.workspace_id as string) ?? null,
+  projectId: (r.project_id as string) ?? null,
   vendorName: (r.vendor_name as string) ?? "",
   vendorEmail: (r.vendor_email as string) ?? null,
   billNumber: r.bill_number as string,
@@ -134,6 +137,7 @@ export const createBill = async (
   const { data, error } = await supabase.from("bills").insert({
     organization_id: organizationId,
     workspace_id: input.workspaceId ?? null,
+    project_id: input.projectId ?? null,
     vendor_name: input.vendorName,
     vendor_email: input.vendorEmail ?? null,
     bill_number: number,
@@ -176,6 +180,8 @@ export const updateBill = async (
     // Clamp a recorded payment that now exceeds the (edited-down) total.
     if (input.amountPaid !== undefined) patch.amount_paid = Math.min(input.amountPaid, totals.total);
   }
+  if (input.workspaceId !== undefined) patch.workspace_id = input.workspaceId;
+  if (input.projectId !== undefined) patch.project_id = input.projectId;
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.dueAt !== undefined) patch.due_at = input.dueAt ? input.dueAt.toISOString().slice(0, 10) : null;
   patch.updated_at = new Date().toISOString();

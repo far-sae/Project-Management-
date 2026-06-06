@@ -9,6 +9,7 @@ export interface InvoiceSchedule {
   organizationId: string;
   clientId: string;
   workspaceId: string | null;
+  projectId: string | null;
   title: string | null;
   currency: string;
   taxRate: number;
@@ -28,6 +29,7 @@ export interface InvoiceSchedule {
 export interface CreateScheduleInput {
   clientId: string;
   workspaceId?: string | null;
+  projectId?: string | null;
   title?: string | null;
   currency?: string;
   taxRate?: number;
@@ -47,6 +49,7 @@ const map = (r: Record<string, unknown>): InvoiceSchedule => ({
   organizationId: r.organization_id as string,
   clientId: r.client_id as string,
   workspaceId: (r.workspace_id as string) ?? null,
+  projectId: (r.project_id as string) ?? null,
   title: (r.title as string) ?? null,
   currency: ((r.currency as string) || "USD").toUpperCase(),
   taxRate: Number(r.tax_rate ?? 0),
@@ -85,6 +88,7 @@ export const createSchedule = async (
     organization_id: organizationId,
     client_id: input.clientId,
     workspace_id: input.workspaceId ?? null,
+    project_id: input.projectId ?? null,
     title: input.title ?? null,
     currency: (input.currency ?? "USD").toUpperCase(),
     tax_rate: input.taxRate ?? 0,
@@ -113,6 +117,7 @@ export const updateSchedule = async (
   if (input.taxRate !== undefined) patch.tax_rate = input.taxRate;
   if (input.discount !== undefined) patch.discount = input.discount;
   if (input.lineItems !== undefined) patch.line_items = input.lineItems;
+  if (input.projectId !== undefined) patch.project_id = input.projectId;
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.terms !== undefined) patch.terms = input.terms;
   if (input.frequency !== undefined) patch.frequency = input.frequency;
