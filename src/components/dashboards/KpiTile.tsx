@@ -15,10 +15,12 @@ interface Props {
   sparkline?: Array<{ value: number }>;
   /** Accent treatment for the primary KPI on the page. */
   accent?: boolean;
+  /** Optional leading icon shown next to the label (e.g. lucide icon). */
+  icon?: React.ComponentType<{ className?: string }>;
 }
 
 export const KpiTile: React.FC<Props> = ({
-  label, value, deltaPct = null, hint, sparkline, accent = false,
+  label, value, deltaPct = null, hint, sparkline, accent = false, icon: Icon,
 }) => {
   const deltaColor =
     deltaPct == null ? '' : deltaPct >= 0 ? 'text-emerald-600' : 'text-rose-600';
@@ -28,7 +30,10 @@ export const KpiTile: React.FC<Props> = ({
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground truncate">{label}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground truncate flex items-center gap-1.5">
+              {Icon && <Icon className={cn('w-3.5 h-3.5', accent && 'text-orange-500')} />}
+              {label}
+            </p>
             <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>
             {(hint || deltaPct != null) && (
               <div className="mt-1 flex items-center gap-2 text-xs">

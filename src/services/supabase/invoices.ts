@@ -154,8 +154,10 @@ export const updateInvoice = async (
   if (input.status !== undefined) {
     patch.status = input.status;
     if (input.status === "sent") patch.sent_at = new Date().toISOString();
-    if (input.status === "paid") patch.paid_at = new Date().toISOString();
-    if (input.status === "void") patch.voided_at = new Date().toISOString();
+    // Clear the paid/void stamps when leaving those states so "unmark paid"
+    // (or un-voiding) doesn't leave a stale paid_at/voided_at behind.
+    patch.paid_at = input.status === "paid" ? new Date().toISOString() : null;
+    patch.voided_at = input.status === "void" ? new Date().toISOString() : null;
   }
   if (input.amountPaid !== undefined) patch.amount_paid = input.amountPaid;
   if (input.currency !== undefined) patch.currency = input.currency.toUpperCase();
@@ -171,6 +173,11 @@ export const updateInvoice = async (
     patch.subtotal = totals.subtotal;
     patch.tax_amount = totals.taxAmount;
     patch.total = totals.total;
+    // Editing the lines can lower the total below what was recorded as paid.
+    // Clamp amount_paid so a stale value never inflates "paid" dashboards.
+    if (input.amountPaid !== undefined) {
+      patch.amount_paid = Math.min(input.amountPaid, totals.total);
+    }
   }
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.terms !== undefined) patch.terms = input.terms;
@@ -191,6 +198,13 @@ export const updateInvoice = async (
   }
   return mapInvoice(data);
 };
+
+/** Revert a paid invoice back to "sent" (clears amount_paid + paid_at). */
+export const unmarkInvoicePaid = async (
+  organizationId: string,
+  invoiceId: string,
+): Promise<Invoice> =>
+  updateInvoice(organizationId, invoiceId, { status: "sent", amountPaid: 0 });
 
 export const deleteInvoice = async (
   organizationId: string,
@@ -253,7 +267,9 @@ export const invoiceTotals = (list: Invoice[], today: Date = new Date()): Invoic
       outstanding += balance;
       if (isOverdue(i, today)) overdue += balance;
     }
-    if (i.paidAt && i.paidAt.getTime() >= cutoff) paidLast30 += i.amountPaid;
+    // Cap at the invoice total so a stale amount_paid (e.g. the doc was edited
+    // smaller after being marked paid) can't overstate the paid figure.
+    if (i.paidAt && i.paidAt.getTime() >= cutoff) paidLast30 += Math.min(i.amountPaid, i.total);
   }
   return { outstanding, overdue, paidLast30, counts };
 };
