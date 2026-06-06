@@ -197,12 +197,16 @@ export const useAgentActionRunner = (): {
         case 'create_client_task': {
           const title = String(p.title ?? '');
           if (!title) { toast.error('Task title is required'); return { ok: false }; }
+          // The edge fn proposes with assignee_id/assignee_name; accept either
+          // those or the older assigned_to/assigned_to_name keys.
+          const assigneeId = p.assignee_id ?? p.assigned_to;
+          const assigneeName = p.assignee_name ?? p.assigned_to_name;
           await createClientTask(orgId, uid, uname, {
             title,
             clientId: p.client_id ? String(p.client_id) : null,
             dueAt: p.due_at ? new Date(String(p.due_at)) : null,
-            assignedTo: p.assigned_to ? String(p.assigned_to) : null,
-            assignedToName: p.assigned_to_name ? String(p.assigned_to_name) : null,
+            assignedTo: assigneeId ? String(assigneeId) : null,
+            assignedToName: assigneeName ? String(assigneeName) : null,
           });
           toast.success(`Task "${title}" created`);
           return { ok: true };

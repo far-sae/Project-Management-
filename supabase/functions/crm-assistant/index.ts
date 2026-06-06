@@ -365,14 +365,22 @@ Deno.serve(async (req: Request) => {
 
   const systemPrompt = `You are a CRM assistant embedded in TaskCalendar. The current user's role is "${auth.role ?? "member"}".
 
-You help reps, admins, and owners get work done across deals, leads, contacts, accounts, and tasks. Be brief and concrete — bullet points beat prose.
+You help reps, admins, and owners get work done across deals, leads, contacts, accounts, and tasks.
 
-Rules:
-- For reads: call the read-only tools (summarize_pipeline / list_overdue_tasks / list_hot_leads / deal_detail) before answering with numbers or facts. Never invent figures.
-- For writes (email drafts, stage moves): use the propose_* tools so the user can review + confirm in the UI. Never claim you sent something.
-- If the user is a "member" and asks for an admin-only change (e.g., delete a deal), tell them so and stop.
-- Keep replies under 6 sentences unless the user explicitly asks for more.
-- You can create and edit records (clients, leads, contacts, deals, meetings, calls, notes, tasks, projects, workspaces) and assign tasks. ALWAYS resolve ids first with find_records / list_org_members, then call the matching propose_* tool. Never invent an id. If find_records returns more than one match, ask the user which one. Propose only — the user confirms in the UI before anything is written.`;
+WRITING STYLE (important):
+- Reply in plain, natural text. Do NOT use Markdown. No asterisks (*), no bold/**, no underscores for emphasis, no "#" headings, and no emoji. For lists, write short numbered points ("1. ...") or plain sentences — never "- " bullets.
+- Be brief: usually 1-4 short sentences.
+
+WHEN THE USER WANTS TO CREATE / ADD / CHANGE SOMETHING — this is the most important rule:
+- If the user asks to create, add, make, schedule, log, update, move, or assign anything (a task, deal, client, lead, contact, meeting, call, note, project, workspace, stage move, etc.), you MUST call the matching propose_* tool in THIS turn. Do not just describe it in text — a request with no propose_* call leaves the user stuck with no Confirm button.
+- Propose with whatever details the user gave. Most actions need very little: a task needs only a title; a client needs only a name. Fill required fields from the message and leave optional ones out.
+- Only ask a clarifying question when a REQUIRED field is truly missing and you cannot reasonably infer it. Never ask for optional details (due date, assignee, client link) before proposing — propose first; the user can edit on confirm.
+- Resolve ids only when the user named a specific existing record/person: use find_records (for a client/deal/lead/project/contact) or list_org_members (to assign by name) to get the id, then call the propose_* tool. Never invent an id. If find_records returns more than one match, ask which one. If the user did not name a specific record, propose without that id.
+- Every write is proposal-only — the user reviews and confirms in the UI before anything is saved. Never claim you already did, saved, sent, or created something.
+
+READS: call the read-only tools (summarize_pipeline / list_overdue_tasks / list_hot_leads / deal_detail / find_records / list_org_members) before stating numbers or facts. Never invent figures.
+
+If the user is a "member" and asks for an admin-only change, tell them plainly and stop.`;
 
   const history = Array.isArray(body.history) ? body.history.slice(-MAX_TURNS) : [];
   const messages: Anthropic.MessageParam[] = [
@@ -382,7 +390,7 @@ Rules:
 
   const proposed: ProposedAction[] = [];
   let response: Anthropic.Message;
-  const toolLoopCap = 4;
+  const toolLoopCap = 5;
   let loop = 0;
 
   while (true) {
@@ -411,8 +419,30 @@ Rules:
     messages.push({ role: "user", content: toolResults });
   }
 
-  const textBlocks = response!.content.filter((c) => c.type === "text") as Array<Anthropic.TextBlock>;
-  const assistantText = textBlocks.map((t) => t.text).join("\n").trim() || "(no response)";
+  let textBlocks = response!.content.filter((c) => c.type === "text") as Array<Anthropic.TextBlock>;
+
+  // If the tool loop was cut off while the model was still calling tools, it
+  // never produced a closing message. Make one final tool-less call so the
+  // user always gets a reply alongside any proposed actions (rather than the
+  // chat looking "stuck" with no text).
+  if (textBlocks.length === 0 && response!.stop_reason === "tool_use") {
+    try {
+      const closing = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 400,
+        system: systemPrompt,
+        messages: [...messages, { role: "user", content: "Briefly tell me what you've prepared (plain text, no markdown). If there's an action to confirm, say so." }],
+      });
+      response = closing;
+      textBlocks = closing.content.filter((c) => c.type === "text") as Array<Anthropic.TextBlock>;
+    } catch (_) { /* fall through to the default below */ }
+  }
+
+  const joined = textBlocks.map((t) => t.text).join("\n").trim();
+  const assistantText = joined
+    || (proposed.length > 0
+      ? "I've prepared the action below — review the details and tap Confirm to apply it."
+      : "(no response)");
 
   return json({
     reply: assistantText,
