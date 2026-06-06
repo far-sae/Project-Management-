@@ -254,9 +254,9 @@ export const handleNaturalLanguage = async (
   }
 
   const [{ data: wsData }, { data: projData }, { data: clData }, tz] = await Promise.all([
-    admin.from("workspaces").select("name").eq("organization_id", account.current_org_id).limit(50),
-    admin.from("projects").select("name").eq("organization_id", account.current_org_id).limit(50),
-    admin.from("clients").select("name").eq("organization_id", account.current_org_id).limit(50),
+    admin.from("workspaces").select("name").eq("organization_id", account.current_org_id).limit(200),
+    admin.from("projects").select("name").eq("organization_id", account.current_org_id).limit(200),
+    admin.from("clients").select("name").eq("organization_id", account.current_org_id).limit(200),
     loadUserTimezone(admin, account.user_id),
   ]);
   const intent = await parseIntent(text, {

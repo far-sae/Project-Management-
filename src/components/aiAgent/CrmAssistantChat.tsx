@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Send, Bot, Loader2, Check, AlertTriangle, Mail, MoveRight, ListTodo, Paperclip, Sparkles } from 'lucide-react';
+import { Send, Bot, Loader2, Check, AlertTriangle, Mail, MoveRight, ListTodo, Paperclip, Sparkles, Building2, FolderKanban, Users } from 'lucide-react';
 import { uploadAttachment, type AttachmentEntityType } from '@/services/supabase/attachments';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useProjects } from '@/hooks/useProjects';
 import { supabase } from '@/services/supabase/config';
 import { ProposedAction, canRunAction } from '@/services/agent/agentActions';
 import { useAgentActionRunner } from '@/services/agent/useAgentActionRunner';
@@ -21,6 +23,7 @@ interface ChatMessage {
 }
 
 const QUICK_PROMPTS = [
+  { label: 'My workspaces', prompt: 'List all my workspaces and the projects inside each one.' },
   { label: 'Summarize my pipeline', prompt: 'Give me a quick summary of every stage in my pipeline — count, total value, and weighted value.' },
   { label: 'Overdue tasks', prompt: 'List my overdue client tasks, oldest first.' },
   { label: 'Hot leads', prompt: 'Show me my hot leads and who owns each.' },
@@ -46,6 +49,8 @@ const cleanAssistantText = (raw: string): string =>
 export const CrmAssistantChat: React.FC = () => {
   const { user } = useAuth();
   const { organization, isOwner, isAdmin, canEditModule } = useOrganization();
+  const { workspaces } = useWorkspaces();
+  const { projects } = useProjects();
   const orgId = organization?.organizationId ?? user?.organizationId ?? null;
   const role = isOwner ? 'owner' : isAdmin ? 'admin' : 'member';
 
@@ -179,6 +184,16 @@ export const CrmAssistantChat: React.FC = () => {
           <span className="hidden sm:inline text-[10px] text-muted-foreground">Powered by Claude</span>
         </div>
 
+        {/* Context strip — shows the assistant knows the whole org structure */}
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b bg-muted/30 text-[11px] text-muted-foreground overflow-x-auto">
+          {organization?.name && <span className="font-medium text-foreground truncate max-w-[40%]">{organization.name}</span>}
+          <span className="inline-flex items-center gap-1"><Building2 className="w-3 h-3" /> {workspaces.length} workspace{workspaces.length === 1 ? '' : 's'}</span>
+          <span className="text-border">·</span>
+          <span className="inline-flex items-center gap-1"><FolderKanban className="w-3 h-3" /> {projects.length} project{projects.length === 1 ? '' : 's'}</span>
+          <span className="text-border">·</span>
+          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><Users className="w-3 h-3" /> full org knowledge</span>
+        </div>
+
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-transparent to-muted/20">
           {messages.map((m) => {
@@ -256,14 +271,14 @@ export const CrmAssistantChat: React.FC = () => {
 
         {/* Composer */}
         <div className="border-t p-3 space-y-2 shrink-0 bg-card">
-          {messages.length <= 1 && (
-            <div className="flex flex-wrap gap-1.5">
+          {!input.trim() && (
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {QUICK_PROMPTS.map((q) => (
                 <button
                   key={q.label}
                   type="button"
                   onClick={() => void send(q.prompt)}
-                  className="text-[11px] px-2.5 py-1 rounded-full border border-border bg-background hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-colors"
+                  className="shrink-0 text-[11px] px-2.5 py-1 rounded-full border border-border bg-background hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-colors"
                   disabled={busy}
                 >
                   {q.label}

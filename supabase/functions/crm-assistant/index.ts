@@ -153,6 +153,10 @@ const TOOLS = [
   },
   { name: "list_org_members", description: "List org members (user_id + name + role) so you can resolve 'assign to <name>'. Read-only.",
     input_schema: { type: "object", properties: {}, required: [] } },
+  { name: "list_workspaces", description: "List all workspaces in the org (name + whether default). Read-only.",
+    input_schema: { type: "object", properties: {}, required: [] } },
+  { name: "list_projects", description: "List projects in the org, optionally only those in a named workspace. Read-only.",
+    input_schema: { type: "object", properties: { workspace: { type: "string", description: "Optional workspace name to filter by." } }, required: [] } },
   { name: "find_records", description: "Find clients/deals/leads/projects/contacts by name. Returns up to 6 {id,label}. If more than one matches, ask the user which one. Read-only.",
     input_schema: { type: "object", properties: {
       entity: { type: "string", enum: ["client","deal","lead","project","contact"] },
@@ -291,6 +295,21 @@ const runTool = async (
       const members = (Array.isArray(org?.members) ? org!.members : []) as Array<Record<string, unknown>>;
       return { result: members.map((m) => ({ user_id: m.userId ?? m.user_id, name: m.displayName ?? m.email, role: m.role ?? "member" })) };
     }
+    case "list_workspaces": {
+      const { data } = await admin.from("workspaces").select("workspace_id, name, is_default").eq("organization_id", orgId).order("name").limit(200);
+      return { result: (data ?? []).map((w) => { const r = w as Record<string, unknown>; return { id: r.workspace_id, name: r.name, default: !!r.is_default }; }) };
+    }
+    case "list_projects": {
+      let pq = admin.from("projects").select("project_id, name, workspace_id").eq("organization_id", orgId);
+      const wsName = String(input.workspace ?? "").trim();
+      if (wsName) {
+        const { data: ws } = await admin.from("workspaces").select("workspace_id").eq("organization_id", orgId).ilike("name", wsName).limit(1).maybeSingle();
+        const wsId = (ws as { workspace_id?: string } | null)?.workspace_id;
+        if (wsId) pq = pq.eq("workspace_id", wsId);
+      }
+      const { data } = await pq.order("created_at", { ascending: false }).limit(200);
+      return { result: (data ?? []).map((p) => { const r = p as Record<string, unknown>; return { id: r.project_id, name: r.name, workspace_id: r.workspace_id }; }) };
+    }
     case "find_records": {
       const entity = String(input.entity ?? "");
       const q = `%${String(input.query ?? "").trim()}%`;
@@ -363,6 +382,26 @@ Deno.serve(async (req: Request) => {
 
   const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
 
+  // Give the assistant up-front knowledge of the whole org structure: every
+  // workspace and the projects inside it. This lets it answer "what's in
+  // workspace X", route a new task/project to the right place, and reason
+  // across all workspaces without a tool round-trip.
+  const [{ data: wsRows }, { data: projRows }] = await Promise.all([
+    admin.from("workspaces").select("workspace_id, name, is_default").eq("organization_id", body.organization_id).limit(200),
+    admin.from("projects").select("project_id, name, workspace_id").eq("organization_id", body.organization_id).limit(500),
+  ]);
+  const workspaces = (wsRows ?? []) as Array<{ workspace_id: string; name: string; is_default?: boolean }>;
+  const allProjects = (projRows ?? []) as Array<{ project_id: string; name: string; workspace_id: string | null }>;
+  const structureLines = workspaces.map((w) => {
+    const ps = allProjects.filter((p) => p.workspace_id === w.workspace_id).map((p) => p.name);
+    return `• ${w.name}${w.is_default ? " (default)" : ""}: ${ps.length ? ps.join(", ") : "(no projects)"}`;
+  });
+  const orphan = allProjects.filter((p) => !p.workspace_id || !workspaces.some((w) => w.workspace_id === p.workspace_id)).map((p) => p.name);
+  if (orphan.length) structureLines.push(`• (no workspace): ${orphan.join(", ")}`);
+  const orgStructure = structureLines.length
+    ? `\n\nYOUR ORG'S WORKSPACES → PROJECTS (you know all of these; use the exact names, and resolve ids with find_records before any write):\n${structureLines.join("\n")}`
+    : "\n\nThis org has no workspaces or projects yet.";
+
   const systemPrompt = `You are a CRM assistant embedded in TaskCalendar. The current user's role is "${auth.role ?? "member"}".
 
 You help reps, admins, and owners get work done across deals, leads, contacts, accounts, and tasks.
@@ -378,9 +417,9 @@ WHEN THE USER WANTS TO CREATE / ADD / CHANGE SOMETHING — this is the most impo
 - Resolve ids only when the user named a specific existing record/person: use find_records (for a client/deal/lead/project/contact) or list_org_members (to assign by name) to get the id, then call the propose_* tool. Never invent an id. If find_records returns more than one match, ask which one. If the user did not name a specific record, propose without that id.
 - Every write is proposal-only — the user reviews and confirms in the UI before anything is saved. Never claim you already did, saved, sent, or created something.
 
-READS: call the read-only tools (summarize_pipeline / list_overdue_tasks / list_hot_leads / deal_detail / find_records / list_org_members) before stating numbers or facts. Never invent figures.
+READS: call the read-only tools (summarize_pipeline / list_overdue_tasks / list_hot_leads / deal_detail / find_records / list_org_members / list_workspaces / list_projects) before stating numbers or facts. Never invent figures. You already know the workspace→project structure below, so you can answer "what workspaces/projects do I have" and "what's in <workspace>" directly; use list_projects only when you need fresh detail.
 
-If the user is a "member" and asks for an admin-only change, tell them plainly and stop.`;
+If the user is a "member" and asks for an admin-only change, tell them plainly and stop.${orgStructure}`;
 
   const history = Array.isArray(body.history) ? body.history.slice(-MAX_TURNS) : [];
   const messages: Anthropic.MessageParam[] = [
