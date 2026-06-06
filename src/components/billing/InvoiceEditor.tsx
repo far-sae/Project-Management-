@@ -38,12 +38,15 @@ interface EditorProps {
   userId: string | null;
   userName: string | null;
   onSaved: () => Promise<void> | void;
+  projects?: { projectId: string; name: string; workspaceId: string }[];
+  defaultProjectId?: string | null;
 }
 
 const blankLine = (): QuoteLineItem => ({ description: '', qty: 1, unitPrice: 0, lineTotal: 0 });
 
 export const InvoiceEditor: React.FC<EditorProps> = ({
   open, onOpenChange, organizationId, client, clients, existing, userId, userName, onSaved,
+  projects, defaultProjectId,
 }) => {
   const [title, setTitle] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -58,6 +61,7 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
   const [amountPaid, setAmountPaid] = useState(0);
   const [busy, setBusy] = useState(false);
   const [pickedClientId, setPickedClientId] = useState('');
+  const [projectId, setProjectId] = useState<string>('');
 
   // The account this invoice belongs to: the fixed prop, the existing
   // invoice's client, or the hub-picked one.
@@ -82,6 +86,7 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
       setTerms(existing.terms ?? '');
       setStatus(existing.status);
       setAmountPaid(existing.amountPaid);
+      setProjectId(existing.projectId ?? '');
     } else {
       setTitle('');
       setCurrency('USD');
@@ -95,6 +100,7 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
       setStatus('draft');
       setAmountPaid(0);
       setPickedClientId('');
+      setProjectId(defaultProjectId ?? '');
     }
   }, [open, existing]);
 
@@ -122,11 +128,13 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
         await updateInvoice(organizationId, existing.invoiceId, {
           title, currency, lineItems: valid, taxRate, discount, notes, terms,
           dueAt: dueAt ? new Date(dueAt) : null, status, amountPaid,
+          projectId: projectId || null,
         });
       } else {
         await createInvoice(organizationId, userId, userName, {
           clientId: effectiveClientId,
           workspaceId: effectiveWorkspaceId,
+          projectId: projectId || null,
           title: title || null, currency, lineItems: valid, taxRate, discount,
           notes, terms, issuedAt: new Date(issuedAt),
           dueAt: dueAt ? new Date(dueAt) : null,
@@ -165,6 +173,27 @@ export const InvoiceEditor: React.FC<EditorProps> = ({
                 <SelectContent>
                   {clients.map((c) => (
                     <SelectItem key={c.clientId} value={c.clientId}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {projects && projects.length > 0 && (
+            <div>
+              <Label className="text-xs">Project (optional)</Label>
+              <Select
+                value={projectId || '__none__'}
+                onValueChange={(v) => setProjectId(v === '__none__' ? '' : v)}
+                disabled={busy}
+              >
+                <SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— None —</SelectItem>
+                  {(effectiveWorkspaceId
+                    ? projects.filter((p) => p.workspaceId === effectiveWorkspaceId)
+                    : projects
+                  ).map((p) => (
+                    <SelectItem key={p.projectId} value={p.projectId}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

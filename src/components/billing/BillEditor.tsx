@@ -32,12 +32,17 @@ interface Props {
   userId: string | null;
   userName: string | null;
   onSaved: () => Promise<void> | void;
+  workspaces?: { workspaceId: string; name: string }[];
+  defaultWorkspaceId?: string | null;
+  projects?: { projectId: string; name: string; workspaceId: string }[];
+  defaultProjectId?: string | null;
 }
 
 const blankLine = (): QuoteLineItem => ({ description: '', qty: 1, unitPrice: 0, lineTotal: 0 });
 
 export const BillEditor: React.FC<Props> = ({
   open, onOpenChange, organizationId, existing, userId, userName, onSaved,
+  workspaces, defaultWorkspaceId, projects, defaultProjectId,
 }) => {
   const [vendorName, setVendorName] = useState('');
   const [vendorEmail, setVendorEmail] = useState('');
@@ -51,6 +56,8 @@ export const BillEditor: React.FC<Props> = ({
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<BillStatus>('draft');
   const [amountPaid, setAmountPaid] = useState(0);
+  const [workspaceId, setWorkspaceId] = useState<string>('');
+  const [projectId, setProjectId] = useState<string>('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -68,6 +75,8 @@ export const BillEditor: React.FC<Props> = ({
       setNotes(existing.notes ?? '');
       setStatus(existing.status);
       setAmountPaid(existing.amountPaid);
+      setWorkspaceId(existing.workspaceId ?? '');
+      setProjectId(existing.projectId ?? '');
     } else {
       setVendorName('');
       setVendorEmail('');
@@ -81,6 +90,8 @@ export const BillEditor: React.FC<Props> = ({
       setNotes('');
       setStatus('draft');
       setAmountPaid(0);
+      setWorkspaceId(defaultWorkspaceId ?? '');
+      setProjectId(defaultProjectId ?? '');
     }
   }, [open, existing]);
 
@@ -111,6 +122,8 @@ export const BillEditor: React.FC<Props> = ({
           reference: reference.trim() || null,
           currency, lineItems: valid, taxRate, discount, notes,
           dueAt: dueAt ? new Date(dueAt) : null, status, amountPaid,
+          workspaceId: workspaceId || null,
+          projectId: projectId || null,
         });
       } else {
         await createBill(organizationId, userId, userName, {
@@ -120,6 +133,8 @@ export const BillEditor: React.FC<Props> = ({
           currency, lineItems: valid, taxRate, discount,
           notes, issuedAt: new Date(issuedAt),
           dueAt: dueAt ? new Date(dueAt) : null,
+          workspaceId: workspaceId || null,
+          projectId: projectId || null,
         });
       }
       toast.success(existing ? 'Bill saved' : 'Bill created');
@@ -161,6 +176,49 @@ export const BillEditor: React.FC<Props> = ({
             <Label className="text-xs">Reference (vendor's invoice number, optional)</Label>
             <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. INV-2026-001" disabled={busy} />
           </div>
+
+          {workspaces && workspaces.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Workspace (optional)</Label>
+                <Select
+                  value={workspaceId || '__none__'}
+                  onValueChange={(v) => {
+                    const next = v === '__none__' ? '' : v;
+                    setWorkspaceId(next);
+                    setProjectId('');
+                  }}
+                  disabled={busy}
+                >
+                  <SelectTrigger><SelectValue placeholder="No workspace" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {workspaces.map((w) => (
+                      <SelectItem key={w.workspaceId} value={w.workspaceId}>{w.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Project (optional)</Label>
+                <Select
+                  value={projectId || '__none__'}
+                  onValueChange={(v) => setProjectId(v === '__none__' ? '' : v)}
+                  disabled={busy}
+                >
+                  <SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {(projects ?? [])
+                      .filter((p) => !workspaceId || p.workspaceId === workspaceId)
+                      .map((p) => (
+                        <SelectItem key={p.projectId} value={p.projectId}>{p.name}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-[100px_1fr_1fr] gap-2">
             <div>

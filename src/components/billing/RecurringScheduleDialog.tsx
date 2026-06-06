@@ -34,12 +34,15 @@ interface Props {
   userId: string | null;
   userName: string | null;
   onSaved: () => Promise<void> | void;
+  projects?: { projectId: string; name: string; workspaceId: string }[];
+  defaultProjectId?: string | null;
 }
 
 const blankLine = (): QuoteLineItem => ({ description: '', qty: 1, unitPrice: 0, lineTotal: 0 });
 
 export const RecurringScheduleDialog: React.FC<Props> = ({
   open, onOpenChange, organizationId, clients, existing, userId, userName, onSaved,
+  projects, defaultProjectId,
 }) => {
   const [pickedClientId, setPickedClientId] = useState('');
   const [frequency, setFrequency] = useState<ScheduleFrequency>('monthly');
@@ -52,6 +55,7 @@ export const RecurringScheduleDialog: React.FC<Props> = ({
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
+  const [projectId, setProjectId] = useState<string>('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -68,6 +72,7 @@ export const RecurringScheduleDialog: React.FC<Props> = ({
       setDiscount(existing.discount);
       setNotes(existing.notes ?? '');
       setTerms(existing.terms ?? '');
+      setProjectId(existing.projectId ?? '');
     } else {
       setPickedClientId('');
       setFrequency('monthly');
@@ -80,6 +85,7 @@ export const RecurringScheduleDialog: React.FC<Props> = ({
       setDiscount(0);
       setNotes('');
       setTerms('');
+      setProjectId(defaultProjectId ?? '');
     }
   }, [open, existing]);
 
@@ -96,6 +102,10 @@ export const RecurringScheduleDialog: React.FC<Props> = ({
       return next;
     }));
   };
+
+  const effectiveClientId = existing?.clientId ?? pickedClientId;
+  const effectiveWorkspaceId =
+    clients.find((c) => c.clientId === effectiveClientId)?.workspaceId ?? null;
 
   const handleSave = async () => {
     const valid = lines.filter((l) => l.description.trim() && l.qty > 0);
@@ -118,11 +128,13 @@ export const RecurringScheduleDialog: React.FC<Props> = ({
           frequency,
           dueDays,
           nextRunDate: new Date(nextRunDate),
+          projectId: projectId || null,
         });
       } else {
         await createSchedule(organizationId, userId, userName, {
           clientId,
           workspaceId: ws,
+          projectId: projectId || null,
           title: title || null,
           currency,
           lineItems: valid,
@@ -167,6 +179,27 @@ export const RecurringScheduleDialog: React.FC<Props> = ({
                 <SelectContent>
                   {clients.map((c) => (
                     <SelectItem key={c.clientId} value={c.clientId}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {projects && projects.length > 0 && (
+            <div>
+              <Label className="text-xs">Project (optional)</Label>
+              <Select
+                value={projectId || '__none__'}
+                onValueChange={(v) => setProjectId(v === '__none__' ? '' : v)}
+                disabled={busy}
+              >
+                <SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— None —</SelectItem>
+                  {(effectiveWorkspaceId
+                    ? projects.filter((p) => p.workspaceId === effectiveWorkspaceId)
+                    : projects
+                  ).map((p) => (
+                    <SelectItem key={p.projectId} value={p.projectId}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
