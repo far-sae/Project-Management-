@@ -104,7 +104,7 @@ export const billTotals = (list: Bill[], today: Date = new Date()): BillTotals =
       payable += balance;
       if (isBillOverdue(b, today)) overdue += balance;
     }
-    if (b.paidAt && b.paidAt.getTime() >= cutoff) paidLast30 += b.amountPaid;
+    if (b.paidAt && b.paidAt.getTime() >= cutoff) paidLast30 += Math.min(b.amountPaid, b.total);
   }
   return { payable, overdue, paidLast30, counts };
 };
@@ -161,8 +161,9 @@ export const updateBill = async (
   if (input.reference !== undefined) patch.reference = input.reference;
   if (input.status !== undefined) {
     patch.status = input.status;
-    if (input.status === "paid") patch.paid_at = new Date().toISOString();
-    if (input.status === "void") patch.voided_at = new Date().toISOString();
+    // Clear stamps when leaving paid/void so "unmark paid" reverts cleanly.
+    patch.paid_at = input.status === "paid" ? new Date().toISOString() : null;
+    patch.voided_at = input.status === "void" ? new Date().toISOString() : null;
   }
   if (input.amountPaid !== undefined) patch.amount_paid = input.amountPaid;
   if (input.currency !== undefined) patch.currency = input.currency.toUpperCase();
@@ -172,6 +173,8 @@ export const updateBill = async (
     patch.line_items = input.lineItems;
     const totals = computeQuoteTotals(input.lineItems, input.taxRate ?? 0, input.discount ?? 0);
     patch.subtotal = totals.subtotal; patch.tax_amount = totals.taxAmount; patch.total = totals.total;
+    // Clamp a recorded payment that now exceeds the (edited-down) total.
+    if (input.amountPaid !== undefined) patch.amount_paid = Math.min(input.amountPaid, totals.total);
   }
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.dueAt !== undefined) patch.due_at = input.dueAt ? input.dueAt.toISOString().slice(0, 10) : null;
@@ -181,6 +184,11 @@ export const updateBill = async (
   if (error) { logger.error("updateBill failed:", error); throw error; }
   return mapBill(data);
 };
+
+/** Revert a paid bill back to "open" (clears amount_paid + paid_at). */
+export const unmarkBillPaid = async (
+  organizationId: string, billId: string,
+): Promise<Bill> => updateBill(organizationId, billId, { status: "open", amountPaid: 0 });
 
 export const deleteBill = async (organizationId: string, billId: string): Promise<void> => {
   const { error } = await supabase.from("bills").delete()

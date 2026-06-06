@@ -37,4 +37,12 @@ describe('billTotals', () => {
     expect(t.counts.open).toBe(2);
     expect(t.counts.void).toBe(1);
   });
+
+  it('caps paidLast30 at the bill total when amountPaid is stale/over total', () => {
+    const list = [
+      bill({ status: 'paid', total: 178673.76, amountPaid: 240000, paidAt: new Date('2026-05-20') }),
+    ];
+    const t = billTotals(list, TODAY);
+    expect(t.paidLast30).toBe(178673.76); // capped at total, not the stale 240000
+  });
 });
