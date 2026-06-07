@@ -278,8 +278,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   useEffect(() => {
     if (!open) return;
     if (task) {
-      setTitle(task.title);
-      setDescription(task.description);
+      // Guard against null — a task with no description would otherwise set
+      // `description` to null and crash render-time `description.trim()` calls.
+      setTitle(task.title ?? '');
+      setDescription(task.description ?? '');
       setStatus(task.status);
       setPriority(task.priority);
       setDueDate(task.dueDate ? new Date(task.dueDate) : null);
@@ -835,7 +837,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
     try {
       const result = await expandDescription(user.userId, { title, projectContext: projectName });
-      setDescription(result.description);
+      setDescription(result.description ?? '');
       markOnboardingAi();
     } catch (error) {
       setAiError((error as AIError).message);
@@ -850,7 +852,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setAiError(null);
     try {
       const result = await refineDescription(user.userId, { title, description, projectContext: projectName });
-      setDescription(result.description);
+      setDescription(result.description ?? '');
       markOnboardingAi();
     } catch (error) {
       setAiError((error as AIError).message);
@@ -884,7 +886,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         description: description.trim(),
         projectContext: projectName,
       });
-      setTitle(result.title);
+      setTitle(result.title ?? '');
       markOnboardingAi();
       toast.success('Title updated from description');
     } catch (error) {
