@@ -3,7 +3,6 @@ import { ProviderCard } from './ProviderCard';
 import { TelegramConnectCard } from './TelegramConnectCard';
 import { WhatsAppConnectCard } from './WhatsAppConnectCard';
 import { IntegrationsHealthCard } from './IntegrationsHealthCard';
-import { TwilioSmsConfigCard } from './TwilioSmsConfigCard';
 import { providerOrder, providerDisplay, visibleProviders } from '@/services/integrations/providers';
 import { FEATURES } from '@/config/featureFlags';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -51,10 +50,6 @@ export const IntegrationsTab: React.FC = () => {
         })}
         <TelegramConnectCard />
         {showWhatsApp && <WhatsAppConnectCard />}
-        {/* Twilio (SMS) — credentials are server-side env vars, not
-            in-app fields, so this card surfaces the exact var names +
-            a probe button instead of a Connect flow. */}
-        <TwilioSmsConfigCard />
       </div>
     </div>
   );
