@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Loader2, FileDown, Send, Trash2, Wallet, AlertTriangle, CheckCircle2, FileText, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useEmailEnabled } from '@/hooks/useEmailEnabled';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,6 +36,7 @@ interface Props {
 }
 
 export const InvoicesTab: React.FC<Props> = ({ invoices, loading, orgId, orgName, clientName, fmt, onEdit, onChanged }) => {
+  const emailEnabled = useEmailEnabled();
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -134,7 +136,7 @@ export const InvoicesTab: React.FC<Props> = ({ invoices, loading, orgId, orgName
                         <Button size="sm" variant="ghost" className="h-7 px-2" title="Download PDF" onClick={() => pdf(inv)} disabled={busy}>
                           <FileDown className="w-3.5 h-3.5" />
                         </Button>
-                        {inv.status !== 'paid' && inv.status !== 'void' && (
+                        {emailEnabled && inv.status !== 'paid' && inv.status !== 'void' && (
                           <Button size="sm" variant="ghost" className="h-7 px-2" title="Email to client" onClick={() => run(inv.invoiceId, () => sendInvoice(orgId, inv.invoiceId), `Emailed ${inv.invoiceNumber}`)} disabled={busy}>
                             <Send className="w-3.5 h-3.5" />
                           </Button>

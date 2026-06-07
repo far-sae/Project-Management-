@@ -16,6 +16,7 @@ import {
   ContactWithAccount, contactDisplayName,
   getReportingContacts,
 } from '@/services/supabase/contacts';
+import { useEmailEnabled } from '@/hooks/useEmailEnabled';
 import type { Client } from '@/services/supabase/clients';
 import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
 import { AccountNotesSection } from '@/components/activities/AccountNotesSection';
@@ -48,6 +49,7 @@ export const ContactDetailDrawer: React.FC<Props> = ({
   contact, organizationId, canManage, parentAccount, visibleClientIds,
   onClose, onEdit, onDelete, onClone, onSendEmail, onOpenAccount,
 }) => {
+  const emailEnabled = useEmailEnabled();
   const [showAllDetails, setShowAllDetails] = useState(false);
   const [reportingContacts, setReportingContacts] = useState<ContactWithAccount[]>([]);
   const [enrolOpen, setEnrolOpen] = useState(false);
@@ -107,9 +109,11 @@ export const ContactDetailDrawer: React.FC<Props> = ({
           <div className="ml-auto flex items-center gap-1">
             {canManage && (
               <>
-                <Button variant="outline" size="sm" onClick={() => onSendEmail(contact)}>
-                  <Mail className="w-3.5 h-3.5 mr-1" /> Send Email
-                </Button>
+                {emailEnabled && (
+                  <Button variant="outline" size="sm" onClick={() => onSendEmail(contact)}>
+                    <Mail className="w-3.5 h-3.5 mr-1" /> Send Email
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => onEdit(contact)}>
                   <Edit className="w-3.5 h-3.5 mr-1" /> Edit
                 </Button>

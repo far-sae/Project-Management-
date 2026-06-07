@@ -33,7 +33,7 @@ export const IntegrationsTab: React.FC = () => {
           each one by triggering a real workflow. */}
       <IntegrationsHealthCard />
       <div className="grid gap-3">
-        {visibleProviders(providerOrder, FEATURES).map((id) => {
+        {visibleProviders(providerOrder, { gmail: FEATURES.gmail || isAppOwner(user?.userId) }).map((id) => {
           const display = providerDisplay[id];
           // Org-level providers (Slack) can only be connected by admins.
           // Non-admins still see the card so they know the connection exists,

@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/context/AuthContext';
+import { useEmailEnabled } from '@/hooks/useEmailEnabled';
 import {
   Lead, LeadNote, LeadStatus,
   leadDisplayName, leadStatusLabel, LEAD_STATUS_OPTIONS,
@@ -72,6 +73,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   onSendEmail, onClone, onStatusChange,
 }) => {
   const { user } = useAuth();
+  const emailEnabled = useEmailEnabled();
   const { organization: _org } = useOrganization(); // satisfies hook order
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
@@ -159,9 +161,11 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           <div className="ml-auto flex items-center gap-1">
             {canManage && !isConverted && !readOnly && (
               <>
-                <Button variant="outline" size="sm" onClick={() => onSendEmail(lead)}>
-                  <Mail className="w-3.5 h-3.5 mr-1" /> Send Email
-                </Button>
+                {emailEnabled && (
+                  <Button variant="outline" size="sm" onClick={() => onSendEmail(lead)}>
+                    <Mail className="w-3.5 h-3.5 mr-1" /> Send Email
+                  </Button>
+                )}
                 {canConvert && (
                   <Button
                     variant="outline" size="sm"

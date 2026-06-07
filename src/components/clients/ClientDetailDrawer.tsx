@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/context/AuthContext';
+import { useEmailEnabled } from '@/hooks/useEmailEnabled';
 import {
   Client,
   ClientAttachment,
@@ -86,6 +87,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   allAccounts, onOpenAccount,
 }) => {
   const { user } = useAuth();
+  const emailEnabled = useEmailEnabled();
   const { organization: _org } = useOrganization(); // satisfies hook order
   const [tab, setTab] = useState<MainTab>('activity');
   const [openEmail, setOpenEmail] = useState(false);
@@ -250,7 +252,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
             {/* Quick action row — HubSpot's row of round icon buttons */}
             <div className="flex items-center justify-center gap-2 pt-1">
               <QuickAction icon={MessageSquare} label="Note" onClick={quickAction('notes')} />
-              <QuickAction icon={Mailbox} label="Email" onClick={() => setOpenEmail(true)} />
+              {emailEnabled && <QuickAction icon={Mailbox} label="Email" onClick={() => setOpenEmail(true)} />}
               <QuickAction icon={MessageSquare} label="SMS" onClick={() => setOpenSms(true)} />
               <QuickAction icon={PhoneCall} label="Call" onClick={quickAction('calls')} href={client.phone ? `tel:${client.phone}` : undefined} />
               <QuickAction icon={FileText} label="Task" onClick={quickAction('tasks')} />
