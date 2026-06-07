@@ -7,10 +7,17 @@ import { TwilioSmsConfigCard } from './TwilioSmsConfigCard';
 import { providerOrder, providerDisplay, visibleProviders } from '@/services/integrations/providers';
 import { FEATURES } from '@/config/featureFlags';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useAuth } from '@/context/AuthContext';
+import { isAppOwner } from '@/lib/app-owner';
 
 export const IntegrationsTab: React.FC = () => {
   const { organization, canManageSettings } = useOrganization();
+  const { user } = useAuth();
   const currentOrgId = organization?.organizationId ?? null;
+  // The WhatsApp bot is owner-only for now — only the app owner (us) sees it,
+  // not customer orgs' admins/members. Falls back to the build flag so it can
+  // be opened up later by setting VITE_ENABLE_WHATSAPP=true.
+  const showWhatsApp = isAppOwner(user?.userId) || FEATURES.whatsapp;
 
   return (
     <div className="space-y-4">
@@ -43,7 +50,7 @@ export const IntegrationsTab: React.FC = () => {
           );
         })}
         <TelegramConnectCard />
-        {FEATURES.whatsapp && <WhatsAppConnectCard />}
+        {showWhatsApp && <WhatsAppConnectCard />}
         {/* Twilio (SMS) — credentials are server-side env vars, not
             in-app fields, so this card surfaces the exact var names +
             a probe button instead of a Connect flow. */}
