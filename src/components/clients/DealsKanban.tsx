@@ -68,6 +68,9 @@ interface Props {
    *  legacy hardcoded six-stage list so existing screens keep working before
    *  the pipelines layer has finished loading. */
   stages?: PipelineStage[];
+  /** Called after a deal is successfully transitioned to a Won stage.
+   *  Parent (Clients.tsx) uses this to open the handoff dialog. */
+  onDealWon?: (deal: Deal) => void;
 }
 
 /** Internal stage shape used by the column renderer and grouping logic. The
@@ -332,6 +335,7 @@ export const DealsKanban: React.FC<Props> = ({
   displayCurrency,
   pipelineId,
   stages,
+  onDealWon,
 }) => {
   const { dealsByStage, loading, update, canManage } = useDeals(pipelineId);
   const { rates } = useFxRates();
@@ -552,6 +556,7 @@ export const DealsKanban: React.FC<Props> = ({
               createdAt: new Date(),
             } as PipelineStage)
           }
+          onWon={onDealWon}
           onClose={() => setPendingWonStage(null)}
         />
       )}

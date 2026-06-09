@@ -76,6 +76,9 @@ export interface DealDetailViewProps {
   /** When true, the back arrow renders. Hidden when the detail view is the
    *  page's primary content (no place to go back to). */
   showBack?: boolean;
+  /** Called AFTER a deal is successfully transitioned to Won. Used by the
+   *  parent (Clients.tsx) to open the handoff dialog. Purely additive. */
+  onDealWon?: (deal: import('@/services/supabase/deals').Deal) => void;
 }
 
 /**
@@ -85,7 +88,7 @@ export interface DealDetailViewProps {
  * Contact Roles, Stage History, with a side rail of Sales Summary numbers.
  */
 export const DealDetailView: React.FC<DealDetailViewProps> = ({
-  dealId, onBack, showBack = true,
+  dealId, onBack, showBack = true, onDealWon,
 }) => {
   const { deals, update, remove, loading, canManage, organizationId } = useDeals();
   const { clients } = useClients();
@@ -179,7 +182,7 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
   }) => {
     if (!deal) return;
     const previousStage = deal.stage;
-    await update(deal.dealId, {
+    const updated = await update(deal.dealId, {
       stage: patch.stage,
       value: patch.value,
       expectedCloseDate: patch.expectedCloseDate,
@@ -196,6 +199,12 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
       changedByName: null,
     });
     toast.success(`Stage moved to ${DEAL_STAGES.find((s) => s.id === patch.stage)?.label ?? patch.stage}`);
+    // Additive: fire onDealWon after the update succeeds (won stage only).
+    if (patch.stage === 'won' && onDealWon) {
+      // Use the updated deal object if available, otherwise use the current one
+      // with the patched stage applied.
+      onDealWon(updated ?? { ...deal, stage: patch.stage, value: patch.value });
+    }
   };
 
   const handleDelete = async () => {

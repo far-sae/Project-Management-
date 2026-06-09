@@ -14,11 +14,14 @@ interface Props {
   deal: Deal;
   targetStage: PipelineStage;
   onClose: () => void;
+  /** Called AFTER the won transition succeeds. Used by the parent to open the
+   *  handoff dialog. Optional so all existing callers remain unchanged. */
+  onWon?: (deal: Deal) => void;
 }
 
 const toIso = (d: Date) => d.toISOString().slice(0, 10);
 
-export const DealWonModal: React.FC<Props> = ({ deal, targetStage: _targetStage, onClose }) => {
+export const DealWonModal: React.FC<Props> = ({ deal, targetStage: _targetStage, onClose, onWon }) => {
   const today = new Date();
   const due = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -45,6 +48,7 @@ export const DealWonModal: React.FC<Props> = ({ deal, targetStage: _targetStage,
         templateId: skip || templateId === "none" ? null : templateId,
       });
       toast.success(skip ? "Deal won" : "Deal won, project created");
+      onWon?.(deal);
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed");

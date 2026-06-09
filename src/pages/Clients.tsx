@@ -28,8 +28,10 @@ import { DealDetailView } from '@/components/deals/DealDetailView';
 import { DealsEmptyState } from '@/components/deals/DealsEmptyState';
 import { DealsListView } from '@/components/deals/DealsListView';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
+import { DealHandoffDialog } from '@/components/deals/DealHandoffDialog';
 import { ImportDealsDialog } from '@/components/deals/ImportDealsDialog';
 import { useDeals } from '@/hooks/useDeals';
+import type { Deal } from '@/services/supabase/deals';
 import { ForecastTab } from '@/components/clients/ForecastTab';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
 import { PipelineSelector } from '@/components/clients/PipelineSelector';
@@ -112,6 +114,8 @@ export const Clients: React.FC = () => {
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
   const { deals: allDeals, create: createDealHook, remove: removeDeal, update: updateDeal } = useDeals();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  // Handoff dialog state: deal that just became Won, triggering the PM task prompt.
+  const [handoffDeal, setHandoffDeal] = useState<Deal | null>(null);
   // Pipeline-tab-local state: which deal is open inline (Zoho detail view),
   // which view mode the rep prefers, and whether the Create Deal dialog is
   // open from the empty state or the kanban header.
@@ -847,6 +851,7 @@ export const Clients: React.FC = () => {
                     <DealDetailView
                       dealId={pipelineDealId}
                       onBack={() => setPipelineDealId(null)}
+                      onDealWon={(won) => setHandoffDeal(won)}
                     />
                   );
                 }
@@ -989,6 +994,7 @@ export const Clients: React.FC = () => {
                             : []
                         }
                         onSelectDeal={(d) => setPipelineDealId(d.dealId)}
+                        onDealWon={(won) => setHandoffDeal(won)}
                       />
                     ) : (
                       <DealsListView
@@ -1532,6 +1538,15 @@ export const Clients: React.FC = () => {
           );
           clearSelection();
         }}
+      />
+
+      {/* Deal won → PM handoff dialog. Owned here so there is exactly one
+          instance regardless of whether the win came from the kanban drag
+          or the deal detail view. Cancelling leaves the deal won. */}
+      <DealHandoffDialog
+        open={!!handoffDeal}
+        onOpenChange={(o) => { if (!o) setHandoffDeal(null); }}
+        deal={handoffDeal}
       />
     </>
   );

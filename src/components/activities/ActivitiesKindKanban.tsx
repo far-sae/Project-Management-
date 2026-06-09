@@ -36,7 +36,11 @@ export const ActivitiesKindKanban: React.FC<ActivitiesKindKanbanProps> = ({
 }) => {
   const grouped = useMemo(() => {
     const out: Record<PrimaryKind, Activity[]> = { task: [], meeting: [], call: [], note: [], email: [] };
-    for (const a of activities) out[a.kind].push(a);
+    for (const a of activities) {
+      // pm_task is a CRM-only read-only kind — not shown in the kind kanban columns
+      if (a.kind === 'pm_task') continue;
+      out[a.kind as PrimaryKind].push(a);
+    }
     return out;
   }, [activities]);
 

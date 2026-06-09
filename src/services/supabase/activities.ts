@@ -11,7 +11,7 @@ import { listMeetings, type Meeting } from "./meetings";
 import { listCalls, type Call, type CallStatus } from "./calls";
 import { supabase } from "./config";
 
-export type ActivityKind = "task" | "meeting" | "call" | "note" | "email";
+export type ActivityKind = "task" | "meeting" | "call" | "note" | "email" | "pm_task";
 
 /** Zoho-style filter views on the Activities page dropdown. Each
  *  resolves to a predicate the page applies after the union fetch. */
@@ -122,7 +122,19 @@ export interface Activity {
     | { kind: "meeting"; row: Meeting }
     | { kind: "call";    row: Call }
     | { kind: "note";    row: NoteRow }
-    | { kind: "email";   row: EmailEventRow };
+    | { kind: "email";   row: EmailEventRow }
+    | { kind: "pm_task"; row: PmTaskRow };
+}
+
+/** Minimal shape for a done PM task returned by listDoneHandoffTasks. */
+export interface PmTaskRow {
+  task_id: string;
+  title: string;
+  source_deal_id: string | null;
+  source_client_id: string | null;
+  completed_at: string | null;
+  project_id: string;
+  organization_id: string;
 }
 
 interface BuildContext {
@@ -323,17 +335,67 @@ const listOrgEmailEvents = async (orgId: string): Promise<EmailEventRow[]> => {
   return (data ?? []) as EmailEventRow[];
 };
 
+// ---------------------------------------------------------------------------
+// Done PM handoff task fetcher + mapper (migration 132)
+// ---------------------------------------------------------------------------
+
+/** Fetch completed PM tasks that have a CRM source link so they can appear in
+ *  the deal / client activity timeline. Only 'done' tasks are returned —
+ *  in-progress work never leaks into CRM activity. */
+export const listDoneHandoffTasks = async (organizationId: string): Promise<PmTaskRow[]> => {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("task_id, title, source_deal_id, source_client_id, completed_at, project_id, organization_id")
+    .eq("organization_id", organizationId)
+    .eq("status", "done")
+    .not("source_deal_id", "is", null);
+  if (error) return [];
+  // Also include rows linked to a client but not a deal
+  const { data: clientOnly, error: clientErr } = await supabase
+    .from("tasks")
+    .select("task_id, title, source_deal_id, source_client_id, completed_at, project_id, organization_id")
+    .eq("organization_id", organizationId)
+    .eq("status", "done")
+    .is("source_deal_id", null)
+    .not("source_client_id", "is", null);
+  if (clientErr) return (data ?? []) as PmTaskRow[];
+  const merged = new Map<string, PmTaskRow>();
+  for (const r of [...(data ?? []), ...(clientOnly ?? [])]) {
+    merged.set((r as PmTaskRow).task_id, r as PmTaskRow);
+  }
+  return Array.from(merged.values());
+};
+
+export const pmTaskToActivity = (row: PmTaskRow): Activity => ({
+  id: `pm_task:${row.task_id}`,
+  kind: "pm_task",
+  organizationId: row.organization_id,
+  workspaceId: null,
+  title: `Delivery task completed: ${row.title}`,
+  description: null,
+  whenAt: row.completed_at ? new Date(row.completed_at) : null,
+  overdue: false,
+  open: false,
+  ownerUserId: null,
+  ownerName: null,
+  priority: "normal",
+  category: "others",
+  relatedToLabel: null,
+  source: { kind: "pm_task", row },
+});
+
 /** Pull all three sources in parallel + map into the unified shape. */
 export const listActivities = async (
   organizationId: string,
   ctx: BuildContext,
 ): Promise<Activity[]> => {
-  const [tasks, meetings, calls, notes, emails] = await Promise.all([
+  const [tasks, meetings, calls, notes, emails, pmTasks] = await Promise.all([
     getOrganizationClientTasks(organizationId).catch(() => [] as ClientTask[]),
     listMeetings(organizationId).catch(() => [] as Meeting[]),
     listCalls(organizationId).catch(() => [] as Call[]),
     listOrgNotes(organizationId).catch(() => [] as NoteRow[]),
     listOrgEmailEvents(organizationId).catch(() => [] as EmailEventRow[]),
+    listDoneHandoffTasks(organizationId).catch(() => [] as PmTaskRow[]),
   ]);
   const out: Activity[] = [
     ...tasks.map((t) => taskToActivity(t, ctx)),
@@ -341,6 +403,7 @@ export const listActivities = async (
     ...calls.map((c) => callToActivity(c, ctx)),
     ...notes.map((n) => noteToActivity(n)),
     ...emails.map((e) => emailToActivity(e)),
+    ...pmTasks.map((p) => pmTaskToActivity(p)),
   ];
   // Open + nearest first; closed sorted newest first; nulls last.
   out.sort((a, b) => {
@@ -483,12 +546,14 @@ export const filterByEntity = (
   if (type === "deal") return (
     ((s.kind === "task" || s.kind === "meeting" || s.kind === "call") && (s.row as { dealId?: string }).dealId === id) ||
     (s.kind === "note" && s.row.deal_id === id) ||
-    (s.kind === "email" && s.row.entity_type === "deal" && s.row.entity_id === id)
+    (s.kind === "email" && s.row.entity_type === "deal" && s.row.entity_id === id) ||
+    (s.kind === "pm_task" && s.row.source_deal_id === id)
   );
   if (type === "client") return (
     ((s.kind === "task" || s.kind === "meeting" || s.kind === "call") && (s.row as { clientId?: string }).clientId === id) ||
     (s.kind === "note" && s.row.client_id === id) ||
-    (s.kind === "email" && s.row.entity_type === "client" && s.row.entity_id === id)
+    (s.kind === "email" && s.row.entity_type === "client" && s.row.entity_id === id) ||
+    (s.kind === "pm_task" && s.row.source_client_id === id)
   );
   // lead
   return (

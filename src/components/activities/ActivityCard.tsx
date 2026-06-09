@@ -1,6 +1,6 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { Calendar, ListTodo, Phone, MapPin, User, Clock, StickyNote, Mail } from 'lucide-react';
+import { Calendar, ListTodo, Phone, MapPin, User, Clock, StickyNote, Mail, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Activity } from '@/services/supabase/activities';
@@ -12,11 +12,12 @@ interface ActivityCardProps {
 }
 
 const KIND_META: Record<Activity['kind'], { icon: typeof Calendar; tone: string; label: string }> = {
-  task:    { icon: ListTodo,   tone: 'text-rose-600 bg-rose-500/10',      label: 'Task' },
-  meeting: { icon: Calendar,   tone: 'text-violet-600 bg-violet-500/10',  label: 'Meeting' },
-  call:    { icon: Phone,      tone: 'text-emerald-600 bg-emerald-500/10', label: 'Call' },
-  note:    { icon: StickyNote, tone: 'text-amber-600 bg-amber-500/10',    label: 'Note' },
-  email:   { icon: Mail,       tone: 'text-sky-600 bg-sky-500/10',        label: 'Email' },
+  task:    { icon: ListTodo,      tone: 'text-rose-600 bg-rose-500/10',      label: 'Task' },
+  meeting: { icon: Calendar,      tone: 'text-violet-600 bg-violet-500/10',  label: 'Meeting' },
+  call:    { icon: Phone,         tone: 'text-emerald-600 bg-emerald-500/10', label: 'Call' },
+  note:    { icon: StickyNote,    tone: 'text-amber-600 bg-amber-500/10',    label: 'Note' },
+  email:   { icon: Mail,          tone: 'text-sky-600 bg-sky-500/10',        label: 'Email' },
+  pm_task: { icon: CheckCircle2,  tone: 'text-green-600 bg-green-500/10',    label: 'Delivery' },
 };
 
 const PRIORITY_DOT: Record<string, string> = {
