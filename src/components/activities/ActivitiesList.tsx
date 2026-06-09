@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Calendar, ListTodo, Phone, ChevronUp, ChevronDown, StickyNote, Mail } from 'lucide-react';
+import { Calendar, ListTodo, Phone, ChevronUp, ChevronDown, StickyNote, Mail, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Activity } from '@/services/supabase/activities';
@@ -15,6 +15,7 @@ interface Sort { key: SortKey; dir: 'asc' | 'desc' }
 
 const KIND_ICON: Record<Activity['kind'], typeof Calendar> = {
   task: ListTodo, meeting: Calendar, call: Phone, note: StickyNote, email: Mail,
+  pm_task: CheckCircle2,
 };
 const KIND_COLOR: Record<Activity['kind'], string> = {
   task: 'text-rose-600',
@@ -22,6 +23,7 @@ const KIND_COLOR: Record<Activity['kind'], string> = {
   call: 'text-emerald-600',
   note: 'text-amber-600',
   email: 'text-sky-600',
+  pm_task: 'text-green-600',
 };
 
 /**
