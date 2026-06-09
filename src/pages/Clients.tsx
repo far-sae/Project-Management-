@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  GitBranch, Home as HomeIcon, UserPlus, Users as UsersIcon,
+  GitBranch, Home as HomeIcon, UserPlus,
   LayoutGrid, List, Activity as ActivityIcon,
 } from 'lucide-react';
 import { ActivitiesHubPanel } from '@/components/activities/ActivitiesHubPanel';
@@ -58,15 +58,7 @@ import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadConvertDialog } from '@/components/leads/LeadConvertDialog';
 import { LeadsHubCard } from '@/components/leads/LeadsHubCard';
 import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
-import { ContactsLanding } from '@/components/contacts/ContactsLanding';
-import { ContactsHubCard } from '@/components/contacts/ContactsHubCard';
-import { ContactsTable } from '@/components/contacts/ContactsTable';
-import { ContactFormDialog } from '@/components/contacts/ContactFormDialog';
-import { ContactDetailDrawer } from '@/components/contacts/ContactDetailDrawer';
-import { ImportContactsDialog } from '@/components/contacts/ImportContactsDialog';
 import { useContacts } from '@/hooks/useContacts';
-import type { ContactWithAccount } from '@/services/supabase/contacts';
-import { contactDisplayName } from '@/services/supabase/contacts';
 import { useLeads } from '@/hooks/useLeads';
 import type { Lead } from '@/services/supabase/leads';
 import { leadDisplayName } from '@/services/supabase/leads';
@@ -144,7 +136,7 @@ export const Clients: React.FC = () => {
   // saved bookmark or onGoToTasks callback fires with 'tasks', the
   // useEffect below silently redirects it to 'activities' (where
   // tasks now live).
-  const [activeTab, setActiveTab] = useState<'home' | 'leads' | 'contacts' | 'accounts' | 'pipeline' | 'tasks' | 'activities' | 'forecast'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'leads' | 'accounts' | 'pipeline' | 'tasks' | 'activities' | 'forecast'>('home');
   useEffect(() => {
     if (activeTab === 'tasks') setActiveTab('activities');
   }, [activeTab]);
@@ -155,40 +147,10 @@ export const Clients: React.FC = () => {
     if (activeTab === 'leads' && !canViewModule('leads')) setActiveTab('home');
   }, [activeTab, canViewModule]);
 
-  // ─── Contacts state ─────────────────────────────────────────────────────
-  const {
-    contacts, allContacts, loading: contactsLoading,
-    accountsInScope: contactsAccountsInScope,
-    visibleClientIds: contactsVisibleClientIds,
-    create: createContactSvc, update: updateContactSvc, remove: removeContactSvc,
-    canCreate: canCreateContact, canManage: canManageContact,
-  } = useContacts();
-  const [selectedContact, setSelectedContact] = useState<ContactWithAccount | null>(null);
-  // Send-email composer state. The Send Email button on Contact / Lead
-  // drawers used to open mailto: directly; now it opens this in-app
-  // composer that picks a saved template, expands merge tokens, sends
-  // via notify-send-gmail (which logs to email_events), and only falls
-  // back to mailto if Gmail isn't connected.
+  // ─── Contacts (still needed for AccountsHubCard count + DealFormDialog) ──
+  const { contacts } = useContacts();
+  // Send-email composer state (used by lead drawer Send Email button).
   const [emailRecipient, setEmailRecipient] = useState<SendEmailRecipient | null>(null);
-  const [editingContact, setEditingContact] = useState<ContactWithAccount | null>(null);
-  const [openCreateContact, setOpenCreateContact] = useState(false);
-  const [openImportContact, setOpenImportContact] = useState(false);
-  const [confirmDeleteContact, setConfirmDeleteContact] = useState<ContactWithAccount | null>(null);
-  const [deletingContact, setDeletingContact] = useState(false);
-
-  const liveSelectedContact = useMemo(() => {
-    if (!selectedContact) return null;
-    return contacts.find((c) => c.contactId === selectedContact.contactId)
-        ?? allContacts.find((c) => c.contactId === selectedContact.contactId)
-        ?? null;
-  }, [contacts, allContacts, selectedContact]);
-
-  // Drop a stale open drawer when the selected contact vanishes.
-  useEffect(() => {
-    if (selectedContact && liveSelectedContact === null) {
-      setSelectedContact(null);
-    }
-  }, [selectedContact, liveSelectedContact]);
 
   // ─── Leads state ────────────────────────────────────────────────────────
   const {
@@ -561,12 +523,6 @@ export const Clients: React.FC = () => {
                   )}
                 </TabsTrigger>
               )}
-              <TabsTrigger value="contacts">
-                <UsersIcon className="w-4 h-4 mr-1.5" /> Contacts
-                {contacts.length > 0 && (
-                  <Badge variant="outline" className="ml-1.5 text-[9px]">{contacts.length}</Badge>
-                )}
-              </TabsTrigger>
               <TabsTrigger value="accounts">
                 <Building2 className="w-4 h-4 mr-1.5" /> Accounts
               </TabsTrigger>
@@ -668,85 +624,6 @@ export const Clients: React.FC = () => {
               )}
             </TabsContent>
 
-            <TabsContent value="contacts" className="mt-4 space-y-4">
-              {contactsLoading ? (
-                <Card>
-                  <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
-                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading contacts…
-                  </CardContent>
-                </Card>
-              ) : contacts.length === 0 ? (
-                <ContactsLanding
-                  canCreate={canCreateContact && contactsAccountsInScope.length > 0}
-                  noAccountsInWorkspace={canCreateContact && contactsAccountsInScope.length === 0}
-                  onCreate={() => {
-                    if (contactsAccountsInScope.length === 0) {
-                      toast.info('Create an account first — contacts need a parent account.');
-                      setActiveTab('accounts');
-                      return;
-                    }
-                    setOpenCreateContact(true);
-                  }}
-                  onImport={() => setOpenImportContact(true)}
-                  onGoToAccounts={() => setActiveTab('accounts')}
-                />
-              ) : (
-                <>
-                  <ContactsHubCard
-                    contactsCount={contacts.length}
-                    accountsCount={clients.length}
-                    leadsCount={leads.length}
-                    primaryCount={contacts.filter((c) => c.isPrimary).length}
-                    canCreate={canCreateContact && contactsAccountsInScope.length > 0}
-                    scopeLabel={isAllWorkspaces
-                      ? 'All workspaces'
-                      : selectedWorkspace?.name ?? 'Current workspace'}
-                    onCreateContact={() => setOpenCreateContact(true)}
-                    onImportContacts={() => setOpenImportContact(true)}
-                    onGoToLeads={() => setActiveTab('leads')}
-                    onGoToAccounts={() => setActiveTab('accounts')}
-                    onGoToPipeline={() => setActiveTab('pipeline')}
-                    onShowPrimary={() => {
-                      // Surface the first primary contact's drawer — useful
-                      // when reps want to email the de-facto decision-maker.
-                      const first = contacts.find((c) => c.isPrimary);
-                      if (first) setSelectedContact(first);
-                    }}
-                  />
-
-                  <div className="flex items-center justify-between flex-wrap gap-2 pt-2">
-                    <div>
-                      <h2 className="text-lg font-semibold">Contacts</h2>
-                      <p className="text-sm text-muted-foreground">
-                        Every person you know at your accounts. Click a row to open
-                        their record.
-                      </p>
-                    </div>
-                    {canCreateContact && (
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => setOpenImportContact(true)}>
-                          <Upload className="w-4 h-4 mr-2" /> Import Contacts
-                        </Button>
-                        <Button
-                          onClick={() => setOpenCreateContact(true)}
-                          disabled={contactsAccountsInScope.length === 0}
-                          title={contactsAccountsInScope.length === 0
-                            ? 'Create an account first'
-                            : undefined}
-                        >
-                          <Plus className="w-4 h-4 mr-2" /> Create Contact
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <ContactsTable
-                    rows={contacts}
-                    onOpen={(c) => setSelectedContact(c)}
-                  />
-                </>
-              )}
-            </TabsContent>
-
             <TabsContent value="accounts" className="mt-4 space-y-6">
               {loading ? (
                 <Card>
@@ -784,7 +661,7 @@ export const Clients: React.FC = () => {
                   : selectedWorkspace?.name ?? 'Current workspace'}
                 onCreateAccount={() => setOpenCreate(true)}
                 onImportAccounts={() => setOpenImport(true)}
-                onGoToContacts={() => setActiveTab('contacts')}
+                onGoToContacts={() => {/* Contacts tab removed */}}
                 onGoToLeads={() => setActiveTab('leads')}
                 onGoToPipeline={() => setActiveTab('pipeline')}
                 onGoToTasks={() => setActiveTab('tasks')}
@@ -1255,236 +1132,12 @@ export const Clients: React.FC = () => {
         }}
       />
 
-      {/* Contact dialogs and drawer */}
-      <ContactFormDialog
-        open={openCreateContact || !!editingContact}
-        onOpenChange={(o) => {
-          if (!o) {
-            setOpenCreateContact(false);
-            setEditingContact(null);
-          }
-        }}
-        contact={editingContact}
-        accounts={contactsAccountsInScope}
-        contactsForReportingTo={allContacts}
-        onSubmit={async (input) => {
-          try {
-            if (editingContact) {
-              await updateContactSvc(editingContact.contactId, input);
-              toast.success(`Updated ${contactDisplayName(editingContact)}`);
-              setEditingContact(null);
-            } else {
-              const created = await createContactSvc(input);
-              toast.success(`Created contact ${contactDisplayName(created)}`);
-              void recordAuditEvent(
-                organizationId,
-                { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
-                {
-                  action: 'contact_created',
-                  targetType: 'contact',
-                  targetId: created.contactId,
-                  targetLabel: `${contactDisplayName(created)} — ${created.clientName}`,
-                  metadata: { clientId: created.clientId },
-                },
-              );
-              setOpenCreateContact(false);
-            }
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Failed to save contact');
-            throw err;
-          }
-        }}
-      />
-
-      {liveSelectedContact && (
-        <ContactDetailDrawer
-          contact={liveSelectedContact}
-          organizationId={organizationId}
-          canManage={canManageContact}
-          parentAccount={
-            allClients.find((c) => c.clientId === liveSelectedContact.clientId) ?? null
-          }
-          visibleClientIds={isAllWorkspaces ? null : contactsVisibleClientIds}
-          onClose={() => setSelectedContact(null)}
-          onEdit={(c) => setEditingContact(c)}
-          onDelete={(c) => setConfirmDeleteContact(c)}
-          onClone={async (c) => {
-            try {
-              const cloned = await createContactSvc({
-                clientId: c.clientId,
-                salutation: c.salutation,
-                firstName: c.firstName,
-                // lastName is required on the input; a missing one would
-                // mean the original was a salvage row anyway.
-                lastName: c.lastName ?? '(no last name)',
-                title: c.title,
-                department: c.department,
-                email: c.email,
-                secondaryEmail: c.secondaryEmail,
-                phone: c.phone,
-                mobile: c.mobile,
-                homePhone: c.homePhone,
-                otherPhone: c.otherPhone,
-                asstPhone: c.asstPhone,
-                fax: c.fax,
-                skypeId: c.skypeId,
-                twitter: c.twitter,
-                linkedinUrl: c.linkedinUrl,
-                mailingStreet: c.mailingStreet,
-                mailingCity: c.mailingCity,
-                mailingState: c.mailingState,
-                mailingZip: c.mailingZip,
-                mailingCountry: c.mailingCountry,
-                otherStreet: c.otherStreet,
-                otherCity: c.otherCity,
-                otherState: c.otherState,
-                otherZip: c.otherZip,
-                otherCountry: c.otherCountry,
-                assistant: c.assistant,
-                reportingTo: c.reportingTo,
-                leadSource: c.leadSource,
-                dateOfBirth: c.dateOfBirth,
-                emailOptOut: c.emailOptOut,
-                description: c.description,
-                tags: c.tags,
-                isPrimary: false,    // never clone primary status
-              });
-              toast.success(`Cloned to ${contactDisplayName(cloned)}`);
-              setSelectedContact(cloned);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : 'Clone failed');
-            }
-          }}
-          onSendEmail={(c) => {
-            if (!c.email) {
-              toast.error('This contact has no email on file.');
-              return;
-            }
-            // Opens the in-app composer with the contact's parent
-            // account context populated for {{client.*}} merge tokens.
-            setEmailRecipient({
-              entityType: 'contact',
-              entityId: c.contactId,
-              name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.email,
-              email: c.email,
-              accountOwnerName: c.clientName ?? null,
-            });
-          }}
-          onOpenAccount={(clientId) => {
-            setSelectedContact(null);
-            const acct = allClients.find((cl) => cl.clientId === clientId);
-            if (acct) setSelected(acct);
-          }}
-        />
-      )}
-
-      {/* In-app email composer — opened by the Send Email button on
-          Contact and Lead drawers. Templates from Settings → Email
-          templates get listed in the picker; merge tokens
-          ({{client.name}} / {{user.name}}) are auto-expanded. */}
+      {/* In-app email composer — opened by the Send Email button on the Lead drawer. */}
       <SendEmailDialog
         open={!!emailRecipient}
         onOpenChange={(o) => { if (!o) setEmailRecipient(null); }}
         recipient={emailRecipient}
       />
-
-      <ImportContactsDialog
-        open={openImportContact}
-        onOpenChange={setOpenImportContact}
-        organizationId={organizationId}
-        accounts={contactsAccountsInScope}
-        workspaceName={selectedWorkspace?.name ?? null}
-        createContact={createContactSvc}
-        onComplete={(result) => {
-          void recordAuditEvent(
-            organizationId,
-            { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
-            {
-              action: result.imported.length > 0
-                ? 'contact_imported'
-                : 'contact_import_failed',
-              targetType: 'contact',
-              targetLabel: `${result.imported.length}/${result.imported.length + result.errors.length} contact(s) via CSV`,
-              metadata: {
-                imported: result.imported.length,
-                errors: result.errors.length,
-                unknownHeaders: result.unknownHeaders,
-                missingRequired: result.missingRequired,
-                unmatchedAccounts: result.unmatchedAccounts.length,
-                aborted: result.aborted,
-                workspaceId: activeWorkspaceId,
-              },
-            },
-          );
-          if (result.imported.length === 0) {
-            toast.error('No contacts were imported. Check the row errors above.');
-          } else if (result.errors.length > 0) {
-            toast.warning(
-              `Imported ${result.imported.length} of ${result.imported.length + result.errors.length} contacts — review the warnings.`,
-            );
-          } else {
-            toast.success(
-              `Imported ${result.imported.length} contact${result.imported.length === 1 ? '' : 's'}`,
-            );
-          }
-        }}
-      />
-
-      <AlertDialog
-        open={!!confirmDeleteContact}
-        onOpenChange={(o) => { if (!o) setConfirmDeleteContact(null); }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this contact?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmDeleteContact && (
-                <>
-                  Permanently remove <strong>{contactDisplayName(confirmDeleteContact)}</strong>{' '}
-                  from {confirmDeleteContact.clientName}. This cannot be undone.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingContact}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deletingContact}
-              onClick={async () => {
-                if (!confirmDeleteContact) return;
-                setDeletingContact(true);
-                try {
-                  await removeContactSvc(confirmDeleteContact.contactId);
-                  void recordAuditEvent(
-                    organizationId,
-                    { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
-                    {
-                      action: 'contact_deleted',
-                      targetType: 'contact',
-                      targetId: confirmDeleteContact.contactId,
-                      targetLabel: `${contactDisplayName(confirmDeleteContact)} — ${confirmDeleteContact.clientName}`,
-                      metadata: { clientId: confirmDeleteContact.clientId },
-                    },
-                  );
-                  toast.success('Contact deleted');
-                  if (selectedContact?.contactId === confirmDeleteContact.contactId) {
-                    setSelectedContact(null);
-                  }
-                  setConfirmDeleteContact(null);
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Delete failed');
-                } finally {
-                  setDeletingContact(false);
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deletingContact && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Lead dialogs and drawer */}
       <ImportLeadsDialog
@@ -1646,6 +1299,13 @@ export const Clients: React.FC = () => {
           }}
           onStatusChange={async (l, next) => {
             await updateLeadSvc(l.leadId, { leadStatus: next });
+          }}
+          onUpdate={async (leadId, patch) => {
+            const updated = await updateLeadSvc(leadId, patch);
+            // Keep the selected-lead pointer in sync so liveSelectedLead
+            // reflects the saved values if the drawer is closed and re-opened.
+            setSelectedLead(updated);
+            return updated;
           }}
         />
       )}
