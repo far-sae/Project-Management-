@@ -36,6 +36,9 @@ export interface Client {
   description?: string | null;
   category?: string | null;
   tags: string[];
+  /** The account's lead category list (migration 133). Lets a rep create an
+   *  empty category before adding leads under it. */
+  leadCategories: string[];
   // Zoho-style account fields (migration 103)
   accountSite?: string | null;
   parentClientId?: string | null;
@@ -130,6 +133,8 @@ export interface CreateClientInput {
   description?: string | null;
   category?: string | null;
   tags?: string[];
+  /** Lead category list for this account (migration 133). */
+  leadCategories?: string[];
   // Zoho-style account fields
   accountSite?: string | null;
   parentClientId?: string | null;
@@ -288,6 +293,7 @@ const mapClient = (row: Record<string, unknown>): Client => ({
   description: (row.description as string) ?? null,
   category: (row.category as string) ?? null,
   tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
+  leadCategories: Array.isArray(row.lead_categories) ? (row.lead_categories as string[]) : [],
   accountSite: (row.account_site as string) ?? null,
   parentClientId: (row.parent_client_id as string) ?? null,
   accountNumber: (row.account_number as string) ?? null,
@@ -442,6 +448,7 @@ export const createClient = async (
       description: sanitizeText(input.description ?? null),
       category: sanitizeText(input.category ?? null),
       tags: sanitizeTags(input.tags),
+      leadCategories: [],
       accountSite: sanitizeText(input.accountSite ?? null),
       parentClientId: input.parentClientId ?? null,
       accountNumber: sanitizeText(input.accountNumber ?? null),
@@ -709,6 +716,7 @@ export const updateClient = async (
     assign("description", input.description !== undefined ? sanitizeText(input.description) : undefined);
     assign("category", input.category !== undefined ? sanitizeText(input.category) : undefined);
     if (input.tags !== undefined) merged.tags = sanitizeTags(input.tags);
+    if (input.leadCategories !== undefined) merged.leadCategories = input.leadCategories;
     assign("fax", input.fax !== undefined ? sanitizeText(input.fax) : undefined);
     assign("accountSite", input.accountSite !== undefined ? sanitizeText(input.accountSite) : undefined);
     assign("parentClientId", input.parentClientId);
@@ -749,6 +757,7 @@ export const updateClient = async (
   if (input.description !== undefined) update.description = sanitizeText(input.description);
   if (input.category !== undefined) update.category = sanitizeText(input.category);
   if (input.tags !== undefined) update.tags = sanitizeTags(input.tags);
+  if (input.leadCategories !== undefined) update.lead_categories = input.leadCategories;
   if (input.fax !== undefined) update.fax = sanitizeText(input.fax);
   if (input.accountSite !== undefined) update.account_site = sanitizeText(input.accountSite);
   if (input.parentClientId !== undefined) update.parent_client_id = input.parentClientId;
@@ -792,6 +801,62 @@ export const updateClient = async (
   }
   notifyClientsChanged(organizationId);
   return mapClient(data);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lead categories (migration 133) — read-modify-write the clients.lead_categories
+// array. These let an account host an empty category before any lead is added.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Fetch the current lead_categories array for one account. */
+const readLeadCategories = async (
+  organizationId: string,
+  clientId: string,
+): Promise<string[]> => {
+  if (isLocalOrg(organizationId)) {
+    const all = readLocal<Client>(STORE.clients(organizationId), reviveClient);
+    return all.find((c) => c.clientId === clientId)?.leadCategories ?? [];
+  }
+  const { data, error } = await supabase
+    .from("clients")
+    .select("lead_categories")
+    .eq("organization_id", organizationId)
+    .eq("client_id", clientId)
+    .single();
+  if (error) {
+    logger.error("readLeadCategories failed:", error);
+    throw error;
+  }
+  return Array.isArray(data?.lead_categories) ? (data.lead_categories as string[]) : [];
+};
+
+/** Append a category (case-insensitive de-dupe) to an account's list. */
+export const addLeadCategory = async (
+  organizationId: string,
+  clientId: string,
+  name: string,
+): Promise<Client> => {
+  const clean = sanitizeText(name);
+  if (!clean) throw new Error("Category name is required");
+  const current = await readLeadCategories(organizationId, clientId);
+  if (current.some((c) => c.toLowerCase() === clean.toLowerCase())) {
+    // Already present — return the account unchanged rather than duplicating.
+    return updateClient(organizationId, clientId, { leadCategories: current });
+  }
+  return updateClient(organizationId, clientId, {
+    leadCategories: [...current, clean],
+  });
+};
+
+/** Remove a category (case-insensitive match) from an account's list. */
+export const removeLeadCategory = async (
+  organizationId: string,
+  clientId: string,
+  name: string,
+): Promise<Client> => {
+  const current = await readLeadCategories(organizationId, clientId);
+  const next = current.filter((c) => c.toLowerCase() !== name.trim().toLowerCase());
+  return updateClient(organizationId, clientId, { leadCategories: next });
 };
 
 export const deleteClient = async (
