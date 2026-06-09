@@ -6,6 +6,8 @@ import {
   Copy, Printer, FileSearch, RefreshCw, Repeat, FileText,
   CheckCircle2,
 } from 'lucide-react';
+import { InlineField } from './InlineField';
+import { CustomPropertiesEditor } from './CustomPropertiesEditor';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -52,6 +54,8 @@ interface Props {
   onSendEmail: (lead: Lead) => void;
   onClone: (lead: Lead) => void;
   onStatusChange?: (lead: Lead, next: LeadStatus) => Promise<void> | void;
+  /** Patch a lead field (or customFields) and return the updated Lead. */
+  onUpdate?: (leadId: string, patch: Partial<Lead>) => Promise<Lead>;
 }
 
 const STATUS_TONE: Record<LeadStatus, string> = {
@@ -68,17 +72,35 @@ const STATUS_TONE: Record<LeadStatus, string> = {
 };
 
 export const LeadDetailDrawer: React.FC<Props> = ({
-  lead, organizationId, canManage, readOnly = false, canConvert = true,
+  lead: leadProp, organizationId, canManage, readOnly = false, canConvert = true,
   onClose, onEdit, onDelete, onConvert,
-  onSendEmail, onClone, onStatusChange,
+  onSendEmail, onClone, onStatusChange, onUpdate,
 }) => {
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
-  const { organization: _org } = useOrganization(); // satisfies hook order
+  const { canEditModule } = useOrganization();
+  const canEdit = canManage && !readOnly && canEditModule('leads');
+
+  // Local copy of lead data so inline edits reflect immediately in the panel
+  // without waiting for the parent to re-query.
+  const [lead, setLead] = useState<Lead | null>(leadProp);
+  useEffect(() => { setLead(leadProp); }, [leadProp]);
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [showAllDetails, setShowAllDetails] = useState(false);
   const [enrolOpen, setEnrolOpen] = useState(false);
+
+  /** Called by every InlineField/CustomPropertiesEditor save. Persists the
+   *  patch via onUpdate (when provided) and merges the returned Lead into
+   *  local state so the panel reflects the new values without a round-trip. */
+  const handleInlineUpdate = async (
+    leadId: string,
+    patch: Partial<Lead>,
+  ): Promise<void> => {
+    if (!onUpdate) return;
+    const updated = await onUpdate(leadId, patch);
+    setLead(updated);
+  };
 
   // Unified activity timeline for the per-lead Activity section.
   const [leadActivities, setLeadActivities] = useState<Activity[]>([]);
@@ -342,23 +364,48 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Quick info */}
+            {/* Quick info — editable via InlineField when canEdit */}
             <div className="grid md:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+              {/* Lead Owner: not inline-editable for v1 */}
               <Field label="Lead Owner" value={lead.leadOwnerName} />
-              <Field label="Email" value={lead.email ? (
-                <a href={`mailto:${lead.email}`} className="text-primary hover:underline">{lead.email}</a>
-              ) : null} />
-              <Field label="Phone" value={lead.phone ? (
-                <a href={`tel:${lead.phone}`} className="hover:underline">{lead.phone}</a>
-              ) : null} />
-              <Field label="Mobile" value={lead.mobile} />
+              <InlineField
+                label="Email"
+                value={lead.email}
+                type="text"
+                editable={canEdit && !isConverted}
+                onSave={(v) => handleInlineUpdate(lead.leadId, { email: v as string | null })}
+                render={(v) => v ? <a href={`mailto:${v}`} className="text-primary hover:underline">{String(v)}</a> : null}
+              />
+              <InlineField
+                label="Phone"
+                value={lead.phone}
+                type="text"
+                editable={canEdit && !isConverted}
+                onSave={(v) => handleInlineUpdate(lead.leadId, { phone: v as string | null })}
+                render={(v) => v ? <a href={`tel:${v}`} className="hover:underline">{String(v)}</a> : null}
+              />
+              <InlineField
+                label="Mobile"
+                value={lead.mobile}
+                type="text"
+                editable={canEdit && !isConverted}
+                onSave={(v) => handleInlineUpdate(lead.leadId, { mobile: v as string | null })}
+              />
+              {/* Lead Status: kept as dropdown, not InlineField */}
               <Field label="Lead Status" value={leadStatusLabel(lead.leadStatus)} />
-              <Field label="Website" value={lead.website ? (
-                <a href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`}
-                   target="_blank" rel="noreferrer noopener" className="text-primary hover:underline">
-                  {lead.website}
-                </a>
-              ) : null} />
+              <InlineField
+                label="Website"
+                value={lead.website}
+                type="text"
+                editable={canEdit && !isConverted}
+                onSave={(v) => handleInlineUpdate(lead.leadId, { website: v as string | null })}
+                render={(v) => v ? (
+                  <a href={String(v).startsWith('http') ? String(v) : `https://${v}`}
+                     target="_blank" rel="noreferrer noopener" className="text-primary hover:underline">
+                    {String(v)}
+                  </a>
+                ) : null}
+              />
             </div>
 
             <button
@@ -372,29 +419,86 @@ export const LeadDetailDrawer: React.FC<Props> = ({
 
             {showAllDetails && (
               <div className="grid md:grid-cols-2 gap-x-6 gap-y-3 text-sm border-t pt-4">
-                <Field label="Company" value={lead.company} />
-                <Field label="Industry" value={lead.industry} />
-                <Field
+                <InlineField
+                  label="Company"
+                  value={lead.company}
+                  type="text"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { company: (v as string | null) ?? lead.company })}
+                />
+                <InlineField
+                  label="Industry"
+                  value={lead.industry}
+                  type="text"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { industry: v as string | null })}
+                />
+                <InlineField
                   label="Annual Revenue"
-                  value={lead.annualRevenue != null
-                    ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(lead.annualRevenue)
+                  value={lead.annualRevenue}
+                  type="number"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { annualRevenue: v as number | null })}
+                  render={(v) => v != null
+                    ? <span>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(v))}</span>
                     : null}
                 />
-                <Field label="No. of Employees" value={lead.noOfEmployees} />
-                <Field label="Fax" value={lead.fax} />
-                <Field label="Skype" value={lead.skypeId} />
-                <Field label="Twitter" value={lead.twitter} />
-                <Field label="LinkedIn" value={lead.linkedinUrl} />
+                <InlineField
+                  label="No. of Employees"
+                  value={lead.noOfEmployees}
+                  type="number"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { noOfEmployees: v as number | null })}
+                />
+                <InlineField
+                  label="Fax"
+                  value={lead.fax}
+                  type="text"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { fax: v as string | null })}
+                />
+                <InlineField
+                  label="Skype"
+                  value={lead.skypeId}
+                  type="text"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { skypeId: v as string | null })}
+                />
+                <InlineField
+                  label="Twitter"
+                  value={lead.twitter}
+                  type="text"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { twitter: v as string | null })}
+                />
+                <InlineField
+                  label="LinkedIn"
+                  value={lead.linkedinUrl}
+                  type="text"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { linkedinUrl: v as string | null })}
+                />
+                <InlineField
+                  label="Title"
+                  value={lead.title}
+                  type="text"
+                  editable={canEdit && !isConverted}
+                  onSave={(v) => handleInlineUpdate(lead.leadId, { title: v as string | null })}
+                />
                 <Field label="Address" value={fullAddress || null} />
                 <Field label="Created" value={format(lead.createdAt, 'PPp')} />
                 <Field label="Updated" value={format(lead.updatedAt, 'PPp')} />
                 <Field label="Email Opt-Out" value={lead.emailOptOut ? 'Yes' : 'No'} />
-                {lead.description && (
-                  <div className="md:col-span-2">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Description</p>
-                    <p className="whitespace-pre-wrap">{lead.description}</p>
-                  </div>
-                )}
+                <div className="md:col-span-2">
+                  <InlineField
+                    label="Description"
+                    value={lead.description}
+                    type="textarea"
+                    editable={canEdit && !isConverted}
+                    onSave={(v) => handleInlineUpdate(lead.leadId, { description: v as string | null })}
+                    render={(v) => v ? <span className="whitespace-pre-wrap">{String(v)}</span> : null}
+                  />
+                </div>
                 {isConverted && (
                   <div className="md:col-span-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
                     <p className="font-semibold inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
@@ -409,6 +513,15 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 )}
               </div>
             )}
+
+            {/* Custom properties */}
+            <div className="border-t pt-4">
+              <CustomPropertiesEditor
+                fields={lead.customFields}
+                editable={canEdit && !isConverted}
+                onChange={(next) => handleInlineUpdate(lead.leadId, { customFields: next })}
+              />
+            </div>
 
             {/* Activity timeline + quick-log */}
             <div id="lead-activity-timeline" className="space-y-2">
