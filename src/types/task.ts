@@ -63,6 +63,10 @@ export interface Task {
   googleMeetLink?: string | null;
   /** Calendar event id created alongside the Meet link. */
   googleEventId?: string | null;
+  /** CRM deal this task was handed off from (migration 132). */
+  sourceDealId?: string | null;
+  /** CRM client this task was handed off for (migration 132). */
+  sourceClientId?: string | null;
 }
 
 export interface CommentAttachment {
@@ -127,6 +131,10 @@ export interface CreateTaskInput {
   projectName?: string;
   createdByDisplayName?: string;
   createdByPhotoURL?: string;
+  /** CRM deal this task is being handed off from (migration 132). */
+  sourceDealId?: string | null;
+  /** CRM client this task is being handed off for (migration 132). */
+  sourceClientId?: string | null;
 }
 
 export interface UpdateTaskInput {
