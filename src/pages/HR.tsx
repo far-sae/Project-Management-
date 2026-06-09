@@ -15,9 +15,14 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Users, Edit, Loader2, ShieldAlert, Lock, Trash2,
 } from 'lucide-react';
+import { TimeTracking } from '@/pages/TimeTracking';
+import { Payroll } from '@/pages/Payroll';
+import { Expenses } from '@/pages/Expenses';
+import { Billing } from '@/pages/Billing';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -255,139 +260,174 @@ export const HR: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        <div className="max-w-5xl mx-auto space-y-6">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-                <Users className="w-6 h-6 text-primary" /> HR Directory
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Job titles, employment, and pay rates.
-                {!canManage && (
-                  <span className="inline-flex items-center gap-1 ml-1 text-amber-600 dark:text-amber-400">
-                    <ShieldAlert className="w-3.5 h-3.5" /> Owner-only edits.
-                  </span>
-                )}
-              </p>
-            </div>
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+        <Tabs defaultValue="people" className="flex flex-col h-full">
+          <div className="px-4 md:px-8 pt-4 md:pt-8 border-b border-border shrink-0">
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2 mb-4">
+              <Users className="w-6 h-6 text-primary" /> HR
+            </h1>
+            <TabsList className="mb-0">
+              <TabsTrigger value="people">People</TabsTrigger>
+              <TabsTrigger value="time-tracking">Time Tracking</TabsTrigger>
+              <TabsTrigger value="payroll">Payroll</TabsTrigger>
+              <TabsTrigger value="expenses">Expenses</TabsTrigger>
+              <TabsTrigger value="billing">Billing</TabsTrigger>
+            </TabsList>
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : visibleDirectory.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-10 text-sm text-muted-foreground">
-                {directory.length === 0
-                  ? 'No team members yet.'
-                  : 'No employees with a hire date in this range.'}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {visibleDirectory.map((entry) => {
-                const p = entry.profile;
-                return (
-                  <Card key={entry.userId}>
-                    <CardContent className="pt-4 space-y-3">
-                      <div className="flex items-start gap-3">
-                        <Avatar className="w-12 h-12">
-                          <AvatarImage src={entry.photoURL} alt={entry.displayName} />
-                          <AvatarFallback>
-                            {entry.displayName.charAt(0).toUpperCase() || '?'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-semibold truncate">
-                              {entry.displayName}
-                            </h3>
-                            {p && employmentBadge(p.employmentType)}
-                            {p && statusBadge(p.status)}
-                            {entry.role === 'owner' && (
-                              <Badge variant="outline" className="border-primary/40 text-primary">
-                                Owner
-                              </Badge>
-                            )}
-                            {entry.role === 'admin' && (
-                              <Badge variant="outline">Admin</Badge>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {entry.email}
-                          </p>
-                          {p?.jobTitle && (
-                            <p className="text-sm mt-1">
-                              {p.jobTitle}
-                              {p.department ? ` · ${p.department}` : ''}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openEdit(entry)}
-                            disabled={!canManage}
-                            title={canManage ? 'Edit profile' : 'Owner only'}
-                          >
-                            {canManage ? (
-                              <Edit className="w-4 h-4" />
-                            ) : (
-                              <Lock className="w-4 h-4" />
-                            )}
-                          </Button>
-                          {canManage && p && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() =>
-                                setDeletingMember({
-                                  userId: entry.userId,
-                                  displayName: entry.displayName,
-                                })
-                              }
-                              title="Remove HR profile"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
+          <TabsContent value="people" className="flex-1 min-h-0 mt-0">
+            <div className="p-4 md:p-8">
+              <div className="max-w-5xl mx-auto space-y-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <h2 className="text-xl font-semibold flex items-center gap-2">
+                      HR Directory
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Job titles, employment, and pay rates.
+                      {!canManage && (
+                        <span className="inline-flex items-center gap-1 ml-1 text-amber-600 dark:text-amber-400">
+                          <ShieldAlert className="w-3.5 h-3.5" /> Owner-only edits.
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <DateRangeFilter value={dateRange} onChange={setDateRange} />
+                </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded border border-border p-2">
-                          <div className="text-muted-foreground uppercase tracking-wide">
-                            Pay
-                          </div>
-                          <div className="font-mono mt-0.5">
-                            {p &&
-                            typeof p.payRate === 'number' &&
-                            Number.isFinite(p.payRate)
-                              ? `${fmt(p.payRate, p.currency)} ${p.payType === 'hourly' ? '/hr' : `/${p.payPeriod}`}`
-                              : '—'}
-                          </div>
-                        </div>
-                        <div className="rounded border border-border p-2">
-                          <div className="text-muted-foreground uppercase tracking-wide">
-                            Hire date
-                          </div>
-                          <div className="mt-0.5">
-                            {p?.hireDate ? format(p.hireDate, 'MMM d, yyyy') : '—'}
-                          </div>
-                        </div>
-                      </div>
+                {loading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : visibleDirectory.length === 0 ? (
+                  <Card>
+                    <CardContent className="text-center py-10 text-sm text-muted-foreground">
+                      {directory.length === 0
+                        ? 'No team members yet.'
+                        : 'No employees with a hire date in this range.'}
                     </CardContent>
                   </Card>
-                );
-              })}
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {visibleDirectory.map((entry) => {
+                      const p = entry.profile;
+                      return (
+                        <Card key={entry.userId}>
+                          <CardContent className="pt-4 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <Avatar className="w-12 h-12">
+                                <AvatarImage src={entry.photoURL} alt={entry.displayName} />
+                                <AvatarFallback>
+                                  {entry.displayName.charAt(0).toUpperCase() || '?'}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="font-semibold truncate">
+                                    {entry.displayName}
+                                  </h3>
+                                  {p && employmentBadge(p.employmentType)}
+                                  {p && statusBadge(p.status)}
+                                  {entry.role === 'owner' && (
+                                    <Badge variant="outline" className="border-primary/40 text-primary">
+                                      Owner
+                                    </Badge>
+                                  )}
+                                  {entry.role === 'admin' && (
+                                    <Badge variant="outline">Admin</Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {entry.email}
+                                </p>
+                                {p?.jobTitle && (
+                                  <p className="text-sm mt-1">
+                                    {p.jobTitle}
+                                    {p.department ? ` · ${p.department}` : ''}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openEdit(entry)}
+                                  disabled={!canManage}
+                                  title={canManage ? 'Edit profile' : 'Owner only'}
+                                >
+                                  {canManage ? (
+                                    <Edit className="w-4 h-4" />
+                                  ) : (
+                                    <Lock className="w-4 h-4" />
+                                  )}
+                                </Button>
+                                {canManage && p && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() =>
+                                      setDeletingMember({
+                                        userId: entry.userId,
+                                        displayName: entry.displayName,
+                                      })
+                                    }
+                                    title="Remove HR profile"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="rounded border border-border p-2">
+                                <div className="text-muted-foreground uppercase tracking-wide">
+                                  Pay
+                                </div>
+                                <div className="font-mono mt-0.5">
+                                  {p &&
+                                  typeof p.payRate === 'number' &&
+                                  Number.isFinite(p.payRate)
+                                    ? `${fmt(p.payRate, p.currency)} ${p.payType === 'hourly' ? '/hr' : `/${p.payPeriod}`}`
+                                    : '—'}
+                                </div>
+                              </div>
+                              <div className="rounded border border-border p-2">
+                                <div className="text-muted-foreground uppercase tracking-wide">
+                                  Hire date
+                                </div>
+                                <div className="mt-0.5">
+                                  {p?.hireDate ? format(p.hireDate, 'MMM d, yyyy') : '—'}
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-        </div>
+          </TabsContent>
+
+          <TabsContent value="time-tracking" className="flex-1 min-h-0 mt-0">
+            <TimeTracking />
+          </TabsContent>
+
+          <TabsContent value="payroll" className="flex-1 min-h-0 mt-0">
+            <Payroll />
+          </TabsContent>
+
+          <TabsContent value="expenses" className="flex-1 min-h-0 mt-0">
+            <Expenses />
+          </TabsContent>
+
+          <TabsContent value="billing" className="flex-1 min-h-0 mt-0">
+            <Billing />
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Edit dialog (owner only) */}
