@@ -6,7 +6,6 @@ import {
   CheckSquare,
   Users,
   Calendar,
-  FileText,
   MessageSquare,
   BarChart3,
   Settings,
@@ -23,10 +22,7 @@ import {
   ChevronDown,
   Menu,
   X,
-  Clock,
-  Receipt,
   UserCircle,
-  Wallet,
   Building2,
   Bot,
   TrendingUp,
@@ -69,6 +65,7 @@ const QUICK_ITEMS_FULL = [
   { icon: Calendar, label: 'Calendar', href: '/calendar' },
   { icon: Activity, label: 'Workload', href: '/workload' },
   { icon: BarChart3, label: 'Reports', href: '/reports' },
+  { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
 ];
 
 // Members get a deliberately small surface: just the personal-productivity
@@ -150,21 +147,14 @@ export const Sidebar: React.FC = () => {
 
   const bottomMenuItems = canSeePeopleOps
     ? ([
-        { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
         // Activities lives inside CRM as a top tab (CRM → Activities),
         // not as a separate sidebar entry, so reps see one consolidated
         // CRM nav instead of two near-duplicate links.
         { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
         { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
-        { icon: FileText, label: 'Contracts', href: '/contracts', feature: 'contracts' as const },
-        { icon: FileText, label: 'Files', href: '/files', feature: 'file_attachments' as const },
         { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null },
-        { icon: Clock, label: 'Time Tracking', href: '/time', feature: null },
-        { icon: Receipt, label: 'Expenses', href: '/expenses', feature: null },
         { icon: UserCircle, label: 'HR', href: '/hr', feature: null },
-        { icon: Wallet, label: 'Payroll', href: '/payroll', feature: null },
-        { icon: Receipt, label: 'Billing', href: '/billing', feature: null },
       ] as const)
     : isViewer
       ? ([
@@ -179,15 +169,14 @@ export const Sidebar: React.FC = () => {
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
         ] as const)
       : ([
-          // Members see Timeline + personal Files + the customer-facing
-          // CRM surfaces (CRM, AI Agent). Activities is a CRM tab so
-          // it's not duplicated in the sidebar. Per-row RLS keeps
-          // members inside their org/workspace; only org-management
-          // surfaces (Team, Audit log, Subscription) stay admin/owner.
+          // Members see Timeline + the customer-facing CRM surfaces
+          // (CRM, AI Agent). Activities is a CRM tab so it's not
+          // duplicated in the sidebar. Per-row RLS keeps members inside
+          // their org/workspace; only org-management surfaces (Team,
+          // Audit log, Subscription) stay admin/owner.
           { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const },
           { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const },
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
-          { icon: FileText, label: 'Files', href: '/files', feature: null },
         ] as const);
 
   const taskCounts = useMemo(() => {
@@ -258,7 +247,9 @@ export const Sidebar: React.FC = () => {
           items={
             canSeePeopleOps
               ? QUICK_ITEMS_FULL.filter(
-                  (i) => i.href !== '/dashboard/clients' || hasFeature('crm'),
+                  (i) =>
+                    (i.href !== '/dashboard/clients' || hasFeature('crm')) &&
+                    (i.href !== '/team' || hasFeature('team_collaboration')),
                 )
               : isViewer
                 ? QUICK_ITEMS_VIEWER
