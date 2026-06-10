@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   ArrowLeft, Edit, Loader2, Phone, Mail,
-  Users, History, Swords, ListTodo,
+  Users, History, Swords, ListTodo, ListPlus,
   CheckCircle2, MessageSquare, Trash2,
 } from 'lucide-react';
 import { format, differenceInCalendarDays } from 'date-fns';
@@ -79,6 +79,9 @@ export interface DealDetailViewProps {
   /** Called AFTER a deal is successfully transitioned to Won. Used by the
    *  parent (Clients.tsx) to open the handoff dialog. Purely additive. */
   onDealWon?: (deal: import('@/services/supabase/deals').Deal) => void;
+  /** Called when the rep clicks "Assign task" — opens the (generalized)
+   *  DealHandoffDialog for this deal without changing its stage. */
+  onAssignTask?: (deal: import('@/services/supabase/deals').Deal) => void;
 }
 
 /**
@@ -88,7 +91,7 @@ export interface DealDetailViewProps {
  * Contact Roles, Stage History, with a side rail of Sales Summary numbers.
  */
 export const DealDetailView: React.FC<DealDetailViewProps> = ({
-  dealId, onBack, showBack = true, onDealWon,
+  dealId, onBack, showBack = true, onDealWon, onAssignTask,
 }) => {
   const { deals, update, remove, loading, canManage, organizationId } = useDeals();
   const { clients } = useClients();
@@ -484,6 +487,11 @@ export const DealDetailView: React.FC<DealDetailViewProps> = ({
             </h1>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {onAssignTask && (
+              <Button size="sm" variant="outline" onClick={() => onAssignTask(deal)}>
+                <ListPlus className="w-3.5 h-3.5 mr-1" /> Assign task
+              </Button>
+            )}
             {canManage && (
               <>
                 <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
