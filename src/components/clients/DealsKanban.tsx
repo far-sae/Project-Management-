@@ -16,6 +16,7 @@ import {
   Building2,
   Calendar as CalendarIcon,
   GripVertical,
+  ListPlus,
   Loader2,
   MoreVertical,
   Pencil,
@@ -31,6 +32,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { format, isPast } from 'date-fns';
 import { useDeals } from '@/hooks/useDeals';
@@ -40,6 +48,7 @@ import {
   DealStage,
   STAGE_DEFAULT_PROBABILITY,
   formatDealMoney,
+  resolveStageChange,
 } from '@/services/supabase/deals';
 import { PipelineStage } from '@/services/supabase/pipelines';
 import { Client } from '@/services/supabase/clients';
@@ -71,6 +80,9 @@ interface Props {
   /** Called after a deal is successfully transitioned to a Won stage.
    *  Parent (Clients.tsx) uses this to open the handoff dialog. */
   onDealWon?: (deal: Deal) => void;
+  /** Called when the rep clicks "Assign task" on any deal card. Parent
+   *  (Clients.tsx) opens the (generalized) DealHandoffDialog for it. */
+  onAssignTask?: (deal: Deal) => void;
 }
 
 /** Internal stage shape used by the column renderer and grouping logic. The
@@ -94,10 +106,11 @@ const DealCard: React.FC<{
   onSelect?: (d: Deal) => void;
   onEdit?: (d: Deal) => void;
   onMove?: (deal: Deal, stage: EffectiveStage) => void;
+  onAssignTask?: (d: Deal) => void;
   stages: EffectiveStage[];
   displayCurrency?: string;
   rates: Record<string, number>;
-}> = ({ deal, onSelect, onEdit, onMove, stages, displayCurrency, rates }) => {
+}> = ({ deal, onSelect, onEdit, onMove, onAssignTask, stages, displayCurrency, rates }) => {
   const fmtMoney = useFormatMoney();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.dealId,
@@ -217,6 +230,60 @@ const DealCard: React.FC<{
           />
         </div>
       )}
+
+      {/* Primary controls: a stage dropdown (the obvious way to advance a
+          deal — drag still works but isn't required) + an Assign-task
+          action that works on ANY deal, not just won ones. Both stop the
+          click from bubbling to the card's onSelect. */}
+      {(onMove || onAssignTask) && (
+        <div
+          className="mt-2 flex items-center gap-1.5"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {onMove && (
+            <Select
+              value={deal.stage}
+              onValueChange={(key) => {
+                const next = stages.find((s) => s.key === key);
+                // Route through the SAME path drag uses (moveDealToStage),
+                // so a Won/Lost pick still hits the won-confirm / lost flow.
+                if (next) onMove(deal, next);
+              }}
+            >
+              <SelectTrigger
+                className="h-7 flex-1 text-xs"
+                aria-label="Change stage"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {stages.map((s) => (
+                  <SelectItem key={s.id} value={s.key} className="text-xs">
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {onAssignTask && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              title="Create a PM task for this deal"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAssignTask(deal);
+              }}
+            >
+              <ListPlus className="mr-1 h-3.5 w-3.5" /> Assign task
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -228,6 +295,7 @@ const StageColumn: React.FC<{
   onSelect?: (d: Deal) => void;
   onEdit?: (d: Deal) => void;
   onMove?: (deal: Deal, stage: EffectiveStage) => void;
+  onAssignTask?: (d: Deal) => void;
   stages: EffectiveStage[];
   canCreate: boolean;
   displayCurrency?: string;
@@ -239,6 +307,7 @@ const StageColumn: React.FC<{
   onSelect,
   onEdit,
   onMove,
+  onAssignTask,
   stages,
   canCreate,
   displayCurrency,
@@ -303,6 +372,7 @@ const StageColumn: React.FC<{
               onSelect={onSelect}
               onEdit={onEdit}
               onMove={onMove}
+              onAssignTask={onAssignTask}
               stages={stages}
               displayCurrency={displayCurrency}
               rates={rates}
@@ -336,6 +406,7 @@ export const DealsKanban: React.FC<Props> = ({
   pipelineId,
   stages,
   onDealWon,
+  onAssignTask,
 }) => {
   const { dealsByStage, loading, update, canManage } = useDeals(pipelineId);
   const { rates } = useFxRates();
@@ -409,10 +480,11 @@ export const DealsKanban: React.FC<Props> = ({
   };
 
   const moveDealToStage = async (deal: Deal, targetStageRecord: EffectiveStage) => {
-    if (targetStageRecord.key === deal.stage) return;
-    // Won stages are intercepted — they need the project-creation handoff in
-    // Task 11 rather than a plain stage update.
-    if (targetStageRecord.isWon) {
+    const action = resolveStageChange(deal.stage, targetStageRecord);
+    if (action === 'noop') return;
+    // Won stages are intercepted — they need the project-creation handoff
+    // via DealWonModal rather than a plain stage update.
+    if (action === 'won-confirm') {
       setPendingWonStage({
         deal,
         stageId: targetStageRecord.id,
@@ -487,9 +559,14 @@ export const DealsKanban: React.FC<Props> = ({
               }
               onSelect={onSelectDeal}
               onEdit={(deal) => setEditingDeal(deal)}
-              onMove={(deal, targetStage) => {
-                moveDealToStage(deal, targetStage);
-              }}
+              onMove={
+                canManage
+                  ? (deal, targetStage) => {
+                      moveDealToStage(deal, targetStage);
+                    }
+                  : undefined
+              }
+              onAssignTask={onAssignTask}
               stages={effectiveStages}
               canCreate={canManage}
               displayCurrency={displayCurrency}
