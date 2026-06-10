@@ -44,6 +44,7 @@ const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m)
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
 const ClientsDashboardPage = React.lazy(() => import('@/pages/dashboards/ClientsDashboard').then((m) => ({ default: m.ClientsDashboard })));
+const InsightsDashboard = React.lazy(() => import('@/pages/dashboards/InsightsDashboard').then((m) => ({ default: m.InsightsDashboard })));
 const AboutPage = React.lazy(() => import('@/pages/legal/AboutPage'));
 const ContractsInfoPage = React.lazy(() => import('@/pages/legal/ContractsInfoPage'));
 const PrivacyPolicyPage = React.lazy(() => import('@/pages/legal/PrivacyPolicyPage'));
@@ -198,6 +199,14 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireFeature="crm">
                   {lazyAppRoute(<ClientsDashboardPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/dashboard/insights',
+              element: (
+                <ProtectedRoute requireSubscription>
+                  {lazyAppRoute(<InsightsDashboard />)}
                 </ProtectedRoute>
               ),
             },

@@ -26,6 +26,7 @@ import {
   Building2,
   Bot,
   TrendingUp,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -60,6 +61,7 @@ const QUICK_ITEMS_FULL = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
   { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects' },
   { icon: TrendingUp, label: 'CRM analytics', href: '/dashboard/clients' },
+  { icon: Sparkles, label: 'Insights', href: '/dashboard/insights' },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks' },
   { icon: Inbox, label: 'Inbox', href: '/inbox' },
   { icon: Calendar, label: 'Calendar', href: '/calendar' },
