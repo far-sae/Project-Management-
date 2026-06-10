@@ -40,6 +40,8 @@ interface DealFormDialogProps {
   contacts?: ClientContact[];
   defaultStage?: DealStage;
   defaultClientId?: string | null;
+  /** Prefill the Deal Name in create mode (e.g. "Promote to deal" from a lead). */
+  defaultTitle?: string | null;
 }
 
 /**
@@ -53,7 +55,7 @@ interface DealFormDialogProps {
  */
 export const DealFormDialog: React.FC<DealFormDialogProps> = ({
   open, onOpenChange, deal = null, clients, contacts = [],
-  defaultStage = 'lead', defaultClientId = null,
+  defaultStage = 'lead', defaultClientId = null, defaultTitle = null,
 }) => {
   const { create, update } = useDeals();
   const orgCurrency = useOrgCurrency();
@@ -61,7 +63,7 @@ export const DealFormDialog: React.FC<DealFormDialogProps> = ({
   const isEdit = Boolean(deal);
 
   const [form, setForm] = useState({
-    title: '',
+    title: defaultTitle ?? '',
     description: '',
     clientId: defaultClientId ?? 'none',
     contactId: 'none',
@@ -99,7 +101,7 @@ export const DealFormDialog: React.FC<DealFormDialogProps> = ({
       return;
     }
     setForm({
-      title: '',
+      title: defaultTitle ?? '',
       description: '',
       clientId: defaultClientId ?? 'none',
       contactId: 'none',
@@ -113,7 +115,7 @@ export const DealFormDialog: React.FC<DealFormDialogProps> = ({
       leadSource: 'none',
       campaignSource: '',
     });
-  }, [open, deal, defaultStage, defaultClientId, orgCurrency]);
+  }, [open, deal, defaultStage, defaultClientId, defaultTitle, orgCurrency]);
 
   // Re-sync probability when stage changes (Zoho behavior).
   useEffect(() => {

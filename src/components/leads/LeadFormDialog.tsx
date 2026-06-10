@@ -22,6 +22,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   lead?: Lead | null;
   onSubmit: (input: CreateLeadInput) => Promise<void>;
+  /** When set (create mode only), stamp the new lead into this account +
+   *  category + workspace. Used when adding a lead from inside an account. */
+  defaultAccountId?: string | null;
+  defaultCategory?: string | null;
+  defaultWorkspaceId?: string | null;
 }
 
 const NONE = '__none__';
@@ -116,7 +121,10 @@ const fromLead = (l: Lead): FormState => ({
   tags: l.tags.join(', '),
 });
 
-export const LeadFormDialog: React.FC<Props> = ({ open, onOpenChange, lead, onSubmit }) => {
+export const LeadFormDialog: React.FC<Props> = ({
+  open, onOpenChange, lead, onSubmit,
+  defaultAccountId = null, defaultCategory = null, defaultWorkspaceId = null,
+}) => {
   const [form, setForm] = useState<FormState>(lead ? fromLead(lead) : blank);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +196,14 @@ export const LeadFormDialog: React.FC<Props> = ({ open, onOpenChange, lead, onSu
         description: form.description || null,
         tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
       };
+      // When adding from inside an account, stamp the account/category/workspace
+      // onto the new lead. Edit mode leaves these untouched (the lead keeps its
+      // existing account/category).
+      if (!lead) {
+        if (defaultAccountId) input.accountId = defaultAccountId;
+        if (defaultCategory) input.category = defaultCategory;
+        if (defaultWorkspaceId) input.workspaceId = defaultWorkspaceId;
+      }
       await onSubmit(input);
       onOpenChange(false);
     } catch (err) {

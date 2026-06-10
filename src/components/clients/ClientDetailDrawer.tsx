@@ -4,6 +4,7 @@ import {
   Building2, X, Mail, Phone, Globe, MapPin, Star, User, Plus,
   FileText, Trash2, Loader2, Paperclip, ExternalLink, MessageSquare,
   Calendar as CalendarIcon, PhoneCall, Mailbox, Edit, Activity as ActivityIcon,
+  ChevronDown, ChevronRight, Tag, UserPlus, ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +35,18 @@ import {
   uploadClientAttachment,
 } from '@/services/supabase/clients';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
+import {
+  addLeadCategory as addLeadCategorySvc,
+  removeLeadCategory as removeLeadCategorySvc,
+} from '@/services/supabase/clients';
+import {
+  Lead, CreateLeadInput,
+  leadDisplayName, leadStatusLabel,
+  listAccountLeads, createLead as createLeadSvc, updateLead as updateLeadSvc,
+} from '@/services/supabase/leads';
+import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
+import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
+import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
   listActivities, filterByEntity, type Activity,
@@ -48,7 +61,7 @@ import { AccountHierarchyCard } from './AccountHierarchyCard';
 import { AccountStageHistoryCard } from './AccountStageHistoryCard';
 import { toast } from 'sonner';
 
-type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files' | 'invoices';
+type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files' | 'invoices' | 'leads';
 
 const KIND_FOR_TAB: Partial<Record<MainTab, ClientNoteKind>> = {
   notes: 'note',
@@ -88,7 +101,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
 }) => {
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
-  const { organization: _org } = useOrganization(); // satisfies hook order
+  const { organization: _org, canEditModule } = useOrganization(); // satisfies hook order
   const [tab, setTab] = useState<MainTab>('activity');
   const [openEmail, setOpenEmail] = useState(false);
   const [openSms, setOpenSms] = useState(false);
@@ -280,6 +293,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                   { v: 'meetings', label: 'Meetings' },
                   { v: 'files', label: 'Files' },
                   { v: 'invoices', label: 'Invoices' },
+                  { v: 'leads', label: 'Leads' },
                 ] as const).map((t) => (
                   <TabsTrigger
                     key={t.v}
@@ -348,6 +362,16 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                   organizationId={organizationId}
                   client={client}
                   canManage={canManage}
+                />
+              )}
+
+              {tab === 'leads' && (
+                <LeadsTab
+                  account={client}
+                  organizationId={organizationId}
+                  contacts={contacts}
+                  canManage={canManage}
+                  canEditLeads={canEditModule('leads')}
                 />
               )}
             </div>
@@ -995,6 +1019,286 @@ const FilesTab: React.FC<{
           );
         })}
       </ul>
+    </div>
+  );
+};
+
+// ─── Leads tab (account-scoped leads grouped by category) ─────────────────────
+
+const LeadsTab: React.FC<{
+  account: Client;
+  organizationId: string;
+  contacts: ClientContact[];
+  canManage: boolean;
+  canEditLeads: boolean;
+}> = ({ account, organizationId, contacts, canManage, canEditLeads }) => {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState(true);
+  // The account's own category list (read-modify-write target). Seeded from the
+  // account record and kept in local state so add/remove reflect immediately.
+  const [categories, setCategories] = useState<string[]>(account.leadCategories ?? []);
+  const [openCategories, setOpenCategories] = useState<Set<string>>(() => new Set());
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
+  const [savingCategory, setSavingCategory] = useState(false);
+
+  // Lead create dialog: which category the new lead lands in.
+  const [createCategory, setCreateCategory] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  // Lead detail drawer (opened from a row).
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  // Promote-to-deal dialog state.
+  const [promoteLead, setPromoteLead] = useState<Lead | null>(null);
+
+  const canEdit = canManage && canEditLeads;
+
+  const reload = async () => {
+    setLeads(await listAccountLeads(organizationId, account.clientId));
+  };
+
+  // Lazy-load this account's leads only when the tab mounts.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listAccountLeads(organizationId, account.clientId)
+      .then((rows) => { if (!cancelled) setLeads(rows); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [organizationId, account.clientId]);
+
+  // Keep the local category list in sync if the account record refreshes.
+  useEffect(() => {
+    setCategories(account.leadCategories ?? []);
+  }, [account.leadCategories]);
+
+  // Group leads by category. Build the display groups from the account's
+  // registered categories first (so empty ones still render), then fold in any
+  // ad-hoc categories carried on leads, and finally an Uncategorized bucket.
+  const groups = useMemo(() => {
+    const byKey = new Map<string, { label: string; leads: Lead[] }>();
+    for (const c of categories) {
+      byKey.set(c.toLowerCase(), { label: c, leads: [] });
+    }
+    for (const l of leads) {
+      const raw = l.category?.trim();
+      if (!raw) continue;
+      const k = raw.toLowerCase();
+      if (!byKey.has(k)) byKey.set(k, { label: raw, leads: [] });
+      byKey.get(k)!.leads.push(l);
+    }
+    const out = Array.from(byKey.values()).sort((a, b) => a.label.localeCompare(b.label));
+    const uncategorized = leads.filter((l) => !l.category?.trim());
+    if (uncategorized.length > 0) {
+      out.push({ label: 'Uncategorized', leads: uncategorized });
+    }
+    return out;
+  }, [categories, leads]);
+
+  const toggleGroup = (label: string) =>
+    setOpenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
+  const submitCategory = async () => {
+    const name = newCategory.trim();
+    if (!name) return;
+    setSavingCategory(true);
+    try {
+      const updated = await addLeadCategorySvc(organizationId, account.clientId, name);
+      setCategories(updated.leadCategories ?? []);
+      setNewCategory('');
+      setAddingCategory(false);
+      setOpenCategories((prev) => new Set(prev).add(name));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add category');
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const removeCategory = async (label: string) => {
+    if (!confirm(`Remove the "${label}" category from this account? Leads keep their data; they just become uncategorized here.`)) return;
+    try {
+      const updated = await removeLeadCategorySvc(organizationId, account.clientId, label);
+      setCategories(updated.leadCategories ?? []);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove category');
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Leads grouped by category for this account. Add a category, then add leads under it.
+        </p>
+        {canEdit && !addingCategory && (
+          <Button size="sm" variant="outline" onClick={() => setAddingCategory(true)}>
+            <Tag className="w-4 h-4 mr-1" /> Add category
+          </Button>
+        )}
+      </div>
+
+      {addingCategory && (
+        <div className="flex items-center gap-2 border rounded-md p-2 bg-secondary/30">
+          <Input
+            autoFocus
+            placeholder="Category name (e.g. Enterprise)"
+            value={newCategory}
+            maxLength={80}
+            onChange={(e) => setNewCategory(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submitCategory(); }}
+          />
+          <Button size="sm" onClick={submitCategory} disabled={savingCategory || !newCategory.trim()}>
+            {savingCategory && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+            Add
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setAddingCategory(false); setNewCategory(''); }}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading leads…
+        </div>
+      )}
+
+      {!loading && groups.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No categories or leads yet. {canEdit ? 'Use “Add category” to create your first group, then add leads under it.' : ''}
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {groups.map((g) => {
+          const isUncategorized = g.label === 'Uncategorized';
+          const open = openCategories.has(g.label);
+          return (
+            <div key={g.label} className="border rounded-md">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+                  onClick={() => toggleGroup(g.label)}
+                >
+                  {open ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+                  <span className="font-medium truncate">{g.label}</span>
+                  <Badge variant="outline" className="ml-1 text-[10px]">{g.leads.length}</Badge>
+                </button>
+                {canEdit && !isUncategorized && (
+                  <>
+                    <Button
+                      size="sm" variant="ghost"
+                      onClick={() => { setCreateCategory(g.label); setCreateOpen(true); }}
+                    >
+                      <UserPlus className="w-4 h-4 mr-1" /> Add lead
+                    </Button>
+                    <Button
+                      size="icon" variant="ghost"
+                      aria-label={`Remove category ${g.label}`}
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => removeCategory(g.label)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
+              </div>
+              {open && (
+                <ul className="border-t divide-y">
+                  {g.leads.length === 0 && (
+                    <li className="px-3 py-2 text-sm text-muted-foreground">No leads in this category yet.</li>
+                  )}
+                  {g.leads.map((l) => (
+                    <li key={l.leadId} className="px-3 py-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="flex-1 min-w-0 text-left hover:text-primary"
+                        onClick={() => setSelectedLead(l)}
+                      >
+                        <span className="font-medium">{leadDisplayName(l)}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {l.leadNumber} · {leadStatusLabel(l.leadStatus)}
+                        </span>
+                      </button>
+                      {canEdit && (
+                        <Button
+                          size="sm" variant="outline"
+                          onClick={() => setPromoteLead(l)}
+                        >
+                          <ArrowRight className="w-4 h-4 mr-1" /> Promote to deal
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add lead — prefilled to this account + the chosen category + workspace. */}
+      <LeadFormDialog
+        open={createOpen}
+        onOpenChange={(o) => { if (!o) { setCreateOpen(false); setCreateCategory(null); } }}
+        defaultAccountId={account.clientId}
+        defaultCategory={createCategory}
+        defaultWorkspaceId={account.workspaceId}
+        onSubmit={async (input: CreateLeadInput) => {
+          try {
+            const created = await createLeadSvc(organizationId, null, null, input);
+            toast.success(`Created lead ${created.leadNumber}`);
+            await reload();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to create lead');
+            throw err;
+          }
+        }}
+      />
+
+      {/* Lead detail drawer — opened from a row inside this account. */}
+      {selectedLead && (
+        <LeadDetailDrawer
+          lead={selectedLead}
+          organizationId={organizationId}
+          canManage={canManage}
+          readOnly={!canEditLeads}
+          canConvert={false}
+          onClose={() => setSelectedLead(null)}
+          onEdit={() => {/* edit handled inline in the drawer */}}
+          onDelete={() => {/* deletion lives in the top-level leads flow */}}
+          onConvert={() => {/* in-account path is Promote to deal, not convert */}}
+          onSendEmail={() => {/* no-op here */}}
+          onClone={() => {/* no-op here */}}
+          onStatusChange={async (l, next) => {
+            const updated = await updateLeadSvc(organizationId, l.leadId, { leadStatus: next });
+            setSelectedLead(updated);
+            await reload();
+          }}
+          onUpdate={async (leadId, patch) => {
+            const updated = await updateLeadSvc(organizationId, leadId, patch);
+            setSelectedLead(updated);
+            await reload();
+            return updated;
+          }}
+        />
+      )}
+
+      {/* Promote to deal — scoped to THIS account (no new account created). */}
+      <DealFormDialog
+        open={!!promoteLead}
+        onOpenChange={(o) => { if (!o) setPromoteLead(null); }}
+        clients={[account]}
+        contacts={contacts}
+        defaultClientId={account.clientId}
+        defaultTitle={promoteLead ? `${leadDisplayName(promoteLead)} — ${promoteLead.company}` : null}
+      />
     </div>
   );
 };

@@ -57,6 +57,11 @@ export interface Lead {
   rating: string | null;
   emailOptOut: boolean;
 
+  /** Owning account (client_id). Null = unassigned lead. */
+  accountId: string | null;
+  /** Category label within the owning account. */
+  category: string | null;
+
   convertedAt: Date | null;
   convertedToClientId: string | null;
   convertedToContactId: string | null;
@@ -120,6 +125,10 @@ export interface CreateLeadInput {
   tags?: string[];
   customFields?: Record<string, unknown>;
   imageUrl?: string | null;
+  /** Owning account (client_id). Null/omitted = unassigned lead. */
+  accountId?: string | null;
+  /** Category label within the owning account. */
+  category?: string | null;
 }
 
 export type UpdateLeadInput = Partial<CreateLeadInput>;
@@ -305,6 +314,9 @@ const mapLead = (r: Record<string, unknown>): Lead => ({
   rating: (r.rating as string) ?? null,
   emailOptOut: Boolean(r.email_opt_out),
 
+  accountId: (r.account_id as string) ?? null,
+  category: (r.category as string) ?? null,
+
   convertedAt: r.converted_at ? new Date(r.converted_at as string) : null,
   convertedToClientId: (r.converted_to_client_id as string) ?? null,
   convertedToContactId: (r.converted_to_contact_id as string) ?? null,
@@ -433,6 +445,8 @@ export const createLead = async (
       leadStatus: input.leadStatus ?? "new",
       rating: sanitize(input.rating),
       emailOptOut: Boolean(input.emailOptOut),
+      accountId: input.accountId ?? null,
+      category: sanitize(input.category),
       convertedAt: null,
       convertedToClientId: null,
       convertedToContactId: null,
@@ -493,6 +507,8 @@ export const createLead = async (
       lead_status: input.leadStatus ?? "new",
       rating: sanitize(input.rating),
       email_opt_out: Boolean(input.emailOptOut),
+      account_id: input.accountId ?? null,
+      category: sanitize(input.category),
       description: sanitize(input.description),
       tags: sanitizeTags(input.tags),
       custom_fields: input.customFields ?? {},
@@ -559,6 +575,8 @@ export const updateLead = async (
     assign("leadStatus", input.leadStatus);
     assign("rating", input.rating !== undefined ? sanitize(input.rating) : undefined);
     if (input.emailOptOut !== undefined) merged.emailOptOut = Boolean(input.emailOptOut);
+    if (input.accountId !== undefined) merged.accountId = input.accountId;
+    assign("category", input.category !== undefined ? sanitize(input.category) : undefined);
     assign("description", input.description !== undefined ? sanitize(input.description) : undefined);
     if (input.tags !== undefined) merged.tags = sanitizeTags(input.tags);
     if (input.customFields !== undefined) merged.customFields = input.customFields;
@@ -599,6 +617,8 @@ export const updateLead = async (
   if (input.leadStatus !== undefined) patch.lead_status = input.leadStatus;
   if (input.rating !== undefined) patch.rating = sanitize(input.rating);
   if (input.emailOptOut !== undefined) patch.email_opt_out = Boolean(input.emailOptOut);
+  if (input.accountId !== undefined) patch.account_id = input.accountId;
+  if (input.category !== undefined) patch.category = sanitize(input.category);
   if (input.description !== undefined) patch.description = sanitize(input.description);
   if (input.tags !== undefined) patch.tags = sanitizeTags(input.tags);
   if (input.customFields !== undefined) patch.custom_fields = input.customFields;
@@ -657,6 +677,56 @@ export const getOrganizationLeads = async (
     .order("created_at", { ascending: false });
   if (error) {
     logger.error("getOrganizationLeads failed:", error);
+    return [];
+  }
+  return (data || []).map(mapLead);
+};
+
+/** Leads owned by a specific account (client_id = accountId). */
+export const listAccountLeads = async (
+  organizationId: string,
+  accountId: string,
+): Promise<Lead[]> => {
+  if (isLocalOrg(organizationId)) {
+    return readLocal<Lead>(STORE.leads(organizationId), reviveLead)
+      .filter((l) => l.accountId === accountId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("account_id", accountId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    logger.error("listAccountLeads failed:", error);
+    return [];
+  }
+  return (data || []).map(mapLead);
+};
+
+/** Leads with no owning account (account_id IS NULL). Bot/agent/CSV-created
+ *  leads land here until a rep moves them into an account. */
+export const listUnassignedLeads = async (
+  organizationId: string,
+  workspaceId?: string | null,
+): Promise<Lead[]> => {
+  if (isLocalOrg(organizationId)) {
+    return readLocal<Lead>(STORE.leads(organizationId), reviveLead)
+      .filter((l) => !l.accountId && (!workspaceId || l.workspaceId === workspaceId))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  let q = supabase
+    .from("leads")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .is("account_id", null);
+  // Scope to the active workspace so a single-workspace view doesn't surface
+  // unassigned leads from other workspaces (matches the rest of the CRM).
+  if (workspaceId) q = q.eq("workspace_id", workspaceId);
+  const { data, error } = await q.order("created_at", { ascending: false });
+  if (error) {
+    logger.error("listUnassignedLeads failed:", error);
     return [];
   }
   return (data || []).map(mapLead);

@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  GitBranch, Home as HomeIcon, UserPlus,
+  GitBranch, Home as HomeIcon,
   LayoutGrid, List, Activity as ActivityIcon,
 } from 'lucide-react';
 import { ActivitiesHubPanel } from '@/components/activities/ActivitiesHubPanel';
@@ -51,14 +51,12 @@ import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { AccountsLanding } from '@/components/clients/AccountsLanding';
 import { AccountsHubCard } from '@/components/clients/AccountsHubCard';
+import { UnassignedLeadsCard } from '@/components/clients/UnassignedLeadsCard';
 import { ManageCategoriesDialog } from '@/components/clients/ManageCategoriesDialog';
 import { useClientCategories } from '@/hooks/useClientCategories';
-import { LeadsLanding } from '@/components/leads/LeadsLanding';
-import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
 import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadConvertDialog } from '@/components/leads/LeadConvertDialog';
-import { LeadsHubCard } from '@/components/leads/LeadsHubCard';
 import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
 import { useContacts } from '@/hooks/useContacts';
 import { useLeads } from '@/hooks/useLeads';
@@ -140,15 +138,17 @@ export const Clients: React.FC = () => {
   // saved bookmark or onGoToTasks callback fires with 'tasks', the
   // useEffect below silently redirects it to 'activities' (where
   // tasks now live).
-  const [activeTab, setActiveTab] = useState<'home' | 'leads' | 'accounts' | 'pipeline' | 'tasks' | 'activities' | 'forecast'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'activities' | 'forecast'>('home');
   useEffect(() => {
+    // 'tasks' and the removed 'leads' tab both redirect: tasks → activities,
+    // leads → accounts (leads now live inside accounts).
     if (activeTab === 'tasks') setActiveTab('activities');
+    if ((activeTab as string) === 'leads') setActiveTab('accounts');
   }, [activeTab]);
 
   // Guard: if the active tab requires a module the user can't view, fall back to home.
   useEffect(() => {
     if (activeTab === 'pipeline' && !canViewModule('deals')) setActiveTab('home');
-    if (activeTab === 'leads' && !canViewModule('leads')) setActiveTab('home');
   }, [activeTab, canViewModule]);
 
   // ─── Contacts (still needed for AccountsHubCard count + DealFormDialog) ──
@@ -158,7 +158,7 @@ export const Clients: React.FC = () => {
 
   // ─── Leads state ────────────────────────────────────────────────────────
   const {
-    leads, allLeads, loading: leadsLoading,
+    leads, allLeads,
     workspaceId: activeLeadWorkspaceId,
     create: createLeadSvc, update: updateLeadSvc, remove: removeLeadSvc, convert: convertLeadSvc,
     canCreate: canCreateLead, canManage: canManageLead,
@@ -170,6 +170,9 @@ export const Clients: React.FC = () => {
   const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
+  // Bumped whenever the unassigned-leads list should reload (after a move, a
+  // convert, or a fresh create from the bot/import paths).
+  const [unassignedRefresh, setUnassignedRefresh] = useState(0);
 
   // Keep the open drawer reactive to realtime updates. Look up against the
   // workspace-filtered list first so the user always sees the "current"
@@ -519,14 +522,6 @@ export const Clients: React.FC = () => {
               <TabsTrigger value="home">
                 <HomeIcon className="w-4 h-4 mr-1.5" /> Home
               </TabsTrigger>
-              {canViewModule('leads') && (
-                <TabsTrigger value="leads">
-                  <UserPlus className="w-4 h-4 mr-1.5" /> Leads
-                  {leads.length > 0 && (
-                    <Badge variant="outline" className="ml-1.5 text-[9px]">{leads.length}</Badge>
-                  )}
-                </TabsTrigger>
-              )}
               <TabsTrigger value="accounts">
                 <Building2 className="w-4 h-4 mr-1.5" /> Accounts
               </TabsTrigger>
@@ -560,74 +555,6 @@ export const Clients: React.FC = () => {
               />
             </TabsContent>
 
-            <TabsContent value="leads" className="mt-4 space-y-4">
-              {!canViewModule('leads') ? (
-                <div className="p-6 text-sm text-muted-foreground">You don't have access to Leads. Ask an admin for access.</div>
-              ) : leadsLoading ? (
-                <Card>
-                  <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
-                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading leads…
-                  </CardContent>
-                </Card>
-              ) : leads.length === 0 ? (
-                <LeadsLanding
-                  canCreate={canCreateLead && canEditModule('leads')}
-                  onCreate={() => setOpenCreateLead(true)}
-                  onImport={() => setOpenImportLead(true)}
-                />
-              ) : (
-                <>
-                  <LeadsHubCard
-                    leadsCount={leads.length}
-                    accountsCount={clients.length}
-                    canCreate={canCreateLead}
-                    scopeLabel={isAllWorkspaces
-                      ? 'All workspaces'
-                      : selectedWorkspace?.name ?? 'Current workspace'}
-                    onCreateLead={() => setOpenCreateLead(true)}
-                    onImportLeads={() => setOpenImportLead(true)}
-                    onGoToAccounts={() => setActiveTab('accounts')}
-                    onGoToPipeline={() => setActiveTab('pipeline')}
-                    onGoToTasks={() => setActiveTab('tasks')}
-                    onConvertHelp={() => {
-                      // Scroll the leads table into view so the rep can
-                      // pick which lead to convert. The Convert action
-                      // itself opens via the row drawer's Convert button.
-                      document.getElementById('leads-table-anchor')
-                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      toast.info('Pick a lead from the table below and click Convert in its drawer.');
-                    }}
-                  />
-
-                  <div
-                    id="leads-table-anchor"
-                    className="flex items-center justify-between flex-wrap gap-2 pt-2"
-                  >
-                    <div>
-                      <h2 className="text-lg font-semibold">Leads</h2>
-                      <p className="text-sm text-muted-foreground">
-                        Prospects you haven't qualified yet. Convert a lead to promote it into a real Account + Contact.
-                      </p>
-                    </div>
-                    {canCreateLead && canEditModule('leads') && (
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => setOpenImportLead(true)}>
-                          <Upload className="w-4 h-4 mr-2" /> Import Leads
-                        </Button>
-                        <Button onClick={() => setOpenCreateLead(true)}>
-                          <Plus className="w-4 h-4 mr-2" /> Create Lead
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <LeadsTable
-                    rows={leads}
-                    onOpen={(l) => setSelectedLead(l)}
-                  />
-                </>
-              )}
-            </TabsContent>
-
             <TabsContent value="accounts" className="mt-4 space-y-6">
               {loading ? (
                 <Card>
@@ -657,19 +584,33 @@ export const Clients: React.FC = () => {
               <>
               <AccountsHubCard
                 accountsCount={clients.length}
-                contactsCount={contacts.length}
-                leadsCount={leads.length}
                 canCreate={canCreate}
                 scopeLabel={isAllWorkspaces
                   ? 'All workspaces'
                   : selectedWorkspace?.name ?? 'Current workspace'}
                 onCreateAccount={() => setOpenCreate(true)}
                 onImportAccounts={() => setOpenImport(true)}
-                onGoToContacts={() => {/* Contacts tab removed */}}
-                onGoToLeads={() => setActiveTab('leads')}
                 onGoToPipeline={() => setActiveTab('pipeline')}
                 onGoToTasks={() => setActiveTab('tasks')}
               />
+              {canViewModule('leads') && (
+                <UnassignedLeadsCard
+                  organizationId={organizationId}
+                  workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
+                  accounts={clients}
+                  canEdit={canCreateLead && canEditModule('leads')}
+                  refreshKey={unassignedRefresh}
+                  onMove={async (lead, accountId, category) => {
+                    // Stamp the lead's workspace to the account's so it follows
+                    // its new account (avoids a cross-workspace mismatch).
+                    const acct = clients.find((c) => c.clientId === accountId);
+                    await updateLeadSvc(lead.leadId, {
+                      accountId, category,
+                      workspaceId: acct?.workspaceId ?? lead.workspaceId,
+                    });
+                  }}
+                />
+              )}
               <div className="pt-2">
                 <h2 className="text-lg font-semibold">Accounts</h2>
                 <p className="text-sm text-muted-foreground">
@@ -1185,6 +1126,8 @@ export const Clients: React.FC = () => {
             toast.error('No leads were imported. Check the row errors above.');
             return;
           }
+          // Imported leads land unassigned — refresh the Unassigned section.
+          setUnassignedRefresh((k) => k + 1);
           if (result.errors.length > 0 || result.coercions.length > 0) {
             toast.warning(
               `Imported ${result.imported.length} of ${result.imported.length + result.errors.length} leads — review the warnings above.`,
@@ -1224,6 +1167,9 @@ export const Clients: React.FC = () => {
                   metadata: { leadNumber: created.leadNumber, workspaceId: created.workspaceId },
                 },
               );
+              // A lead created from this top-level dialog has no account yet,
+              // so refresh the Unassigned list to surface it.
+              setUnassignedRefresh((k) => k + 1);
               setOpenCreateLead(false);
             }
           } catch (err) {
@@ -1344,6 +1290,8 @@ export const Clients: React.FC = () => {
         }}
         onConverted={(result) => {
           setSelectedLead(null);
+          // A converted lead leaves the unassigned pool — refresh the list.
+          setUnassignedRefresh((k) => k + 1);
           const acct = allClients.find((c) => c.clientId === result.clientId);
           if (acct) setSelected(acct);
         }}
