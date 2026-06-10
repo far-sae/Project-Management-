@@ -29,9 +29,12 @@ import { DealsEmptyState } from '@/components/deals/DealsEmptyState';
 import { DealsListView } from '@/components/deals/DealsListView';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { DealHandoffDialog } from '@/components/deals/DealHandoffDialog';
+import { DealWonModal } from '@/components/clients/DealWonModal';
+import type { PipelineStage } from '@/services/supabase/pipelines';
 import { ImportDealsDialog } from '@/components/deals/ImportDealsDialog';
 import { useDeals } from '@/hooks/useDeals';
 import type { Deal } from '@/services/supabase/deals';
+import { resolveStageChange } from '@/services/supabase/deals';
 import { ForecastTab } from '@/components/clients/ForecastTab';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
 import { PipelineSelector } from '@/components/clients/PipelineSelector';
@@ -112,8 +115,19 @@ export const Clients: React.FC = () => {
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
   const { deals: allDeals, create: createDealHook, remove: removeDeal, update: updateDeal } = useDeals();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
-  // Handoff dialog state: deal that just became Won, triggering the PM task prompt.
+  // Handoff dialog state: deal that just became Won (or any deal the rep
+  // clicked "Assign task" on), triggering the PM task prompt. `handoffWon`
+  // tracks which entry point opened it so the dialog copy is correct.
   const [handoffDeal, setHandoffDeal] = useState<Deal | null>(null);
+  const [handoffWon, setHandoffWon] = useState(false);
+  // List-view stage dropdown → Won pick. Reuses the SAME DealWonModal the
+  // kanban uses, so the won-confirm + project handoff fires identically
+  // regardless of which view the rep is in.
+  const [listWonStage, setListWonStage] = useState<{ deal: Deal; stage: PipelineStage } | null>(null);
+  // Helpers so both entry points (won → handoff, Assign-task button) open
+  // the one DealHandoffDialog with the right copy.
+  const openWonHandoff = (deal: Deal) => { setHandoffWon(true); setHandoffDeal(deal); };
+  const openAssignTask = (deal: Deal) => { setHandoffWon(false); setHandoffDeal(deal); };
   // Pipeline-tab-local state: which deal is open inline (Zoho detail view),
   // which view mode the rep prefers, and whether the Create Deal dialog is
   // open from the empty state or the kanban header.
@@ -444,6 +458,25 @@ export const Clients: React.FC = () => {
       toast.error(err instanceof Error ? err.message : 'Failed to delete selected accounts');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // List-view stage dropdown handler. Mirrors DealsKanban.moveDealToStage:
+  // a Won pick is intercepted and routed through DealWonModal (so the
+  // project-creation + handoff still fires); everything else is a plain
+  // stageId update — identical to the kanban's drag/dropdown path.
+  const handleListStageChange = async (deal: Deal, stage: PipelineStage) => {
+    const action = resolveStageChange(deal.stage, stage);
+    if (action === 'noop') return;
+    if (action === 'won-confirm') {
+      setListWonStage({ deal, stage });
+      return;
+    }
+    try {
+      await updateDeal(deal.dealId, { stageId: stage.stageId });
+      toast.success(`Moved "${deal.title}" to ${stage.label}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not move deal');
     }
   };
 
@@ -792,7 +825,8 @@ export const Clients: React.FC = () => {
                     <DealDetailView
                       dealId={pipelineDealId}
                       onBack={() => setPipelineDealId(null)}
-                      onDealWon={(won) => setHandoffDeal(won)}
+                      onDealWon={(won) => openWonHandoff(won)}
+                      onAssignTask={(d) => openAssignTask(d)}
                     />
                   );
                 }
@@ -935,12 +969,20 @@ export const Clients: React.FC = () => {
                             : []
                         }
                         onSelectDeal={(d) => setPipelineDealId(d.dealId)}
-                        onDealWon={(won) => setHandoffDeal(won)}
+                        onDealWon={(won) => openWonHandoff(won)}
+                        onAssignTask={(d) => openAssignTask(d)}
                       />
                     ) : (
                       <DealsListView
                         deals={scopedDeals}
                         onSelectDeal={(d) => setPipelineDealId(d.dealId)}
+                        stagesByPipeline={stagesByPipeline}
+                        onStageChange={
+                          canManage && canEditModule('deals')
+                            ? handleListStageChange
+                            : undefined
+                        }
+                        onAssignTask={(d) => openAssignTask(d)}
                       />
                     )}
                   </>
@@ -1488,14 +1530,29 @@ export const Clients: React.FC = () => {
         }}
       />
 
-      {/* Deal won → PM handoff dialog. Owned here so there is exactly one
-          instance regardless of whether the win came from the kanban drag
-          or the deal detail view. Cancelling leaves the deal won. */}
+      {/* Deal → PM handoff dialog. Owned here so there is exactly one
+          instance regardless of the entry point: the won transition (kanban
+          drag, kanban/list stage dropdown, or detail-view stage path) OR the
+          "Assign task" action on any deal. `wonContext` swaps the copy.
+          Cancelling never changes the deal. */}
       <DealHandoffDialog
         open={!!handoffDeal}
-        onOpenChange={(o) => { if (!o) setHandoffDeal(null); }}
+        onOpenChange={(o) => { if (!o) { setHandoffDeal(null); setHandoffWon(false); } }}
         deal={handoffDeal}
+        wonContext={handoffWon}
       />
+
+      {/* List-view Won pick → reuse the SAME DealWonModal the kanban mounts,
+          so the project-creation handoff fires identically. onWon opens the
+          handoff dialog in won-context, matching the kanban flow. */}
+      {listWonStage && (
+        <DealWonModal
+          deal={listWonStage.deal}
+          targetStage={listWonStage.stage}
+          onWon={(won) => openWonHandoff(won)}
+          onClose={() => setListWonStage(null)}
+        />
+      )}
     </>
   );
 };
