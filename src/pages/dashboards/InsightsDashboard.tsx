@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2, Plus, MoreVertical, ArrowUp, ArrowDown, Trash2, Sparkles, AlertTriangle,
+  Send, Pin, X,
 } from "lucide-react";
 import { useOrganization } from "@/context/OrganizationContext";
 import { useAuth } from "@/context/AuthContext";
@@ -37,6 +38,9 @@ import {
 import {
   addWidget, removeWidget, reorderWidget, setWidgetSize, type WidgetSize,
 } from "@/lib/dashboardWidgets";
+import {
+  askDashboardAI, isFailure, type AiWidgetSpec,
+} from "@/services/dashboards/askDashboardAI";
 
 const SIZE_SPAN: Record<WidgetSize, string> = {
   sm: "lg:col-span-1",
@@ -80,10 +84,13 @@ const WidgetView: React.FC<{
   widget: Widget;
   orgId: string;
   fmtMoney: (n: number, c?: string) => string;
-  onReorder: (dir: "up" | "down") => void;
-  onResize: (size: WidgetSize) => void;
-  onRemove: () => void;
-}> = ({ widget, orgId, fmtMoney, onReorder, onResize, onRemove }) => {
+  onReorder?: (dir: "up" | "down") => void;
+  onResize?: (size: WidgetSize) => void;
+  onRemove?: () => void;
+  // Preview mode (AI Ask): render the chart exactly the same way but drop the
+  // per-widget arrange/size/remove menu (the preview has its own controls).
+  hideMenu?: boolean;
+}> = ({ widget, orgId, fmtMoney, onReorder, onResize, onRemove, hideMenu }) => {
   const [result, setResult] = useState<MetricResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +125,7 @@ const WidgetView: React.FC<{
     };
   }, [metric, orgId, widget.dimension, widget.timeframe]);
 
-  const menu = (
+  const menu = hideMenu ? null : (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-7 w-7 -mr-1">
@@ -127,10 +134,10 @@ const WidgetView: React.FC<{
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuLabel className="text-xs">Arrange</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => onReorder("up")}>
+        <DropdownMenuItem onClick={() => onReorder?.("up")}>
           <ArrowUp className="mr-2 h-4 w-4" /> Move up
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onReorder("down")}>
+        <DropdownMenuItem onClick={() => onReorder?.("down")}>
           <ArrowDown className="mr-2 h-4 w-4" /> Move down
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -138,7 +145,7 @@ const WidgetView: React.FC<{
         {(["sm", "md", "lg"] as const).map((s) => (
           <DropdownMenuItem
             key={s}
-            onClick={() => onResize(s)}
+            onClick={() => onResize?.(s)}
             className={widget.size === s ? "font-medium text-foreground" : ""}
           >
             {s === "sm" ? "Small" : s === "md" ? "Medium" : "Large"}
@@ -407,6 +414,126 @@ const AddWidgetDialog: React.FC<{
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Ask AI — plain-English question → constrained widget spec + takeaway.
+// The preview reuses the EXACT widget render path (WidgetView) so what the
+// user previews is what gets pinned. A "Pin to dashboard" turns the spec into
+// a real Widget; "Dismiss" clears the preview.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Turn an AI spec into a renderable Widget. `order` is filled at pin time.
+const specToWidget = (spec: AiWidgetSpec, order: number, size: WidgetSize = "md"): Widget => ({
+  id: crypto.randomUUID(),
+  metricId: spec.metricId,
+  title: spec.title,
+  chartType: spec.chartType,
+  dimension: spec.dimension,
+  timeframe: spec.timeframe,
+  size,
+  order,
+});
+
+const AskAi: React.FC<{
+  orgId: string;
+  fmtMoney: (n: number, c?: string) => string;
+  onPin: (spec: AiWidgetSpec) => void;
+}> = ({ orgId, fmtMoney, onPin }) => {
+  const [question, setQuestion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ spec: AiWidgetSpec; takeaway: string } | null>(null);
+
+  const submit = async () => {
+    const q = question.trim();
+    if (!q || loading) return;
+    setLoading(true);
+    setError(null);
+    setPreview(null);
+    const result = await askDashboardAI(orgId, q);
+    setLoading(false);
+    if (isFailure(result)) {
+      setError(result.error);
+      return;
+    }
+    setPreview({ spec: result.widget, takeaway: result.takeaway });
+  };
+
+  // A self-contained, full-width preview widget (md size). order is a
+  // placeholder for rendering only — the real order is assigned on pin.
+  const previewWidget = useMemo(
+    () => (preview ? specToWidget(preview.spec, 0, "lg") : null),
+    [preview],
+  );
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <Sparkles className="h-4 w-4 text-orange-500" /> Ask AI
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            placeholder='Ask a question, e.g. "won value by month" or "leads by status"'
+            disabled={loading}
+          />
+          <Button onClick={() => void submit()} disabled={loading || !question.trim()}>
+            {loading ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-1 h-4 w-4" />
+            )}
+            Ask
+          </Button>
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {preview && previewWidget && (
+          <div className="space-y-2 rounded-lg border border-dashed border-orange-300 dark:border-orange-800 p-3">
+            <WidgetView
+              widget={previewWidget}
+              orgId={orgId}
+              fmtMoney={fmtMoney}
+              hideMenu
+            />
+            {preview.takeaway && (
+              <p className="text-sm text-muted-foreground px-1">{preview.takeaway}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPreview(null)}>
+                <X className="mr-1 h-4 w-4" /> Dismiss
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  onPin(preview.spec);
+                  setPreview(null);
+                  setQuestion("");
+                }}
+              >
+                <Pin className="mr-1 h-4 w-4" /> Pin to dashboard
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -464,6 +591,24 @@ export const InsightsDashboard: React.FC = () => {
     [dashboard?.widgets],
   );
 
+  // Pin an AI-previewed spec onto the dashboard as a real widget (order =
+  // last+1). Reuses the same addWidget + persist path as the Add dialog.
+  const pinFromAi = useCallback(
+    (spec: AiWidgetSpec) => {
+      setDashboard((prev) => {
+        if (!prev) return prev;
+        const next = addWidget(prev.widgets, specToWidget(spec, prev.widgets.length));
+        if (prev.dashboardId) {
+          void saveWidgets(prev.dashboardId, next, { orgId, userId }).catch(() => {
+            /* non-fatal: optimistic state already applied */
+          });
+        }
+        return { ...prev, widgets: next };
+      });
+    },
+    [orgId, userId],
+  );
+
   if (loading) {
     return (
       <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
@@ -500,6 +645,8 @@ export const InsightsDashboard: React.FC = () => {
           <Plus className="mr-1 h-4 w-4" /> Add widget
         </Button>
       </div>
+
+      <AskAi orgId={orgId} fmtMoney={fmtMoney} onPin={pinFromAi} />
 
       {widgets.length === 0 ? (
         <Card>
