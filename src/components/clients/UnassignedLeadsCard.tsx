@@ -22,6 +22,9 @@ import { toast } from 'sonner';
 
 interface Props {
   organizationId: string | null;
+  /** Active workspace — scopes the unassigned list so other workspaces' leads
+   *  don't leak in. Null = all workspaces. */
+  workspaceId?: string | null;
   /** Accounts the lead can be moved into (workspace-scoped list from the page). */
   accounts: Client[];
   canEdit: boolean;
@@ -40,7 +43,7 @@ const NONE = '__none__';
  * move each into an account + category.
  */
 export const UnassignedLeadsCard: React.FC<Props> = ({
-  organizationId, accounts, canEdit, refreshKey = 0, onMove,
+  organizationId, workspaceId, accounts, canEdit, refreshKey = 0, onMove,
 }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,11 +60,11 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
     if (!organizationId) { setLeads([]); setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    listUnassignedLeads(organizationId)
+    listUnassignedLeads(organizationId, workspaceId ?? null)
       .then((rows) => { if (!cancelled) setLeads(rows); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [organizationId, refreshKey]);
+  }, [organizationId, workspaceId, refreshKey]);
 
   const targetAccount = useMemo(
     () => accounts.find((a) => a.clientId === targetAccountId) ?? null,

@@ -709,18 +709,22 @@ export const listAccountLeads = async (
  *  leads land here until a rep moves them into an account. */
 export const listUnassignedLeads = async (
   organizationId: string,
+  workspaceId?: string | null,
 ): Promise<Lead[]> => {
   if (isLocalOrg(organizationId)) {
     return readLocal<Lead>(STORE.leads(organizationId), reviveLead)
-      .filter((l) => !l.accountId)
+      .filter((l) => !l.accountId && (!workspaceId || l.workspaceId === workspaceId))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
-  const { data, error } = await supabase
+  let q = supabase
     .from("leads")
     .select("*")
     .eq("organization_id", organizationId)
-    .is("account_id", null)
-    .order("created_at", { ascending: false });
+    .is("account_id", null);
+  // Scope to the active workspace so a single-workspace view doesn't surface
+  // unassigned leads from other workspaces (matches the rest of the CRM).
+  if (workspaceId) q = q.eq("workspace_id", workspaceId);
+  const { data, error } = await q.order("created_at", { ascending: false });
   if (error) {
     logger.error("listUnassignedLeads failed:", error);
     return [];

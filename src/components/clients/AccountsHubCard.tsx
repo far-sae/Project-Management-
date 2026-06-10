@@ -1,33 +1,28 @@
 import React from 'react';
 import {
-  Plus, Upload, Users as UsersIcon, UserPlus, GitBranch, ListTodo,
+  Plus, Upload, GitBranch, ListTodo,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 interface AccountsHubCardProps {
   accountsCount: number;
-  contactsCount: number;
-  leadsCount: number;
   canCreate: boolean;
   scopeLabel?: string | null;
 
   onCreateAccount: () => void;
   onImportAccounts: () => void;
-  onGoToContacts: () => void;
-  onGoToLeads: () => void;
   onGoToPipeline: () => void;
   onGoToTasks: () => void;
 }
 
 /**
- * Zoho-style hub at the top of the Accounts tab. Mirrors the Leads and
- * Contacts hubs so reps land on a consistent "Choose what you want to do
- * next" panel whichever module they enter through.
+ * Zoho-style hub at the top of the Accounts tab. Leads + contacts now live
+ * inside an account, so this hub focuses on accounts, sales, and follow-ups.
  */
 export const AccountsHubCard: React.FC<AccountsHubCardProps> = ({
-  accountsCount, contactsCount, leadsCount, canCreate, scopeLabel,
-  onCreateAccount, onImportAccounts, onGoToContacts, onGoToLeads,
+  accountsCount, canCreate, scopeLabel,
+  onCreateAccount, onImportAccounts,
   onGoToPipeline, onGoToTasks,
 }) => (
   <Card>
@@ -50,12 +45,6 @@ export const AccountsHubCard: React.FC<AccountsHubCardProps> = ({
           <Badge variant="outline">
             {accountsCount} account{accountsCount === 1 ? '' : 's'}
           </Badge>
-          <Badge variant="outline">
-            {contactsCount} contact{contactsCount === 1 ? '' : 's'}
-          </Badge>
-          <Badge variant="outline">
-            {leadsCount} lead{leadsCount === 1 ? '' : 's'}
-          </Badge>
         </div>
       </div>
 
@@ -76,18 +65,6 @@ export const AccountsHubCard: React.FC<AccountsHubCardProps> = ({
             onClick={onImportAccounts}
           />
         )}
-        <HubTile
-          icon={UsersIcon}
-          title={`View contacts (${contactsCount})`}
-          hint="Jump to the people you know at each account."
-          onClick={onGoToContacts}
-        />
-        <HubTile
-          icon={UserPlus}
-          title={`View leads (${leadsCount})`}
-          hint="Jump to prospects waiting to be qualified."
-          onClick={onGoToLeads}
-        />
         <HubTile
           icon={GitBranch}
           title="Track sales"

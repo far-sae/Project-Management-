@@ -584,27 +584,30 @@ export const Clients: React.FC = () => {
               <>
               <AccountsHubCard
                 accountsCount={clients.length}
-                contactsCount={contacts.length}
-                leadsCount={leads.length}
                 canCreate={canCreate}
                 scopeLabel={isAllWorkspaces
                   ? 'All workspaces'
                   : selectedWorkspace?.name ?? 'Current workspace'}
                 onCreateAccount={() => setOpenCreate(true)}
                 onImportAccounts={() => setOpenImport(true)}
-                onGoToContacts={() => {/* Contacts tab removed */}}
-                onGoToLeads={() => {/* Leads tab removed — leads live inside accounts */}}
                 onGoToPipeline={() => setActiveTab('pipeline')}
                 onGoToTasks={() => setActiveTab('tasks')}
               />
               {canViewModule('leads') && (
                 <UnassignedLeadsCard
                   organizationId={organizationId}
+                  workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
                   accounts={clients}
                   canEdit={canCreateLead && canEditModule('leads')}
                   refreshKey={unassignedRefresh}
                   onMove={async (lead, accountId, category) => {
-                    await updateLeadSvc(lead.leadId, { accountId, category });
+                    // Stamp the lead's workspace to the account's so it follows
+                    // its new account (avoids a cross-workspace mismatch).
+                    const acct = clients.find((c) => c.clientId === accountId);
+                    await updateLeadSvc(lead.leadId, {
+                      accountId, category,
+                      workspaceId: acct?.workspaceId ?? lead.workspaceId,
+                    });
                   }}
                 />
               )}
