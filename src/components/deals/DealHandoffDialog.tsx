@@ -1,8 +1,12 @@
 // src/components/deals/DealHandoffDialog.tsx
 //
-// Post-won handoff dialog: after a deal is marked Won, let the user
-// create a PM task on any project so delivery can pick it up immediately.
-// Purely additive — cancelling leaves the deal won, no task is created.
+// Deal → PM handoff dialog. Two entry points share this one dialog:
+//  1. Post-won handoff: after a deal is marked Won, prompt to create a PM
+//     task on a delivery project (the original use).
+//  2. "Assign task" action: opened manually from any deal (won or not) so a
+//     rep can spin off a follow-up task without closing the deal first.
+// The `wonContext` prop just swaps the copy — the create-task behaviour is
+// identical either way. Purely additive — cancelling creates no task.
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Loader2 } from 'lucide-react';
@@ -42,6 +46,11 @@ interface DealHandoffDialogProps {
   onOpenChange: (open: boolean) => void;
   deal: Deal | null;
   onCreated?: () => void;
+  /** When true (the won-handoff entry point), the copy reads "Deal won —
+   *  hand it to delivery". When false/omitted (the generic "Assign task"
+   *  action), the copy is neutral so the dialog reads correctly for an
+   *  open deal that hasn't been won. */
+  wonContext?: boolean;
 }
 
 export const DealHandoffDialog: React.FC<DealHandoffDialogProps> = ({
@@ -49,6 +58,7 @@ export const DealHandoffDialog: React.FC<DealHandoffDialogProps> = ({
   onOpenChange,
   deal,
   onCreated,
+  wonContext = false,
 }) => {
   const { user } = useAuth();
   const { organization } = useOrganization();
@@ -169,11 +179,15 @@ export const DealHandoffDialog: React.FC<DealHandoffDialogProps> = ({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Deal won — hand it to delivery</DialogTitle>
+            <DialogTitle>
+              {wonContext ? 'Deal won — hand it to delivery' : 'Assign a task for this deal'}
+            </DialogTitle>
             <DialogDescription>
-              Create a task on your PM board so delivery can pick up{' '}
-              <strong>{deal.title}</strong>. You can skip this now — the deal is
-              already won.
+              Create a task on your PM board so the team can pick up{' '}
+              <strong>{deal.title}</strong>.{' '}
+              {wonContext
+                ? 'You can skip this now — the deal is already won.'
+                : 'This does not change the deal stage.'}
             </DialogDescription>
           </DialogHeader>
 

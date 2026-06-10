@@ -34,6 +34,31 @@ export const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   lost: 0,
 };
 
+/** Minimal stage shape the pipeline UI needs to decide how a stage pick is
+ *  routed. Both `PipelineStage` and the kanban's `EffectiveStage` satisfy it. */
+export interface StageChoice {
+  key: string;
+  isWon: boolean;
+  isLost: boolean;
+}
+
+/** Pure routing decision for a stage-dropdown / drag stage change, shared by
+ *  the kanban and the list view so a Won pick is NEVER treated as a plain
+ *  update (it must go through the won-confirm + handoff modal):
+ *   - 'noop'        — the deal is already in this stage.
+ *   - 'won-confirm' — open DealWonModal (project creation + handoff).
+ *   - 'update'      — plain stageId update (open stages and Lost).
+ *  Lost intentionally falls through to 'update' to match the existing
+ *  drag behaviour (it does not open a separate confirm). */
+export const resolveStageChange = (
+  currentStage: string,
+  target: StageChoice,
+): "noop" | "won-confirm" | "update" => {
+  if (target.key === currentStage) return "noop";
+  if (target.isWon) return "won-confirm";
+  return "update";
+};
+
 export interface Deal {
   dealId: string;
   organizationId: string;

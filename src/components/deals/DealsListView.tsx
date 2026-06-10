@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { ListPlus, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { DEAL_STAGES, Deal, DealStage } from '@/services/supabase/deals';
+import { PipelineStage } from '@/services/supabase/pipelines';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 
@@ -14,6 +16,17 @@ const fmtDate = (d: Date | null | undefined) =>
 interface DealsListViewProps {
   deals: Deal[];
   onSelectDeal: (d: Deal) => void;
+  /** Pipeline stages keyed by pipeline id. Lets each row's stage dropdown
+   *  list the deal's own pipeline stages (falls back to DEAL_STAGES). */
+  stagesByPipeline?: Record<string, PipelineStage[]>;
+  /** Called when the rep picks a new stage on a row. The parent owns the
+   *  actual update + the won/lost confirmation flow (same path the kanban
+   *  uses), so a Won pick still fires the handoff. Omit to hide the
+   *  per-row dropdown (read-only mode). */
+  onStageChange?: (deal: Deal, stage: PipelineStage) => void;
+  /** Called when the rep clicks "Assign task" on a row. Parent opens the
+   *  DealHandoffDialog for that deal. */
+  onAssignTask?: (deal: Deal) => void;
 }
 
 /**
@@ -22,7 +35,7 @@ interface DealsListViewProps {
  * kanban (which always shows the full pipeline) doesn't inherit them.
  */
 export const DealsListView: React.FC<DealsListViewProps> = ({
-  deals, onSelectDeal,
+  deals, onSelectDeal, stagesByPipeline, onStageChange, onAssignTask,
 }) => {
   const fmtMoney = useFormatMoney();
   // useFormatMoney now FX-converts at the hook level, so we just need
@@ -47,6 +60,31 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
     }
     return rows;
   }, [deals, stageFilter, search]);
+
+  // Resolve the stage list a row's dropdown should show. Prefer the deal's
+  // own pipeline stages; fall back to synthesizing PipelineStage-shaped
+  // records from the legacy DEAL_STAGES so the dropdown still works before
+  // the pipelines layer has loaded (or for local-org deals with no stages).
+  const stagesForDeal = (deal: Deal): PipelineStage[] => {
+    const real = stagesByPipeline?.[deal.pipelineId];
+    if (real && real.length > 0) return real;
+    return DEAL_STAGES.map((s, i) => ({
+      stageId: s.id,
+      pipelineId: deal.pipelineId,
+      organizationId: deal.organizationId,
+      key: s.id,
+      label: s.label,
+      color: s.color,
+      position: i,
+      defaultProbability: 0,
+      isWon: s.id === 'won',
+      isLost: s.id === 'lost',
+      requiredFields: [],
+      createdAt: new Date(),
+    }));
+  };
+  const showStageControl = !!onStageChange;
+  const showActions = !!onAssignTask;
 
   return (
     <div className="space-y-3">
@@ -83,17 +121,19 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
               <th className="px-3 py-2 font-medium text-right">Probability</th>
               <th className="px-3 py-2 font-medium">Closing Date</th>
               <th className="px-3 py-2 font-medium">Owner</th>
+              {showActions && <th className="px-3 py-2 font-medium text-right">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground text-xs">
+                <td colSpan={showActions ? 8 : 7} className="px-3 py-6 text-center text-muted-foreground text-xs">
                   No deals match your filters.
                 </td>
               </tr>
             ) : filtered.map((d) => {
               const stageMeta = DEAL_STAGES.find((s) => s.id === d.stage);
+              const rowStages = stagesForDeal(d);
               return (
                 <tr
                   key={d.dealId}
@@ -103,10 +143,35 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
                   <td className="px-3 py-2 font-medium">{d.title}</td>
                   <td className="px-3 py-2 text-muted-foreground">{d.clientName ?? '—'}</td>
                   <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1.5 text-xs">
-                      <span className="w-2 h-2 rounded-full" style={{ background: stageMeta?.color ?? '#999' }} />
-                      {stageMeta?.label ?? d.stage}
-                    </span>
+                    {showStageControl ? (
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Select
+                          value={d.stage}
+                          onValueChange={(key) => {
+                            const next = rowStages.find((s) => s.key === key);
+                            // Same path the kanban uses — the parent routes
+                            // Won/Lost through the won-confirm + handoff flow.
+                            if (next) onStageChange?.(d, next);
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-40 text-xs" aria-label="Change stage">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rowStages.map((s) => (
+                              <SelectItem key={s.stageId} value={s.key} className="text-xs">
+                                {s.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs">
+                        <span className="w-2 h-2 rounded-full" style={{ background: stageMeta?.color ?? '#999' }} />
+                        {stageMeta?.label ?? d.stage}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {/* useFormatMoney now FX-converts internally — pass
@@ -123,6 +188,20 @@ export const DealsListView: React.FC<DealsListViewProps> = ({
                   <td className="px-3 py-2 text-right tabular-nums">{d.probability}%</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(d.expectedCloseDate)}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{d.ownerName ?? '—'}</td>
+                  {showActions && (
+                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        title="Create a PM task for this deal"
+                        onClick={() => onAssignTask?.(d)}
+                      >
+                        <ListPlus className="mr-1 h-3.5 w-3.5" /> Assign task
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
