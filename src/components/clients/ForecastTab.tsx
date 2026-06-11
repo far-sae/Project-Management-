@@ -1,14 +1,24 @@
 // src/components/clients/ForecastTab.tsx
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { useForecast, ForecastPeriod } from "@/hooks/useForecast";
-import { usePipelines } from "@/hooks/usePipelines";
-import { formatDealMoney } from "@/services/supabase/deals";
+import { Loader2, TrendingUp, Wallet, Trophy, Percent } from "lucide-react";
+import { useOrganization } from "@/context/OrganizationContext";
+import { useAuth } from "@/context/AuthContext";
+import { useFxRates, convertAmount } from "@/lib/fxRates";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
-} from "recharts";
+  getOrganizationDeals,
+  DEAL_STAGES,
+  OPEN_STAGES,
+  type Deal,
+  type DealStage,
+} from "@/services/supabase/deals";
+
+import { KpiTile } from "@/components/dashboards/KpiTile";
+import { ChartCard } from "@/components/dashboards/ChartCard";
+import { BarHorizontal } from "@/components/dashboards/BarHorizontal";
+import { TrendArea, type TrendDatum } from "@/components/dashboards/TrendArea";
+import { PipelineFunnel, type FunnelDatum } from "@/components/dashboards/PipelineFunnel";
 
 interface Props {
   displayCurrency: string;
@@ -17,127 +27,282 @@ interface Props {
   restrictToClientIds?: Set<string> | null;
 }
 
+const OPEN_STAGE_SET = new Set<DealStage>(OPEN_STAGES);
+const STAGE_LABEL: Record<DealStage, string> = DEAL_STAGES.reduce(
+  (acc, s) => ({ ...acc, [s.id]: s.label }),
+  {} as Record<DealStage, string>,
+);
+
+/** "This period" for the won/win-rate KPIs = the current calendar quarter. */
+const quarterStart = (): Date => {
+  const now = new Date();
+  const q = Math.floor(now.getMonth() / 3);
+  return new Date(now.getFullYear(), q * 3, 1);
+};
+
 export const ForecastTab: React.FC<Props> = ({ displayCurrency, restrictToClientIds }) => {
-  const { pipelines } = usePipelines();
-  const [pipelineId, setPipelineId] = useState<string>("all");
-  const [ownerId, setOwnerId] = useState<string>("all");
-  const [period, setPeriod] = useState<ForecastPeriod>("quarter");
+  const { organization } = useOrganization();
+  const { user } = useAuth();
+  const orgId =
+    organization?.organizationId ??
+    user?.organizationId ??
+    (user?.userId ? `local-${user.userId}` : null);
 
-  const { loading, months, buckets, totals, byOwner } = useForecast({
-    pipelineId: pipelineId === "all" ? null : pipelineId,
-    ownerId: ownerId === "all" ? null : ownerId,
-    period,
-    displayCurrency,
-    restrictToClientIds,
-  });
+  const { rates } = useFxRates();
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const chartData = months.map((m) => ({
-    month: m,
-    Committed: Math.round(buckets[m]?.committed ?? 0),
-    "Best case": Math.round(buckets[m]?.bestCase ?? 0),
-    Pipeline: Math.round(buckets[m]?.pipeline ?? 0),
-  }));
+  // Real pipeline data — read straight from getOrganizationDeals.
+  useEffect(() => {
+    if (!orgId) {
+      setDeals([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    getOrganizationDeals(orgId)
+      .then((next) => {
+        if (!cancelled) setDeals(next);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
 
-  const owners = Array.from(new Map(byOwner.map((o) => [o.ownerId, o.name])).entries());
+  // Workspace scoping: drop deals whose client is outside the active
+  // workspace. Deals with no client stay (they are unscoped by definition).
+  const scopedDeals = useMemo(() => {
+    if (!restrictToClientIds) return deals;
+    return deals.filter(
+      (d) => !d.clientId || restrictToClientIds.has(d.clientId),
+    );
+  }, [deals, restrictToClientIds]);
+
+  // Convert each deal value into the display currency before any summing,
+  // so a mix of USD/GBP/EUR deals aggregates into one meaningful number.
+  const toDisplay = useMemo(
+    () =>
+      (amount: number, currency: string | null | undefined) =>
+        convertAmount(amount, currency ?? displayCurrency, displayCurrency, rates),
+    [displayCurrency, rates],
+  );
+
+  const fmt = useMemo(() => {
+    const nf = (max: number) =>
+      new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: displayCurrency,
+        maximumFractionDigits: max,
+      });
+    const full = nf(0);
+    return {
+      money: (v: number) => {
+        try {
+          return full.format(v);
+        } catch {
+          return `${displayCurrency} ${Math.round(v)}`;
+        }
+      },
+      // Compact axis ticks (e.g. £12k) keep charts legible.
+      compact: (v: number) => {
+        const abs = Math.abs(v);
+        const sym = (() => {
+          try {
+            const p = new Intl.NumberFormat(undefined, {
+              style: "currency",
+              currency: displayCurrency,
+              currencyDisplay: "narrowSymbol",
+            }).formatToParts(0);
+            return p.find((x) => x.type === "currency")?.value ?? "";
+          } catch {
+            return "";
+          }
+        })();
+        if (abs >= 1_000_000) return `${sym}${(v / 1_000_000).toFixed(1)}M`;
+        if (abs >= 1_000) return `${sym}${Math.round(v / 1_000)}k`;
+        return `${sym}${Math.round(v)}`;
+      },
+    };
+  }, [displayCurrency]);
+
+  // ── KPIs ────────────────────────────────────────────────────────────────
+  const metrics = useMemo(() => {
+    const open = scopedDeals.filter((d) => OPEN_STAGE_SET.has(d.stage));
+    const openPipeline = open.reduce((s, d) => s + toDisplay(d.value || 0, d.currency), 0);
+    const weightedForecast = open.reduce(
+      (s, d) => s + toDisplay(d.value || 0, d.currency) * ((d.probability ?? 0) / 100),
+      0,
+    );
+
+    const qs = quarterStart();
+    const wonThisPeriod = scopedDeals.filter(
+      (d) => d.stage === "won" && d.closedAt && d.closedAt >= qs,
+    );
+    const wonValue = wonThisPeriod.reduce((s, d) => s + toDisplay(d.value || 0, d.currency), 0);
+
+    const closedThisPeriod = scopedDeals.filter(
+      (d) => (d.stage === "won" || d.stage === "lost") && d.closedAt && d.closedAt >= qs,
+    );
+    const winRate =
+      closedThisPeriod.length === 0
+        ? null
+        : (wonThisPeriod.length / closedThisPeriod.length) * 100;
+
+    return {
+      openCount: open.length,
+      openPipeline,
+      weightedForecast,
+      wonCount: wonThisPeriod.length,
+      wonValue,
+      winRate,
+      closedCount: closedThisPeriod.length,
+    };
+  }, [scopedDeals, toDisplay]);
+
+  // ── Weighted forecast by stage (open stages only) ─────────────────────────
+  const byStage = useMemo<{ name: string; value: number }[]>(() => {
+    return OPEN_STAGES.map((stage) => {
+      const rows = scopedDeals.filter((d) => d.stage === stage);
+      const weighted = rows.reduce(
+        (s, d) => s + toDisplay(d.value || 0, d.currency) * ((d.probability ?? 0) / 100),
+        0,
+      );
+      return { name: STAGE_LABEL[stage], value: Math.round(weighted) };
+    }).filter((d) => d.value > 0);
+  }, [scopedDeals, toDisplay]);
+
+  // ── Expected revenue by close month (next 6 months, weighted) ─────────────
+  const byMonth = useMemo<TrendDatum[]>(() => {
+    const buckets: Record<string, number> = {};
+    const now = new Date();
+    const order: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const key = format(m, "MMM yyyy");
+      buckets[key] = 0;
+      order.push(key);
+    }
+    for (const d of scopedDeals) {
+      if (!d.expectedCloseDate || d.stage === "won" || d.stage === "lost") continue;
+      const key = format(d.expectedCloseDate, "MMM yyyy");
+      if (key in buckets) {
+        buckets[key] += toDisplay(d.value || 0, d.currency) * ((d.probability ?? 0) / 100);
+      }
+    }
+    return order.map((label) => ({ label, value: Math.round(buckets[label]) }));
+  }, [scopedDeals, toDisplay]);
+
+  // ── Pipeline funnel — stage counts + (gross) values ───────────────────────
+  const funnel = useMemo<FunnelDatum[]>(() => {
+    const order: DealStage[] = ["lead", "qualified", "proposal", "negotiation", "won"];
+    return order.map((stage) => {
+      const rows = scopedDeals.filter((d) => d.stage === stage);
+      return {
+        stage: STAGE_LABEL[stage],
+        count: rows.length,
+        value: rows.reduce((s, d) => s + toDisplay(d.value || 0, d.currency), 0),
+      };
+    });
+  }, [scopedDeals, toDisplay]);
+
+  if (loading) {
+    return (
+      <div className="flex h-[40vh] items-center justify-center text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading forecast…
+      </div>
+    );
+  }
+
+  // Empty state — no deals at all in scope.
+  if (scopedDeals.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-10 text-center space-y-2">
+          <TrendingUp className="mx-auto h-9 w-9 text-orange-500" />
+          <h3 className="text-base font-semibold">No deals to forecast yet</h3>
+          <p className="mx-auto max-w-md text-sm text-muted-foreground">
+            Add deals to your pipeline and this view fills in with weighted
+            forecast, expected revenue by month, and a stage funnel — all from
+            your real pipeline data.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const hasMonthData = byMonth.some((m) => m.value > 0);
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardContent className="pt-4 flex flex-wrap gap-3 items-end">
-          <div>
-            <Label>Pipeline</Label>
-            <Select value={pipelineId} onValueChange={setPipelineId}>
-              <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All pipelines</SelectItem>
-                {pipelines.map((p) => (
-                  <SelectItem key={p.pipelineId} value={p.pipelineId}>{p.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Owner</Label>
-            <Select value={ownerId} onValueChange={setOwnerId}>
-              <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All owners</SelectItem>
-                {owners.map(([id, name]) => (
-                  <SelectItem key={id} value={id}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Period</Label>
-            <Select value={period} onValueChange={(v) => setPeriod(v as ForecastPeriod)}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="month">This month</SelectItem>
-                <SelectItem value="quarter">This quarter</SelectItem>
-                <SelectItem value="next_quarter">Next quarter</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-3 gap-3">
-        {(["committed", "bestCase", "pipeline"] as const).map((k) => (
-          <Card key={k}>
-            <CardContent className="pt-4">
-              <p className="text-xs uppercase text-muted-foreground tracking-wide">
-                {k === "committed" ? "Committed" : k === "bestCase" ? "Best case" : "Pipeline"}
-              </p>
-              <p className="text-2xl font-bold">{formatDealMoney(totals[k], displayCurrency)}</p>
-            </CardContent>
-          </Card>
-        ))}
+      {/* KPI tiles. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile
+          label="Open pipeline"
+          icon={Wallet}
+          value={fmt.money(metrics.openPipeline)}
+          hint={`${metrics.openCount} open ${metrics.openCount === 1 ? "deal" : "deals"}`}
+        />
+        <KpiTile
+          label="Weighted forecast"
+          icon={TrendingUp}
+          accent
+          value={fmt.money(metrics.weightedForecast)}
+          hint="Σ value × probability"
+        />
+        <KpiTile
+          label="Won this quarter"
+          icon={Trophy}
+          value={fmt.money(metrics.wonValue)}
+          hint={`${metrics.wonCount} ${metrics.wonCount === 1 ? "deal" : "deals"} closed`}
+        />
+        <KpiTile
+          label="Win rate"
+          icon={Percent}
+          value={metrics.winRate == null ? "—" : `${metrics.winRate.toFixed(0)}%`}
+          hint={
+            metrics.winRate == null
+              ? "No closed deals this quarter"
+              : `${metrics.closedCount} closed this quarter`
+          }
+        />
       </div>
 
-      <Card>
-        <CardContent className="pt-4 h-72">
-          {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="Committed" stackId="a" fill="#10B981" />
-                <Bar dataKey="Best case" stackId="a" fill="#3B82F6" />
-                <Bar dataKey="Pipeline"  stackId="a" fill="#9CA3AF" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+      {/* Charts. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <ChartCard
+          title="Weighted forecast by stage"
+          subtitle="Open deals, value × probability"
+          bodyHeight="h-64"
+        >
+          <BarHorizontal data={byStage} valueFormatter={fmt.compact} highlightTop />
+        </ChartCard>
 
-      <Card>
-        <CardContent className="pt-4">
-          <table className="w-full text-sm">
-            <thead className="text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="text-left p-1">Owner</th>
-                <th className="text-right p-1">Committed</th>
-                <th className="text-right p-1">Best case</th>
-                <th className="text-right p-1">Pipeline</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byOwner.map((o) => (
-                <tr key={o.ownerId}>
-                  <td className="p-1">{o.name}</td>
-                  <td className="p-1 text-right">{formatDealMoney(o.committed, displayCurrency)}</td>
-                  <td className="p-1 text-right">{formatDealMoney(o.bestCase, displayCurrency)}</td>
-                  <td className="p-1 text-right">{formatDealMoney(o.pipeline, displayCurrency)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+        <ChartCard
+          title="Expected revenue by close month"
+          subtitle="Weighted, next 6 months"
+          bodyHeight="h-64"
+        >
+          {hasMonthData ? (
+            <TrendArea data={byMonth} primaryName="Weighted" yFormatter={fmt.compact} />
+          ) : (
+            <div className="grid h-full w-full place-items-center text-sm text-muted-foreground">
+              No open deals with an expected close date in the next 6 months
+            </div>
+          )}
+        </ChartCard>
+      </div>
+
+      <ChartCard
+        title="Pipeline funnel"
+        subtitle="Deal count and value by stage"
+        bodyHeight="h-64"
+      >
+        <PipelineFunnel data={funnel} valueFormatter={fmt.compact} />
+      </ChartCard>
     </div>
   );
 };
