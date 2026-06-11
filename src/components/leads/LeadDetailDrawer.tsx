@@ -43,6 +43,7 @@ import { type PipelineStage } from '@/services/supabase/pipelines';
 import { usePipelines } from '@/hooks/usePipelines';
 import { getOrganizationClients, type Client } from '@/services/supabase/clients';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
+import { CustomItemDialog } from '@/components/deals/CustomItemDialog';
 import { DealStagePicker } from '@/components/deals/DealStagePicker';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
 
@@ -136,6 +137,9 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   // the lead has no account.
   const [accountClient, setAccountClient] = useState<Client | null>(null);
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
+  // Custom-item create / edit, scoped to the lead's account.
+  const [openCustomItem, setOpenCustomItem] = useState(false);
+  const [editingCustomItem, setEditingCustomItem] = useState<Deal | null>(null);
   // Bumped after a deal is added or its stage changes so the rail re-queries.
   const [dealsRefresh, setDealsRefresh] = useState(0);
   useEffect(() => {
@@ -614,6 +618,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               stagesByPipeline={stagesByPipeline}
               defaultPipelineId={defaultPipeline?.pipelineId ?? null}
               onNewDeal={() => setOpenCreateDeal(true)}
+              onNewCustomItem={() => { setEditingCustomItem(null); setOpenCustomItem(true); }}
+              onEditCustomItem={(d) => { setEditingCustomItem(d); setOpenCustomItem(true); }}
               onStageChanged={() => setDealsRefresh((k) => k + 1)}
             />
 
@@ -654,6 +660,19 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           defaultTitle={`${displayName} — ${lead.company}`}
         />
       )}
+
+      {/* Custom item (create / edit) scoped to the lead's account. */}
+      {accountClient && (
+        <CustomItemDialog
+          open={openCustomItem}
+          onOpenChange={(o) => {
+            setOpenCustomItem(o);
+            if (!o) { setEditingCustomItem(null); setDealsRefresh((k) => k + 1); }
+          }}
+          clientId={accountClient.clientId}
+          deal={editingCustomItem}
+        />
+      )}
     </div>
   );
 };
@@ -673,10 +692,12 @@ const AccountDealsCard: React.FC<{
   stagesByPipeline: Record<string, PipelineStage[]>;
   defaultPipelineId: string | null;
   onNewDeal: () => void;
+  onNewCustomItem: () => void;
+  onEditCustomItem: (d: Deal) => void;
   onStageChanged: () => void;
 }> = ({
   deals, hasAccount, canCreate, canChangeStage, stagesByPipeline,
-  defaultPipelineId, onNewDeal, onStageChanged,
+  defaultPipelineId, onNewDeal, onNewCustomItem, onEditCustomItem, onStageChanged,
 }) => {
   const formatMoney = useFormatMoney();
   return (
@@ -688,25 +709,37 @@ const AccountDealsCard: React.FC<{
             <span className="ml-1 text-muted-foreground normal-case">({deals.length})</span>
           )}
         </h3>
-        {canCreate && (
-          <span title={hasAccount ? undefined : 'Move this lead into an account first'}>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs"
-              disabled={!hasAccount}
-              onClick={onNewDeal}
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" /> Add deal
-            </Button>
-          </span>
-        )}
       </div>
+      {canCreate && (
+        <div
+          className="flex items-center gap-1 mb-2"
+          title={hasAccount ? undefined : 'Move this lead into an account first'}
+        >
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs px-2"
+            disabled={!hasAccount}
+            onClick={onNewDeal}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" /> Pipeline deal
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs px-2"
+            disabled={!hasAccount}
+            onClick={onNewCustomItem}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" /> Custom item
+          </Button>
+        </div>
+      )}
 
       {!hasAccount || deals.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {hasAccount
-            ? `No deals yet.${canCreate ? ' Use “Add deal” to start tracking an opportunity.' : ''}`
+            ? `No deals yet.${canCreate ? ' Use “Pipeline deal” or “Custom item” to start tracking.' : ''}`
             : 'No account. Move this lead into an account to track deals.'}
         </p>
       ) : (
@@ -714,21 +747,33 @@ const AccountDealsCard: React.FC<{
           {deals.map((d) => {
             const stages = stagesByPipeline[d.pipelineId]
               ?? (defaultPipelineId ? stagesByPipeline[defaultPipelineId] : undefined);
+            const isCustom = d.dealType === 'custom';
             return (
-              <li key={d.dealId} className="rounded-md border p-2.5 space-y-2">
+              <li
+                key={d.dealId}
+                className={`rounded-md border p-2.5 space-y-2${isCustom ? ' cursor-pointer hover:border-primary/50' : ''}`}
+                onClick={isCustom ? () => onEditCustomItem(d) : undefined}
+              >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-sm font-medium truncate">{d.title}</span>
+                  <span className="text-sm font-medium truncate inline-flex items-center gap-1.5">
+                    {d.title}
+                    {isCustom && (
+                      <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">Custom</Badge>
+                    )}
+                  </span>
                   <span className="text-sm font-semibold shrink-0">
                     {formatMoney(d.value, d.currency)}
                   </span>
                 </div>
-                {canChangeStage ? (
-                  <DealStagePicker deal={d} stages={stages} onChanged={onStageChanged} />
-                ) : (
-                  <Badge variant="outline" className="text-[10px]">
-                    {stages?.find((s) => s.key === d.stage)?.label ?? d.stage}
-                  </Badge>
-                )}
+                <div onClick={(e) => e.stopPropagation()}>
+                  {canChangeStage ? (
+                    <DealStagePicker deal={d} stages={stages} onChanged={onStageChanged} />
+                  ) : (
+                    <Badge variant="outline" className="text-[10px]">
+                      {stages?.find((s) => s.key === d.stage)?.label ?? d.stage}
+                    </Badge>
+                  )}
+                </div>
               </li>
             );
           })}

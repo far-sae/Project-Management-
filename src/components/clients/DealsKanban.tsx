@@ -15,6 +15,7 @@ import {
 import {
   Building2,
   Calendar as CalendarIcon,
+  ChevronDown,
   GripVertical,
   ListPlus,
   Loader2,
@@ -56,6 +57,7 @@ import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { toast } from 'sonner';
 import { NewDealDialog } from './NewDealDialog';
 import { DealWonModal } from './DealWonModal';
+import { CustomItemDialog } from '@/components/deals/CustomItemDialog';
 import { convertAmount, useFxRates } from '@/lib/fxRates';
 
 interface Props {
@@ -143,7 +145,14 @@ const DealCard: React.FC<{
           >
             <GripVertical className="h-3.5 w-3.5" />
           </button>
-          <p className="text-sm font-medium leading-tight line-clamp-2">{deal.title}</p>
+          <p className="text-sm font-medium leading-tight line-clamp-2">
+            {deal.title}
+            {deal.dealType === 'custom' && (
+              <Badge variant="secondary" className="ml-1.5 align-middle text-[9px] px-1 py-0">
+                Custom
+              </Badge>
+            )}
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <span className="text-sm font-semibold text-foreground">
@@ -292,6 +301,7 @@ const StageColumn: React.FC<{
   stage: EffectiveStage;
   deals: Deal[];
   onAdd: (stage: EffectiveStage) => void;
+  onAddCustom: (stage: EffectiveStage) => void;
   onSelect?: (d: Deal) => void;
   onEdit?: (d: Deal) => void;
   onMove?: (deal: Deal, stage: EffectiveStage) => void;
@@ -304,6 +314,7 @@ const StageColumn: React.FC<{
   stage,
   deals,
   onAdd,
+  onAddCustom,
   onSelect,
   onEdit,
   onMove,
@@ -382,15 +393,22 @@ const StageColumn: React.FC<{
       </div>
       {canCreate && (
         <div className="border-t border-border p-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="w-full justify-start text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => onAdd(stage)}
-          >
-            <Plus className="w-3.5 h-3.5 mr-1" /> Add deal
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" /> Add <ChevronDown className="w-3 h-3 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => onAdd(stage)}>Pipeline deal</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onAddCustom(stage)}>Custom item</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
     </div>
@@ -420,6 +438,11 @@ export const DealsKanban: React.FC<Props> = ({
     stageId?: string | null;
   } | null>(null);
   const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
+  // Custom-item create (scoped to the current stage) / edit (clicking a custom
+  // card). `customItemStage` carries the stage for a new item; `editingCustom`
+  // carries the deal being edited.
+  const [customItemStage, setCustomItemStage] = useState<DealStage | null>(null);
+  const [editingCustom, setEditingCustom] = useState<Deal | null>(null);
   // Won-stage drop intercept. Set by handleDragEnd when the target stage has
   // `isWon`; Task 11 will mount <DealWonModal/> against this state. For now we
   // surface a placeholder toast and clear it so the user still gets feedback.
@@ -557,8 +580,22 @@ export const DealsKanban: React.FC<Props> = ({
                   stageId: stages?.length ? s.id : null,
                 })
               }
-              onSelect={onSelectDeal}
-              onEdit={(deal) => setEditingDeal(deal)}
+              onAddCustom={(s) => { setEditingCustom(null); setCustomItemStage(s.key as DealStage); }}
+              onSelect={(d) => {
+                // Custom items open their own edit dialog; standard deals keep
+                // their existing open behaviour (parent's onSelectDeal).
+                if (d.dealType === 'custom') {
+                  setCustomItemStage(null);
+                  setEditingCustom(d);
+                } else {
+                  onSelectDeal?.(d);
+                }
+              }}
+              onEdit={(deal) =>
+                deal.dealType === 'custom'
+                  ? (setCustomItemStage(null), setEditingCustom(deal))
+                  : setEditingDeal(deal)
+              }
               onMove={
                 canManage
                   ? (deal, targetStage) => {
@@ -609,6 +646,18 @@ export const DealsKanban: React.FC<Props> = ({
           clients={clients}
           stages={stages}
           deal={editingDeal}
+        />
+      )}
+
+      {(customItemStage !== null || editingCustom) && canManage !== false && (
+        <CustomItemDialog
+          open={customItemStage !== null || !!editingCustom}
+          onOpenChange={(o) => {
+            if (!o) { setCustomItemStage(null); setEditingCustom(null); }
+          }}
+          clientId={editingCustom ? editingCustom.clientId : scopedClientId ?? null}
+          defaultStage={customItemStage ?? undefined}
+          deal={editingCustom}
         />
       )}
 
