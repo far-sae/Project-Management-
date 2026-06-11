@@ -11,6 +11,21 @@ vi.mock("@/services/supabase/projectTemplates", () => ({
     { templateId: "t1", organizationId: "o1", name: "Onboarding", description: null, taskDefinitions: [], createdAt: new Date() },
   ]),
 }));
+vi.mock("@/services/supabase/clients", () => ({
+  getOrganizationClients: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("@/services/supabase/database", () => ({
+  updateProject: vi.fn().mockResolvedValue(undefined),
+}));
+// The dialog reads/creates workspaces via useWorkspaces; stub it so the
+// component renders without AuthProvider/OrganizationProvider in the test.
+vi.mock("@/hooks/useWorkspaces", () => ({
+  useWorkspaces: () => ({
+    workspaces: [{ workspaceId: "w1", name: "Default", isDefault: true }],
+    addWorkspace: vi.fn().mockResolvedValue({ workspaceId: "w2", name: "New" }),
+    DEFAULT_WORKSPACE_ID: "w1",
+  }),
+}));
 
 describe("DealWonModal", () => {
   beforeEach(() => vi.clearAllMocks());
