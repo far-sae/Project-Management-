@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical, TrendingUp,
-  Pencil, ArrowLeft,
+  Pencil, ArrowLeft, ChevronDown,
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +28,7 @@ import { DealDetailView } from '@/components/deals/DealDetailView';
 import { DealsEmptyState } from '@/components/deals/DealsEmptyState';
 import { DealsListView } from '@/components/deals/DealsListView';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
+import { CustomItemDialog } from '@/components/deals/CustomItemDialog';
 import { DealHandoffDialog } from '@/components/deals/DealHandoffDialog';
 import { DealWonModal } from '@/components/clients/DealWonModal';
 import type { PipelineStage } from '@/services/supabase/pipelines';
@@ -119,6 +123,8 @@ export const Clients: React.FC = () => {
   const [pipelineDealId, setPipelineDealId] = useState<string | null>(null);
   const [pipelineView, setPipelineView] = useState<'kanban' | 'list'>('kanban');
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
+  // Pipeline-tab "Custom item" create (two-button add alongside Create Deal).
+  const [openCustomItem, setOpenCustomItem] = useState(false);
   const [openImportDeals, setOpenImportDeals] = useState(false);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   useEffect(() => {
@@ -852,9 +858,22 @@ export const Clients: React.FC = () => {
                             <Button size="sm" variant="outline" onClick={() => setOpenImportDeals(true)}>
                               <Upload className="w-3.5 h-3.5 mr-1" /> Import
                             </Button>
-                            <Button size="sm" onClick={() => setOpenCreateDeal(true)}>
-                              <Plus className="w-3.5 h-3.5 mr-1" /> Create Deal
-                            </Button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="sm">
+                                  <Plus className="w-3.5 h-3.5 mr-1" /> Add
+                                  <ChevronDown className="w-3 h-3 ml-1" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setOpenCreateDeal(true)}>
+                                  Pipeline deal
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setOpenCustomItem(true)}>
+                                  Custom item
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </>
                         )}
                       </div>
@@ -1044,6 +1063,12 @@ export const Clients: React.FC = () => {
         onOpenChange={setOpenCreateDeal}
         clients={clients}
         contacts={contacts}
+      />
+
+      {/* Pipeline-tab "Custom item" create — a freeform deal (dealType custom). */}
+      <CustomItemDialog
+        open={openCustomItem}
+        onOpenChange={setOpenCustomItem}
       />
 
       {/* Deals CSV importer — same shape as Leads / Contacts / Accounts. */}

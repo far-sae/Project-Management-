@@ -29,6 +29,7 @@ import {
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { InlineField } from '@/components/leads/InlineField';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
+import { CustomItemDialog } from '@/components/deals/CustomItemDialog';
 import { DealStagePicker } from '@/components/deals/DealStagePicker';
 import { AccountStageHistoryCard } from '@/components/clients/AccountStageHistoryCard';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -42,6 +43,8 @@ import {
 } from '@/services/supabase/deals';
 import { type PipelineStage } from '@/services/supabase/pipelines';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { convertAmount, useFxRates } from '@/lib/fxRates';
 import {
   SendEmailDialog, type SendEmailRecipient,
 } from '@/components/activities/SendEmailDialog';
@@ -106,6 +109,10 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   const [deals, setDeals] = useState<Deal[]>([]);
   const [clientActivities, setClientActivities] = useState<Activity[]>([]);
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
+  // Custom-item create / edit. `editingCustomItem` holds the custom deal being
+  // edited (clicking a custom row opens the dialog in edit mode).
+  const [openCustomItem, setOpenCustomItem] = useState(false);
+  const [editingCustomItem, setEditingCustomItem] = useState<Deal | null>(null);
   // Bumped after a deal is added or its stage changes so the rail re-queries.
   const [dealsRefresh, setDealsRefresh] = useState(0);
 
@@ -333,10 +340,17 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               )}
 
               {tab === 'pipeline' && (
-                <AccountStageHistoryCard
-                  organizationId={organizationId}
-                  clientId={client.clientId}
-                />
+                <div className="space-y-5">
+                  <PipelineDealsList
+                    deals={deals}
+                    stagesByPipeline={stagesByPipeline}
+                    defaultPipelineId={defaultPipeline?.pipelineId ?? null}
+                  />
+                  <AccountStageHistoryCard
+                    organizationId={organizationId}
+                    clientId={client.clientId}
+                  />
+                </div>
               )}
 
               {tab === 'emails' && (
@@ -388,6 +402,8 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               stagesByPipeline={stagesByPipeline}
               defaultPipelineId={defaultPipeline?.pipelineId ?? null}
               onNewDeal={() => setOpenCreateDeal(true)}
+              onNewCustomItem={() => { setEditingCustomItem(null); setOpenCustomItem(true); }}
+              onEditCustomItem={(d) => { setEditingCustomItem(d); setOpenCustomItem(true); }}
               onStageChanged={() => setDealsRefresh((k) => k + 1)}
             />
           </aside>
@@ -401,6 +417,17 @@ export const ClientDetailDrawer: React.FC<Props> = ({
         clients={[client]}
         contacts={contacts}
         defaultClientId={client.clientId}
+      />
+
+      {/* Custom item (create / edit) scoped to this account. */}
+      <CustomItemDialog
+        open={openCustomItem}
+        onOpenChange={(o) => {
+          setOpenCustomItem(o);
+          if (!o) { setEditingCustomItem(null); setDealsRefresh((k) => k + 1); }
+        }}
+        clientId={client.clientId}
+        deal={editingCustomItem}
       />
     </div>
   );
@@ -572,10 +599,12 @@ const DealsCard: React.FC<{
   stagesByPipeline: Record<string, PipelineStage[]>;
   defaultPipelineId: string | null;
   onNewDeal: () => void;
+  onNewCustomItem: () => void;
+  onEditCustomItem: (d: Deal) => void;
   onStageChanged: () => void;
 }> = ({
   deals, canCreate, canChangeStage, stagesByPipeline, defaultPipelineId,
-  onNewDeal, onStageChanged,
+  onNewDeal, onNewCustomItem, onEditCustomItem, onStageChanged,
 }) => {
   const formatMoney = useFormatMoney();
   return (
@@ -587,43 +616,129 @@ const DealsCard: React.FC<{
             <span className="ml-1 text-muted-foreground normal-case">({deals.length})</span>
           )}
         </h3>
-        {canCreate && (
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onNewDeal}>
-            <Plus className="w-3.5 h-3.5 mr-1" /> Add deal
-          </Button>
-        )}
       </div>
+      {canCreate && (
+        <div className="flex items-center gap-1 mb-2">
+          <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={onNewDeal}>
+            <Plus className="w-3.5 h-3.5 mr-1" /> Pipeline deal
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={onNewCustomItem}>
+            <Plus className="w-3.5 h-3.5 mr-1" /> Custom item
+          </Button>
+        </div>
+      )}
 
       {deals.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No deals for this account yet.{canCreate ? ' Use “Add deal” to start tracking an opportunity.' : ''}
+          No deals for this account yet.{canCreate ? ' Use “Pipeline deal” or “Custom item” to start tracking.' : ''}
         </p>
       ) : (
         <ul className="space-y-1.5">
           {deals.map((d) => {
             const stages = stagesByPipeline[d.pipelineId]
               ?? (defaultPipelineId ? stagesByPipeline[defaultPipelineId] : undefined);
+            const isCustom = d.dealType === 'custom';
             return (
-              <li key={d.dealId} className="rounded-md border p-2.5 space-y-2">
+              <li
+                key={d.dealId}
+                className={`rounded-md border p-2.5 space-y-2${isCustom ? ' cursor-pointer hover:border-primary/50' : ''}`}
+                onClick={isCustom ? () => onEditCustomItem(d) : undefined}
+              >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-sm font-medium truncate">{d.title}</span>
+                  <span className="text-sm font-medium truncate inline-flex items-center gap-1.5">
+                    {d.title}
+                    {isCustom && (
+                      <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">Custom</Badge>
+                    )}
+                  </span>
                   <span className="text-sm font-semibold shrink-0">
                     {formatMoney(d.value, d.currency)}
                   </span>
                 </div>
-                {canChangeStage ? (
-                  <DealStagePicker deal={d} stages={stages} onChanged={onStageChanged} />
-                ) : (
-                  <Badge variant="outline" className="text-[10px]">
-                    {stages?.find((s) => s.key === d.stage)?.label ?? d.stage}
-                  </Badge>
-                )}
+                <div onClick={(e) => e.stopPropagation()}>
+                  {canChangeStage ? (
+                    <DealStagePicker deal={d} stages={stages} onChanged={onStageChanged} />
+                  ) : (
+                    <Badge variant="outline" className="text-[10px]">
+                      {stages?.find((s) => s.key === d.stage)?.label ?? d.stage}
+                    </Badge>
+                  )}
+                </div>
               </li>
             );
           })}
         </ul>
       )}
     </div>
+  );
+};
+
+// ─── Pipeline tab: deals + total (above the Stage History) ──────────────────
+
+/** Lists the record's deals (incl. custom items) with their stage + value,
+ *  plus a total row. Rendered above the cross-deal Stage History in the
+ *  Pipeline tab so reps see the money before the stage trail. */
+const PipelineDealsList: React.FC<{
+  deals: Deal[];
+  stagesByPipeline: Record<string, PipelineStage[]>;
+  defaultPipelineId: string | null;
+}> = ({ deals, stagesByPipeline, defaultPipelineId }) => {
+  const formatMoney = useFormatMoney();
+  const orgCurrency = useOrgCurrency();
+  const { rates } = useFxRates();
+
+  const total = useMemo(
+    () => deals.reduce((sum, d) => sum + convertAmount(d.value, d.currency, orgCurrency, rates), 0),
+    [deals, orgCurrency, rates],
+  );
+
+  const stageLabel = (d: Deal) => {
+    const stages = stagesByPipeline[d.pipelineId]
+      ?? (defaultPipelineId ? stagesByPipeline[defaultPipelineId] : undefined);
+    return stages?.find((s) => s.key === d.stage)?.label ?? d.stage;
+  };
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold inline-flex items-center gap-1.5">
+          Deals
+          <span className="text-xs text-muted-foreground font-normal">{deals.length}</span>
+        </h3>
+      </div>
+
+      {deals.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic">
+          No deals for this account yet.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {deals.map((d) => (
+            <li
+              key={d.dealId}
+              className="flex items-center justify-between gap-2 rounded-md border p-2.5"
+            >
+              <div className="min-w-0 flex items-center gap-1.5">
+                <span className="text-sm font-medium truncate">{d.title}</span>
+                {d.dealType === 'custom' && (
+                  <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">Custom</Badge>
+                )}
+                <Badge variant="outline" className="text-[10px] shrink-0">{stageLabel(d)}</Badge>
+              </div>
+              <span className="text-sm font-semibold shrink-0 tabular-nums">
+                {formatMoney(d.value, d.currency)}
+              </span>
+            </li>
+          ))}
+          <li className="flex items-center justify-between gap-2 pt-1.5 mt-1 border-t">
+            <span className="text-sm font-semibold">Total</span>
+            <span className="text-sm font-bold tabular-nums">
+              {formatMoney(total, orgCurrency)}
+            </span>
+          </li>
+        </ul>
+      )}
+    </section>
   );
 };
 
