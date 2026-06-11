@@ -25,7 +25,6 @@ import {
 } from '@/services/supabase/leads';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { EntityActivitiesSection } from '@/components/activities/EntityActivitiesSection';
 import { EntityAttachmentsSection } from '@/components/activities/EntityAttachmentsSection';
 import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
 import { EnrollAutomationDialog } from '@/components/activities/EnrollAutomationDialog';
@@ -37,6 +36,10 @@ import {
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
 import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
 import { NextBestAction } from '@/components/activities/NextBestAction';
+import {
+  getOrganizationDeals, DEAL_STAGES, type Deal, type DealStage,
+} from '@/services/supabase/deals';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 
 interface Props {
   lead: Lead | null;
@@ -102,7 +105,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
     setLead(updated);
   };
 
-  // Unified activity timeline for the per-lead Activity section.
+  // Right-rail: read-only activity timeline for this lead (mirrors the
+  // account drawer's rail timeline).
   const [leadActivities, setLeadActivities] = useState<Activity[]>([]);
   const [activitiesKey, setActivitiesKey] = useState(0);
   useEffect(() => {
@@ -115,6 +119,26 @@ export const LeadDetailDrawer: React.FC<Props> = ({
       .catch(() => {/* non-blocking */});
     return () => { cancelled = true; };
   }, [lead?.leadId, organizationId, activitiesKey]);
+
+  // Right-rail: deals shown for the lead. A lead isn't itself a deal, so we
+  // surface the lead's ACCOUNT's deals when the lead is attached to one
+  // (accountId === client_id). No lead→deal link is invented; when the lead
+  // has no account (or the account has no deals) the card shows an empty state.
+  const [accountDeals, setAccountDeals] = useState<Deal[]>([]);
+  useEffect(() => {
+    if (!lead || !organizationId || !lead.accountId) {
+      setAccountDeals([]);
+      return;
+    }
+    const accountId = lead.accountId;
+    let cancelled = false;
+    getOrganizationDeals(organizationId)
+      .then((all) => {
+        if (!cancelled) setAccountDeals(all.filter((d) => d.clientId === accountId));
+      })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [lead?.leadId, lead?.accountId, organizationId]);
 
   useEffect(() => {
     if (!lead || !organizationId) return;
@@ -247,8 +271,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Body — 2 columns: nav, content */}
-        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)]">
+        {/* Body — 3 columns: nav, content, right rail (deals + timeline) */}
+        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_320px]">
           {/* LEFT nav. Rows that map to a real section on the right scroll to
               it; rows that aren't built yet render visibly disabled so the
               user knows the affordance is intentional, not broken. */}
@@ -268,11 +292,12 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                   underlying tables, no wiring. Greyed-out nav entries
                   were misleading reps; better to drop them until each
                   ships a real implementation. */}
+              {/* Calls/Tasks (Open/Closed Activities) removed: leads only
+                  gain task tracking once a deal is won. The read-only
+                  timeline now lives in the right rail. */}
               {[
                 { label: 'Notes',            anchor: 'lead-notes-section',     count: notes.length },
                 { label: 'Attachments',      anchor: 'lead-attachments-section' },
-                { label: 'Open Activities',  anchor: 'lead-open-activities-section' },
-                { label: 'Closed Activities',anchor: 'lead-closed-activities-section' },
                 { label: 'Emails',           anchor: 'lead-emails-section' },
               ].map((row) => {
                 const wired = row.anchor != null;
@@ -523,20 +548,6 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               />
             </div>
 
-            {/* Activity timeline + quick-log */}
-            <div id="lead-activity-timeline" className="space-y-2">
-              <h3 className="text-sm font-semibold border-b pb-1.5 flex items-center gap-2">
-                Activity Timeline
-              </h3>
-              {/* AI next-best-action for this lead, above the timeline */}
-              <NextBestAction entity={{ type: 'lead', id: lead.leadId, label: displayName }} />
-              <QuickLogComposer
-                entity={{ type: 'lead', id: lead.leadId, label: displayName }}
-                onPosted={() => setActivitiesKey((k) => k + 1)}
-              />
-              <ActivitiesTimeline activities={leadActivities} />
-            </div>
-
             {/* Notes */}
             <div id="lead-notes-section">
               <NotesSection
@@ -562,31 +573,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 canManage={canManage && !isConverted}
               />
             </div>
-            {/* Activities — real sections now, wired to client_tasks /
-                meetings / calls. Quick-create buttons open the dialogs
-                we already ship for the Activities hub. */}
-            <div id="lead-open-activities-section">
-              <EntityActivitiesSection
-                entityKind="lead"
-                entityName={leadDisplayName(lead)}
-                entityId={lead.leadId}
-                clientId={lead.convertedToClientId ?? null}
-                dealId={lead.convertedToDealId ?? null}
-                mode="open"
-                readOnly={isConverted || !canManage}
-              />
-            </div>
-            <div id="lead-closed-activities-section">
-              <EntityActivitiesSection
-                entityKind="lead"
-                entityName={leadDisplayName(lead)}
-                entityId={lead.leadId}
-                clientId={lead.convertedToClientId ?? null}
-                dealId={lead.convertedToDealId ?? null}
-                mode="closed"
-                readOnly
-              />
-            </div>
+            {/* No Calls/Tasks (Open/Closed Activities) sections here: a lead
+                only gains task tracking after a deal is won. */}
             <div id="lead-emails-section">
               <EntityEmailsSection
                 organizationId={organizationId}
@@ -595,6 +583,27 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               />
             </div>
           </section>
+
+          {/* ── RIGHT: deals + activity timeline (parity with the account
+              drawer's right rail) ──────────────────────────────────────── */}
+          <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-4">
+            <AccountDealsCard deals={accountDeals} hasAccount={!!lead.accountId} />
+
+            <div id="lead-activity-timeline" className="border-t pt-3 space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Activity timeline
+              </h3>
+              {/* AI next-best-action for this lead, above the timeline */}
+              <NextBestAction entity={{ type: 'lead', id: lead.leadId, label: displayName }} />
+              {canManage && !isConverted && (
+                <QuickLogComposer
+                  entity={{ type: 'lead', id: lead.leadId, label: displayName }}
+                  onPosted={() => setActivitiesKey((k) => k + 1)}
+                />
+              )}
+              <ActivitiesTimeline activities={leadActivities} />
+            </div>
+          </aside>
         </div>
       </aside>
 
@@ -604,6 +613,53 @@ export const LeadDetailDrawer: React.FC<Props> = ({
         clientId={lead.convertedToClientId ?? null}
         entityName={leadDisplayName(lead)}
       />
+    </div>
+  );
+};
+
+// ─── Right rail: Account deals card ──────────────────────────────────────────
+
+const STAGE_LABEL: Record<DealStage, string> = DEAL_STAGES.reduce(
+  (acc, s) => { acc[s.id] = s.label; return acc; },
+  {} as Record<DealStage, string>,
+);
+
+/** Deals shown for a lead = the lead's ACCOUNT's deals (a lead isn't itself a
+ *  deal). Renders a muted empty state when the lead has no account or the
+ *  account has no deals — no lead→deal link is invented. */
+const AccountDealsCard: React.FC<{
+  deals: Deal[];
+  hasAccount: boolean;
+}> = ({ deals, hasAccount }) => {
+  const formatMoney = useFormatMoney();
+  return (
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        Account deals
+        {deals.length > 0 && (
+          <span className="ml-1 text-muted-foreground normal-case">({deals.length})</span>
+        )}
+      </h3>
+
+      {!hasAccount || deals.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No deals yet</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {deals.map((d) => (
+            <li key={d.dealId} className="rounded-md border p-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-sm font-medium truncate">{d.title}</span>
+                <span className="text-sm font-semibold shrink-0">
+                  {formatMoney(d.value, d.currency)}
+                </span>
+              </div>
+              <Badge variant="outline" className="mt-1 text-[10px]">
+                {STAGE_LABEL[d.stage] ?? d.stage}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 };
