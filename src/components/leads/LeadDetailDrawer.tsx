@@ -4,7 +4,7 @@ import {
   X, Edit, Trash2, Loader2, Mail,
   User as UserIcon, MoreVertical, ChevronDown, ChevronUp,
   Copy, Printer, FileSearch, RefreshCw, Repeat, FileText,
-  CheckCircle2,
+  CheckCircle2, Plus,
 } from 'lucide-react';
 import { InlineField } from './InlineField';
 import { CustomPropertiesEditor } from './CustomPropertiesEditor';
@@ -37,8 +37,13 @@ import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
 import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
 import { NextBestAction } from '@/components/activities/NextBestAction';
 import {
-  getOrganizationDeals, DEAL_STAGES, type Deal, type DealStage,
+  getOrganizationDeals, type Deal,
 } from '@/services/supabase/deals';
+import { type PipelineStage } from '@/services/supabase/pipelines';
+import { usePipelines } from '@/hooks/usePipelines';
+import { getOrganizationClients, type Client } from '@/services/supabase/clients';
+import { DealFormDialog } from '@/components/deals/DealFormDialog';
+import { DealStagePicker } from '@/components/deals/DealStagePicker';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
 
 interface Props {
@@ -82,6 +87,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
   const { canEditModule } = useOrganization();
+  const { defaultPipeline, stagesByPipeline } = usePipelines();
   const canEdit = canManage && !readOnly && canEditModule('leads');
 
   // Local copy of lead data so inline edits reflect immediately in the panel
@@ -125,9 +131,17 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   // (accountId === client_id). No lead→deal link is invented; when the lead
   // has no account (or the account has no deals) the card shows an empty state.
   const [accountDeals, setAccountDeals] = useState<Deal[]>([]);
+  // The lead's account as a full Client record — needed so a new deal can be
+  // scoped to it (DealFormDialog wants a Client + defaultClientId). Null when
+  // the lead has no account.
+  const [accountClient, setAccountClient] = useState<Client | null>(null);
+  const [openCreateDeal, setOpenCreateDeal] = useState(false);
+  // Bumped after a deal is added or its stage changes so the rail re-queries.
+  const [dealsRefresh, setDealsRefresh] = useState(0);
   useEffect(() => {
     if (!lead || !organizationId || !lead.accountId) {
       setAccountDeals([]);
+      setAccountClient(null);
       return;
     }
     const accountId = lead.accountId;
@@ -137,8 +151,13 @@ export const LeadDetailDrawer: React.FC<Props> = ({
         if (!cancelled) setAccountDeals(all.filter((d) => d.clientId === accountId));
       })
       .catch(() => {/* non-blocking */});
+    getOrganizationClients(organizationId)
+      .then((all) => {
+        if (!cancelled) setAccountClient(all.find((c) => c.clientId === accountId) ?? null);
+      })
+      .catch(() => {/* non-blocking */});
     return () => { cancelled = true; };
-  }, [lead?.leadId, lead?.accountId, organizationId]);
+  }, [lead?.leadId, lead?.accountId, organizationId, openCreateDeal, dealsRefresh]);
 
   useEffect(() => {
     if (!lead || !organizationId) return;
@@ -587,7 +606,16 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           {/* ── RIGHT: deals + activity timeline (parity with the account
               drawer's right rail) ──────────────────────────────────────── */}
           <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-4">
-            <AccountDealsCard deals={accountDeals} hasAccount={!!lead.accountId} />
+            <AccountDealsCard
+              deals={accountDeals}
+              hasAccount={!!lead.accountId}
+              canCreate={canEdit}
+              canChangeStage={canEdit}
+              stagesByPipeline={stagesByPipeline}
+              defaultPipelineId={defaultPipeline?.pipelineId ?? null}
+              onNewDeal={() => setOpenCreateDeal(true)}
+              onStageChanged={() => setDealsRefresh((k) => k + 1)}
+            />
 
             <div id="lead-activity-timeline" className="border-t pt-3 space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -613,51 +641,97 @@ export const LeadDetailDrawer: React.FC<Props> = ({
         clientId={lead.convertedToClientId ?? null}
         entityName={leadDisplayName(lead)}
       />
+
+      {/* New deal scoped to the lead's account (a lead isn't itself a deal —
+          its deals live on the account it's attached to). Only mounts when an
+          account exists; the rail's Add button is disabled otherwise. */}
+      {accountClient && (
+        <DealFormDialog
+          open={openCreateDeal}
+          onOpenChange={setOpenCreateDeal}
+          clients={[accountClient]}
+          defaultClientId={accountClient.clientId}
+          defaultTitle={`${displayName} — ${lead.company}`}
+        />
+      )}
     </div>
   );
 };
 
-// ─── Right rail: Account deals card ──────────────────────────────────────────
-
-const STAGE_LABEL: Record<DealStage, string> = DEAL_STAGES.reduce(
-  (acc, s) => { acc[s.id] = s.label; return acc; },
-  {} as Record<DealStage, string>,
-);
+// ─── Right rail: interactive account pipeline ────────────────────────────────
 
 /** Deals shown for a lead = the lead's ACCOUNT's deals (a lead isn't itself a
- *  deal). Renders a muted empty state when the lead has no account or the
- *  account has no deals — no lead→deal link is invented. */
+ *  deal). Renders an interactive pipeline: ＋ Add deal scoped to the account,
+ *  plus a per-deal stage picker (reuses the board's won-confirm path). When the
+ *  lead has no account, Add is disabled with a tooltip prompting to move the
+ *  lead into an account first — no lead→deal link is invented. */
 const AccountDealsCard: React.FC<{
   deals: Deal[];
   hasAccount: boolean;
-}> = ({ deals, hasAccount }) => {
+  canCreate: boolean;
+  canChangeStage: boolean;
+  stagesByPipeline: Record<string, PipelineStage[]>;
+  defaultPipelineId: string | null;
+  onNewDeal: () => void;
+  onStageChanged: () => void;
+}> = ({
+  deals, hasAccount, canCreate, canChangeStage, stagesByPipeline,
+  defaultPipelineId, onNewDeal, onStageChanged,
+}) => {
   const formatMoney = useFormatMoney();
   return (
     <div>
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-        Account deals
-        {deals.length > 0 && (
-          <span className="ml-1 text-muted-foreground normal-case">({deals.length})</span>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Account deals
+          {deals.length > 0 && (
+            <span className="ml-1 text-muted-foreground normal-case">({deals.length})</span>
+          )}
+        </h3>
+        {canCreate && (
+          <span title={hasAccount ? undefined : 'Move this lead into an account first'}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              disabled={!hasAccount}
+              onClick={onNewDeal}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add deal
+            </Button>
+          </span>
         )}
-      </h3>
+      </div>
 
       {!hasAccount || deals.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No deals yet</p>
+        <p className="text-xs text-muted-foreground">
+          {hasAccount
+            ? `No deals yet.${canCreate ? ' Use “Add deal” to start tracking an opportunity.' : ''}`
+            : 'No account. Move this lead into an account to track deals.'}
+        </p>
       ) : (
         <ul className="space-y-1.5">
-          {deals.map((d) => (
-            <li key={d.dealId} className="rounded-md border p-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-sm font-medium truncate">{d.title}</span>
-                <span className="text-sm font-semibold shrink-0">
-                  {formatMoney(d.value, d.currency)}
-                </span>
-              </div>
-              <Badge variant="outline" className="mt-1 text-[10px]">
-                {STAGE_LABEL[d.stage] ?? d.stage}
-              </Badge>
-            </li>
-          ))}
+          {deals.map((d) => {
+            const stages = stagesByPipeline[d.pipelineId]
+              ?? (defaultPipelineId ? stagesByPipeline[defaultPipelineId] : undefined);
+            return (
+              <li key={d.dealId} className="rounded-md border p-2.5 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-sm font-medium truncate">{d.title}</span>
+                  <span className="text-sm font-semibold shrink-0">
+                    {formatMoney(d.value, d.currency)}
+                  </span>
+                </div>
+                {canChangeStage ? (
+                  <DealStagePicker deal={d} stages={stages} onChanged={onStageChanged} />
+                ) : (
+                  <Badge variant="outline" className="text-[10px]">
+                    {stages?.find((s) => s.key === d.stage)?.label ?? d.stage}
+                  </Badge>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
