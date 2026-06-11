@@ -1830,6 +1830,10 @@ const buildLeadInput = (
   rowNumber: number,
   coercions: LeadCsvCoercion[],
   extraColumns: string[] = [],
+  // When importing from inside an account, stamp every row onto that account
+  // (and optionally a default category) so imported leads attach to it.
+  accountId: string | null = null,
+  category: string | null = null,
 ): { ok: true; input: CreateLeadInput } | { ok: false; reason: string } => {
   let firstName = row.first_name?.trim() ?? "";
   let lastName = row.last_name?.trim() ?? "";
@@ -1921,6 +1925,13 @@ const buildLeadInput = (
     customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
   };
 
+  // Account scoping (import-from-account path). A row's own category column,
+  // if present, wins over the dialog's default category.
+  if (accountId) input.accountId = accountId;
+  const rowCategory = row.category?.trim();
+  if (rowCategory) input.category = rowCategory;
+  else if (category) input.category = category;
+
   return { ok: true, input };
 };
 
@@ -1975,12 +1986,19 @@ export const importLeadsFromCsv = async (
     /** Extra CSV column names the rep ticked in "Keep extra columns" —
      *  these become lead.customFields entries instead of being dropped. */
     extraColumns?: string[];
+    /** When importing from inside an account, stamp every imported lead onto
+     *  this account (account_id) so they attach to it. */
+    accountId?: string | null;
+    /** Default category for imported leads (a row's own category column wins). */
+    category?: string | null;
   } = {},
 ): Promise<ImportLeadsResult> => {
   const errors: LeadCsvRowError[] = [];
   const imported: Lead[] = [];
   const coercions: LeadCsvCoercion[] = [];
   const extraColumns = (options.extraColumns ?? []).map((s) => s.trim()).filter(Boolean);
+  const accountId = options.accountId ?? null;
+  const category = options.category ?? null;
   const { unknownHeaders, missingRequired } = computeImportPrecheck(rows, extraColumns);
   const duplicateHeaders = options.duplicateHeaders ?? [];
 
@@ -1993,7 +2011,7 @@ export const importLeadsFromCsv = async (
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = i + 2;
-    const built = buildLeadInput(row, workspaceId, rowNumber, coercions, extraColumns);
+    const built = buildLeadInput(row, workspaceId, rowNumber, coercions, extraColumns, accountId, category);
     if (!built.ok) {
       errors.push({ row: rowNumber, message: built.reason });
       lastErrorMessage = built.reason;

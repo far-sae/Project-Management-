@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Upload, Loader2, Download, FileSpreadsheet, AlertTriangle, CheckCircle2, X,
+  Upload, Loader2, Download, FileSpreadsheet, AlertTriangle, CheckCircle2, X, Users,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
@@ -9,9 +9,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  ImportLeadsResult,
+  ImportLeadsResult, Lead,
   parseLeadCsv, importLeadsFromCsv, buildLeadsCsvTemplate,
-  computeImportPrecheck,
+  computeImportPrecheck, getOrganizationLeads, isLeadDuplicate, leadDisplayName,
 } from '@/services/supabase/leads';
 import { toast } from 'sonner';
 
@@ -29,7 +29,28 @@ interface Props {
    *  the parent can audit success AND failure counts and surface partial
    *  outcomes (not just the imported leads). */
   onComplete: (result: ImportLeadsResult) => void;
+  /** When importing from inside an account, stamp every imported lead onto
+   *  this account (account_id) so they attach to it. Also drives a name label
+   *  shown in the header so the rep knows where the rows are landing. */
+  defaultAccountId?: string | null;
+  defaultAccountName?: string | null;
+  /** Default category for imported leads (a row's own category column wins). */
+  defaultCategory?: string | null;
 }
+
+/** The canonical fields parseLeadCsv produces that the dedupe matcher reads. */
+const rowCandidate = (row: Record<string, string>): { email: string | null; lastName: string | null; company: string | null } => {
+  let lastName = row.last_name?.trim() || null;
+  if (!lastName && row.full_name?.trim()) {
+    const parts = row.full_name.trim().split(/\s+/);
+    lastName = parts[parts.length - 1] || null;
+  }
+  return {
+    email: row.email?.trim() || null,
+    lastName,
+    company: row.company?.trim() || null,
+  };
+};
 
 const downloadFile = (filename: string, content: string, mime: string) => {
   const blob = new Blob([content], { type: mime + ';charset=utf-8' });
@@ -46,6 +67,7 @@ const downloadFile = (filename: string, content: string, mime: string) => {
 export const ImportLeadsDialog: React.FC<Props> = ({
   open, onOpenChange, organizationId, workspaceId, workspaceName,
   userId, userName, onComplete,
+  defaultAccountId = null, defaultAccountName = null, defaultCategory = null,
 }) => {
   const [phase, setPhase] = useState<Phase>('pick');
   const [file, setFile] = useState<File | null>(null);
@@ -55,6 +77,10 @@ export const ImportLeadsDialog: React.FC<Props> = ({
   const [result, setResult] = useState<ImportLeadsResult | null>(null);
   const [extraColumns, setExtraColumns] = useState<string[]>([]);
   const [newExtraCol, setNewExtraCol] = useState('');
+  // Dedupe (HubSpot/Salesforce style): existing org leads, fetched once, and a
+  // per-row "matches existing lead <name>" marker. Skip-duplicates defaults on.
+  const [existingLeads, setExistingLeads] = useState<Lead[]>([]);
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const reset = () => {
@@ -66,8 +92,35 @@ export const ImportLeadsDialog: React.FC<Props> = ({
     setResult(null);
     setExtraColumns([]);
     setNewExtraCol('');
+    setSkipDuplicates(true);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // Load the org's existing leads once per open so the preview can flag
+  // duplicates client-side (one fetch, matched in-memory — no per-row query).
+  useEffect(() => {
+    if (!open || !organizationId) return;
+    let cancelled = false;
+    getOrganizationLeads(organizationId)
+      .then((rows) => { if (!cancelled) setExistingLeads(rows); })
+      .catch(() => { if (!cancelled) setExistingLeads([]); });
+    return () => { cancelled = true; };
+  }, [open, organizationId]);
+
+  // For each parsed row, find the first existing lead it matches (or null).
+  const rowMatches = useMemo<Array<Lead | null>>(() => {
+    if (parsed.length === 0 || existingLeads.length === 0) {
+      return parsed.map(() => null);
+    }
+    return parsed.map((row) => {
+      const cand = rowCandidate(row);
+      return existingLeads.find((l) =>
+        isLeadDuplicate(cand, { email: l.email, lastName: l.lastName, company: l.company }),
+      ) ?? null;
+    });
+  }, [parsed, existingLeads]);
+
+  const duplicateCount = useMemo(() => rowMatches.filter(Boolean).length, [rowMatches]);
 
   const handleClose = (next: boolean) => {
     if (phase === 'importing') {
@@ -120,6 +173,15 @@ export const ImportLeadsDialog: React.FC<Props> = ({
       toast.error('Missing workspace or signed-in user.');
       return;
     }
+    // When "Skip duplicates" is on, drop rows that match an existing lead
+    // before sending them to the importer (HubSpot/Salesforce behaviour).
+    const rowsToImport = skipDuplicates
+      ? parsed.filter((_, i) => !rowMatches[i])
+      : parsed;
+    if (rowsToImport.length === 0) {
+      toast.info('Every row matched an existing lead — nothing to import. Turn off "Skip duplicates" to import anyway.');
+      return;
+    }
     setPhase('importing');
     try {
       const res = await importLeadsFromCsv(
@@ -127,8 +189,11 @@ export const ImportLeadsDialog: React.FC<Props> = ({
         userId ?? null,
         userName ?? null,
         workspaceId,
-        parsed,
-        { duplicateHeaders, extraColumns },
+        rowsToImport,
+        {
+          duplicateHeaders, extraColumns,
+          accountId: defaultAccountId, category: defaultCategory,
+        },
       );
       setResult(res);
       setPhase('imported');
@@ -151,12 +216,20 @@ export const ImportLeadsDialog: React.FC<Props> = ({
             Upload a spreadsheet of prospects. We recognize common Salesforce,
             HubSpot, and Apollo column names.
           </DialogDescription>
-          <p className="text-xs text-muted-foreground mt-1 break-words">
-            Leads will land in workspace{' '}
-            <strong className="text-foreground">{workspaceName ?? 'Default'}</strong>.
-            Switch workspace in the sidebar before importing to send them
-            elsewhere.
-          </p>
+          {defaultAccountId ? (
+            <p className="text-xs text-muted-foreground mt-1 break-words">
+              Imported leads will attach to{' '}
+              <strong className="text-foreground">{defaultAccountName ?? 'this account'}</strong>
+              {defaultCategory ? <> under category <strong className="text-foreground">{defaultCategory}</strong></> : null}.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1 break-words">
+              Leads will land in workspace{' '}
+              <strong className="text-foreground">{workspaceName ?? 'Default'}</strong>.
+              Switch workspace in the sidebar before importing to send them
+              elsewhere.
+            </p>
+          )}
         </DialogHeader>
 
         <div className="space-y-4">
@@ -194,6 +267,10 @@ export const ImportLeadsDialog: React.FC<Props> = ({
               onRemoveExtraCol={(name) =>
                 setExtraColumns((prev) => prev.filter((c) => c !== name))
               }
+              rowMatches={rowMatches}
+              duplicateCount={duplicateCount}
+              skipDuplicates={skipDuplicates}
+              onToggleSkipDuplicates={setSkipDuplicates}
               onReset={reset}
               onImport={handleImport}
             />
@@ -309,14 +386,22 @@ const PreviewBlock: React.FC<{
   onChangeNewExtraCol: (v: string) => void;
   onAddExtraCol: (v: string) => void;
   onRemoveExtraCol: (name: string) => void;
+  /** Per-row existing-lead match (parallel to sampleRows' source rows). Used
+   *  to mark rows "matches existing lead <name>" and to count dupes. */
+  rowMatches: Array<Lead | null>;
+  duplicateCount: number;
+  skipDuplicates: boolean;
+  onToggleSkipDuplicates: (v: boolean) => void;
   onReset: () => void;
   onImport: () => void;
 }> = ({
   file, headers, rowCount, sampleRows, missingRequired, unknownHeaders, duplicateHeaders,
   hasWorkspace, parseErrors,
   extraColumns, newExtraCol, onChangeNewExtraCol, onAddExtraCol, onRemoveExtraCol,
+  rowMatches, duplicateCount, skipDuplicates, onToggleSkipDuplicates,
   onReset, onImport,
 }) => {
+  const willImportCount = skipDuplicates ? rowCount - duplicateCount : rowCount;
 
   return (
     <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
@@ -345,6 +430,33 @@ const PreviewBlock: React.FC<{
             We couldn't find: <code className="font-mono break-all">{missingRequired.join(', ')}</code>.
             Add the column (or rename an existing one) and try again.
           </p>
+        </div>
+      )}
+
+      {/* Duplicate detection (HubSpot/Salesforce style) — flag rows that match
+          an existing lead and let the rep skip them or import anyway. */}
+      {duplicateCount > 0 && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs space-y-2">
+          <p className="font-semibold text-amber-700 dark:text-amber-300 inline-flex items-center gap-1">
+            <Users className="w-3.5 h-3.5" />
+            {duplicateCount} of {rowCount} row{rowCount === 1 ? '' : 's'} match an existing lead
+          </p>
+          <p className="text-amber-700/80 dark:text-amber-300/80">
+            Matched by email, or by last name + company. With "Skip duplicates"
+            on we'll import the {willImportCount} new row{willImportCount === 1 ? '' : 's'} and leave the
+            matches untouched.
+          </p>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="w-4 h-4 rounded border-border"
+              checked={skipDuplicates}
+              onChange={(e) => onToggleSkipDuplicates(e.target.checked)}
+            />
+            <span className="text-foreground font-medium">
+              Skip duplicates ({duplicateCount} row{duplicateCount === 1 ? '' : 's'})
+            </span>
+          </label>
         </div>
       )}
 
@@ -439,6 +551,7 @@ const PreviewBlock: React.FC<{
           <table className="text-[11px] w-full">
             <thead className="bg-muted/40 sticky top-0">
               <tr>
+                <th className="px-2 py-1 text-left font-semibold whitespace-nowrap">Match</th>
                 {headers.map((h) => (
                   <th key={h} className="px-2 py-1 text-left font-semibold whitespace-nowrap">
                     {h}
@@ -447,15 +560,30 @@ const PreviewBlock: React.FC<{
               </tr>
             </thead>
             <tbody>
-              {sampleRows.map((r, i) => (
-                <tr key={i} className="border-t border-border/60">
-                  {headers.map((h) => (
-                    <td key={h} className="px-2 py-1 whitespace-nowrap text-foreground/90">
-                      {r[h] || <span className="text-muted-foreground">—</span>}
+              {sampleRows.map((r, i) => {
+                const match = rowMatches[i] ?? null;
+                return (
+                  <tr key={i} className="border-t border-border/60">
+                    <td className="px-2 py-1 whitespace-nowrap">
+                      {match ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                          title={`Matches existing lead ${leadDisplayName(match)}`}
+                        >
+                          <Users className="w-3 h-3" /> matches {leadDisplayName(match)}
+                        </span>
+                      ) : (
+                        <span className="text-emerald-600 dark:text-emerald-400">new</span>
+                      )}
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    {headers.map((h) => (
+                      <td key={h} className="px-2 py-1 whitespace-nowrap text-foreground/90">
+                        {r[h] || <span className="text-muted-foreground">—</span>}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -500,9 +628,12 @@ const PreviewBlock: React.FC<{
       <div className="flex items-center justify-end gap-2">
         <Button
           onClick={onImport}
-          disabled={missingRequired.length > 0 || !hasWorkspace}
+          disabled={missingRequired.length > 0 || !hasWorkspace || willImportCount <= 0}
         >
-          <Upload className="w-4 h-4 mr-2" /> Import {rowCount} lead{rowCount === 1 ? '' : 's'}
+          <Upload className="w-4 h-4 mr-2" /> Import {willImportCount} lead{willImportCount === 1 ? '' : 's'}
+          {skipDuplicates && duplicateCount > 0 && (
+            <span className="ml-1 opacity-80">(skipping {duplicateCount})</span>
+          )}
         </Button>
       </div>
     </div>
