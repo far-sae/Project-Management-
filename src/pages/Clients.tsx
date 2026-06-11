@@ -1075,8 +1075,13 @@ export const Clients: React.FC = () => {
           onClose={() => setSelected(null)}
           onEdit={(c) => setEditing(c)}
           onDelete={(c) => setConfirmDelete(c)}
-          allAccounts={allClients}
-          onOpenAccount={(c) => setSelected(c)}
+          onUpdate={async (clientId, patch) => {
+            const updated = await update(clientId, patch);
+            // Keep the selected pointer in sync so the drawer reflects the
+            // saved values even after a close/reopen.
+            setSelected(updated);
+            return updated;
+          }}
         />
       )}
 

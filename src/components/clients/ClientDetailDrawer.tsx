@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import {
-  Building2, X, Mail, Phone, Globe, MapPin, Star, User, Plus,
+  Building2, X, Star, Plus,
   FileText, Trash2, Loader2, Paperclip, ExternalLink, MessageSquare,
-  Calendar as CalendarIcon, PhoneCall, Mailbox, Edit, Activity as ActivityIcon,
+  Calendar as CalendarIcon, Mailbox, Edit,
   ChevronDown, ChevronRight, Tag, UserPlus, ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 import { useAuth } from '@/context/AuthContext';
 import { useEmailEnabled } from '@/hooks/useEmailEnabled';
 import {
@@ -21,20 +18,17 @@ import {
   ClientAttachment,
   ClientContact,
   ClientNote,
-  ClientNoteKind,
-  createContact,
   createNote,
   deleteAttachment,
-  deleteContact,
   deleteNote,
   formatRevenue,
   getClientAttachments,
   getClientContacts,
   getClientNotes,
-  isValidEmail,
   uploadClientAttachment,
 } from '@/services/supabase/clients';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
+import { InlineField } from '@/components/leads/InlineField';
 import {
   addLeadCategory as addLeadCategorySvc,
   removeLeadCategory as removeLeadCategorySvc,
@@ -52,24 +46,20 @@ import {
   listActivities, filterByEntity, type Activity,
 } from '@/services/supabase/activities';
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
-import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
-import { NextBestAction } from '@/components/activities/NextBestAction';
-import { SendEmailDialog } from './SendEmailDialog';
-import { SendSmsDialog } from './SendSmsDialog';
+import {
+  getOrganizationDeals, DEAL_STAGES, type Deal, type DealStage,
+} from '@/services/supabase/deals';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
+import {
+  SendEmailDialog, type SendEmailRecipient,
+} from '@/components/activities/SendEmailDialog';
+import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
+import { CreateMeetingDialog } from '@/components/activities/CreateMeetingDialog';
+import { listMeetings, type Meeting } from '@/services/supabase/meetings';
 import { InvoicesPanel } from './InvoicesPanel';
-import { AccountHierarchyCard } from './AccountHierarchyCard';
-import { AccountStageHistoryCard } from './AccountStageHistoryCard';
 import { toast } from 'sonner';
 
-type MainTab = 'activity' | 'notes' | 'calls' | 'emails' | 'meetings' | 'tasks' | 'files' | 'invoices' | 'leads';
-
-const KIND_FOR_TAB: Partial<Record<MainTab, ClientNoteKind>> = {
-  notes: 'note',
-  calls: 'call',
-  emails: 'email',
-  meetings: 'meeting',
-  tasks: 'task',
-};
+type MainTab = 'notes' | 'emails' | 'meetings' | 'files' | 'invoices' | 'leads';
 
 interface Props {
   client: Client | null;
@@ -78,52 +68,51 @@ interface Props {
   onClose: () => void;
   onEdit: (client: Client) => void;
   onDelete: (client: Client) => void;
-  /** Full org-wide accounts list — powers the new Account Hierarchy card
-   *  in the right rail. Optional so existing callers don't break; when
-   *  omitted the hierarchy section just hides. */
-  allAccounts?: Client[];
-  /** Called when the rep clicks a related account in the hierarchy tree.
-   *  Lets the parent swap the drawer to that account. */
-  onOpenAccount?: (c: Client) => void;
+  /** Persist a partial update to the account and return the saved Client.
+   *  Wired in Clients.tsx → updateClient(orgId, clientId, patch). When
+   *  omitted the left fields render read-only. */
+  onUpdate?: (clientId: string, patch: Partial<Client>) => Promise<Client>;
 }
 
-const NOTE_KIND_ICON: Record<ClientNoteKind, React.ComponentType<{ className?: string }>> = {
-  note: MessageSquare,
-  call: PhoneCall,
-  meeting: CalendarIcon,
-  email: Mailbox,
-  task: FileText,
-};
-
 export const ClientDetailDrawer: React.FC<Props> = ({
-  client, organizationId, canManage, onClose, onEdit, onDelete,
-  allAccounts, onOpenAccount,
+  client: clientProp, organizationId, canManage, onClose, onEdit, onDelete,
+  onUpdate,
 }) => {
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
-  const { organization: _org, canEditModule } = useOrganization(); // satisfies hook order
-  const [tab, setTab] = useState<MainTab>('activity');
-  const [openEmail, setOpenEmail] = useState(false);
-  const [openSms, setOpenSms] = useState(false);
+  const { canEditModule } = useOrganization();
+  // Account (client) write access isn't a grant module — there is no
+  // canEditModule('crm'). It's governed by canManage (owner/admin/manager),
+  // same as the Edit/Delete controls. Deals/Leads sub-features still use
+  // their own grant modules below.
+  const canEdit = canManage;
+  const [tab, setTab] = useState<MainTab>('notes');
+
+  // Local merged copy of the account so inline edits reflect immediately
+  // without waiting for the parent to re-query (mirrors LeadDetailDrawer).
+  const [client, setClient] = useState<Client | null>(clientProp);
+  useEffect(() => { setClient(clientProp); }, [clientProp]);
 
   const [contacts, setContacts] = useState<ClientContact[]>([]);
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [attachments, setAttachments] = useState<ClientAttachment[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Unified activity feed for the Activity tab — filtered to this client.
+  /** Persist one inline-field patch and merge the returned account into
+   *  local state so the panel updates without a round-trip. */
+  const handleInlineUpdate = async (
+    clientId: string,
+    patch: Partial<Client>,
+  ): Promise<void> => {
+    if (!onUpdate) return;
+    const updated = await onUpdate(clientId, patch);
+    setClient(updated);
+  };
+
+  // Right-rail: this account's deals + read-only activity timeline.
+  const [deals, setDeals] = useState<Deal[]>([]);
   const [clientActivities, setClientActivities] = useState<Activity[]>([]);
-  const [activitiesKey, setActivitiesKey] = useState(0);
-  useEffect(() => {
-    if (!client || !organizationId || tab !== 'activity') return;
-    let cancelled = false;
-    listActivities(organizationId, { openDealIds: new Set(), customerClientIds: new Set() })
-      .then((all) => {
-        if (!cancelled) setClientActivities(filterByEntity(all, 'client', client.clientId));
-      })
-      .catch(() => {/* non-blocking */});
-    return () => { cancelled = true; };
-  }, [client?.clientId, organizationId, tab, activitiesKey]);
+  const [openCreateDeal, setOpenCreateDeal] = useState(false);
 
   // Reload everything when the open client changes.
   useEffect(() => {
@@ -149,10 +138,30 @@ export const ClientDetailDrawer: React.FC<Props> = ({
     };
   }, [client?.clientId, organizationId]);
 
-  const reloadContacts = async () => {
+  // Right-rail deals — filtered to this account.
+  useEffect(() => {
     if (!client || !organizationId) return;
-    setContacts(await getClientContacts(organizationId, client.clientId));
-  };
+    let cancelled = false;
+    getOrganizationDeals(organizationId)
+      .then((all) => {
+        if (!cancelled) setDeals(all.filter((d) => d.clientId === client.clientId));
+      })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [client?.clientId, organizationId, openCreateDeal]);
+
+  // Right-rail activity timeline — the record's notes/emails/calls/meetings.
+  useEffect(() => {
+    if (!client || !organizationId) return;
+    let cancelled = false;
+    listActivities(organizationId, { openDealIds: new Set(), customerClientIds: new Set() })
+      .then((all) => {
+        if (!cancelled) setClientActivities(filterByEntity(all, 'client', client.clientId));
+      })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [client?.clientId, organizationId]);
+
   const reloadNotes = async () => {
     if (!client || !organizationId) return;
     setNotes(await getClientNotes(organizationId, client.clientId));
@@ -171,11 +180,9 @@ export const ClientDetailDrawer: React.FC<Props> = ({
     ]
       .filter((s) => !!(s && s.trim()))
       .join(', ');
-  }, [client, organizationId]);
+  }, [client]);
 
   if (!client || !organizationId) return null;
-
-  const quickAction = (target: MainTab) => () => setTab(target);
 
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
@@ -186,8 +193,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
       />
 
       {/* Wide modal — HubSpot-style 3-column record view. 95vw on desktop,
-          full-screen on mobile. Right-side slide animation reuses the
-          existing drawer affordance so the UX is familiar. */}
+          full-screen on mobile. */}
       <aside className="relative ml-auto h-full w-full sm:w-[95vw] sm:max-w-[1400px] bg-background border-l border-border shadow-xl flex flex-col animate-in slide-in-from-right-2 duration-200">
         {/* Top bar — name, badges, close + edit/delete */}
         <div className="px-4 py-3 border-b border-border flex items-center gap-3 bg-card">
@@ -225,7 +231,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
 
         {/* 3-column body */}
         <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_320px]">
-          {/* ── LEFT: identity + quick actions + about ─────────────────── */}
+          {/* ── LEFT: identity + about (inline-editable) ───────────────── */}
           <aside className="border-r border-border bg-card/40 overflow-y-auto p-4 space-y-4">
             <div className="flex flex-col items-center text-center">
               <div className="w-16 h-16 rounded-2xl bg-primary-soft text-primary-soft-foreground flex items-center justify-center text-lg font-bold">
@@ -262,21 +268,16 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Quick action row — HubSpot's row of round icon buttons */}
-            <div className="flex items-center justify-center gap-2 pt-1">
-              <QuickAction icon={MessageSquare} label="Note" onClick={quickAction('notes')} />
-              {emailEnabled && <QuickAction icon={Mailbox} label="Email" onClick={() => setOpenEmail(true)} />}
-              <QuickAction icon={MessageSquare} label="SMS" onClick={() => setOpenSms(true)} />
-              <QuickAction icon={PhoneCall} label="Call" onClick={quickAction('calls')} href={client.phone ? `tel:${client.phone}` : undefined} />
-              <QuickAction icon={FileText} label="Task" onClick={quickAction('tasks')} />
-              <QuickAction icon={CalendarIcon} label="Meeting" onClick={quickAction('meetings')} />
-            </div>
-
             <div className="border-t border-border pt-3">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                 About this company
               </h3>
-              <OverviewTab client={client} fullAddress={fullAddress} />
+              <AboutCompany
+                client={client}
+                fullAddress={fullAddress}
+                editable={canEdit}
+                onSave={handleInlineUpdate}
+              />
             </div>
           </aside>
 
@@ -285,11 +286,8 @@ export const ClientDetailDrawer: React.FC<Props> = ({
             <Tabs value={tab} onValueChange={(v) => setTab(v as MainTab)} className="px-4 pt-3">
               <TabsList className="bg-transparent border-b border-border rounded-none w-full justify-start gap-1 h-auto p-0">
                 {([
-                  { v: 'activity', label: 'Activity', icon: ActivityIcon },
                   { v: 'notes', label: 'Notes' },
                   { v: 'emails', label: 'Emails' },
-                  { v: 'calls', label: 'Calls' },
-                  { v: 'tasks', label: 'Tasks' },
                   { v: 'meetings', label: 'Meetings' },
                   { v: 'files', label: 'Files' },
                   { v: 'invoices', label: 'Invoices' },
@@ -316,24 +314,8 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                 </div>
               )}
 
-              {tab === 'activity' && (
-                <>
-                  {/* AI next-best-action for this client */}
-                  <div className="mb-3">
-                    <NextBestAction entity={{ type: 'client', id: client.clientId, label: client.name }} />
-                  </div>
-                  <QuickLogComposer
-                    entity={{ type: 'client', id: client.clientId, label: client.name }}
-                    onPosted={() => setActivitiesKey((k) => k + 1)}
-                  />
-                  <div className="mt-3">
-                    <ActivitiesTimeline activities={clientActivities} />
-                  </div>
-                </>
-              )}
-
-              {(tab === 'notes' || tab === 'calls' || tab === 'emails' || tab === 'meetings' || tab === 'tasks') && (
-                <ActivityTab
+              {tab === 'notes' && (
+                <NotesTab
                   clientId={client.clientId}
                   organizationId={organizationId}
                   userId={user?.userId}
@@ -341,7 +323,24 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                   canManage={canManage}
                   notes={notes}
                   onChanged={reloadNotes}
-                  kindFilter={KIND_FOR_TAB[tab]}
+                />
+              )}
+
+              {tab === 'emails' && (
+                <EmailsTab
+                  client={client}
+                  organizationId={organizationId}
+                  emailEnabled={emailEnabled}
+                />
+              )}
+
+              {tab === 'meetings' && (
+                <MeetingsTab
+                  client={client}
+                  organizationId={organizationId}
+                  userId={user?.userId}
+                  userName={user?.displayName}
+                  canManage={canManage}
                 />
               )}
 
@@ -377,386 +376,250 @@ export const ClientDetailDrawer: React.FC<Props> = ({
             </div>
           </section>
 
-          {/* ── RIGHT: contacts list ────────────────────────────────────── */}
-          <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Contacts
-                {contacts.length > 0 && (
-                  <span className="ml-1 text-muted-foreground normal-case">({contacts.length})</span>
-                )}
-              </h3>
-            </div>
-            <ContactsTab
-              clientId={client.clientId}
-              organizationId={organizationId}
-              userId={user?.userId}
-              canManage={canManage}
-              contacts={contacts}
-              onChanged={reloadContacts}
+          {/* ── RIGHT: deals + activity timeline ────────────────────────── */}
+          <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-4">
+            <DealsCard
+              deals={deals}
+              canCreate={canManage && canEditModule('deals')}
+              onNewDeal={() => setOpenCreateDeal(true)}
             />
 
-            {/* Zoho-style related lists: parent / child accounts and the
-                cross-deal Stage History trail. Both are read-only here. */}
-            {allAccounts && allAccounts.length > 0 && (
-              <div className="border-t pt-3">
-                <AccountHierarchyCard
-                  account={client}
-                  allAccounts={allAccounts}
-                  onOpenAccount={onOpenAccount}
-                />
-              </div>
-            )}
-
             <div className="border-t pt-3">
-              <AccountStageHistoryCard
-                organizationId={organizationId}
-                clientId={client.clientId}
-                currency={client.customFields?.currency as string | undefined}
-              />
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Activity timeline
+              </h3>
+              <ActivitiesTimeline activities={clientActivities} />
             </div>
           </aside>
         </div>
       </aside>
 
-      <SendEmailDialog
-        open={openEmail}
-        onOpenChange={setOpenEmail}
-        client={client}
-        organizationId={organizationId}
-        onLogged={reloadNotes}
-      />
-
-      <SendSmsDialog
-        open={openSms}
-        onOpenChange={setOpenSms}
-        client={client}
-        organizationId={organizationId}
-        onLogged={reloadNotes}
+      {/* New deal scoped to this account. */}
+      <DealFormDialog
+        open={openCreateDeal}
+        onOpenChange={setOpenCreateDeal}
+        clients={[client]}
+        contacts={contacts}
+        defaultClientId={client.clientId}
       />
     </div>
   );
 };
 
-// Tiny round icon button used in the quick-action row.
-const QuickAction: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick?: () => void;
-  href?: string;
-}> = ({ icon: Icon, label, onClick, href }) => {
-  const Inner = (
-    <span className="flex flex-col items-center gap-1">
-      <span className="h-9 w-9 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 grid place-items-center transition-colors hover:bg-orange-500/25">
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className="text-[10px] text-muted-foreground">{label}</span>
-    </span>
-  );
-  if (href) {
-    return (
-      <a href={href} aria-label={label}>
-        {Inner}
-      </a>
-    );
-  }
-  return (
-    <button type="button" onClick={onClick} aria-label={label}>
-      {Inner}
-    </button>
-  );
-};
+// ─── Left: About this company (inline-editable) ──────────────────────────────
 
-// ─── Overview tab ────────────────────────────────────────────────────────────
-
-/** Make a user-entered website safe to link to. A value like "www.foo.com" has
- *  no scheme, so the browser treats it as a relative path (→ our own app).
- *  Prepend https:// unless an http(s)/mailto/tel scheme is already present. */
+/** Make a user-entered website safe to link to. */
 const toExternalUrl = (raw: string | null | undefined): string | undefined => {
   const v = raw?.trim();
   if (!v) return undefined;
   return /^(https?:|mailto:|tel:)/i.test(v) ? v : `https://${v}`;
 };
 
-const OverviewTab: React.FC<{ client: Client; fullAddress: string }> = ({
-  client, fullAddress,
-}) => (
-  <div className="space-y-4 text-sm">
-    <div className="grid grid-cols-2 gap-3">
-      <Field icon={Mail} label="Email" value={client.email} href={client.email ? `mailto:${client.email}` : undefined} />
-      <Field icon={Phone} label="Phone" value={client.phone} href={client.phone ? `tel:${client.phone}` : undefined} />
-      <Field icon={Globe} label="Website" value={client.website} href={toExternalUrl(client.website)} external />
-      <Field icon={User} label="Owner" value={client.accountOwnerName} />
-      <Field
-        icon={MapPin} label="Address"
-        value={fullAddress || null} className="col-span-2"
-      />
-    </div>
-
-    <div className="grid grid-cols-2 gap-3">
-      <Field
-        label="Annual revenue"
-        value={
-          client.annualRevenue == null
-            ? null
-            : formatRevenue(client.annualRevenue)
-        }
-      />
-      <Field
-        label="Employees"
-        value={
-          client.employeeCount == null ? null : String(client.employeeCount)
-        }
-      />
-      <Field label="Source" value={client.source} />
-      <Field label="Created" value={format(client.createdAt, 'PP')} />
-    </div>
-
-    {client.tags && client.tags.length > 0 && (
-      <div>
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-          Tags
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {client.tags.map((t) => (
-            <Badge key={t} variant="secondary">{t}</Badge>
-          ))}
-        </div>
-      </div>
-    )}
-
-    {client.description && (
-      <div>
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-          Description
-        </p>
-        <p className="whitespace-pre-wrap text-foreground/90">
-          {client.description}
-        </p>
-      </div>
-    )}
-  </div>
-);
-
-const Field: React.FC<{
-  icon?: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string | null | undefined;
-  href?: string;
-  external?: boolean;
-  className?: string;
-}> = ({ icon: Icon, label, value, href, external, className }) => (
-  <div className={className}>
-    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5 flex items-center gap-1">
-      {Icon && <Icon className="w-3 h-3" />} {label}
-    </p>
-    {value ? (
-      href ? (
-        <a
-          href={href}
-          target={external ? '_blank' : undefined}
-          rel={external ? 'noopener noreferrer' : undefined}
-          className="text-foreground hover:text-primary inline-flex items-center gap-1 break-all"
-        >
-          {value}
-          {external && <ExternalLink className="w-3 h-3" />}
-        </a>
-      ) : (
-        <span className="text-foreground break-words">{value}</span>
-      )
-    ) : (
-      <span className="text-muted-foreground">—</span>
-    )}
-  </div>
-);
-
-// ─── Contacts tab ────────────────────────────────────────────────────────────
-
-const ContactsTab: React.FC<{
-  clientId: string;
-  organizationId: string;
-  userId: string | undefined;
-  canManage: boolean;
-  contacts: ClientContact[];
-  onChanged: () => Promise<void> | void;
-}> = ({ clientId, organizationId, userId, canManage, contacts, onChanged }) => {
-  const [showForm, setShowForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    firstName: '',
-    lastName: '',
-    title: '',
-    email: '',
-    phone: '',
-    isPrimary: false,
-  });
-
-  const reset = () => setForm({
-    firstName: '', lastName: '', title: '', email: '', phone: '', isPrimary: false,
-  });
-
-  const submit = async () => {
-    if (!userId) return;
-    if (form.email && !isValidEmail(form.email)) {
-      toast.error('Invalid email');
-      return;
-    }
-    if (!form.firstName.trim() && !form.lastName.trim() && !form.email.trim()) {
-      toast.error('Add at least a name or email');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await createContact(organizationId, clientId, userId, {
-        firstName: form.firstName.trim() || null,
-        lastName: form.lastName.trim() || null,
-        title: form.title.trim() || null,
-        email: form.email.trim() || null,
-        phone: form.phone.trim() || null,
-        isPrimary: form.isPrimary,
-      });
-      reset();
-      setShowForm(false);
-      await onChanged();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add contact');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const remove = async (c: ClientContact) => {
-    if (!confirm(`Delete contact "${c.fullName || c.email || 'Unnamed'}"?`)) return;
-    try {
-      await deleteContact(organizationId, c.contactId);
-      await onChanged();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete');
-    }
-  };
-
+const AboutCompany: React.FC<{
+  client: Client;
+  fullAddress: string;
+  editable: boolean;
+  onSave: (clientId: string, patch: Partial<Client>) => Promise<void>;
+}> = ({ client, fullAddress, editable, onSave }) => {
+  const save = (patch: Partial<Client>) => onSave(client.clientId, patch);
   return (
-    <div className="space-y-3">
-      {canManage && !showForm && (
-        <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
-          <Plus className="w-4 h-4 mr-1" /> Add contact
-        </Button>
-      )}
+    <div className="space-y-3 text-sm">
+      <InlineField
+        label="Email"
+        value={client.email}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ email: v as string | null })}
+        render={(v) => v
+          ? <a href={`mailto:${v}`} className="text-primary hover:underline break-all">{String(v)}</a>
+          : null}
+      />
+      <InlineField
+        label="Phone"
+        value={client.phone}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ phone: v as string | null })}
+        render={(v) => v ? <a href={`tel:${v}`} className="hover:underline">{String(v)}</a> : null}
+      />
+      <InlineField
+        label="Website"
+        value={client.website}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ website: v as string | null })}
+        render={(v) => {
+          const url = toExternalUrl(v as string | null | undefined);
+          return v && url ? (
+            <a href={url} target="_blank" rel="noopener noreferrer"
+               className="text-primary hover:underline inline-flex items-center gap-1 break-all">
+              {String(v)} <ExternalLink className="w-3 h-3" />
+            </a>
+          ) : null;
+        }}
+      />
+      <InlineField
+        label="Owner"
+        value={client.accountOwnerName}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ accountOwnerName: v as string | null })}
+      />
+      <InlineField
+        label="Address"
+        value={client.addressLine1}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ addressLine1: v as string | null })}
+        render={() => fullAddress
+          ? <span className="break-words">{fullAddress}</span>
+          : null}
+      />
+      <InlineField
+        label="City"
+        value={client.city}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ city: v as string | null })}
+      />
+      <InlineField
+        label="State"
+        value={client.state}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ state: v as string | null })}
+      />
+      <InlineField
+        label="Postal code"
+        value={client.postalCode}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ postalCode: v as string | null })}
+      />
+      <InlineField
+        label="Country"
+        value={client.country}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ country: v as string | null })}
+      />
+      <InlineField
+        label="Annual revenue"
+        value={client.annualRevenue}
+        type="number"
+        editable={editable}
+        onSave={(v) => save({ annualRevenue: v as number | null })}
+        render={(v) => v != null ? <span>{formatRevenue(Number(v))}</span> : null}
+      />
+      <InlineField
+        label="Employees"
+        value={client.employeeCount}
+        type="number"
+        editable={editable}
+        onSave={(v) => save({ employeeCount: v as number | null })}
+      />
+      <InlineField
+        label="Source"
+        value={client.source}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ source: v as string | null })}
+      />
+      <InlineField
+        label="Industry"
+        value={client.industry}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ industry: v as string | null })}
+      />
+      <InlineField
+        label="Description"
+        value={client.description}
+        type="textarea"
+        editable={editable}
+        onSave={(v) => save({ description: v as string | null })}
+        render={(v) => v ? <span className="whitespace-pre-wrap break-words">{String(v)}</span> : null}
+      />
+      <div className="grid grid-cols-[140px_1fr] items-baseline gap-2">
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground text-right">
+          Created
+        </span>
+        <span className="text-foreground">{format(client.createdAt, 'PP')}</span>
+      </div>
 
-      {showForm && (
-        <div className="border rounded-md p-3 space-y-2 bg-secondary/30">
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              placeholder="First name" maxLength={100}
-              value={form.firstName}
-              onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
-            />
-            <Input
-              placeholder="Last name" maxLength={100}
-              value={form.lastName}
-              onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
-            />
-            <Input
-              placeholder="Title" maxLength={150}
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            />
-            <Input
-              placeholder="Phone" maxLength={50}
-              value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            />
-            <Input
-              className="col-span-2"
-              placeholder="Email" type="email" maxLength={250}
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox" checked={form.isPrimary}
-              onChange={(e) => setForm((f) => ({ ...f, isPrimary: e.target.checked }))}
-            />
-            Primary contact
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button
-              size="sm" variant="ghost"
-              onClick={() => { setShowForm(false); reset(); }}
-              disabled={submitting}
-            >
-              Cancel
-            </Button>
-            <Button size="sm" onClick={submit} disabled={submitting}>
-              {submitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-              Add
-            </Button>
+      {client.tags && client.tags.length > 0 && (
+        <div className="pt-1">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            Tags
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {client.tags.map((t) => (
+              <Badge key={t} variant="secondary">{t}</Badge>
+            ))}
           </div>
         </div>
       )}
-
-      {contacts.length === 0 && !showForm && (
-        <p className="text-sm text-muted-foreground">
-          No contacts yet. Add the main person your team should talk to for this client.
-        </p>
-      )}
-
-      <ul className="space-y-2">
-        {contacts.map((c) => (
-          <li
-            key={c.contactId}
-            className="rounded-md border p-3 flex items-start gap-3"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium">
-                  {c.fullName || c.email || 'Unnamed'}
-                </span>
-                {c.isPrimary && (
-                  <Badge className="bg-primary/10 text-primary border-primary/20">
-                    Primary
-                  </Badge>
-                )}
-              </div>
-              {c.title && (
-                <p className="text-sm text-muted-foreground">{c.title}</p>
-              )}
-              <div className="text-xs text-muted-foreground mt-1 space-x-3">
-                {c.email && (
-                  <a
-                    className="hover:text-foreground"
-                    href={`mailto:${c.email}`}
-                  >
-                    {c.email}
-                  </a>
-                )}
-                {c.phone && (
-                  <a className="hover:text-foreground" href={`tel:${c.phone}`}>
-                    {c.phone}
-                  </a>
-                )}
-              </div>
-            </div>
-            {canManage && (
-              <Button
-                size="icon" variant="ghost" aria-label="Delete contact"
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => remove(c)}
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            )}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 };
 
-// ─── Notes tab (notes / calls / meetings / emails) ───────────────────────────
+// ─── Right rail: Deals card ──────────────────────────────────────────────────
 
-const ActivityTab: React.FC<{
+const STAGE_LABEL: Record<DealStage, string> = DEAL_STAGES.reduce(
+  (acc, s) => { acc[s.id] = s.label; return acc; },
+  {} as Record<DealStage, string>,
+);
+
+const DealsCard: React.FC<{
+  deals: Deal[];
+  canCreate: boolean;
+  onNewDeal: () => void;
+}> = ({ deals, canCreate, onNewDeal }) => {
+  const formatMoney = useFormatMoney();
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Deals
+          {deals.length > 0 && (
+            <span className="ml-1 text-muted-foreground normal-case">({deals.length})</span>
+          )}
+        </h3>
+        {canCreate && (
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onNewDeal}>
+            <Plus className="w-3.5 h-3.5 mr-1" /> New deal
+          </Button>
+        )}
+      </div>
+
+      {deals.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No deals for this account yet.{canCreate ? ' Use “New deal” to start tracking an opportunity.' : ''}
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {deals.map((d) => (
+            <li key={d.dealId} className="rounded-md border p-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-sm font-medium truncate">{d.title}</span>
+                <span className="text-sm font-semibold shrink-0">
+                  {formatMoney(d.value, d.currency)}
+                </span>
+              </div>
+              <Badge variant="outline" className="mt-1 text-[10px]">
+                {STAGE_LABEL[d.stage] ?? d.stage}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ─── Notes tab ───────────────────────────────────────────────────────────────
+
+const NotesTab: React.FC<{
   clientId: string;
   organizationId: string;
   userId: string | undefined;
@@ -764,14 +627,7 @@ const ActivityTab: React.FC<{
   canManage: boolean;
   notes: ClientNote[];
   onChanged: () => Promise<void> | void;
-  /** If set, only show notes of this kind and pre-select the composer to it. */
-  kindFilter?: ClientNoteKind;
-}> = ({ clientId, organizationId, userId, userName, canManage, notes, onChanged, kindFilter }) => {
-  const [kind, setKind] = useState<ClientNoteKind>(kindFilter ?? 'note');
-  useEffect(() => {
-    if (kindFilter) setKind(kindFilter);
-  }, [kindFilter]);
-  const visibleNotes = kindFilter ? notes.filter((n) => n.kind === kindFilter) : notes;
+}> = ({ clientId, organizationId, userId, userName, canManage, notes, onChanged }) => {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -779,30 +635,29 @@ const ActivityTab: React.FC<{
   const submit = async () => {
     if (!userId || !userName) return;
     if (!subject.trim() && !body.trim()) {
-      toast.error('Write something to log');
+      toast.error('Write something to add');
       return;
     }
     setSubmitting(true);
     try {
       await createNote(organizationId, clientId, userId, userName, {
-        kind,
+        kind: 'note',
         subject: subject.trim() || null,
         body: body.trim() || null,
         occurredAt: new Date(),
       });
       setSubject('');
       setBody('');
-      setKind('note');
       await onChanged();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to log');
+      toast.error(err instanceof Error ? err.message : 'Failed to add note');
     } finally {
       setSubmitting(false);
     }
   };
 
   const remove = async (n: ClientNote) => {
-    if (!confirm('Delete this entry?')) return;
+    if (!confirm('Delete this note?')) return;
     try {
       await deleteNote(organizationId, n.noteId);
       await onChanged();
@@ -812,39 +667,26 @@ const ActivityTab: React.FC<{
   };
 
   const canDelete = (n: ClientNote) => canManage || n.authorId === userId;
+  const visibleNotes = useMemo(() => notes.filter((n) => n.kind === 'note'), [notes]);
 
   return (
     <div className="space-y-3">
       {userId && (
         <div className="border rounded-md p-3 space-y-2 bg-secondary/30">
-          <div className="flex gap-2">
-            {!kindFilter && (
-              <Select value={kind} onValueChange={(v) => setKind(v as ClientNoteKind)}>
-                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="note">Note</SelectItem>
-                  <SelectItem value="call">Call</SelectItem>
-                  <SelectItem value="meeting">Meeting</SelectItem>
-                  <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="task">Task</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            <Input
-              placeholder="Subject (optional)" maxLength={200}
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-            />
-          </div>
+          <Input
+            placeholder="Add a title (optional)" maxLength={200}
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+          />
           <Textarea
-            placeholder="Details…" rows={3} maxLength={5000}
+            placeholder="Add a note…" rows={3} maxLength={5000}
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
           <div className="flex justify-end">
             <Button size="sm" onClick={submit} disabled={submitting}>
               {submitting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-              Log
+              Add note
             </Button>
           </div>
         </div>
@@ -852,59 +694,227 @@ const ActivityTab: React.FC<{
 
       {visibleNotes.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          {kindFilter
-            ? `No ${kindFilter}s logged yet. Use the composer above to add the first.`
-            : 'No notes yet. Log calls, meetings, emails, or quick reminders so everyone has context.'}
+          No notes yet. Capture context, decisions, or reminders so everyone on the account stays aligned.
         </p>
       )}
 
       <ul className="space-y-2">
-        {visibleNotes.map((n) => {
-          const Icon = NOTE_KIND_ICON[n.kind] ?? MessageSquare;
-          return (
-            <li key={n.noteId} className="rounded-md border p-3">
-              <div className="flex items-start gap-2">
-                <Icon className="w-4 h-4 mt-0.5 text-muted-foreground" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap text-sm">
-                    <span className="font-medium capitalize">{n.kind}</span>
-                    {n.subject && (
-                      <span className="text-foreground">— {n.subject}</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {n.authorName ?? 'Unknown'} · {format(n.occurredAt, 'PPp')}
-                  </p>
-                  {n.body && (
-                    <p className="text-sm whitespace-pre-wrap mt-2">{n.body}</p>
-                  )}
-                </div>
-                {canDelete(n) && (
-                  <Button
-                    size="icon" variant="ghost"
-                    className="text-muted-foreground hover:text-destructive"
-                    aria-label="Delete entry"
-                    onClick={() => remove(n)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+        {visibleNotes.map((n) => (
+          <li key={n.noteId} className="rounded-md border p-3">
+            <div className="flex items-start gap-2">
+              <MessageSquare className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                {n.subject && (
+                  <p className="font-medium text-sm">{n.subject}</p>
                 )}
+                {n.body && (
+                  <p className="text-sm whitespace-pre-wrap mt-0.5">{n.body}</p>
+                )}
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {n.authorName ?? 'Someone'} · {formatDistanceToNow(n.occurredAt, { addSuffix: true })}
+                </p>
               </div>
-            </li>
-          );
-        })}
+              {canDelete(n) && (
+                <Button
+                  size="icon" variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  aria-label="Delete note"
+                  onClick={() => remove(n)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          </li>
+        ))}
       </ul>
     </div>
   );
 };
 
-// ─── Files tab ────────────────────────────────────────────────────────────
+// ─── Emails tab ──────────────────────────────────────────────────────────────
 
-const ActivityKindLabel: Record<ClientNoteKind, string> = {
-  note: 'Note', call: 'Call', meeting: 'Meeting', email: 'Email', task: 'Task',
+const EmailsTab: React.FC<{
+  client: Client;
+  organizationId: string;
+  emailEnabled: boolean;
+}> = ({ client, organizationId, emailEnabled }) => {
+  const [openEmail, setOpenEmail] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  if (!emailEnabled) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Email sending is available once Gmail is verified.
+        </p>
+        <EntityEmailsSection
+          organizationId={organizationId}
+          entityType="client"
+          entityId={client.clientId}
+        />
+      </div>
+    );
+  }
+
+  const recipient: SendEmailRecipient = {
+    entityType: 'client',
+    entityId: client.clientId,
+    name: client.name,
+    email: client.email ?? null,
+    legalName: client.legalName ?? null,
+    industry: client.industry ?? null,
+    country: client.country ?? null,
+    accountOwnerName: client.accountOwnerName ?? null,
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Send an email to {client.email ? client.email : 'this account'} and track replies here.
+        </p>
+        <Button
+          size="sm"
+          onClick={() => {
+            if (!client.email) {
+              toast.error('This account has no email on file. Add one in About this company.');
+              return;
+            }
+            setOpenEmail(true);
+          }}
+        >
+          <Mailbox className="w-4 h-4 mr-1" /> Send email
+        </Button>
+      </div>
+
+      <EntityEmailsSection
+        organizationId={organizationId}
+        entityType="client"
+        entityId={client.clientId}
+        refreshKey={refreshKey}
+      />
+
+      <SendEmailDialog
+        open={openEmail}
+        onOpenChange={setOpenEmail}
+        recipient={recipient}
+        onSent={() => setRefreshKey((k) => k + 1)}
+      />
+    </div>
+  );
 };
-// (kept exported in spirit even if unused — useful for reports later)
-void ActivityKindLabel;
+
+// ─── Meetings tab ────────────────────────────────────────────────────────────
+
+const MeetingsTab: React.FC<{
+  client: Client;
+  organizationId: string;
+  userId: string | undefined;
+  userName: string | undefined;
+  canManage: boolean;
+}> = ({ client, organizationId, canManage }) => {
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openSchedule, setOpenSchedule] = useState(false);
+
+  const reload = async () => {
+    const all = await listMeetings(organizationId);
+    setMeetings(all.filter((m) => m.clientId === client.clientId));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listMeetings(organizationId)
+      .then((all) => {
+        if (!cancelled) setMeetings(all.filter((m) => m.clientId === client.clientId));
+      })
+      .catch(() => {/* non-blocking */})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [organizationId, client.clientId]);
+
+  const now = Date.now();
+  const upcoming = meetings.filter((m) => m.startAt.getTime() >= now);
+  const past = meetings.filter((m) => m.startAt.getTime() < now);
+
+  const renderMeeting = (m: Meeting) => (
+    <li key={m.meetingId} className="rounded-md border p-3">
+      <div className="flex items-start gap-2">
+        <CalendarIcon className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm">{m.title}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {m.allDay
+              ? `${format(m.startAt, 'PP')} · All day`
+              : `${format(m.startAt, 'PPp')} – ${format(m.endAt, 'p')}`}
+          </p>
+          {m.participants.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {m.participants.map((p) => p.name).join(', ')}
+            </p>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Schedule and review meetings for this account.
+        </p>
+        {canManage && (
+          <Button size="sm" onClick={() => setOpenSchedule(true)}>
+            <Plus className="w-4 h-4 mr-1" /> Schedule meeting
+          </Button>
+        )}
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading meetings…
+        </div>
+      )}
+
+      {!loading && meetings.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No meetings yet. Use “Schedule meeting” to book the first one.
+        </p>
+      )}
+
+      {upcoming.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-primary mb-1.5">Upcoming</h4>
+          <ul className="space-y-2">{upcoming.map(renderMeeting)}</ul>
+        </div>
+      )}
+
+      {past.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Past</h4>
+          <ul className="space-y-2">{past.map(renderMeeting)}</ul>
+        </div>
+      )}
+
+      <CreateMeetingDialog
+        open={openSchedule}
+        onOpenChange={setOpenSchedule}
+        defaultRelatedTo={{
+          type: 'client',
+          id: client.clientId,
+          label: client.name,
+          clientId: client.clientId,
+        }}
+        onCreated={reload}
+      />
+    </div>
+  );
+};
+
+// ─── Files tab ───────────────────────────────────────────────────────────────
 
 const FilesTab: React.FC<{
   clientId: string;
@@ -1071,9 +1081,7 @@ const LeadsTab: React.FC<{
     setCategories(account.leadCategories ?? []);
   }, [account.leadCategories]);
 
-  // Group leads by category. Build the display groups from the account's
-  // registered categories first (so empty ones still render), then fold in any
-  // ad-hoc categories carried on leads, and finally an Uncategorized bucket.
+  // Group leads by category.
   const groups = useMemo(() => {
     const byKey = new Map<string, { label: string; leads: Lead[] }>();
     for (const c of categories) {
