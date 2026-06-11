@@ -1338,6 +1338,160 @@ export const leadStatusLabel = (s: LeadStatus): string => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Dedupe — HubSpot/Salesforce-style duplicate detection for leads
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Identifying fields used to decide whether two leads are the same person.
+ *  Mirrors the account dedupe in dupDetection.ts but tuned for the lead shape
+ *  (email exact OR lastName+company). */
+export interface LeadDuplicateCandidate {
+  email?: string | null;
+  lastName?: string | null;
+  company?: string | null;
+}
+
+const normEmail = (e: string | null | undefined): string | null => {
+  if (!e) return null;
+  const t = e.trim().toLowerCase();
+  return t.length ? t : null;
+};
+
+const normText = (v: string | null | undefined): string | null => {
+  if (!v) return null;
+  const t = v.trim().toLowerCase().replace(/\s+/g, " ");
+  return t.length ? t : null;
+};
+
+/** Pure matcher — true when `candidate` looks like the same lead as `existing`.
+ *  Rule (HubSpot/Salesforce style): case-insensitive exact email match, OR a
+ *  case-insensitive (lastName + company) match when no email decides it. Kept
+ *  pure (no I/O) so it's unit-testable and reusable client-side in the import
+ *  preview. */
+export const isLeadDuplicate = (
+  candidate: LeadDuplicateCandidate,
+  existing: LeadDuplicateCandidate,
+): boolean => {
+  const cEmail = normEmail(candidate.email);
+  const eEmail = normEmail(existing.email);
+  if (cEmail && eEmail && cEmail === eEmail) return true;
+
+  const cLast = normText(candidate.lastName);
+  const eLast = normText(existing.lastName);
+  const cCompany = normText(candidate.company);
+  const eCompany = normText(existing.company);
+  if (cLast && eLast && cCompany && eCompany && cLast === eLast && cCompany === eCompany) {
+    return true;
+  }
+  return false;
+};
+
+/** Find existing leads in the org that look like duplicates of the given
+ *  candidate. Mirrors dupDetection.findDuplicates (the account dedupe): scans
+ *  the org's leads and returns those matching on email exact, or
+ *  lastName+company. Org-scoped; honours the local-org fallback. */
+export const findLeadDuplicates = async (
+  organizationId: string,
+  candidate: LeadDuplicateCandidate,
+): Promise<Lead[]> => {
+  // Nothing to match on → no duplicates.
+  if (!normEmail(candidate.email) &&
+      !(normText(candidate.lastName) && normText(candidate.company))) {
+    return [];
+  }
+  const all = await getOrganizationLeads(organizationId);
+  return all.filter((l) =>
+    isLeadDuplicate(candidate, { email: l.email, lastName: l.lastName, company: l.company }),
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CSV export — mirror exportClientsToCsv for leads
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Column order for the lead CSV export. Re-importable: every header here is
+ *  a canonical key the importer (parseLeadCsv / buildLeadInput) understands. */
+export const LEAD_CSV_HEADERS = [
+  "lead_number",
+  "salutation",
+  "first_name",
+  "last_name",
+  "title",
+  "company",
+  "email",
+  "phone",
+  "mobile",
+  "fax",
+  "website",
+  "industry",
+  "annual_revenue",
+  "no_of_employees",
+  "street",
+  "city",
+  "state",
+  "postal_code",
+  "country",
+  "lead_owner_name",
+  "lead_source",
+  "lead_status",
+  "rating",
+  "category",
+  "description",
+  "tags",
+  "linkedin_url",
+  "twitter",
+  "skype_id",
+] as const;
+
+/** Serialize leads to a CSV string. Mirrors clients.ts exportClientsToCsv —
+ *  same RFC-4180 quoting (wrap + double-up quotes when a value contains a
+ *  comma, quote, or newline) and `;`-joined tags. */
+export const exportLeadsToCsv = (leads: Lead[]): string => {
+  const escape = (v: unknown): string => {
+    const s = v == null ? "" : String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [LEAD_CSV_HEADERS.join(",")];
+  for (const l of leads) {
+    lines.push(
+      [
+        l.leadNumber,
+        l.salutation,
+        l.firstName,
+        l.lastName,
+        l.title,
+        l.company,
+        l.email,
+        l.phone,
+        l.mobile,
+        l.fax,
+        l.website,
+        l.industry,
+        l.annualRevenue,
+        l.noOfEmployees,
+        l.street,
+        l.city,
+        l.state,
+        l.postalCode,
+        l.country,
+        l.leadOwnerName,
+        l.leadSource,
+        leadStatusLabel(l.leadStatus),
+        l.rating,
+        l.category,
+        l.description,
+        (l.tags || []).join(";"),
+        l.linkedinUrl,
+        l.twitter,
+        l.skypeId,
+      ]
+        .map(escape)
+        .join(","),
+    );
+  }
+  return lines.join("\n");
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CSV import — Zoho-style "Import Leads" feature
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1676,6 +1830,10 @@ const buildLeadInput = (
   rowNumber: number,
   coercions: LeadCsvCoercion[],
   extraColumns: string[] = [],
+  // When importing from inside an account, stamp every row onto that account
+  // (and optionally a default category) so imported leads attach to it.
+  accountId: string | null = null,
+  category: string | null = null,
 ): { ok: true; input: CreateLeadInput } | { ok: false; reason: string } => {
   let firstName = row.first_name?.trim() ?? "";
   let lastName = row.last_name?.trim() ?? "";
@@ -1767,6 +1925,13 @@ const buildLeadInput = (
     customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
   };
 
+  // Account scoping (import-from-account path). A row's own category column,
+  // if present, wins over the dialog's default category.
+  if (accountId) input.accountId = accountId;
+  const rowCategory = row.category?.trim();
+  if (rowCategory) input.category = rowCategory;
+  else if (category) input.category = category;
+
   return { ok: true, input };
 };
 
@@ -1821,12 +1986,19 @@ export const importLeadsFromCsv = async (
     /** Extra CSV column names the rep ticked in "Keep extra columns" —
      *  these become lead.customFields entries instead of being dropped. */
     extraColumns?: string[];
+    /** When importing from inside an account, stamp every imported lead onto
+     *  this account (account_id) so they attach to it. */
+    accountId?: string | null;
+    /** Default category for imported leads (a row's own category column wins). */
+    category?: string | null;
   } = {},
 ): Promise<ImportLeadsResult> => {
   const errors: LeadCsvRowError[] = [];
   const imported: Lead[] = [];
   const coercions: LeadCsvCoercion[] = [];
   const extraColumns = (options.extraColumns ?? []).map((s) => s.trim()).filter(Boolean);
+  const accountId = options.accountId ?? null;
+  const category = options.category ?? null;
   const { unknownHeaders, missingRequired } = computeImportPrecheck(rows, extraColumns);
   const duplicateHeaders = options.duplicateHeaders ?? [];
 
@@ -1839,7 +2011,7 @@ export const importLeadsFromCsv = async (
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = i + 2;
-    const built = buildLeadInput(row, workspaceId, rowNumber, coercions, extraColumns);
+    const built = buildLeadInput(row, workspaceId, rowNumber, coercions, extraColumns, accountId, category);
     if (!built.ok) {
       errors.push({ row: rowNumber, message: built.reason });
       lastErrorMessage = built.reason;

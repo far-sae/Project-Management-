@@ -149,6 +149,13 @@ export const ClientFormDialog: React.FC<Props> = ({
   const [matches, setMatches] = useState<DuplicateMatch[]>([]);
   const [override, setOverride] = useState(false);
 
+  // Create mode is category-first minimal: only Name + Category + Type +
+  // Status are shown. Everything else (legal name, industry, contact,
+  // address, financial, Zoho extras, tags, description) is hidden on create
+  // and edited inline on the record afterwards. Edit mode shows the full
+  // form unchanged.
+  const isCreate = !client;
+
   useEffect(() => {
     if (open) {
       setForm(client ? fromClient(client) : blank);
@@ -362,24 +369,28 @@ export const ClientFormDialog: React.FC<Props> = ({
                 placeholder="Acme Corp"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="cf-legal">Legal name</Label>
-              <Input
-                id="cf-legal" maxLength={200}
-                value={form.legalName}
-                onChange={(e) => set('legalName', e.target.value)}
-                placeholder="Acme Corporation, Inc."
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="cf-industry">Industry</Label>
-              <Input
-                id="cf-industry" maxLength={100}
-                value={form.industry}
-                onChange={(e) => set('industry', e.target.value)}
-                placeholder="Manufacturing"
-              />
-            </div>
+            {!isCreate && (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="cf-legal">Legal name</Label>
+                  <Input
+                    id="cf-legal" maxLength={200}
+                    value={form.legalName}
+                    onChange={(e) => set('legalName', e.target.value)}
+                    placeholder="Acme Corporation, Inc."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="cf-industry">Industry</Label>
+                  <Input
+                    id="cf-industry" maxLength={100}
+                    value={form.industry}
+                    onChange={(e) => set('industry', e.target.value)}
+                    placeholder="Manufacturing"
+                  />
+                </div>
+              </>
+            )}
             <div className="space-y-1">
               <Label htmlFor="cf-category">Category</Label>
               <Input
@@ -425,6 +436,8 @@ export const ClientFormDialog: React.FC<Props> = ({
               </Select>
             </div>
 
+            {!isCreate && (
+              <>
             <div className="space-y-1">
               <Label htmlFor="cf-email">Email</Label>
               <Input
@@ -624,6 +637,8 @@ export const ClientFormDialog: React.FC<Props> = ({
                 placeholder="Brief background, deal context, anything useful for the next person opening this account…"
               />
             </div>
+              </>
+            )}
           </div>
 
           {error && (
