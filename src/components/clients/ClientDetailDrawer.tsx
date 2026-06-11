@@ -5,6 +5,7 @@ import {
   FileText, Trash2, Loader2, Paperclip, ExternalLink, MessageSquare,
   Calendar as CalendarIcon, Mailbox, Edit,
   ChevronDown, ChevronRight, Tag, UserPlus, ArrowRight,
+  Upload, Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,9 +38,12 @@ import {
   Lead, CreateLeadInput,
   leadDisplayName, leadStatusLabel,
   listAccountLeads, createLead as createLeadSvc, updateLead as updateLeadSvc,
+  exportLeadsToCsv, type ImportLeadsResult,
 } from '@/services/supabase/leads';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
+import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
 import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
+import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
@@ -1042,6 +1046,7 @@ const LeadsTab: React.FC<{
   canManage: boolean;
   canEditLeads: boolean;
 }> = ({ account, organizationId, contacts, canManage, canEditLeads }) => {
+  const { user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   // The account's own category list (read-modify-write target). Seeded from the
@@ -1052,9 +1057,12 @@ const LeadsTab: React.FC<{
   const [newCategory, setNewCategory] = useState('');
   const [savingCategory, setSavingCategory] = useState(false);
 
-  // Lead create dialog: which category the new lead lands in.
+  // Lead create dialog: which category the new lead lands in (null = no
+  // pre-selected category, e.g. the toolbar's "Add single lead").
   const [createCategory, setCreateCategory] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // Import-leads dialog (scoped to this account).
+  const [importOpen, setImportOpen] = useState(false);
   // Lead detail drawer (opened from a row).
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   // Promote-to-deal dialog state.
@@ -1064,6 +1072,32 @@ const LeadsTab: React.FC<{
 
   const reload = async () => {
     setLeads(await listAccountLeads(organizationId, account.clientId));
+  };
+
+  // Export this account's leads to a CSV download. Re-fetch so the export is
+  // current even if a row changed elsewhere since the tab mounted.
+  const handleExport = async () => {
+    try {
+      const rows = await listAccountLeads(organizationId, account.clientId);
+      if (rows.length === 0) {
+        toast.info('No leads to export for this account yet.');
+        return;
+      }
+      const csv = exportLeadsToCsv(rows);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeName = account.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'account';
+      a.href = url;
+      a.download = `leads-${safeName}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${rows.length} lead${rows.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed');
+    }
   };
 
   // Lazy-load this account's leads only when the tab mounts.
@@ -1139,15 +1173,32 @@ const LeadsTab: React.FC<{
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      {/* Toolbar — account-scoped lead actions. No "All workspaces" control
+          here: every action operates on THIS account's leads only. */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-sm text-muted-foreground">
           Leads grouped by category for this account. Add a category, then add leads under it.
         </p>
-        {canEdit && !addingCategory && (
-          <Button size="sm" variant="outline" onClick={() => setAddingCategory(true)}>
-            <Tag className="w-4 h-4 mr-1" /> Add category
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {canEdit && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => { setCreateCategory(null); setCreateOpen(true); }}>
+                <UserPlus className="w-4 h-4 mr-1" /> Add single lead
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload className="w-4 h-4 mr-1" /> Import leads
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant="outline" onClick={handleExport} disabled={leads.length === 0}>
+            <Download className="w-4 h-4 mr-1" /> Export leads
           </Button>
-        )}
+          {canEdit && !addingCategory && (
+            <Button size="sm" variant="outline" onClick={() => setAddingCategory(true)}>
+              <Tag className="w-4 h-4 mr-1" /> Add category
+            </Button>
+          )}
+        </div>
       </div>
 
       {addingCategory && (
@@ -1260,12 +1311,59 @@ const LeadsTab: React.FC<{
         defaultWorkspaceId={account.workspaceId}
         onSubmit={async (input: CreateLeadInput) => {
           try {
-            const created = await createLeadSvc(organizationId, null, null, input);
+            const created = await createLeadSvc(
+              organizationId, user?.userId ?? null, user?.displayName ?? null, input,
+            );
             toast.success(`Created lead ${created.leadNumber}`);
             await reload();
           } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to create lead');
             throw err;
+          }
+        }}
+      />
+
+      {/* Import leads — scoped to THIS account: imported rows attach to it
+          (accountId set), with HubSpot/Salesforce-style dedupe in the preview. */}
+      <ImportLeadsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        organizationId={organizationId}
+        workspaceId={account.workspaceId}
+        workspaceName={null}
+        userId={user?.userId}
+        userName={user?.displayName}
+        defaultAccountId={account.clientId}
+        defaultAccountName={account.name}
+        onComplete={(result: ImportLeadsResult) => {
+          void recordAuditEvent(
+            organizationId,
+            { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+            {
+              action: result.imported.length > 0 ? 'lead_imported' : 'lead_import_failed',
+              targetType: 'lead',
+              targetLabel: `${result.imported.length}/${result.imported.length + result.errors.length} lead(s) via CSV → ${account.name}`,
+              metadata: {
+                imported: result.imported.length,
+                errors: result.errors.length,
+                coercions: result.coercions.length,
+                aborted: result.aborted,
+                accountId: account.clientId,
+                accountName: account.name,
+              },
+            },
+          );
+          if (result.imported.length === 0) {
+            toast.error('No leads were imported. Check the row errors above.');
+            return;
+          }
+          void reload();
+          if (result.errors.length > 0 || result.coercions.length > 0) {
+            toast.warning(
+              `Imported ${result.imported.length} of ${result.imported.length + result.errors.length} leads — review the warnings above.`,
+            );
+          } else {
+            toast.success(`Imported ${result.imported.length} lead${result.imported.length === 1 ? '' : 's'} into ${account.name}`);
           }
         }}
       />
