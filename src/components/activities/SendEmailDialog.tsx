@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter,
@@ -10,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Mail, Loader2, FileText } from 'lucide-react';
+import { Mail, Loader2, FileText, Plus, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -18,6 +19,9 @@ import {
   listEmailTemplates, expandTemplate,
   type EmailTemplate, type MergeContext,
 } from '@/services/supabase/emailTemplates';
+
+/** Settings route + tab anchor where email templates are managed. */
+const EMAIL_TEMPLATES_SETTINGS_ROUTE = '/settings?tab=email-templates';
 
 export interface SendEmailRecipient {
   /** The CRM entity we're emailing from — used to pre-fill merge
@@ -61,6 +65,7 @@ interface SendEmailDialogProps {
 export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
   open, onOpenChange, recipient, onSent,
 }) => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
@@ -112,6 +117,15 @@ export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
   }, [templateId, templates, mergeContext]);
 
   if (!recipient) return null;
+
+  const hasTemplates = templates.length > 0;
+
+  // Jump to Settings → Email templates so the rep can create / edit
+  // templates, then close the composer (it reloads templates on reopen).
+  const goToTemplates = () => {
+    onOpenChange(false);
+    navigate(EMAIL_TEMPLATES_SETTINGS_ROUTE);
+  };
 
   const handleSend = async () => {
     if (!recipient.email) { toast.error('No email address on file'); return; }
@@ -179,73 +193,137 @@ export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
     }
   };
 
+  const recipientInitial =
+    (recipient.name ?? recipient.email ?? '?').trim().charAt(0).toUpperCase() || '?';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Mail className="w-5 h-5 text-amber-600" />
-            Send Email
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto gap-0 p-0">
+        {/* Header — tidy band with the mail icon. */}
+        <DialogHeader className="space-y-1 border-b px-6 py-4">
+          <DialogTitle className="flex items-center gap-2.5 text-base">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-orange-100 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400">
+              <Mail className="h-4.5 w-4.5" />
+            </span>
+            Compose email
           </DialogTitle>
           <DialogDescription className="sr-only">
             Compose an email to the recipient, optionally from a saved template. Sent via the connected Gmail account; falls back to a mailto link when Gmail isn't connected.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="grid grid-cols-[80px,1fr] gap-2 items-center text-sm">
-            <Label className="text-muted-foreground">To</Label>
-            <div className="font-medium">
-              {recipient.name ?? recipient.email}
-              {recipient.email && recipient.name && (
-                <span className="text-muted-foreground font-normal ml-1">&lt;{recipient.email}&gt;</span>
-              )}
+        <div className="space-y-4 px-6 py-5">
+          {/* To row — avatar + name + address. */}
+          <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-foreground/5 text-xs font-semibold text-foreground/70">
+              {recipientInitial}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">To</p>
+              <p className="truncate text-sm font-medium">
+                {recipient.name ?? recipient.email}
+                {recipient.email && recipient.name && (
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    &lt;{recipient.email}&gt;
+                  </span>
+                )}
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-[80px,1fr] gap-2 items-center text-sm">
-            <Label htmlFor="template">Template</Label>
-            <Select value={templateId} onValueChange={setTemplateId}>
-              <SelectTrigger id="template" className="h-9">
-                <span className="inline-flex items-center gap-2">
-                  <FileText className="w-3.5 h-3.5 text-muted-foreground" />
-                  <SelectValue placeholder={templates.length === 0 ? 'No templates — create one in Settings → Email templates' : 'Choose a template (optional)'} />
+          {/* Template row — picker when templates exist, an actionable
+              "New email template" link when they don't. */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="template" className="text-xs text-muted-foreground">
+                Template
+              </Label>
+              {hasTemplates && (
+                <button
+                  type="button"
+                  onClick={goToTemplates}
+                  className="text-[11px] font-medium text-orange-600 hover:underline dark:text-orange-400"
+                >
+                  Manage templates
+                </button>
+              )}
+            </div>
+
+            {hasTemplates ? (
+              <Select value={templateId} onValueChange={setTemplateId}>
+                <SelectTrigger id="template" className="h-9">
+                  <span className="inline-flex items-center gap-2">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                    <SelectValue placeholder="Choose a template (optional)" />
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.templateId} value={t.templateId}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <button
+                type="button"
+                onClick={goToTemplates}
+                className="flex h-9 w-full items-center gap-2 rounded-md border border-dashed px-3 text-sm text-muted-foreground transition-colors hover:border-orange-300 hover:bg-orange-50/60 hover:text-orange-700 dark:hover:bg-orange-500/10 dark:hover:text-orange-300"
+              >
+                <Plus className="h-4 w-4" />
+                New email template
+                <span className="ml-auto text-[11px] text-muted-foreground/70">
+                  Settings → Email templates
                 </span>
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((t) => (
-                  <SelectItem key={t.templateId} value={t.templateId}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              </button>
+            )}
           </div>
 
-          <Input
-            placeholder="Subject"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="h-9"
-          />
-          <Textarea
-            placeholder="Write your message… Tokens like {{client.name}}, {{user.name}} get auto-expanded from the picked template."
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={10}
-          />
+          {/* Subject. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="email-subject" className="text-xs text-muted-foreground">
+              Subject
+            </Label>
+            <Input
+              id="email-subject"
+              placeholder="Subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="h-9"
+            />
+          </div>
 
-          <p className="text-[11px] text-muted-foreground">
-            Sends through your connected Gmail (Settings → Integrations).
-            Without it, this opens your default email client instead.
+          {/* Body — larger textarea. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="email-body" className="text-xs text-muted-foreground">
+              Message
+            </Label>
+            <Textarea
+              id="email-body"
+              placeholder="Write your message… Tokens like {{client.name}}, {{user.name}} get auto-expanded from the picked template."
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={12}
+              className="resize-y"
+            />
+          </div>
+
+          {/* Helper text about the Gmail send path. */}
+          <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Sends through your connected Gmail (Settings → Integrations).
+              Without it, this opens your default email client instead.
+            </span>
           </p>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="border-t px-6 py-4">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Cancel
           </Button>
           <Button onClick={handleSend} disabled={sending || !recipient.email}>
-            {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
-            Send
+            {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+            Send email
           </Button>
         </DialogFooter>
       </DialogContent>
