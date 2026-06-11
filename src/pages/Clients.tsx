@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -480,11 +479,6 @@ export const Clients: React.FC = () => {
             <div>
               <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
                 <Building2 className="w-6 h-6 text-primary" /> CRM
-                <Badge variant="outline" className="ml-2 text-xs font-medium">
-                  {isAllWorkspaces
-                    ? 'All workspaces'
-                    : selectedWorkspace?.name ?? 'Workspace'}
-                </Badge>
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
                 {isAllWorkspaces
