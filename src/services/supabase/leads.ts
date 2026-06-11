@@ -1338,6 +1338,73 @@ export const leadStatusLabel = (s: LeadStatus): string => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Dedupe — HubSpot/Salesforce-style duplicate detection for leads
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Identifying fields used to decide whether two leads are the same person.
+ *  Mirrors the account dedupe in dupDetection.ts but tuned for the lead shape
+ *  (email exact OR lastName+company). */
+export interface LeadDuplicateCandidate {
+  email?: string | null;
+  lastName?: string | null;
+  company?: string | null;
+}
+
+const normEmail = (e: string | null | undefined): string | null => {
+  if (!e) return null;
+  const t = e.trim().toLowerCase();
+  return t.length ? t : null;
+};
+
+const normText = (v: string | null | undefined): string | null => {
+  if (!v) return null;
+  const t = v.trim().toLowerCase().replace(/\s+/g, " ");
+  return t.length ? t : null;
+};
+
+/** Pure matcher — true when `candidate` looks like the same lead as `existing`.
+ *  Rule (HubSpot/Salesforce style): case-insensitive exact email match, OR a
+ *  case-insensitive (lastName + company) match when no email decides it. Kept
+ *  pure (no I/O) so it's unit-testable and reusable client-side in the import
+ *  preview. */
+export const isLeadDuplicate = (
+  candidate: LeadDuplicateCandidate,
+  existing: LeadDuplicateCandidate,
+): boolean => {
+  const cEmail = normEmail(candidate.email);
+  const eEmail = normEmail(existing.email);
+  if (cEmail && eEmail && cEmail === eEmail) return true;
+
+  const cLast = normText(candidate.lastName);
+  const eLast = normText(existing.lastName);
+  const cCompany = normText(candidate.company);
+  const eCompany = normText(existing.company);
+  if (cLast && eLast && cCompany && eCompany && cLast === eLast && cCompany === eCompany) {
+    return true;
+  }
+  return false;
+};
+
+/** Find existing leads in the org that look like duplicates of the given
+ *  candidate. Mirrors dupDetection.findDuplicates (the account dedupe): scans
+ *  the org's leads and returns those matching on email exact, or
+ *  lastName+company. Org-scoped; honours the local-org fallback. */
+export const findLeadDuplicates = async (
+  organizationId: string,
+  candidate: LeadDuplicateCandidate,
+): Promise<Lead[]> => {
+  // Nothing to match on → no duplicates.
+  if (!normEmail(candidate.email) &&
+      !(normText(candidate.lastName) && normText(candidate.company))) {
+    return [];
+  }
+  const all = await getOrganizationLeads(organizationId);
+  return all.filter((l) =>
+    isLeadDuplicate(candidate, { email: l.email, lastName: l.lastName, company: l.company }),
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CSV import — Zoho-style "Import Leads" feature
 // ─────────────────────────────────────────────────────────────────────────────
 
