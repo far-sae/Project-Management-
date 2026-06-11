@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
-  Building2, Plus, Search, Upload, Download, Loader2,
+  Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical, TrendingUp,
   Pencil, ArrowLeft,
 } from 'lucide-react';
@@ -19,9 +18,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   GitBranch, Home as HomeIcon,
-  LayoutGrid, List, Activity as ActivityIcon,
+  LayoutGrid, List,
 } from 'lucide-react';
-import { ActivitiesHubPanel } from '@/components/activities/ActivitiesHubPanel';
 import { DealsKanban } from '@/components/clients/DealsKanban';
 import { DealDetailDrawer } from '@/components/clients/DealDetailDrawer';
 import { DealDetailView } from '@/components/deals/DealDetailView';
@@ -42,7 +40,7 @@ import { useClients } from '@/hooks/useClients';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
   Client, ClientStatus, ClientType,
-  CreateClientInput, exportClientsToCsv,
+  CreateClientInput,
 } from '@/services/supabase/clients';
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
 import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialog';
@@ -91,18 +89,6 @@ const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
   { value: 'archived', label: 'Archived' },
 ];
 
-const downloadFile = (filename: string, content: string, mime: string) => {
-  const blob = new Blob([content], { type: mime + ';charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
-
 export const Clients: React.FC = () => {
   const { user } = useAuth();
   const { canViewModule, canEditModule } = useOrganization();
@@ -148,15 +134,17 @@ export const Clients: React.FC = () => {
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
-  // 'tasks' is retained in the union for backwards compat — if a
-  // saved bookmark or onGoToTasks callback fires with 'tasks', the
-  // useEffect below silently redirects it to 'activities' (where
-  // tasks now live).
-  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'activities' | 'forecast'>('home');
+  // 'tasks' is retained in the union for backwards compat — some hub
+  // callbacks (CrmHomeDashboard, AccountsHubCard) still pass it. The
+  // useEffect below redirects those legacy values to a live tab now that
+  // the Activities tab is gone (its timeline moved into each record's
+  // right rail).
+  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
   useEffect(() => {
-    // 'tasks' and the removed 'leads' tab both redirect: tasks → activities,
-    // leads → accounts (leads now live inside accounts).
-    if (activeTab === 'tasks') setActiveTab('activities');
+    // The removed 'tasks'/'activities'/'leads' tabs all redirect: tasks &
+    // activities → home (the Activities tab is gone; its feed now lives in
+    // each record's right rail), leads → accounts (leads live in accounts).
+    if (activeTab === 'tasks' || (activeTab as string) === 'activities') setActiveTab('home');
     if ((activeTab as string) === 'leads') setActiveTab('accounts');
   }, [activeTab]);
 
@@ -480,26 +468,6 @@ export const Clients: React.FC = () => {
     }
   };
 
-  const exportAll = () => {
-    if (filtered.length === 0) {
-      toast.error('Nothing to export with current filters');
-      return;
-    }
-    const csv = exportClientsToCsv(filtered);
-    downloadFile(`clients-${new Date().toISOString().slice(0, 10)}.csv`, csv, 'text/csv');
-    toast.success(`Exported ${filtered.length} account(s)`);
-    void recordAuditEvent(
-      organizationId,
-      { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
-      {
-        action: 'data_exported',
-        targetType: 'client',
-        targetLabel: `${filtered.length} account(s) → CSV`,
-        metadata: { count: filtered.length, format: 'csv', workspaceId: activeWorkspaceId },
-      },
-    );
-  };
-
   return (
     <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
@@ -531,20 +499,9 @@ export const Clients: React.FC = () => {
                   <ArrowLeft className="w-4 h-4 mr-2" /> Categories
                 </Button>
               )}
-              <Button variant="outline" asChild>
-                <Link to="/clients/activity">Activities</Link>
-              </Button>
-              <Button variant="outline" onClick={exportAll}>
-                <Download className="w-4 h-4 mr-2" /> Export CSV
-              </Button>
-              {canCreate && (
-                <Button variant="outline" onClick={() => setOpenImport(true)}>
-                  <Upload className="w-4 h-4 mr-2" /> Import
-                </Button>
-              )}
               {canCreate && (
                 <Button onClick={() => setOpenCreate(true)}>
-                  <Plus className="w-4 h-4 mr-2" /> New account
+                  <Plus className="w-4 h-4 mr-2" /> Add account
                 </Button>
               )}
             </div>
@@ -563,13 +520,6 @@ export const Clients: React.FC = () => {
                   <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
                 </TabsTrigger>
               )}
-              {/* Tasks + Meetings + Calls all live in the Activities tab
-                  now — same underlying tables, same filter views, plus
-                  the drag-droppable status kanban. The old Tasks tab was
-                  redundant (also read client_tasks) and confused reps. */}
-              <TabsTrigger value="activities">
-                <ActivityIcon className="w-4 h-4 mr-1.5" /> Activities
-              </TabsTrigger>
               <TabsTrigger value="forecast">
                 <TrendingUp className="w-4 h-4 mr-1.5" /> Forecast
               </TabsTrigger>
@@ -988,13 +938,6 @@ export const Clients: React.FC = () => {
                   </>
                 );
               })()}
-            </TabsContent>
-
-            <TabsContent value="activities" className="mt-4">
-              {/* Embeds the same hub the standalone /clients/activity page
-                  renders — Tasks + Meetings + Calls in one filterable
-                  view, with kanban + list toggle and quick-create dialogs. */}
-              <ActivitiesHubPanel bounded={false} />
             </TabsContent>
 
             <TabsContent value="forecast" className="mt-4 space-y-4">
