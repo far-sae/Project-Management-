@@ -1405,6 +1405,93 @@ export const findLeadDuplicates = async (
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CSV export — mirror exportClientsToCsv for leads
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Column order for the lead CSV export. Re-importable: every header here is
+ *  a canonical key the importer (parseLeadCsv / buildLeadInput) understands. */
+export const LEAD_CSV_HEADERS = [
+  "lead_number",
+  "salutation",
+  "first_name",
+  "last_name",
+  "title",
+  "company",
+  "email",
+  "phone",
+  "mobile",
+  "fax",
+  "website",
+  "industry",
+  "annual_revenue",
+  "no_of_employees",
+  "street",
+  "city",
+  "state",
+  "postal_code",
+  "country",
+  "lead_owner_name",
+  "lead_source",
+  "lead_status",
+  "rating",
+  "category",
+  "description",
+  "tags",
+  "linkedin_url",
+  "twitter",
+  "skype_id",
+] as const;
+
+/** Serialize leads to a CSV string. Mirrors clients.ts exportClientsToCsv —
+ *  same RFC-4180 quoting (wrap + double-up quotes when a value contains a
+ *  comma, quote, or newline) and `;`-joined tags. */
+export const exportLeadsToCsv = (leads: Lead[]): string => {
+  const escape = (v: unknown): string => {
+    const s = v == null ? "" : String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [LEAD_CSV_HEADERS.join(",")];
+  for (const l of leads) {
+    lines.push(
+      [
+        l.leadNumber,
+        l.salutation,
+        l.firstName,
+        l.lastName,
+        l.title,
+        l.company,
+        l.email,
+        l.phone,
+        l.mobile,
+        l.fax,
+        l.website,
+        l.industry,
+        l.annualRevenue,
+        l.noOfEmployees,
+        l.street,
+        l.city,
+        l.state,
+        l.postalCode,
+        l.country,
+        l.leadOwnerName,
+        l.leadSource,
+        leadStatusLabel(l.leadStatus),
+        l.rating,
+        l.category,
+        l.description,
+        (l.tags || []).join(";"),
+        l.linkedinUrl,
+        l.twitter,
+        l.skypeId,
+      ]
+        .map(escape)
+        .join(","),
+    );
+  }
+  return lines.join("\n");
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CSV import — Zoho-style "Import Leads" feature
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -4,6 +4,9 @@ import {
   isLeadDuplicate,
   findLeadDuplicates,
   createLead,
+  exportLeadsToCsv,
+  LEAD_CSV_HEADERS,
+  type Lead,
 } from "@/services/supabase/leads";
 
 // Local-org id → localStorage-backed fallback (no Supabase round-trips), same
@@ -83,5 +86,79 @@ describe("findLeadDuplicates (org-scoped)", () => {
   it("returns [] when the candidate has nothing to match on", async () => {
     await createLead(ORG, null, null, { lastName: "Doe", company: "Acme" });
     expect(await findLeadDuplicates(ORG, {})).toEqual([]);
+  });
+});
+
+describe("exportLeadsToCsv", () => {
+  const makeLead = (over: Partial<Lead> = {}): Lead => ({
+    leadId: "id-1",
+    organizationId: ORG,
+    workspaceId: "ws-1",
+    leadNumber: "L-000001",
+    salutation: null,
+    firstName: "Jane",
+    lastName: "Doe",
+    title: null,
+    email: "jane@acme.com",
+    phone: null,
+    mobile: null,
+    fax: null,
+    website: null,
+    skypeId: null,
+    twitter: null,
+    linkedinUrl: null,
+    company: "Acme",
+    industry: null,
+    annualRevenue: null,
+    noOfEmployees: null,
+    street: null,
+    city: null,
+    state: null,
+    postalCode: null,
+    country: null,
+    leadOwnerId: null,
+    leadOwnerName: null,
+    leadSource: null,
+    leadStatus: "new",
+    rating: null,
+    emailOptOut: false,
+    accountId: null,
+    category: null,
+    convertedAt: null,
+    convertedToClientId: null,
+    convertedToContactId: null,
+    convertedToDealId: null,
+    description: null,
+    tags: [],
+    customFields: {},
+    imageUrl: null,
+    createdBy: null,
+    createdByName: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...over,
+  });
+
+  it("emits the header row then one row per lead", () => {
+    const csv = exportLeadsToCsv([makeLead(), makeLead({ leadNumber: "L-000002", lastName: "Smith" })]);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe(LEAD_CSV_HEADERS.join(","));
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toContain("L-000001");
+    expect(lines[2]).toContain("Smith");
+  });
+
+  it("quotes values containing commas/quotes/newlines and joins tags with ;", () => {
+    const csv = exportLeadsToCsv([
+      makeLead({ company: "Acme, Inc", description: 'He said "hi"', tags: ["vip", "hot"] }),
+    ]);
+    expect(csv).toContain('"Acme, Inc"');
+    expect(csv).toContain('"He said ""hi"""');
+    expect(csv).toContain("vip;hot");
+  });
+
+  it("writes a human-readable lead status label", () => {
+    const csv = exportLeadsToCsv([makeLead({ leadStatus: "attempted_to_contact" })]);
+    expect(csv).toContain("Attempted to Contact");
   });
 });
