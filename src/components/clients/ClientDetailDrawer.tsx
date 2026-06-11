@@ -43,6 +43,8 @@ import {
 } from '@/services/supabase/deals';
 import { type PipelineStage } from '@/services/supabase/pipelines';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { convertAmount, useFxRates } from '@/lib/fxRates';
 import {
   SendEmailDialog, type SendEmailRecipient,
 } from '@/components/activities/SendEmailDialog';
@@ -338,10 +340,17 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               )}
 
               {tab === 'pipeline' && (
-                <AccountStageHistoryCard
-                  organizationId={organizationId}
-                  clientId={client.clientId}
-                />
+                <div className="space-y-5">
+                  <PipelineDealsList
+                    deals={deals}
+                    stagesByPipeline={stagesByPipeline}
+                    defaultPipelineId={defaultPipeline?.pipelineId ?? null}
+                  />
+                  <AccountStageHistoryCard
+                    organizationId={organizationId}
+                    clientId={client.clientId}
+                  />
+                </div>
               )}
 
               {tab === 'emails' && (
@@ -661,6 +670,75 @@ const DealsCard: React.FC<{
         </ul>
       )}
     </div>
+  );
+};
+
+// ─── Pipeline tab: deals + total (above the Stage History) ──────────────────
+
+/** Lists the record's deals (incl. custom items) with their stage + value,
+ *  plus a total row. Rendered above the cross-deal Stage History in the
+ *  Pipeline tab so reps see the money before the stage trail. */
+const PipelineDealsList: React.FC<{
+  deals: Deal[];
+  stagesByPipeline: Record<string, PipelineStage[]>;
+  defaultPipelineId: string | null;
+}> = ({ deals, stagesByPipeline, defaultPipelineId }) => {
+  const formatMoney = useFormatMoney();
+  const orgCurrency = useOrgCurrency();
+  const { rates } = useFxRates();
+
+  const total = useMemo(
+    () => deals.reduce((sum, d) => sum + convertAmount(d.value, d.currency, orgCurrency, rates), 0),
+    [deals, orgCurrency, rates],
+  );
+
+  const stageLabel = (d: Deal) => {
+    const stages = stagesByPipeline[d.pipelineId]
+      ?? (defaultPipelineId ? stagesByPipeline[defaultPipelineId] : undefined);
+    return stages?.find((s) => s.key === d.stage)?.label ?? d.stage;
+  };
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold inline-flex items-center gap-1.5">
+          Deals
+          <span className="text-xs text-muted-foreground font-normal">{deals.length}</span>
+        </h3>
+      </div>
+
+      {deals.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic">
+          No deals for this account yet.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {deals.map((d) => (
+            <li
+              key={d.dealId}
+              className="flex items-center justify-between gap-2 rounded-md border p-2.5"
+            >
+              <div className="min-w-0 flex items-center gap-1.5">
+                <span className="text-sm font-medium truncate">{d.title}</span>
+                {d.dealType === 'custom' && (
+                  <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">Custom</Badge>
+                )}
+                <Badge variant="outline" className="text-[10px] shrink-0">{stageLabel(d)}</Badge>
+              </div>
+              <span className="text-sm font-semibold shrink-0 tabular-nums">
+                {formatMoney(d.value, d.currency)}
+              </span>
+            </li>
+          ))}
+          <li className="flex items-center justify-between gap-2 pt-1.5 mt-1 border-t">
+            <span className="text-sm font-semibold">Total</span>
+            <span className="text-sm font-bold tabular-nums">
+              {formatMoney(total, orgCurrency)}
+            </span>
+          </li>
+        </ul>
+      )}
+    </section>
   );
 };
 
