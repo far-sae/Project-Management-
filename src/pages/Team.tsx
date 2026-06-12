@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { updateOrganization } from '@/services/supabase/organizations';
+import { upsertProjectMember, type ProjectRole } from '@/services/supabase/projectMembers';
 import type { Organization, OrganizationMember } from '@/types/organization';
 import type { CustomRole } from '@/services/supabase/customRoles';
 import { listOrgGrants, setModuleGrant, type GrantRow, type CrmModule, type GrantLevel } from '@/services/supabase/crmGrants';
@@ -106,6 +107,12 @@ export const Team: React.FC = () => {
   const navigate = useNavigate();
 
   const [showInviteModal, setShowInviteModal] = useState(false);
+  // Add-existing-member-to-project dialog + per-row project-role busy flag.
+  const [openAddMember, setOpenAddMember] = useState(false);
+  const [addUserId, setAddUserId] = useState<string>('');
+  const [addRole, setAddRole] = useState<ProjectRole>('member');
+  const [addBusy, setAddBusy] = useState(false);
+  const [roleBusyUserId, setRoleBusyUserId] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'member' | 'viewer'>('member');
   const [selectedProject, setSelectedProject] = useState<string>('');
@@ -364,11 +371,52 @@ export const Team: React.FC = () => {
 
   const allMembers = Array.from(allMembersMap.values());
 
+  // Existing org members who aren't already on this project (for "Add member").
+  const inProjectIds = new Set(allMembers.map((m) => m.userId));
+  const availableToAdd = (organization?.members ?? []).filter(
+    (m) => m.status !== 'removed'
+      && m.userId !== effectiveOwnerId
+      && !inProjectIds.has(m.userId),
+  );
+
   const pendingInvitations = invitations.filter(
     (inv) => inv.status === "pending"
   );
   // Use effectiveOwnerId (from DB + project list) so project owner can always invite
   const isProjectOwner = !!user?.userId && effectiveOwnerId === user.userId;
+
+  const handleAddMember = async () => {
+    if (!selectedProject || !organization || !addUserId) {
+      toast.error('Pick a teammate to add');
+      return;
+    }
+    setAddBusy(true);
+    try {
+      await upsertProjectMember(selectedProject, organization.organizationId, addUserId, addRole);
+      setOpenAddMember(false);
+      setAddUserId('');
+      setAddRole('member');
+      await loadTeamData();
+      toast.success('Member added to project');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add member');
+    } finally {
+      setAddBusy(false);
+    }
+  };
+
+  const handleChangeProjectRole = async (userId: string, role: ProjectRole) => {
+    if (!selectedProject || !organization) return;
+    setRoleBusyUserId(userId);
+    try {
+      await upsertProjectMember(selectedProject, organization.organizationId, userId, role);
+      await loadTeamData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to change project role');
+    } finally {
+      setRoleBusyUserId(null);
+    }
+  };
 
   const handleRemoveMember = async (member: ProjectMember, unassignTasks: boolean) => {
     if (!selectedProject) return;
@@ -690,6 +738,15 @@ export const Team: React.FC = () => {
               </SelectContent>
             </Select>
             <Button
+              variant="outline"
+              onClick={() => { setAddUserId(''); setAddRole('member'); setOpenAddMember(true); }}
+              disabled={!selectedProject || !(isProjectOwner || isAdmin)}
+              title="Add an existing teammate to this project"
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              Add member
+            </Button>
+            <Button
               onClick={() => setShowInviteModal(true)}
               className="bg-gradient-to-r from-orange-500 to-red-500"
               disabled={!selectedProject || !isProjectOwner}
@@ -788,6 +845,25 @@ export const Team: React.FC = () => {
                         />
                       ) : (
                         getRoleBadge(member.role)
+                      )}
+
+                      {/* Per-project role (separate from the org-wide role). */}
+                      {(isProjectOwner || isAdmin) && member.role !== 'owner' && (
+                        <RoleSelect
+                          value={member.role}
+                          onValueChange={(v) => void handleChangeProjectRole(member.userId, v as ProjectRole)}
+                        >
+                          <RoleSelectTrigger className="w-36 h-8">
+                            {roleBusyUserId === member.userId
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <RoleSelectValue />}
+                          </RoleSelectTrigger>
+                          <RoleSelectContent>
+                            <RoleSelectItem value="admin">Project admin</RoleSelectItem>
+                            <RoleSelectItem value="member">Project member</RoleSelectItem>
+                            <RoleSelectItem value="viewer">Project viewer</RoleSelectItem>
+                          </RoleSelectContent>
+                        </RoleSelect>
                       )}
 
                       {/* Remove button - hide for owner */}
@@ -894,6 +970,57 @@ export const Team: React.FC = () => {
             </div>
           </section>
         )}
+
+        {/* Add an existing teammate to this project (no email). */}
+        <Dialog open={openAddMember} onOpenChange={(o) => { if (!addBusy) setOpenAddMember(o); }}>
+          <DialogContent aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle>Add a member to this project</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-muted-foreground">
+                Add an existing teammate to{' '}
+                <strong className="text-foreground">{currentProject?.name ?? 'this project'}</strong>{' '}
+                and set their project role.
+              </p>
+              <div>
+                <Label className="text-xs">Member</Label>
+                <RoleSelect value={addUserId} onValueChange={setAddUserId}>
+                  <RoleSelectTrigger><RoleSelectValue placeholder="Pick a teammate" /></RoleSelectTrigger>
+                  <RoleSelectContent>
+                    {availableToAdd.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        Everyone in the org is already on this project.
+                      </div>
+                    ) : availableToAdd.map((m) => (
+                      <RoleSelectItem key={m.userId} value={m.userId}>
+                        {m.displayName || m.email}
+                      </RoleSelectItem>
+                    ))}
+                  </RoleSelectContent>
+                </RoleSelect>
+              </div>
+              <div>
+                <Label className="text-xs">Project role</Label>
+                <RoleSelect value={addRole} onValueChange={(v) => setAddRole(v as ProjectRole)}>
+                  <RoleSelectTrigger><RoleSelectValue /></RoleSelectTrigger>
+                  <RoleSelectContent>
+                    <RoleSelectItem value="admin">Admin</RoleSelectItem>
+                    <RoleSelectItem value="member">Member</RoleSelectItem>
+                    <RoleSelectItem value="viewer">Viewer</RoleSelectItem>
+                  </RoleSelectContent>
+                </RoleSelect>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpenAddMember(false)} disabled={addBusy}>Cancel</Button>
+              <Button onClick={handleAddMember} disabled={addBusy || !addUserId}>
+                {addBusy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                Add to project
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
           <DialogContent aria-describedby={undefined}>
