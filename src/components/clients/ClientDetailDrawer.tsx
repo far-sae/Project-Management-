@@ -58,7 +58,7 @@ import {
 } from '@/components/activities/SendEmailDialog';
 import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
 import { CreateMeetingDialog } from '@/components/activities/CreateMeetingDialog';
-import { listMeetings, type Meeting } from '@/services/supabase/meetings';
+import { listMeetings, deleteMeeting, type Meeting } from '@/services/supabase/meetings';
 import { InvoicesPanel } from './InvoicesPanel';
 import { toast } from 'sonner';
 
@@ -86,6 +86,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   const { canEditModule } = useOrganization();
   const { remove: removeDeal } = useDeals();
   const formatMoney = useFormatMoney();
+  const orgCurrency = useOrgCurrency();
   // Account (client) write access isn't a grant module — there is no
   // canEditModule('crm'). It's governed by canManage (owner/admin/manager),
   // same as the Edit/Delete controls. Deals/Leads sub-features still use
@@ -407,6 +408,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                   <AccountStageHistoryCard
                     organizationId={organizationId}
                     clientId={client.clientId}
+                    currency={deals[0]?.currency ?? orgCurrency}
                   />
                 </div>
               )}
@@ -1063,10 +1065,22 @@ const MeetingsTab: React.FC<{
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [openSchedule, setOpenSchedule] = useState(false);
+  const [editing, setEditing] = useState<Meeting | null>(null);
 
   const reload = async () => {
     const all = await listMeetings(organizationId);
     setMeetings(all.filter((m) => m.clientId === client.clientId));
+  };
+
+  const handleDelete = async (m: Meeting) => {
+    if (!confirm(`Delete meeting "${m.title}"?`)) return;
+    try {
+      await deleteMeeting(m.meetingId, organizationId);
+      await reload();
+      toast.success('Meeting deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete meeting');
+    }
   };
 
   useEffect(() => {
@@ -1101,6 +1115,36 @@ const MeetingsTab: React.FC<{
               {m.participants.map((p) => p.name).join(', ')}
             </p>
           )}
+          <div className="flex items-center gap-3 mt-2">
+            {m.googleMeetLink && (
+              <a
+                href={m.googleMeetLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <ExternalLink className="w-3 h-3" /> Join
+              </a>
+            )}
+            {canManage && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setEditing(m)}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                >
+                  <Edit className="w-3 h-3" /> Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(m)}
+                  className="text-xs text-destructive hover:text-destructive/80 inline-flex items-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" /> Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </li>
@@ -1146,8 +1190,9 @@ const MeetingsTab: React.FC<{
       )}
 
       <CreateMeetingDialog
-        open={openSchedule}
-        onOpenChange={setOpenSchedule}
+        open={openSchedule || !!editing}
+        onOpenChange={(o) => { setOpenSchedule(o); if (!o) setEditing(null); }}
+        editMeeting={editing}
         defaultRelatedTo={{
           type: 'client',
           id: client.clientId,

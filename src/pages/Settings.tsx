@@ -39,8 +39,6 @@ import {
   GitBranch,
   Target,
   ClipboardList,
-  Sparkles,
-  MailPlus,
   Mail,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,8 +50,6 @@ import { CapacitySettings } from "@/components/settings/CapacitySettings";
 import { PipelinesSettingsTab } from "@/components/settings/PipelinesSettingsTab";
 import { LeadScoringSettingsTab } from "@/components/settings/LeadScoringSettingsTab";
 import { LeadFormsSettingsTab } from "@/components/settings/LeadFormsSettingsTab";
-import { SequencesSettingsTab } from "@/components/settings/SequencesSettingsTab";
-import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
 import { EmailTemplatesSettingsTab } from "@/components/settings/EmailTemplatesSettingsTab";
 import { AuditLogSettingsTab } from "@/components/settings/AuditLogSettingsTab";
 import { MfaSettingsTab } from "@/components/settings/MfaSettingsTab";
@@ -561,19 +557,6 @@ export const Settings: React.FC = () => {
                 </>
               )}
 
-              {/* ───── Automation (Advanced plan and up) ─────
-                  Automations + Sequences are member-visible (reps
-                  trigger them on their own deals). AI Usage is the
-                  org-wide spend dashboard — admin/owner only. */}
-              {hasCrm && (
-                <>
-                  <SettingsSectionLabel>Automation</SettingsSectionLabel>
-                  <SettingsTab value="sequences" icon={MailPlus}>Sequences</SettingsTab>
-                  {canManageSettings && (
-                    <SettingsTab value="ai-usage" icon={Sparkles}>AI Usage</SettingsTab>
-                  )}
-                </>
-              )}
             </TabsList>
           </div>
 
@@ -649,26 +632,6 @@ export const Settings: React.FC = () => {
             />
             <EmailTemplatesSettingsTab />
           </TabsContent>
-
-          {/* SEQUENCES TAB */}
-          <TabsContent value="sequences">
-            <SettingsHelp
-              title="Sequences"
-              description="Build timed outreach steps for emails, waits, and follow-ups without writing code."
-            />
-            <SequencesSettingsTab />
-          </TabsContent>
-
-          {/* AI USAGE TAB — admin/owner only (org-wide spend dashboard). */}
-          {canManageSettings && (
-            <TabsContent value="ai-usage">
-              <SettingsHelp
-                title="AI usage"
-                description="Control AI limits and review which automations or agent actions are using credits."
-              />
-              <AiUsageSettingsTab />
-            </TabsContent>
-          )}
 
           {/* ORGANIZATION TAB — owner/admin only */}
           {canManageSettings && (
