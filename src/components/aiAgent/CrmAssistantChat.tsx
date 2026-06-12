@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Send, Bot, Loader2, Check, AlertTriangle, Mail, MoveRight, ListTodo, Paperclip, Sparkles, Building2, FolderKanban, Users } from 'lucide-react';
+import { Send, Bot, Loader2, Check, AlertTriangle, Mail, MoveRight, ListTodo, Paperclip, Sparkles, Building2, FolderKanban, Users, Zap, Megaphone } from 'lucide-react';
 import { uploadAttachment, type AttachmentEntityType } from '@/services/supabase/attachments';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,10 +23,11 @@ interface ChatMessage {
 }
 
 const QUICK_PROMPTS = [
-  { label: 'My workspaces', prompt: 'List all my workspaces and the projects inside each one.' },
   { label: 'Summarize my pipeline', prompt: 'Give me a quick summary of every stage in my pipeline — count, total value, and weighted value.' },
-  { label: 'Overdue tasks', prompt: 'List my overdue client tasks, oldest first.' },
+  { label: 'Build an automation', prompt: 'Create an automation: when a lead becomes hot, create a follow-up task and notify the owner.' },
+  { label: 'Build a campaign', prompt: 'Create an email campaign: a 3-step intro sequence for leads in the Enterprise category.' },
   { label: 'Hot leads', prompt: 'Show me my hot leads and who owns each.' },
+  { label: 'Overdue tasks', prompt: 'List my overdue client tasks, oldest first.' },
   { label: 'What should I do today?', prompt: "What's the most important thing I should do today to move deals forward?" },
 ];
 
@@ -163,6 +164,9 @@ export const CrmAssistantChat: React.FC = () => {
   };
 
   const userInitial = (user?.displayName?.charAt(0) ?? 'U').toUpperCase();
+  // Fresh conversation (only the welcome line) → show a centered hero with
+  // suggestions instead of a single bubble.
+  const isEmpty = messages.length === 1 && messages[0]?.id === 'welcome';
 
   return (
     <Card className="overflow-hidden border-border/70">
@@ -196,7 +200,33 @@ export const CrmAssistantChat: React.FC = () => {
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-transparent to-muted/20">
-          {messages.map((m) => {
+          {isEmpty ? (
+            <div className="h-full flex flex-col items-center justify-center text-center gap-5 px-4 py-8">
+              <span className="grid place-items-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md">
+                <Bot className="w-7 h-7" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold">How can I help with your CRM?</h2>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto mt-1">
+                  Ask in plain language — summarize your pipeline, build an automation or campaign,
+                  draft an email, create tasks. I always show a Confirm before changing anything.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+                {QUICK_PROMPTS.map((q) => (
+                  <button
+                    key={q.label}
+                    type="button"
+                    onClick={() => void send(q.prompt)}
+                    disabled={busy}
+                    className="text-left text-sm rounded-xl border border-border bg-card px-3.5 py-2.5 hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+                  >
+                    {q.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : messages.map((m) => {
             const isUser = m.role === 'user';
             return (
               <div key={m.id} className={cn('flex gap-2.5 items-start', isUser ? 'flex-row-reverse' : 'flex-row')}>
@@ -230,6 +260,8 @@ export const CrmAssistantChat: React.FC = () => {
                         const Icon = a.type === 'draft_email' ? Mail
                           : a.type === 'move_deal_stage' ? MoveRight
                           : (a.type === 'create_client_task' || a.type === 'create_pm_task' || a.type === 'assign_task') ? ListTodo
+                          : a.type === 'create_automation' ? Zap
+                          : a.type === 'create_campaign' ? Megaphone
                           : Sparkles;
                         const allowed = canRunAction(a.type, perms);
                         const acting = actingActionId === id;
@@ -271,7 +303,7 @@ export const CrmAssistantChat: React.FC = () => {
 
         {/* Composer */}
         <div className="border-t p-3 space-y-2 shrink-0 bg-card">
-          {!input.trim() && (
+          {!isEmpty && !input.trim() && (
             <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {QUICK_PROMPTS.map((q) => (
                 <button
