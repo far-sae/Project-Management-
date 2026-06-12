@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import {
-  Building2, ChevronRight, Layers, FileQuestion, Settings2,
+  Building2, ChevronRight, Layers, FileQuestion, Settings2, Download,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,10 @@ interface CrmCategoryLandingProps {
   onPick: (category: string | null) => void;
   /** Optional CTA on the header to open the full Manage dialog. */
   onManageCategories?: () => void;
+  /** When provided, each category tile gets an Export CSV action that exports
+   *  that category's accounts + their leads. Called with the bucket key
+   *  (lowercased category, or '__uncategorized__') and the display label. */
+  onExport?: (categoryKey: string, label: string) => void;
 }
 
 interface Bucket {
@@ -48,7 +52,7 @@ const accentFor = (key: string): string => {
 };
 
 export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
-  clients, registered = [], onPick, onManageCategories,
+  clients, registered = [], onPick, onManageCategories, onExport,
 }) => {
   // Build the union of registered + derived categories so historic free-text
   // entries still appear alongside categories the rep set up explicitly.
@@ -190,11 +194,15 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
                 ? 'bg-muted text-muted-foreground border-border'
                 : accentFor(b.key);
           return (
-            <button
+            <div
               key={b.key}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => onPick(b.key)}
-              className="group text-left rounded-lg border bg-card p-4 hover:border-primary/60 hover:shadow-sm transition-all"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(b.key); }
+              }}
+              className="group text-left rounded-lg border bg-card p-4 hover:border-primary/60 hover:shadow-sm transition-all cursor-pointer"
             >
               <div className="flex items-start gap-3">
                 <span
@@ -220,7 +228,19 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
                         <Badge variant="outline" className="text-[9px] shrink-0">saved</Badge>
                       )}
                     </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onExport && (
+                        <button
+                          type="button"
+                          title="Export accounts + leads (CSV)"
+                          onClick={(e) => { e.stopPropagation(); onExport(b.key, b.label); }}
+                          className="text-muted-foreground hover:text-foreground p-0.5 rounded opacity-60 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5 truncate">
                     {b.sample.length > 0
@@ -232,7 +252,7 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
                   </Badge>
                 </div>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { updateOrganization } from '@/services/supabase/organizations';
+import type { Organization, OrganizationMember } from '@/types/organization';
+import type { CustomRole } from '@/services/supabase/customRoles';
 import { listOrgGrants, setModuleGrant, type GrantRow, type CrmModule, type GrantLevel } from '@/services/supabase/crmGrants';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useProjects } from '@/hooks/useProjects';
@@ -33,10 +36,71 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from 'sonner';
 import { SUPPORT_EMAIL } from '@/lib/support-email';
 import { RolesAndAccessSection } from '@/components/team/RolesAndAccessSection';
+import {
+  Select as RoleSelect, SelectContent as RoleSelectContent, SelectItem as RoleSelectItem,
+  SelectTrigger as RoleSelectTrigger, SelectValue as RoleSelectValue,
+} from '@/components/ui/select';
+
+/**
+ * Inline role picker for a member row — assigns a built-in role or a custom
+ * role (reusing the org-wide roles). Persists customRoleId on the members
+ * jsonb via updateOrganization. Owner-only changes are gated by the caller.
+ */
+const MemberRoleSelect: React.FC<{
+  userId: string;
+  organization: Organization;
+  customRoles: CustomRole[];
+  onChanged: () => Promise<void> | void;
+}> = ({ userId, organization, customRoles, onChanged }) => {
+  const [busy, setBusy] = useState(false);
+  const orgMember = (organization.members ?? []).find((m) => m.userId === userId);
+  const role = orgMember?.role ?? 'member';
+  const value = orgMember?.customRoleId && customRoles.some((r) => r.roleId === orgMember.customRoleId)
+    ? `custom:${orgMember.customRoleId}`
+    : `builtin:${role}`;
+
+  const assign = async (v: string) => {
+    const next = (organization.members ?? []).map((m) => {
+      if (m.userId !== userId) return m;
+      if (v.startsWith('custom:')) {
+        // Keep a safe built-in baseline so deleting the custom role degrades
+        // gracefully rather than leaving stale access.
+        return { ...m, role: 'member' as const, customRoleId: v.slice('custom:'.length) };
+      }
+      return { ...m, role: v.slice('builtin:'.length) as OrganizationMember['role'], customRoleId: null };
+    });
+    setBusy(true);
+    try {
+      await updateOrganization(organization.organizationId, { members: next });
+      await onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update access');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+      <RoleSelect value={value} onValueChange={(v) => void assign(v)}>
+        <RoleSelectTrigger className="w-40 h-8"><RoleSelectValue /></RoleSelectTrigger>
+        <RoleSelectContent>
+          <RoleSelectItem value="builtin:admin">Admin (full)</RoleSelectItem>
+          <RoleSelectItem value="builtin:member">Member</RoleSelectItem>
+          <RoleSelectItem value="builtin:viewer">Viewer</RoleSelectItem>
+          {customRoles.map((r) => (
+            <RoleSelectItem key={r.roleId} value={`custom:${r.roleId}`}>{r.name}</RoleSelectItem>
+          ))}
+        </RoleSelectContent>
+      </RoleSelect>
+    </div>
+  );
+};
 
 export const Team: React.FC = () => {
   const { user } = useAuth();
-  const { organization, refreshOrganization, isAdmin } = useOrganization();
+  const { organization, refreshOrganization, isAdmin, customRoles } = useOrganization();
   const { projects, refreshProjects } = useProjects();
   const { hasFeature, currentTier, pricing } = useSubscription();
   const navigate = useNavigate();
@@ -712,7 +776,19 @@ export const Team: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {getRoleBadge(member.role)}
+                      {isAdmin && organization
+                        && organization.ownerId !== member.userId
+                        && member.userId !== user?.userId
+                        && (organization.members ?? []).some((m) => m.userId === member.userId) ? (
+                        <MemberRoleSelect
+                          userId={member.userId}
+                          organization={organization}
+                          customRoles={customRoles}
+                          onChanged={refreshOrganization}
+                        />
+                      ) : (
+                        getRoleBadge(member.role)
+                      )}
 
                       {/* Remove button - hide for owner */}
                       {isProjectOwner && member.role !== "owner" && (
