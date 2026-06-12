@@ -603,6 +603,7 @@ export const Clients: React.FC = () => {
                   }}
                   onDelete={async (lead) => { await removeLeadSvc(lead.leadId); }}
                   onImport={() => setOpenImportLead(true)}
+                  onOpen={(lead) => setSelectedLead(lead)}
                 />
               )}
 
