@@ -43,7 +43,7 @@ import { useClients } from '@/hooks/useClients';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
   Client, ClientStatus, ClientType,
-  CreateClientInput,
+  CreateClientInput, exportClientsToCsv,
 } from '@/services/supabase/clients';
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
 import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialog';
@@ -64,7 +64,7 @@ import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
 import { useContacts } from '@/hooks/useContacts';
 import { useLeads } from '@/hooks/useLeads';
 import type { Lead } from '@/services/supabase/leads';
-import { leadDisplayName } from '@/services/supabase/leads';
+import { leadDisplayName, exportLeadsToCsv } from '@/services/supabase/leads';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -181,6 +181,14 @@ export const Clients: React.FC = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [openCreateLead, setOpenCreateLead] = useState(false);
   const [openImportLead, setOpenImportLead] = useState(false);
+  // Prefill for adding/importing leads into a chosen account + category
+  // (from the "Add leads" form in the Unassigned card).
+  const [leadPrefill, setLeadPrefill] = useState<
+    { accountId: string; category: string | null; workspaceId: string | null } | null
+  >(null);
+  const [importPrefill, setImportPrefill] = useState<
+    { accountId: string; category: string | null; accountName: string; workspaceId: string | null } | null
+  >(null);
   const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
@@ -395,6 +403,28 @@ export const Clients: React.FC = () => {
     setSelected(updated);
   };
 
+  /** Export one category's accounts AND the leads attached to those accounts
+   *  as a single CSV (accounts block, then a leads block). */
+  const handleExportCategory = (categoryKey: string, label: string) => {
+    const inCategory = (c: Client) =>
+      categoryKey === '__uncategorized__'
+        ? !(c.category && c.category.trim())
+        : (c.category ?? '').trim().toLowerCase() === categoryKey.toLowerCase();
+    const catAccounts = clients.filter(inCategory);
+    const acctIds = new Set(catAccounts.map((a) => a.clientId));
+    const catLeads = allLeads.filter((l) => l.accountId && acctIds.has(l.accountId));
+    const csv =
+      `ACCOUNTS\n${exportClientsToCsv(catAccounts)}\n\nLEADS\n${exportLeadsToCsv(catLeads)}\n`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(label || 'category').replace(/[^\w-]+/g, '_')}_accounts_leads.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${catAccounts.length} account(s) + ${catLeads.length} lead(s)`);
+  };
+
   const handleDelete = async () => {
     if (!confirmDelete) return;
     setDeleting(true);
@@ -550,6 +580,7 @@ export const Clients: React.FC = () => {
                   clients={clients}
                   registered={registeredCategories}
                   onPick={exitLanding}
+                  onExport={handleExportCategory}
                   onManageCategories={canManageCategories
                     ? () => setOpenManageCategories(true)
                     : undefined}
@@ -571,6 +602,14 @@ export const Clients: React.FC = () => {
                       accountId, category,
                       workspaceId: acct?.workspaceId ?? lead.workspaceId,
                     });
+                  }}
+                  onAddLead={(accountId, category, _accountName, wsId) => {
+                    setLeadPrefill({ accountId, category, workspaceId: wsId });
+                    setOpenCreateLead(true);
+                  }}
+                  onImportLeads={(accountId, category, accountName, wsId) => {
+                    setImportPrefill({ accountId, category, accountName, workspaceId: wsId });
+                    setOpenImportLead(true);
                   }}
                 />
               )}
@@ -1042,7 +1081,10 @@ export const Clients: React.FC = () => {
       {/* Lead dialogs and drawer */}
       <ImportLeadsDialog
         open={openImportLead}
-        onOpenChange={setOpenImportLead}
+        onOpenChange={(o) => { setOpenImportLead(o); if (!o) setImportPrefill(null); }}
+        defaultAccountId={importPrefill?.accountId ?? null}
+        defaultAccountName={importPrefill?.accountName ?? null}
+        defaultCategory={importPrefill?.category ?? null}
         organizationId={organizationId}
         // Skip the implicit-workspace fallback when the user is in 'All
         // workspaces' / 'Unassigned' — the dialog will refuse to import
@@ -1097,9 +1139,13 @@ export const Clients: React.FC = () => {
           if (!o) {
             setOpenCreateLead(false);
             setEditingLead(null);
+            setLeadPrefill(null);
           }
         }}
         lead={editingLead}
+        defaultAccountId={editingLead ? null : leadPrefill?.accountId ?? null}
+        defaultCategory={editingLead ? null : leadPrefill?.category ?? null}
+        defaultWorkspaceId={editingLead ? null : leadPrefill?.workspaceId ?? null}
         onSubmit={async (input) => {
           try {
             if (editingLead) {
