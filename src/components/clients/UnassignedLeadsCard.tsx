@@ -32,6 +32,8 @@ interface Props {
   onDelete?: (lead: Lead) => Promise<void>;
   /** Open the lead CSV importer. */
   onImport?: () => void;
+  /** Open the lead's detail record. */
+  onOpen?: (lead: Lead) => void;
 }
 
 const NEW = '__new__';
@@ -44,7 +46,7 @@ const NEW = '__new__';
  */
 export const UnassignedLeadsCard: React.FC<Props> = ({
   organizationId, workspaceId, categories, canEdit, refreshKey = 0,
-  onMove, onDelete, onImport,
+  onMove, onDelete, onImport, onOpen,
 }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,12 +142,17 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
           <ul className="border rounded-md divide-y">
             {leads.map((l) => (
               <li key={l.leadId} className="px-3 py-2 flex items-center gap-2">
-                <div className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  className="flex-1 min-w-0 text-left hover:text-primary disabled:cursor-default disabled:hover:text-foreground"
+                  onClick={() => onOpen?.(l)}
+                  disabled={!onOpen}
+                >
                   <span className="font-medium">{leadDisplayName(l)}</span>
                   <span className="ml-2 text-xs text-muted-foreground">
                     {l.company} · {l.leadNumber} · {leadStatusLabel(l.leadStatus)}
                   </span>
-                </div>
+                </button>
                 {canEdit && (
                   <div className="flex items-center gap-1 shrink-0">
                     <Button size="sm" variant="outline" onClick={() => startMove(l)}>
