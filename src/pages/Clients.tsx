@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2, Plus, Search, Upload, Loader2,
-  Filter, Trash2, MoreVertical, TrendingUp,
+  Filter, Trash2, MoreVertical,
   Pencil, ArrowLeft, ChevronDown,
 } from 'lucide-react';
 import {
@@ -536,9 +536,6 @@ export const Clients: React.FC = () => {
                   <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
                 </TabsTrigger>
               )}
-              <TabsTrigger value="forecast">
-                <TrendingUp className="w-4 h-4 mr-1.5" /> Forecast
-              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="home" className="mt-4">
@@ -733,6 +730,22 @@ export const Clients: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="pipeline" className="mt-4 space-y-4">
+              {/* Forecast moved here (its own tab was removed): KPI tiles +
+                  charts on top, the pipeline board below. */}
+              {canViewModule('deals') && (
+                <div className="space-y-4 pb-2 border-b border-border">
+                  <div>
+                    <h2 className="text-lg font-semibold">Forecast</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Estimate likely revenue from open deals, grouped into easy sales projections.
+                    </p>
+                  </div>
+                  <ForecastTab
+                    displayCurrency={effectivePipelineCurrency}
+                    restrictToClientIds={workspaceClientIds}
+                  />
+                </div>
+              )}
               {(() => {
                 if (!canViewModule('deals')) {
                   return (
@@ -934,18 +947,6 @@ export const Clients: React.FC = () => {
               })()}
             </TabsContent>
 
-            <TabsContent value="forecast" className="mt-4 space-y-4">
-              <div>
-                <h2 className="text-lg font-semibold">Forecast</h2>
-                <p className="text-sm text-muted-foreground">
-                  Estimate likely revenue from open deals, grouped into easy sales projections.
-                </p>
-              </div>
-              <ForecastTab
-                displayCurrency={effectivePipelineCurrency}
-                restrictToClientIds={workspaceClientIds}
-              />
-            </TabsContent>
           </Tabs>
         </div>
       </main>
