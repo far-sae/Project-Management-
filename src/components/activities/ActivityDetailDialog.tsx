@@ -11,7 +11,7 @@ import {
 import {
   Calendar, ListTodo, Phone, MapPin, User, Clock, Trash2,
   CheckCircle2, Loader2, RotateCcw, Video, Edit3, Copy, ExternalLink,
-  ArrowDownLeft, ArrowUpRight, AlertTriangle, StickyNote, Mail, ClipboardCheck,
+  ArrowDownLeft, ArrowUpRight, AlertTriangle, StickyNote, Mail, ClipboardCheck, Handshake,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -43,6 +43,7 @@ const KIND_THEME: Record<import('@/services/supabase/activities').ActivityKind, 
   note:    { Icon: StickyNote,    accent: 'amber',   label: 'Note' },
   email:   { Icon: Mail,          accent: 'sky',     label: 'Email' },
   pm_task: { Icon: ClipboardCheck, accent: 'green',  label: 'Delivery' },
+  deal:    { Icon: Handshake,      accent: 'orange', label: 'Deal' },
 };
 
 const PRIORITY_DOT: Record<ClientTaskPriority, string> = {
@@ -60,6 +61,7 @@ const KIND_BANNER: Record<Activity['kind'], string> = {
   note:    'from-amber-500/15 via-amber-500/5 to-transparent',
   email:   'from-sky-500/15 via-sky-500/5 to-transparent',
   pm_task: 'from-green-500/15 via-green-500/5 to-transparent',
+  deal:    'from-orange-500/15 via-orange-500/5 to-transparent',
 };
 
 const KIND_ICON_BG: Record<Activity['kind'], string> = {
@@ -69,6 +71,7 @@ const KIND_ICON_BG: Record<Activity['kind'], string> = {
   note:    'bg-amber-500/15 text-amber-600 dark:text-amber-300',
   email:   'bg-sky-500/15 text-sky-600 dark:text-sky-300',
   pm_task: 'bg-green-500/15 text-green-600 dark:text-green-300',
+  deal:    'bg-orange-500/15 text-orange-600 dark:text-orange-300',
 };
 
 const TASK_STATUS_OPTS: ClientTaskStatus[] = ['pending', 'snoozed', 'done'];
