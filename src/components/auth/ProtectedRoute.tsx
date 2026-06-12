@@ -5,6 +5,7 @@ import { isAppOwner } from '@/lib/app-owner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSubscription, AppFeature } from '@/context/SubscriptionContext';
 import { Loader2 } from 'lucide-react';
+import type { PageKey } from '@/lib/pageCatalog';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -14,6 +15,9 @@ interface ProtectedRouteProps {
   requireOrgAdmin?: boolean;
   /** Block the route unless the user's plan includes this feature. */
   requireFeature?: AppFeature;
+  /** Block unless the user's role grants access (view or edit) to this page.
+   *  Drives custom-role / per-page gating; supersedes requireOrgAdmin where set. */
+  requirePage?: PageKey;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
@@ -22,10 +26,14 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requireAdmin = false,
   requireOrgAdmin = false,
   requireFeature,
+  requirePage,
 }) => {
   const { user, loading: authLoading } = useAuth();
   const { canAccessFeatures, hasFeature, loading: subLoading } = useSubscription();
-  const { isAdmin: isOrgAdminOrOwner, loading: orgLoading } = useOrganization();
+  const {
+    isAdmin: isOrgAdminOrOwner, loading: orgLoading,
+    canAccessPage, permissionsLoading,
+  } = useOrganization();
   const location = useLocation();
 
   // ── Loading state ──────────────────────────────────
@@ -83,6 +91,25 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // Wait for org info before deciding so we don't redirect during the
   // initial fetch race. Members land on /tasks (their personal home).
   if (requireOrgAdmin && !isOrgAdminOrOwner && !isAppOwner(user.userId)) {
+    return <Navigate to="/tasks" replace />;
+  }
+
+  // ── Per-page access (custom roles) ─────────────────
+  // Wait until org + custom roles are loaded so we don't decide on stale
+  // (member-fallback) permissions for a custom-role user. App owner bypasses.
+  if (requirePage && permissionsLoading && !isAppOwner(user.userId)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto" />
+          <p className="mt-2 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  // my_tasks is always available, so /tasks is a safe landing page for anyone
+  // bounced from a page their role doesn't grant.
+  if (requirePage && !canAccessPage(requirePage) && !isAppOwner(user.userId)) {
     return <Navigate to="/tasks" replace />;
   }
 

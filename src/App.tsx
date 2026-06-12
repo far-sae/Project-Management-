@@ -181,7 +181,7 @@ const router = createBrowserRouter(
             {
               path: '/dashboard',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="dashboard">
                   {lazyAppRoute(<Dashboard />)}
                 </ProtectedRoute>
               ),
@@ -189,7 +189,7 @@ const router = createBrowserRouter(
             {
               path: '/dashboard/projects',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="projects_analytics">
                   {lazyAppRoute(<ProjectsDashboard />)}
                 </ProtectedRoute>
               ),
@@ -197,7 +197,7 @@ const router = createBrowserRouter(
             {
               path: '/dashboard/clients',
               element: (
-                <ProtectedRoute requireSubscription requireFeature="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm_analytics">
                   {lazyAppRoute(<ClientsDashboardPage />)}
                 </ProtectedRoute>
               ),
@@ -205,7 +205,7 @@ const router = createBrowserRouter(
             {
               path: '/dashboard/insights',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="insights">
                   {lazyAppRoute(<InsightsDashboard />)}
                 </ProtectedRoute>
               ),
@@ -213,7 +213,7 @@ const router = createBrowserRouter(
             {
               path: '/project/:projectId',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="project_management">
                   {lazyAppRoute(<KeyedProjectView />)}
                 </ProtectedRoute>
               ),
@@ -221,7 +221,7 @@ const router = createBrowserRouter(
             {
               path: '/tasks',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="my_tasks">
                   {lazyAppRoute(<MyTasks />)}
                 </ProtectedRoute>
               ),
@@ -229,7 +229,7 @@ const router = createBrowserRouter(
             {
               path: '/inbox',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="inbox">
                   {lazyAppRoute(<Inbox />)}
                 </ProtectedRoute>
               ),
@@ -237,7 +237,7 @@ const router = createBrowserRouter(
             {
               path: '/workload',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="workload">
                   {lazyAppRoute(<Workload />)}
                 </ProtectedRoute>
               ),
@@ -245,7 +245,7 @@ const router = createBrowserRouter(
             {
               path: '/team',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="team">
                   {lazyAppRoute(<Team />)}
                 </ProtectedRoute>
               ),
@@ -253,7 +253,7 @@ const router = createBrowserRouter(
             {
               path: '/calendar',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="calendar">
                   {lazyAppRoute(<CalendarPage />)}
                 </ProtectedRoute>
               ),
@@ -264,7 +264,7 @@ const router = createBrowserRouter(
               // inside the page itself (they're redirected to /tasks).
               path: '/files',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="files">
                   {lazyAppRoute(<Files />)}
                 </ProtectedRoute>
               ),
@@ -272,7 +272,7 @@ const router = createBrowserRouter(
             {
               path: '/comments',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="comments">
                   {lazyAppRoute(<Comments />)}
                 </ProtectedRoute>
               ),
@@ -280,7 +280,7 @@ const router = createBrowserRouter(
             {
               path: '/contracts',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="contracts">
                   {lazyAppRoute(<Contracts />)}
                 </ProtectedRoute>
               ),
@@ -288,7 +288,7 @@ const router = createBrowserRouter(
             {
               path: '/time',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="hr">
                   {lazyAppRoute(<TimeTracking />)}
                 </ProtectedRoute>
               ),
@@ -296,7 +296,7 @@ const router = createBrowserRouter(
             {
               path: '/expenses',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="hr">
                   {lazyAppRoute(<ExpensesPage />)}
                 </ProtectedRoute>
               ),
@@ -304,7 +304,7 @@ const router = createBrowserRouter(
             {
               path: '/hr',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="hr">
                   {lazyAppRoute(<HRPage />)}
                 </ProtectedRoute>
               ),
@@ -312,7 +312,7 @@ const router = createBrowserRouter(
             {
               path: '/payroll',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="hr">
                   {lazyAppRoute(<PayrollPage />)}
                 </ProtectedRoute>
               ),
@@ -320,7 +320,7 @@ const router = createBrowserRouter(
             {
               path: '/billing',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="billing">
                   {lazyAppRoute(<BillingPage />)}
                 </ProtectedRoute>
               ),
@@ -333,7 +333,7 @@ const router = createBrowserRouter(
               // reps need to log + close their own activities from here.
               path: '/clients/activity',
               element: (
-                <ProtectedRoute requireSubscription requireFeature="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
                   {lazyAppRoute(<ClientsActivity />)}
                 </ProtectedRoute>
               ),
@@ -344,7 +344,7 @@ const router = createBrowserRouter(
               // account, bulk edit) are gated inside the page itself.
               path: '/clients',
               element: (
-                <ProtectedRoute requireSubscription requireFeature="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
                   {lazyAppRoute(<ClientsPage />)}
                 </ProtectedRoute>
               ),
@@ -354,7 +354,7 @@ const router = createBrowserRouter(
               // on their own deals/contacts.
               path: '/ai-agent',
               element: (
-                <ProtectedRoute requireSubscription requireFeature="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="ai_agent">
                   {lazyAppRoute(<AIAgentPage />)}
                 </ProtectedRoute>
               ),
@@ -362,7 +362,7 @@ const router = createBrowserRouter(
             {
               path: '/reports',
               element: (
-                <ProtectedRoute requireSubscription requireOrgAdmin>
+                <ProtectedRoute requireSubscription requirePage="reports">
                   {lazyAppRoute(<Reports />)}
                 </ProtectedRoute>
               ),
@@ -370,7 +370,7 @@ const router = createBrowserRouter(
             {
               path: '/timeline',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="timeline">
                   {lazyAppRoute(<TimelineOverview />)}
                 </ProtectedRoute>
               ),
@@ -378,7 +378,7 @@ const router = createBrowserRouter(
             {
               path: '/settings',
               element: (
-                <ProtectedRoute requireSubscription>
+                <ProtectedRoute requireSubscription requirePage="settings">
                   {lazyAppRoute(<Settings />)}
                 </ProtectedRoute>
               ),
