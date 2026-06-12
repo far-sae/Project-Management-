@@ -61,13 +61,9 @@ export const useLeads = () => {
     });
   }, [orgId]);
 
-  // Workspace filter (same shape as useClients).
-  const leads = useMemo(() => {
-    if (isAll) return allLeads;
-    if (isUnassigned) return [];
-    if (!selectedWorkspaceId) return allLeads;
-    return allLeads.filter((l) => l.workspaceId === selectedWorkspaceId);
-  }, [allLeads, selectedWorkspaceId, isAll, isUnassigned]);
+  // CRM is org-global — leads are NOT scoped to the selected workspace
+  // (matches useClients; workspaces are a post-win delivery concept).
+  const leads = allLeads;
 
   const activeWorkspaceId = useMemo(() => {
     if (!isAll && !isUnassigned && selectedWorkspaceId) return selectedWorkspaceId;

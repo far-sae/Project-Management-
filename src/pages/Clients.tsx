@@ -335,10 +335,9 @@ export const Clients: React.FC = () => {
   // Shared allow-list for every workspace-scoped view (kanban, analytics,
   // tasks, forecast). When the sidebar shows "All workspaces" we pass null
   // so the downstream components skip filtering entirely.
-  const workspaceClientIds = useMemo(
-    () => (isAllWorkspaces ? null : new Set(clients.map((c) => c.clientId))),
-    [isAllWorkspaces, clients],
-  );
+  // CRM is org-global now — no workspace restriction on the kanban /
+  // analytics / forecast views (null = show everything in the org).
+  const workspaceClientIds = useMemo<Set<string> | null>(() => null, []);
 
   // Known category names (for the lead move dialog + category landing) —
   // union of registered categories + any typed on accounts or leads.
@@ -591,7 +590,7 @@ export const Clients: React.FC = () => {
               {canViewModule('leads') && (
                 <UnassignedLeadsCard
                   organizationId={organizationId}
-                  workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
+                  workspaceId={null}
                   categories={knownCategories}
                   canEdit={canCreateLead && canEditModule('leads')}
                   refreshKey={unassignedRefresh}

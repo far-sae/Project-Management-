@@ -59,16 +59,11 @@ export const useClients = () => {
     });
   }, [orgId]);
 
-  // Clients are workspace-scoped: each workspace gets its own list. The
-  // sidebar's "All workspaces" view still aggregates everything so users can
-  // search across the org. "Unassigned" is a no-op for clients (every row has
-  // a workspace post-092) and shows an empty list.
-  const clients = useMemo(() => {
-    if (isAll) return allClients;
-    if (isUnassigned) return [];
-    if (!selectedWorkspaceId) return allClients;
-    return allClients.filter((c) => c.workspaceId === selectedWorkspaceId);
-  }, [allClients, selectedWorkspaceId, isAll, isUnassigned]);
+  // CRM is org-global — accounts are NOT scoped to the selected workspace.
+  // Workspaces are a delivery concept (created when a deal is WON), not a CRM
+  // filter, so the accounts list shows the whole org regardless of the sidebar
+  // workspace.
+  const clients = allClients;
 
   // What workspace should a newly created client land in? Prefer the sidebar
   // selection; fall back to the org's default workspace if the sidebar is
