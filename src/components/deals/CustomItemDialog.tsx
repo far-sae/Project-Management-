@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select';
 import { useDeals } from '@/hooks/useDeals';
 import { DEAL_STAGES, Deal, DealStage } from '@/services/supabase/deals';
-import { CustomPropertiesEditor } from '@/components/leads/CustomPropertiesEditor';
+import { CustomFieldsBuilder } from '@/components/deals/CustomFieldsBuilder';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import { toast } from 'sonner';
 
@@ -36,9 +36,11 @@ interface Props {
  * table: it reuses the deals table so it shows up in the rail/board/pipeline
  * tab alongside standard deals.
  *
- * Fields: Title (required), optional Value + currency, optional Stage
- * (defaults to the first stage), and a CustomPropertiesEditor over the item's
- * customFields.
+ * Fields: Title (required), optional Value + currency, and a rich
+ * CustomFieldsBuilder over the item's customFields. Custom items are NOT bound
+ * to a pipeline stage — there is no Stage field; the stored deal's stage is
+ * defaulted internally (first stage, e.g. 'lead') purely so it satisfies the
+ * deals table.
  */
 export const CustomItemDialog: React.FC<Props> = ({
   open, onOpenChange, clientId = null, defaultStage, deal = null,
@@ -48,10 +50,14 @@ export const CustomItemDialog: React.FC<Props> = ({
   const [busy, setBusy] = useState(false);
   const isEdit = Boolean(deal);
 
+  // Custom items aren't shown a Stage field. The stored deal still needs a
+  // stage for the table, so we default it internally (preserve the existing
+  // stage on edit, otherwise the first stage / caller-provided default).
+  const internalStage: DealStage = deal?.stage ?? defaultStage ?? DEAL_STAGES[0].id;
+
   const [title, setTitle] = useState('');
   const [value, setValue] = useState('');
   const [currency, setCurrency] = useState(orgCurrency);
-  const [stage, setStage] = useState<DealStage>(DEAL_STAGES[0].id);
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
@@ -60,14 +66,12 @@ export const CustomItemDialog: React.FC<Props> = ({
       setTitle(deal.title ?? '');
       setValue(deal.value ? String(deal.value) : '');
       setCurrency(deal.currency || orgCurrency);
-      setStage(deal.stage ?? DEAL_STAGES[0].id);
       setCustomFields(deal.customFields ?? {});
       return;
     }
     setTitle('');
     setValue('');
     setCurrency(orgCurrency);
-    setStage(defaultStage ?? DEAL_STAGES[0].id);
     setCustomFields({});
   }, [open, deal, orgCurrency, defaultStage]);
 
@@ -86,7 +90,7 @@ export const CustomItemDialog: React.FC<Props> = ({
         clientId: clientId ?? deal?.clientId ?? null,
         value: numericValue,
         currency,
-        stage,
+        stage: internalStage,
         dealType: 'custom',
         customFields,
       };
@@ -153,20 +157,9 @@ export const CustomItemDialog: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="ci-stage">Stage</Label>
-            <Select value={stage} onValueChange={(v) => setStage(v as DealStage)}>
-              <SelectTrigger id="ci-stage"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {DEAL_STAGES.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="border-t pt-3">
-            <CustomPropertiesEditor
+            <CustomFieldsBuilder
               fields={customFields}
-              editable
               onChange={(next) => setCustomFields(next)}
             />
           </div>

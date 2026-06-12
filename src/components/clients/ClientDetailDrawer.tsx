@@ -10,6 +10,10 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAuth } from '@/context/AuthContext';
 import { useEmailEnabled } from '@/hooks/useEmailEnabled';
 import {
@@ -31,6 +35,7 @@ import { InlineField } from '@/components/leads/InlineField';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { CustomItemDialog } from '@/components/deals/CustomItemDialog';
 import { DealStagePicker } from '@/components/deals/DealStagePicker';
+import { useDeals } from '@/hooks/useDeals';
 import { AccountStageHistoryCard } from '@/components/clients/AccountStageHistoryCard';
 import { useOrganization } from '@/context/OrganizationContext';
 import { usePipelines } from '@/hooks/usePipelines';
@@ -76,6 +81,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
   const { canEditModule } = useOrganization();
+  const { remove: removeDeal } = useDeals();
   // Account (client) write access isn't a grant module — there is no
   // canEditModule('crm'). It's governed by canManage (owner/admin/manager),
   // same as the Edit/Delete controls. Deals/Leads sub-features still use
@@ -109,12 +115,34 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   const [deals, setDeals] = useState<Deal[]>([]);
   const [clientActivities, setClientActivities] = useState<Activity[]>([]);
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
+  // Standard-deal edit (DealFormDialog in edit mode), opened from a rail row's
+  // Edit action.
+  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   // Custom-item create / edit. `editingCustomItem` holds the custom deal being
   // edited (clicking a custom row opens the dialog in edit mode).
   const [openCustomItem, setOpenCustomItem] = useState(false);
   const [editingCustomItem, setEditingCustomItem] = useState<Deal | null>(null);
   // Bumped after a deal is added or its stage changes so the rail re-queries.
   const [dealsRefresh, setDealsRefresh] = useState(0);
+  // Rail delete: which deal is pending a confirm, and whether a delete is
+  // in flight.
+  const [deletingDeal, setDeletingDeal] = useState<Deal | null>(null);
+  const [dealDeleteBusy, setDealDeleteBusy] = useState(false);
+
+  const handleDeleteDeal = async () => {
+    if (!deletingDeal) return;
+    setDealDeleteBusy(true);
+    try {
+      await removeDeal(deletingDeal.dealId);
+      toast.success(`Deleted "${deletingDeal.title}"`);
+      setDeletingDeal(null);
+      setDealsRefresh((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete');
+    } finally {
+      setDealDeleteBusy(false);
+    }
+  };
 
   // Reload everything when the open client changes.
   useEffect(() => {
@@ -404,6 +432,8 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               onNewDeal={() => setOpenCreateDeal(true)}
               onNewCustomItem={() => { setEditingCustomItem(null); setOpenCustomItem(true); }}
               onEditCustomItem={(d) => { setEditingCustomItem(d); setOpenCustomItem(true); }}
+              onEditDeal={(d) => setEditingDeal(d)}
+              onDeleteDeal={(d) => setDeletingDeal(d)}
               onStageChanged={() => setDealsRefresh((k) => k + 1)}
             />
           </aside>
@@ -429,6 +459,45 @@ export const ClientDetailDrawer: React.FC<Props> = ({
         clientId={client.clientId}
         deal={editingCustomItem}
       />
+
+      {/* Edit a standard deal from the rail (DealFormDialog in edit mode). */}
+      <DealFormDialog
+        open={!!editingDeal}
+        onOpenChange={(o) => {
+          if (!o) { setEditingDeal(null); setDealsRefresh((k) => k + 1); }
+        }}
+        deal={editingDeal}
+        clients={[client]}
+        contacts={contacts}
+        defaultClientId={client.clientId}
+      />
+
+      {/* Confirm deal/custom-item delete from the rail. */}
+      <AlertDialog
+        open={!!deletingDeal}
+        onOpenChange={(o) => { if (!o && !dealDeleteBusy) setDeletingDeal(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes <strong>{deletingDeal?.title}</strong> from
+              the pipeline. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dealDeleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDeal}
+              disabled={dealDeleteBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {dealDeleteBusy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              <Trash2 className="w-4 h-4 mr-1" /> Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
@@ -601,10 +670,13 @@ const DealsCard: React.FC<{
   onNewDeal: () => void;
   onNewCustomItem: () => void;
   onEditCustomItem: (d: Deal) => void;
+  onEditDeal: (d: Deal) => void;
+  onDeleteDeal: (d: Deal) => void;
   onStageChanged: () => void;
 }> = ({
   deals, canCreate, canChangeStage, stagesByPipeline, defaultPipelineId,
-  onNewDeal, onNewCustomItem, onEditCustomItem, onStageChanged,
+  onNewDeal, onNewCustomItem, onEditCustomItem, onEditDeal, onDeleteDeal,
+  onStageChanged,
 }) => {
   const formatMoney = useFormatMoney();
   return (
@@ -641,8 +713,7 @@ const DealsCard: React.FC<{
             return (
               <li
                 key={d.dealId}
-                className={`rounded-md border p-2.5 space-y-2${isCustom ? ' cursor-pointer hover:border-primary/50' : ''}`}
-                onClick={isCustom ? () => onEditCustomItem(d) : undefined}
+                className="rounded-md border p-2.5 space-y-2"
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-sm font-medium truncate inline-flex items-center gap-1.5">
@@ -655,15 +726,35 @@ const DealsCard: React.FC<{
                     {formatMoney(d.value, d.currency)}
                   </span>
                 </div>
-                <div onClick={(e) => e.stopPropagation()}>
-                  {canChangeStage ? (
+                {/* Standard deals keep the stage control; custom items show
+                    only their value (above) — no stage control. */}
+                {!isCustom && (
+                  canChangeStage ? (
                     <DealStagePicker deal={d} stages={stages} onChanged={onStageChanged} />
                   ) : (
                     <Badge variant="outline" className="text-[10px]">
                       {stages?.find((s) => s.key === d.stage)?.label ?? d.stage}
                     </Badge>
-                  )}
-                </div>
+                  )
+                )}
+                {canChangeStage && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 text-xs px-2"
+                      onClick={() => (isCustom ? onEditCustomItem(d) : onEditDeal(d))}
+                    >
+                      <Edit className="w-3.5 h-3.5 mr-1" /> Edit
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 text-xs px-2 text-destructive hover:text-destructive"
+                      onClick={() => onDeleteDeal(d)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+                    </Button>
+                  </div>
+                )}
               </li>
             );
           })}
