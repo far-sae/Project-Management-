@@ -3,6 +3,15 @@ import {
   Loader2, Plus, MoreVertical, ArrowUp, ArrowDown, Trash2, Sparkles, AlertTriangle,
   Send, Pin, X,
 } from "lucide-react";
+import {
+  DndContext, closestCenter, PointerSensor, KeyboardSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { cn } from "@/lib/utils";
 import { useOrganization } from "@/context/OrganizationContext";
 import { useAuth } from "@/context/AuthContext";
 import { useFormatMoney } from "@/hooks/useFormatMoney";
@@ -36,7 +45,7 @@ import {
   getOrCreateMyDashboard, saveWidgets, type Dashboard, type Widget,
 } from "@/services/dashboards/dashboards";
 import {
-  addWidget, removeWidget, reorderWidget, setWidgetSize, type WidgetSize,
+  addWidget, removeWidget, reorderWidget, moveWidget, setWidgetSize, type WidgetSize,
 } from "@/lib/dashboardWidgets";
 import {
   askDashboardAI, isFailure, type AiWidgetSpec,
@@ -128,7 +137,13 @@ const WidgetView: React.FC<{
   const menu = hideMenu ? null : (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7 -mr-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 -mr-1"
+          // Stop the drag sensor from claiming this press so the menu opens.
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <MoreVertical className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -534,6 +549,43 @@ const AskAi: React.FC<{
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sortable wrapper — makes a whole widget tile drag-and-droppable. The tile is
+// also the grid cell (so dnd-kit measures the right element incl. its col-span).
+// Whole-tile drag matches the kanban convention; the per-widget … menu opts out
+// of the drag via stopPropagation so it still opens on click.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SortableWidget: React.FC<{
+  widget: Widget;
+  children: React.ReactNode;
+}> = ({ widget, children }) => {
+  const {
+    attributes, listeners, setNodeRef, transform, transition, isDragging,
+  } = useSortable({ id: widget.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        SIZE_SPAN[widget.size],
+        "touch-none cursor-grab active:cursor-grabbing",
+        isDragging && "z-20 opacity-80",
+      )}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -591,6 +643,23 @@ export const InsightsDashboard: React.FC = () => {
     [dashboard?.widgets],
   );
 
+  // Drag-and-drop reorder. distance:8 so clicks (e.g. the … menu) aren't drags;
+  // the keyboard sensor makes the grid reorderable with the arrow keys too.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = useCallback(
+    (e: DragEndEvent) => {
+      const { active, over } = e;
+      if (over && active.id !== over.id) {
+        persist(moveWidget(widgets, String(active.id), String(over.id)));
+      }
+    },
+    [persist, widgets],
+  );
+
   // Pin an AI-previewed spec onto the dashboard as a real widget (order =
   // last+1). Reuses the same addWidget + persist path as the Add dialog.
   const pinFromAi = useCallback(
@@ -638,7 +707,7 @@ export const InsightsDashboard: React.FC = () => {
             <Sparkles className="h-5 w-5 text-orange-500" /> Insights
           </h1>
           <p className="text-sm text-muted-foreground">
-            Your customizable dashboard. Add widgets and arrange them how you like.
+            Your customizable dashboard. Add widgets and drag them to arrange how you like.
           </p>
         </div>
         <Button onClick={() => setAddOpen(true)}>
@@ -663,22 +732,33 @@ export const InsightsDashboard: React.FC = () => {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-          {widgets.map((w) => (
-            <div key={w.id} className={SIZE_SPAN[w.size]}>
-              <WidgetBoundary title={w.title}>
-                <WidgetView
-                  widget={w}
-                  orgId={orgId}
-                  fmtMoney={fmtMoney}
-                  onReorder={(dir) => persist(reorderWidget(widgets, w.id, dir))}
-                  onResize={(size) => persist(setWidgetSize(widgets, w.id, size))}
-                  onRemove={() => persist(removeWidget(widgets, w.id))}
-                />
-              </WidgetBoundary>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={widgets.map((w) => w.id)}
+            strategy={rectSortingStrategy}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+              {widgets.map((w) => (
+                <SortableWidget key={w.id} widget={w}>
+                  <WidgetBoundary title={w.title}>
+                    <WidgetView
+                      widget={w}
+                      orgId={orgId}
+                      fmtMoney={fmtMoney}
+                      onReorder={(dir) => persist(reorderWidget(widgets, w.id, dir))}
+                      onResize={(size) => persist(setWidgetSize(widgets, w.id, size))}
+                      onRemove={() => persist(removeWidget(widgets, w.id))}
+                    />
+                  </WidgetBoundary>
+                </SortableWidget>
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <AddWidgetDialog

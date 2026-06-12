@@ -4,6 +4,7 @@ import {
   addWidget,
   removeWidget,
   reorderWidget,
+  moveWidget,
   setWidgetSize,
 } from "@/lib/dashboardWidgets";
 import type { Widget } from "@/services/dashboards/dashboards";
@@ -75,6 +76,37 @@ describe("dashboardWidgets helpers", () => {
     expect(reorderWidget(list, "b", "down").map((w) => w.id)).toEqual(["a", "b"]);
     // unknown id is a no-op
     expect(reorderWidget(list, "zzz", "up").map((w) => w.id)).toEqual(["a", "b"]);
+  });
+
+  it("moveWidget drops a widget into an arbitrary slot (drag reorder)", () => {
+    const list = [
+      mk({ id: "a", order: 0 }),
+      mk({ id: "b", order: 1 }),
+      mk({ id: "c", order: 2 }),
+      mk({ id: "d", order: 3 }),
+    ];
+    // drag "a" onto "c" → a lands where c was, shifting b/c left
+    const fwd = moveWidget(list, "a", "c");
+    expect(fwd.map((w) => w.id)).toEqual(["b", "c", "a", "d"]);
+    expect(fwd.map((w) => w.order)).toEqual([0, 1, 2, 3]);
+
+    // drag "d" onto "a" → d jumps to the front
+    const back = moveWidget(list, "d", "a");
+    expect(back.map((w) => w.id)).toEqual(["d", "a", "b", "c"]);
+    expect(back.map((w) => w.order)).toEqual([0, 1, 2, 3]);
+
+    // original untouched
+    expect(list.map((w) => w.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("moveWidget is a no-op for same id or unknown ids", () => {
+    const list = [
+      mk({ id: "a", order: 0 }),
+      mk({ id: "b", order: 1 }),
+    ];
+    expect(moveWidget(list, "a", "a").map((w) => w.id)).toEqual(["a", "b"]);
+    expect(moveWidget(list, "zzz", "a").map((w) => w.id)).toEqual(["a", "b"]);
+    expect(moveWidget(list, "a", "zzz").map((w) => w.id)).toEqual(["a", "b"]);
   });
 
   it("setWidgetSize updates only the matching widget's size", () => {

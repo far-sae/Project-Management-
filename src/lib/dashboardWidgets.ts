@@ -46,6 +46,27 @@ export const reorderWidget = <T extends WidgetLike>(
   return resequence(next);
 };
 
+/**
+ * Move the widget `activeId` to the slot currently held by `overId`
+ * (drag-and-drop reorder to an arbitrary position), then re-sequence.
+ * No-op when either id is unknown or they're the same.
+ */
+export const moveWidget = <T extends WidgetLike>(
+  widgets: T[],
+  activeId: string,
+  overId: string,
+): T[] => {
+  // Operate on a position-sorted copy so the visible order matches `order`.
+  const sorted = [...widgets].sort((a, b) => a.order - b.order);
+  const from = sorted.findIndex((w) => w.id === activeId);
+  const to = sorted.findIndex((w) => w.id === overId);
+  if (from === -1 || to === -1 || from === to) return resequence(widgets);
+  const next = [...sorted];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return resequence(next);
+};
+
 /** Set the size of the widget with `id` (no-op if absent). */
 export const setWidgetSize = <T extends WidgetLike>(
   widgets: T[],
