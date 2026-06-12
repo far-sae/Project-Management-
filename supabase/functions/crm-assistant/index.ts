@@ -46,7 +46,8 @@ interface ProposedAction {
     | "create_meeting" | "create_call" | "log_note"
     | "update_deal" | "update_lead_status"
     | "create_client_task" | "create_pm_task" | "assign_task"
-    | "create_project" | "create_workspace";
+    | "create_project" | "create_workspace"
+    | "create_automation";
   label: string;
   payload: Record<string, unknown>;
 }
@@ -189,6 +190,8 @@ const TOOLS = [
     input_schema: { type: "object", properties: { name: { type: "string" }, workspace_id: { type: "string" } }, required: ["name"] } },
   { name: "propose_create_workspace", description: "Propose creating a workspace.",
     input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
+  { name: "propose_create_automation", description: "Propose creating an automation from a plain-English description, e.g. 'when a lead becomes hot, create a follow-up task and notify the owner'. Give a short name plus a full description of the trigger AND what should happen (conditions + actions). It is built into a recipe and saved live on confirm.",
+    input_schema: { type: "object", properties: { name: { type: "string" }, description: { type: "string" } }, required: ["name","description"] } },
 ] as const;
 
 // Gate Deals/Leads READ tools by the #4 module grant (the admin client bypasses
@@ -356,6 +359,8 @@ const runTool = async (
       return { result: { status: "proposed" }, proposed: { type: "create_project", label: `Create project "${String(input.name ?? "")}"`, payload: input } };
     case "propose_create_workspace":
       return { result: { status: "proposed" }, proposed: { type: "create_workspace", label: `Create workspace "${String(input.name ?? "")}"`, payload: input } };
+    case "propose_create_automation":
+      return { result: { status: "proposed" }, proposed: { type: "create_automation", label: `Create automation "${String(input.name ?? "")}"`, payload: input } };
     default:
       return { result: { error: `Unknown tool: ${name}` } };
   }

@@ -7,7 +7,8 @@ export type AgentActionType =
   | "create_meeting" | "create_call" | "log_note"
   | "update_deal" | "update_lead_status"
   | "create_client_task" | "create_pm_task" | "assign_task"
-  | "create_project" | "create_workspace";
+  | "create_project" | "create_workspace"
+  | "create_automation" | "create_campaign";
 
 export interface ProposedAction {
   type: AgentActionType;

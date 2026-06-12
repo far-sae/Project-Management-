@@ -18,6 +18,7 @@ import { createTask } from '@/services/supabase/database';
 import { createWorkspace } from '@/services/supabase/workspaces';
 import { createMeeting } from '@/services/supabase/meetings';
 import { createCall } from '@/services/supabase/calls';
+import { draftAutomationFromText, upsertRecipe } from '@/services/supabase/automations';
 import { ProposedAction, canRunAction, ActionPerms } from '@/services/agent/agentActions';
 import { useMemo } from 'react';
 
@@ -255,6 +256,21 @@ export const useAgentActionRunner = (): {
           await createWorkspace({ name, organizationId: orgId });
           toast.success(`Workspace "${name}" created`);
           return { ok: true };
+        }
+
+        // ── Automation ────────────────────────────────────────────────────
+        // The agent captures intent (name + plain-English description); we turn
+        // it into a recipe via the NL author, then save it live (enabled).
+        case 'create_automation': {
+          const name = String(p.name ?? '').trim() || 'New automation';
+          const description = String(p.description ?? '').trim();
+          if (!description) { toast.error('Describe what the automation should do'); return { ok: false }; }
+          const draft = await draftAutomationFromText(orgId, description);
+          draft.name = name;
+          draft.enabled = true;
+          const recipe = await upsertRecipe(orgId, null, draft);
+          toast.success(`Automation "${name}" is live`);
+          return { ok: true, created: { type: 'automation', id: recipe.recipeId, label: name } };
         }
 
         // ── Meeting / Call actions ────────────────────────────────────────
