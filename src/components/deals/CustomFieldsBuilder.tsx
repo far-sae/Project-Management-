@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/select';
 
 /** The field types a user can build for a custom item. */
-export type CustomFieldType = 'text' | 'number' | 'date' | 'dropdown' | 'checkbox';
+export type CustomFieldType = 'text' | 'number' | 'date' | 'dropdown' | 'checkbox' | 'money';
 
 /** A single user-defined field on a custom item. Persisted (as an array)
  *  under `customFields._fields` so the rest of the app — which reads plain
@@ -18,17 +18,23 @@ export interface CustomFieldDef {
   type: CustomFieldType;
   /** Only present for `dropdown` — the user's own option list. */
   options?: string[];
-  /** Value matching the type: string (text/date/dropdown), number, boolean. */
+  /** Only present for `money` — the chosen currency code. */
+  currency?: string;
+  /** Value matching the type: string (text/date/dropdown), number
+   *  (number/money), boolean (checkbox). */
   value: string | number | boolean | null;
 }
 
 const FIELD_TYPE_OPTIONS: { value: CustomFieldType; label: string }[] = [
   { value: 'text', label: 'Text' },
   { value: 'number', label: 'Number' },
+  { value: 'money', label: 'Money' },
   { value: 'date', label: 'Date' },
   { value: 'dropdown', label: 'Dropdown' },
   { value: 'checkbox', label: 'Checkbox' },
 ];
+
+const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
 
 const FIELDS_KEY = '_fields';
 
@@ -44,6 +50,7 @@ const newId = (): string => {
 const defaultValueForType = (type: CustomFieldType): CustomFieldDef['value'] => {
   switch (type) {
     case 'number': return null;
+    case 'money': return null;
     case 'checkbox': return false;
     default: return '';
   }
@@ -70,13 +77,15 @@ export const readFields = (fields: Record<string, unknown> | null | undefined): 
         : undefined;
       let value = f.value as CustomFieldDef['value'];
       if (type === 'checkbox') value = Boolean(value);
-      else if (type === 'number') value = value == null || value === '' ? null : Number(value);
+      else if (type === 'number' || type === 'money') value = value == null || value === '' ? null : Number(value);
       else value = value == null ? '' : String(value);
+      const currency = typeof f.currency === 'string' && f.currency ? f.currency : 'USD';
       return {
         id: typeof f.id === 'string' ? f.id : newId(),
         label: typeof f.label === 'string' ? f.label : '',
         type,
         ...(type === 'dropdown' ? { options: options ?? [] } : {}),
+        ...(type === 'money' ? { currency } : {}),
         value,
       } as CustomFieldDef;
     });
@@ -102,6 +111,8 @@ interface Props {
   /** The full customFields record (the builder owns only the `_fields` key). */
   fields: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  /** Currency seeded onto a newly-added Money field. Defaults to USD. */
+  defaultCurrency?: string;
 }
 
 /**
@@ -110,7 +121,7 @@ interface Props {
  * value input matching the type. Dropdown fields let the user manage their
  * own option list. The whole array is persisted under `customFields._fields`.
  */
-export const CustomFieldsBuilder: React.FC<Props> = ({ fields, onChange }) => {
+export const CustomFieldsBuilder: React.FC<Props> = ({ fields, onChange, defaultCurrency = 'USD' }) => {
   const defs = readFields(fields);
 
   const commit = (next: CustomFieldDef[]) => onChange(writeFields(fields, next));
@@ -134,8 +145,10 @@ export const CustomFieldsBuilder: React.FC<Props> = ({ fields, onChange }) => {
     patchField(id, {
       type,
       value: defaultValueForType(type),
-      // Seed an empty options list for dropdowns; drop it otherwise.
+      // Seed an empty options list for dropdowns; a currency for money; drop
+      // both otherwise.
       ...(type === 'dropdown' ? { options: [] } : { options: undefined }),
+      ...(type === 'money' ? { currency: defaultCurrency } : { currency: undefined }),
     });
   };
 
@@ -179,7 +192,7 @@ export const CustomFieldsBuilder: React.FC<Props> = ({ fields, onChange }) => {
       {defs.length === 0 && (
         <p className="text-xs text-muted-foreground">
           No custom fields yet. Click "Add field" to define your own
-          text, number, date, dropdown, or checkbox fields.
+          text, number, money, date, dropdown, or checkbox fields.
         </p>
       )}
 
@@ -278,6 +291,29 @@ export const CustomFieldsBuilder: React.FC<Props> = ({ fields, onChange }) => {
                 <Label htmlFor={`cf-${f.id}`} className="text-sm font-normal">
                   {f.value ? 'Yes' : 'No'}
                 </Label>
+              </div>
+            ) : f.type === 'money' ? (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={f.value == null ? '' : String(f.value)}
+                  placeholder="Amount"
+                  onChange={(e) => patchField(f.id, {
+                    value: e.target.value === '' ? null : Number(e.target.value),
+                  })}
+                  className="h-8 text-sm flex-1"
+                />
+                <Select
+                  value={f.currency ?? defaultCurrency}
+                  onValueChange={(v) => patchField(f.id, { currency: v })}
+                >
+                  <SelectTrigger className="h-8 text-sm w-[88px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             ) : f.type === 'dropdown' ? (
               <Select

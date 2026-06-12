@@ -39,7 +39,6 @@ import {
   GitBranch,
   Target,
   ClipboardList,
-  Zap,
   Sparkles,
   MailPlus,
   Mail,
@@ -53,7 +52,6 @@ import { CapacitySettings } from "@/components/settings/CapacitySettings";
 import { PipelinesSettingsTab } from "@/components/settings/PipelinesSettingsTab";
 import { LeadScoringSettingsTab } from "@/components/settings/LeadScoringSettingsTab";
 import { LeadFormsSettingsTab } from "@/components/settings/LeadFormsSettingsTab";
-import { AutomationsSettingsTab } from "@/components/settings/AutomationsSettingsTab";
 import { SequencesSettingsTab } from "@/components/settings/SequencesSettingsTab";
 import { AiUsageSettingsTab } from "@/components/settings/AiUsageSettingsTab";
 import { EmailTemplatesSettingsTab } from "@/components/settings/EmailTemplatesSettingsTab";
@@ -570,7 +568,6 @@ export const Settings: React.FC = () => {
               {hasCrm && (
                 <>
                   <SettingsSectionLabel>Automation</SettingsSectionLabel>
-                  <SettingsTab value="automations" icon={Zap}>Automations</SettingsTab>
                   <SettingsTab value="sequences" icon={MailPlus}>Sequences</SettingsTab>
                   {canManageSettings && (
                     <SettingsTab value="ai-usage" icon={Sparkles}>AI Usage</SettingsTab>
@@ -651,15 +648,6 @@ export const Settings: React.FC = () => {
               description="Save reusable subjects and bodies your reps can pick from when emailing a client. Merge tokens like {{client.name}} get filled in automatically."
             />
             <EmailTemplatesSettingsTab />
-          </TabsContent>
-
-          {/* AUTOMATIONS TAB */}
-          <TabsContent value="automations">
-            <SettingsHelp
-              title="Automations"
-              description="Make the app do repeat work for you, like creating follow-up tasks when clients or deals change."
-            />
-            <AutomationsSettingsTab />
           </TabsContent>
 
           {/* SEQUENCES TAB */}
