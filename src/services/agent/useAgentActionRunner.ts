@@ -273,6 +273,25 @@ export const useAgentActionRunner = (): {
           return { ok: true, created: { type: 'automation', id: recipe.recipeId, label: name } };
         }
 
+        // ── Campaign (a timed email sequence) ─────────────────────────────
+        // Same path as an automation, but framed as a send_email + wait
+        // sequence so the author produces an outreach recipe. Saved live.
+        case 'create_campaign': {
+          const name = String(p.name ?? '').trim() || 'New campaign';
+          const description = String(p.description ?? '').trim();
+          const segment = String(p.segment ?? '').trim();
+          if (!description) { toast.error('Describe the campaign emails'); return { ok: false }; }
+          const draft = await draftAutomationFromText(
+            orgId,
+            `Outreach email campaign (a timed sequence of send_email + wait steps): ${description}.${segment ? ` Target segment: ${segment}.` : ''}`,
+          );
+          draft.name = name;
+          draft.enabled = true;
+          const recipe = await upsertRecipe(orgId, null, draft);
+          toast.success(`Campaign "${name}" created & live`);
+          return { ok: true, created: { type: 'campaign', id: recipe.recipeId, label: name } };
+        }
+
         // ── Meeting / Call actions ────────────────────────────────────────
         case 'create_meeting': {
           const title = String(p.title ?? '');
