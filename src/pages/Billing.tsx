@@ -25,9 +25,11 @@ type Tab = 'invoices' | 'recurring' | 'bills';
 
 export const Billing: React.FC = () => {
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, canEditPage } = useOrganization();
   const fmt = useFormatMoney();
   const orgId = organization?.organizationId ?? '';
+  // View-only billing access hides the create action.
+  const canEditBilling = canEditPage('billing');
   const { workspaces } = useWorkspaces();
   const { projects } = useProjects();
 
@@ -109,9 +111,11 @@ export const Billing: React.FC = () => {
           </h1>
           <p className="text-sm text-muted-foreground">Invoices, recurring billing, and bills you owe.</p>
         </div>
-        <Button onClick={newAction[tab].onClick}>
-          <Plus className="w-4 h-4 mr-1.5" /> {newAction[tab].label}
-        </Button>
+        {canEditBilling && (
+          <Button onClick={newAction[tab].onClick}>
+            <Plus className="w-4 h-4 mr-1.5" /> {newAction[tab].label}
+          </Button>
+        )}
       </div>
 
       <div className="flex gap-1 border-b">

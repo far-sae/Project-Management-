@@ -93,13 +93,19 @@ const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
 
 export const Clients: React.FC = () => {
   const { user } = useAuth();
-  const { canViewModule, canEditModule } = useOrganization();
+  const { canViewModule, canEditModule, canEditPage } = useOrganization();
+  // Page-level CRM access: when the user's role grants only 'view' on CRM,
+  // every CRM mutation is disabled (read-only). ANDed into the capability
+  // flags below so all existing canManage/canCreate-gated controls inherit it.
+  const crmEditable = canEditPage('crm');
   const {
     organizationId, workspaceId: activeWorkspaceId,
     clients, allClients, loading, create, update, remove,
-    canCreate, canManage,
+    canCreate: rawCanCreate, canManage: rawCanManage,
     selectedWorkspace, isAllWorkspaces,
   } = useClients();
+  const canCreate = rawCanCreate && crmEditable;
+  const canManage = rawCanManage && crmEditable;
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
   const { deals: allDeals, create: createDealHook, remove: removeDeal, update: updateDeal } = useDeals();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
@@ -167,8 +173,10 @@ export const Clients: React.FC = () => {
     leads, allLeads,
     workspaceId: activeLeadWorkspaceId,
     create: createLeadSvc, update: updateLeadSvc, remove: removeLeadSvc, convert: convertLeadSvc,
-    canCreate: canCreateLead, canManage: canManageLead,
+    canCreate: rawCanCreateLead, canManage: rawCanManageLead,
   } = useLeads();
+  const canCreateLead = rawCanCreateLead && crmEditable;
+  const canManageLead = rawCanManageLead && crmEditable;
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [openCreateLead, setOpenCreateLead] = useState(false);
@@ -210,9 +218,10 @@ export const Clients: React.FC = () => {
     create: createCategorySvc,
     update: updateCategorySvc,
     remove: removeCategorySvc,
-    canManage: canManageCategories,
+    canManage: rawCanManageCategories,
     canAdminCategories,
   } = useClientCategories();
+  const canManageCategories = rawCanManageCategories && crmEditable;
   const [openManageCategories, setOpenManageCategories] = useState(false);
 
   // Category landing gate. Users see a tile picker first; clicking a tile

@@ -590,12 +590,14 @@ const SortableWidget: React.FC<{
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const InsightsDashboard: React.FC = () => {
-  const { organization } = useOrganization();
+  const { organization, canEditPage } = useOrganization();
   const { user } = useAuth();
   const fmtMoney = useFormatMoney();
 
   const orgId = organization?.organizationId ?? "";
   const userId = user?.userId ?? "";
+  // View-only (role grants 'view' on Insights) hides add/arrange/remove.
+  const canEdit = canEditPage("insights");
 
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -707,31 +709,36 @@ export const InsightsDashboard: React.FC = () => {
             <Sparkles className="h-5 w-5 text-orange-500" /> Insights
           </h1>
           <p className="text-sm text-muted-foreground">
-            Your customizable dashboard. Add widgets and drag them to arrange how you like.
+            Your customizable dashboard.{canEdit ? " Add widgets and drag them to arrange how you like." : " You have view-only access."}
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus className="mr-1 h-4 w-4" /> Add widget
-        </Button>
+        {canEdit && (
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus className="mr-1 h-4 w-4" /> Add widget
+          </Button>
+        )}
       </div>
 
-      <AskAi orgId={orgId} fmtMoney={fmtMoney} onPin={pinFromAi} />
+      {canEdit && <AskAi orgId={orgId} fmtMoney={fmtMoney} onPin={pinFromAi} />}
 
       {widgets.length === 0 ? (
         <Card>
           <CardContent className="p-10 text-center space-y-3">
             <Sparkles className="h-10 w-10 mx-auto text-orange-500" />
-            <h2 className="text-lg font-semibold">Add your first widget</h2>
+            <h2 className="text-lg font-semibold">{canEdit ? "Add your first widget" : "No widgets yet"}</h2>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Build a dashboard from your own data — pipeline, leads, tasks, and money.
-              Pick a metric and a chart type to get started.
+              {canEdit
+                ? "Build a dashboard from your own data — pipeline, leads, tasks, and money. Pick a metric and a chart type to get started."
+                : "This dashboard is empty and you have view-only access."}
             </p>
-            <Button onClick={() => setAddOpen(true)}>
-              <Plus className="mr-1 h-4 w-4" /> Add widget
-            </Button>
+            {canEdit && (
+              <Button onClick={() => setAddOpen(true)}>
+                <Plus className="mr-1 h-4 w-4" /> Add widget
+              </Button>
+            )}
           </CardContent>
         </Card>
-      ) : (
+      ) : canEdit ? (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -759,6 +766,17 @@ export const InsightsDashboard: React.FC = () => {
             </div>
           </SortableContext>
         </DndContext>
+      ) : (
+        // View-only: render widgets read-only — no drag, no per-widget menu.
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+          {widgets.map((w) => (
+            <div key={w.id} className={SIZE_SPAN[w.size]}>
+              <WidgetBoundary title={w.title}>
+                <WidgetView widget={w} orgId={orgId} fmtMoney={fmtMoney} hideMenu />
+              </WidgetBoundary>
+            </div>
+          ))}
+        </div>
       )}
 
       <AddWidgetDialog
