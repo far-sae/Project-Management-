@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, UserPlus, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, UserPlus, ArrowRight, ChevronDown, ChevronRight, Trash2, Upload } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +33,10 @@ interface Props {
   /** Create a new account (name + optional category) so a lead can be moved
    *  into a fresh account straight from the move dialog. */
   onCreateAccount?: (name: string, category: string | null, workspaceId: string | null) => Promise<Client>;
+  /** Permanently delete an unassigned lead. */
+  onDelete?: (lead: Lead) => Promise<void>;
+  /** Open the lead CSV importer. */
+  onImport?: () => void;
 }
 
 const NONE = '__none__';
@@ -45,6 +49,7 @@ const NEW_ACCOUNT = '__new_account__';
  */
 export const UnassignedLeadsCard: React.FC<Props> = ({
   organizationId, workspaceId, accounts, canEdit, refreshKey = 0, onMove, onCreateAccount,
+  onDelete, onImport,
 }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,26 +119,45 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
     }
   };
 
-  // Hide the card when there are no unassigned leads.
-  if (!loading && leads.length === 0) return null;
+  const handleDelete = async (lead: Lead) => {
+    if (!onDelete) return;
+    if (!confirm(`Delete lead "${leadDisplayName(lead)}"? This cannot be undone.`)) return;
+    try {
+      await onDelete(lead);
+      setLeads((prev) => prev.filter((l) => l.leadId !== lead.leadId));
+      toast.success('Lead deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete lead');
+    }
+  };
+
+  // Hide the card when there are no unassigned leads (unless import is offered).
+  if (!loading && leads.length === 0 && !onImport) return null;
 
   return (
     <Card>
       <CardContent className="pt-4 space-y-3">
-        <button
-          type="button"
-          className="flex items-center gap-2 w-full text-left flex-wrap"
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
-          <UserPlus className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="font-semibold">Unassigned leads</span>
-          <Badge variant="outline" className="text-[10px]">{loading ? '…' : leads.length}</Badge>
-          <span className="ml-1 text-xs text-muted-foreground">
-            Created by the bot, agent, or CSV import. Move each into an account
-            (pick one or create a new one) and a category.
-          </span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-2 flex-1 min-w-0 text-left flex-wrap"
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+            <UserPlus className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="font-semibold">Unassigned leads</span>
+            <Badge variant="outline" className="text-[10px]">{loading ? '…' : leads.length}</Badge>
+            <span className="ml-1 text-xs text-muted-foreground">
+              Created by the bot, agent, or CSV import. Move each into an account
+              (pick one or create a new one) and a category.
+            </span>
+          </button>
+          {canEdit && onImport && (
+            <Button size="sm" variant="outline" className="shrink-0" onClick={onImport}>
+              <Upload className="w-4 h-4 mr-1" /> Import leads
+            </Button>
+          )}
+        </div>
 
         {open && (loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -150,9 +174,21 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
                   </span>
                 </div>
                 {canEdit && (
-                  <Button size="sm" variant="outline" onClick={() => startMove(l)}>
-                    <ArrowRight className="w-4 h-4 mr-1" /> Move to account
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button size="sm" variant="outline" onClick={() => startMove(l)}>
+                      <ArrowRight className="w-4 h-4 mr-1" /> Move to account
+                    </Button>
+                    {onDelete && (
+                      <Button
+                        size="sm" variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        aria-label="Delete lead"
+                        onClick={() => handleDelete(l)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 )}
               </li>
             ))}

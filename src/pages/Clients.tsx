@@ -598,6 +598,8 @@ export const Clients: React.FC = () => {
                       ...(category ? { category } : {}),
                       ...(wsId ? { workspaceId: wsId } : {}),
                     })}
+                  onDelete={async (lead) => { await removeLeadSvc(lead.leadId); }}
+                  onImport={() => setOpenImportLead(true)}
                 />
               )}
               <div className="pt-2">
