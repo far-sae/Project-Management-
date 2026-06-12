@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2, UserPlus, ArrowRight, ChevronDown, ChevronRight, Trash2, Upload } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,6 @@ import {
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import type { Client } from '@/services/supabase/clients';
 import {
   Lead, leadDisplayName, leadStatusLabel, listUnassignedLeads,
 } from '@/services/supabase/leads';
@@ -20,36 +19,32 @@ import { toast } from 'sonner';
 
 interface Props {
   organizationId: string | null;
-  /** Active workspace — scopes the unassigned list so other workspaces' leads
-   *  don't leak in. Null = all workspaces. */
+  /** Active workspace — scopes the unassigned list. Null = all workspaces. */
   workspaceId?: string | null;
-  /** Accounts the lead can be moved into (workspace-scoped list from the page). */
-  accounts: Client[];
+  /** Known category names for the move dropdown (the org's categories). */
+  categories: string[];
   canEdit: boolean;
-  /** Re-fetch trigger — bump to reload the unassigned list. */
+  /** Re-fetch trigger — bump to reload the list. */
   refreshKey?: number;
-  /** Move a lead into an account + category. */
-  onMove: (lead: Lead, accountId: string, category: string | null) => Promise<void>;
-  /** Create a new account (name + optional category) so a lead can be moved
-   *  into a fresh account straight from the move dialog. */
-  onCreateAccount?: (name: string, category: string | null, workspaceId: string | null) => Promise<Client>;
+  /** Move a lead into a category (leads are organised by category). */
+  onMove: (lead: Lead, category: string) => Promise<void>;
   /** Permanently delete an unassigned lead. */
   onDelete?: (lead: Lead) => Promise<void>;
   /** Open the lead CSV importer. */
   onImport?: () => void;
 }
 
-const NONE = '__none__';
-const NEW_ACCOUNT = '__new_account__';
+const NEW = '__new__';
 
 /**
- * "Unassigned leads" for the Accounts tab. Lists leads with no owning account
- * (bot/agent/CSV-created) and lets a rep move each into an account + category —
- * picking an existing account OR creating a new one right in the move dialog.
+ * "Unassigned leads" for the Accounts tab — leads that don't have a category
+ * yet (bot/agent/CSV-created). Each can be moved into a category (pick an
+ * existing one or type a new one); leads are organised by category, not by a
+ * company account.
  */
 export const UnassignedLeadsCard: React.FC<Props> = ({
-  organizationId, workspaceId, accounts, canEdit, refreshKey = 0, onMove, onCreateAccount,
-  onDelete, onImport,
+  organizationId, workspaceId, categories, canEdit, refreshKey = 0,
+  onMove, onDelete, onImport,
 }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,9 +52,7 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
 
   // Move dialog state.
   const [moving, setMoving] = useState<Lead | null>(null);
-  const [targetAccountId, setTargetAccountId] = useState<string>(NONE);
-  const [newAccountName, setNewAccountName] = useState('');
-  const [targetCategory, setTargetCategory] = useState<string>(NONE);
+  const [targetCategory, setTargetCategory] = useState<string>(NEW);
   const [customCategory, setCustomCategory] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -73,43 +66,20 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, [organizationId, workspaceId, refreshKey]);
 
-  const targetAccount = useMemo(
-    () => accounts.find((a) => a.clientId === targetAccountId) ?? null,
-    [accounts, targetAccountId],
-  );
-
   const startMove = (lead: Lead) => {
     setMoving(lead);
-    setTargetAccountId(NONE);
-    setNewAccountName('');
-    setTargetCategory(NONE);
+    setTargetCategory(categories.length > 0 ? categories[0] : NEW);
     setCustomCategory('');
   };
 
   const confirmMove = async () => {
     if (!moving) return;
-    if (targetAccountId === NONE) {
-      toast.error('Pick an account (or create one) to move this lead into');
-      return;
-    }
-    const creatingNew = targetAccountId === NEW_ACCOUNT;
-    if (creatingNew && !newAccountName.trim()) {
-      toast.error('Name the new account');
-      return;
-    }
-    const category = targetCategory === NONE ? (customCategory.trim() || null) : targetCategory;
+    const category = targetCategory === NEW ? customCategory.trim() : targetCategory;
+    if (!category) { toast.error('Pick an existing category or type a new one'); return; }
     setBusy(true);
     try {
-      let accountId = targetAccountId;
-      let accountName = targetAccount?.name ?? 'account';
-      if (creatingNew) {
-        if (!onCreateAccount) throw new Error('Cannot create accounts here');
-        const created = await onCreateAccount(newAccountName.trim(), category, workspaceId ?? null);
-        accountId = created.clientId;
-        accountName = created.name;
-      }
-      await onMove(moving, accountId, category);
-      toast.success(`Moved ${leadDisplayName(moving)} into ${accountName}`);
+      await onMove(moving, category);
+      toast.success(`Moved ${leadDisplayName(moving)} into ${category}`);
       setLeads((prev) => prev.filter((l) => l.leadId !== moving.leadId));
       setMoving(null);
     } catch (err) {
@@ -131,7 +101,7 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
     }
   };
 
-  // Hide the card when there are no unassigned leads (unless import is offered).
+  // Hide the card when there's nothing to show (and no import affordance).
   if (!loading && leads.length === 0 && !onImport) return null;
 
   return (
@@ -148,8 +118,7 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
             <span className="font-semibold">Unassigned leads</span>
             <Badge variant="outline" className="text-[10px]">{loading ? '…' : leads.length}</Badge>
             <span className="ml-1 text-xs text-muted-foreground">
-              Created by the bot, agent, or CSV import. Move each into an account
-              (pick one or create a new one) and a category.
+              No category yet (bot, agent, or CSV import). Move each into a category.
             </span>
           </button>
           {canEdit && onImport && (
@@ -163,6 +132,10 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
+        ) : leads.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No uncategorised leads. Import leads or wait for the bot/agent to create some.
+          </p>
         ) : (
           <ul className="border rounded-md divide-y">
             {leads.map((l) => (
@@ -176,7 +149,7 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
                 {canEdit && (
                   <div className="flex items-center gap-1 shrink-0">
                     <Button size="sm" variant="outline" onClick={() => startMove(l)}>
-                      <ArrowRight className="w-4 h-4 mr-1" /> Move to account
+                      <ArrowRight className="w-4 h-4 mr-1" /> Move to category
                     </Button>
                     {onDelete && (
                       <Button
@@ -199,59 +172,33 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
       <Dialog open={!!moving} onOpenChange={(o) => { if (!o && !busy) setMoving(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Move lead to an account</DialogTitle>
+            <DialogTitle>Move lead to a category</DialogTitle>
             <DialogDescription>
               {moving && (
-                <>Move <strong>{leadDisplayName(moving)}</strong> into an account
-                  (pick one or create a new one) and a category.</>
+                <>Put <strong>{leadDisplayName(moving)}</strong> into a category
+                  (pick an existing one or type a new one).</>
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-xs">Account</Label>
-              <Select
-                value={targetAccountId}
-                onValueChange={(v) => { setTargetAccountId(v); setTargetCategory(NONE); setCustomCategory(''); }}
-              >
-                <SelectTrigger><SelectValue placeholder="Pick an account" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>— Pick an account —</SelectItem>
-                  {onCreateAccount && (
-                    <SelectItem value={NEW_ACCOUNT}>＋ Create new account</SelectItem>
-                  )}
-                  {accounts.map((a) => (
-                    <SelectItem key={a.clientId} value={a.clientId}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {targetAccountId === NEW_ACCOUNT && (
-                <Input
-                  className="mt-2"
-                  placeholder="New account name"
-                  value={newAccountName}
-                  maxLength={120}
-                  onChange={(e) => setNewAccountName(e.target.value)}
-                />
-              )}
-            </div>
-            <div>
-              <Label className="text-xs">Category (optional)</Label>
+              <Label className="text-xs">Category</Label>
               <Select value={targetCategory} onValueChange={setTargetCategory}>
-                <SelectTrigger><SelectValue placeholder="— Uncategorized —" /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NONE}>— Uncategorized / new —</SelectItem>
-                  {(targetAccount?.leadCategories ?? []).map((c) => (
+                  {categories.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
+                  <SelectItem value={NEW}>＋ New category…</SelectItem>
                 </SelectContent>
               </Select>
-              {targetCategory === NONE && (
+              {targetCategory === NEW && (
                 <Input
                   className="mt-2"
-                  placeholder="Or type a new category (leave blank for uncategorized)"
+                  placeholder="New category name (e.g. Enterprise, SMB)"
                   value={customCategory}
                   maxLength={80}
+                  autoFocus
                   onChange={(e) => setCustomCategory(e.target.value)}
                 />
               )}
@@ -259,7 +206,10 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMoving(null)} disabled={busy}>Cancel</Button>
-            <Button onClick={confirmMove} disabled={busy || targetAccountId === NONE}>
+            <Button
+              onClick={confirmMove}
+              disabled={busy || (targetCategory === NEW && !customCategory.trim())}
+            >
               {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Move
             </Button>

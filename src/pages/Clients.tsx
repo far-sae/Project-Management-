@@ -10,6 +10,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -64,7 +65,7 @@ import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
 import { useContacts } from '@/hooks/useContacts';
 import { useLeads } from '@/hooks/useLeads';
 import type { Lead } from '@/services/supabase/leads';
-import { leadDisplayName, exportLeadsToCsv } from '@/services/supabase/leads';
+import { leadDisplayName, leadStatusLabel, exportLeadsToCsv } from '@/services/supabase/leads';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -339,6 +340,16 @@ export const Clients: React.FC = () => {
     [isAllWorkspaces, clients],
   );
 
+  // Known category names (for the lead move dialog + category landing) —
+  // union of registered categories + any typed on accounts or leads.
+  const knownCategories = useMemo(() => {
+    const set = new Set<string>();
+    registeredCategories.forEach((c) => { if (c.name) set.add(c.name); });
+    clients.forEach((c) => { if (c.category && c.category.trim()) set.add(c.category.trim()); });
+    allLeads.forEach((l) => { if (l.category && l.category.trim()) set.add(l.category.trim()); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [registeredCategories, clients, allLeads]);
+
   useEffect(() => {
     const handler = (event: Event) => {
       const clientId = (event as CustomEvent<string>).detail;
@@ -568,6 +579,7 @@ export const Clients: React.FC = () => {
                 <CrmCategoryLanding
                   clients={clients}
                   registered={registeredCategories}
+                  leads={allLeads}
                   onPick={exitLanding}
                   onExport={handleExportCategory}
                   onManageCategories={canManageCategories
@@ -580,28 +592,59 @@ export const Clients: React.FC = () => {
                 <UnassignedLeadsCard
                   organizationId={organizationId}
                   workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
-                  accounts={clients}
+                  categories={knownCategories}
                   canEdit={canCreateLead && canEditModule('leads')}
                   refreshKey={unassignedRefresh}
-                  onMove={async (lead, accountId, category) => {
-                    // Stamp the lead's workspace to the account's so it follows
-                    // its new account (avoids a cross-workspace mismatch).
-                    const acct = clients.find((c) => c.clientId === accountId);
-                    await updateLeadSvc(lead.leadId, {
-                      accountId, category,
-                      workspaceId: acct?.workspaceId ?? lead.workspaceId,
-                    });
+                  onMove={async (lead, category) => {
+                    // Leads are organised by category (no company account) —
+                    // moving just sets the category, which removes it from the
+                    // uncategorised list and files it under that category.
+                    await updateLeadSvc(lead.leadId, { category });
+                    setUnassignedRefresh((k) => k + 1);
                   }}
-                  onCreateAccount={(name, category, wsId) =>
-                    create({
-                      name,
-                      ...(category ? { category } : {}),
-                      ...(wsId ? { workspaceId: wsId } : {}),
-                    })}
                   onDelete={async (lead) => { await removeLeadSvc(lead.leadId); }}
                   onImport={() => setOpenImportLead(true)}
                 />
               )}
+
+              {/* Leads filed under the picked category (leads are organised by
+                  category). Shown when focused on a specific category. */}
+              {canViewModule('leads')
+                && categoryFilter !== 'all'
+                && categoryFilter !== '__uncategorized__'
+                && (() => {
+                  const catLeads = allLeads.filter(
+                    (l) => (l.category ?? '').trim().toLowerCase() === categoryFilter.toLowerCase(),
+                  );
+                  if (catLeads.length === 0) return null;
+                  return (
+                    <Card>
+                      <CardContent className="pt-4 space-y-2">
+                        <h3 className="font-semibold text-sm flex items-center gap-2">
+                          Leads in {categoryFilter}
+                          <Badge variant="outline" className="text-[10px]">{catLeads.length}</Badge>
+                        </h3>
+                        <ul className="border rounded-md divide-y">
+                          {catLeads.map((l) => (
+                            <li key={l.leadId} className="px-3 py-2 flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="flex-1 min-w-0 text-left hover:text-primary"
+                                onClick={() => setSelectedLead(l)}
+                              >
+                                <span className="font-medium">{leadDisplayName(l)}</span>
+                                <span className="ml-2 text-xs text-muted-foreground">
+                                  {l.company} · {l.leadNumber} · {leadStatusLabel(l.leadStatus)}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
+
               <div className="pt-2">
                 <h2 className="text-lg font-semibold">Accounts</h2>
                 <p className="text-sm text-muted-foreground">

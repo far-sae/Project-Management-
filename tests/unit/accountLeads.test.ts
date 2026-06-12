@@ -23,17 +23,19 @@ beforeEach(() => {
 });
 
 describe("account-scoped leads", () => {
-  it("listUnassignedLeads returns only leads with no account_id", async () => {
-    await createLead(ORG, null, null, base({ lastName: "Unassigned1" }));
-    await createLead(ORG, null, null, base({ lastName: "Unassigned2" }));
-    await createLead(ORG, null, null, base({ lastName: "Assigned", accountId: "acct-1" }));
+  it("listUnassignedLeads returns only leads with no category", async () => {
+    // Leads are organised by category now — "unassigned" = no category yet
+    // (account_id is irrelevant to this list).
+    await createLead(ORG, null, null, base({ lastName: "Uncat1" }));
+    await createLead(ORG, null, null, base({ lastName: "Uncat2" }));
+    await createLead(ORG, null, null, base({ lastName: "Filed", category: "Enterprise" }));
 
     const unassigned = await listUnassignedLeads(ORG);
     expect(unassigned).toHaveLength(2);
-    expect(unassigned.every((l) => l.accountId === null)).toBe(true);
+    expect(unassigned.every((l) => !l.category)).toBe(true);
     expect(unassigned.map((l) => l.lastName).sort()).toEqual([
-      "Unassigned1",
-      "Unassigned2",
+      "Uncat1",
+      "Uncat2",
     ]);
   });
 

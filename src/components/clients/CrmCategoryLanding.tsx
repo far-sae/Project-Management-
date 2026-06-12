@@ -17,6 +17,8 @@ interface CrmCategoryLandingProps {
   /** Called with the chosen category name. Pass null = browse "all";
    *  '__uncategorized__' = accounts without a category set. */
   onPick: (category: string | null) => void;
+  /** Leads in scope — counted per category alongside accounts. */
+  leads?: { category?: string | null }[];
   /** Optional CTA on the header to open the full Manage dialog. */
   onManageCategories?: () => void;
   /** When provided, each category tile gets an Export CSV action that exports
@@ -28,7 +30,8 @@ interface CrmCategoryLandingProps {
 interface Bucket {
   key: string;          // category string, or '__uncategorized__'
   label: string;
-  count: number;
+  count: number;        // accounts in this category
+  leadCount: number;    // leads in this category
   sample: string[];     // up to 3 account names from the bucket
   color?: string | null;
   registered: boolean;  // true if it lives in client_categories
@@ -52,7 +55,7 @@ const accentFor = (key: string): string => {
 };
 
 export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
-  clients, registered = [], onPick, onManageCategories, onExport,
+  clients, registered = [], leads = [], onPick, onManageCategories, onExport,
 }) => {
   // Build the union of registered + derived categories so historic free-text
   // entries still appear alongside categories the rep set up explicitly.
@@ -77,6 +80,7 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
         key: r.name,                   // display + filter use the raw name
         label: r.name,
         count: 0,
+        leadCount: 0,
         sample: [],
         color: r.color ?? null,
         registered: true,
@@ -98,6 +102,7 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
             key: '__uncategorized__',
             label: 'Uncategorized',
             count: 1,
+            leadCount: 0,
             sample: [c.name],
             registered: false,
           });
@@ -114,20 +119,44 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
           key: raw,
           label: raw,
           count: 1,
+          leadCount: 0,
           sample: [c.name],
           registered: false,
         });
       }
     }
 
+    // 3. Walk leads: bump leadCount per category; lead-only categories get
+    //    their own bucket; uncategorised leads count under Uncategorized.
+    for (const l of leads) {
+      const raw = l.category?.trim();
+      if (!raw) {
+        const u = map.get('__uncategorized__');
+        if (u) u.leadCount += 1;
+        else map.set('__uncategorized__', {
+          key: '__uncategorized__', label: 'Uncategorized',
+          count: 0, leadCount: 1, sample: [], registered: false,
+        });
+        continue;
+      }
+      const k = raw.toLowerCase();
+      const existing = map.get(k);
+      if (existing) existing.leadCount += 1;
+      else map.set(k, {
+        key: raw, label: raw, count: 0, leadCount: 1, sample: [], registered: false,
+      });
+    }
+
     return Array.from(map.values()).sort((a, b) => {
-      // Uncategorized at the bottom, then highest count first, then alpha.
+      // Uncategorized at the bottom, then highest total (accounts+leads), then alpha.
       if (a.key === '__uncategorized__') return 1;
       if (b.key === '__uncategorized__') return -1;
-      if (b.count !== a.count) return b.count - a.count;
+      const at = a.count + a.leadCount;
+      const bt = b.count + b.leadCount;
+      if (bt !== at) return bt - at;
       return a.label.localeCompare(b.label);
     });
-  }, [clients, registered]);
+  }, [clients, registered, leads]);
 
   const total = clients.length;
   const hasAnyCategory = buckets.some((b) => b.key !== '__uncategorized__');
@@ -248,7 +277,7 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
                       : 'No accounts here yet — open one and set this category.'}
                   </p>
                   <Badge variant="outline" className="mt-2 text-[10px]">
-                    {b.count} account{b.count === 1 ? '' : 's'}
+                    {b.count} account{b.count === 1 ? '' : 's'} · {b.leadCount} lead{b.leadCount === 1 ? '' : 's'}
                   </Badge>
                 </div>
               </div>
