@@ -7,16 +7,17 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 import { useDeals } from '@/hooks/useDeals';
 import { DEAL_STAGES, Deal, DealStage } from '@/services/supabase/deals';
-import { CustomFieldsBuilder } from '@/components/deals/CustomFieldsBuilder';
+import {
+  CustomFieldsBuilder, readFields, writeFields, type CustomFieldDef,
+} from '@/components/deals/CustomFieldsBuilder';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import { toast } from 'sonner';
 
-const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
+const makeFieldId = (): string => {
+  try { return crypto.randomUUID(); } catch { return `f_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`; }
+};
 
 interface Props {
   open: boolean;
@@ -36,11 +37,13 @@ interface Props {
  * table: it reuses the deals table so it shows up in the rail/board/pipeline
  * tab alongside standard deals.
  *
- * Fields: Title (required), optional Value + currency, and a rich
- * CustomFieldsBuilder over the item's customFields. Custom items are NOT bound
- * to a pipeline stage — there is no Stage field; the stored deal's stage is
- * defaulted internally (first stage, e.g. 'lead') purely so it satisfies the
- * deals table.
+ * Fields: Title (required) + a fully freeform CustomFieldsBuilder over the
+ * item's customFields. Custom items are NOT bound to money — there is no fixed
+ * Value/Currency; money is just one optional field type the user can add. When
+ * a "Money" field is present its amount/currency back the stored deal's
+ * value/currency so the item still shows money in the pipeline; otherwise the
+ * value is 0. Custom items are also NOT bound to a pipeline stage — the stored
+ * deal's stage is defaulted internally purely to satisfy the deals table.
  */
 export const CustomItemDialog: React.FC<Props> = ({
   open, onOpenChange, clientId = null, defaultStage, deal = null,
@@ -56,40 +59,53 @@ export const CustomItemDialog: React.FC<Props> = ({
   const internalStage: DealStage = deal?.stage ?? defaultStage ?? DEAL_STAGES[0].id;
 
   const [title, setTitle] = useState('');
-  const [value, setValue] = useState('');
-  const [currency, setCurrency] = useState(orgCurrency);
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
     if (!open) return;
     if (deal) {
       setTitle(deal.title ?? '');
-      setValue(deal.value ? String(deal.value) : '');
-      setCurrency(deal.currency || orgCurrency);
-      setCustomFields(deal.customFields ?? {});
+      let fields = deal.customFields ?? {};
+      // Back-compat: a custom item created before money became a field stored
+      // its amount in deal.value with no Money field. Surface it as an
+      // editable Money field so it stays visible and editing doesn't drop it.
+      const defs = readFields(fields);
+      if (deal.value && !defs.some((f) => f.type === 'money')) {
+        const moneyField: CustomFieldDef = {
+          id: makeFieldId(),
+          label: 'Value',
+          type: 'money',
+          currency: deal.currency || orgCurrency,
+          value: deal.value,
+        };
+        fields = writeFields(fields, [moneyField, ...defs]);
+      }
+      setCustomFields(fields);
       return;
     }
     setTitle('');
-    setValue('');
-    setCurrency(orgCurrency);
     setCustomFields({});
-  }, [open, deal, orgCurrency, defaultStage]);
+  }, [open, deal, orgCurrency]);
 
   const handleSave = async () => {
     const trimmed = title.trim();
     if (!trimmed) { toast.error('Title is required'); return; }
-    const numericValue = value ? Number(value) : 0;
+    // Money is optional now — derive the stored deal value/currency from the
+    // first Money field if the user added one, else 0 / org currency.
+    const moneyField = readFields(customFields).find((f) => f.type === 'money');
+    const numericValue = moneyField && moneyField.value != null ? Number(moneyField.value) : 0;
     if (!Number.isFinite(numericValue) || numericValue < 0) {
-      toast.error('Value must be a non-negative number');
+      toast.error('Money amount must be a non-negative number');
       return;
     }
+    const resolvedCurrency = moneyField?.currency || orgCurrency;
     setBusy(true);
     try {
       const payload = {
         title: trimmed,
         clientId: clientId ?? deal?.clientId ?? null,
         value: numericValue,
-        currency,
+        currency: resolvedCurrency,
         stage: internalStage,
         dealType: 'custom',
         customFields,
@@ -133,35 +149,16 @@ export const CustomItemDialog: React.FC<Props> = ({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="ci-value">Value</Label>
-              <Input
-                id="ci-value"
-                type="number"
-                min={0}
-                step="0.01"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder="0"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ci-currency">Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger id="ci-currency"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           <div className="border-t pt-3">
             <CustomFieldsBuilder
               fields={customFields}
               onChange={(next) => setCustomFields(next)}
+              defaultCurrency={orgCurrency}
             />
+            <p className="text-xs text-muted-foreground mt-2">
+              Define whatever fields you need. Add a <strong>Money</strong> field
+              only if this item has a value — it'll then show in the pipeline.
+            </p>
           </div>
         </div>
 
