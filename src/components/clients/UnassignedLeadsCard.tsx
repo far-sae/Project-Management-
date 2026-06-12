@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
+import { Loader2, UserPlus, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +48,7 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
 }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(true);
 
   // Move dialog state.
   const [moving, setMoving] = useState<Lead | null>(null);
@@ -119,7 +120,12 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
   return (
     <Card>
       <CardContent className="pt-4 space-y-3">
-        <div className="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          className="flex items-center gap-2 w-full text-left flex-wrap"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
           <UserPlus className="w-4 h-4 text-muted-foreground shrink-0" />
           <span className="font-semibold">Unassigned leads</span>
           <Badge variant="outline" className="text-[10px]">{loading ? '…' : leads.length}</Badge>
@@ -127,9 +133,9 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
             Created by the bot, agent, or CSV import. Move each into an account
             (pick one or create a new one) and a category.
           </span>
-        </div>
+        </button>
 
-        {loading ? (
+        {open && (loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
@@ -151,7 +157,7 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
               </li>
             ))}
           </ul>
-        )}
+        ))}
       </CardContent>
 
       <Dialog open={!!moving} onOpenChange={(o) => { if (!o && !busy) setMoving(null); }}>
