@@ -32,6 +32,7 @@ import { checkTeamMemberLimit, supabase } from '@/services/supabase';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { SUPPORT_EMAIL } from '@/lib/support-email';
+import { RolesAndAccessSection } from '@/components/team/RolesAndAccessSection';
 
 export const Team: React.FC = () => {
   const { user } = useAuth();
@@ -667,6 +668,9 @@ export const Team: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Owner/admin: custom roles + per-page access (No access / View / Edit). */}
+        <RolesAndAccessSection />
 
         <Card className="mb-6">
           <CardHeader><CardTitle>Team Members</CardTitle></CardHeader>
