@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  ChevronDown, ChevronRight, Loader2, UserPlus, ArrowRight,
-} from 'lucide-react';
+import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,59 +26,36 @@ interface Props {
   /** Accounts the lead can be moved into (workspace-scoped list from the page). */
   accounts: Client[];
   canEdit: boolean;
-  /** Re-fetch trigger — bump to reload the unassigned list (e.g. after a move
-   *  or after a bot/import created new leads). */
+  /** Re-fetch trigger — bump to reload the unassigned list. */
   refreshKey?: number;
   /** Move a lead into an account + category. */
   onMove: (lead: Lead, accountId: string, category: string | null) => Promise<void>;
-  /** Open the lead form prefilled to this account + category. */
-  onAddLead?: (accountId: string, category: string | null, accountName: string, workspaceId: string | null) => void;
-  /** Open the lead CSV import prefilled to this account + category. */
-  onImportLeads?: (accountId: string, category: string | null, accountName: string, workspaceId: string | null) => void;
+  /** Create a new account (name + optional category) so a lead can be moved
+   *  into a fresh account straight from the move dialog. */
+  onCreateAccount?: (name: string, category: string | null, workspaceId: string | null) => Promise<Client>;
 }
 
 const NONE = '__none__';
+const NEW_ACCOUNT = '__new_account__';
 
 /**
- * Collapsible "Unassigned leads" affordance for the Accounts tab. Lists leads
- * with no owning account (bot/agent/CSV-created ones land here) and lets a rep
- * move each into an account + category.
+ * "Unassigned leads" for the Accounts tab. Lists leads with no owning account
+ * (bot/agent/CSV-created) and lets a rep move each into an account + category —
+ * picking an existing account OR creating a new one right in the move dialog.
  */
 export const UnassignedLeadsCard: React.FC<Props> = ({
-  organizationId, workspaceId, accounts, canEdit, refreshKey = 0, onMove,
-  onAddLead, onImportLeads,
+  organizationId, workspaceId, accounts, canEdit, refreshKey = 0, onMove, onCreateAccount,
 }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [orphansOpen, setOrphansOpen] = useState(false);
 
-  // Category-first add form: pick an account + category, then add/import leads.
-  const [formAccountId, setFormAccountId] = useState<string>(NONE);
-  const [formCategory, setFormCategory] = useState<string>(NONE);
-  const [formCustomCategory, setFormCustomCategory] = useState('');
-
-  // Move dialog state (for orphan leads created by the bot/agent/CSV).
+  // Move dialog state.
   const [moving, setMoving] = useState<Lead | null>(null);
   const [targetAccountId, setTargetAccountId] = useState<string>(NONE);
+  const [newAccountName, setNewAccountName] = useState('');
   const [targetCategory, setTargetCategory] = useState<string>(NONE);
   const [customCategory, setCustomCategory] = useState('');
   const [busy, setBusy] = useState(false);
-
-  const formAccount = useMemo(
-    () => accounts.find((a) => a.clientId === formAccountId) ?? null,
-    [accounts, formAccountId],
-  );
-  const resolvedFormCategory = (): string | null =>
-    formCategory === NONE ? (formCustomCategory.trim() || null) : formCategory;
-
-  const triggerAdd = () => {
-    if (!formAccount) { toast.error('Pick an account first'); return; }
-    onAddLead?.(formAccount.clientId, resolvedFormCategory(), formAccount.name, formAccount.workspaceId ?? null);
-  };
-  const triggerImport = () => {
-    if (!formAccount) { toast.error('Pick an account first'); return; }
-    onImportLeads?.(formAccount.clientId, resolvedFormCategory(), formAccount.name, formAccount.workspaceId ?? null);
-  };
 
   useEffect(() => {
     if (!organizationId) { setLeads([]); setLoading(false); return; }
@@ -100,6 +75,7 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
   const startMove = (lead: Lead) => {
     setMoving(lead);
     setTargetAccountId(NONE);
+    setNewAccountName('');
     setTargetCategory(NONE);
     setCustomCategory('');
   };
@@ -107,17 +83,27 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
   const confirmMove = async () => {
     if (!moving) return;
     if (targetAccountId === NONE) {
-      toast.error('Pick an account to move this lead into');
+      toast.error('Pick an account (or create one) to move this lead into');
       return;
     }
-    const category =
-      targetCategory === NONE
-        ? (customCategory.trim() || null)
-        : targetCategory;
+    const creatingNew = targetAccountId === NEW_ACCOUNT;
+    if (creatingNew && !newAccountName.trim()) {
+      toast.error('Name the new account');
+      return;
+    }
+    const category = targetCategory === NONE ? (customCategory.trim() || null) : targetCategory;
     setBusy(true);
     try {
-      await onMove(moving, targetAccountId, category);
-      toast.success(`Moved ${leadDisplayName(moving)} into ${targetAccount?.name ?? 'account'}`);
+      let accountId = targetAccountId;
+      let accountName = targetAccount?.name ?? 'account';
+      if (creatingNew) {
+        if (!onCreateAccount) throw new Error('Cannot create accounts here');
+        const created = await onCreateAccount(newAccountName.trim(), category, workspaceId ?? null);
+        accountId = created.clientId;
+        accountName = created.name;
+      }
+      await onMove(moving, accountId, category);
+      toast.success(`Moved ${leadDisplayName(moving)} into ${accountName}`);
       setLeads((prev) => prev.filter((l) => l.leadId !== moving.leadId));
       setMoving(null);
     } catch (err) {
@@ -127,111 +113,44 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
     }
   };
 
+  // Hide the card when there are no unassigned leads.
+  if (!loading && leads.length === 0) return null;
+
   return (
     <Card>
       <CardContent className="pt-4 space-y-3">
-        {/* ── Category-first add form (primary) ───────────────────────────── */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <UserPlus className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="font-semibold">Add leads</span>
-            <span className="text-xs text-muted-foreground">
-              Pick an account and category first, then add or import leads into it.
-            </span>
-          </div>
-
-          {!canEdit ? (
-            <p className="text-xs text-muted-foreground">You don't have permission to add leads.</p>
-          ) : accounts.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Create an account first — leads are added into an account + category.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div>
-                <Label className="text-xs">Account</Label>
-                <Select
-                  value={formAccountId}
-                  onValueChange={(v) => { setFormAccountId(v); setFormCategory(NONE); setFormCustomCategory(''); }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Pick an account" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>— Pick an account —</SelectItem>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.clientId} value={a.clientId}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Category</Label>
-                <Select value={formCategory} onValueChange={setFormCategory}>
-                  <SelectTrigger><SelectValue placeholder="— Uncategorized —" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>— Uncategorized / new —</SelectItem>
-                    {(formAccount?.leadCategories ?? []).map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formCategory === NONE && (
-                  <Input
-                    className="mt-1.5"
-                    placeholder="Or type a new category (optional)"
-                    value={formCustomCategory}
-                    maxLength={80}
-                    onChange={(e) => setFormCustomCategory(e.target.value)}
-                  />
-                )}
-              </div>
-              <div className="sm:col-span-2 flex items-center gap-2">
-                <Button size="sm" onClick={triggerAdd} disabled={formAccountId === NONE}>
-                  <UserPlus className="w-4 h-4 mr-1" /> Add lead
-                </Button>
-                <Button size="sm" variant="outline" onClick={triggerImport} disabled={formAccountId === NONE}>
-                  <ArrowRight className="w-4 h-4 mr-1" /> Import leads
-                </Button>
-              </div>
-            </div>
-          )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <UserPlus className="w-4 h-4 text-muted-foreground shrink-0" />
+          <span className="font-semibold">Unassigned leads</span>
+          <Badge variant="outline" className="text-[10px]">{loading ? '…' : leads.length}</Badge>
+          <span className="ml-1 text-xs text-muted-foreground">
+            Created by the bot, agent, or CSV import. Move each into an account
+            (pick one or create a new one) and a category.
+          </span>
         </div>
 
-        {/* ── Orphan leads (bot/agent/CSV with no account) — secondary ─────── */}
-        {(loading || leads.length > 0) && (
-          <div className="border-t pt-3">
-            <button
-              type="button"
-              className="flex items-center gap-2 w-full text-left"
-              onClick={() => setOrphansOpen((v) => !v)}
-            >
-              {orphansOpen ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
-              <span className="text-sm font-medium">Leads waiting for an account</span>
-              <Badge variant="outline" className="text-[10px]">{loading ? '…' : leads.length}</Badge>
-              <span className="ml-1 text-xs text-muted-foreground truncate">
-                Created by the bot, agent, or CSV import — move each into an account.
-              </span>
-            </button>
-
-            {orphansOpen && (
-              <ul className="border rounded-md divide-y mt-2">
-                {leads.map((l) => (
-                  <li key={l.leadId} className="px-3 py-2 flex items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <span className="font-medium">{leadDisplayName(l)}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {l.company} · {l.leadNumber} · {leadStatusLabel(l.leadStatus)}
-                      </span>
-                    </div>
-                    {canEdit && (
-                      <Button size="sm" variant="outline" onClick={() => startMove(l)}>
-                        <ArrowRight className="w-4 h-4 mr-1" /> Move to account
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
           </div>
+        ) : (
+          <ul className="border rounded-md divide-y">
+            {leads.map((l) => (
+              <li key={l.leadId} className="px-3 py-2 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium">{leadDisplayName(l)}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {l.company} · {l.leadNumber} · {leadStatusLabel(l.leadStatus)}
+                  </span>
+                </div>
+                {canEdit && (
+                  <Button size="sm" variant="outline" onClick={() => startMove(l)}>
+                    <ArrowRight className="w-4 h-4 mr-1" /> Move to account
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </CardContent>
 
@@ -240,21 +159,39 @@ export const UnassignedLeadsCard: React.FC<Props> = ({
           <DialogHeader>
             <DialogTitle>Move lead to an account</DialogTitle>
             <DialogDescription>
-              {moving && <>Move <strong>{leadDisplayName(moving)}</strong> into an account and (optionally) a category.</>}
+              {moving && (
+                <>Move <strong>{leadDisplayName(moving)}</strong> into an account
+                  (pick one or create a new one) and a category.</>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label className="text-xs">Account</Label>
-              <Select value={targetAccountId} onValueChange={(v) => { setTargetAccountId(v); setTargetCategory(NONE); }}>
+              <Select
+                value={targetAccountId}
+                onValueChange={(v) => { setTargetAccountId(v); setTargetCategory(NONE); setCustomCategory(''); }}
+              >
                 <SelectTrigger><SelectValue placeholder="Pick an account" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>— Pick an account —</SelectItem>
+                  {onCreateAccount && (
+                    <SelectItem value={NEW_ACCOUNT}>＋ Create new account</SelectItem>
+                  )}
                   {accounts.map((a) => (
                     <SelectItem key={a.clientId} value={a.clientId}>{a.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {targetAccountId === NEW_ACCOUNT && (
+                <Input
+                  className="mt-2"
+                  placeholder="New account name"
+                  value={newAccountName}
+                  maxLength={120}
+                  onChange={(e) => setNewAccountName(e.target.value)}
+                />
+              )}
             </div>
             <div>
               <Label className="text-xs">Category (optional)</Label>

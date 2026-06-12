@@ -181,14 +181,6 @@ export const Clients: React.FC = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [openCreateLead, setOpenCreateLead] = useState(false);
   const [openImportLead, setOpenImportLead] = useState(false);
-  // Prefill for adding/importing leads into a chosen account + category
-  // (from the "Add leads" form in the Unassigned card).
-  const [leadPrefill, setLeadPrefill] = useState<
-    { accountId: string; category: string | null; workspaceId: string | null } | null
-  >(null);
-  const [importPrefill, setImportPrefill] = useState<
-    { accountId: string; category: string | null; accountName: string; workspaceId: string | null } | null
-  >(null);
   const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
@@ -603,14 +595,12 @@ export const Clients: React.FC = () => {
                       workspaceId: acct?.workspaceId ?? lead.workspaceId,
                     });
                   }}
-                  onAddLead={(accountId, category, _accountName, wsId) => {
-                    setLeadPrefill({ accountId, category, workspaceId: wsId });
-                    setOpenCreateLead(true);
-                  }}
-                  onImportLeads={(accountId, category, accountName, wsId) => {
-                    setImportPrefill({ accountId, category, accountName, workspaceId: wsId });
-                    setOpenImportLead(true);
-                  }}
+                  onCreateAccount={(name, category, wsId) =>
+                    create({
+                      name,
+                      ...(category ? { category } : {}),
+                      ...(wsId ? { workspaceId: wsId } : {}),
+                    })}
                 />
               )}
               <div className="pt-2">
@@ -1081,10 +1071,7 @@ export const Clients: React.FC = () => {
       {/* Lead dialogs and drawer */}
       <ImportLeadsDialog
         open={openImportLead}
-        onOpenChange={(o) => { setOpenImportLead(o); if (!o) setImportPrefill(null); }}
-        defaultAccountId={importPrefill?.accountId ?? null}
-        defaultAccountName={importPrefill?.accountName ?? null}
-        defaultCategory={importPrefill?.category ?? null}
+        onOpenChange={setOpenImportLead}
         organizationId={organizationId}
         // Skip the implicit-workspace fallback when the user is in 'All
         // workspaces' / 'Unassigned' — the dialog will refuse to import
@@ -1139,13 +1126,9 @@ export const Clients: React.FC = () => {
           if (!o) {
             setOpenCreateLead(false);
             setEditingLead(null);
-            setLeadPrefill(null);
           }
         }}
         lead={editingLead}
-        defaultAccountId={editingLead ? null : leadPrefill?.accountId ?? null}
-        defaultCategory={editingLead ? null : leadPrefill?.category ?? null}
-        defaultWorkspaceId={editingLead ? null : leadPrefill?.workspaceId ?? null}
         onSubmit={async (input) => {
           try {
             if (editingLead) {
