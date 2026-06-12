@@ -413,28 +413,34 @@ export const ClientFormDialog: React.FC<Props> = ({
               </datalist>
             </div>
 
-            <div className="space-y-1">
-              <Label>Type</Label>
-              <Select value={form.type} onValueChange={(v) => set('type', v as ClientType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => set('status', v as ClientStatus)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Create mode is category-only (Name + Category). Type/Status
+                default to Customer/Active and are editable on the record. */}
+            {!isCreate && (
+              <>
+                <div className="space-y-1">
+                  <Label>Type</Label>
+                  <Select value={form.type} onValueChange={(v) => set('type', v as ClientType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {TYPES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Status</Label>
+                  <Select value={form.status} onValueChange={(v) => set('status', v as ClientStatus)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {STATUSES.map((s) => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
             {!isCreate && (
               <>
