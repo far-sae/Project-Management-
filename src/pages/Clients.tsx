@@ -54,7 +54,6 @@ import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { AccountsLanding } from '@/components/clients/AccountsLanding';
-import { AccountsHubCard } from '@/components/clients/AccountsHubCard';
 import { UnassignedLeadsCard } from '@/components/clients/UnassignedLeadsCard';
 import { ManageCategoriesDialog } from '@/components/clients/ManageCategoriesDialog';
 import { useClientCategories } from '@/hooks/useClientCategories';
@@ -137,13 +136,13 @@ export const Clients: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
   const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
+  // Category filter is no longer surfaced in the Accounts toolbar, but it is
+  // still driven by the category landing gate (a tile picker → exitLanding).
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [groupByCategory, setGroupByCategory] = useState<boolean>(false);
   // 'tasks' is retained in the union for backwards compat — some hub
-  // callbacks (CrmHomeDashboard, AccountsHubCard) still pass it. The
-  // useEffect below redirects those legacy values to a live tab now that
-  // the Activities tab is gone (its timeline moved into each record's
-  // right rail).
+  // callbacks (e.g. CrmHomeDashboard) may still pass it. The useEffect below
+  // redirects those legacy values to a live tab now that the Activities tab
+  // is gone (its timeline moved into each record's right rail).
   const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
   useEffect(() => {
     // The removed 'tasks'/'activities'/'leads' tabs all redirect: tasks &
@@ -158,7 +157,7 @@ export const Clients: React.FC = () => {
     if (activeTab === 'pipeline' && !canViewModule('deals')) setActiveTab('home');
   }, [activeTab, canViewModule]);
 
-  // ─── Contacts (still needed for AccountsHubCard count + DealFormDialog) ──
+  // ─── Contacts (still needed for DealFormDialog's contact picker) ──
   const { contacts } = useContacts();
   // Send-email composer state (used by lead drawer Send Email button).
   const [emailRecipient, setEmailRecipient] = useState<SendEmailRecipient | null>(null);
@@ -313,24 +312,6 @@ export const Clients: React.FC = () => {
       return haystack.includes(q);
     });
   }, [clients, search, typeFilter, statusFilter, bandFilter, categoryFilter]);
-
-  // Union of registered categories + free-text categories on accounts.
-  // Keyed case-insensitively so "Enterprise" and "ENTERPRISE" collapse into
-  // one option (matches how the landing buckets them). Registered names win
-  // as the display label so dropdowns show the canonical casing.
-  const availableCategories = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const r of registeredCategories) {
-      map.set(r.name.toLowerCase(), r.name);
-    }
-    for (const c of clients) {
-      const raw = c.category?.trim();
-      if (!raw) continue;
-      const k = raw.toLowerCase();
-      if (!map.has(k)) map.set(k, raw);
-    }
-    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
-  }, [clients, registeredCategories]);
 
   const selectedClients = useMemo(
     () => clients.filter((c) => selectedClientIds.has(c.clientId)),
@@ -565,17 +546,6 @@ export const Clients: React.FC = () => {
                 />
               ) : (
               <>
-              <AccountsHubCard
-                accountsCount={clients.length}
-                canCreate={canCreate}
-                scopeLabel={isAllWorkspaces
-                  ? 'All workspaces'
-                  : selectedWorkspace?.name ?? 'Current workspace'}
-                onCreateAccount={() => setOpenCreate(true)}
-                onImportAccounts={() => setOpenImport(true)}
-                onGoToPipeline={() => setActiveTab('pipeline')}
-                onGoToTasks={() => setActiveTab('tasks')}
-              />
               {canViewModule('leads') && (
                 <UnassignedLeadsCard
                   organizationId={organizationId}
@@ -643,28 +613,11 @@ export const Clients: React.FC = () => {
                   <SelectItem value="cold">Cold</SelectItem>
                 </SelectContent>
               </Select>
-              {/* Category filter + group toggle — always visible so the
-                  feature is discoverable even before any client has a
-                  category. */}
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All categories</SelectItem>
-                  {availableCategories.length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No categories yet. Set one when adding or editing an account.
-                    </div>
-                  )}
-                  {availableCategories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <SavedListViews
                 organizationId={organizationId}
                 currentFilters={{
                   search, typeFilter, statusFilter, bandFilter,
-                  categoryFilter, groupByCategory,
+                  categoryFilter, groupByCategory: false,
                 }}
                 onApply={(f) => {
                   setSearch(f.search);
@@ -672,18 +625,8 @@ export const Clients: React.FC = () => {
                   setStatusFilter(f.statusFilter);
                   setBandFilter(f.bandFilter);
                   setCategoryFilter(f.categoryFilter);
-                  setGroupByCategory(f.groupByCategory);
                 }}
               />
-              <Button
-                type="button"
-                size="sm"
-                variant={groupByCategory ? 'default' : 'outline'}
-                onClick={() => setGroupByCategory((v) => !v)}
-                title={groupByCategory ? 'Show as flat grid' : 'Group cards by category'}
-              >
-                {groupByCategory ? 'Grouped' : 'Group by category'}
-              </Button>
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
                 <Filter className="w-3 h-3" />
                 {filtered.length} of {clients.length}
@@ -737,7 +680,6 @@ export const Clients: React.FC = () => {
             <ClientsTable
               rows={filtered}
               selectedIds={selectedClientIds}
-              groupByCategory={groupByCategory}
               canManage={canManage}
               onOpen={(c) => setSelected(c)}
               onToggleRow={toggleClientSelection}
@@ -1010,14 +952,6 @@ export const Clients: React.FC = () => {
                 },
               },
             );
-          }
-          // If any imported client has a category, switch to grouped view so
-          // the user immediately sees their data organised by category — and
-          // clear any active category filter so all groups are visible.
-          if (imported && imported.some((c) => c.category && c.category.trim().length > 0)) {
-            setGroupByCategory(true);
-            setCategoryFilter('all');
-            toast.success('Switched to "Group by category" view');
           }
         }}
       />
