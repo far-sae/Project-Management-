@@ -468,6 +468,11 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               onDeleteDeal={(d) => setDeletingDeal(d)}
               onStageChanged={() => setDealsRefresh((k) => k + 1)}
             />
+            <BusinessDetailsCard
+              client={client}
+              editable={canEdit}
+              onSave={handleInlineUpdate}
+            />
           </aside>
         </div>
       </aside>
@@ -687,6 +692,59 @@ const AboutCompany: React.FC<{
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ─── Right rail: business details (inline-editable) ──────────────────────────
+
+const BusinessDetailsCard: React.FC<{
+  client: Client;
+  editable: boolean;
+  onSave: (clientId: string, patch: Partial<Client>) => Promise<void>;
+}> = ({ client, editable, onSave }) => {
+  const save = (patch: Partial<Client>) => onSave(client.clientId, patch);
+  return (
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        Business details
+      </h3>
+      <div className="space-y-3 text-sm">
+        <InlineField
+          label="Legal name" value={client.legalName} type="text" editable={editable}
+          onSave={(v) => save({ legalName: v as string | null })}
+        />
+        <InlineField
+          label="Industry" value={client.industry} type="text" editable={editable}
+          onSave={(v) => save({ industry: v as string | null })}
+        />
+        <InlineField
+          label="Annual revenue" value={client.annualRevenue} type="number" editable={editable}
+          onSave={(v) => save({ annualRevenue: v as number | null })}
+          render={(v) => v != null ? <span>{formatRevenue(Number(v))}</span> : null}
+        />
+        <InlineField
+          label="Employees" value={client.employeeCount} type="number" editable={editable}
+          onSave={(v) => save({ employeeCount: v as number | null })}
+        />
+        <InlineField
+          label="Source" value={client.source} type="text" editable={editable}
+          onSave={(v) => save({ source: v as string | null })}
+        />
+        <InlineField
+          label="Website" value={client.website} type="text" editable={editable}
+          onSave={(v) => save({ website: v as string | null })}
+          render={(v) => {
+            const url = toExternalUrl(v as string | null | undefined);
+            return v && url ? (
+              <a href={url} target="_blank" rel="noopener noreferrer"
+                 className="text-primary hover:underline inline-flex items-center gap-1 break-all">
+                {String(v)} <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : null;
+          }}
+        />
+      </div>
     </div>
   );
 };
