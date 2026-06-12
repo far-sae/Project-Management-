@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   X, Edit, Trash2, Loader2, Mail,
@@ -31,14 +31,17 @@ import { EnrollAutomationDialog } from '@/components/activities/EnrollAutomation
 import { Zap } from 'lucide-react';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
-  listActivities, filterByEntity, type Activity,
+  listActivities, filterByEntity, dealTimelineActivities, type Activity,
 } from '@/services/supabase/activities';
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
 import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
 import { NextBestAction } from '@/components/activities/NextBestAction';
 import {
-  getOrganizationDeals, type Deal,
+  getOrganizationDeals, DEAL_STAGES, type Deal,
 } from '@/services/supabase/deals';
+import {
+  listAccountStageHistory, type DealStageHistoryEntry,
+} from '@/services/supabase/dealRelations';
 import { type PipelineStage } from '@/services/supabase/pipelines';
 import { usePipelines } from '@/hooks/usePipelines';
 import { getOrganizationClients, type Client } from '@/services/supabase/clients';
@@ -95,6 +98,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   const { canEditModule } = useOrganization();
   const { defaultPipeline, stagesByPipeline } = usePipelines();
   const { remove: removeDeal } = useDeals();
+  const formatMoney = useFormatMoney();
   const canEdit = canManage && !readOnly && canEditModule('leads');
 
   // Local copy of lead data so inline edits reflect immediately in the panel
@@ -142,6 +146,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   // scoped to it (DealFormDialog wants a Client + defaultClientId). Null when
   // the lead has no account.
   const [accountClient, setAccountClient] = useState<Client | null>(null);
+  // Stage-change trail for the account's deals — folded into the timeline.
+  const [stageHistory, setStageHistory] = useState<DealStageHistoryEntry[]>([]);
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
   // Standard-deal edit (DealFormDialog in edit mode), opened from a rail row.
   const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
@@ -189,6 +195,32 @@ export const LeadDetailDrawer: React.FC<Props> = ({
       .catch(() => {/* non-blocking */});
     return () => { cancelled = true; };
   }, [lead?.leadId, lead?.accountId, organizationId, openCreateDeal, dealsRefresh]);
+
+  // Deal stage history for the lead's account — re-queries on deal changes.
+  useEffect(() => {
+    if (!lead || !organizationId || !lead.accountId) {
+      setStageHistory([]);
+      return;
+    }
+    const accountId = lead.accountId;
+    let cancelled = false;
+    listAccountStageHistory(organizationId, accountId)
+      .then((rows) => { if (!cancelled) setStageHistory(rows); })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [lead?.leadId, lead?.accountId, organizationId, dealsRefresh]);
+
+  // Timeline = the lead's own activities (notes/emails) + its account's deal
+  // lifecycle (deal added + stage moves), newest first — so pipeline movement
+  // shows here, not just an empty feed.
+  const timelineActivities = useMemo(() => {
+    const stageLabel = (key: string | null) =>
+      DEAL_STAGES.find((s) => s.id === key)?.label ?? key ?? '(new)';
+    const dealEvents = dealTimelineActivities(accountDeals, stageHistory, { formatMoney, stageLabel });
+    return [...leadActivities, ...dealEvents].sort(
+      (a, b) => (b.whenAt?.getTime() ?? -Infinity) - (a.whenAt?.getTime() ?? -Infinity),
+    );
+  }, [leadActivities, accountDeals, stageHistory, formatMoney]);
 
   useEffect(() => {
     if (!lead || !organizationId) return;
@@ -664,7 +696,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                   onPosted={() => setActivitiesKey((k) => k + 1)}
                 />
               )}
-              <ActivitiesTimeline activities={leadActivities} />
+              <ActivitiesTimeline activities={timelineActivities} />
             </div>
           </aside>
         </div>

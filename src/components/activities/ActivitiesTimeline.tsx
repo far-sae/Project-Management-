@@ -1,10 +1,10 @@
 import React, { useMemo } from "react";
-import { Phone, Calendar, ListTodo, StickyNote, Mail, CheckCircle2 } from "lucide-react";
+import { Phone, Calendar, ListTodo, StickyNote, Mail, CheckCircle2, Handshake } from "lucide-react";
 import { dayBucket, type Activity, type DayBucket, type ActivityKind } from "@/services/supabase/activities";
 
 const KIND_ICON: Record<ActivityKind, React.ComponentType<{ className?: string }>> = {
   task: ListTodo, meeting: Calendar, call: Phone, note: StickyNote, email: Mail,
-  pm_task: CheckCircle2,
+  pm_task: CheckCircle2, deal: Handshake,
 };
 const fmt = (d: Date | null) => d ? d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 

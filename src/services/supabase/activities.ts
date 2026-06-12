@@ -11,7 +11,7 @@ import { listMeetings, type Meeting } from "./meetings";
 import { listCalls, type Call, type CallStatus } from "./calls";
 import { supabase } from "./config";
 
-export type ActivityKind = "task" | "meeting" | "call" | "note" | "email" | "pm_task";
+export type ActivityKind = "task" | "meeting" | "call" | "note" | "email" | "pm_task" | "deal";
 
 /** Zoho-style filter views on the Activities page dropdown. Each
  *  resolves to a predicate the page applies after the union fetch. */
@@ -123,7 +123,15 @@ export interface Activity {
     | { kind: "call";    row: Call }
     | { kind: "note";    row: NoteRow }
     | { kind: "email";   row: EmailEventRow }
-    | { kind: "pm_task"; row: PmTaskRow };
+    | { kind: "pm_task"; row: PmTaskRow }
+    | { kind: "deal";    row: DealActivityRow };
+}
+
+/** Minimal shape backing a deal timeline event (deal added or stage move). */
+export interface DealActivityRow {
+  dealId: string;
+  clientId: string | null;
+  title: string;
 }
 
 /** Minimal shape for a done PM task returned by listDoneHandoffTasks. */
@@ -383,6 +391,118 @@ export const pmTaskToActivity = (row: PmTaskRow): Activity => ({
   relatedToLabel: null,
   source: { kind: "pm_task", row },
 });
+
+// ---------------------------------------------------------------------------
+// Deal timeline events (deal added + stage moves)
+//
+// Deals aren't part of the org-wide listActivities() union, but a record's
+// Activity timeline should still reflect its pipeline. These builders turn a
+// record's deals + stage history into Activity rows so the Activity tab shows
+// the pipeline lifecycle alongside notes/emails/meetings. Money + stage labels
+// are resolved by the caller (hook/context-dependent), keeping these pure +
+// unit-testable.
+// ---------------------------------------------------------------------------
+
+export const buildDealActivity = (input: {
+  dealId: string;
+  clientId: string | null | undefined;
+  title: string;
+  organizationId?: string;
+  /** Row title, e.g. "Deal added: Website" or "Website: Qualified → Won". */
+  headline: string;
+  /** Subline detail after the kind, e.g. "Qualified · £12,222". */
+  detail: string | null;
+  whenAt: Date | null;
+  ownerName?: string | null;
+  /** Unique suffix so created + each stage move get distinct ids. */
+  eventKey: string;
+}): Activity => ({
+  id: `deal:${input.dealId}:${input.eventKey}`,
+  kind: "deal",
+  organizationId: input.organizationId ?? "",
+  workspaceId: null,
+  title: input.headline,
+  description: null,
+  whenAt: input.whenAt,
+  overdue: false,
+  open: false,
+  ownerUserId: null,
+  ownerName: input.ownerName ?? null,
+  priority: "normal",
+  category: "open_deals",
+  relatedToLabel: input.detail,
+  source: {
+    kind: "deal",
+    row: { dealId: input.dealId, clientId: input.clientId ?? null, title: input.title },
+  },
+});
+
+interface DealLike {
+  dealId: string;
+  clientId?: string | null;
+  title: string;
+  stage: string;
+  value: number;
+  currency: string;
+  createdAt: Date;
+  dealType?: string | null;
+}
+
+interface StageHistoryLike {
+  historyId: string;
+  dealId: string;
+  fromStage: string | null;
+  toStage: string;
+  amount: number | null;
+  changedAt: Date;
+  changedByName: string | null;
+}
+
+/** Build the deal-lifecycle activities for one record's timeline: an "added"
+ *  entry per deal plus a row per real stage move (the initial creation row,
+ *  fromStage === null, is skipped since the "added" entry covers it). */
+export const dealTimelineActivities = (
+  deals: DealLike[],
+  stageHistory: StageHistoryLike[],
+  helpers: {
+    formatMoney: (value: number, currency?: string) => string;
+    stageLabel: (stageKey: string | null) => string;
+  },
+): Activity[] => {
+  const titleById = new Map(deals.map((d) => [d.dealId, d.title]));
+
+  const created = deals.map((d) => {
+    const isCustom = d.dealType === "custom";
+    const money = helpers.formatMoney(d.value, d.currency);
+    return buildDealActivity({
+      dealId: d.dealId,
+      clientId: d.clientId,
+      title: d.title,
+      headline: `${isCustom ? "Custom item" : "Deal"} added: ${d.title}`,
+      detail: isCustom ? money : `${helpers.stageLabel(d.stage)} · ${money}`,
+      whenAt: d.createdAt,
+      eventKey: "created",
+    });
+  });
+
+  const moves = stageHistory
+    .filter((h) => h.fromStage != null)
+    .map((h) => {
+      const title = titleById.get(h.dealId) ?? "Deal";
+      return buildDealActivity({
+        dealId: h.dealId,
+        clientId: null,
+        title,
+        headline: `${title}: ${helpers.stageLabel(h.fromStage)} → ${helpers.stageLabel(h.toStage)}`,
+        detail: h.amount != null ? helpers.formatMoney(h.amount) : null,
+        whenAt: h.changedAt,
+        ownerName: h.changedByName,
+        eventKey: `stage:${h.historyId}`,
+      });
+    });
+
+  return [...created, ...moves];
+};
 
 /** Pull all three sources in parallel + map into the unified shape. */
 export const listActivities = async (

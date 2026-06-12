@@ -37,14 +37,17 @@ import { CustomItemDialog } from '@/components/deals/CustomItemDialog';
 import { DealStagePicker } from '@/components/deals/DealStagePicker';
 import { useDeals } from '@/hooks/useDeals';
 import { AccountStageHistoryCard } from '@/components/clients/AccountStageHistoryCard';
+import {
+  listAccountStageHistory, type DealStageHistoryEntry,
+} from '@/services/supabase/dealRelations';
 import { useOrganization } from '@/context/OrganizationContext';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
-  listActivities, filterByEntity, type Activity,
+  listActivities, filterByEntity, dealTimelineActivities, type Activity,
 } from '@/services/supabase/activities';
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
 import {
-  getOrganizationDeals, type Deal,
+  getOrganizationDeals, DEAL_STAGES, type Deal,
 } from '@/services/supabase/deals';
 import { type PipelineStage } from '@/services/supabase/pipelines';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
@@ -82,6 +85,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   const emailEnabled = useEmailEnabled();
   const { canEditModule } = useOrganization();
   const { remove: removeDeal } = useDeals();
+  const formatMoney = useFormatMoney();
   // Account (client) write access isn't a grant module — there is no
   // canEditModule('crm'). It's governed by canManage (owner/admin/manager),
   // same as the Edit/Delete controls. Deals/Leads sub-features still use
@@ -114,6 +118,9 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   // Right-rail: this account's deals + Activity-tab timeline.
   const [deals, setDeals] = useState<Deal[]>([]);
   const [clientActivities, setClientActivities] = useState<Activity[]>([]);
+  // Deal stage-change trail across this account's deals — folded into the
+  // Activity timeline (and shown raw in the Pipeline tab).
+  const [stageHistory, setStageHistory] = useState<DealStageHistoryEntry[]>([]);
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
   // Standard-deal edit (DealFormDialog in edit mode), opened from a rail row's
   // Edit action.
@@ -181,7 +188,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, [client?.clientId, organizationId, openCreateDeal, dealsRefresh]);
 
-  // Right-rail activity timeline — the record's notes/emails/calls/meetings.
+  // Activity timeline base — the record's notes/emails/calls/meetings/pm-tasks.
   useEffect(() => {
     if (!client || !organizationId) return;
     let cancelled = false;
@@ -192,6 +199,29 @@ export const ClientDetailDrawer: React.FC<Props> = ({
       .catch(() => {/* non-blocking */});
     return () => { cancelled = true; };
   }, [client?.clientId, organizationId]);
+
+  // Deal stage history for this account — re-queries when a deal is added or
+  // its stage changes (dealsRefresh), so new pipeline activity shows up.
+  useEffect(() => {
+    if (!client || !organizationId) return;
+    let cancelled = false;
+    listAccountStageHistory(organizationId, client.clientId)
+      .then((rows) => { if (!cancelled) setStageHistory(rows); })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [client?.clientId, organizationId, dealsRefresh]);
+
+  // The Activity tab feed = base activities + the account's deal lifecycle
+  // (deal added + stage moves), newest first. Deals weren't surfacing in the
+  // timeline before, so a fresh account with only a deal read as "no activity".
+  const timelineActivities = useMemo(() => {
+    const stageLabel = (key: string | null) =>
+      DEAL_STAGES.find((s) => s.id === key)?.label ?? key ?? '(new)';
+    const dealEvents = dealTimelineActivities(deals, stageHistory, { formatMoney, stageLabel });
+    return [...clientActivities, ...dealEvents].sort(
+      (a, b) => (b.whenAt?.getTime() ?? -Infinity) - (a.whenAt?.getTime() ?? -Infinity),
+    );
+  }, [clientActivities, deals, stageHistory, formatMoney]);
 
   const reloadNotes = async () => {
     if (!client || !organizationId) return;
@@ -351,7 +381,7 @@ export const ClientDetailDrawer: React.FC<Props> = ({
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Activity timeline
                   </h3>
-                  <ActivitiesTimeline activities={clientActivities} />
+                  <ActivitiesTimeline activities={timelineActivities} />
                 </div>
               )}
 
