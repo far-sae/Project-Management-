@@ -47,7 +47,7 @@ interface ProposedAction {
     | "update_deal" | "update_lead_status"
     | "create_client_task" | "create_pm_task" | "assign_task"
     | "create_project" | "create_workspace"
-    | "create_automation";
+    | "create_automation" | "create_campaign";
   label: string;
   payload: Record<string, unknown>;
 }
@@ -192,6 +192,8 @@ const TOOLS = [
     input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
   { name: "propose_create_automation", description: "Propose creating an automation from a plain-English description, e.g. 'when a lead becomes hot, create a follow-up task and notify the owner'. Give a short name plus a full description of the trigger AND what should happen (conditions + actions). It is built into a recipe and saved live on confirm.",
     input_schema: { type: "object", properties: { name: { type: "string" }, description: { type: "string" } }, required: ["name","description"] } },
+  { name: "propose_create_campaign", description: "Propose creating an outreach EMAIL CAMPAIGN — a timed sequence (send an email, wait N days, send another, …). Give a short name, a description of the email steps + timing, and the target segment in plain text (e.g. 'leads in category Enterprise'). Built into a sequence recipe and saved live on confirm.",
+    input_schema: { type: "object", properties: { name: { type: "string" }, description: { type: "string" }, segment: { type: "string" } }, required: ["name","description"] } },
 ] as const;
 
 // Gate Deals/Leads READ tools by the #4 module grant (the admin client bypasses
@@ -361,6 +363,8 @@ const runTool = async (
       return { result: { status: "proposed" }, proposed: { type: "create_workspace", label: `Create workspace "${String(input.name ?? "")}"`, payload: input } };
     case "propose_create_automation":
       return { result: { status: "proposed" }, proposed: { type: "create_automation", label: `Create automation "${String(input.name ?? "")}"`, payload: input } };
+    case "propose_create_campaign":
+      return { result: { status: "proposed" }, proposed: { type: "create_campaign", label: `Create campaign "${String(input.name ?? "")}"${input.segment ? ` → ${String(input.segment)}` : ""}`, payload: input } };
     default:
       return { result: { error: `Unknown tool: ${name}` } };
   }

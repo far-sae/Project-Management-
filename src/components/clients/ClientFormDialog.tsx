@@ -272,7 +272,9 @@ export const ClientFormDialog: React.FC<Props> = ({
       name,
       legalName: form.legalName.trim() || null,
       industry: form.industry.trim() || null,
-      category: form.category.trim() || null,
+      // On create the single Name field IS the category (account = a category
+      // bucket). Edit mode keeps the explicit category field.
+      category: (isCreate ? form.name.trim() : form.category.trim()) || null,
       type: form.type,
       status: form.status,
       website: form.website.trim() || null,
@@ -391,27 +393,29 @@ export const ClientFormDialog: React.FC<Props> = ({
                 </div>
               </>
             )}
-            <div className="space-y-1">
-              <Label htmlFor="cf-category">Category</Label>
-              <Input
-                id="cf-category" maxLength={60}
-                value={form.category}
-                onChange={(e) => set('category', e.target.value)}
-                placeholder="Enterprise, SMB, NGO…"
-                list="cf-category-suggestions"
-              />
-              {/* Suggestions come from common categories; users can also type free text. */}
-              <datalist id="cf-category-suggestions">
-                <option value="Enterprise" />
-                <option value="SMB" />
-                <option value="Startup" />
-                <option value="NGO" />
-                <option value="Government" />
-                <option value="Reseller" />
-                <option value="Agency" />
-                <option value="Education" />
-              </datalist>
-            </div>
+            {!isCreate && (
+              <div className="space-y-1">
+                <Label htmlFor="cf-category">Category</Label>
+                <Input
+                  id="cf-category" maxLength={60}
+                  value={form.category}
+                  onChange={(e) => set('category', e.target.value)}
+                  placeholder="Enterprise, SMB, NGO…"
+                  list="cf-category-suggestions"
+                />
+                {/* Suggestions come from common categories; users can also type free text. */}
+                <datalist id="cf-category-suggestions">
+                  <option value="Enterprise" />
+                  <option value="SMB" />
+                  <option value="Startup" />
+                  <option value="NGO" />
+                  <option value="Government" />
+                  <option value="Reseller" />
+                  <option value="Agency" />
+                  <option value="Education" />
+                </datalist>
+              </div>
+            )}
 
             {/* Create mode is category-only (Name + Category). Type/Status
                 default to Customer/Active and are editable on the record. */}
