@@ -293,7 +293,11 @@ export const Clients: React.FC = () => {
   // Keep the selected client's data in sync when the list refreshes via realtime.
   const liveSelected = useMemo(() => {
     if (!selected) return null;
-    return clients.find((c) => c.clientId === selected.clientId) ?? null;
+    // Prefer the live row from the scoped list, but fall back to the captured
+    // `selected` (kept fresh via onUpdate/onEdit) so the drawer never vanishes
+    // back to the list + search when the account momentarily isn't in `clients`
+    // (e.g. during an edit, or a workspace-scope mismatch).
+    return clients.find((c) => c.clientId === selected.clientId) ?? selected;
   }, [clients, selected]);
 
   const filtered = useMemo(() => {
@@ -546,9 +550,6 @@ export const Clients: React.FC = () => {
                   clients={clients}
                   registered={registeredCategories}
                   onPick={exitLanding}
-                  onCreateCategory={canManageCategories
-                    ? () => setOpenManageCategories(true)
-                    : undefined}
                   onManageCategories={canManageCategories
                     ? () => setOpenManageCategories(true)
                     : undefined}

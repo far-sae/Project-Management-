@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import {
-  Building2, ChevronRight, Layers, FileQuestion, Plus, Settings2,
+  Building2, ChevronRight, Layers, FileQuestion, Settings2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,9 +17,6 @@ interface CrmCategoryLandingProps {
   /** Called with the chosen category name. Pass null = browse "all";
    *  '__uncategorized__' = accounts without a category set. */
   onPick: (category: string | null) => void;
-  /** When provided, surfaces a "Create category" tile in the picker that
-   *  opens the manage dialog. Hidden for viewers. */
-  onCreateCategory?: () => void;
   /** Optional CTA on the header to open the full Manage dialog. */
   onManageCategories?: () => void;
 }
@@ -51,7 +48,7 @@ const accentFor = (key: string): string => {
 };
 
 export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
-  clients, registered = [], onPick, onCreateCategory, onManageCategories,
+  clients, registered = [], onPick, onManageCategories,
 }) => {
   // Build the union of registered + derived categories so historic free-text
   // entries still appear alongside categories the rep set up explicitly.
@@ -238,34 +235,6 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
             </button>
           );
         })}
-
-        {/* Create-category tile, shown when the parent supplied a handler.
-            Hidden for viewers (who can't write to client_categories anyway). */}
-        {onCreateCategory && (
-          <button
-            type="button"
-            onClick={onCreateCategory}
-            className="group text-left rounded-lg border border-dashed bg-card/40 p-4 hover:border-primary/60 hover:bg-card transition-all"
-          >
-            <div className="flex items-start gap-3">
-              <span className="w-10 h-10 rounded-md bg-primary/10 text-primary grid place-items-center shrink-0">
-                <Plus className="w-5 h-5" />
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-semibold">Create category</h3>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Add a new bucket like Enterprise, NGO, or Reseller.
-                </p>
-                <Badge variant="outline" className="mt-2 text-[10px] border-dashed">
-                  new
-                </Badge>
-              </div>
-            </div>
-          </button>
-        )}
       </div>
     </div>
   );
