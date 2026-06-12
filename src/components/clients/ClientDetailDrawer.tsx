@@ -1047,6 +1047,8 @@ const EmailsTab: React.FC<{
 }> = ({ client, organizationId, emailEnabled }) => {
   const [openEmail, setOpenEmail] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // "Edit & resend" prefill captured from a prior/failed email.
+  const [resendInit, setResendInit] = useState<{ subject: string; body: string } | null>(null);
 
   if (!emailEnabled) {
     return (
@@ -1099,12 +1101,18 @@ const EmailsTab: React.FC<{
         entityType="client"
         entityId={client.clientId}
         refreshKey={refreshKey}
+        onResend={(e) => {
+          setResendInit({ subject: e.subject ?? '', body: e.snippet ?? '' });
+          setOpenEmail(true);
+        }}
       />
 
       <SendEmailDialog
         open={openEmail}
-        onOpenChange={setOpenEmail}
+        onOpenChange={(o) => { setOpenEmail(o); if (!o) setResendInit(null); }}
         recipient={recipient}
+        initialSubject={resendInit?.subject ?? ''}
+        initialBody={resendInit?.body ?? ''}
         onSent={() => setRefreshKey((k) => k + 1)}
       />
     </div>
