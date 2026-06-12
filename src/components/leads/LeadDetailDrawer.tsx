@@ -46,6 +46,11 @@ import { DealFormDialog } from '@/components/deals/DealFormDialog';
 import { CustomItemDialog } from '@/components/deals/CustomItemDialog';
 import { DealStagePicker } from '@/components/deals/DealStagePicker';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
+import { useDeals } from '@/hooks/useDeals';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface Props {
   lead: Lead | null;
@@ -89,6 +94,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   const emailEnabled = useEmailEnabled();
   const { canEditModule } = useOrganization();
   const { defaultPipeline, stagesByPipeline } = usePipelines();
+  const { remove: removeDeal } = useDeals();
   const canEdit = canManage && !readOnly && canEditModule('leads');
 
   // Local copy of lead data so inline edits reflect immediately in the panel
@@ -137,11 +143,32 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   // the lead has no account.
   const [accountClient, setAccountClient] = useState<Client | null>(null);
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
+  // Standard-deal edit (DealFormDialog in edit mode), opened from a rail row.
+  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   // Custom-item create / edit, scoped to the lead's account.
   const [openCustomItem, setOpenCustomItem] = useState(false);
   const [editingCustomItem, setEditingCustomItem] = useState<Deal | null>(null);
   // Bumped after a deal is added or its stage changes so the rail re-queries.
   const [dealsRefresh, setDealsRefresh] = useState(0);
+  // Rail delete: which deal is pending a confirm, and whether a delete is
+  // in flight.
+  const [deletingDeal, setDeletingDeal] = useState<Deal | null>(null);
+  const [dealDeleteBusy, setDealDeleteBusy] = useState(false);
+
+  const handleDeleteDeal = async () => {
+    if (!deletingDeal) return;
+    setDealDeleteBusy(true);
+    try {
+      await removeDeal(deletingDeal.dealId);
+      toast.success(`Deleted "${deletingDeal.title}"`);
+      setDeletingDeal(null);
+      setDealsRefresh((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete');
+    } finally {
+      setDealDeleteBusy(false);
+    }
+  };
   useEffect(() => {
     if (!lead || !organizationId || !lead.accountId) {
       setAccountDeals([]);
@@ -620,6 +647,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               onNewDeal={() => setOpenCreateDeal(true)}
               onNewCustomItem={() => { setEditingCustomItem(null); setOpenCustomItem(true); }}
               onEditCustomItem={(d) => { setEditingCustomItem(d); setOpenCustomItem(true); }}
+              onEditDeal={(d) => setEditingDeal(d)}
+              onDeleteDeal={(d) => setDeletingDeal(d)}
               onStageChanged={() => setDealsRefresh((k) => k + 1)}
             />
 
@@ -673,6 +702,46 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           deal={editingCustomItem}
         />
       )}
+
+      {/* Edit a standard deal from the rail (DealFormDialog in edit mode). */}
+      {accountClient && (
+        <DealFormDialog
+          open={!!editingDeal}
+          onOpenChange={(o) => {
+            if (!o) { setEditingDeal(null); setDealsRefresh((k) => k + 1); }
+          }}
+          deal={editingDeal}
+          clients={[accountClient]}
+          defaultClientId={accountClient.clientId}
+        />
+      )}
+
+      {/* Confirm deal/custom-item delete from the rail. */}
+      <AlertDialog
+        open={!!deletingDeal}
+        onOpenChange={(o) => { if (!o && !dealDeleteBusy) setDeletingDeal(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes <strong>{deletingDeal?.title}</strong> from
+              the pipeline. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={dealDeleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDeal}
+              disabled={dealDeleteBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {dealDeleteBusy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              <Trash2 className="w-4 h-4 mr-1" /> Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
@@ -694,10 +763,13 @@ const AccountDealsCard: React.FC<{
   onNewDeal: () => void;
   onNewCustomItem: () => void;
   onEditCustomItem: (d: Deal) => void;
+  onEditDeal: (d: Deal) => void;
+  onDeleteDeal: (d: Deal) => void;
   onStageChanged: () => void;
 }> = ({
   deals, hasAccount, canCreate, canChangeStage, stagesByPipeline,
-  defaultPipelineId, onNewDeal, onNewCustomItem, onEditCustomItem, onStageChanged,
+  defaultPipelineId, onNewDeal, onNewCustomItem, onEditCustomItem,
+  onEditDeal, onDeleteDeal, onStageChanged,
 }) => {
   const formatMoney = useFormatMoney();
   return (
@@ -751,8 +823,7 @@ const AccountDealsCard: React.FC<{
             return (
               <li
                 key={d.dealId}
-                className={`rounded-md border p-2.5 space-y-2${isCustom ? ' cursor-pointer hover:border-primary/50' : ''}`}
-                onClick={isCustom ? () => onEditCustomItem(d) : undefined}
+                className="rounded-md border p-2.5 space-y-2"
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-sm font-medium truncate inline-flex items-center gap-1.5">
@@ -765,15 +836,35 @@ const AccountDealsCard: React.FC<{
                     {formatMoney(d.value, d.currency)}
                   </span>
                 </div>
-                <div onClick={(e) => e.stopPropagation()}>
-                  {canChangeStage ? (
+                {/* Standard deals keep the stage control; custom items show
+                    only their value (above) — no stage control. */}
+                {!isCustom && (
+                  canChangeStage ? (
                     <DealStagePicker deal={d} stages={stages} onChanged={onStageChanged} />
                   ) : (
                     <Badge variant="outline" className="text-[10px]">
                       {stages?.find((s) => s.key === d.stage)?.label ?? d.stage}
                     </Badge>
-                  )}
-                </div>
+                  )
+                )}
+                {canChangeStage && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 text-xs px-2"
+                      onClick={() => (isCustom ? onEditCustomItem(d) : onEditDeal(d))}
+                    >
+                      <Edit className="w-3.5 h-3.5 mr-1" /> Edit
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 text-xs px-2 text-destructive hover:text-destructive"
+                      onClick={() => onDeleteDeal(d)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+                    </Button>
+                  </div>
+                )}
               </li>
             );
           })}
