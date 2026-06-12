@@ -36,6 +36,10 @@ export interface OrganizationMember {
   displayName: string;
   photoURL?: string;
   role: "owner" | "admin" | "member" | "viewer";
+  /** When set, points at a custom_roles.role_id that governs this member's
+   *  per-page access (overrides the built-in `role` for page gating). Owner
+   *  is always full regardless. Stored inline on the members jsonb. */
+  customRoleId?: string | null;
   joinedAt: Date;
   status: "active" | "invited" | "removed";
   addedAt?: Date | string;

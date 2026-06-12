@@ -4,6 +4,9 @@ import { Organization, OrganizationMember } from '@/types/organization';
 import { getOrganization } from '@/services/supabase/organizations';
 import { supabase } from '@/services/supabase/config';
 import { listOrgGrants, computeModuleAccess, type GrantRow, type CrmModule } from "@/services/supabase/crmGrants";
+import { listCustomRoles, type CustomRole } from "@/services/supabase/customRoles";
+import { resolvePagePermissions, type BuiltinRole } from "@/lib/pagePermissions";
+import { type PageKey, type PageAccessLevel } from "@/lib/pageCatalog";
 
 interface OrganizationContextType {
   organization: Organization | null;
@@ -20,6 +23,15 @@ interface OrganizationContextType {
   canManageSettings: boolean;
   canViewModule: (m: CrmModule) => boolean;
   canEditModule: (m: CrmModule) => boolean;
+  /** Owner-defined roles in this org (for the Team editor). */
+  customRoles: CustomRole[];
+  /** Current user's effective access to a page: 'none' | 'view' | 'edit'.
+   *  Owner is always 'edit'; otherwise driven by the assigned custom role, or
+   *  the built-in role's today-equivalent surface. Does NOT include the plan
+   *  feature gate — apply that separately (it already exists). */
+  pageLevel: (page: PageKey) => PageAccessLevel;
+  canAccessPage: (page: PageKey) => boolean;
+  canEditPage: (page: PageKey) => boolean;
 }
 
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
@@ -30,6 +42,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [grants, setGrants] = useState<GrantRow[]>([]);
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
 
   // ============================================
   // Helper Functions
@@ -301,12 +314,45 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     return () => { cancelled = true; };
   }, [organization?.organizationId, user?.userId]);
 
+  // Load the org's custom roles (drives per-page access). Non-fatal on error
+  // (e.g. local-only org) — falls back to [] and the built-in role surface.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (organization?.organizationId) {
+          const roles = await listCustomRoles(organization.organizationId);
+          if (!cancelled) setCustomRoles(roles);
+        } else if (!cancelled) {
+          setCustomRoles([]);
+        }
+      } catch {
+        if (!cancelled) setCustomRoles([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [organization?.organizationId]);
+
   // ============================================
   // Provider value
   // ============================================
 
   const value = useMemo(() => {
     const moduleAccess = computeModuleAccess(isAdmin, grants);
+
+    // Resolve the current user's per-page access from their assigned custom
+    // role (if any), else the built-in role's today-equivalent surface.
+    const me = organization?.members.find((m) => m.userId === user?.userId);
+    const myCustomRole = me?.customRoleId
+      ? customRoles.find((r) => r.roleId === me.customRoleId) ?? null
+      : null;
+    const pagePerms = resolvePagePermissions({
+      isOwner,
+      builtinRole: (role as BuiltinRole | null),
+      customRole: myCustomRole,
+    });
+    const pageLevel = (page: PageKey): PageAccessLevel => pagePerms[page] ?? 'none';
+
     return {
       organization,
       loading,
@@ -320,9 +366,13 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       canManageSettings,
       canViewModule: moduleAccess.canView,
       canEditModule: moduleAccess.canEdit,
+      customRoles,
+      pageLevel,
+      canAccessPage: (page: PageKey) => pageLevel(page) !== 'none',
+      canEditPage: (page: PageKey) => pageLevel(page) === 'edit',
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, grants]);
+  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, grants, customRoles, role, user?.userId]);
 
   return (
     <OrganizationContext.Provider value={value}>
