@@ -32,6 +32,9 @@ interface OrganizationContextType {
   pageLevel: (page: PageKey) => PageAccessLevel;
   canAccessPage: (page: PageKey) => boolean;
   canEditPage: (page: PageKey) => boolean;
+  /** True until org + custom roles have loaded — guards should wait on this
+   *  before deciding page access (avoids a wrong-access flash). */
+  permissionsLoading: boolean;
 }
 
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
@@ -43,6 +46,9 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const [error, setError] = useState<string | null>(null);
   const [grants, setGrants] = useState<GrantRow[]>([]);
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
+  // False until the org's custom roles have been fetched at least once, so
+  // route guards don't decide page access before a member's role is known.
+  const [customRolesLoaded, setCustomRolesLoaded] = useState(false);
 
   // ============================================
   // Helper Functions
@@ -328,6 +334,8 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
         }
       } catch {
         if (!cancelled) setCustomRoles([]);
+      } finally {
+        if (!cancelled) setCustomRolesLoaded(true);
       }
     })();
     return () => { cancelled = true; };
@@ -370,9 +378,10 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       pageLevel,
       canAccessPage: (page: PageKey) => pageLevel(page) !== 'none',
       canEditPage: (page: PageKey) => pageLevel(page) === 'edit',
+      permissionsLoading: loading || !customRolesLoaded,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, grants, customRoles, role, user?.userId]);
+  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, grants, customRoles, customRolesLoaded, role, user?.userId]);
 
   return (
     <OrganizationContext.Provider value={value}>

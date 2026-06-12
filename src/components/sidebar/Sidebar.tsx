@@ -31,7 +31,8 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useSubscription } from '@/context/SubscriptionContext';
+import { useSubscription, type AppFeature } from '@/context/SubscriptionContext';
+import type { PageKey } from '@/lib/pageCatalog';
 import { useProjectChrome } from '@/context/ProjectChromeContext';
 import { useProjects } from '@/hooks/useProjects';
 import {
@@ -58,16 +59,26 @@ import {
 import { toast } from 'sonner';
 
 const QUICK_ITEMS_FULL = [
-  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
-  { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects' },
-  { icon: TrendingUp, label: 'CRM analytics', href: '/dashboard/clients' },
-  { icon: Sparkles, label: 'Insights', href: '/dashboard/insights' },
-  { icon: CheckSquare, label: 'My Tasks', href: '/tasks' },
-  { icon: Inbox, label: 'Inbox', href: '/inbox' },
-  { icon: Calendar, label: 'Calendar', href: '/calendar' },
-  { icon: Activity, label: 'Workload', href: '/workload' },
-  { icon: BarChart3, label: 'Reports', href: '/reports' },
-  { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const },
+  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard', page: 'dashboard' as PageKey },
+  { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects', page: 'projects_analytics' as PageKey },
+  { icon: TrendingUp, label: 'CRM analytics', href: '/dashboard/clients', page: 'crm_analytics' as PageKey },
+  { icon: Sparkles, label: 'Insights', href: '/dashboard/insights', page: 'insights' as PageKey },
+  { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
+  { icon: Inbox, label: 'Inbox', href: '/inbox', page: 'inbox' as PageKey },
+  { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
+  { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
+  { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
+  { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
+];
+
+// Bottom quick-nav for owner/admin — also the source list filtered for
+// custom-role members so they see exactly their granted pages.
+const BOTTOM_ITEMS_FULL = [
+  { icon: Building2, label: 'CRM', href: '/clients', feature: 'crm' as const, page: 'crm' as PageKey },
+  { icon: Bot, label: 'AI Agent', href: '/ai-agent', feature: 'crm' as const, page: 'ai_agent' as PageKey },
+  { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const, page: 'timeline' as PageKey },
+  { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null, page: 'comments' as PageKey },
+  { icon: UserCircle, label: 'HR', href: '/hr', feature: null, page: 'hr' as PageKey },
 ];
 
 // Members get a deliberately small surface: just the personal-productivity
@@ -90,7 +101,18 @@ export const Sidebar: React.FC = () => {
     useProjectChrome();
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
-  const { isAdmin: isOrgAdminOrOwner, isViewer } = useOrganization();
+  const {
+    isAdmin: isOrgAdminOrOwner, isViewer, organization, customRoles, canAccessPage,
+  } = useOrganization();
+
+  // A member with a custom role assigned gets a permission-filtered nav (exactly
+  // their granted pages); built-in roles keep the original tiered surface.
+  const myMember = organization?.members.find((m) => m.userId === user?.userId);
+  const hasCustomRole =
+    !!myMember?.customRoleId && customRoles.some((r) => r.roleId === myMember.customRoleId);
+  const featureOk = (f: string | null | undefined) => !f || hasFeature(f as AppFeature);
+  const pageVisible = (page: PageKey, feature: string | null | undefined) =>
+    canAccessPage(page) && featureOk(feature);
   const navigate = useNavigate();
   const location = useLocation();
   // Owner + admin see HR / Payroll / Time / Expenses; members must use the
@@ -147,7 +169,9 @@ export const Sidebar: React.FC = () => {
     };
   }, [mobileOpen]);
 
-  const bottomMenuItems = canSeePeopleOps
+  const bottomMenuItems = hasCustomRole
+    ? BOTTOM_ITEMS_FULL.filter((i) => pageVisible(i.page, i.feature))
+    : canSeePeopleOps
     ? ([
         // Activities lives inside CRM as a top tab (CRM → Activities),
         // not as a separate sidebar entry, so reps see one consolidated
@@ -247,7 +271,9 @@ export const Sidebar: React.FC = () => {
             Hide CRM analytics when the user's plan doesn't include CRM. */}
         <QuickMenu
           items={
-            canSeePeopleOps
+            hasCustomRole
+              ? QUICK_ITEMS_FULL.filter((i) => pageVisible(i.page, (i as { feature?: string }).feature))
+              : canSeePeopleOps
               ? QUICK_ITEMS_FULL.filter(
                   (i) =>
                     (i.href !== '/dashboard/clients' || hasFeature('crm')) &&
