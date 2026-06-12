@@ -713,14 +713,17 @@ export const listUnassignedLeads = async (
 ): Promise<Lead[]> => {
   if (isLocalOrg(organizationId)) {
     return readLocal<Lead>(STORE.leads(organizationId), reviveLead)
-      .filter((l) => !l.accountId && (!workspaceId || l.workspaceId === workspaceId))
+      .filter((l) => !(l.category && l.category.trim()) && (!workspaceId || l.workspaceId === workspaceId))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
+  // "Unassigned" = no category yet (leads are organised by category, not by a
+  // company account). Categorising a lead moves it out of this list and into
+  // its category bucket.
   let q = supabase
     .from("leads")
     .select("*")
     .eq("organization_id", organizationId)
-    .is("account_id", null);
+    .is("category", null);
   // Scope to the active workspace so a single-workspace view doesn't surface
   // unassigned leads from other workspaces (matches the rest of the CRM).
   if (workspaceId) q = q.eq("workspace_id", workspaceId);
