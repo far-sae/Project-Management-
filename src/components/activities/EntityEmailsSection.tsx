@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { Mail, ArrowDownLeft, ArrowUpRight, Loader2, AlertTriangle } from 'lucide-react';
+import {
+  Mail, ArrowDownLeft, ArrowUpRight, Loader2, AlertTriangle, RotateCcw,
+  ChevronDown, ChevronRight,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   listEntityEmails, type EmailEvent, type EmailEntityType,
 } from '@/services/supabase/emailEvents';
@@ -14,6 +18,9 @@ interface EntityEmailsSectionProps {
   /** Reload trigger — bump this from the parent after a Send Email
    *  action so the new row appears immediately. */
   refreshKey?: number;
+  /** When set, outbound rows get an "Edit & resend" action that opens the
+   *  composer prefilled from this email. */
+  onResend?: (email: EmailEvent) => void;
 }
 
 const STATUS_TONE: Record<EmailEvent['status'], string> = {
@@ -31,10 +38,11 @@ const STATUS_TONE: Record<EmailEvent['status'], string> = {
  * Send Email button on the parent drawer.
  */
 export const EntityEmailsSection: React.FC<EntityEmailsSectionProps> = ({
-  organizationId, entityType, entityId, refreshKey = 0,
+  organizationId, entityType, entityId, refreshKey = 0, onResend,
 }) => {
   const [events, setEvents] = useState<EmailEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!organizationId) { setEvents([]); return; }
@@ -70,9 +78,17 @@ export const EntityEmailsSection: React.FC<EntityEmailsSectionProps> = ({
             const who = isOutbound
               ? `To ${e.toEmails.join(', ') || '—'}`
               : `From ${e.fromEmail ?? '—'}`;
+            const expanded = expandedId === e.eventId;
             return (
               <li key={e.eventId} className="rounded-md border p-2.5">
-                <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  className="w-full text-left flex items-start gap-2"
+                  onClick={() => setExpandedId((id) => (id === e.eventId ? null : e.eventId))}
+                >
+                  {expanded
+                    ? <ChevronDown className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                    : <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
                   <Arrow className={cn(
                     'w-3.5 h-3.5 mt-0.5 shrink-0',
                     isOutbound ? 'text-violet-600' : 'text-sky-600',
@@ -92,7 +108,7 @@ export const EntityEmailsSection: React.FC<EntityEmailsSectionProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate">{who}</p>
-                    {e.snippet && (
+                    {e.snippet && !expanded && (
                       <p className="text-xs mt-1 text-foreground/80 line-clamp-2">{e.snippet}</p>
                     )}
                     <p className={cn('text-[11px] mt-1', STATUS_TONE[e.status])}>
@@ -102,7 +118,23 @@ export const EntityEmailsSection: React.FC<EntityEmailsSectionProps> = ({
                       {e.senderName && isOutbound && <> · sent by {e.senderName}</>}
                     </p>
                   </div>
-                </div>
+                </button>
+
+                {expanded && (
+                  <div className="mt-2 ml-5 space-y-2 border-t pt-2">
+                    <p className="text-[11px] text-muted-foreground">{who}</p>
+                    {e.snippet ? (
+                      <p className="text-xs whitespace-pre-wrap text-foreground/90">{e.snippet}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">No body captured for this email.</p>
+                    )}
+                    {onResend && isOutbound && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onResend(e)}>
+                        <RotateCcw className="w-3.5 h-3.5 mr-1" /> Edit &amp; resend
+                      </Button>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}

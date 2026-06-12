@@ -43,6 +43,9 @@ interface SendEmailDialogProps {
   onOpenChange: (open: boolean) => void;
   recipient: SendEmailRecipient | null;
   onSent?: () => void;
+  /** Prefill the composer (e.g. "Edit & resend" a prior/failed email). */
+  initialSubject?: string;
+  initialBody?: string;
 }
 
 /**
@@ -63,7 +66,7 @@ interface SendEmailDialogProps {
  *     client with the same subject/body so they can still send.
  */
 export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
-  open, onOpenChange, recipient, onSent,
+  open, onOpenChange, recipient, onSent, initialSubject = '', initialBody = '',
 }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -98,13 +101,14 @@ export const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
     void listEmailTemplates(orgId).then(setTemplates);
   }, [open, orgId]);
 
-  // Reset state on open + close.
+  // Reset state on open + close. Prefill from initialSubject/initialBody when
+  // resending a prior email.
   useEffect(() => {
     if (!open) return;
     setTemplateId('');
-    setSubject('');
-    setBody('');
-  }, [open]);
+    setSubject(initialSubject);
+    setBody(initialBody);
+  }, [open, initialSubject, initialBody]);
 
   // When a template is picked, expand its tokens and prefill the
   // editor. The rep can still edit before sending.
