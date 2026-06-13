@@ -1084,8 +1084,12 @@ export const Clients: React.FC = () => {
         clients={clients}
         canManage={canManageCategories}
         canAdmin={canAdminCategories}
-        workspaceId={isAllWorkspaces ? null : categoriesWorkspaceId}
-        workspaceName={selectedWorkspace?.name ?? null}
+        // CRM is org-global, so don't block category creation on "All
+        // workspaces" — the hook already resolves a default workspace to file
+        // new categories into. Passing null here used to trip the dialog's
+        // "Pick a workspace" gate and hide the Add-category input entirely.
+        workspaceId={categoriesWorkspaceId}
+        workspaceName={selectedWorkspace?.name ?? 'Default'}
         onCreate={createCategorySvc}
         onUpdate={updateCategorySvc}
         onDelete={removeCategorySvc}
