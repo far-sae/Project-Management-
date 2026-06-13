@@ -54,7 +54,6 @@ import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { AccountsLanding } from '@/components/clients/AccountsLanding';
-import { UnassignedLeadsCard } from '@/components/clients/UnassignedLeadsCard';
 import { ManageCategoriesDialog } from '@/components/clients/ManageCategoriesDialog';
 import { useClientCategories } from '@/hooks/useClientCategories';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
@@ -173,9 +172,8 @@ export const Clients: React.FC = () => {
     leads, allLeads,
     workspaceId: activeLeadWorkspaceId,
     create: createLeadSvc, update: updateLeadSvc, remove: removeLeadSvc, convert: convertLeadSvc,
-    canCreate: rawCanCreateLead, canManage: rawCanManageLead,
+    canManage: rawCanManageLead,
   } = useLeads();
-  const canCreateLead = rawCanCreateLead && crmEditable;
   const canManageLead = rawCanManageLead && crmEditable;
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
@@ -184,10 +182,6 @@ export const Clients: React.FC = () => {
   const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
-  // Bumped whenever the unassigned-leads list should reload (after a move, a
-  // convert, or a fresh create from the bot/import paths).
-  const [unassignedRefresh, setUnassignedRefresh] = useState(0);
-
   // Keep the open drawer reactive to realtime updates. Look up against the
   // workspace-filtered list first so the user always sees the "current"
   // version; fall back to the org-wide list (allLeads) so a lead that lives
@@ -348,15 +342,6 @@ export const Clients: React.FC = () => {
   // analytics / forecast views (null = show everything in the org).
   const workspaceClientIds = useMemo<Set<string> | null>(() => null, []);
 
-  // Known category names (for the lead move dialog + category landing) —
-  // union of registered categories + any typed on accounts or leads.
-  const knownCategories = useMemo(() => {
-    const set = new Set<string>();
-    registeredCategories.forEach((c) => { if (c.name) set.add(c.name); });
-    clients.forEach((c) => { if (c.category && c.category.trim()) set.add(c.category.trim()); });
-    allLeads.forEach((l) => { if (l.category && l.category.trim()) set.add(l.category.trim()); });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [registeredCategories, clients, allLeads]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -599,39 +584,6 @@ export const Clients: React.FC = () => {
                 />
               ) : (
               <>
-              {canViewModule('leads') && (
-                <UnassignedLeadsCard
-                  organizationId={organizationId}
-                  workspaceId={null}
-                  categories={knownCategories}
-                  canEdit={canCreateLead && canEditModule('leads')}
-                  refreshKey={unassignedRefresh}
-                  onMove={async (lead, category) => {
-                    // An account IS a category bucket. Moving files the lead
-                    // under that category (so it leaves the uncategorised list
-                    // and shows inside the account), and registers the category
-                    // so the bucket exists as a first-class account even when it
-                    // had no record before. Registration is best-effort — the
-                    // lead is filed regardless, and a duplicate name is fine.
-                    await updateLeadSvc(lead.leadId, { category });
-                    const known = registeredCategories.some(
-                      (c) => c.name.trim().toLowerCase() === category.trim().toLowerCase(),
-                    );
-                    if (!known && categoriesWorkspaceId) {
-                      try { await createCategorySvc({ name: category, workspaceId: categoriesWorkspaceId }); } catch { /* already exists — ignore */ }
-                    }
-                    setUnassignedRefresh((k) => k + 1);
-                    // Land the user inside that account so the moved lead is
-                    // visible where its leads live.
-                    setCategoryFilter(category);
-                    setShowLanding(false);
-                  }}
-                  onDelete={async (lead) => { await removeLeadSvc(lead.leadId); }}
-                  onImport={() => setOpenImportLead(true)}
-                  onOpen={(lead) => setSelectedLead(lead)}
-                />
-              )}
-
               <div className="pt-2">
                 <h2 className="text-lg font-semibold">Accounts</h2>
                 <p className="text-sm text-muted-foreground">
@@ -1147,8 +1099,6 @@ export const Clients: React.FC = () => {
             toast.error('No leads were imported. Check the row errors above.');
             return;
           }
-          // Imported leads land unassigned — refresh the Unassigned section.
-          setUnassignedRefresh((k) => k + 1);
           if (result.errors.length > 0 || result.coercions.length > 0) {
             toast.warning(
               `Imported ${result.imported.length} of ${result.imported.length + result.errors.length} leads — review the warnings above.`,
@@ -1188,9 +1138,6 @@ export const Clients: React.FC = () => {
                   metadata: { leadNumber: created.leadNumber, workspaceId: created.workspaceId },
                 },
               );
-              // A lead created from this top-level dialog has no account yet,
-              // so refresh the Unassigned list to surface it.
-              setUnassignedRefresh((k) => k + 1);
               setOpenCreateLead(false);
             }
           } catch (err) {
@@ -1311,8 +1258,6 @@ export const Clients: React.FC = () => {
         }}
         onConverted={(result) => {
           setSelectedLead(null);
-          // A converted lead leaves the unassigned pool — refresh the list.
-          setUnassignedRefresh((k) => k + 1);
           const acct = allClients.find((c) => c.clientId === result.clientId);
           if (acct) setSelected(acct);
         }}
