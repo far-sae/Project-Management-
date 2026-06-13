@@ -526,7 +526,10 @@ export const Clients: React.FC = () => {
                 </Button>
               )}
               {canCreate && (
-                <Button onClick={() => setOpenCreate(true)}>
+                // An account IS a category bucket — "Add account" registers a
+                // category (no company/lead record). Accounts fill up as leads
+                // get filed into the category or convert on a won deal.
+                <Button onClick={() => setOpenManageCategories(true)}>
                   <Plus className="w-4 h-4 mr-2" /> Add account
                 </Button>
               )}
@@ -571,7 +574,7 @@ export const Clients: React.FC = () => {
               ) : clients.length === 0 ? (
                 <AccountsLanding
                   canCreate={canCreate}
-                  onCreate={() => setOpenCreate(true)}
+                  onCreate={() => setOpenManageCategories(true)}
                   onImport={() => setOpenImport(true)}
                 />
               ) : showLanding ? (
@@ -595,11 +598,24 @@ export const Clients: React.FC = () => {
                   canEdit={canCreateLead && canEditModule('leads')}
                   refreshKey={unassignedRefresh}
                   onMove={async (lead, category) => {
-                    // Leads are organised by category (no company account) —
-                    // moving just sets the category, which removes it from the
-                    // uncategorised list and files it under that category.
+                    // An account IS a category bucket. Moving files the lead
+                    // under that category (so it leaves the uncategorised list
+                    // and shows inside the account), and registers the category
+                    // so the bucket exists as a first-class account even when it
+                    // had no record before. Registration is best-effort — the
+                    // lead is filed regardless, and a duplicate name is fine.
                     await updateLeadSvc(lead.leadId, { category });
+                    const known = registeredCategories.some(
+                      (c) => c.name.trim().toLowerCase() === category.trim().toLowerCase(),
+                    );
+                    if (!known && categoriesWorkspaceId) {
+                      try { await createCategorySvc({ name: category, workspaceId: categoriesWorkspaceId }); } catch { /* already exists — ignore */ }
+                    }
                     setUnassignedRefresh((k) => k + 1);
+                    // Land the user inside that account so the moved lead is
+                    // visible where its leads live.
+                    setCategoryFilter(category);
+                    setShowLanding(false);
                   }}
                   onDelete={async (lead) => { await removeLeadSvc(lead.leadId); }}
                   onImport={() => setOpenImportLead(true)}
