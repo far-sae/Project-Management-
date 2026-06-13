@@ -10,7 +10,6 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -65,7 +64,7 @@ import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
 import { useContacts } from '@/hooks/useContacts';
 import { useLeads } from '@/hooks/useLeads';
 import type { Lead } from '@/services/supabase/leads';
-import { leadDisplayName, leadStatusLabel, exportLeadsToCsv } from '@/services/supabase/leads';
+import { leadDisplayName, exportLeadsToCsv } from '@/services/supabase/leads';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -331,6 +330,16 @@ export const Clients: React.FC = () => {
     () => clients.filter((c) => selectedClientIds.has(c.clientId)),
     [clients, selectedClientIds],
   );
+
+  // Leads filed under the focused category. An account IS a category bucket,
+  // so its leads render inside the accounts list (not a separate card). Only
+  // when a specific category is in focus — 'all' / uncategorised don't list
+  // leads here (uncategorised leads live in the Unassigned card above).
+  const categoryLeads = useMemo(() => {
+    if (categoryFilter === 'all' || categoryFilter === '__uncategorized__') return [];
+    const cf = categoryFilter.trim().toLowerCase();
+    return allLeads.filter((l) => (l.category ?? '').trim().toLowerCase() === cf);
+  }, [allLeads, categoryFilter]);
 
   // Shared allow-list for every workspace-scoped view (kanban, analytics,
   // tasks, forecast). When the sidebar shows "All workspaces" we pass null
@@ -623,44 +632,6 @@ export const Clients: React.FC = () => {
                 />
               )}
 
-              {/* Leads filed under the picked category (leads are organised by
-                  category). Shown when focused on a specific category. */}
-              {canViewModule('leads')
-                && categoryFilter !== 'all'
-                && categoryFilter !== '__uncategorized__'
-                && (() => {
-                  const catLeads = allLeads.filter(
-                    (l) => (l.category ?? '').trim().toLowerCase() === categoryFilter.toLowerCase(),
-                  );
-                  if (catLeads.length === 0) return null;
-                  return (
-                    <Card>
-                      <CardContent className="pt-4 space-y-2">
-                        <h3 className="font-semibold text-sm flex items-center gap-2">
-                          Leads in {categoryFilter}
-                          <Badge variant="outline" className="text-[10px]">{catLeads.length}</Badge>
-                        </h3>
-                        <ul className="border rounded-md divide-y">
-                          {catLeads.map((l) => (
-                            <li key={l.leadId} className="px-3 py-2 flex items-center gap-2">
-                              <button
-                                type="button"
-                                className="flex-1 min-w-0 text-left hover:text-primary"
-                                onClick={() => setSelectedLead(l)}
-                              >
-                                <span className="font-medium">{leadDisplayName(l)}</span>
-                                <span className="ml-2 text-xs text-muted-foreground">
-                                  {l.company} · {l.leadNumber} · {leadStatusLabel(l.leadStatus)}
-                                </span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  );
-                })()}
-
               <div className="pt-2">
                 <h2 className="text-lg font-semibold">Accounts</h2>
                 <p className="text-sm text-muted-foreground">
@@ -784,6 +755,8 @@ export const Clients: React.FC = () => {
                 if (allSelected) clearSelection();
                 else selectAllFiltered();
               }}
+              leadRows={canViewModule('leads') ? categoryLeads : []}
+              onOpenLead={(l) => setSelectedLead(l)}
             />
           )}
               </>

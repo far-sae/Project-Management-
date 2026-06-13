@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ArrowUp, ArrowDown, ArrowUpDown, Star, Building2,
+  ArrowUp, ArrowDown, ArrowUpDown, Star, Building2, UserPlus,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { Client, ClientStatus, formatRevenue } from '@/services/supabase/clients';
+import { Lead, leadDisplayName, leadStatusLabel } from '@/services/supabase/leads';
 import { cn } from '@/lib/utils';
 
 type SortKey =
@@ -66,11 +67,16 @@ interface ClientsTableProps {
   onOpen: (client: Client) => void;
   groupByCategory?: boolean;
   canManage: boolean;
+  /** Leads filed under the viewed category — shown as rows in this same list
+   *  (an account IS a category bucket; its leads live inside it). */
+  leadRows?: Lead[];
+  onOpenLead?: (lead: Lead) => void;
 }
 
 export const ClientsTable: React.FC<ClientsTableProps> = ({
   rows, selectedIds, onToggleRow, onToggleAll, onOpen,
   groupByCategory = false, canManage,
+  leadRows = [], onOpenLead,
 }) => {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -230,6 +236,80 @@ export const ClientsTable: React.FC<ClientsTableProps> = ({
     </tr>
   );
 
+  // Lead rows share the account columns so the moved lead shows up right here
+  // in the accounts list. No bulk-select checkbox (delete is account-only);
+  // clicking opens the lead drawer.
+  const renderLeadRow = (l: Lead) => (
+    <tr
+      key={`lead-${l.leadId}`}
+      onClick={() => onOpenLead?.(l)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenLead?.(l); }
+      }}
+      tabIndex={0}
+      className={cn(
+        'border-b border-border/60 cursor-pointer outline-none',
+        'hover:bg-muted/50 focus:bg-muted/60',
+      )}
+    >
+      {canManage && <td className="px-2 py-1.5 align-middle w-8" />}
+      <td className="px-2 py-1.5 align-middle">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-6 h-6 rounded-md bg-sky-500/15 text-sky-600 dark:text-sky-400 grid place-items-center shrink-0">
+            <UserPlus className="w-3.5 h-3.5" />
+          </span>
+          <span className="font-medium truncate max-w-[280px]">{leadDisplayName(l)}</span>
+        </div>
+      </td>
+      <td className="px-2 py-1.5 align-middle text-xs">
+        <Badge variant="outline" className="text-[10px] border-sky-500/40 text-sky-600 dark:text-sky-400">Lead</Badge>
+      </td>
+      <td className="px-2 py-1.5 align-middle text-xs text-muted-foreground">
+        {leadStatusLabel(l.leadStatus)}
+      </td>
+      <td className="px-2 py-1.5 align-middle text-xs">
+        {l.category ? (
+          <Badge variant="secondary" className="text-[10px]">{l.category}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-2 py-1.5 align-middle text-xs truncate max-w-[160px]">
+        {l.leadOwnerName ?? <span className="text-muted-foreground">—</span>}
+      </td>
+      <td className="px-2 py-1.5 align-middle text-xs truncate max-w-[200px]">
+        {l.email ? (
+          <a href={`mailto:${l.email}`} onClick={(e) => e.stopPropagation()} className="text-primary hover:underline">
+            {l.email}
+          </a>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-2 py-1.5 align-middle text-xs whitespace-nowrap">
+        {l.phone ? (
+          <a href={`tel:${l.phone}`} onClick={(e) => e.stopPropagation()} className="hover:underline">{l.phone}</a>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-2 py-1.5 align-middle text-xs whitespace-nowrap">
+        {l.country ?? <span className="text-muted-foreground">—</span>}
+      </td>
+      <td className="px-2 py-1.5 align-middle text-right text-xs text-muted-foreground">—</td>
+      <td className="px-2 py-1.5 align-middle text-right text-xs tabular-nums whitespace-nowrap">
+        {l.annualRevenue == null ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          formatRevenue(l.annualRevenue)
+        )}
+      </td>
+      <td className="px-2 py-1.5 align-middle text-right text-xs text-muted-foreground whitespace-nowrap">
+        {l.updatedAt.toLocaleDateString()}
+      </td>
+    </tr>
+  );
+
   return (
     <div className="rounded-md border border-border overflow-auto bg-card max-h-[calc(100vh-22rem)]">
       <table className="w-full border-collapse text-sm">
@@ -275,31 +355,51 @@ export const ClientsTable: React.FC<ClientsTableProps> = ({
           </tr>
         </thead>
         <tbody>
-          {sortedRows.length === 0 ? (
+          {sortedRows.length === 0 && leadRows.length === 0 ? (
             <tr>
               <td colSpan={colSpan} className="px-3 py-8 text-center text-sm text-muted-foreground">
                 No rows.
               </td>
             </tr>
-          ) : groupedRows ? (
-            groupedRows.map(([label, items]) => (
-              <React.Fragment key={label}>
-                <tr className="bg-muted/30 border-b border-border/60">
-                  <td
-                    colSpan={colSpan}
-                    className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide"
-                  >
-                    {label}
-                    <span className="ml-2 font-normal normal-case">
-                      {items.length} client{items.length === 1 ? '' : 's'}
-                    </span>
-                  </td>
-                </tr>
-                {items.map(renderRow)}
-              </React.Fragment>
-            ))
           ) : (
-            sortedRows.map(renderRow)
+            <>
+              {groupedRows ? (
+                groupedRows.map(([label, items]) => (
+                  <React.Fragment key={label}>
+                    <tr className="bg-muted/30 border-b border-border/60">
+                      <td
+                        colSpan={colSpan}
+                        className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                      >
+                        {label}
+                        <span className="ml-2 font-normal normal-case">
+                          {items.length} client{items.length === 1 ? '' : 's'}
+                        </span>
+                      </td>
+                    </tr>
+                    {items.map(renderRow)}
+                  </React.Fragment>
+                ))
+              ) : (
+                sortedRows.map(renderRow)
+              )}
+              {leadRows.length > 0 && (
+                <>
+                  <tr className="bg-sky-500/5 border-b border-border/60">
+                    <td
+                      colSpan={colSpan}
+                      className="px-3 py-1.5 text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wide"
+                    >
+                      Leads
+                      <span className="ml-2 font-normal normal-case text-muted-foreground">
+                        {leadRows.length} lead{leadRows.length === 1 ? '' : 's'} in this account
+                      </span>
+                    </td>
+                  </tr>
+                  {leadRows.map(renderLeadRow)}
+                </>
+              )}
+            </>
           )}
         </tbody>
       </table>
