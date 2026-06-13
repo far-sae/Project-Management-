@@ -6,7 +6,6 @@ import { updateOrganization } from '@/services/supabase/organizations';
 import { upsertProjectMember, type ProjectRole } from '@/services/supabase/projectMembers';
 import type { Organization, OrganizationMember } from '@/types/organization';
 import type { CustomRole } from '@/services/supabase/customRoles';
-import { listOrgGrants, setModuleGrant, type GrantRow, type CrmModule, type GrantLevel } from '@/services/supabase/crmGrants';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useProjects } from '@/hooks/useProjects';
 import { useSubscription } from '@/context/SubscriptionContext';
@@ -147,26 +146,10 @@ export const Team: React.FC = () => {
   });
   const [addSeatLoading, setAddSeatLoading] = useState(false);
 
-  // ─── CRM module grants ───────────────────────────────────────────────────
-  const [orgGrants, setOrgGrants] = useState<GrantRow[]>([]);
-  useEffect(() => {
-    if (organization?.organizationId && isAdmin) {
-      listOrgGrants(organization.organizationId).then(setOrgGrants).catch(() => setOrgGrants([]));
-    }
-  }, [organization?.organizationId, isAdmin]);
-
-  // View is the default for every member, so the only stored grant is "edit".
-  // A row with level 'edit' → Edit; no row (or a stale 'view' row) → View.
-  const levelFor = (userId: string, module: CrmModule): GrantLevel =>
-    orgGrants.find((g) => g.user_id === userId && g.module === module)?.level === "edit" ? "edit" : "view";
-
-  const onChangeGrant = async (userId: string, module: CrmModule, value: GrantLevel) => {
-    if (!organization?.organizationId) return;
-    // "edit" stores a grant row; "view" (the default) removes it.
-    await setModuleGrant(organization.organizationId, userId, module, value === "edit" ? "edit" : null);
-    const all = await listOrgGrants(organization.organizationId);
-    setOrgGrants(all);
-  };
+  // CRM access (Deals/Leads) is governed by the member's assigned role — see
+  // the "Roles & access" section above (RolesAndAccessSection + the per-member
+  // role picker). Owners/admins always have full access. The old per-member
+  // Deals/Leads grant matrix was removed in favour of custom roles.
 
   // ✅ Check feature access
   const canUseTeam = hasFeature('team_collaboration');
@@ -952,42 +935,6 @@ export const Team: React.FC = () => {
             </Card>
           )}
         </div>
-
-        {isAdmin && (
-          <section className="mt-8">
-            <h3 className="text-lg font-semibold mb-1">Organization access</h3>
-            <p className="text-sm text-muted-foreground mb-4">Everyone can view Deals and Leads by default. Grant <strong>Edit</strong> to let a member change records. Owners and admins always have full access.</p>
-            <div className="space-y-2">
-              {(organization?.members ?? []).map((m) => {
-                const isPrivileged = m.role === "owner" || m.role === "admin";
-                return (
-                  <div key={m.userId} className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
-                    <div className="text-sm"><span className="font-medium">{m.displayName || m.email}</span> <span className="text-muted-foreground">· {m.role}</span></div>
-                    {isPrivileged ? (
-                      <span className="text-xs rounded bg-muted px-2 py-1 text-muted-foreground">Full (admin)</span>
-                    ) : (
-                      <div className="flex gap-2">
-                        {(["deals", "leads"] as CrmModule[]).map((mod) => (
-                          <label key={mod} className="flex items-center gap-1 text-xs">
-                            <span className="capitalize text-muted-foreground">{mod}</span>
-                            <select
-                              className="rounded border border-border bg-background px-1 py-0.5"
-                              value={levelFor(m.userId, mod)}
-                              onChange={(e) => onChangeGrant(m.userId, mod, e.target.value as GrantLevel)}
-                            >
-                              <option value="view">View (default)</option>
-                              <option value="edit">Edit</option>
-                            </select>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         {/* Add an existing teammate to this project (no email). */}
         <Dialog open={openAddMember} onOpenChange={(o) => { if (!addBusy) setOpenAddMember(o); }}>

@@ -3,7 +3,7 @@ import { useAuth } from './AuthContext';
 import { Organization, OrganizationMember } from '@/types/organization';
 import { getOrganization } from '@/services/supabase/organizations';
 import { supabase } from '@/services/supabase/config';
-import { listOrgGrants, computeModuleAccess, type GrantRow, type CrmModule } from "@/services/supabase/crmGrants";
+import { type CrmModule } from "@/services/supabase/crmGrants";
 import { listCustomRoles, type CustomRole } from "@/services/supabase/customRoles";
 import { resolvePagePermissions, type BuiltinRole } from "@/lib/pagePermissions";
 import { type PageKey, type PageAccessLevel } from "@/lib/pageCatalog";
@@ -44,7 +44,6 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [grants, setGrants] = useState<GrantRow[]>([]);
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
   // False until the org's custom roles have been fetched at least once, so
   // route guards don't decide page access before a member's role is known.
@@ -302,24 +301,6 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [user?.userId]);
 
-  // Load current user's CRM module grants when org + user are known.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (organization?.organizationId && user?.userId) {
-          const all = await listOrgGrants(organization.organizationId);
-          if (!cancelled) setGrants(all.filter((g) => g.user_id === user.userId));
-        } else if (!cancelled) {
-          setGrants([]);
-        }
-      } catch {
-        if (!cancelled) setGrants([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [organization?.organizationId, user?.userId]);
-
   // Load the org's custom roles (drives per-page access). Non-fatal on error
   // (e.g. local-only org) — falls back to [] and the built-in role surface.
   useEffect(() => {
@@ -346,8 +327,6 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   // ============================================
 
   const value = useMemo(() => {
-    const moduleAccess = computeModuleAccess(isAdmin, grants);
-
     // Resolve the current user's per-page access from their assigned custom
     // role (if any), else the built-in role's today-equivalent surface.
     const me = organization?.members.find((m) => m.userId === user?.userId);
@@ -361,6 +340,18 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     });
     const pageLevel = (page: PageKey): PageAccessLevel => pagePerms[page] ?? 'none';
 
+    // CRM module access (Deals/Leads) is governed by the assigned custom role,
+    // not a separate per-member grant matrix (removed). Owner/admin = full.
+    // A member with no custom role can VIEW by default (matches the CRM
+    // default-open read) but can't EDIT until a role grants 'crm' = edit.
+    const crmRoleLevel: PageAccessLevel | null = myCustomRole
+      ? (myCustomRole.permissions['crm'] ?? 'none')
+      : null;
+    const canViewModule = (_m: CrmModule): boolean =>
+      isAdmin || (crmRoleLevel !== null ? crmRoleLevel !== 'none' : true);
+    const canEditModule = (_m: CrmModule): boolean =>
+      isAdmin || crmRoleLevel === 'edit';
+
     return {
       organization,
       loading,
@@ -372,8 +363,8 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       canInviteMembers,
       canManageBilling,
       canManageSettings,
-      canViewModule: moduleAccess.canView,
-      canEditModule: moduleAccess.canEdit,
+      canViewModule,
+      canEditModule,
       customRoles,
       pageLevel,
       canAccessPage: (page: PageKey) => pageLevel(page) !== 'none',
@@ -381,7 +372,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       permissionsLoading: loading || !customRolesLoaded,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, grants, customRoles, customRolesLoaded, role, user?.userId]);
+  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, customRoles, customRolesLoaded, role, user?.userId]);
 
   return (
     <OrganizationContext.Provider value={value}>
