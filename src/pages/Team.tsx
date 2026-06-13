@@ -114,7 +114,10 @@ export const Team: React.FC = () => {
   const [addBusy, setAddBusy] = useState(false);
   const [roleBusyUserId, setRoleBusyUserId] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'member' | 'viewer'>('member');
+  // Combined role value: 'builtin:admin|member|viewer' or 'custom:<roleId>'.
+  // A custom pick grants the role on accept; the built-in `role` stays as a
+  // safe baseline ('member') so deleting the role later degrades gracefully.
+  const [inviteRoleValue, setInviteRoleValue] = useState<string>('builtin:member');
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [invitations, setInvitations] = useState<ProjectInvitation[]>([]);
   const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
@@ -575,6 +578,18 @@ export const Team: React.FC = () => {
     const failed: { email: string; reason: string }[] = [];
     const manualLinks: { email: string; link: string; reason: string }[] = [];
 
+    // Split the combined picker value into a built-in baseline + optional
+    // custom role, and a human label for the invite email.
+    const inviteCustomRoleId = inviteRoleValue.startsWith('custom:')
+      ? inviteRoleValue.slice('custom:'.length)
+      : null;
+    const inviteBuiltinRole = (inviteCustomRoleId
+      ? 'member'
+      : inviteRoleValue.slice('builtin:'.length)) as 'admin' | 'member' | 'viewer';
+    const inviteRoleLabel = inviteCustomRoleId
+      ? (customRoles.find((r) => r.roleId === inviteCustomRoleId)?.name ?? 'Custom role')
+      : inviteBuiltinRole;
+
     try {
       // Sequential — gives each createInvitation a clean turn for RLS / DB writes.
       for (const email of filtered) {
@@ -582,13 +597,16 @@ export const Team: React.FC = () => {
           const invitation = await createInvitation(
             selectedProject, currentProject.name, user.userId,
             user.displayName, user.email, projectOrgId,
-            { projectId: selectedProject, inviteeEmail: email, role: inviteRole },
+            {
+              projectId: selectedProject, inviteeEmail: email,
+              role: inviteBuiltinRole, customRoleId: inviteCustomRoleId,
+            },
           );
           setInvitations((prev) => [invitation, ...prev]);
           const inviteLink = `${window.location.origin}/accept-invite/${invitation.token}`;
           const emailResult = await sendInvitationEmail({
             toEmail: email, inviterName: user.displayName,
-            projectName: currentProject.name, inviteLink, role: inviteRole,
+            projectName: currentProject.name, inviteLink, role: inviteRoleLabel,
           });
           if (emailResult.ok) {
             sentTo.push(email);
@@ -1047,18 +1065,28 @@ export const Team: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
-                <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as typeof inviteRole)}>
+                <Select value={inviteRoleValue} onValueChange={setInviteRoleValue}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">
+                    <SelectItem value="builtin:admin">
                       <div className="flex items-center gap-2"><Shield className="w-4 h-4 text-purple-500" />Admin - Can manage members and settings</div>
                     </SelectItem>
-                    <SelectItem value="member">
+                    <SelectItem value="builtin:member">
                       <div className="flex items-center gap-2"><User className="w-4 h-4 text-blue-500" />Member - Can create and edit tasks</div>
                     </SelectItem>
-                    <SelectItem value="viewer">
+                    <SelectItem value="builtin:viewer">
                       <div className="flex items-center gap-2"><User className="w-4 h-4 text-muted-foreground" />Viewer - Read-only access</div>
                     </SelectItem>
+                    {customRoles.length > 0 && (
+                      <>
+                        <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground">Custom roles</div>
+                        {customRoles.map((r) => (
+                          <SelectItem key={r.roleId} value={`custom:${r.roleId}`}>
+                            <div className="flex items-center gap-2"><Shield className="w-4 h-4 text-emerald-500" />{r.name}</div>
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
