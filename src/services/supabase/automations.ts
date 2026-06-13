@@ -630,17 +630,46 @@ export const enrollInAutomation = async (params: {
   recipeId: string;
   clientId?: string | null;
   dealId?: string | null;
+  leadId?: string | null;
 }): Promise<string> => {
   const { data, error } = await supabase.rpc("enroll_in_automation", {
     p_recipe_id: params.recipeId,
     p_client_id: params.clientId ?? null,
     p_deal_id: params.dealId ?? null,
+    p_lead_id: params.leadId ?? null,
   });
   if (error) {
     logger.error("enrollInAutomation failed:", error);
     throw new Error(error.message);
   }
+  void kickAutomationWorker({ force: true });
   return String(data ?? "");
+};
+
+/**
+ * Enrol an entire lead segment (by category) into a campaign / automation
+ * recipe in one server-side call. Backed by enroll_segment_in_automation
+ * (migration 137): inserts one synthetic event per mailable lead whose
+ * category matches `category` (skips no-email / opted-out leads). Returns
+ * the number of leads enrolled so the caller can report it.
+ *
+ * Used by the AI agent's create_campaign action so a new campaign starts
+ * its sequence for its target segment immediately.
+ */
+export const enrollSegmentInAutomation = async (params: {
+  recipeId: string;
+  category: string;
+}): Promise<number> => {
+  const { data, error } = await supabase.rpc("enroll_segment_in_automation", {
+    p_recipe_id: params.recipeId,
+    p_category: params.category,
+  });
+  if (error) {
+    logger.error("enrollSegmentInAutomation failed:", error);
+    throw new Error(error.message);
+  }
+  void kickAutomationWorker({ force: true });
+  return Number(data ?? 0);
 };
 
 /**
