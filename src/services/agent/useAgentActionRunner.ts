@@ -18,7 +18,7 @@ import { createTask } from '@/services/supabase/database';
 import { createWorkspace } from '@/services/supabase/workspaces';
 import { createMeeting } from '@/services/supabase/meetings';
 import { createCall } from '@/services/supabase/calls';
-import { draftAutomationFromText, upsertRecipe } from '@/services/supabase/automations';
+import { draftAutomationFromText, upsertRecipe, enrollSegmentInAutomation } from '@/services/supabase/automations';
 import { ProposedAction, canRunAction, ActionPerms } from '@/services/agent/agentActions';
 import { useMemo } from 'react';
 
@@ -288,7 +288,22 @@ export const useAgentActionRunner = (): {
           draft.name = name;
           draft.enabled = true;
           const recipe = await upsertRecipe(orgId, null, draft);
-          toast.success(`Campaign "${name}" created & live`);
+          // Auto-enrol the target segment (leads by category) so the
+          // sequence starts immediately. Best-effort: a failed/empty
+          // enrolment never blocks campaign creation.
+          let enrolled = 0;
+          if (segment) {
+            try {
+              enrolled = await enrollSegmentInAutomation({ recipeId: recipe.recipeId, category: segment });
+            } catch (err) {
+              toast.warning(err instanceof Error ? `Campaign live, but enrolment failed: ${err.message}` : 'Campaign live, but segment enrolment failed');
+            }
+          }
+          toast.success(
+            enrolled > 0
+              ? `Campaign "${name}" live · enrolled ${enrolled} lead${enrolled === 1 ? '' : 's'}`
+              : `Campaign "${name}" created & live`,
+          );
           return { ok: true, created: { type: 'campaign', id: recipe.recipeId, label: name } };
         }
 
