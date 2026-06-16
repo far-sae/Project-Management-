@@ -264,9 +264,8 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   if (!client || !organizationId) return null;
 
   return (
-    // Full-page record: fills the CRM content area (the app sidebar stays).
-    // Not a side drawer — it replaces the list while open.
-    <div className="absolute inset-0 z-30 flex bg-background" role="region" aria-label="Account record">
+    // Full-page record at its own URL — full-screen, not a side drawer.
+    <div className="fixed inset-0 z-40 flex bg-background" role="region" aria-label="Account record">
       {/* HubSpot-style 3-column record view, full width. */}
       <aside className="relative h-full w-full bg-background flex flex-col">
         {/* Top bar — name, badges, close + edit/delete */}
