@@ -498,11 +498,12 @@ export const Clients: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
+      <main className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
         {/* Every CRM tab gets full page width — matches the project-board
             layout and gives leads / contacts / accounts / pipeline lists
-            enough room for all their columns without internal scroll. */}
-        <div className="space-y-6">
+            enough room for all their columns without internal scroll. The
+            account record opens as a full-page layer over this (see below). */}
+        <div className="space-y-6 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
           {/* Header */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
@@ -968,6 +969,27 @@ export const Clients: React.FC = () => {
 
           </Tabs>
         </div>
+
+        {/* Account record — opens as a full-page layer over the CRM content
+            (replaces the list; the app sidebar stays). Not a side drawer. */}
+        {liveSelected && (
+          <ClientDetailDrawer
+            client={liveSelected}
+            organizationId={organizationId}
+            canManage={canManage}
+            onClose={() => setSelected(null)}
+            onEdit={(c) => setEditing(c)}
+            onDelete={(c) => setConfirmDelete(c)}
+            onUpdate={async (clientId, patch) => {
+              const updated = await update(clientId, patch);
+              // Keep the selected pointer in sync so the drawer reflects the
+              // saved values even after a close/reopen.
+              setSelected(updated);
+              return updated;
+            }}
+            onOpenLead={(l) => { setSelected(null); setSelectedLead(l); }}
+          />
+        )}
       </main>
 
       {/* New */}
@@ -1015,25 +1037,6 @@ export const Clients: React.FC = () => {
         }}
       />
 
-      {/* Detail drawer */}
-      {liveSelected && (
-        <ClientDetailDrawer
-          client={liveSelected}
-          organizationId={organizationId}
-          canManage={canManage}
-          onClose={() => setSelected(null)}
-          onEdit={(c) => setEditing(c)}
-          onDelete={(c) => setConfirmDelete(c)}
-          onUpdate={async (clientId, patch) => {
-            const updated = await update(clientId, patch);
-            // Keep the selected pointer in sync so the drawer reflects the
-            // saved values even after a close/reopen.
-            setSelected(updated);
-            return updated;
-          }}
-          onOpenLead={(l) => { setSelected(null); setSelectedLead(l); }}
-        />
-      )}
 
       {/* Account categories — managed list lives in client_categories */}
       <ManageCategoriesDialog
