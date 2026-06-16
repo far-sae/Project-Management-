@@ -1031,6 +1031,7 @@ export const Clients: React.FC = () => {
             setSelected(updated);
             return updated;
           }}
+          onOpenLead={(l) => { setSelected(null); setSelectedLead(l); }}
         />
       )}
 
@@ -1263,7 +1264,7 @@ export const Clients: React.FC = () => {
             setSelectedLead(updated);
             return updated;
           }}
-          onOpenAccount={(c) => setSelected(c)}
+          onOpenAccount={(c) => { setSelectedLead(null); setSelected(c); }}
         />
       )}
 
