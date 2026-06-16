@@ -715,32 +715,20 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               </h3>
               {accountClient ? (
                 <>
+                  {/* Short summary — click anywhere to open the full business
+                      account page (the whole form lives there, not here). */}
                   <button
                     type="button"
                     onClick={() => onOpenAccount?.(accountClient)}
                     className="text-left w-full group"
                   >
                     <div className="font-medium group-hover:text-primary truncate">{accountClient.name}</div>
-                    {accountClient.category && (
-                      <div className="text-xs text-muted-foreground truncate">{accountClient.category}</div>
-                    )}
+                    <div className="text-xs text-muted-foreground truncate">
+                      {[accountClient.category, accountClient.industry,
+                        accountClient.annualRevenue != null ? formatRevenue(accountClient.annualRevenue) : null]
+                        .filter(Boolean).join(' · ') || 'Company'}
+                    </div>
                   </button>
-                  <dl className="text-xs space-y-1">
-                    <BizRow label="Legal name" value={accountClient.legalName} />
-                    <BizRow label="Industry" value={accountClient.industry} />
-                    <BizRow
-                      label="Annual revenue"
-                      value={accountClient.annualRevenue != null ? formatRevenue(accountClient.annualRevenue) : null}
-                    />
-                    <BizRow
-                      label="Employees"
-                      value={accountClient.employeeCount != null ? String(accountClient.employeeCount) : null}
-                    />
-                    <BizRow label="Source" value={accountClient.source} />
-                    <BizRow label="Website" value={accountClient.website} />
-                    <BizRow label="Email" value={accountClient.email} />
-                    <BizRow label="Phone" value={accountClient.phone} />
-                  </dl>
                   <Button size="sm" variant="outline" className="w-full" onClick={() => onOpenAccount?.(accountClient)}>
                     <ExternalLink className="w-3.5 h-3.5 mr-1" /> Open business account
                   </Button>
@@ -937,18 +925,6 @@ export const LeadDetailDrawer: React.FC<Props> = ({
 };
 
 // ─── Right rail: interactive account pipeline ────────────────────────────────
-
-/** One label/value row in the lead rail's Business details panel. Hidden when
- *  the value is empty so the panel stays compact. */
-const BizRow: React.FC<{ label: string; value?: string | null }> = ({ label, value }) => {
-  if (!value || !String(value).trim()) return null;
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <dt className="text-muted-foreground shrink-0">{label}</dt>
-      <dd className="text-right truncate">{value}</dd>
-    </div>
-  );
-};
 
 /** Deals shown for a lead = the lead's ACCOUNT's deals (a lead isn't itself a
  *  deal). Renders an interactive pipeline: ＋ Add deal scoped to the account,

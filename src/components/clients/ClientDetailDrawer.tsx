@@ -3,7 +3,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import {
   Building2, X, Star, Plus,
   FileText, Trash2, Loader2, Paperclip, ExternalLink, MessageSquare,
-  Calendar as CalendarIcon, Mailbox, Edit, UserPlus,
+  Calendar as CalendarIcon, Mailbox, Edit,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,9 +30,6 @@ import {
   getClientNotes,
   uploadClientAttachment,
 } from '@/services/supabase/clients';
-import {
-  listAccountLeads, leadDisplayName, leadStatusLabel, type Lead,
-} from '@/services/supabase/leads';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
 import { InlineField } from '@/components/leads/InlineField';
 import { DealFormDialog } from '@/components/deals/DealFormDialog';
@@ -78,13 +75,11 @@ interface Props {
    *  Wired in Clients.tsx → updateClient(orgId, clientId, patch). When
    *  omitted the left fields render read-only. */
   onUpdate?: (clientId: string, patch: Partial<Client>) => Promise<Client>;
-  /** Open one of this account's linked leads in the lead window. */
-  onOpenLead?: (lead: Lead) => void;
 }
 
 export const ClientDetailDrawer: React.FC<Props> = ({
   client: clientProp, organizationId, canManage, onClose, onEdit, onDelete,
-  onUpdate, onOpenLead,
+  onUpdate,
 }) => {
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
@@ -123,8 +118,6 @@ export const ClientDetailDrawer: React.FC<Props> = ({
 
   // Right-rail: this account's deals + Activity-tab timeline.
   const [deals, setDeals] = useState<Deal[]>([]);
-  // Leads linked to this business account (lead.account_id === client_id).
-  const [accountLeads, setAccountLeads] = useState<Lead[]>([]);
   const [clientActivities, setClientActivities] = useState<Activity[]>([]);
   // Deal stage-change trail across this account's deals — folded into the
   // Activity timeline (and shown raw in the Pipeline tab).
@@ -195,16 +188,6 @@ export const ClientDetailDrawer: React.FC<Props> = ({
       .catch(() => {/* non-blocking */});
     return () => { cancelled = true; };
   }, [client?.clientId, organizationId, openCreateDeal, dealsRefresh]);
-
-  // Leads linked to this business account — the company↔leads connection.
-  useEffect(() => {
-    if (!client || !organizationId) { setAccountLeads([]); return; }
-    let cancelled = false;
-    listAccountLeads(organizationId, client.clientId)
-      .then((rows) => { if (!cancelled) setAccountLeads(rows); })
-      .catch(() => {/* non-blocking */});
-    return () => { cancelled = true; };
-  }, [client?.clientId, organizationId]);
 
   // Activity timeline base — the record's notes/emails/calls/meetings/pm-tasks.
   useEffect(() => {
@@ -484,36 +467,6 @@ export const ClientDetailDrawer: React.FC<Props> = ({
               editable={canEdit}
               onSave={handleInlineUpdate}
             />
-
-            {/* Leads linked to this business account (lead.account_id). Click
-                a lead to open its full window. */}
-            <div className="rounded-lg border border-border bg-card p-3 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                <UserPlus className="w-3.5 h-3.5" /> Leads
-                <span className="ml-auto font-normal normal-case text-[11px]">{accountLeads.length}</span>
-              </h3>
-              {accountLeads.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No leads linked to this account yet.</p>
-              ) : (
-                <ul className="divide-y divide-border/60">
-                  {accountLeads.map((l) => (
-                    <li key={l.leadId}>
-                      <button
-                        type="button"
-                        onClick={() => onOpenLead?.(l)}
-                        disabled={!onOpenLead}
-                        className="w-full text-left py-1.5 hover:text-primary disabled:hover:text-foreground disabled:cursor-default"
-                      >
-                        <span className="text-sm font-medium block truncate">{leadDisplayName(l)}</span>
-                        <span className="text-[11px] text-muted-foreground block truncate">
-                          {[leadStatusLabel(l.leadStatus), l.email].filter(Boolean).join(' · ')}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
           </aside>
         </div>
       </aside>
