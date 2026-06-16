@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical,
-  Pencil, ArrowLeft, ChevronDown,
+  ArrowLeft, ChevronDown,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -42,13 +42,10 @@ import { PipelineSelector } from '@/components/clients/PipelineSelector';
 import { useClients } from '@/hooks/useClients';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
-  Client, ClientStatus, ClientType,
+  Client,
   CreateClientInput, exportClientsToCsv,
 } from '@/services/supabase/clients';
 import { ClientFormDialog } from '@/components/clients/ClientFormDialog';
-import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialog';
-import { SavedListViews } from '@/components/clients/SavedListViews';
-import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
@@ -58,6 +55,7 @@ import { AccountsLanding } from '@/components/clients/AccountsLanding';
 import { ManageCategoriesDialog } from '@/components/clients/ManageCategoriesDialog';
 import { useClientCategories } from '@/hooks/useClientCategories';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
+import { LeadsTable } from '@/components/leads/LeadsTable';
 import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadConvertDialog } from '@/components/leads/LeadConvertDialog';
 import { ImportLeadsDialog } from '@/components/leads/ImportLeadsDialog';
@@ -74,22 +72,6 @@ import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import { useFxRates } from '@/lib/fxRates';
 import { Coins } from 'lucide-react';
 import { SendEmailDialog, type SendEmailRecipient } from '@/components/activities/SendEmailDialog';
-
-const TYPE_OPTIONS: { value: ClientType | 'all'; label: string }[] = [
-  { value: 'all', label: 'All types' },
-  { value: 'customer', label: 'Customer' },
-  { value: 'prospect', label: 'Prospect' },
-  { value: 'partner', label: 'Partner' },
-  { value: 'vendor', label: 'Vendor' },
-  { value: 'other', label: 'Other' },
-];
-
-const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-  { value: 'archived', label: 'Archived' },
-];
 
 export const Clients: React.FC = () => {
   const { user } = useAuth();
@@ -139,9 +121,6 @@ export const Clients: React.FC = () => {
   }, [defaultPipeline, selectedPipelineId]);
 
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<ClientType | 'all'>('all');
-  const [statusFilter, setStatusFilter] = useState<ClientStatus | 'all'>('all');
-  const [bandFilter, setBandFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
   // Category filter is no longer surfaced in the Accounts toolbar, but it is
   // still driven by the category landing gate (a tile picker → exitLanding).
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -284,9 +263,6 @@ export const Clients: React.FC = () => {
   const [openImport, setOpenImport] = useState(false);
   const [selected, setSelected] = useState<Client | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
-  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(() => new Set());
-  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const [openBulkEdit, setOpenBulkEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   // Keep the selected client's data in sync when the list refreshes via realtime.
@@ -299,46 +275,32 @@ export const Clients: React.FC = () => {
     return clients.find((c) => c.clientId === selected.clientId) ?? selected;
   }, [clients, selected]);
 
-  const filtered = useMemo(() => {
+  // Leads shown inside the Accounts category view (the Accounts tab is the
+  // LEADS surface; companies live on the Business accounts tab). 'all' → every
+  // lead, '__uncategorized__' → leads with no category, else the category's
+  // leads — then filtered by the search box.
+  const viewLeads = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return clients.filter((c) => {
-      if (typeFilter !== 'all' && c.type !== typeFilter) return false;
-      if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-      if (bandFilter !== "all" && c.scoreBand !== bandFilter) return false;
-      if (categoryFilter === '__uncategorized__') {
-        if (c.category && c.category.trim().length > 0) return false;
-      } else if (
-        categoryFilter !== 'all'
-        && (c.category ?? '').trim().toLowerCase() !== categoryFilter.toLowerCase()
-      ) {
-        return false;
-      }
-      if (!q) return true;
-      const haystack = [
-        c.name, c.legalName, c.industry, c.category, c.email, c.phone,
-        c.city, c.country, c.accountOwnerName, ...(c.tags ?? []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [clients, search, typeFilter, statusFilter, bandFilter, categoryFilter]);
+    let base = allLeads;
+    if (categoryFilter === '__uncategorized__') {
+      base = allLeads.filter((l) => !(l.category && l.category.trim()));
+    } else if (categoryFilter !== 'all') {
+      const cf = categoryFilter.trim().toLowerCase();
+      base = allLeads.filter((l) => (l.category ?? '').trim().toLowerCase() === cf);
+    }
+    if (!q) return base;
+    return base.filter((l) =>
+      [leadDisplayName(l), l.company, l.email, l.leadOwnerName, l.leadNumber]
+        .filter(Boolean).join(' ').toLowerCase().includes(q));
+  }, [allLeads, categoryFilter, search]);
 
-  const selectedClients = useMemo(
-    () => clients.filter((c) => selectedClientIds.has(c.clientId)),
-    [clients, selectedClientIds],
-  );
-
-  // Leads filed under the focused category. An account IS a category bucket,
-  // so its leads render inside the accounts list (not a separate card). Only
-  // when a specific category is in focus — 'all' / uncategorised don't list
-  // leads here (uncategorised leads live in the Unassigned card above).
-  const categoryLeads = useMemo(() => {
-    if (categoryFilter === 'all' || categoryFilter === '__uncategorized__') return [];
-    const cf = categoryFilter.trim().toLowerCase();
-    return allLeads.filter((l) => (l.category ?? '').trim().toLowerCase() === cf);
-  }, [allLeads, categoryFilter]);
+  // The concrete category bucket new/imported leads should land in (null when
+  // viewing 'all' or 'uncategorised').
+  const leadScopeCategory = (categoryFilter === 'all' || categoryFilter === '__uncategorized__')
+    ? null : categoryFilter;
+  // Carried to the lead create / import dialogs so they file into the bucket.
+  const [leadCreateCategory, setLeadCreateCategory] = useState<string | null>(null);
+  const [importLeadCategory, setImportLeadCategory] = useState<string | null>(null);
 
   // Shared allow-list for every workspace-scoped view (kanban, analytics,
   // tasks, forecast). When the sidebar shows "All workspaces" we pass null
@@ -357,21 +319,6 @@ export const Clients: React.FC = () => {
     window.addEventListener('open-client', handler);
     return () => window.removeEventListener('open-client', handler);
   }, [clients]);
-
-  const toggleClientSelection = (clientId: string) => {
-    setSelectedClientIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(clientId)) next.delete(clientId);
-      else next.add(clientId);
-      return next;
-    });
-  };
-
-  const selectAllFiltered = () => {
-    setSelectedClientIds(new Set(filtered.map((c) => c.clientId)));
-  };
-
-  const clearSelection = () => setSelectedClientIds(new Set());
 
   const handleCreate = async (input: CreateClientInput) => {
     try {
@@ -433,47 +380,9 @@ export const Clients: React.FC = () => {
       await remove(confirmDelete.clientId);
       toast.success(`Deleted "${confirmDelete.name}"`);
       if (selected?.clientId === confirmDelete.clientId) setSelected(null);
-      setSelectedClientIds((prev) => {
-        const next = new Set(prev);
-        next.delete(confirmDelete.clientId);
-        return next;
-      });
       setConfirmDelete(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedClients.length === 0) return;
-    setDeleting(true);
-    const targetSample = selectedClients.slice(0, 5).map((c) => c.name);
-    try {
-      for (const client of selectedClients) {
-        await remove(client.clientId);
-      }
-      toast.success(`Deleted ${selectedClients.length} account(s)`);
-      void recordAuditEvent(
-        organizationId,
-        { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
-        {
-          action: 'bulk_delete',
-          targetType: 'client',
-          targetLabel: `${selectedClients.length} account(s)`,
-          metadata: {
-            count: selectedClients.length,
-            sample: targetSample,
-            workspaceId: activeWorkspaceId,
-          },
-        },
-      );
-      if (selected && selectedClientIds.has(selected.clientId)) setSelected(null);
-      clearSelection();
-      setConfirmBulkDelete(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete selected accounts');
     } finally {
       setDeleting(false);
     }
@@ -524,10 +433,11 @@ export const Clients: React.FC = () => {
                   <ArrowLeft className="w-4 h-4 mr-2" /> Categories
                 </Button>
               )}
-              {canCreate && (
+              {canCreate && activeTab === 'accounts' && showLanding && (
                 // An account IS a category bucket — "Add account" registers a
-                // category (no company/lead record). Accounts fill up as leads
-                // get filed into the category or convert on a won deal.
+                // category (no company/lead record), and only belongs on the
+                // category landing. Inside a category you add leads; companies
+                // live on the Business accounts tab.
                 <Button onClick={() => setOpenManageCategories(true)}>
                   <Plus className="w-4 h-4 mr-2" /> Add account
                 </Button>
@@ -592,133 +502,64 @@ export const Clients: React.FC = () => {
                 />
               ) : (
               <>
-              <div className="pt-2">
-                <h2 className="text-lg font-semibold">Accounts</h2>
-                <p className="text-sm text-muted-foreground">
-                  Your main accounts list. Search, filter, open a record, or add/import more accounts.
-                </p>
-              </div>
-          {/* Filters */}
-          <Card>
-            <CardContent className="pt-4 flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-                <Search className="w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search name, email, tags, owner…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  maxLength={200}
-                />
-              </div>
-              <Select
-                value={typeFilter}
-                onValueChange={(v) => setTypeFilter(v as ClientType | 'all')}
-              >
-                <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {TYPE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => setStatusFilter(v as ClientStatus | 'all')}
-              >
-                <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={bandFilter} onValueChange={(v) => setBandFilter(v as any)}>
-                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All scores</SelectItem>
-                  <SelectItem value="hot">Hot</SelectItem>
-                  <SelectItem value="warm">Warm</SelectItem>
-                  <SelectItem value="cold">Cold</SelectItem>
-                </SelectContent>
-              </Select>
-              <SavedListViews
-                organizationId={organizationId}
-                currentFilters={{
-                  search, typeFilter, statusFilter, bandFilter,
-                  categoryFilter, groupByCategory: false,
-                }}
-                onApply={(f) => {
-                  setSearch(f.search);
-                  setTypeFilter(f.typeFilter);
-                  setStatusFilter(f.statusFilter);
-                  setBandFilter(f.bandFilter);
-                  setCategoryFilter(f.categoryFilter);
-                }}
-              />
-              <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
-                <Filter className="w-3 h-3" />
-                {filtered.length} of {clients.length}
-              </span>
-            </CardContent>
-          </Card>
-
-          {canManage && filtered.length > 0 && (
-            <Card>
-              <CardContent className="py-3 flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {selectedClients.length > 0
-                    ? `${selectedClients.length} selected`
-                    : 'Select accounts to bulk delete'}
-                </span>
-                <Button type="button" variant="outline" size="sm" onClick={selectAllFiltered}>
-                  Select all shown
-                </Button>
-                {selectedClients.length > 0 && (
-                  <>
-                    <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
-                      Clear
+              <div className="flex items-center justify-between gap-3 flex-wrap pt-2">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold truncate">
+                    {categoryFilter === 'all'
+                      ? 'All leads'
+                      : categoryFilter === '__uncategorized__'
+                        ? 'Uncategorised leads'
+                        : `Leads in ${categoryFilter}`}
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Leads in this category. Open a lead to see its details and its business account.
+                  </p>
+                </div>
+                {canManageLead && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => { setImportLeadCategory(leadScopeCategory); setOpenImportLead(true); }}
+                    >
+                      <Upload className="w-4 h-4 mr-1" /> Import leads
                     </Button>
                     <Button
-                      type="button"
-                      variant="outline"
                       size="sm"
-                      onClick={() => setOpenBulkEdit(true)}
+                      onClick={() => { setLeadCreateCategory(leadScopeCategory); setOpenCreateLead(true); }}
                     >
-                      <Pencil className="w-4 h-4 mr-2" /> Mass edit
+                      <Plus className="w-4 h-4 mr-1" /> Add lead
                     </Button>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setConfirmBulkDelete(true)}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" /> Delete selected
-                    </Button>
-                  </>
+                  </div>
                 )}
-              </CardContent>
-            </Card>
-          )}
+              </div>
 
-          {/* Excel-style table — the outer branches already handled
-              `loading` and the zero-clients empty state above. By the time
-              we reach here we have rows to show, so render the table
-              directly. */}
-          {(
-            <ClientsTable
-              rows={filtered}
-              selectedIds={selectedClientIds}
-              canManage={canManage}
-              onOpen={(c) => setSelected(c)}
-              onToggleRow={toggleClientSelection}
-              onToggleAll={(allSelected) => {
-                if (allSelected) clearSelection();
-                else selectAllFiltered();
-              }}
-              leadRows={canViewModule('leads') ? categoryLeads : []}
-              onOpenLead={(l) => setSelectedLead(l)}
-            />
-          )}
+              <Card>
+                <CardContent className="pt-4 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                    <Search className="w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search leads by name, company, owner…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      maxLength={200}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto">
+                    <Filter className="w-3 h-3" />
+                    {viewLeads.length} lead{viewLeads.length === 1 ? '' : 's'}
+                  </span>
+                </CardContent>
+              </Card>
+
+              {viewLeads.length === 0 ? (
+                <Card>
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    No leads in this category yet. Use <strong>Import leads</strong> or <strong>Add lead</strong> to get started.
+                  </CardContent>
+                </Card>
+              ) : (
+                <LeadsTable rows={viewLeads} onOpen={(l) => setSelectedLead(l)} />
+              )}
               </>
               )}
             </TabsContent>
@@ -1086,7 +927,7 @@ export const Clients: React.FC = () => {
       {/* Lead dialogs and drawer */}
       <ImportLeadsDialog
         open={openImportLead}
-        onOpenChange={setOpenImportLead}
+        onOpenChange={(o) => { setOpenImportLead(o); if (!o) setImportLeadCategory(null); }}
         organizationId={organizationId}
         // Skip the implicit-workspace fallback when the user is in 'All
         // workspaces' / 'Unassigned' — the dialog will refuse to import
@@ -1094,6 +935,7 @@ export const Clients: React.FC = () => {
         // row into workspaces[0].
         workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
         workspaceName={selectedWorkspace?.name ?? null}
+        defaultCategory={importLeadCategory}
         userId={user?.userId}
         userName={user?.displayName}
         onComplete={(result) => {
@@ -1139,9 +981,11 @@ export const Clients: React.FC = () => {
           if (!o) {
             setOpenCreateLead(false);
             setEditingLead(null);
+            setLeadCreateCategory(null);
           }
         }}
         lead={editingLead}
+        defaultCategory={editingLead ? undefined : leadCreateCategory}
         onSubmit={async (input) => {
           try {
             if (editingLead) {
@@ -1424,59 +1268,6 @@ export const Clients: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <AlertDialog
-        open={confirmBulkDelete}
-        onOpenChange={(o) => { if (!o) setConfirmBulkDelete(false); }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete selected accounts?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete {selectedClients.length} selected account
-              {selectedClients.length === 1 ? '' : 's'}. Only the accounts you
-              selected will be deleted. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleBulkDelete}
-              disabled={deleting || selectedClients.length === 0}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              <Trash2 className="w-4 h-4 mr-1" /> Delete selected
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <BulkEditClientsDialog
-        open={openBulkEdit}
-        onOpenChange={setOpenBulkEdit}
-        clients={selectedClients}
-        onApply={async (clientId, patch) => {
-          await update(clientId, patch);
-        }}
-        onClear={() => {
-          // Fires after the dialog finishes applying changes to every row.
-          void recordAuditEvent(
-            organizationId,
-            { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
-            {
-              action: 'bulk_edit',
-              targetType: 'client',
-              targetLabel: `${selectedClients.length} account(s)`,
-              metadata: {
-                count: selectedClients.length,
-                workspaceId: activeWorkspaceId,
-              },
-            },
-          );
-          clearSelection();
-        }}
-      />
 
       {/* Deal → PM handoff dialog. Owned here so there is exactly one
           instance regardless of the entry point: the won transition (kanban
