@@ -1085,7 +1085,6 @@ export const Clients: React.FC = () => {
             setSelected(updated);
             return updated;
           }}
-          onOpenLead={(l) => { navigate('/clients'); setSelectedLead(l); }}
         />
       )}
 
