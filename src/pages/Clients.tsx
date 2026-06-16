@@ -52,6 +52,7 @@ import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
 import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
+import { BusinessAccountsTab } from '@/components/clients/BusinessAccountsTab';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { AccountsLanding } from '@/components/clients/AccountsLanding';
 import { ManageCategoriesDialog } from '@/components/clients/ManageCategoriesDialog';
@@ -148,7 +149,11 @@ export const Clients: React.FC = () => {
   // callbacks (e.g. CrmHomeDashboard) may still pass it. The useEffect below
   // redirects those legacy values to a live tab now that the Activities tab
   // is gone (its timeline moved into each record's right rail).
-  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'business_accounts' | 'tasks' | 'forecast'>('home');
+  // "Add business account" / "Import" from the Business-accounts tab carry the
+  // category bucket the user is in, so the new/imported company files into it.
+  const [createDefaultCategory, setCreateDefaultCategory] = useState<string | null>(null);
+  const [importDefaultCategory, setImportDefaultCategory] = useState<string | null>(null);
   useEffect(() => {
     // The removed 'tasks'/'activities'/'leads' tabs all redirect: tasks &
     // activities → home (the Activities tab is gone; its feed now lives in
@@ -543,6 +548,9 @@ export const Clients: React.FC = () => {
                   <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
                 </TabsTrigger>
               )}
+              <TabsTrigger value="business_accounts">
+                <Building2 className="w-4 h-4 mr-1.5" /> Business accounts
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="home" className="mt-4">
@@ -933,17 +941,32 @@ export const Clients: React.FC = () => {
               })()}
             </TabsContent>
 
+            <TabsContent value="business_accounts" className="mt-4">
+              <BusinessAccountsTab
+                clients={clients}
+                registeredCategories={registeredCategories}
+                leads={allLeads}
+                canCreate={canCreate}
+                onOpenCompany={(c) => setSelected(c)}
+                onExportCategory={handleExportCategory}
+                onManageCategories={canManageCategories ? () => setOpenManageCategories(true) : undefined}
+                onAddCompany={(cat) => { setCreateDefaultCategory(cat); setOpenCreate(true); }}
+                onImportCompanies={(cat) => { setImportDefaultCategory(cat); setOpenImport(true); }}
+              />
+            </TabsContent>
+
           </Tabs>
         </div>
       </main>
 
-      {/* New */}
+      {/* New business account */}
       <ClientFormDialog
         open={openCreate}
-        onOpenChange={setOpenCreate}
+        onOpenChange={(o) => { setOpenCreate(o); if (!o) setCreateDefaultCategory(null); }}
         onSubmit={handleCreate}
         onUpdateExisting={canManage ? handleUpdateExistingFromCreate : undefined}
         organizationId={organizationId}
+        defaultCategory={createDefaultCategory}
       />
       {/* Edit */}
       <ClientFormDialog
@@ -956,12 +979,13 @@ export const Clients: React.FC = () => {
       {/* Import */}
       <ImportClientsDialog
         open={openImport}
-        onOpenChange={setOpenImport}
+        onOpenChange={(o) => { setOpenImport(o); if (!o) setImportDefaultCategory(null); }}
         organizationId={organizationId}
         workspaceId={activeWorkspaceId}
         workspaceName={selectedWorkspace?.name ?? null}
         userId={user?.userId}
         userName={user?.displayName}
+        defaultCategory={importDefaultCategory}
         onComplete={(imported) => {
           if (imported && imported.length > 0) {
             void recordAuditEvent(

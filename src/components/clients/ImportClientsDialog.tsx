@@ -130,6 +130,9 @@ interface Props {
   workspaceName?: string | null;
   userId: string | undefined;
   userName: string | undefined;
+  /** When set, imported rows that don't carry their own category are filed
+   *  under this bucket (the category the user is importing into). */
+  defaultCategory?: string | null;
   /** Called after every successful import phase. Receives the clients we
    *  just persisted so the parent can auto-switch to a grouped view, scroll
    *  to a category, etc. */
@@ -240,7 +243,7 @@ const scanRows = (
 type Phase = 'pick' | 'preview' | 'imported';
 
 export const ImportClientsDialog: React.FC<Props> = ({
-  open, onOpenChange, organizationId, workspaceId, workspaceName,
+  open, onOpenChange, organizationId, workspaceId, workspaceName, defaultCategory,
   userId, userName, onComplete,
 }) => {
   const [phase, setPhase] = useState<Phase>('pick');
@@ -342,11 +345,17 @@ export const ImportClientsDialog: React.FC<Props> = ({
       toast.error('Pick a workspace in the sidebar first — accounts need a workspace to land in.');
       return;
     }
-    const rowsToImport = rowReview?.importableRows ?? scan.rawRows;
-    if (rowsToImport.length === 0) {
+    const rawRowsToImport = rowReview?.importableRows ?? scan.rawRows;
+    if (rawRowsToImport.length === 0) {
       setParseErrors(['No clean rows to import. Fix or override the red rows first.']);
       return;
     }
+    // File rows under the current category bucket when they don't bring their
+    // own category (importing into a specific Business-accounts category).
+    const rowsToImport = defaultCategory
+      ? rawRowsToImport.map((r) =>
+          (r.category && String(r.category).trim()) ? r : { ...r, category: defaultCategory })
+      : rawRowsToImport;
     setBusy(true);
     setResult(null);
     try {

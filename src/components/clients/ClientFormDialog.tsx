@@ -138,10 +138,14 @@ interface Props {
    * defence-in-depth layer — server-side unique indexes still hard-block.
    */
   organizationId?: string | null;
+  /** When creating, file the new business account under this category bucket
+   *  (the category the user is currently viewing). Null = uncategorised. */
+  defaultCategory?: string | null;
 }
 
 export const ClientFormDialog: React.FC<Props> = ({
   open, onOpenChange, client, onSubmit, onUpdateExisting, organizationId,
+  defaultCategory,
 }) => {
   const [form, setForm] = useState<FormState>(blank);
   const [submitting, setSubmitting] = useState(false);
@@ -272,9 +276,9 @@ export const ClientFormDialog: React.FC<Props> = ({
       name,
       legalName: form.legalName.trim() || null,
       industry: form.industry.trim() || null,
-      // On create the single Name field IS the category (account = a category
-      // bucket). Edit mode keeps the explicit category field.
-      category: (isCreate ? form.name.trim() : form.category.trim()) || null,
+      // Create files the new business account under the current category
+      // bucket (passed in); edit keeps the explicit category field.
+      category: (isCreate ? (defaultCategory?.trim() || null) : (form.category.trim() || null)),
       type: form.type,
       status: form.status,
       website: form.website.trim() || null,
@@ -351,11 +355,13 @@ export const ClientFormDialog: React.FC<Props> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{client ? 'Edit account' : 'New account'}</DialogTitle>
+          <DialogTitle>{client ? 'Edit business account' : 'New business account'}</DialogTitle>
           <DialogDescription>
             {client
-              ? 'Update the client account details.'
-              : 'Add a new client (account) to your CRM.'}
+              ? 'Update this company / business account.'
+              : defaultCategory
+                ? <>Add a company to your CRM. It will be filed under <strong>{defaultCategory}</strong> — edit the rest of its details on the record afterwards.</>
+                : 'Add a company / business account to your CRM. Edit the rest of its details on the record afterwards.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -683,7 +689,7 @@ export const ClientFormDialog: React.FC<Props> = ({
             </Button>
             <Button type="submit" disabled={submitting}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {client ? 'Save changes' : override ? 'Add as new client' : 'Create client'}
+              {client ? 'Save changes' : override ? 'Add as new company' : 'Create business account'}
             </Button>
           </DialogFooter>
         </form>
