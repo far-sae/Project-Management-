@@ -301,6 +301,9 @@ export const Clients: React.FC = () => {
   // Carried to the lead create / import dialogs so they file into the bucket.
   const [leadCreateCategory, setLeadCreateCategory] = useState<string | null>(null);
   const [importLeadCategory, setImportLeadCategory] = useState<string | null>(null);
+  // When set, the next business account created via ClientFormDialog is linked
+  // to this lead (the "Create business account" action on a lead window).
+  const [linkLeadAfterCreate, setLinkLeadAfterCreate] = useState<Lead | null>(null);
 
   // Shared allow-list for every workspace-scoped view (kanban, analytics,
   // tasks, forecast). When the sidebar shows "All workspaces" we pass null
@@ -323,7 +326,21 @@ export const Clients: React.FC = () => {
   const handleCreate = async (input: CreateClientInput) => {
     try {
       const created = await create(input);
-      toast.success(`Created "${created.name}"`);
+      // When this create was launched from a lead's "Create business account",
+      // link the new company to that lead (lead stays active).
+      if (linkLeadAfterCreate) {
+        try {
+          const updated = await updateLeadSvc(linkLeadAfterCreate.leadId, { accountId: created.clientId });
+          setSelectedLead(updated);
+          toast.success(`Created "${created.name}" and linked it to ${leadDisplayName(linkLeadAfterCreate)}`);
+        } catch {
+          toast.success(`Created "${created.name}" (couldn't auto-link the lead — link it from the lead window)`);
+        } finally {
+          setLinkLeadAfterCreate(null);
+        }
+      } else {
+        toast.success(`Created "${created.name}"`);
+      }
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : 'Failed to create account');
@@ -803,7 +820,7 @@ export const Clients: React.FC = () => {
       {/* New business account */}
       <ClientFormDialog
         open={openCreate}
-        onOpenChange={(o) => { setOpenCreate(o); if (!o) setCreateDefaultCategory(null); }}
+        onOpenChange={(o) => { setOpenCreate(o); if (!o) { setCreateDefaultCategory(null); setLinkLeadAfterCreate(null); } }}
         onSubmit={handleCreate}
         onUpdateExisting={canManage ? handleUpdateExistingFromCreate : undefined}
         organizationId={organizationId}
@@ -1094,6 +1111,14 @@ export const Clients: React.FC = () => {
             // reflects the saved values if the drawer is closed and re-opened.
             setSelectedLead(updated);
             return updated;
+          }}
+          onOpenAccount={(c) => setSelected(c)}
+          onCreateAccountForLead={(l) => {
+            // Create a business account, then link it to this lead (lead stays
+            // active). handleCreate links it once the company is created.
+            setLinkLeadAfterCreate(l);
+            setCreateDefaultCategory(l.category ?? null);
+            setOpenCreate(true);
           }}
         />
       )}

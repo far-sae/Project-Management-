@@ -4,8 +4,11 @@ import {
   X, Edit, Trash2, Loader2, Mail,
   User as UserIcon, MoreVertical, ChevronDown, ChevronUp,
   Copy, Printer, FileSearch, RefreshCw, Repeat, FileText,
-  CheckCircle2, Plus,
+  CheckCircle2, Plus, Building2, ExternalLink, Search as SearchIcon,
 } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { InlineField } from './InlineField';
 import { CustomPropertiesEditor } from './CustomPropertiesEditor';
 import { Button } from '@/components/ui/button';
@@ -73,6 +76,10 @@ interface Props {
   onStatusChange?: (lead: Lead, next: LeadStatus) => Promise<void> | void;
   /** Patch a lead field (or customFields) and return the updated Lead. */
   onUpdate?: (leadId: string, patch: Partial<Lead>) => Promise<Lead>;
+  /** Open the linked company in the full business-account window. */
+  onOpenAccount?: (client: Client) => void;
+  /** Create a new business account and link it to this lead. */
+  onCreateAccountForLead?: (lead: Lead) => void;
 }
 
 const STATUS_TONE: Record<LeadStatus, string> = {
@@ -92,6 +99,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   lead: leadProp, organizationId, canManage, readOnly = false, canConvert = true,
   onClose, onEdit, onDelete, onConvert,
   onSendEmail, onClone, onStatusChange, onUpdate,
+  onOpenAccount, onCreateAccountForLead,
 }) => {
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
@@ -146,6 +154,11 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   // scoped to it (DealFormDialog wants a Client + defaultClientId). Null when
   // the lead has no account.
   const [accountClient, setAccountClient] = useState<Client | null>(null);
+  // "Link an existing business account" picker.
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkCandidates, setLinkCandidates] = useState<Client[]>([]);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linking, setLinking] = useState(false);
   // Stage-change trail for the account's deals — folded into the timeline.
   const [stageHistory, setStageHistory] = useState<DealStageHistoryEntry[]>([]);
   const [openCreateDeal, setOpenCreateDeal] = useState(false);
@@ -195,6 +208,34 @@ export const LeadDetailDrawer: React.FC<Props> = ({
       .catch(() => {/* non-blocking */});
     return () => { cancelled = true; };
   }, [lead?.leadId, lead?.accountId, organizationId, openCreateDeal, dealsRefresh]);
+
+  // Load company candidates when the link picker opens.
+  useEffect(() => {
+    if (!linkOpen || !organizationId) return;
+    let cancelled = false;
+    getOrganizationClients(organizationId)
+      .then((all) => { if (!cancelled) setLinkCandidates(all); })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [linkOpen, organizationId]);
+
+  // Link (or re-link) this lead to an existing business account. Uses the
+  // shared onUpdate path so the change persists and the rail re-queries.
+  const linkTo = async (clientId: string) => {
+    if (!lead || !onUpdate) return;
+    setLinking(true);
+    try {
+      const updated = await onUpdate(lead.leadId, { accountId: clientId });
+      setLead(updated);
+      setLinkOpen(false);
+      setLinkSearch('');
+      toast.success('Linked business account');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to link account');
+    } finally {
+      setLinking(false);
+    }
+  };
 
   // Deal stage history for the lead's account — re-queries on deal changes.
   useEffect(() => {
@@ -669,6 +710,60 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           {/* ── RIGHT: deals + activity timeline (parity with the account
               drawer's right rail) ──────────────────────────────────────── */}
           <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-4">
+            {/* Business details — the company this lead belongs to. Opens the
+                full business-account window; link/create when none yet. */}
+            <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5" /> Business details
+              </h3>
+              {accountClient ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenAccount?.(accountClient)}
+                    className="text-left w-full group"
+                  >
+                    <div className="font-medium group-hover:text-primary truncate">{accountClient.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {[accountClient.category, accountClient.industry].filter(Boolean).join(' · ') || 'Company'}
+                    </div>
+                  </button>
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    {accountClient.email && <div className="truncate">{accountClient.email}</div>}
+                    {accountClient.phone && <div>{accountClient.phone}</div>}
+                  </div>
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => onOpenAccount?.(accountClient)}>
+                    <ExternalLink className="w-3.5 h-3.5 mr-1" /> Open business account
+                  </Button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className="w-full text-[11px] text-muted-foreground hover:text-foreground"
+                      onClick={() => setLinkOpen(true)}
+                    >
+                      Change linked account
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Not linked to a business account yet.
+                  </p>
+                  {canEdit && (
+                    <div className="space-y-1.5">
+                      <Button size="sm" variant="outline" className="w-full" onClick={() => setLinkOpen(true)}>
+                        Link existing
+                      </Button>
+                      <Button size="sm" className="w-full" onClick={() => onCreateAccountForLead?.(lead)}>
+                        <Plus className="w-3.5 h-3.5 mr-1" /> Create business account
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <AccountDealsCard
               deals={accountDeals}
               hasAccount={!!lead.accountId}
@@ -708,6 +803,73 @@ export const LeadDetailDrawer: React.FC<Props> = ({
         clientId={lead.convertedToClientId ?? null}
         entityName={leadDisplayName(lead)}
       />
+
+      {/* Link this lead to an existing business account (company). */}
+      <Dialog open={linkOpen} onOpenChange={(o) => { if (!linking) { setLinkOpen(o); if (!o) setLinkSearch(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link a business account</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 rounded-md border border-border px-2">
+              <SearchIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+              <Input
+                autoFocus
+                placeholder="Search companies…"
+                value={linkSearch}
+                onChange={(e) => setLinkSearch(e.target.value)}
+                className="border-0 focus-visible:ring-0 px-0"
+              />
+            </div>
+            <div className="max-h-[50vh] overflow-y-auto border rounded-md divide-y">
+              {(() => {
+                const q = linkSearch.trim().toLowerCase();
+                const list = (q
+                  ? linkCandidates.filter((c) =>
+                      [c.name, c.legalName, c.email, c.category, c.industry]
+                        .filter(Boolean).join(' ').toLowerCase().includes(q))
+                  : linkCandidates
+                ).slice(0, 100);
+                if (list.length === 0) {
+                  return (
+                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      No companies found. Create one from the lead instead.
+                    </div>
+                  );
+                }
+                return list.map((c) => (
+                  <button
+                    key={c.clientId}
+                    type="button"
+                    disabled={linking || c.clientId === lead.accountId}
+                    onClick={() => void linkTo(c.clientId)}
+                    className="w-full text-left px-3 py-2 hover:bg-muted/50 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="min-w-0">
+                      <span className="font-medium truncate block">{c.name}</span>
+                      <span className="text-xs text-muted-foreground truncate block">
+                        {[c.category, c.industry, c.email].filter(Boolean).join(' · ')}
+                      </span>
+                    </span>
+                    {c.clientId === lead.accountId && (
+                      <Badge variant="outline" className="ml-auto text-[10px] shrink-0">Linked</Badge>
+                    )}
+                  </button>
+                ));
+              })()}
+            </div>
+            {onCreateAccountForLead && (
+              <Button
+                variant="outline" className="w-full"
+                onClick={() => { setLinkOpen(false); onCreateAccountForLead(lead); }}
+              >
+                <Plus className="w-4 h-4 mr-1" /> Create a new business account
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* New deal scoped to the lead's account (a lead isn't itself a deal —
           its deals live on the account it's attached to). Only mounts when an
