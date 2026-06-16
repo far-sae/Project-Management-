@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical,
@@ -91,6 +92,9 @@ const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
 ];
 
 export const Clients: React.FC = () => {
+  // The open account record is reflected in the URL (/clients/:clientId).
+  const { clientId: urlClientId } = useParams<{ clientId?: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { canViewModule, canEditModule, canEditPage } = useOrganization();
   // Page-level CRM access: when the user's role grants only 'view' on CRM,
@@ -148,7 +152,9 @@ export const Clients: React.FC = () => {
   // callbacks (e.g. CrmHomeDashboard) may still pass it. The useEffect below
   // redirects those legacy values to a live tab now that the Activities tab
   // is gone (its timeline moved into each record's right rail).
-  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'business_accounts' | 'tasks' | 'forecast'>('home');
+  // Search for the Business accounts (companies) directory tab.
+  const [bizSearch, setBizSearch] = useState('');
   useEffect(() => {
     // The removed 'tasks'/'activities'/'leads' tabs all redirect: tasks &
     // activities → home (the Activities tab is gone; its feed now lives in
@@ -328,6 +334,16 @@ export const Clients: React.FC = () => {
     [clients, selectedClientIds],
   );
 
+  // Business accounts directory (the "after Pipeline" tab): every company,
+  // filtered by the tab's own search box.
+  const bizAccounts = useMemo(() => {
+    const q = bizSearch.trim().toLowerCase();
+    if (!q) return allClients;
+    return allClients.filter((c) =>
+      [c.name, c.legalName, c.industry, c.email, c.phone, c.city, c.country, c.accountOwnerName, c.category]
+        .filter(Boolean).join(' ').toLowerCase().includes(q));
+  }, [allClients, bizSearch]);
+
   // Leads filed under the focused category. An account IS a category bucket,
   // so its leads render inside the accounts list (not a separate card). Only
   // when a specific category is in focus — 'all' / uncategorised don't list
@@ -349,12 +365,19 @@ export const Clients: React.FC = () => {
   useEffect(() => {
     const handler = (event: Event) => {
       const clientId = (event as CustomEvent<string>).detail;
-      const match = clients.find((c) => c.clientId === clientId);
-      if (match) setSelected(match);
+      if (clientId) navigate(`/clients/${clientId}`);
     };
     window.addEventListener('open-client', handler);
     return () => window.removeEventListener('open-client', handler);
-  }, [clients]);
+  }, [navigate]);
+
+  // The account record is driven by the URL (/clients/:clientId). Resolve the
+  // param to the open client; clearing the param closes the record.
+  useEffect(() => {
+    if (!urlClientId) { setSelected(null); return; }
+    const found = allClients.find((c) => c.clientId === urlClientId);
+    if (found) setSelected(found);
+  }, [urlClientId, allClients]);
 
   const toggleClientSelection = (clientId: string) => {
     setSelectedClientIds((prev) => {
@@ -498,12 +521,11 @@ export const Clients: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
         {/* Every CRM tab gets full page width — matches the project-board
             layout and gives leads / contacts / accounts / pipeline lists
-            enough room for all their columns without internal scroll. The
-            account record opens as a full-page layer over this (see below). */}
-        <div className="space-y-6 flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
+            enough room for all their columns without internal scroll. */}
+        <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
@@ -547,6 +569,9 @@ export const Clients: React.FC = () => {
                   <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
                 </TabsTrigger>
               )}
+              <TabsTrigger value="business_accounts">
+                <Building2 className="w-4 h-4 mr-1.5" /> Business accounts
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="home" className="mt-4">
@@ -556,7 +581,7 @@ export const Clients: React.FC = () => {
                 workspaceClientIds={workspaceClientIds}
                 workspaceName={selectedWorkspace?.name ?? null}
                 displayCurrency={effectivePipelineCurrency}
-                onOpenAccount={(c) => setSelected(c)}
+                onOpenAccount={(c) => navigate(`/clients/${c.clientId}`)}
                 onOpenDeal={(d) => setSelectedDealId(d.dealId)}
                 onGoToTab={(t) => setActiveTab(t)}
               />
@@ -735,7 +760,7 @@ export const Clients: React.FC = () => {
               rows={filtered}
               selectedIds={selectedClientIds}
               canManage={canManage}
-              onOpen={(c) => setSelected(c)}
+              onOpen={(c) => navigate(`/clients/${c.clientId}`)}
               onToggleRow={toggleClientSelection}
               onToggleAll={(allSelected) => {
                 if (allSelected) clearSelection();
@@ -967,30 +992,68 @@ export const Clients: React.FC = () => {
               })()}
             </TabsContent>
 
+            {/* Business accounts — a directory of every company. Each opens at
+                its own URL (/clients/:id) as a full-page record. */}
+            <TabsContent value="business_accounts" className="mt-4 space-y-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h2 className="text-lg font-semibold">Business accounts</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Every company in this organization. Open one for its full record (its own page).
+                  </p>
+                </div>
+                {canCreate && (
+                  <Button size="sm" onClick={() => setOpenCreate(true)}>
+                    <Plus className="w-4 h-4 mr-1" /> Add business account
+                  </Button>
+                )}
+              </div>
+              <Card>
+                <CardContent className="pt-4 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                    <Search className="w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search company name, email, owner…"
+                      value={bizSearch}
+                      onChange={(e) => setBizSearch(e.target.value)}
+                      maxLength={200}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground">{bizAccounts.length} compan{bizAccounts.length === 1 ? 'y' : 'ies'}</span>
+                </CardContent>
+              </Card>
+              <ClientsTable
+                rows={bizAccounts}
+                selectedIds={new Set<string>()}
+                canManage={false}
+                onOpen={(c) => navigate(`/clients/${c.clientId}`)}
+                onToggleRow={() => { /* no bulk-select here */ }}
+                onToggleAll={() => { /* no bulk-select here */ }}
+              />
+            </TabsContent>
+
           </Tabs>
         </div>
-
-        {/* Account record — opens as a full-page layer over the CRM content
-            (replaces the list; the app sidebar stays). Not a side drawer. */}
-        {liveSelected && (
-          <ClientDetailDrawer
-            client={liveSelected}
-            organizationId={organizationId}
-            canManage={canManage}
-            onClose={() => setSelected(null)}
-            onEdit={(c) => setEditing(c)}
-            onDelete={(c) => setConfirmDelete(c)}
-            onUpdate={async (clientId, patch) => {
-              const updated = await update(clientId, patch);
-              // Keep the selected pointer in sync so the drawer reflects the
-              // saved values even after a close/reopen.
-              setSelected(updated);
-              return updated;
-            }}
-            onOpenLead={(l) => { setSelected(null); setSelectedLead(l); }}
-          />
-        )}
       </main>
+
+      {/* Account record — its own page at /clients/:clientId (full screen,
+          driven by the URL; back/refresh/share all work). */}
+      {liveSelected && (
+        <ClientDetailDrawer
+          client={liveSelected}
+          organizationId={organizationId}
+          canManage={canManage}
+          onClose={() => navigate('/clients')}
+          onEdit={(c) => setEditing(c)}
+          onDelete={(c) => setConfirmDelete(c)}
+          onUpdate={async (clientId, patch) => {
+            const updated = await update(clientId, patch);
+            setSelected(updated);
+            return updated;
+          }}
+          onOpenLead={(l) => { navigate('/clients'); setSelectedLead(l); }}
+        />
+      )}
 
       {/* New */}
       <ClientFormDialog
@@ -1267,7 +1330,7 @@ export const Clients: React.FC = () => {
             setSelectedLead(updated);
             return updated;
           }}
-          onOpenAccount={(c) => { setSelectedLead(null); setSelected(c); }}
+          onOpenAccount={(c) => { setSelectedLead(null); navigate(`/clients/${c.clientId}`); }}
         />
       )}
 
@@ -1408,7 +1471,7 @@ export const Clients: React.FC = () => {
             }}
             onOpenClient={(c) => {
               setSelectedDealId(null);
-              setSelected(c);
+              navigate(`/clients/${c.clientId}`);
             }}
           />
         );
