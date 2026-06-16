@@ -179,6 +179,9 @@ export const Clients: React.FC = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [openCreateLead, setOpenCreateLead] = useState(false);
   const [openImportLead, setOpenImportLead] = useState(false);
+  // Category bucket new/imported leads should land in (the category the user
+  // is viewing). Null when on "All accounts"/uncategorised.
+  const [leadFormCategory, setLeadFormCategory] = useState<string | null>(null);
   const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
@@ -584,11 +587,41 @@ export const Clients: React.FC = () => {
                 />
               ) : (
               <>
-              <div className="pt-2">
-                <h2 className="text-lg font-semibold">Accounts</h2>
-                <p className="text-sm text-muted-foreground">
-                  Your main accounts list. Search, filter, open a record, or add/import more accounts.
-                </p>
+              <div className="pt-2 flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold">Accounts</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Your main accounts list. Search, filter, open a record, or add/import more accounts.
+                  </p>
+                </div>
+                {/* Leads live inside a category — add or import them here, filed
+                    into the category you're viewing. */}
+                {canViewModule('leads') && canEditModule('leads') && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => {
+                        setLeadFormCategory(
+                          categoryFilter === 'all' || categoryFilter === '__uncategorized__' ? null : categoryFilter,
+                        );
+                        setOpenImportLead(true);
+                      }}
+                    >
+                      <Upload className="w-4 h-4 mr-1" /> Import leads
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setLeadFormCategory(
+                          categoryFilter === 'all' || categoryFilter === '__uncategorized__' ? null : categoryFilter,
+                        );
+                        setOpenCreateLead(true);
+                      }}
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Add lead
+                    </Button>
+                  </div>
+                )}
               </div>
           {/* Filters */}
           <Card>
@@ -1062,7 +1095,7 @@ export const Clients: React.FC = () => {
       {/* Lead dialogs and drawer */}
       <ImportLeadsDialog
         open={openImportLead}
-        onOpenChange={setOpenImportLead}
+        onOpenChange={(o) => { setOpenImportLead(o); if (!o) setLeadFormCategory(null); }}
         organizationId={organizationId}
         // Skip the implicit-workspace fallback when the user is in 'All
         // workspaces' / 'Unassigned' — the dialog will refuse to import
@@ -1070,6 +1103,7 @@ export const Clients: React.FC = () => {
         // row into workspaces[0].
         workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
         workspaceName={selectedWorkspace?.name ?? null}
+        defaultCategory={leadFormCategory}
         userId={user?.userId}
         userName={user?.displayName}
         onComplete={(result) => {
@@ -1115,9 +1149,11 @@ export const Clients: React.FC = () => {
           if (!o) {
             setOpenCreateLead(false);
             setEditingLead(null);
+            setLeadFormCategory(null);
           }
         }}
         lead={editingLead}
+        defaultCategory={editingLead ? undefined : leadFormCategory}
         onSubmit={async (input) => {
           try {
             if (editingLead) {
