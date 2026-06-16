@@ -383,22 +383,9 @@ export const ClientsTable: React.FC<ClientsTableProps> = ({
               ) : (
                 sortedRows.map(renderRow)
               )}
-              {leadRows.length > 0 && (
-                <>
-                  <tr className="bg-sky-500/5 border-b border-border/60">
-                    <td
-                      colSpan={colSpan}
-                      className="px-3 py-1.5 text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wide"
-                    >
-                      Leads
-                      <span className="ml-2 font-normal normal-case text-muted-foreground">
-                        {leadRows.length} lead{leadRows.length === 1 ? '' : 's'} in this account
-                      </span>
-                    </td>
-                  </tr>
-                  {leadRows.map(renderLeadRow)}
-                </>
-              )}
+              {/* Leads render as flat rows in the same list (no grouping
+                  subheader) — a lead reads like any other row. */}
+              {leadRows.map(renderLeadRow)}
             </>
           )}
         </tbody>
