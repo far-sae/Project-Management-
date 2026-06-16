@@ -522,10 +522,10 @@ export const Clients: React.FC = () => {
                   <ArrowLeft className="w-4 h-4 mr-2" /> Categories
                 </Button>
               )}
-              {canCreate && (
-                // An account IS a category bucket — "Add account" registers a
-                // category (no company/lead record). Accounts fill up as leads
-                // get filed into the category or convert on a won deal.
+              {canCreate && activeTab === 'accounts' && showLanding && (
+                // "Add account" = register a category bucket. It only belongs on
+                // the category landing (when picking/adding a category). Inside a
+                // category you add leads, not accounts.
                 <Button onClick={() => setOpenManageCategories(true)}>
                   <Plus className="w-4 h-4 mr-2" /> Add account
                 </Button>
@@ -1263,6 +1263,7 @@ export const Clients: React.FC = () => {
             setSelectedLead(updated);
             return updated;
           }}
+          onOpenAccount={(c) => setSelected(c)}
         />
       )}
 
