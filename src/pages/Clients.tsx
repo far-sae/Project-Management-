@@ -398,6 +398,8 @@ export const Clients: React.FC = () => {
     try {
       const created = await create(input);
       toast.success(`Created "${created.name}"`);
+      // Open the new business account on its own page.
+      navigate(`/clients/${created.clientId}`);
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : 'Failed to create account');
@@ -1022,13 +1024,45 @@ export const Clients: React.FC = () => {
                   <span className="text-xs text-muted-foreground">{bizAccounts.length} compan{bizAccounts.length === 1 ? 'y' : 'ies'}</span>
                 </CardContent>
               </Card>
+
+              {/* Bulk delete / edit — select one (delete one by one) or all. */}
+              {canManage && bizAccounts.length > 0 && (
+                <Card>
+                  <CardContent className="py-3 flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {selectedClients.length > 0
+                        ? `${selectedClients.length} selected`
+                        : 'Select companies to delete'}
+                    </span>
+                    <Button type="button" variant="outline" size="sm"
+                      onClick={() => setSelectedClientIds(new Set(bizAccounts.map((c) => c.clientId)))}>
+                      Select all shown
+                    </Button>
+                    {selectedClients.length > 0 && (
+                      <>
+                        <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>Clear</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => setOpenBulkEdit(true)}>
+                          <Pencil className="w-4 h-4 mr-2" /> Mass edit
+                        </Button>
+                        <Button type="button" variant="destructive" size="sm" onClick={() => setConfirmBulkDelete(true)}>
+                          <Trash2 className="w-4 h-4 mr-2" /> Delete selected
+                        </Button>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               <ClientsTable
                 rows={bizAccounts}
-                selectedIds={new Set<string>()}
-                canManage={false}
+                selectedIds={selectedClientIds}
+                canManage={canManage}
                 onOpen={(c) => navigate(`/clients/${c.clientId}`)}
-                onToggleRow={() => { /* no bulk-select here */ }}
-                onToggleAll={() => { /* no bulk-select here */ }}
+                onToggleRow={toggleClientSelection}
+                onToggleAll={(allSelected) => {
+                  if (allSelected) clearSelection();
+                  else setSelectedClientIds(new Set(bizAccounts.map((c) => c.clientId)));
+                }}
               />
             </TabsContent>
 
