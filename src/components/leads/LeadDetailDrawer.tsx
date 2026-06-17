@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
-  X, Edit, Trash2, Loader2, Mail,
-  User as UserIcon, MoreVertical, ChevronDown,
-  Copy, Printer, FileSearch, RefreshCw, Repeat, FileText,
+  X, Edit, Trash2, Loader2,
+  User as UserIcon, ChevronDown, FileText,
   CheckCircle2, Plus,
 } from 'lucide-react';
 import { InlineField } from './InlineField';
@@ -14,11 +13,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/context/AuthContext';
-import { useEmailEnabled } from '@/hooks/useEmailEnabled';
 import {
   Lead, LeadNote, LeadStatus,
   leadDisplayName, leadStatusLabel, LEAD_STATUS_OPTIONS,
@@ -28,15 +25,11 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { EntityAttachmentsSection } from '@/components/activities/EntityAttachmentsSection';
 import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
-import { EnrollAutomationDialog } from '@/components/activities/EnrollAutomationDialog';
-import { Zap } from 'lucide-react';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
   listActivities, filterByEntity, dealTimelineActivities, type Activity,
 } from '@/services/supabase/activities';
 import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
-import { QuickLogComposer } from '@/components/activities/QuickLogComposer';
-import { NextBestAction } from '@/components/activities/NextBestAction';
 import {
   getOrganizationDeals, DEAL_STAGES, type Deal,
 } from '@/services/supabase/deals';
@@ -62,15 +55,18 @@ interface Props {
   canManage: boolean;
   /** When true, hides/disables all save and delete controls regardless of canManage. */
   readOnly?: boolean;
-  /** When false the Convert button is hidden — typically because the
-   *  caller is in local-org mode where the convert service isn't supported. */
+  /** Retained for API compatibility with the parent (lead conversion lives
+   *  outside this drawer now — the header mirrors the account drawer's
+   *  Edit + Delete only). */
   canConvert?: boolean;
   onClose: () => void;
   onEdit: (lead: Lead) => void;
   onDelete: (lead: Lead) => void;
-  onConvert: (lead: Lead) => void;
-  onSendEmail: (lead: Lead) => void;
-  onClone: (lead: Lead) => void;
+  /** Still accepted from the parent (used elsewhere); not surfaced in the
+   *  header anymore so the lead window matches the account window. */
+  onConvert?: (lead: Lead) => void;
+  onSendEmail?: (lead: Lead) => void;
+  onClone?: (lead: Lead) => void;
   onStatusChange?: (lead: Lead, next: LeadStatus) => Promise<void> | void;
   /** Patch a lead field (or customFields) and return the updated Lead. */
   onUpdate?: (leadId: string, patch: Partial<Lead>) => Promise<Lead>;
@@ -95,12 +91,10 @@ const STATUS_TONE: Record<LeadStatus, string> = {
 };
 
 export const LeadDetailDrawer: React.FC<Props> = ({
-  lead: leadProp, organizationId, canManage, readOnly = false, canConvert = true,
-  onClose, onEdit, onDelete, onConvert,
-  onSendEmail, onClone, onStatusChange, onUpdate,
+  lead: leadProp, organizationId, canManage, readOnly = false,
+  onClose, onEdit, onDelete, onStatusChange, onUpdate,
 }) => {
   const { user } = useAuth();
-  const emailEnabled = useEmailEnabled();
   const { canEditModule } = useOrganization();
   const { defaultPipeline, stagesByPipeline } = usePipelines();
   const { remove: removeDeal } = useDeals();
@@ -114,7 +108,6 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [tab, setTab] = useState<LeadTab>('activity');
-  const [enrolOpen, setEnrolOpen] = useState(false);
 
   /** Called by every InlineField/CustomPropertiesEditor save. Persists the
    *  patch via onUpdate (when provided) and merges the returned Lead into
@@ -131,7 +124,6 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   // Right-rail: read-only activity timeline for this lead (mirrors the
   // account drawer's rail timeline).
   const [leadActivities, setLeadActivities] = useState<Activity[]>([]);
-  const [activitiesKey, setActivitiesKey] = useState(0);
   useEffect(() => {
     if (!lead || !organizationId) return;
     let cancelled = false;
@@ -141,7 +133,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
       })
       .catch(() => {/* non-blocking */});
     return () => { cancelled = true; };
-  }, [lead?.leadId, organizationId, activitiesKey]);
+  }, [lead?.leadId, organizationId]);
 
   // Right-rail: deals shown for the lead. A lead isn't itself a deal, so we
   // surface the lead's ACCOUNT's deals when the lead is attached to one
@@ -271,7 +263,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
       />
 
       <aside className="relative ml-auto h-full w-full sm:w-[95vw] sm:max-w-[1400px] bg-background border-l border-border shadow-xl flex flex-col animate-in slide-in-from-right-2 duration-200">
-        {/* Top bar */}
+        {/* Top bar — mirrors the account drawer: Close · breadcrumb · Edit + Delete. */}
         <div className="px-4 py-3 border-b border-border flex items-center gap-3 bg-card">
           <button
             type="button"
@@ -293,69 +285,20 @@ export const LeadDetailDrawer: React.FC<Props> = ({
             </Badge>
           </div>
           <div className="ml-auto flex items-center gap-1">
-            {canManage && !isConverted && !readOnly && (
+            {canManage && !readOnly && (
               <>
-                {emailEnabled && (
-                  <Button variant="outline" size="sm" onClick={() => onSendEmail(lead)}>
-                    <Mail className="w-3.5 h-3.5 mr-1" /> Send Email
-                  </Button>
-                )}
-                {canConvert && (
-                  <Button
-                    variant="outline" size="sm"
-                    className="text-emerald-600 border-emerald-600/40 hover:bg-emerald-500/10"
-                    onClick={() => onConvert(lead)}
-                  >
-                    <Repeat className="w-3.5 h-3.5 mr-1" /> Convert
-                  </Button>
-                )}
                 <Button variant="outline" size="sm" onClick={() => onEdit(lead)}>
                   <Edit className="w-3.5 h-3.5 mr-1" /> Edit
                 </Button>
+                <Button
+                  variant="ghost" size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onDelete(lead)}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+                </Button>
               </>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <MoreVertical className="w-3.5 h-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onClick={() => onClone(lead)} disabled={!canManage}>
-                  <Copy className="w-4 h-4 mr-2" /> Clone
-                </DropdownMenuItem>
-                {/* Run automation — synthesises a trigger event so an
-                    enabled recipe fires against this lead (after it
-                    becomes a client via convertedToClientId, or via
-                    a 'scheduled' / 'agent_intake' generic trigger). */}
-                <DropdownMenuItem
-                  onClick={() => setEnrolOpen(true)}
-                  disabled={!canManage || !lead.convertedToClientId}
-                  title={!lead.convertedToClientId
-                    ? 'Convert the lead first — recipes target the resulting client'
-                    : 'Run an enabled automation against this lead'}
-                >
-                  <Zap className="w-4 h-4 mr-2" /> Run automation
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => onDelete(lead)}
-                  disabled={!canManage || readOnly}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" /> Delete
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => window.print()}>
-                  <Printer className="w-4 h-4 mr-2" /> Print Preview
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled>
-                  <FileSearch className="w-4 h-4 mr-2" /> Find and Merge Duplicates
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled>
-                  <RefreshCw className="w-4 h-4 mr-2" /> Review History
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
 
@@ -471,18 +414,10 @@ export const LeadDetailDrawer: React.FC<Props> = ({
 
             <div className="flex-1 overflow-y-auto p-4">
               {tab === 'activity' && (
-                <div id="lead-activity-timeline" className="space-y-3">
+                <div id="lead-activity-timeline" className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Activity timeline
                   </h3>
-                  {/* AI next-best-action for this lead, above the timeline */}
-                  <NextBestAction entity={{ type: 'lead', id: lead.leadId, label: displayName }} />
-                  {canManage && !isConverted && (
-                    <QuickLogComposer
-                      entity={{ type: 'lead', id: lead.leadId, label: displayName }}
-                      onPosted={() => setActivitiesKey((k) => k + 1)}
-                    />
-                  )}
                   <ActivitiesTimeline activities={timelineActivities} />
                 </div>
               )}
@@ -568,13 +503,6 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           </aside>
         </div>
       </aside>
-
-      <EnrollAutomationDialog
-        open={enrolOpen}
-        onOpenChange={setEnrolOpen}
-        clientId={lead.convertedToClientId ?? null}
-        entityName={leadDisplayName(lead)}
-      />
 
       {/* New deal scoped to the lead's account (a lead isn't itself a deal —
           its deals live on the account it's attached to). Only mounts when an
