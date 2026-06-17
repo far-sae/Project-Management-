@@ -87,47 +87,9 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
       });
     }
 
-    // 2. Walk accounts: bump counts for registered buckets and add new
-    //    "derived" buckets for free-text categories that haven't been
-    //    registered yet.
-    for (const c of clients) {
-      const raw = c.category?.trim();
-      if (!raw) {
-        const u = map.get('__uncategorized__');
-        if (u) {
-          u.count += 1;
-          if (u.sample.length < 3) u.sample.push(c.name);
-        } else {
-          map.set('__uncategorized__', {
-            key: '__uncategorized__',
-            label: 'Uncategorized',
-            count: 1,
-            leadCount: 0,
-            sample: [c.name],
-            registered: false,
-          });
-        }
-        continue;
-      }
-      const k = raw.toLowerCase();
-      const existing = map.get(k);
-      if (existing) {
-        existing.count += 1;
-        if (existing.sample.length < 3) existing.sample.push(c.name);
-      } else {
-        map.set(k, {
-          key: raw,
-          label: raw,
-          count: 1,
-          leadCount: 0,
-          sample: [c.name],
-          registered: false,
-        });
-      }
-    }
-
-    // 3. Walk leads: bump leadCount per category; lead-only categories get
-    //    their own bucket; uncategorised leads count under Uncategorized.
+    // 2. Walk LEADS: this landing is the lead-category view, so leads drive
+    //    the tiles. bump leadCount; lead categories get their own bucket;
+    //    uncategorised leads count under Uncategorized.
     for (const l of leads) {
       const raw = l.category?.trim();
       if (!raw) {
@@ -145,6 +107,21 @@ export const CrmCategoryLanding: React.FC<CrmCategoryLandingProps> = ({
       else map.set(k, {
         key: raw, label: raw, count: 0, leadCount: 1, sample: [], registered: false,
       });
+    }
+
+    // 3. Walk accounts (companies): ONLY bump the account count for a category
+    //    that already exists here (registered or a lead category). A category
+    //    that lives only on a business account does NOT create a tile on this
+    //    landing — business-account categories are separate (Business accounts
+    //    tab) and must not leak into the lead-category page.
+    for (const c of clients) {
+      const raw = c.category?.trim();
+      if (!raw) continue;
+      const existing = map.get(raw.toLowerCase());
+      if (existing) {
+        existing.count += 1;
+        if (existing.sample.length < 3) existing.sample.push(c.name);
+      }
     }
 
     return Array.from(map.values()).sort((a, b) => {

@@ -51,7 +51,7 @@ import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialo
 import { SavedListViews } from '@/components/clients/SavedListViews';
 import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
-import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
+import { BusinessAccountPage } from '@/components/clients/BusinessAccountPage';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { AccountsLanding } from '@/components/clients/AccountsLanding';
@@ -1070,12 +1070,12 @@ export const Clients: React.FC = () => {
         </div>
       </main>
 
-      {/* Account record — its own page at /clients/:clientId (full screen,
-          driven by the URL; back/refresh/share all work). */}
+      {/* Business account record — its own page at /clients/:clientId: a clean
+          business-details FORM (no tabs/activity/pipeline/leads). Driven by the
+          URL; back/refresh/share all work. */}
       {liveSelected && (
-        <ClientDetailDrawer
+        <BusinessAccountPage
           client={liveSelected}
-          organizationId={organizationId}
           canManage={canManage}
           onClose={() => navigate('/clients')}
           onEdit={(c) => setEditing(c)}
