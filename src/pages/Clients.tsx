@@ -493,6 +493,14 @@ export const Clients: React.FC = () => {
     }
   };
 
+  // True once the rep has drilled into a specific category bucket (not the
+  // landing, not "All accounts", not Uncategorized). Inside a bucket the only
+  // adds are lead-level — import a CSV or add one by hand — never "Add
+  // account" (the account IS this category; you're already in it).
+  const insideCategory =
+    activeTab === 'accounts' && !showLanding
+    && categoryFilter !== 'all' && categoryFilter !== '__uncategorized__';
+
   return (
     <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
@@ -519,13 +527,30 @@ export const Clients: React.FC = () => {
                   <ArrowLeft className="w-4 h-4 mr-2" /> Categories
                 </Button>
               )}
-              {canCreate && (
-                // An account IS a category bucket — "Add account" registers a
-                // category (no company/lead record). Accounts fill up as leads
-                // get filed into the category or convert on a won deal.
-                <Button onClick={() => setOpenManageCategories(true)}>
-                  <Plus className="w-4 h-4 mr-2" /> Add account
-                </Button>
+              {insideCategory ? (
+                // Inside a category bucket the adds are lead-only: import a CSV
+                // (column-matched, mismatches flagged, custom columns kept) or
+                // add one by hand. NO "Add account" here — you're already in
+                // the account/category. Both gated by lead-manage permission.
+                canManageLead && (
+                  <>
+                    <Button variant="outline" onClick={() => setOpenImportLead(true)}>
+                      <Upload className="w-4 h-4 mr-2" /> Import leads
+                    </Button>
+                    <Button onClick={() => setOpenCreateLead(true)}>
+                      <Plus className="w-4 h-4 mr-2" /> Add lead
+                    </Button>
+                  </>
+                )
+              ) : (
+                canCreate && (
+                  // An account IS a category bucket — "Add account" registers a
+                  // category (no company/lead record). Accounts fill up as leads
+                  // get filed into the category or convert on a won deal.
+                  <Button onClick={() => setOpenManageCategories(true)}>
+                    <Plus className="w-4 h-4 mr-2" /> Add account
+                  </Button>
+                )
               )}
             </div>
           </div>
@@ -1072,6 +1097,10 @@ export const Clients: React.FC = () => {
         workspaceName={selectedWorkspace?.name ?? null}
         userId={user?.userId}
         userName={user?.displayName}
+        // Imported from inside a category → file every row into that bucket
+        // (a row's own category column still wins). A row's category column
+        // overrides this default per the dialog's contract.
+        defaultCategory={insideCategory ? categoryFilter : null}
         onComplete={(result) => {
           // Always audit the attempt — even when zero rows landed, finance/
           // compliance reviewers need to see that a bulk action ran.
@@ -1118,6 +1147,11 @@ export const Clients: React.FC = () => {
           }
         }}
         lead={editingLead}
+        // Adding a lead from inside a category → stamp the bucket + the active
+        // workspace onto the new lead so it lands in this list. Ignored in edit
+        // mode (the dialog only applies these when creating).
+        defaultCategory={!editingLead && insideCategory ? categoryFilter : null}
+        defaultWorkspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
         onSubmit={async (input) => {
           try {
             if (editingLead) {
