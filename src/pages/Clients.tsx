@@ -152,9 +152,7 @@ export const Clients: React.FC = () => {
   // callbacks (e.g. CrmHomeDashboard) may still pass it. The useEffect below
   // redirects those legacy values to a live tab now that the Activities tab
   // is gone (its timeline moved into each record's right rail).
-  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'business_accounts' | 'tasks' | 'forecast'>('home');
-  // Search for the Business accounts (companies) directory tab.
-  const [bizSearch, setBizSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
   useEffect(() => {
     // The removed 'tasks'/'activities'/'leads' tabs all redirect: tasks &
     // activities → home (the Activities tab is gone; its feed now lives in
@@ -333,16 +331,6 @@ export const Clients: React.FC = () => {
     () => clients.filter((c) => selectedClientIds.has(c.clientId)),
     [clients, selectedClientIds],
   );
-
-  // Business accounts directory (the "after Pipeline" tab): every company,
-  // filtered by the tab's own search box.
-  const bizAccounts = useMemo(() => {
-    const q = bizSearch.trim().toLowerCase();
-    if (!q) return allClients;
-    return allClients.filter((c) =>
-      [c.name, c.legalName, c.industry, c.email, c.phone, c.city, c.country, c.accountOwnerName, c.category]
-        .filter(Boolean).join(' ').toLowerCase().includes(q));
-  }, [allClients, bizSearch]);
 
   // Leads filed under the focused category. An account IS a category bucket,
   // so its leads render inside the accounts list (not a separate card). Only
@@ -571,9 +559,6 @@ export const Clients: React.FC = () => {
                   <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
                 </TabsTrigger>
               )}
-              <TabsTrigger value="business_accounts">
-                <Building2 className="w-4 h-4 mr-1.5" /> Business accounts
-              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="home" className="mt-4">
@@ -994,77 +979,6 @@ export const Clients: React.FC = () => {
               })()}
             </TabsContent>
 
-            {/* Business accounts — a directory of every company. Each opens at
-                its own URL (/clients/:id) as a full-page record. */}
-            <TabsContent value="business_accounts" className="mt-4 space-y-4">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <h2 className="text-lg font-semibold">Business accounts</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Every company in this organization. Open one for its full record (its own page).
-                  </p>
-                </div>
-                {canCreate && (
-                  <Button size="sm" onClick={() => setOpenCreate(true)}>
-                    <Plus className="w-4 h-4 mr-1" /> Add business account
-                  </Button>
-                )}
-              </div>
-              <Card>
-                <CardContent className="pt-4 flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-                    <Search className="w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search company name, email, owner…"
-                      value={bizSearch}
-                      onChange={(e) => setBizSearch(e.target.value)}
-                      maxLength={200}
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground">{bizAccounts.length} compan{bizAccounts.length === 1 ? 'y' : 'ies'}</span>
-                </CardContent>
-              </Card>
-
-              {/* Bulk delete / edit — select one (delete one by one) or all. */}
-              {canManage && bizAccounts.length > 0 && (
-                <Card>
-                  <CardContent className="py-3 flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      {selectedClients.length > 0
-                        ? `${selectedClients.length} selected`
-                        : 'Select companies to delete'}
-                    </span>
-                    <Button type="button" variant="outline" size="sm"
-                      onClick={() => setSelectedClientIds(new Set(bizAccounts.map((c) => c.clientId)))}>
-                      Select all shown
-                    </Button>
-                    {selectedClients.length > 0 && (
-                      <>
-                        <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>Clear</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setOpenBulkEdit(true)}>
-                          <Pencil className="w-4 h-4 mr-2" /> Mass edit
-                        </Button>
-                        <Button type="button" variant="destructive" size="sm" onClick={() => setConfirmBulkDelete(true)}>
-                          <Trash2 className="w-4 h-4 mr-2" /> Delete selected
-                        </Button>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              <ClientsTable
-                rows={bizAccounts}
-                selectedIds={selectedClientIds}
-                canManage={canManage}
-                onOpen={(c) => navigate(`/clients/${c.clientId}`)}
-                onToggleRow={toggleClientSelection}
-                onToggleAll={(allSelected) => {
-                  if (allSelected) clearSelection();
-                  else setSelectedClientIds(new Set(bizAccounts.map((c) => c.clientId)));
-                }}
-              />
-            </TabsContent>
 
           </Tabs>
         </div>
