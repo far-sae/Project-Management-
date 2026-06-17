@@ -27,6 +27,10 @@ interface Props {
   defaultAccountId?: string | null;
   defaultCategory?: string | null;
   defaultWorkspaceId?: string | null;
+  /** When provided, a "Business / Account" picker is shown so the rep can set
+   *  (or change) which business this lead belongs to — both create and edit.
+   *  This is the lead-side half of the two-way business↔lead link. */
+  accounts?: Array<{ clientId: string; name: string }>;
 }
 
 const NONE = '__none__';
@@ -59,6 +63,7 @@ interface FormState {
   emailOptOut: boolean;
   description: string;
   tags: string;
+  accountId: string;
 }
 
 const blank: FormState = {
@@ -89,6 +94,7 @@ const blank: FormState = {
   emailOptOut: false,
   description: '',
   tags: '',
+  accountId: '',
 };
 
 const fromLead = (l: Lead): FormState => ({
@@ -119,21 +125,27 @@ const fromLead = (l: Lead): FormState => ({
   emailOptOut: l.emailOptOut,
   description: l.description ?? '',
   tags: l.tags.join(', '),
+  accountId: l.accountId ?? '',
 });
 
 export const LeadFormDialog: React.FC<Props> = ({
   open, onOpenChange, lead, onSubmit,
   defaultAccountId = null, defaultCategory = null, defaultWorkspaceId = null,
+  accounts = [],
 }) => {
-  const [form, setForm] = useState<FormState>(lead ? fromLead(lead) : blank);
+  // Create mode seeds the account from defaultAccountId; edit mode from the lead.
+  const initial = (): FormState =>
+    lead ? fromLead(lead) : { ...blank, accountId: defaultAccountId ?? '' };
+  const [form, setForm] = useState<FormState>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setForm(lead ? fromLead(lead) : blank);
+      setForm(initial());
       setError(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, lead]);
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
@@ -196,11 +208,12 @@ export const LeadFormDialog: React.FC<Props> = ({
         description: form.description || null,
         tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
       };
-      // When adding from inside an account, stamp the account/category/workspace
-      // onto the new lead. Edit mode leaves these untouched (the lead keeps its
-      // existing account/category).
+      // Business/account link is editable in both create and edit via the
+      // selector, so always carry the chosen value (empty = no business).
+      input.accountId = form.accountId || null;
+      // Category/workspace are only stamped on create (from the account the
+      // lead was added inside). Edit leaves the lead's existing ones untouched.
       if (!lead) {
-        if (defaultAccountId) input.accountId = defaultAccountId;
         if (defaultCategory) input.category = defaultCategory;
         if (defaultWorkspaceId) input.workspaceId = defaultWorkspaceId;
       }
@@ -270,6 +283,28 @@ export const LeadFormDialog: React.FC<Props> = ({
                 <Input value={form.company} onChange={(e) => set('company', e.target.value)} required maxLength={160} />
               </div>
             </Row>
+            {accounts.length > 0 && (
+              <Row>
+                <div className="md:col-span-3">
+                  <Label className="text-xs">Business / Account</Label>
+                  <Select
+                    value={form.accountId || NONE}
+                    onValueChange={(v) => set('accountId', v === NONE ? '' : v)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="-None-" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>-None-</SelectItem>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.clientId} value={a.clientId}>{a.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Which business this lead belongs to. The business page lists all its leads.
+                  </p>
+                </div>
+              </Row>
+            )}
             <Row>
               <div>
                 <Label className="text-xs">Industry</Label>

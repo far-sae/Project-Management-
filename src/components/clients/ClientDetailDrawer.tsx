@@ -75,11 +75,14 @@ interface Props {
    *  Wired in Clients.tsx → updateClient(orgId, clientId, patch). When
    *  omitted the left fields render read-only. */
   onUpdate?: (clientId: string, patch: Partial<Client>) => Promise<Client>;
+  /** When provided, a "Business page" button opens the standalone business
+   *  view (details + its leads) for this account. */
+  onOpenBusinessPage?: (clientId: string) => void;
 }
 
 export const ClientDetailDrawer: React.FC<Props> = ({
   client: clientProp, organizationId, canManage, onClose, onEdit, onDelete,
-  onUpdate,
+  onUpdate, onOpenBusinessPage,
 }) => {
   const { user } = useAuth();
   const emailEnabled = useEmailEnabled();
@@ -274,6 +277,11 @@ export const ClientDetailDrawer: React.FC<Props> = ({
             <span className="text-sm font-semibold text-foreground truncate">{client.name}</span>
           </div>
           <div className="ml-auto flex items-center gap-1">
+            {onOpenBusinessPage && (
+              <Button variant="outline" size="sm" onClick={() => onOpenBusinessPage(client.clientId)}>
+                <Building2 className="w-3.5 h-3.5 mr-1" /> Business page
+              </Button>
+            )}
             {canManage && (
               <>
                 <Button variant="outline" size="sm" onClick={() => onEdit(client)}>
