@@ -274,7 +274,7 @@ export const ClientFormDialog: React.FC<Props> = ({
       industry: form.industry.trim() || null,
       // On create the single Name field IS the category (account = a category
       // bucket). Edit mode keeps the explicit category field.
-      category: form.category.trim() || null,
+      category: (isCreate ? form.name.trim() : form.category.trim()) || null,
       type: form.type,
       status: form.status,
       website: form.website.trim() || null,
@@ -351,7 +351,7 @@ export const ClientFormDialog: React.FC<Props> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{client ? 'Edit business account' : 'New business account'}</DialogTitle>
+          <DialogTitle>{client ? 'Edit account' : 'New account'}</DialogTitle>
           <DialogDescription>
             {client
               ? 'Update the client account details.'
@@ -393,29 +393,29 @@ export const ClientFormDialog: React.FC<Props> = ({
                 </div>
               </>
             )}
-            {/* Category — shown on create AND edit so a business account is
-                filed into a category (its bucket) when added. */}
-            <div className="space-y-1">
-              <Label htmlFor="cf-category">Category</Label>
-              <Input
-                id="cf-category" maxLength={60}
-                value={form.category}
-                onChange={(e) => set('category', e.target.value)}
-                placeholder="Enterprise, SMB, NGO…"
-                list="cf-category-suggestions"
-              />
-              {/* Suggestions come from common categories; users can also type free text. */}
-              <datalist id="cf-category-suggestions">
-                <option value="Enterprise" />
-                <option value="SMB" />
-                <option value="Startup" />
-                <option value="NGO" />
-                <option value="Government" />
-                <option value="Reseller" />
-                <option value="Agency" />
-                <option value="Education" />
-              </datalist>
-            </div>
+            {!isCreate && (
+              <div className="space-y-1">
+                <Label htmlFor="cf-category">Category</Label>
+                <Input
+                  id="cf-category" maxLength={60}
+                  value={form.category}
+                  onChange={(e) => set('category', e.target.value)}
+                  placeholder="Enterprise, SMB, NGO…"
+                  list="cf-category-suggestions"
+                />
+                {/* Suggestions come from common categories; users can also type free text. */}
+                <datalist id="cf-category-suggestions">
+                  <option value="Enterprise" />
+                  <option value="SMB" />
+                  <option value="Startup" />
+                  <option value="NGO" />
+                  <option value="Government" />
+                  <option value="Reseller" />
+                  <option value="Agency" />
+                  <option value="Education" />
+                </datalist>
+              </div>
+            )}
 
             {/* Create mode is category-only (Name + Category). Type/Status
                 default to Customer/Active and are editable on the record. */}
