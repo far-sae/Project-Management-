@@ -70,6 +70,11 @@ interface Props {
   onStatusChange?: (lead: Lead, next: LeadStatus) => Promise<void> | void;
   /** Patch a lead field (or customFields) and return the updated Lead. */
   onUpdate?: (leadId: string, patch: Partial<Lead>) => Promise<Lead>;
+  /** The linked business/account name + a handler to open its page. When both
+   *  are present the About panel shows a clickable "Business" link (the
+   *  lead→business half of the two-way link). */
+  accountName?: string | null;
+  onOpenBusiness?: (clientId: string) => void;
 }
 
 // Middle-column tabs — mirrors the account drawer's tabbed layout so leads and
@@ -93,6 +98,7 @@ const STATUS_TONE: Record<LeadStatus, string> = {
 export const LeadDetailDrawer: React.FC<Props> = ({
   lead: leadProp, organizationId, canManage, readOnly = false,
   onClose, onEdit, onDelete, onStatusChange, onUpdate,
+  accountName = null, onOpenBusiness,
 }) => {
   const { user } = useAuth();
   const { canEditModule } = useOrganization();
@@ -370,6 +376,8 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 fullAddress={fullAddress}
                 editable={canEdit && !isConverted}
                 onSave={handleInlineUpdate}
+                accountName={accountName}
+                onOpenBusiness={onOpenBusiness}
               />
             </div>
 
@@ -580,11 +588,31 @@ const AboutLead: React.FC<{
   fullAddress: string;
   editable: boolean;
   onSave: (leadId: string, patch: Partial<Lead>) => Promise<void>;
-}> = ({ lead, fullAddress, editable, onSave }) => {
+  accountName?: string | null;
+  onOpenBusiness?: (clientId: string) => void;
+}> = ({ lead, fullAddress, editable, onSave, accountName = null, onOpenBusiness }) => {
   const save = (patch: Partial<Lead>) => onSave(lead.leadId, patch);
   return (
     <div className="space-y-3 text-sm">
       <Field label="Lead Owner" value={lead.leadOwnerName} />
+      <Field
+        label="Business"
+        value={
+          lead.accountId
+            ? (onOpenBusiness
+                ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenBusiness(lead.accountId!)}
+                    className="text-primary hover:underline text-left truncate"
+                  >
+                    {accountName || 'View business'}
+                  </button>
+                )
+                : (accountName || '—'))
+            : null
+        }
+      />
       <InlineField
         label="Email"
         value={lead.email}

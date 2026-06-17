@@ -36,6 +36,7 @@ const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ de
 const BillingPage = React.lazy(() => import('@/pages/Billing').then((m) => ({ default: m.Billing })));
 const PublicInvoicePage = React.lazy(() => import('@/pages/public/PublicInvoice').then((m) => ({ default: m.PublicInvoice })));
 const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
+const BusinessAccountPage = React.lazy(() => import('@/pages/BusinessAccountPage').then((m) => ({ default: m.BusinessAccountPage })));
 const AIAgentPage = React.lazy(() => import('@/pages/AIAgent').then((m) => ({ default: m.AIAgent })));
 const ClientsActivity = React.lazy(() => import('@/pages/ClientsActivity').then((m) => ({ default: m.ClientsActivity })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
@@ -346,6 +347,17 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
                   {lazyAppRoute(<ClientsPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              // Standalone Business page (reuses the company/account record):
+              // business details + its leads. Reached from a lead's "Business"
+              // link or by navigating here directly.
+              path: '/business/:clientId',
+              element: (
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
+                  {lazyAppRoute(<BusinessAccountPage />)}
                 </ProtectedRoute>
               ),
             },

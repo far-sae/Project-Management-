@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical,
@@ -92,6 +93,7 @@ const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
 
 export const Clients: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { canViewModule, canEditModule, canEditPage } = useOrganization();
   // Page-level CRM access: when the user's role grants only 'view' on CRM,
   // every CRM mutation is disabled (read-only). ANDed into the capability
@@ -1025,6 +1027,7 @@ export const Clients: React.FC = () => {
             setSelected(updated);
             return updated;
           }}
+          onOpenBusinessPage={(id) => navigate(`/business/${id}`)}
         />
       )}
 
@@ -1149,6 +1152,9 @@ export const Clients: React.FC = () => {
           }
         }}
         lead={editingLead}
+        // Business/account picker — lets the rep set which business a lead
+        // belongs to (the lead-side half of the two-way link).
+        accounts={allClients}
         // Adding a lead from inside a category → stamp the bucket + the active
         // workspace onto the new lead so it lands in this list. Ignored in edit
         // mode (the dialog only applies these when creating).
@@ -1190,6 +1196,9 @@ export const Clients: React.FC = () => {
           canManage={canManageLead}
           readOnly={!canEditModule('leads')}
           canConvert={!isLocalOrg}
+          // Lead → business link: show the linked business name and open its page.
+          accountName={allClients.find((c) => c.clientId === liveSelectedLead.accountId)?.name ?? null}
+          onOpenBusiness={(id) => navigate(`/business/${id}`)}
           onClose={() => setSelectedLead(null)}
           onEdit={(l) => setEditingLead(l)}
           onDelete={(l) => setConfirmDeleteLead(l)}
