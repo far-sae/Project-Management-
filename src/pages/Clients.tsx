@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical,
@@ -51,7 +50,7 @@ import { BulkEditClientsDialog } from '@/components/clients/BulkEditClientsDialo
 import { SavedListViews } from '@/components/clients/SavedListViews';
 import { ClientsTable } from '@/components/clients/ClientsTable';
 import { ImportClientsDialog } from '@/components/clients/ImportClientsDialog';
-import { BusinessAccountPage } from '@/components/clients/BusinessAccountPage';
+import { ClientDetailDrawer } from '@/components/clients/ClientDetailDrawer';
 import { CrmCategoryLanding } from '@/components/clients/CrmCategoryLanding';
 import { CrmHomeDashboard } from '@/components/clients/CrmHomeDashboard';
 import { AccountsLanding } from '@/components/clients/AccountsLanding';
@@ -92,9 +91,6 @@ const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
 ];
 
 export const Clients: React.FC = () => {
-  // The open account record is reflected in the URL (/clients/:clientId).
-  const { clientId: urlClientId } = useParams<{ clientId?: string }>();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const { canViewModule, canEditModule, canEditPage } = useOrganization();
   // Page-level CRM access: when the user's role grants only 'view' on CRM,
@@ -183,9 +179,6 @@ export const Clients: React.FC = () => {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [openCreateLead, setOpenCreateLead] = useState(false);
   const [openImportLead, setOpenImportLead] = useState(false);
-  // Category bucket new/imported leads should land in (the category the user
-  // is viewing). Null when on "All accounts"/uncategorised.
-  const [leadFormCategory, setLeadFormCategory] = useState<string | null>(null);
   const [confirmDeleteLead, setConfirmDeleteLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
@@ -353,19 +346,12 @@ export const Clients: React.FC = () => {
   useEffect(() => {
     const handler = (event: Event) => {
       const clientId = (event as CustomEvent<string>).detail;
-      if (clientId) navigate(`/clients/${clientId}`);
+      const match = clients.find((c) => c.clientId === clientId);
+      if (match) setSelected(match);
     };
     window.addEventListener('open-client', handler);
     return () => window.removeEventListener('open-client', handler);
-  }, [navigate]);
-
-  // The account record is driven by the URL (/clients/:clientId). Resolve the
-  // param to the open client; clearing the param closes the record.
-  useEffect(() => {
-    if (!urlClientId) { setSelected(null); return; }
-    const found = allClients.find((c) => c.clientId === urlClientId);
-    if (found) setSelected(found);
-  }, [urlClientId, allClients]);
+  }, [clients]);
 
   const toggleClientSelection = (clientId: string) => {
     setSelectedClientIds((prev) => {
@@ -386,8 +372,6 @@ export const Clients: React.FC = () => {
     try {
       const created = await create(input);
       toast.success(`Created "${created.name}"`);
-      // Open the new business account on its own page.
-      navigate(`/clients/${created.clientId}`);
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : 'Failed to create account');
@@ -535,10 +519,10 @@ export const Clients: React.FC = () => {
                   <ArrowLeft className="w-4 h-4 mr-2" /> Categories
                 </Button>
               )}
-              {canCreate && activeTab === 'accounts' && showLanding && (
-                // "Add account" = register a category bucket. It only belongs on
-                // the category landing (when picking/adding a category). Inside a
-                // category you add leads, not accounts.
+              {canCreate && (
+                // An account IS a category bucket — "Add account" registers a
+                // category (no company/lead record). Accounts fill up as leads
+                // get filed into the category or convert on a won deal.
                 <Button onClick={() => setOpenManageCategories(true)}>
                   <Plus className="w-4 h-4 mr-2" /> Add account
                 </Button>
@@ -568,7 +552,7 @@ export const Clients: React.FC = () => {
                 workspaceClientIds={workspaceClientIds}
                 workspaceName={selectedWorkspace?.name ?? null}
                 displayCurrency={effectivePipelineCurrency}
-                onOpenAccount={(c) => navigate(`/clients/${c.clientId}`)}
+                onOpenAccount={(c) => setSelected(c)}
                 onOpenDeal={(d) => setSelectedDealId(d.dealId)}
                 onGoToTab={(t) => setActiveTab(t)}
               />
@@ -600,41 +584,11 @@ export const Clients: React.FC = () => {
                 />
               ) : (
               <>
-              <div className="pt-2 flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <h2 className="text-lg font-semibold">Accounts</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Your main accounts list. Search, filter, open a record, or add/import more accounts.
-                  </p>
-                </div>
-                {/* Leads live inside a category — add or import them here, filed
-                    into the category you're viewing. */}
-                {canViewModule('leads') && canEditModule('leads') && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="outline" size="sm"
-                      onClick={() => {
-                        setLeadFormCategory(
-                          categoryFilter === 'all' || categoryFilter === '__uncategorized__' ? null : categoryFilter,
-                        );
-                        setOpenImportLead(true);
-                      }}
-                    >
-                      <Upload className="w-4 h-4 mr-1" /> Import leads
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setLeadFormCategory(
-                          categoryFilter === 'all' || categoryFilter === '__uncategorized__' ? null : categoryFilter,
-                        );
-                        setOpenCreateLead(true);
-                      }}
-                    >
-                      <Plus className="w-4 h-4 mr-1" /> Add lead
-                    </Button>
-                  </div>
-                )}
+              <div className="pt-2">
+                <h2 className="text-lg font-semibold">Accounts</h2>
+                <p className="text-sm text-muted-foreground">
+                  Your main accounts list. Search, filter, open a record, or add/import more accounts.
+                </p>
               </div>
           {/* Filters */}
           <Card>
@@ -747,7 +701,7 @@ export const Clients: React.FC = () => {
               rows={filtered}
               selectedIds={selectedClientIds}
               canManage={canManage}
-              onOpen={(c) => navigate(`/clients/${c.clientId}`)}
+              onOpen={(c) => setSelected(c)}
               onToggleRow={toggleClientSelection}
               onToggleAll={(allSelected) => {
                 if (allSelected) clearSelection();
@@ -979,31 +933,9 @@ export const Clients: React.FC = () => {
               })()}
             </TabsContent>
 
-
           </Tabs>
         </div>
       </main>
-
-      {/* Business account record — its own page at /clients/:clientId: a clean
-          business-details FORM (no tabs/activity/pipeline/leads). Driven by the
-          URL; back/refresh/share all work. */}
-      {liveSelected && (
-        <BusinessAccountPage
-          client={liveSelected}
-          organizationId={organizationId}
-          canManage={canManage}
-          userId={user?.userId}
-          userName={user?.displayName}
-          onClose={() => navigate('/clients')}
-          onEdit={(c) => setEditing(c)}
-          onDelete={(c) => setConfirmDelete(c)}
-          onUpdate={async (clientId, patch) => {
-            const updated = await update(clientId, patch);
-            setSelected(updated);
-            return updated;
-          }}
-        />
-      )}
 
       {/* New */}
       <ClientFormDialog
@@ -1050,6 +982,24 @@ export const Clients: React.FC = () => {
         }}
       />
 
+      {/* Detail drawer */}
+      {liveSelected && (
+        <ClientDetailDrawer
+          client={liveSelected}
+          organizationId={organizationId}
+          canManage={canManage}
+          onClose={() => setSelected(null)}
+          onEdit={(c) => setEditing(c)}
+          onDelete={(c) => setConfirmDelete(c)}
+          onUpdate={async (clientId, patch) => {
+            const updated = await update(clientId, patch);
+            // Keep the selected pointer in sync so the drawer reflects the
+            // saved values even after a close/reopen.
+            setSelected(updated);
+            return updated;
+          }}
+        />
+      )}
 
       {/* Account categories — managed list lives in client_categories */}
       <ManageCategoriesDialog
@@ -1112,7 +1062,7 @@ export const Clients: React.FC = () => {
       {/* Lead dialogs and drawer */}
       <ImportLeadsDialog
         open={openImportLead}
-        onOpenChange={(o) => { setOpenImportLead(o); if (!o) setLeadFormCategory(null); }}
+        onOpenChange={setOpenImportLead}
         organizationId={organizationId}
         // Skip the implicit-workspace fallback when the user is in 'All
         // workspaces' / 'Unassigned' — the dialog will refuse to import
@@ -1120,7 +1070,6 @@ export const Clients: React.FC = () => {
         // row into workspaces[0].
         workspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
         workspaceName={selectedWorkspace?.name ?? null}
-        defaultCategory={leadFormCategory}
         userId={user?.userId}
         userName={user?.displayName}
         onComplete={(result) => {
@@ -1166,11 +1115,9 @@ export const Clients: React.FC = () => {
           if (!o) {
             setOpenCreateLead(false);
             setEditingLead(null);
-            setLeadFormCategory(null);
           }
         }}
         lead={editingLead}
-        defaultCategory={editingLead ? undefined : leadFormCategory}
         onSubmit={async (input) => {
           try {
             if (editingLead) {
@@ -1280,7 +1227,6 @@ export const Clients: React.FC = () => {
             setSelectedLead(updated);
             return updated;
           }}
-          onOpenAccount={(c) => { setSelectedLead(null); navigate(`/clients/${c.clientId}`); }}
         />
       )}
 
@@ -1421,7 +1367,7 @@ export const Clients: React.FC = () => {
             }}
             onOpenClient={(c) => {
               setSelectedDealId(null);
-              navigate(`/clients/${c.clientId}`);
+              setSelected(c);
             }}
           />
         );

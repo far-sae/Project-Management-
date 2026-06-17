@@ -11,7 +11,6 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { CustomPropertiesEditor } from './CustomPropertiesEditor';
 import {
   Lead, CreateLeadInput, LeadStatus,
   LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS,
@@ -129,13 +128,10 @@ export const LeadFormDialog: React.FC<Props> = ({
   const [form, setForm] = useState<FormState>(lead ? fromLead(lead) : blank);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Custom fields / columns captured on the lead (free-form key→value).
-  const [customFields, setCustomFields] = useState<Record<string, unknown>>(lead?.customFields ?? {});
 
   useEffect(() => {
     if (open) {
       setForm(lead ? fromLead(lead) : blank);
-      setCustomFields(lead?.customFields ?? {});
       setError(null);
     }
   }, [open, lead]);
@@ -200,8 +196,6 @@ export const LeadFormDialog: React.FC<Props> = ({
         description: form.description || null,
         tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
       };
-      // Custom fields / columns (only when any were added).
-      if (Object.keys(customFields).length > 0) input.customFields = customFields;
       // When adding from inside an account, stamp the account/category/workspace
       // onto the new lead. Edit mode leaves these untouched (the lead keeps its
       // existing account/category).
@@ -470,17 +464,6 @@ export const LeadFormDialog: React.FC<Props> = ({
                 />
               </div>
             </Row>
-          </Section>
-
-          {/* Custom fields / columns — add your own properties on the lead. */}
-          <Section title="Custom fields">
-            <div className="md:col-span-3">
-              <CustomPropertiesEditor
-                fields={customFields}
-                editable
-                onChange={(next) => setCustomFields(next)}
-              />
-            </div>
           </Section>
 
           {error && (

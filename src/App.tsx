@@ -350,16 +350,6 @@ const router = createBrowserRouter(
               ),
             },
             {
-              // A business account (company) record opens at its own URL —
-              // same page component, which reads :clientId and shows the record.
-              path: '/clients/:clientId',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
-                  {lazyAppRoute(<ClientsPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
               // AI Agent — open to members so reps can use the assistant
               // on their own deals/contacts.
               path: '/ai-agent',

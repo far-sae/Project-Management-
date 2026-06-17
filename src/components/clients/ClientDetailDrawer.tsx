@@ -247,10 +247,16 @@ export const ClientDetailDrawer: React.FC<Props> = ({
   if (!client || !organizationId) return null;
 
   return (
-    // Full-page record at its own URL — full-screen, not a side drawer.
-    <div className="fixed inset-0 z-40 flex bg-background" role="region" aria-label="Account record">
-      {/* HubSpot-style 3-column record view, full width. */}
-      <aside className="relative h-full w-full bg-background flex flex-col">
+    <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
+        onClick={onClose}
+        aria-hidden
+      />
+
+      {/* Wide modal — HubSpot-style 3-column record view. 95vw on desktop,
+          full-screen on mobile. */}
+      <aside className="relative ml-auto h-full w-full sm:w-[95vw] sm:max-w-[1400px] bg-background border-l border-border shadow-xl flex flex-col animate-in slide-in-from-right-2 duration-200">
         {/* Top bar — name, badges, close + edit/delete */}
         <div className="px-4 py-3 border-b border-border flex items-center gap-3 bg-card">
           <button
