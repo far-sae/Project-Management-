@@ -734,6 +734,8 @@ export const Clients: React.FC = () => {
               }}
               leadRows={canViewModule('leads') ? categoryLeads : []}
               onOpenLead={(l) => setSelectedLead(l)}
+              onDeleteClient={canManage ? (c) => setConfirmDelete(c) : undefined}
+              onDeleteLead={canManageLead ? (l) => setConfirmDeleteLead(l) : undefined}
             />
           )}
               </>

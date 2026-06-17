@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   X, Edit, Trash2, Loader2, Mail,
-  User as UserIcon, MoreVertical, ChevronDown, ChevronUp,
+  User as UserIcon, MoreVertical, ChevronDown,
   Copy, Printer, FileSearch, RefreshCw, Repeat, FileText,
   CheckCircle2, Plus,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -75,6 +76,11 @@ interface Props {
   onUpdate?: (leadId: string, patch: Partial<Lead>) => Promise<Lead>;
 }
 
+// Middle-column tabs — mirrors the account drawer's tabbed layout so leads and
+// accounts read the same. A lead has no pipeline/meetings/invoices of its own
+// (deals live on its account, shown in the right rail), so the set is trimmed.
+type LeadTab = 'activity' | 'notes' | 'emails' | 'files' | 'details';
+
 const STATUS_TONE: Record<LeadStatus, string> = {
   new:                  'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
   attempted_to_contact: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
@@ -107,7 +113,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   useEffect(() => { setLead(leadProp); }, [leadProp]);
   const [notes, setNotes] = useState<LeadNote[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
-  const [showAllDetails, setShowAllDetails] = useState(false);
+  const [tab, setTab] = useState<LeadTab>('activity');
   const [enrolOpen, setEnrolOpen] = useState(false);
 
   /** Called by every InlineField/CustomPropertiesEditor save. Persists the
@@ -264,7 +270,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
         aria-hidden
       />
 
-      <aside className="relative ml-auto h-full w-full sm:w-[92vw] sm:max-w-[1200px] bg-background border-l border-border shadow-xl flex flex-col animate-in slide-in-from-right-2 duration-200">
+      <aside className="relative ml-auto h-full w-full sm:w-[95vw] sm:max-w-[1400px] bg-background border-l border-border shadow-xl flex flex-col animate-in slide-in-from-right-2 duration-200">
         {/* Top bar */}
         <div className="px-4 py-3 border-b border-border flex items-center gap-3 bg-card">
           <button
@@ -353,321 +359,197 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Body — 3 columns: nav, content, right rail (deals + timeline) */}
-        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)_320px]">
-          {/* LEFT nav. Rows that map to a real section on the right scroll to
-              it; rows that aren't built yet render visibly disabled so the
-              user knows the affordance is intentional, not broken. */}
-          <aside className="border-r border-border bg-card/40 overflow-y-auto p-3 space-y-3 text-sm">
-            <p className="font-semibold text-foreground">Info</p>
-            <p
-              className="text-muted-foreground hover:text-foreground cursor-pointer"
-              onClick={() => document.getElementById('lead-activity-timeline')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            >
-              Timeline
-            </p>
-            <div className="border-t border-border pt-2 space-y-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Related list
-              </p>
-              {/* Removed: Invited Meetings / Campaigns / Social — no
-                  underlying tables, no wiring. Greyed-out nav entries
-                  were misleading reps; better to drop them until each
-                  ships a real implementation. */}
-              {/* Calls/Tasks (Open/Closed Activities) removed: leads only
-                  gain task tracking once a deal is won. The read-only
-                  timeline now lives in the right rail. */}
-              {[
-                { label: 'Notes',            anchor: 'lead-notes-section',     count: notes.length },
-                { label: 'Attachments',      anchor: 'lead-attachments-section' },
-                { label: 'Emails',           anchor: 'lead-emails-section' },
-              ].map((row) => {
-                const wired = row.anchor != null;
-                const cls = wired
-                  ? 'flex items-center justify-between text-muted-foreground hover:text-foreground cursor-pointer'
-                  : 'flex items-center justify-between text-muted-foreground opacity-50 cursor-not-allowed';
-                return (
-                  <div
-                    key={row.label}
-                    className={cls}
-                    onClick={() => {
-                      if (!wired) return;
-                      document.getElementById(row.anchor!)?.scrollIntoView({
-                        behavior: 'smooth', block: 'start',
-                      });
-                    }}
-                    title={wired ? undefined : 'Coming soon'}
-                  >
-                    <span>{row.label}</span>
-                    {row.count != null && (
-                      <Badge variant="outline" className="text-[9px]">{row.count}</Badge>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </aside>
-
-          {/* RIGHT content */}
-          <section className="overflow-y-auto p-5 space-y-6">
-            {/* Identity card */}
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 to-pink-400 text-white grid place-items-center text-xl font-bold shrink-0">
+        {/* Body — 3 columns mirroring the account drawer: identity + About
+            (left), tabbed content (middle), account deals (right). */}
+        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_320px]">
+          {/* ── LEFT: identity + About this lead (inline-editable) ───────── */}
+          <aside className="border-r border-border bg-card/40 overflow-y-auto p-4 space-y-4">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-400 to-pink-400 text-white grid place-items-center text-lg font-bold">
                 {displayName.charAt(0).toUpperCase()}
               </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-xl md:text-2xl font-bold truncate">
-                  {displayName}
-                  <span className="text-muted-foreground font-normal text-base ml-2">
-                    — {lead.company}
-                  </span>
-                </h2>
-                {lead.title && (
-                  <p className="text-sm text-muted-foreground mt-0.5">{lead.title}</p>
+              <h2 className="mt-3 text-xl font-bold truncate w-full">{displayName}</h2>
+              <p className="text-sm text-muted-foreground truncate w-full">{lead.company}</p>
+              {lead.title && (
+                <p className="text-xs text-muted-foreground mt-0.5">{lead.title}</p>
+              )}
+              <div className="flex items-center gap-1 flex-wrap justify-center mt-2">
+                {onStatusChange ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger disabled={!canManage || isConverted}>
+                      <Badge
+                        className={cn('text-[10px] cursor-pointer inline-flex items-center gap-1', STATUS_TONE[lead.leadStatus])}
+                        title="Click to change status"
+                      >
+                        {leadStatusLabel(lead.leadStatus)}
+                        {canManage && !isConverted && <ChevronDown className="w-3 h-3" />}
+                      </Badge>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {LEAD_STATUS_OPTIONS
+                        .filter((o) => o.value !== 'converted')
+                        .map((o) => (
+                          <DropdownMenuItem key={o.value} onClick={() => handleStatusPick(o.value)}>
+                            {o.label}
+                          </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Badge className={cn('text-[10px]', STATUS_TONE[lead.leadStatus])}>
+                    {leadStatusLabel(lead.leadStatus)}
+                  </Badge>
                 )}
-                <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  {onStatusChange ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger disabled={!canManage || isConverted}>
-                        <Badge
-                          className={cn('text-[10px] cursor-pointer inline-flex items-center gap-1', STATUS_TONE[lead.leadStatus])}
-                          title="Click to change status"
-                        >
-                          {leadStatusLabel(lead.leadStatus)}
-                          {canManage && !isConverted && <ChevronDown className="w-3 h-3" />}
-                        </Badge>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        {LEAD_STATUS_OPTIONS
-                          .filter((o) => o.value !== 'converted')
-                          .map((o) => (
-                            <DropdownMenuItem key={o.value} onClick={() => handleStatusPick(o.value)}>
-                              {o.label}
-                            </DropdownMenuItem>
-                          ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <Badge className={cn('text-[10px]', STATUS_TONE[lead.leadStatus])}>
-                      {leadStatusLabel(lead.leadStatus)}
-                    </Badge>
-                  )}
-                  {lead.leadSource && (
-                    <Badge variant="outline" className="text-[10px]">
-                      Source: {lead.leadSource}
-                    </Badge>
-                  )}
-                  {lead.rating && (
-                    <Badge variant="outline" className="text-[10px]">
-                      Rating: {lead.rating}
-                    </Badge>
-                  )}
-                  {isConverted && (
-                    <Badge className="text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-                      <CheckCircle2 className="w-3 h-3 mr-1" /> Converted
-                    </Badge>
-                  )}
-                </div>
+                {lead.leadSource && (
+                  <Badge variant="outline" className="text-[10px]">
+                    Source: {lead.leadSource}
+                  </Badge>
+                )}
+                {lead.rating && (
+                  <Badge variant="outline" className="text-[10px]">
+                    Rating: {lead.rating}
+                  </Badge>
+                )}
+                {isConverted && (
+                  <Badge className="text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
+                    <CheckCircle2 className="w-3 h-3 mr-1" /> Converted
+                  </Badge>
+                )}
               </div>
             </div>
 
-            {/* Quick info — editable via InlineField when canEdit */}
-            <div className="grid md:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-              {/* Lead Owner: not inline-editable for v1 */}
-              <Field label="Lead Owner" value={lead.leadOwnerName} />
-              <InlineField
-                label="Email"
-                value={lead.email}
-                type="text"
+            <div className="border-t border-border pt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                About this lead
+              </h3>
+              <AboutLead
+                lead={lead}
+                fullAddress={fullAddress}
                 editable={canEdit && !isConverted}
-                onSave={(v) => handleInlineUpdate(lead.leadId, { email: v as string | null })}
-                render={(v) => v ? <a href={`mailto:${v}`} className="text-primary hover:underline">{String(v)}</a> : null}
-              />
-              <InlineField
-                label="Phone"
-                value={lead.phone}
-                type="text"
-                editable={canEdit && !isConverted}
-                onSave={(v) => handleInlineUpdate(lead.leadId, { phone: v as string | null })}
-                render={(v) => v ? <a href={`tel:${v}`} className="hover:underline">{String(v)}</a> : null}
-              />
-              <InlineField
-                label="Mobile"
-                value={lead.mobile}
-                type="text"
-                editable={canEdit && !isConverted}
-                onSave={(v) => handleInlineUpdate(lead.leadId, { mobile: v as string | null })}
-              />
-              {/* Lead Status: kept as dropdown, not InlineField */}
-              <Field label="Lead Status" value={leadStatusLabel(lead.leadStatus)} />
-              <InlineField
-                label="Website"
-                value={lead.website}
-                type="text"
-                editable={canEdit && !isConverted}
-                onSave={(v) => handleInlineUpdate(lead.leadId, { website: v as string | null })}
-                render={(v) => v ? (
-                  <a href={String(v).startsWith('http') ? String(v) : `https://${v}`}
-                     target="_blank" rel="noreferrer noopener" className="text-primary hover:underline">
-                    {String(v)}
-                  </a>
-                ) : null}
+                onSave={handleInlineUpdate}
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowAllDetails((v) => !v)}
-              className="text-xs font-semibold uppercase tracking-wide text-primary hover:underline inline-flex items-center gap-1"
-            >
-              {showAllDetails ? 'Hide details' : 'Show details'}
-              {showAllDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-
-            {showAllDetails && (
-              <div className="grid md:grid-cols-2 gap-x-6 gap-y-3 text-sm border-t pt-4">
-                <InlineField
-                  label="Company"
-                  value={lead.company}
-                  type="text"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { company: (v as string | null) ?? lead.company })}
-                />
-                <InlineField
-                  label="Industry"
-                  value={lead.industry}
-                  type="text"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { industry: v as string | null })}
-                />
-                <InlineField
-                  label="Annual Revenue"
-                  value={lead.annualRevenue}
-                  type="number"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { annualRevenue: v as number | null })}
-                  render={(v) => v != null
-                    ? <span>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(v))}</span>
-                    : null}
-                />
-                <InlineField
-                  label="No. of Employees"
-                  value={lead.noOfEmployees}
-                  type="number"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { noOfEmployees: v as number | null })}
-                />
-                <InlineField
-                  label="Fax"
-                  value={lead.fax}
-                  type="text"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { fax: v as string | null })}
-                />
-                <InlineField
-                  label="Skype"
-                  value={lead.skypeId}
-                  type="text"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { skypeId: v as string | null })}
-                />
-                <InlineField
-                  label="Twitter"
-                  value={lead.twitter}
-                  type="text"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { twitter: v as string | null })}
-                />
-                <InlineField
-                  label="LinkedIn"
-                  value={lead.linkedinUrl}
-                  type="text"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { linkedinUrl: v as string | null })}
-                />
-                <InlineField
-                  label="Title"
-                  value={lead.title}
-                  type="text"
-                  editable={canEdit && !isConverted}
-                  onSave={(v) => handleInlineUpdate(lead.leadId, { title: v as string | null })}
-                />
-                <Field label="Address" value={fullAddress || null} />
-                <Field label="Created" value={format(lead.createdAt, 'PPp')} />
-                <Field label="Updated" value={format(lead.updatedAt, 'PPp')} />
-                <Field label="Email Opt-Out" value={lead.emailOptOut ? 'Yes' : 'No'} />
-                <div className="md:col-span-2">
-                  <InlineField
-                    label="Description"
-                    value={lead.description}
-                    type="textarea"
-                    editable={canEdit && !isConverted}
-                    onSave={(v) => handleInlineUpdate(lead.leadId, { description: v as string | null })}
-                    render={(v) => v ? <span className="whitespace-pre-wrap">{String(v)}</span> : null}
-                  />
-                </div>
-                {isConverted && (
-                  <div className="md:col-span-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
-                    <p className="font-semibold inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Converted {lead.convertedAt && format(lead.convertedAt, 'PP')}
-                    </p>
-                    <ul className="mt-1 space-y-0.5 text-muted-foreground">
-                      {lead.convertedToClientId && <li>→ Account: <code className="font-mono">{lead.convertedToClientId.slice(0, 8)}…</code></li>}
-                      {lead.convertedToContactId && <li>→ Contact: <code className="font-mono">{lead.convertedToContactId.slice(0, 8)}…</code></li>}
-                      {lead.convertedToDealId && <li>→ Deal: <code className="font-mono">{lead.convertedToDealId.slice(0, 8)}…</code></li>}
-                    </ul>
-                  </div>
-                )}
+            {isConverted && (
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
+                <p className="font-semibold inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Converted {lead.convertedAt && format(lead.convertedAt, 'PP')}
+                </p>
+                <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                  {lead.convertedToClientId && <li>→ Account: <code className="font-mono">{lead.convertedToClientId.slice(0, 8)}…</code></li>}
+                  {lead.convertedToContactId && <li>→ Contact: <code className="font-mono">{lead.convertedToContactId.slice(0, 8)}…</code></li>}
+                  {lead.convertedToDealId && <li>→ Deal: <code className="font-mono">{lead.convertedToDealId.slice(0, 8)}…</code></li>}
+                </ul>
               </div>
             )}
+          </aside>
 
-            {/* Custom properties */}
-            <div className="border-t pt-4">
-              <CustomPropertiesEditor
-                fields={lead.customFields}
-                editable={canEdit && !isConverted}
-                onChange={(next) => handleInlineUpdate(lead.leadId, { customFields: next })}
-              />
-            </div>
+          {/* ── MIDDLE: tabbed content (parity with the account drawer) ───── */}
+          <section className="flex flex-col overflow-hidden">
+            <Tabs value={tab} onValueChange={(v) => setTab(v as LeadTab)} className="px-4 pt-3">
+              <TabsList className="bg-transparent border-b border-border rounded-none w-full justify-start gap-1 h-auto p-0">
+                {([
+                  { v: 'activity', label: 'Activity' },
+                  { v: 'notes', label: 'Notes' },
+                  { v: 'emails', label: 'Emails' },
+                  { v: 'files', label: 'Files' },
+                  { v: 'details', label: 'Details' },
+                ] as const).map((t) => (
+                  <TabsTrigger
+                    key={t.v}
+                    value={t.v}
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-orange-500 data-[state=active]:bg-transparent px-3 pb-2"
+                  >
+                    {t.label}
+                    {t.v === 'notes' && notes.length > 0 && (
+                      <span className="ml-1 text-xs text-muted-foreground">({notes.length})</span>
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
 
-            {/* Notes */}
-            <div id="lead-notes-section">
-              <NotesSection
-                lead={lead}
-                organizationId={organizationId}
-                notes={notes}
-                loading={loadingNotes}
-                canCompose={canManage && !isConverted}
-                userId={user?.userId ?? null}
-                userName={user?.displayName ?? null}
-                onChanged={reloadNotes}
-              />
-            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {tab === 'activity' && (
+                <div id="lead-activity-timeline" className="space-y-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Activity timeline
+                  </h3>
+                  {/* AI next-best-action for this lead, above the timeline */}
+                  <NextBestAction entity={{ type: 'lead', id: lead.leadId, label: displayName }} />
+                  {canManage && !isConverted && (
+                    <QuickLogComposer
+                      entity={{ type: 'lead', id: lead.leadId, label: displayName }}
+                      onPosted={() => setActivitiesKey((k) => k + 1)}
+                    />
+                  )}
+                  <ActivitiesTimeline activities={timelineActivities} />
+                </div>
+              )}
 
-            {/* Attachments — wired to attachments table + Storage
-                bucket (migration 116). Upload / list / download / delete
-                all work end-to-end. */}
-            <div id="lead-attachments-section">
-              <EntityAttachmentsSection
-                organizationId={organizationId}
-                entityType="lead"
-                entityId={lead.leadId}
-                canManage={canManage && !isConverted}
-              />
-            </div>
-            {/* No Calls/Tasks (Open/Closed Activities) sections here: a lead
-                only gains task tracking after a deal is won. */}
-            <div id="lead-emails-section">
-              <EntityEmailsSection
-                organizationId={organizationId}
-                entityType="lead"
-                entityId={lead.leadId}
-              />
+              {tab === 'notes' && (
+                <div id="lead-notes-section">
+                  <NotesSection
+                    lead={lead}
+                    organizationId={organizationId}
+                    notes={notes}
+                    loading={loadingNotes}
+                    canCompose={canManage && !isConverted}
+                    userId={user?.userId ?? null}
+                    userName={user?.displayName ?? null}
+                    onChanged={reloadNotes}
+                  />
+                </div>
+              )}
+
+              {tab === 'emails' && (
+                <div id="lead-emails-section">
+                  <EntityEmailsSection
+                    organizationId={organizationId}
+                    entityType="lead"
+                    entityId={lead.leadId}
+                  />
+                </div>
+              )}
+
+              {tab === 'files' && (
+                <div id="lead-attachments-section">
+                  {/* Attachments — wired to attachments table + Storage bucket
+                      (migration 116). Upload / list / download / delete work. */}
+                  <EntityAttachmentsSection
+                    organizationId={organizationId}
+                    entityType="lead"
+                    entityId={lead.leadId}
+                    canManage={canManage && !isConverted}
+                  />
+                </div>
+              )}
+
+              {tab === 'details' && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold border-b pb-1.5 mb-3">
+                      Custom properties
+                    </h3>
+                    <CustomPropertiesEditor
+                      fields={lead.customFields}
+                      editable={canEdit && !isConverted}
+                      onChange={(next) => handleInlineUpdate(lead.leadId, { customFields: next })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm border-t pt-4">
+                    <Field label="Lead Source" value={lead.leadSource} />
+                    <Field label="Rating" value={lead.rating} />
+                    <Field label="Email Opt-Out" value={lead.emailOptOut ? 'Yes' : 'No'} />
+                    <Field label="Created" value={format(lead.createdAt, 'PPp')} />
+                    <Field label="Updated" value={format(lead.updatedAt, 'PPp')} />
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
-          {/* ── RIGHT: deals + activity timeline (parity with the account
-              drawer's right rail) ──────────────────────────────────────── */}
+          {/* ── RIGHT: account deals (parity with the account drawer's rail) ── */}
           <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-4">
             <AccountDealsCard
               deals={accountDeals}
@@ -683,21 +565,6 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               onDeleteDeal={(d) => setDeletingDeal(d)}
               onStageChanged={() => setDealsRefresh((k) => k + 1)}
             />
-
-            <div id="lead-activity-timeline" className="border-t pt-3 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Activity timeline
-              </h3>
-              {/* AI next-best-action for this lead, above the timeline */}
-              <NextBestAction entity={{ type: 'lead', id: lead.leadId, label: displayName }} />
-              {canManage && !isConverted && (
-                <QuickLogComposer
-                  entity={{ type: 'lead', id: lead.leadId, label: displayName }}
-                  onPosted={() => setActivitiesKey((k) => k + 1)}
-                />
-              )}
-              <ActivitiesTimeline activities={timelineActivities} />
-            </div>
           </aside>
         </div>
       </aside>
@@ -774,6 +641,147 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+};
+
+// ─── Left: About this lead (inline-editable) ─────────────────────────────────
+
+const AboutLead: React.FC<{
+  lead: Lead;
+  fullAddress: string;
+  editable: boolean;
+  onSave: (leadId: string, patch: Partial<Lead>) => Promise<void>;
+}> = ({ lead, fullAddress, editable, onSave }) => {
+  const save = (patch: Partial<Lead>) => onSave(lead.leadId, patch);
+  return (
+    <div className="space-y-3 text-sm">
+      <Field label="Lead Owner" value={lead.leadOwnerName} />
+      <InlineField
+        label="Email"
+        value={lead.email}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ email: v as string | null })}
+        render={(v) => v
+          ? <a href={`mailto:${v}`} className="text-primary hover:underline break-all">{String(v)}</a>
+          : null}
+      />
+      <InlineField
+        label="Phone"
+        value={lead.phone}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ phone: v as string | null })}
+        render={(v) => v ? <a href={`tel:${v}`} className="hover:underline">{String(v)}</a> : null}
+      />
+      <InlineField
+        label="Mobile"
+        value={lead.mobile}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ mobile: v as string | null })}
+      />
+      <InlineField
+        label="Website"
+        value={lead.website}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ website: v as string | null })}
+        render={(v) => v ? (
+          <a href={String(v).startsWith('http') ? String(v) : `https://${v}`}
+             target="_blank" rel="noreferrer noopener" className="text-primary hover:underline break-all">
+            {String(v)}
+          </a>
+        ) : null}
+      />
+      <InlineField
+        label="Company"
+        value={lead.company}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ company: (v as string | null) ?? lead.company })}
+      />
+      <InlineField
+        label="Title"
+        value={lead.title}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ title: v as string | null })}
+      />
+      <InlineField
+        label="Industry"
+        value={lead.industry}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ industry: v as string | null })}
+      />
+      <InlineField
+        label="Annual Revenue"
+        value={lead.annualRevenue}
+        type="number"
+        editable={editable}
+        onSave={(v) => save({ annualRevenue: v as number | null })}
+        render={(v) => v != null
+          ? <span>{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(v))}</span>
+          : null}
+      />
+      <InlineField
+        label="No. of Employees"
+        value={lead.noOfEmployees}
+        type="number"
+        editable={editable}
+        onSave={(v) => save({ noOfEmployees: v as number | null })}
+      />
+      <InlineField
+        label="Fax"
+        value={lead.fax}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ fax: v as string | null })}
+      />
+      <InlineField
+        label="Skype"
+        value={lead.skypeId}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ skypeId: v as string | null })}
+      />
+      <InlineField
+        label="Twitter"
+        value={lead.twitter}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ twitter: v as string | null })}
+      />
+      <InlineField
+        label="LinkedIn"
+        value={lead.linkedinUrl}
+        type="text"
+        editable={editable}
+        onSave={(v) => save({ linkedinUrl: v as string | null })}
+      />
+      <Field label="Address" value={fullAddress || null} />
+      <InlineField
+        label="Description"
+        value={lead.description}
+        type="textarea"
+        editable={editable}
+        onSave={(v) => save({ description: v as string | null })}
+        render={(v) => v ? <span className="whitespace-pre-wrap break-words">{String(v)}</span> : null}
+      />
+      {lead.tags && lead.tags.length > 0 && (
+        <div className="pt-1">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            Tags
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {lead.tags.map((t) => (
+              <Badge key={t} variant="secondary">{t}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1066,4 +1074,3 @@ const NotesSection: React.FC<NotesSectionProps> = ({
     </div>
   );
 };
-
