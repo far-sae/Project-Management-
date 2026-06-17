@@ -509,6 +509,54 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               </div>
             </div>
 
+            {/* Business details — the lead's linked business account. Short
+                summary here in the LEFT rail; click to open the full business
+                account page (the whole form lives there, not here). */}
+            <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5" /> Business details
+              </h3>
+              {accountClient ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenAccount?.(accountClient)}
+                    className="text-left w-full group"
+                  >
+                    <div className="font-medium group-hover:text-primary truncate">{accountClient.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {[accountClient.category, accountClient.industry,
+                        accountClient.annualRevenue != null ? formatRevenue(accountClient.annualRevenue) : null]
+                        .filter(Boolean).join(' · ') || 'Company'}
+                    </div>
+                  </button>
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => onOpenAccount?.(accountClient)}>
+                    <ExternalLink className="w-3.5 h-3.5 mr-1" /> Open business account
+                  </Button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className="w-full text-[11px] text-muted-foreground hover:text-foreground"
+                      onClick={() => setLinkOpen(true)}
+                    >
+                      Change linked account
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    This lead isn't linked to a business account yet.
+                  </p>
+                  {canEdit && (
+                    <Button size="sm" variant="outline" className="w-full" onClick={() => setLinkOpen(true)}>
+                      Link a business account
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* Quick info — editable via InlineField when canEdit */}
             <div className="grid md:grid-cols-2 gap-x-6 gap-y-3 text-sm">
               {/* Lead Owner: not inline-editable for v1 */}
@@ -707,55 +755,6 @@ export const LeadDetailDrawer: React.FC<Props> = ({
           {/* ── RIGHT: deals + activity timeline (parity with the account
               drawer's right rail) ──────────────────────────────────────── */}
           <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-4">
-            {/* Business details — the lead's business account (company). Mirrors
-                the company window's Business details and links straight to it. */}
-            <div className="rounded-lg border border-border bg-card p-3 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5" /> Business details
-              </h3>
-              {accountClient ? (
-                <>
-                  {/* Short summary — click anywhere to open the full business
-                      account page (the whole form lives there, not here). */}
-                  <button
-                    type="button"
-                    onClick={() => onOpenAccount?.(accountClient)}
-                    className="text-left w-full group"
-                  >
-                    <div className="font-medium group-hover:text-primary truncate">{accountClient.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {[accountClient.category, accountClient.industry,
-                        accountClient.annualRevenue != null ? formatRevenue(accountClient.annualRevenue) : null]
-                        .filter(Boolean).join(' · ') || 'Company'}
-                    </div>
-                  </button>
-                  <Button size="sm" variant="outline" className="w-full" onClick={() => onOpenAccount?.(accountClient)}>
-                    <ExternalLink className="w-3.5 h-3.5 mr-1" /> Open business account
-                  </Button>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      className="w-full text-[11px] text-muted-foreground hover:text-foreground"
-                      onClick={() => setLinkOpen(true)}
-                    >
-                      Change linked account
-                    </button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p className="text-xs text-muted-foreground">
-                    This lead isn't linked to a business account yet.
-                  </p>
-                  {canEdit && (
-                    <Button size="sm" variant="outline" className="w-full" onClick={() => setLinkOpen(true)}>
-                      Link a business account
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
-
             <AccountDealsCard
               deals={accountDeals}
               hasAccount={!!lead.accountId}
