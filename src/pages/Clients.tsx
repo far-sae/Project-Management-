@@ -1076,7 +1076,10 @@ export const Clients: React.FC = () => {
       {liveSelected && (
         <BusinessAccountPage
           client={liveSelected}
+          organizationId={organizationId}
           canManage={canManage}
+          userId={user?.userId}
+          userName={user?.displayName}
           onClose={() => navigate('/clients')}
           onEdit={(c) => setEditing(c)}
           onDelete={(c) => setConfirmDelete(c)}
