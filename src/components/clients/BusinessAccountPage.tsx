@@ -4,12 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { InlineField } from '@/components/leads/InlineField';
 import { ScoreBadge } from '@/components/clients/ScoreBadge';
+import { AccountNotesSection } from '@/components/clients/AccountNotesSection';
 import { Client, formatRevenue } from '@/services/supabase/clients';
 import { cn } from '@/lib/utils';
 
 interface Props {
   client: Client | null;
+  organizationId: string | null;
   canManage: boolean;
+  userId?: string;
+  userName?: string;
   onClose: () => void;
   onEdit: (client: Client) => void;
   onDelete: (client: Client) => void;
@@ -32,7 +36,7 @@ const STATUS_CLASS = (status: Client['status']): string =>
  * rest are inline-editable here.
  */
 export const BusinessAccountPage: React.FC<Props> = ({
-  client, canManage, onClose, onEdit, onDelete, onUpdate,
+  client, organizationId, canManage, userId, userName, onClose, onEdit, onDelete, onUpdate,
 }) => {
   if (!client) return null;
   const canEdit = canManage && !!onUpdate;
@@ -145,6 +149,18 @@ export const BusinessAccountPage: React.FC<Props> = ({
             <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</h2>
             <InlineField label="Description" type="textarea" value={client.description} editable={canEdit}
               onSave={(v) => save({ description: (v as string) || null })} />
+          </section>
+
+          {/* Notes — keep context on the business (separate from lead notes). */}
+          <section className="rounded-lg border border-border bg-card p-4 space-y-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes</h2>
+            <AccountNotesSection
+              clientId={client.clientId}
+              organizationId={organizationId}
+              userId={userId}
+              userName={userName}
+              canManage={canManage}
+            />
           </section>
         </div>
       </div>
