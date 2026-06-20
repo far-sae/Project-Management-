@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical,
-  Pencil, ArrowLeft, ChevronDown,
+  Pencil, ArrowLeft, ChevronDown, Briefcase, ChevronRight,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -150,7 +151,10 @@ export const Clients: React.FC = () => {
   // callbacks (e.g. CrmHomeDashboard) may still pass it. The useEffect below
   // redirects those legacy values to a live tab now that the Activities tab
   // is gone (its timeline moved into each record's right rail).
-  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'tasks' | 'forecast'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'accounts' | 'pipeline' | 'business' | 'tasks' | 'forecast'>('home');
+  // Business tab: a flat list of business accounts (the scoped clients) with a
+  // little detail; clicking one opens its standalone /business/:id page.
+  const [bizSearch, setBizSearch] = useState('');
   useEffect(() => {
     // The removed 'tasks'/'activities'/'leads' tabs all redirect: tasks &
     // activities → home (the Activities tab is gone; its feed now lives in
@@ -338,6 +342,26 @@ export const Clients: React.FC = () => {
     // sidebar workspace just like the accounts list.
     return leads.filter((l) => (l.category ?? '').trim().toLowerCase() === cf);
   }, [leads, categoryFilter]);
+
+  // Business tab: how many leads each business has (from scoped leads).
+  const leadCountByAccount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of leads) {
+      if (l.accountId) m.set(l.accountId, (m.get(l.accountId) ?? 0) + 1);
+    }
+    return m;
+  }, [leads]);
+
+  // Businesses shown on the Business tab — scoped accounts, filtered by a
+  // lightweight search over name / industry / category / country / email.
+  const businessRows = useMemo(() => {
+    const q = bizSearch.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) =>
+      [c.name, c.industry, c.category, c.country, c.email]
+        .filter(Boolean).join(' ').toLowerCase().includes(q),
+    );
+  }, [clients, bizSearch]);
 
   // Shared allow-list for every workspace-scoped view (kanban, analytics,
   // tasks, forecast). When the sidebar shows "All workspaces" we pass null
@@ -572,6 +596,9 @@ export const Clients: React.FC = () => {
                   <GitBranch className="w-4 h-4 mr-1.5" /> Pipeline
                 </TabsTrigger>
               )}
+              <TabsTrigger value="business">
+                <Briefcase className="w-4 h-4 mr-1.5" /> Business
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="home" className="mt-4">
@@ -962,6 +989,82 @@ export const Clients: React.FC = () => {
                   </>
                 );
               })()}
+            </TabsContent>
+
+            <TabsContent value="business" className="mt-4 space-y-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h2 className="text-lg font-semibold">Business accounts</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {isAllWorkspaces
+                      ? 'Every business across your organization.'
+                      : `Businesses in the "${selectedWorkspace?.name ?? 'current'}" workspace.`}
+                    {' '}Open one to see its details and the leads attached to it.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 min-w-[240px]">
+                  <Search className="w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search businesses…"
+                    value={bizSearch}
+                    onChange={(e) => setBizSearch(e.target.value)}
+                    maxLength={200}
+                  />
+                </div>
+              </div>
+
+              {loading ? (
+                <Card>
+                  <CardContent className="py-10 flex items-center justify-center text-muted-foreground">
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading businesses…
+                  </CardContent>
+                </Card>
+              ) : businessRows.length === 0 ? (
+                <Card>
+                  <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                    {bizSearch.trim()
+                      ? 'No businesses match your search.'
+                      : `No businesses ${isAllWorkspaces ? '' : 'in this workspace '}yet.`}
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {businessRows.map((c) => {
+                    const leadCount = leadCountByAccount.get(c.clientId) ?? 0;
+                    return (
+                      <button
+                        key={c.clientId}
+                        type="button"
+                        onClick={() => navigate(`/business/${c.clientId}`)}
+                        className="group text-left rounded-lg border bg-card p-4 hover:border-primary/60 hover:shadow-sm transition-all"
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="w-10 h-10 rounded-md bg-primary-soft text-primary-soft-foreground grid place-items-center shrink-0">
+                            <Building2 className="w-5 h-5" />
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <h3 className="font-semibold truncate">{c.name}</h3>
+                              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">
+                              {[c.industry, c.category].filter(Boolean).join(' · ') || 'Business account'}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              <Badge variant="outline" className="text-[10px]">
+                                {leadCount} lead{leadCount === 1 ? '' : 's'}
+                              </Badge>
+                              {c.country && (
+                                <Badge variant="secondary" className="text-[10px]">{c.country}</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </TabsContent>
 
           </Tabs>
