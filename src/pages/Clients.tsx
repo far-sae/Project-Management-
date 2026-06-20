@@ -570,6 +570,15 @@ export const Clients: React.FC = () => {
                     </Button>
                   </>
                 )
+              ) : activeTab === 'business' ? (
+                canCreate && (
+                  // On the Business tab, "Add business account" creates a real
+                  // company record (Client) — distinct from the category "Add
+                  // account" on the Accounts tab.
+                  <Button onClick={() => setOpenCreate(true)}>
+                    <Plus className="w-4 h-4 mr-2" /> Add business account
+                  </Button>
+                )
               ) : (
                 canCreate && (
                   // An account IS a category bucket — "Add account" registers a

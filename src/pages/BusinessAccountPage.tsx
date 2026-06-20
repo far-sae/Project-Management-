@@ -63,11 +63,16 @@ export const BusinessAccountPage: React.FC = () => {
     () => allLeads.filter((l) => l.accountId === clientId),
     [allLeads, clientId],
   );
-  // Leads not yet on this business — selectable in the "add a lead" dropdown.
-  const attachableLeads = useMemo(
-    () => allLeads.filter((l) => l.accountId !== clientId),
-    [allLeads, clientId],
-  );
+  // Leads selectable in the "add a lead" dropdown: only leads from this
+  // business's own category (the leads that live inside that category on the
+  // accounts page) and not already on this business.
+  const attachableLeads = useMemo(() => {
+    const cat = (client?.category ?? '').trim().toLowerCase();
+    return allLeads.filter((l) =>
+      l.accountId !== clientId
+      && (l.category ?? '').trim().toLowerCase() === cat,
+    );
+  }, [allLeads, clientId, client?.category]);
   // This business's deals = its "projects" for billing.
   const businessDeals = useMemo(
     () => deals.filter((d) => d.clientId === clientId),
