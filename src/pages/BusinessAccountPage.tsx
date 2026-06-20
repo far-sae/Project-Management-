@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Building2, Loader2, UserPlus, X, Trash2,
+  ArrowLeft, Building2, Loader2, UserPlus, X, Trash2, Receipt, CheckCircle2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,10 +18,24 @@ import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
 import { useClients } from '@/hooks/useClients';
 import { useLeads } from '@/hooks/useLeads';
+import { useDeals } from '@/hooks/useDeals';
+import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { formatRevenue } from '@/services/supabase/clients';
-import { Lead, leadDisplayName, leadStatusLabel } from '@/services/supabase/leads';
+import { Lead, leadDisplayName, leadStatusLabel, createLeadNote } from '@/services/supabase/leads';
+import type { Deal } from '@/services/supabase/deals';
+import { createInvoice } from '@/services/supabase/invoices';
+import { createSchedule } from '@/services/supabase/invoiceSchedules';
 import { toast } from 'sonner';
+
+// Per-deal billing preference, stored in deal.customFields.billingType.
+type BillingMode = 'on_completion' | 'monthly' | 'none';
+const BILLING_LABEL: Record<BillingMode, string> = {
+  on_completion: 'Bill on completion',
+  monthly: 'Monthly (recurring)',
+  none: "Don't bill",
+};
 
 /**
  * Standalone Business page (reuses the company/account record). Shows ONLY the
@@ -35,7 +49,10 @@ export const BusinessAccountPage: React.FC = () => {
   const navigate = useNavigate();
   const { organizationId, allClients, update, canManage, loading } = useClients();
   const { allLeads, update: updateLead, remove: removeLead } = useLeads();
+  const { deals, update: updateDeal } = useDeals();
+  const { user } = useAuth();
   const { canEditModule } = useOrganization();
+  const formatMoney = useFormatMoney();
   const canEdit = canManage;
 
   const client = useMemo(
@@ -50,6 +67,11 @@ export const BusinessAccountPage: React.FC = () => {
   const attachableLeads = useMemo(
     () => allLeads.filter((l) => l.accountId !== clientId),
     [allLeads, clientId],
+  );
+  // This business's deals = its "projects" for billing.
+  const businessDeals = useMemo(
+    () => deals.filter((d) => d.clientId === clientId),
+    [deals, clientId],
   );
 
   // Lead drawer / edit / delete state (mirrors the CRM page's lead wiring).
@@ -89,6 +111,74 @@ export const BusinessAccountPage: React.FC = () => {
       toast.success(`Removed ${leadDisplayName(lead)} from this business`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not remove lead');
+    }
+  };
+
+  // ── Billing (Phase 2/3) ──────────────────────────────────────────────────
+  const billingOf = (d: Deal): BillingMode => {
+    const v = d.customFields?.billingType;
+    return v === 'on_completion' || v === 'monthly' ? v : 'none';
+  };
+  const lineItemsFor = (d: Deal) => [
+    { description: d.title, qty: 1, unitPrice: d.value, lineTotal: d.value },
+  ];
+
+  const setBilling = async (d: Deal, mode: BillingMode) => {
+    try {
+      await updateDeal(d.dealId, { customFields: { ...d.customFields, billingType: mode } });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save billing');
+    }
+  };
+
+  // Manual one-off: create a draft invoice for this deal right now.
+  const generateInvoice = async (d: Deal) => {
+    if (!organizationId || !client) return;
+    try {
+      await createInvoice(organizationId, user?.userId ?? null, user?.displayName ?? null, {
+        clientId: client.clientId, dealId: d.dealId, title: d.title,
+        currency: d.currency, lineItems: lineItemsFor(d),
+      });
+      toast.success(`Draft invoice created for "${d.title}"`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not create invoice');
+    }
+  };
+
+  // Mark the project (deal) delivered: apply its billing preference (one-time
+  // invoice or start a monthly schedule) AND log it to every attached lead's
+  // Activity timeline (Phase 3).
+  const markDelivered = async (d: Deal) => {
+    if (!organizationId || !client) return;
+    const mode = billingOf(d);
+    try {
+      if (mode === 'monthly') {
+        await createSchedule(organizationId, user?.userId ?? null, user?.displayName ?? null, {
+          clientId: client.clientId, frequency: 'monthly', currency: d.currency,
+          lineItems: lineItemsFor(d), nextRunDate: new Date(),
+        });
+      } else if (mode === 'on_completion') {
+        await createInvoice(organizationId, user?.userId ?? null, user?.displayName ?? null, {
+          clientId: client.clientId, dealId: d.dealId, title: d.title,
+          currency: d.currency, lineItems: lineItemsFor(d),
+        });
+      }
+      // Log a "Project delivered" note on each lead attached to this business
+      // so it shows in their Activity timeline.
+      await Promise.all(attachedLeads.map((l) =>
+        createLeadNote(organizationId, l.leadId, user?.userId ?? null, user?.displayName ?? null, {
+          kind: 'note', subject: 'Project delivered',
+          body: `Project "${d.title}" was marked delivered.`, occurredAt: new Date(),
+        })));
+      const billNote = mode === 'monthly'
+        ? ' Monthly billing started.'
+        : mode === 'on_completion' ? ' Invoice generated.' : '';
+      toast.success(
+        `Marked "${d.title}" delivered.${billNote}`
+        + (attachedLeads.length ? ` Logged to ${attachedLeads.length} lead${attachedLeads.length === 1 ? '' : 's'}.` : ''),
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not mark delivered');
     }
   };
 
@@ -298,6 +388,68 @@ export const BusinessAccountPage: React.FC = () => {
                       )}
                     </li>
                   ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Projects & billing (Phase 2/3) */}
+          <Card>
+            <CardContent className="pt-5">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-2 mb-1">
+                <Receipt className="w-4 h-4" /> Projects &amp; billing
+              </h2>
+              <p className="text-sm text-muted-foreground mb-3">
+                Deals for this business. Pick how each is billed, generate the invoice now, or
+                mark it delivered — delivering applies the billing choice and logs to the leads' Activity.
+              </p>
+              {businessDeals.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No deals for this business yet. Create one from the Pipeline.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {businessDeals.map((d) => {
+                    const mode = billingOf(d);
+                    return (
+                      <li key={d.dealId} className="rounded-md border p-3">
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-medium truncate">{d.title}</span>
+                              <Badge variant="outline" className="text-[9px] capitalize shrink-0">{d.stage}</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {formatMoney(d.value, d.currency)}
+                            </p>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground shrink-0">
+                            Billing: {BILLING_LABEL[mode]}
+                          </span>
+                        </div>
+                        {canManage && (
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <Select value={mode} onValueChange={(v) => setBilling(d, v as BillingMode)}>
+                              <SelectTrigger className="w-[200px] h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="on_completion">{BILLING_LABEL.on_completion}</SelectItem>
+                                <SelectItem value="monthly">{BILLING_LABEL.monthly}</SelectItem>
+                                <SelectItem value="none">{BILLING_LABEL.none}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => generateInvoice(d)}>
+                              <Receipt className="w-3.5 h-3.5 mr-1" /> Generate invoice
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => markDelivered(d)}>
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark delivered
+                            </Button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </CardContent>
