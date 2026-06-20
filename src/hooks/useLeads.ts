@@ -61,9 +61,15 @@ export const useLeads = () => {
     });
   }, [orgId]);
 
-  // CRM is org-global — leads are NOT scoped to the selected workspace
-  // (matches useClients; workspaces are a post-win delivery concept).
-  const leads = allLeads;
+  // CRM is workspace-scoped (matches useClients): a selected workspace shows
+  // only its leads; "All workspaces" shows everything; "Unassigned" shows
+  // leads with no workspace. `allLeads` stays available for cross-workspace
+  // lookups (e.g. keeping an open lead drawer hydrated).
+  const leads = useMemo(() => {
+    if (isAll) return allLeads;
+    if (isUnassigned) return allLeads.filter((l) => !l.workspaceId);
+    return allLeads.filter((l) => l.workspaceId === selectedWorkspaceId);
+  }, [allLeads, isAll, isUnassigned, selectedWorkspaceId]);
 
   const activeWorkspaceId = useMemo(() => {
     if (!isAll && !isUnassigned && selectedWorkspaceId) return selectedWorkspaceId;
