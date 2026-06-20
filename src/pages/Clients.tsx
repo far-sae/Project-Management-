@@ -334,8 +334,10 @@ export const Clients: React.FC = () => {
   const categoryLeads = useMemo(() => {
     if (categoryFilter === 'all' || categoryFilter === '__uncategorized__') return [];
     const cf = categoryFilter.trim().toLowerCase();
-    return allLeads.filter((l) => (l.category ?? '').trim().toLowerCase() === cf);
-  }, [allLeads, categoryFilter]);
+    // Scoped `leads` (workspace-filtered), so the category view honors the
+    // sidebar workspace just like the accounts list.
+    return leads.filter((l) => (l.category ?? '').trim().toLowerCase() === cf);
+  }, [leads, categoryFilter]);
 
   // Shared allow-list for every workspace-scoped view (kanban, analytics,
   // tasks, forecast). When the sidebar shows "All workspaces" we pass null
@@ -602,7 +604,7 @@ export const Clients: React.FC = () => {
                 <CrmCategoryLanding
                   clients={clients}
                   registered={registeredCategories}
-                  leads={allLeads}
+                  leads={leads}
                   onPick={exitLanding}
                   onExport={handleExportCategory}
                   onManageCategories={canManageCategories

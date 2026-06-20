@@ -59,11 +59,15 @@ export const useClients = () => {
     });
   }, [orgId]);
 
-  // CRM is org-global — accounts are NOT scoped to the selected workspace.
-  // Workspaces are a delivery concept (created when a deal is WON), not a CRM
-  // filter, so the accounts list shows the whole org regardless of the sidebar
-  // workspace.
-  const clients = allClients;
+  // CRM is workspace-scoped: picking a workspace in the sidebar shows only
+  // that workspace's accounts; "All workspaces" shows everything; "Unassigned"
+  // shows accounts with no workspace. `allClients` stays available for
+  // cross-workspace lookups (e.g. keeping an open drawer hydrated).
+  const clients = useMemo(() => {
+    if (isAll) return allClients;
+    if (isUnassigned) return allClients.filter((c) => !c.workspaceId);
+    return allClients.filter((c) => c.workspaceId === selectedWorkspaceId);
+  }, [allClients, isAll, isUnassigned, selectedWorkspaceId]);
 
   // What workspace should a newly created client land in? Prefer the sidebar
   // selection; fall back to the org's default workspace if the sidebar is
