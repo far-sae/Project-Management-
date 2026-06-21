@@ -31,6 +31,9 @@ interface Props {
    *  (or change) which business this lead belongs to — both create and edit.
    *  This is the lead-side half of the two-way business↔lead link. */
   accounts?: Array<{ clientId: string; name: string }>;
+  /** When provided, a "Workspace" picker is shown so the rep can move the lead
+   *  to another workspace (CRM is workspace-scoped). */
+  workspaces?: Array<{ workspaceId: string; name: string }>;
 }
 
 const NONE = '__none__';
@@ -64,6 +67,7 @@ interface FormState {
   description: string;
   tags: string;
   accountId: string;
+  workspaceId: string;
 }
 
 const blank: FormState = {
@@ -95,6 +99,7 @@ const blank: FormState = {
   description: '',
   tags: '',
   accountId: '',
+  workspaceId: '',
 };
 
 const fromLead = (l: Lead): FormState => ({
@@ -126,16 +131,19 @@ const fromLead = (l: Lead): FormState => ({
   description: l.description ?? '',
   tags: l.tags.join(', '),
   accountId: l.accountId ?? '',
+  workspaceId: l.workspaceId ?? '',
 });
 
 export const LeadFormDialog: React.FC<Props> = ({
   open, onOpenChange, lead, onSubmit,
   defaultAccountId = null, defaultCategory = null, defaultWorkspaceId = null,
-  accounts = [],
+  accounts = [], workspaces = [],
 }) => {
-  // Create mode seeds the account from defaultAccountId; edit mode from the lead.
+  // Create mode seeds account + workspace from the defaults; edit from the lead.
   const initial = (): FormState =>
-    lead ? fromLead(lead) : { ...blank, accountId: defaultAccountId ?? '' };
+    lead
+      ? fromLead(lead)
+      : { ...blank, accountId: defaultAccountId ?? '', workspaceId: defaultWorkspaceId ?? '' };
   const [form, setForm] = useState<FormState>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -211,12 +219,13 @@ export const LeadFormDialog: React.FC<Props> = ({
       // Business/account link is editable in both create and edit via the
       // selector, so always carry the chosen value (empty = no business).
       input.accountId = form.accountId || null;
-      // Category/workspace are only stamped on create (from the account the
-      // lead was added inside). Edit leaves the lead's existing ones untouched.
-      if (!lead) {
-        if (defaultCategory) input.category = defaultCategory;
-        if (defaultWorkspaceId) input.workspaceId = defaultWorkspaceId;
-      }
+      // Workspace is editable in both create and edit (move a lead between
+      // workspaces). Only carry an explicit pick; empty leaves it to the create
+      // hook's active-workspace default (and is a no-op on edit).
+      if (form.workspaceId) input.workspaceId = form.workspaceId;
+      // Category is only stamped on create (from the account the lead was added
+      // inside). Edit leaves the lead's existing category untouched.
+      if (!lead && defaultCategory) input.category = defaultCategory;
       await onSubmit(input);
       onOpenChange(false);
     } catch (err) {
@@ -301,6 +310,28 @@ export const LeadFormDialog: React.FC<Props> = ({
                   </Select>
                   <p className="text-[11px] text-muted-foreground mt-1">
                     Which business this lead belongs to. The business page lists all its leads.
+                  </p>
+                </div>
+              </Row>
+            )}
+            {workspaces.length > 0 && (
+              <Row>
+                <div className="md:col-span-3">
+                  <Label className="text-xs">Workspace</Label>
+                  <Select
+                    value={form.workspaceId || NONE}
+                    onValueChange={(v) => set('workspaceId', v === NONE ? '' : v)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="-None-" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>-Unassigned-</SelectItem>
+                      {workspaces.map((w) => (
+                        <SelectItem key={w.workspaceId} value={w.workspaceId}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Which workspace this lead lives in. Move it here if it's not showing under the right workspace.
                   </p>
                 </div>
               </Row>

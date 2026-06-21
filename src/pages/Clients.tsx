@@ -42,6 +42,7 @@ import { ForecastTab } from '@/components/clients/ForecastTab';
 import { PipelineAnalyticsCard } from '@/components/clients/PipelineAnalyticsCard';
 import { PipelineSelector } from '@/components/clients/PipelineSelector';
 import { useClients } from '@/hooks/useClients';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
   Client, ClientStatus, ClientType,
@@ -106,6 +107,9 @@ export const Clients: React.FC = () => {
     canCreate: rawCanCreate, canManage: rawCanManage,
     selectedWorkspace, isAllWorkspaces,
   } = useClients();
+  // Full workspace list — used by the account/lead forms' "Workspace" picker
+  // so reps can move a record to the right workspace (CRM is workspace-scoped).
+  const { workspaces } = useSelectedWorkspace();
   const canCreate = rawCanCreate && crmEditable;
   const canManage = rawCanManage && crmEditable;
   const { pipelines, defaultPipeline, stagesByPipeline } = usePipelines();
@@ -1095,6 +1099,7 @@ export const Clients: React.FC = () => {
         client={editing}
         onSubmit={handleUpdate}
         organizationId={organizationId}
+        workspaces={workspaces}
       />
       {/* Import */}
       <ImportClientsDialog
@@ -1269,6 +1274,8 @@ export const Clients: React.FC = () => {
         // Business/account picker — lets the rep set which business a lead
         // belongs to (the lead-side half of the two-way link).
         accounts={allClients}
+        // Workspace picker — move the lead to another workspace.
+        workspaces={workspaces}
         // Adding a lead from inside a category → stamp the bucket + the active
         // workspace onto the new lead so it lands in this list. Ignored in edit
         // mode (the dialog only applies these when creating).

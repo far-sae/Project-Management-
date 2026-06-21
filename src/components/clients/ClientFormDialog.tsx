@@ -63,6 +63,7 @@ interface FormState {
   tickerSymbol: string;
   ownership: string;
   sicCode: string;
+  workspaceId: string;
 }
 
 const blank: FormState = {
@@ -93,6 +94,7 @@ const blank: FormState = {
   tickerSymbol: '',
   ownership: '',
   sicCode: '',
+  workspaceId: '',
 };
 
 const fromClient = (c: Client): FormState => ({
@@ -123,6 +125,7 @@ const fromClient = (c: Client): FormState => ({
   tickerSymbol: c.tickerSymbol ?? '',
   ownership: c.ownership ?? '',
   sicCode: c.sicCode ?? '',
+  workspaceId: c.workspaceId ?? '',
 });
 
 interface Props {
@@ -138,10 +141,14 @@ interface Props {
    * defence-in-depth layer — server-side unique indexes still hard-block.
    */
   organizationId?: string | null;
+  /** When provided, a "Workspace" picker is shown (edit mode) so the account
+   *  can be moved to another workspace. */
+  workspaces?: Array<{ workspaceId: string; name: string }>;
 }
 
 export const ClientFormDialog: React.FC<Props> = ({
   open, onOpenChange, client, onSubmit, onUpdateExisting, organizationId,
+  workspaces = [],
 }) => {
   const [form, setForm] = useState<FormState>(blank);
   const [submitting, setSubmitting] = useState(false);
@@ -300,6 +307,9 @@ export const ClientFormDialog: React.FC<Props> = ({
       tickerSymbol: form.tickerSymbol.trim() || null,
       ownership: form.ownership.trim() || null,
       sicCode: form.sicCode.trim() || null,
+      // Move-between-workspaces (edit). Empty → undefined so create defers to
+      // the hook's active-workspace default.
+      workspaceId: form.workspaceId || undefined,
     };
   };
 
@@ -443,6 +453,25 @@ export const ClientFormDialog: React.FC<Props> = ({
                     </SelectContent>
                   </Select>
                 </div>
+                {workspaces.length > 0 && (
+                  <div className="space-y-1 md:col-span-2">
+                    <Label>Workspace</Label>
+                    <Select
+                      value={form.workspaceId || undefined}
+                      onValueChange={(v) => set('workspaceId', v)}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Pick a workspace" /></SelectTrigger>
+                      <SelectContent>
+                        {workspaces.map((w) => (
+                          <SelectItem key={w.workspaceId} value={w.workspaceId}>{w.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      Which workspace this account lives in. Move it here if it's not showing under the right workspace.
+                    </p>
+                  </div>
+                )}
               </>
             )}
 

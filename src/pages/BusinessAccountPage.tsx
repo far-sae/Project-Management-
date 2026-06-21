@@ -18,6 +18,7 @@ import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
 import { useClients } from '@/hooks/useClients';
 import { useLeads } from '@/hooks/useLeads';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useDeals } from '@/hooks/useDeals';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -50,6 +51,7 @@ export const BusinessAccountPage: React.FC = () => {
   const { organizationId, allClients, update, canManage, loading } = useClients();
   const { allLeads, update: updateLead, remove: removeLead } = useLeads();
   const { deals, update: updateDeal } = useDeals();
+  const { workspaces } = useSelectedWorkspace();
   const { user } = useAuth();
   const { canEditModule } = useOrganization();
   const formatMoney = useFormatMoney();
@@ -488,6 +490,7 @@ export const BusinessAccountPage: React.FC = () => {
         onOpenChange={(o) => { if (!o) setEditingLead(null); }}
         lead={editingLead}
         accounts={allClients}
+        workspaces={workspaces}
         onSubmit={async (input) => {
           if (!editingLead) return;
           try {
