@@ -347,6 +347,17 @@ export const Clients: React.FC = () => {
     return leads.filter((l) => (l.category ?? '').trim().toLowerCase() === cf);
   }, [leads, categoryFilter]);
 
+  // The single business account in the focused category (if exactly one). Leads
+  // imported or added inside a category attach to this business (accountId) so
+  // they belong to it — e.g. they show on the Securovix business page and read
+  // "Business: Securovix" — instead of coming in loose with "No account".
+  const categoryAccount = useMemo(() => {
+    if (categoryFilter === 'all' || categoryFilter === '__uncategorized__') return null;
+    const cf = categoryFilter.trim().toLowerCase();
+    const inCat = clients.filter((c) => (c.category ?? '').trim().toLowerCase() === cf);
+    return inCat.length === 1 ? inCat[0] : null;
+  }, [clients, categoryFilter]);
+
   // Business tab: how many leads each business has (from scoped leads).
   const leadCountByAccount = useMemo(() => {
     const m = new Map<string, number>();
@@ -1225,6 +1236,10 @@ export const Clients: React.FC = () => {
         // (a row's own category column still wins). A row's category column
         // overrides this default per the dialog's contract.
         defaultCategory={insideCategory ? categoryFilter : null}
+        // …and attach them to the category's business account (e.g. Securovix)
+        // so they belong to it rather than coming in as loose "no account" leads.
+        defaultAccountId={insideCategory && categoryAccount ? categoryAccount.clientId : null}
+        defaultAccountName={insideCategory && categoryAccount ? categoryAccount.name : null}
         onComplete={(result) => {
           // Always audit the attempt — even when zero rows landed, finance/
           // compliance reviewers need to see that a bulk action ran.
@@ -1280,6 +1295,9 @@ export const Clients: React.FC = () => {
         // workspace onto the new lead so it lands in this list. Ignored in edit
         // mode (the dialog only applies these when creating).
         defaultCategory={!editingLead && insideCategory ? categoryFilter : null}
+        // …and attach it to the category's business account (e.g. Securovix) so
+        // a manually-added lead belongs to that business, not "no account".
+        defaultAccountId={!editingLead && insideCategory && categoryAccount ? categoryAccount.clientId : null}
         defaultWorkspaceId={isAllWorkspaces ? null : activeLeadWorkspaceId}
         onSubmit={async (input) => {
           try {
