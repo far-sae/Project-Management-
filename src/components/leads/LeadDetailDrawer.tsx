@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import {
   X, Edit, Trash2, Loader2,
   User as UserIcon, ChevronDown, FileText,
-  CheckCircle2, Plus,
+  CheckCircle2, Plus, Building2,
 } from 'lucide-react';
 import { InlineField } from './InlineField';
 import { CustomPropertiesEditor } from './CustomPropertiesEditor';
@@ -48,6 +48,14 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+// Reused from the account drawer so the lead window mirrors it for the lead's
+// attached business (Pipeline / Meetings / Invoices / Business details tabs).
+import {
+  MeetingsTab, PipelineDealsList, BusinessDetailsCard,
+} from '@/components/clients/ClientDetailDrawer';
+import { AccountStageHistoryCard } from '@/components/clients/AccountStageHistoryCard';
+import { InvoicesPanel } from '@/components/clients/InvoicesPanel';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 
 interface Props {
   lead: Lead | null;
@@ -80,7 +88,7 @@ interface Props {
 // Middle-column tabs — mirrors the account drawer's tabbed layout so leads and
 // accounts read the same. A lead has no pipeline/meetings/invoices of its own
 // (deals live on its account, shown in the right rail), so the set is trimmed.
-type LeadTab = 'activity' | 'notes' | 'emails' | 'files' | 'details';
+type LeadTab = 'activity' | 'notes' | 'pipeline' | 'emails' | 'meetings' | 'files' | 'invoices';
 
 const STATUS_TONE: Record<LeadStatus, string> = {
   new:                  'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
@@ -105,6 +113,7 @@ export const LeadDetailDrawer: React.FC<Props> = ({
   const { defaultPipeline, stagesByPipeline } = usePipelines();
   const { remove: removeDeal } = useDeals();
   const formatMoney = useFormatMoney();
+  const orgCurrency = useOrgCurrency();
   const canEdit = canManage && !readOnly && canEditModule('leads');
 
   // Local copy of lead data so inline edits reflect immediately in the panel
@@ -291,6 +300,11 @@ export const LeadDetailDrawer: React.FC<Props> = ({
             </Badge>
           </div>
           <div className="ml-auto flex items-center gap-1">
+            {lead.accountId && onOpenBusiness && (
+              <Button variant="outline" size="sm" onClick={() => onOpenBusiness(lead.accountId!)}>
+                <Building2 className="w-3.5 h-3.5 mr-1" /> Business page
+              </Button>
+            )}
             {canManage && !readOnly && (
               <>
                 <Button variant="outline" size="sm" onClick={() => onEdit(lead)}>
@@ -381,6 +395,16 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               />
             </div>
 
+            {/* Custom properties live here (the account window has no Custom
+                tab, so we keep them in the left rail rather than a tab). */}
+            <div className="border-t border-border pt-3">
+              <CustomPropertiesEditor
+                fields={lead.customFields}
+                editable={canEdit && !isConverted}
+                onChange={(next) => handleInlineUpdate(lead.leadId, { customFields: next })}
+              />
+            </div>
+
             {isConverted && (
               <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
                 <p className="font-semibold inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
@@ -402,9 +426,11 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 {([
                   { v: 'activity', label: 'Activity' },
                   { v: 'notes', label: 'Notes' },
+                  { v: 'pipeline', label: 'Pipeline' },
                   { v: 'emails', label: 'Emails' },
+                  { v: 'meetings', label: 'Meetings' },
                   { v: 'files', label: 'Files' },
-                  { v: 'details', label: 'Details' },
+                  { v: 'invoices', label: 'Invoices' },
                 ] as const).map((t) => (
                   <TabsTrigger
                     key={t.v}
@@ -445,6 +471,29 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 </div>
               )}
 
+              {/* Pipeline / Meetings / Invoices belong to the lead's attached
+                  business — they mirror the account window for that account. */}
+              {tab === 'pipeline' && (
+                accountClient ? (
+                  <div className="space-y-5">
+                    <PipelineDealsList
+                      deals={accountDeals}
+                      stagesByPipeline={stagesByPipeline}
+                      defaultPipelineId={defaultPipeline?.pipelineId ?? null}
+                    />
+                    <AccountStageHistoryCard
+                      organizationId={organizationId}
+                      clientId={accountClient.clientId}
+                      currency={accountDeals[0]?.currency ?? orgCurrency}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No business attached. Move this lead into a business to track its pipeline.
+                  </p>
+                )
+              )}
+
               {tab === 'emails' && (
                 <div id="lead-emails-section">
                   <EntityEmailsSection
@@ -453,6 +502,22 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                     entityId={lead.leadId}
                   />
                 </div>
+              )}
+
+              {tab === 'meetings' && (
+                accountClient ? (
+                  <MeetingsTab
+                    client={accountClient}
+                    organizationId={organizationId}
+                    userId={user?.userId}
+                    userName={user?.displayName}
+                    canManage={canManage && !isConverted}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No business attached. Move this lead into a business to schedule meetings on it.
+                  </p>
+                )
               )}
 
               {tab === 'files' && (
@@ -468,31 +533,24 @@ export const LeadDetailDrawer: React.FC<Props> = ({
                 </div>
               )}
 
-              {tab === 'details' && (
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-semibold border-b pb-1.5 mb-3">
-                      Custom properties
-                    </h3>
-                    <CustomPropertiesEditor
-                      fields={lead.customFields}
-                      editable={canEdit && !isConverted}
-                      onChange={(next) => handleInlineUpdate(lead.leadId, { customFields: next })}
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm border-t pt-4">
-                    <Field label="Lead Source" value={lead.leadSource} />
-                    <Field label="Rating" value={lead.rating} />
-                    <Field label="Email Opt-Out" value={lead.emailOptOut ? 'Yes' : 'No'} />
-                    <Field label="Created" value={format(lead.createdAt, 'PPp')} />
-                    <Field label="Updated" value={format(lead.updatedAt, 'PPp')} />
-                  </div>
-                </div>
+              {tab === 'invoices' && (
+                accountClient ? (
+                  <InvoicesPanel
+                    organizationId={organizationId}
+                    client={accountClient}
+                    canManage={canManage && !isConverted}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No business attached. Move this lead into a business to bill it.
+                  </p>
+                )
               )}
             </div>
           </section>
 
-          {/* ── RIGHT: account deals (parity with the account drawer's rail) ── */}
+          {/* ── RIGHT: pipeline + business details (parity with the account
+              drawer's rail), for the lead's attached business. ───────────── */}
           <aside className="border-l border-border bg-card/40 overflow-y-auto p-4 space-y-4">
             <AccountDealsCard
               deals={accountDeals}
@@ -508,6 +566,15 @@ export const LeadDetailDrawer: React.FC<Props> = ({
               onDeleteDeal={(d) => setDeletingDeal(d)}
               onStageChanged={() => setDealsRefresh((k) => k + 1)}
             />
+            {accountClient && (
+              <div className="border-t border-border pt-4">
+                <BusinessDetailsCard
+                  client={accountClient}
+                  editable={false}
+                  onSave={async () => { /* read-only here — edit on the business page */ }}
+                />
+              </div>
+            )}
           </aside>
         </div>
       </aside>
