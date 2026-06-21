@@ -706,7 +706,9 @@ const AboutCompany: React.FC<{
 
 // ─── Right rail: business details (inline-editable) ──────────────────────────
 
-const BusinessDetailsCard: React.FC<{
+// Exported so the lead drawer can mirror the account window for a lead's
+// attached account.
+export const BusinessDetailsCard: React.FC<{
   client: Client;
   editable: boolean;
   onSave: (clientId: string, patch: Partial<Client>) => Promise<void>;
@@ -867,7 +869,7 @@ const DealsCard: React.FC<{
 /** Lists the record's deals (incl. custom items) with their stage + value,
  *  plus a total row. Rendered above the cross-deal Stage History in the
  *  Pipeline tab so reps see the money before the stage trail. */
-const PipelineDealsList: React.FC<{
+export const PipelineDealsList: React.FC<{
   deals: Deal[];
   stagesByPipeline: Record<string, PipelineStage[]>;
   defaultPipelineId: string | null;
@@ -1129,7 +1131,7 @@ const EmailsTab: React.FC<{
 
 // ─── Meetings tab ────────────────────────────────────────────────────────────
 
-const MeetingsTab: React.FC<{
+export const MeetingsTab: React.FC<{
   client: Client;
   organizationId: string;
   userId: string | undefined;
