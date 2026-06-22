@@ -420,11 +420,39 @@ export const ClientsTable: React.FC<ClientsTableProps> = ({
                   </React.Fragment>
                 ))
               ) : (
-                sortedRows.map(renderRow)
+                <>
+                  {/* When a category holds BOTH business accounts and leads,
+                      label the two groups so they read as distinct things
+                      (still uniform row styling — no coloured band). */}
+                  {sortedRows.length > 0 && leadRows.length > 0 && (
+                    <tr className="bg-muted/30 border-b border-border/60">
+                      <td
+                        colSpan={colSpan}
+                        className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                      >
+                        Business accounts
+                        <span className="ml-2 font-normal normal-case">{sortedRows.length}</span>
+                      </td>
+                    </tr>
+                  )}
+                  {sortedRows.map(renderRow)}
+                </>
               )}
-              {/* Leads continue the SAME list directly after the accounts —
-                  no separate band, uniform row styling (user request). */}
-              {leadRows.map(renderLeadRow)}
+              {/* Leads — a distinct group from the business accounts above. */}
+              {leadRows.length > 0 && (
+                <>
+                  <tr className="bg-muted/30 border-b border-border/60">
+                    <td
+                      colSpan={colSpan}
+                      className="px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                    >
+                      Leads
+                      <span className="ml-2 font-normal normal-case">{leadRows.length}</span>
+                    </td>
+                  </tr>
+                  {leadRows.map(renderLeadRow)}
+                </>
+              )}
             </>
           )}
         </tbody>
