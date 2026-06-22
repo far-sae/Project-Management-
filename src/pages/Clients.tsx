@@ -653,7 +653,10 @@ export const Clients: React.FC = () => {
               ) : clients.length === 0 ? (
                 <AccountsLanding
                   canCreate={canCreate}
-                  onCreate={() => setOpenManageCategories(true)}
+                  // "Create an Account" opens the real account form (creates a
+                  // company) — NOT the category manager, which couldn't create
+                  // an account.
+                  onCreate={() => setOpenCreate(true)}
                   onImport={() => setOpenImport(true)}
                 />
               ) : showLanding ? (
