@@ -650,16 +650,21 @@ export const Clients: React.FC = () => {
                     <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading accounts…
                   </CardContent>
                 </Card>
-              ) : clients.length === 0 ? (
+              ) : clients.length === 0 && registeredCategories.length === 0 ? (
+                // Truly empty (no accounts AND no categories): the first step is
+                // to create a category. "Create an Account" makes a category;
+                // once one exists, the category landing below takes over so the
+                // rep can drill in and import / add leads + clients.
                 <AccountsLanding
                   canCreate={canCreate}
-                  // "Create an Account" opens the real account form (creates a
-                  // company) — NOT the category manager, which couldn't create
-                  // an account.
-                  onCreate={() => setOpenCreate(true)}
+                  onCreate={() => setOpenManageCategories(true)}
                   onImport={() => setOpenImport(true)}
                 />
-              ) : showLanding ? (
+              ) : (showLanding || (clients.length === 0 && categoryFilter === 'all')) ? (
+                // Show the category tiles when browsing the landing, OR when
+                // there are categories but no account records yet and we're not
+                // drilled into a specific category — so a freshly-created
+                // category is visible to click into (rather than an empty table).
                 <CrmCategoryLanding
                   clients={clients}
                   registered={registeredCategories}
