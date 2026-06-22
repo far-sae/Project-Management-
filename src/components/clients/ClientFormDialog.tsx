@@ -144,11 +144,14 @@ interface Props {
   /** When provided, a "Workspace" picker is shown (edit mode) so the account
    *  can be moved to another workspace. */
   workspaces?: Array<{ workspaceId: string; name: string }>;
+  /** When creating a business account from inside a category, file it into that
+   *  category instead of making the account its own category bucket. */
+  defaultCategory?: string | null;
 }
 
 export const ClientFormDialog: React.FC<Props> = ({
   open, onOpenChange, client, onSubmit, onUpdateExisting, organizationId,
-  workspaces = [],
+  workspaces = [], defaultCategory = null,
 }) => {
   const [form, setForm] = useState<FormState>(blank);
   const [submitting, setSubmitting] = useState(false);
@@ -279,9 +282,11 @@ export const ClientFormDialog: React.FC<Props> = ({
       name,
       legalName: form.legalName.trim() || null,
       industry: form.industry.trim() || null,
-      // On create the single Name field IS the category (account = a category
-      // bucket). Edit mode keeps the explicit category field.
-      category: (isCreate ? form.name.trim() : form.category.trim()) || null,
+      // On create: if a defaultCategory was passed (adding a business from
+      // inside a category), file the account into THAT category; otherwise the
+      // single Name field IS the category (account = a category bucket).
+      // Edit mode keeps the explicit category field.
+      category: (isCreate ? (defaultCategory?.trim() || form.name.trim()) : form.category.trim()) || null,
       type: form.type,
       status: form.status,
       website: form.website.trim() || null,

@@ -571,20 +571,25 @@ export const Clients: React.FC = () => {
                 </Button>
               )}
               {insideCategory ? (
-                // Inside a category bucket the adds are lead-only: import a CSV
-                // (column-matched, mismatches flagged, custom columns kept) or
-                // add one by hand. NO "Add account" here — you're already in
-                // the account/category. Both gated by lead-manage permission.
-                canManageLead && (
-                  <>
-                    <Button variant="outline" onClick={() => setOpenImportLead(true)}>
-                      <Upload className="w-4 h-4 mr-2" /> Import leads
+                // Inside a category: import / add leads (lead-manage), and add a
+                // business account that lands in THIS category (account-create).
+                <>
+                  {canManageLead && (
+                    <>
+                      <Button variant="outline" onClick={() => setOpenImportLead(true)}>
+                        <Upload className="w-4 h-4 mr-2" /> Import leads
+                      </Button>
+                      <Button variant="outline" onClick={() => setOpenCreateLead(true)}>
+                        <Plus className="w-4 h-4 mr-2" /> Add lead
+                      </Button>
+                    </>
+                  )}
+                  {canCreate && (
+                    <Button onClick={() => setOpenCreate(true)}>
+                      <Building2 className="w-4 h-4 mr-2" /> Add business account
                     </Button>
-                    <Button onClick={() => setOpenCreateLead(true)}>
-                      <Plus className="w-4 h-4 mr-2" /> Add lead
-                    </Button>
-                  </>
-                )
+                  )}
+                </>
               ) : activeTab === 'business' ? (
                 canCreate && (
                   // On the Business tab, "Add business account" creates a real
@@ -1102,6 +1107,9 @@ export const Clients: React.FC = () => {
         onSubmit={handleCreate}
         onUpdateExisting={canManage ? handleUpdateExistingFromCreate : undefined}
         organizationId={organizationId}
+        // Adding a business account from inside a category files it into that
+        // category; from the Business tab it makes its own category bucket.
+        defaultCategory={insideCategory ? categoryFilter : null}
       />
       {/* Edit */}
       <ClientFormDialog
