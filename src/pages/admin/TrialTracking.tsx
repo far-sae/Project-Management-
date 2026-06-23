@@ -173,7 +173,7 @@ export const TrialTracking: React.FC = () => {
               </FunnelChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-center text-gray-500 py-12">No trial data yet</p>
+            <p className="text-center text-muted-foreground py-12">No trial data yet</p>
           )}
         </CardContent>
       </Card>
@@ -195,7 +195,7 @@ export const TrialTracking: React.FC = () => {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-center text-gray-500 py-12">No trial data yet</p>
+            <p className="text-center text-muted-foreground py-12">No trial data yet</p>
           )}
         </CardContent>
       </Card>
@@ -210,7 +210,7 @@ export const TrialTracking: React.FC = () => {
         </CardHeader>
         <CardContent>
           {urgentTrials.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">No urgent trials</p>
+            <p className="text-center text-muted-foreground py-4">No urgent trials</p>
           ) : (
             <div className="space-y-3">
               {urgentTrials.map((user) => (
@@ -223,8 +223,8 @@ export const TrialTracking: React.FC = () => {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-medium text-gray-900">{user.displayName}</p>
-                      <p className="text-sm text-gray-500">{user.email}</p>
+                      <p className="font-medium text-foreground">{user.displayName}</p>
+                      <p className="text-sm text-muted-foreground">{user.email}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -250,7 +250,7 @@ export const TrialTracking: React.FC = () => {
         <CardContent>
           <div className="space-y-3">
             {activeTrials.slice(0, 10).map((user) => (
-              <div key={user.userId} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
+              <div key={user.userId} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors">
                 <div className="flex items-center gap-3">
                   <Avatar>
                     <AvatarImage src={user.photoURL} />
@@ -259,26 +259,26 @@ export const TrialTracking: React.FC = () => {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-medium text-gray-900">{user.displayName}</p>
-                    <p className="text-sm text-gray-500">{user.email}</p>
+                    <p className="font-medium text-foreground">{user.displayName}</p>
+                    <p className="text-sm text-muted-foreground">{user.email}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="w-32">
                     <Progress value={((28 - user.daysRemaining) / 28) * 100} className="h-2" />
-                    <p className="text-xs text-gray-500 mt-1 text-right">
+                    <p className="text-xs text-muted-foreground mt-1 text-right">
                       Day {28 - user.daysRemaining} of 28
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusIcon(user.daysRemaining)}
-                    <span className="text-sm text-gray-600">{user.daysRemaining} days left</span>
+                    <span className="text-sm text-muted-foreground">{user.daysRemaining} days left</span>
                   </div>
                 </div>
               </div>
             ))}
             {activeTrials.length === 0 && (
-              <p className="text-center text-gray-500 py-8">No active trials</p>
+              <p className="text-center text-muted-foreground py-8">No active trials</p>
             )}
           </div>
         </CardContent>

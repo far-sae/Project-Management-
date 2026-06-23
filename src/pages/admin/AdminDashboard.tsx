@@ -136,11 +136,11 @@ export const AdminDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <div className="p-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-gray-500">Monitor your app's performance and user metrics</p>
+          <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
+          <p className="text-muted-foreground">Monitor your app's performance and user metrics</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -149,7 +149,7 @@ export const AdminDashboard: React.FC = () => {
             return (
               <Card key={index}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
                     {stat.title}
                   </CardTitle>
                   <div className={`p-2 rounded-lg ${stat.bgColor}`}>
@@ -158,7 +158,7 @@ export const AdminDashboard: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{stat.value}</div>
-                  <p className="text-xs text-gray-500 mt-1">{stat.subValue}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{stat.subValue}</p>
                 </CardContent>
               </Card>
             );
@@ -166,7 +166,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <Tabs defaultValue="users" className="space-y-4">
-          <TabsList className="bg-white border">
+          <TabsList className="bg-card border">
             <TabsTrigger value="users" className="data-[state=active]:bg-orange-50">
               <Users className="w-4 h-4 mr-2" />User Analytics
             </TabsTrigger>
