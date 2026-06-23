@@ -157,7 +157,7 @@ export const UserAnalytics: React.FC = () => {
             {data?.users.map((user) => (
               <div
                 key={user.userId}
-                className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <Avatar>
@@ -167,19 +167,19 @@ export const UserAnalytics: React.FC = () => {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-medium text-gray-900">{user.displayName}</p>
-                    <p className="text-sm text-gray-500">{user.email}</p>
+                    <p className="font-medium text-foreground">{user.displayName}</p>
+                    <p className="text-sm text-muted-foreground">{user.email}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-400">{user.country}</span>
+                  <span className="text-xs text-muted-foreground">{user.country}</span>
                   {getStatusBadge(user.subscription?.status || 'trial')}
                 </div>
               </div>
             ))}
 
             {(!data?.users || data.users.length === 0) && (
-              <p className="text-center text-gray-500 py-8">No users found</p>
+              <p className="text-center text-muted-foreground py-8">No users found</p>
             )}
           </div>
         </CardContent>

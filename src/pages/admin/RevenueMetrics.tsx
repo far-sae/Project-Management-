@@ -192,7 +192,7 @@ export const RevenueMetrics: React.FC = () => {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-center text-gray-500 py-12">No subscription revenue data yet</p>
+            <p className="text-center text-muted-foreground py-12">No subscription revenue data yet</p>
           )}
         </CardContent>
       </Card>
@@ -230,13 +230,13 @@ export const RevenueMetrics: React.FC = () => {
                       className="w-3 h-3 rounded-full"
                       style={{ backgroundColor: tier.color }}
                     />
-                    <span className="text-sm text-gray-600">{tier.name}</span>
+                    <span className="text-sm text-muted-foreground">{tier.name}</span>
                   </div>
                 ))}
               </div>
             </>
           ) : (
-            <p className="text-center text-gray-500 py-12">No paid subscriptions yet</p>
+            <p className="text-center text-muted-foreground py-12">No paid subscriptions yet</p>
           )}
         </CardContent>
       </Card>
@@ -257,7 +257,7 @@ export const RevenueMetrics: React.FC = () => {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-center text-gray-500 py-12">No subscriber country data yet</p>
+            <p className="text-center text-muted-foreground py-12">No subscriber country data yet</p>
           )}
         </CardContent>
       </Card>
