@@ -935,7 +935,7 @@ export const PipelineDealsList: React.FC<{
 
 // ─── Notes tab ───────────────────────────────────────────────────────────────
 
-const NotesTab: React.FC<{
+export const NotesTab: React.FC<{
   clientId: string;
   organizationId: string;
   userId: string | undefined;

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Building2, Loader2, UserPlus, X, Trash2, Receipt, CheckCircle2,
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -16,6 +17,20 @@ import {
 import { InlineField } from '@/components/leads/InlineField';
 import { LeadDetailDrawer } from '@/components/leads/LeadDetailDrawer';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
+// Reused from the account drawer so the business page mirrors the lead window's
+// tabbed experience (Notes / Meetings, etc.) for this account.
+import { NotesTab, MeetingsTab } from '@/components/clients/ClientDetailDrawer';
+import { AccountStageHistoryCard } from '@/components/clients/AccountStageHistoryCard';
+import { InvoicesPanel } from '@/components/clients/InvoicesPanel';
+import { EntityEmailsSection } from '@/components/activities/EntityEmailsSection';
+import { EntityAttachmentsSection } from '@/components/activities/EntityAttachmentsSection';
+import { ActivitiesTimeline } from '@/components/activities/ActivitiesTimeline';
+import {
+  listActivities, filterByEntity, dealTimelineActivities, type Activity,
+} from '@/services/supabase/activities';
+import {
+  listAccountStageHistory, type DealStageHistoryEntry,
+} from '@/services/supabase/dealRelations';
 import { useClients } from '@/hooks/useClients';
 import { useLeads } from '@/hooks/useLeads';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
@@ -23,9 +38,10 @@ import { useDeals } from '@/hooks/useDeals';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
-import { formatRevenue } from '@/services/supabase/clients';
+import { useOrgCurrency } from '@/hooks/useOrgCurrency';
+import { formatRevenue, getClientNotes, type ClientNote } from '@/services/supabase/clients';
 import { Lead, leadDisplayName, leadStatusLabel, createLeadNote } from '@/services/supabase/leads';
-import type { Deal } from '@/services/supabase/deals';
+import { DEAL_STAGES, type Deal } from '@/services/supabase/deals';
 import { createInvoice } from '@/services/supabase/invoices';
 import { createSchedule } from '@/services/supabase/invoiceSchedules';
 import { toast } from 'sonner';
@@ -38,12 +54,15 @@ const BILLING_LABEL: Record<BillingMode, string> = {
   none: "Don't bill",
 };
 
+type BusinessTab =
+  | 'activity' | 'notes' | 'leads' | 'pipeline'
+  | 'emails' | 'meetings' | 'files' | 'invoices';
+
 /**
- * Standalone Business page (reuses the company/account record). Shows ONLY the
- * business details, plus a dropdown to attach leads and the list of leads that
- * belong to this business. A business can have many leads — leads link via
- * lead.accountId === clientId. This is the business-side half of the two-way
- * business↔lead link (the lead-side picker lives in LeadFormDialog).
+ * Standalone Business page (reuses the company/account record). Tabbed like the
+ * lead window: business details on the left, then Activity / Notes / Leads /
+ * Pipeline / Emails / Meetings / Files / Invoices. A business can have many
+ * leads (lead.accountId === clientId); the Leads tab manages that link.
  */
 export const BusinessAccountPage: React.FC = () => {
   const { clientId } = useParams<{ clientId: string }>();
@@ -55,7 +74,10 @@ export const BusinessAccountPage: React.FC = () => {
   const { user } = useAuth();
   const { canEditModule } = useOrganization();
   const formatMoney = useFormatMoney();
+  const orgCurrency = useOrgCurrency();
   const canEdit = canManage;
+
+  const [tab, setTab] = useState<BusinessTab>('activity');
 
   const client = useMemo(
     () => allClients.find((c) => c.clientId === clientId) ?? null,
@@ -75,7 +97,7 @@ export const BusinessAccountPage: React.FC = () => {
       && (l.category ?? '').trim().toLowerCase() === cat,
     );
   }, [allLeads, clientId, client?.category]);
-  // This business's deals = its "projects" for billing.
+  // This business's deals = its "projects" for billing + the Pipeline tab.
   const businessDeals = useMemo(
     () => deals.filter((d) => d.clientId === clientId),
     [deals, clientId],
@@ -92,6 +114,47 @@ export const BusinessAccountPage: React.FC = () => {
     () => (selectedLead ? allLeads.find((l) => l.leadId === selectedLead.leadId) ?? null : null),
     [allLeads, selectedLead],
   );
+
+  // ── Account-level data for the tabs (activity / notes / pipeline) ──────────
+  const [clientActivities, setClientActivities] = useState<Activity[]>([]);
+  const [stageHistory, setStageHistory] = useState<DealStageHistoryEntry[]>([]);
+  const [clientNotes, setClientNotes] = useState<ClientNote[]>([]);
+
+  useEffect(() => {
+    if (!organizationId || !clientId) return;
+    let cancelled = false;
+    listActivities(organizationId, { openDealIds: new Set(), customerClientIds: new Set() })
+      .then((all) => { if (!cancelled) setClientActivities(filterByEntity(all, 'client', clientId)); })
+      .catch(() => {/* non-blocking */});
+    listAccountStageHistory(organizationId, clientId)
+      .then((rows) => { if (!cancelled) setStageHistory(rows); })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [organizationId, clientId]);
+
+  useEffect(() => {
+    if (!organizationId || !clientId) return;
+    let cancelled = false;
+    getClientNotes(organizationId, clientId)
+      .then((n) => { if (!cancelled) setClientNotes(n); })
+      .catch(() => {/* non-blocking */});
+    return () => { cancelled = true; };
+  }, [organizationId, clientId]);
+
+  const reloadNotes = async () => {
+    if (!organizationId || !clientId) return;
+    setClientNotes(await getClientNotes(organizationId, clientId));
+  };
+
+  // Activity feed = the account's own activities + its deal lifecycle events.
+  const timelineActivities = useMemo(() => {
+    const stageLabel = (key: string | null) =>
+      DEAL_STAGES.find((s) => s.id === key)?.label ?? key ?? '(new)';
+    const dealEvents = dealTimelineActivities(businessDeals, stageHistory, { formatMoney, stageLabel });
+    return [...clientActivities, ...dealEvents].sort(
+      (a, b) => (b.whenAt?.getTime() ?? -Infinity) - (a.whenAt?.getTime() ?? -Infinity),
+    );
+  }, [clientActivities, businessDeals, stageHistory, formatMoney]);
 
   const save = async (patch: Parameters<typeof update>[1]) => {
     if (!client) return;
@@ -170,8 +233,6 @@ export const BusinessAccountPage: React.FC = () => {
           currency: d.currency, lineItems: lineItemsFor(d),
         });
       }
-      // Log a "Project delivered" note on each lead attached to this business
-      // so it shows in their Activity timeline.
       await Promise.all(attachedLeads.map((l) =>
         createLeadNote(organizationId, l.leadId, user?.userId ?? null, user?.displayName ?? null, {
           kind: 'note', subject: 'Project delivered',
@@ -199,7 +260,7 @@ export const BusinessAccountPage: React.FC = () => {
     );
   }
 
-  if (!client) {
+  if (!client || !organizationId) {
     return (
       <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-8">
         <div className="max-w-2xl mx-auto text-center space-y-3 py-16">
@@ -216,10 +277,12 @@ export const BusinessAccountPage: React.FC = () => {
     );
   }
 
+  const leadsCount = attachedLeads.length;
+
   return (
     <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        <div className="space-y-6 max-w-5xl mx-auto">
+        <div className="space-y-4 max-w-[1400px] mx-auto">
           {/* Header */}
           <div className="flex items-center gap-3 flex-wrap">
             <Button
@@ -247,230 +310,329 @@ export const BusinessAccountPage: React.FC = () => {
             )}
           </div>
 
-          {/* Business details (inline-editable) */}
-          <Card>
-            <CardContent className="pt-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                Business details
-              </h2>
-              <div className="grid md:grid-cols-2 gap-x-8 gap-y-3 text-sm">
-                <InlineField
-                  label="Name" value={client.name} type="text" editable={canEdit}
-                  onSave={(v) => save({ name: (v as string | null) ?? client.name })}
-                />
-                <InlineField
-                  label="Legal name" value={client.legalName} type="text" editable={canEdit}
-                  onSave={(v) => save({ legalName: v as string | null })}
-                />
-                <InlineField
-                  label="Industry" value={client.industry} type="text" editable={canEdit}
-                  onSave={(v) => save({ industry: v as string | null })}
-                />
-                <InlineField
-                  label="Website" value={client.website} type="text" editable={canEdit}
-                  onSave={(v) => save({ website: v as string | null })}
-                  render={(v) => v ? (
-                    <a href={String(v).startsWith('http') ? String(v) : `https://${v}`}
-                       target="_blank" rel="noreferrer noopener" className="text-primary hover:underline break-all">
-                      {String(v)}
-                    </a>
-                  ) : null}
-                />
-                <InlineField
-                  label="Email" value={client.email} type="text" editable={canEdit}
-                  onSave={(v) => save({ email: v as string | null })}
-                  render={(v) => v ? <a href={`mailto:${v}`} className="text-primary hover:underline break-all">{String(v)}</a> : null}
-                />
-                <InlineField
-                  label="Phone" value={client.phone} type="text" editable={canEdit}
-                  onSave={(v) => save({ phone: v as string | null })}
-                  render={(v) => v ? <a href={`tel:${v}`} className="hover:underline">{String(v)}</a> : null}
-                />
-                <InlineField
-                  label="City" value={client.city} type="text" editable={canEdit}
-                  onSave={(v) => save({ city: v as string | null })}
-                />
-                <InlineField
-                  label="State" value={client.state} type="text" editable={canEdit}
-                  onSave={(v) => save({ state: v as string | null })}
-                />
-                <InlineField
-                  label="Postal code" value={client.postalCode} type="text" editable={canEdit}
-                  onSave={(v) => save({ postalCode: v as string | null })}
-                />
-                <InlineField
-                  label="Country" value={client.country} type="text" editable={canEdit}
-                  onSave={(v) => save({ country: v as string | null })}
-                />
-                <InlineField
-                  label="Annual revenue" value={client.annualRevenue} type="number" editable={canEdit}
-                  onSave={(v) => save({ annualRevenue: v as number | null })}
-                  render={(v) => v != null ? <span>{formatRevenue(Number(v))}</span> : null}
-                />
-                <InlineField
-                  label="Employees" value={client.employeeCount} type="number" editable={canEdit}
-                  onSave={(v) => save({ employeeCount: v as number | null })}
-                />
-                <InlineField
-                  label="Source" value={client.source} type="text" editable={canEdit}
-                  onSave={(v) => save({ source: v as string | null })}
-                />
-                <InlineField
-                  label="Owner" value={client.accountOwnerName} type="text" editable={canEdit}
-                  onSave={(v) => save({ accountOwnerName: v as string | null })}
-                />
-                <div className="md:col-span-2">
+          {/* Body — business details (left) + tabbed content (right), mirroring
+              the lead window's layout. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)] gap-4 items-start">
+            {/* LEFT: business details (inline-editable) */}
+            <Card>
+              <CardContent className="pt-5">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+                  Business details
+                </h2>
+                <div className="grid grid-cols-1 gap-y-3 text-sm">
+                  <InlineField
+                    label="Name" value={client.name} type="text" editable={canEdit}
+                    onSave={(v) => save({ name: (v as string | null) ?? client.name })}
+                  />
+                  <InlineField
+                    label="Legal name" value={client.legalName} type="text" editable={canEdit}
+                    onSave={(v) => save({ legalName: v as string | null })}
+                  />
+                  <InlineField
+                    label="Industry" value={client.industry} type="text" editable={canEdit}
+                    onSave={(v) => save({ industry: v as string | null })}
+                  />
+                  <InlineField
+                    label="Website" value={client.website} type="text" editable={canEdit}
+                    onSave={(v) => save({ website: v as string | null })}
+                    render={(v) => v ? (
+                      <a href={String(v).startsWith('http') ? String(v) : `https://${v}`}
+                         target="_blank" rel="noreferrer noopener" className="text-primary hover:underline break-all">
+                        {String(v)}
+                      </a>
+                    ) : null}
+                  />
+                  <InlineField
+                    label="Email" value={client.email} type="text" editable={canEdit}
+                    onSave={(v) => save({ email: v as string | null })}
+                    render={(v) => v ? <a href={`mailto:${v}`} className="text-primary hover:underline break-all">{String(v)}</a> : null}
+                  />
+                  <InlineField
+                    label="Phone" value={client.phone} type="text" editable={canEdit}
+                    onSave={(v) => save({ phone: v as string | null })}
+                    render={(v) => v ? <a href={`tel:${v}`} className="hover:underline">{String(v)}</a> : null}
+                  />
+                  <InlineField
+                    label="City" value={client.city} type="text" editable={canEdit}
+                    onSave={(v) => save({ city: v as string | null })}
+                  />
+                  <InlineField
+                    label="State" value={client.state} type="text" editable={canEdit}
+                    onSave={(v) => save({ state: v as string | null })}
+                  />
+                  <InlineField
+                    label="Postal code" value={client.postalCode} type="text" editable={canEdit}
+                    onSave={(v) => save({ postalCode: v as string | null })}
+                  />
+                  <InlineField
+                    label="Country" value={client.country} type="text" editable={canEdit}
+                    onSave={(v) => save({ country: v as string | null })}
+                  />
+                  <InlineField
+                    label="Annual revenue" value={client.annualRevenue} type="number" editable={canEdit}
+                    onSave={(v) => save({ annualRevenue: v as number | null })}
+                    render={(v) => v != null ? <span>{formatRevenue(Number(v))}</span> : null}
+                  />
+                  <InlineField
+                    label="Employees" value={client.employeeCount} type="number" editable={canEdit}
+                    onSave={(v) => save({ employeeCount: v as number | null })}
+                  />
+                  <InlineField
+                    label="Source" value={client.source} type="text" editable={canEdit}
+                    onSave={(v) => save({ source: v as string | null })}
+                  />
+                  <InlineField
+                    label="Owner" value={client.accountOwnerName} type="text" editable={canEdit}
+                    onSave={(v) => save({ accountOwnerName: v as string | null })}
+                  />
                   <InlineField
                     label="Description" value={client.description} type="textarea" editable={canEdit}
                     onSave={(v) => save({ description: v as string | null })}
                     render={(v) => v ? <span className="whitespace-pre-wrap break-words">{String(v)}</span> : null}
                   />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          {/* Leads on this business */}
-          <Card>
-            <CardContent className="pt-5">
-              <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-2">
-                  Leads
-                  <Badge variant="outline" className="text-[10px]">{attachedLeads.length}</Badge>
-                </h2>
-                {canManage && (
-                  <div className="w-[280px] max-w-full">
-                    <Select value="" onValueChange={attachLead}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="+ Add a lead to this business…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {attachableLeads.length === 0 ? (
-                          <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                            No other leads to add.
-                          </div>
-                        ) : (
-                          attachableLeads.map((l) => (
-                            <SelectItem key={l.leadId} value={l.leadId}>
-                              {leadDisplayName(l)}{l.company ? ` — ${l.company}` : ''}
-                            </SelectItem>
-                          ))
+            {/* RIGHT: tabbed content (mirrors the lead window) */}
+            <Card>
+              <CardContent className="pt-3">
+                <Tabs value={tab} onValueChange={(v) => setTab(v as BusinessTab)}>
+                  <TabsList className="bg-transparent border-b border-border rounded-none w-full justify-start gap-1 h-auto p-0 flex-wrap">
+                    {([
+                      { v: 'activity', label: 'Activity' },
+                      { v: 'notes', label: 'Notes' },
+                      { v: 'leads', label: 'Leads' },
+                      { v: 'pipeline', label: 'Pipeline' },
+                      { v: 'emails', label: 'Emails' },
+                      { v: 'meetings', label: 'Meetings' },
+                      { v: 'files', label: 'Files' },
+                      { v: 'invoices', label: 'Invoices' },
+                    ] as const).map((t) => (
+                      <TabsTrigger
+                        key={t.v}
+                        value={t.v}
+                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-orange-500 data-[state=active]:bg-transparent px-3 pb-2"
+                      >
+                        {t.label}
+                        {t.v === 'leads' && leadsCount > 0 && (
+                          <span className="ml-1 text-xs text-muted-foreground">({leadsCount})</span>
                         )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
+                        {t.v === 'notes' && clientNotes.length > 0 && (
+                          <span className="ml-1 text-xs text-muted-foreground">({clientNotes.length})</span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
 
-              {attachedLeads.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No leads on this business yet. Use the dropdown above to attach one.
-                </p>
-              ) : (
-                <ul className="divide-y divide-border rounded-md border">
-                  {attachedLeads.map((l) => (
-                    <li
-                      key={l.leadId}
-                      onClick={() => setSelectedLead(l)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedLead(l); }
-                      }}
-                      tabIndex={0}
-                      className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 focus:bg-muted/60 outline-none"
-                    >
-                      <span className="w-7 h-7 rounded-md bg-primary-soft text-primary-soft-foreground grid place-items-center shrink-0">
-                        <UserPlus className="w-3.5 h-3.5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-medium truncate">{leadDisplayName(l)}</span>
-                          <Badge variant="outline" className="text-[9px] shrink-0">
-                            {leadStatusLabel(l.leadStatus)}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {[l.company, l.email, l.phone].filter(Boolean).join(' · ') || '—'}
-                        </p>
-                      </div>
-                      {canManage && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); detachLead(l); }}
-                          className="text-muted-foreground hover:text-destructive p-1 rounded opacity-60 hover:opacity-100 transition-opacity shrink-0"
-                          title="Remove from this business"
-                          aria-label={`Remove ${leadDisplayName(l)} from this business`}
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+                <div className="pt-4">
+                  {tab === 'activity' && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Activity timeline
+                      </h3>
+                      <ActivitiesTimeline activities={timelineActivities} />
+                    </div>
+                  )}
 
-          {/* Projects & billing (Phase 2/3) */}
-          <Card>
-            <CardContent className="pt-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-2 mb-1">
-                <Receipt className="w-4 h-4" /> Projects &amp; billing
-              </h2>
-              <p className="text-sm text-muted-foreground mb-3">
-                Deals for this business. Pick how each is billed, generate the invoice now, or
-                mark it delivered — delivering applies the billing choice and logs to the leads' Activity.
-              </p>
-              {businessDeals.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No deals for this business yet. Create one from the Pipeline.
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {businessDeals.map((d) => {
-                    const mode = billingOf(d);
-                    return (
-                      <li key={d.dealId} className="rounded-md border p-3">
-                        <div className="flex items-start justify-between gap-2 flex-wrap">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="font-medium truncate">{d.title}</span>
-                              <Badge variant="outline" className="text-[9px] capitalize shrink-0">{d.stage}</Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {formatMoney(d.value, d.currency)}
-                            </p>
-                          </div>
-                          <span className="text-[11px] text-muted-foreground shrink-0">
-                            Billing: {BILLING_LABEL[mode]}
-                          </span>
-                        </div>
+                  {tab === 'notes' && (
+                    <NotesTab
+                      clientId={client.clientId}
+                      organizationId={organizationId!}
+                      userId={user?.userId}
+                      userName={user?.displayName}
+                      canManage={canManage}
+                      notes={clientNotes}
+                      onChanged={reloadNotes}
+                    />
+                  )}
+
+                  {tab === 'leads' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-2">
+                          Leads
+                          <Badge variant="outline" className="text-[10px]">{leadsCount}</Badge>
+                        </h3>
                         {canManage && (
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            <Select value={mode} onValueChange={(v) => setBilling(d, v as BillingMode)}>
-                              <SelectTrigger className="w-[200px] h-8 text-xs">
-                                <SelectValue />
+                          <div className="w-[280px] max-w-full">
+                            <Select value="" onValueChange={attachLead}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="+ Add a lead to this business…" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="on_completion">{BILLING_LABEL.on_completion}</SelectItem>
-                                <SelectItem value="monthly">{BILLING_LABEL.monthly}</SelectItem>
-                                <SelectItem value="none">{BILLING_LABEL.none}</SelectItem>
+                                {attachableLeads.length === 0 ? (
+                                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                    No other leads to add.
+                                  </div>
+                                ) : (
+                                  attachableLeads.map((l) => (
+                                    <SelectItem key={l.leadId} value={l.leadId}>
+                                      {leadDisplayName(l)}{l.company ? ` — ${l.company}` : ''}
+                                    </SelectItem>
+                                  ))
+                                )}
                               </SelectContent>
                             </Select>
-                            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => generateInvoice(d)}>
-                              <Receipt className="w-3.5 h-3.5 mr-1" /> Generate invoice
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => markDelivered(d)}>
-                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark delivered
-                            </Button>
                           </div>
                         )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+                      </div>
+
+                      {attachedLeads.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No leads on this business yet. Use the dropdown above to attach one.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-border rounded-md border">
+                          {attachedLeads.map((l) => (
+                            <li
+                              key={l.leadId}
+                              onClick={() => setSelectedLead(l)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedLead(l); }
+                              }}
+                              tabIndex={0}
+                              className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 focus:bg-muted/60 outline-none"
+                            >
+                              <span className="w-7 h-7 rounded-md bg-primary-soft text-primary-soft-foreground grid place-items-center shrink-0">
+                                <UserPlus className="w-3.5 h-3.5" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="font-medium truncate">{leadDisplayName(l)}</span>
+                                  <Badge variant="outline" className="text-[9px] shrink-0">
+                                    {leadStatusLabel(l.leadStatus)}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {[l.company, l.email, l.phone].filter(Boolean).join(' · ') || '—'}
+                                </p>
+                              </div>
+                              {canManage && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); detachLead(l); }}
+                                  className="text-muted-foreground hover:text-destructive p-1 rounded opacity-60 hover:opacity-100 transition-opacity shrink-0"
+                                  title="Remove from this business"
+                                  aria-label={`Remove ${leadDisplayName(l)} from this business`}
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {tab === 'pipeline' && (
+                    <div className="space-y-5">
+                      <div>
+                        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-2 mb-1">
+                          <Receipt className="w-4 h-4" /> Projects &amp; billing
+                        </h3>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          Deals for this business. Pick how each is billed, generate the invoice now, or
+                          mark it delivered — delivering applies the billing choice and logs to the leads' Activity.
+                        </p>
+                        {businessDeals.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            No deals for this business yet. Create one from the Pipeline.
+                          </p>
+                        ) : (
+                          <ul className="space-y-2">
+                            {businessDeals.map((d) => {
+                              const mode = billingOf(d);
+                              return (
+                                <li key={d.dealId} className="rounded-md border p-3">
+                                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="font-medium truncate">{d.title}</span>
+                                        <Badge variant="outline" className="text-[9px] capitalize shrink-0">{d.stage}</Badge>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        {formatMoney(d.value, d.currency)}
+                                      </p>
+                                    </div>
+                                    <span className="text-[11px] text-muted-foreground shrink-0">
+                                      Billing: {BILLING_LABEL[mode]}
+                                    </span>
+                                  </div>
+                                  {canManage && (
+                                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                      <Select value={mode} onValueChange={(v) => setBilling(d, v as BillingMode)}>
+                                        <SelectTrigger className="w-[200px] h-8 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="on_completion">{BILLING_LABEL.on_completion}</SelectItem>
+                                          <SelectItem value="monthly">{BILLING_LABEL.monthly}</SelectItem>
+                                          <SelectItem value="none">{BILLING_LABEL.none}</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => generateInvoice(d)}>
+                                        <Receipt className="w-3.5 h-3.5 mr-1" /> Generate invoice
+                                      </Button>
+                                      <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => markDelivered(d)}>
+                                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark delivered
+                                      </Button>
+                                    </div>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                      <AccountStageHistoryCard
+                        organizationId={organizationId!}
+                        clientId={client.clientId}
+                        currency={businessDeals[0]?.currency ?? orgCurrency}
+                      />
+                    </div>
+                  )}
+
+                  {tab === 'emails' && (
+                    <EntityEmailsSection
+                      organizationId={organizationId!}
+                      entityType="client"
+                      entityId={client.clientId}
+                    />
+                  )}
+
+                  {tab === 'meetings' && (
+                    <MeetingsTab
+                      client={client}
+                      organizationId={organizationId!}
+                      userId={user?.userId}
+                      userName={user?.displayName}
+                      canManage={canManage}
+                    />
+                  )}
+
+                  {tab === 'files' && (
+                    <EntityAttachmentsSection
+                      organizationId={organizationId!}
+                      entityType="client"
+                      entityId={client.clientId}
+                      canManage={canManage}
+                    />
+                  )}
+
+                  {tab === 'invoices' && (
+                    <InvoicesPanel
+                      organizationId={organizationId}
+                      client={client}
+                      canManage={canManage}
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
 
