@@ -222,7 +222,17 @@ export const BusinessAccountPage: React.FC = () => {
         <div className="space-y-6 max-w-5xl mx-auto">
           {/* Header */}
           <div className="flex items-center gap-3 flex-wrap">
-            <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+            <Button
+              variant="outline"
+              size="sm"
+              // Back returns to this business's category in the CRM (not the
+              // CRM landing). Falls back to /clients when it has no category.
+              onClick={() => navigate(
+                client.category
+                  ? `/clients?cat=${encodeURIComponent(client.category)}`
+                  : '/clients',
+              )}
+            >
               <ArrowLeft className="w-4 h-4 mr-2" /> Back
             </Button>
             <span className="w-9 h-9 rounded-lg bg-primary-soft text-primary-soft-foreground grid place-items-center shrink-0">

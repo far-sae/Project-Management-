@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Building2, Plus, Search, Upload, Loader2,
   Filter, Trash2, MoreVertical,
@@ -96,6 +96,7 @@ const STATUS_OPTIONS: { value: ClientStatus | 'all'; label: string }[] = [
 export const Clients: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { canViewModule, canEditModule, canEditPage } = useOrganization();
   // Page-level CRM access: when the user's role grants only 'view' on CRM,
   // every CRM mutation is disabled (read-only). ANDed into the capability
@@ -255,6 +256,18 @@ export const Clients: React.FC = () => {
     setCategoryFilter('all');
     try { localStorage.removeItem(LANDING_KEY); } catch { /* ignore */ }
   };
+
+  // Deep-link: arriving with ?cat=<category> (e.g. "Back" from a business page)
+  // focuses that category instead of dropping the rep on the CRM landing. The
+  // param is cleared after so a later "Categories" click isn't overridden.
+  useEffect(() => {
+    const cat = searchParams.get('cat');
+    if (!cat) return;
+    setActiveTab('accounts');
+    exitLanding(cat);
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Pipeline display currency. Persists per-browser so reps don't have to
   // re-pick on every visit. Defaults to whatever the org is set to.
