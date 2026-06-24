@@ -760,7 +760,7 @@ export const Clients: React.FC = () => {
             </CardContent>
           </Card>
 
-          {canManage && filtered.length > 0 && (
+          {canManage && !insideCategory && filtered.length > 0 && (
             <Card>
               <CardContent className="py-3 flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted-foreground">
@@ -804,7 +804,9 @@ export const Clients: React.FC = () => {
               directly. */}
           {(
             <ClientsTable
-              rows={filtered}
+              // Inside a category, show ONLY the leads — business accounts live
+              // on the Business tab, not in the category's list.
+              rows={insideCategory ? [] : filtered}
               selectedIds={selectedClientIds}
               canManage={canManage}
               onOpen={(c) => setSelected(c)}
