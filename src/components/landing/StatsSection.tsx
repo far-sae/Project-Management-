@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, useInView } from "framer-motion";
-import { CheckCircle, Users, FolderKanban, Zap, type LucideIcon } from "lucide-react";
+import { CheckCircle, Users, FolderKanban, Coins, type LucideIcon } from "lucide-react";
 
 interface Stat {
   icon: LucideIcon;
@@ -13,31 +13,31 @@ interface Stat {
 const stats: Stat[] = [
   {
     icon: FolderKanban,
-    value: 9,
-    suffix: '+ views',
-    label: 'Work surfaces',
-    description: 'Board, list, calendar, timeline, dashboards, CRM, AI, bot',
+    value: 10,
+    suffix: '+ surfaces',
+    label: 'Work views',
+    description: 'Board, list, calendar, timeline, workload, CRM pipeline, reports, dashboards.',
   },
   {
-    icon: Zap,
-    value: 25,
-    suffix: '+ automations',
-    label: 'Triggers & actions',
-    description: 'Stage moves, scores, tags, schedules. Wired to email, Slack, webhooks.',
+    icon: Coins,
+    value: 20,
+    suffix: ' currencies',
+    label: 'Global-ready',
+    description: 'USD, GBP, EUR, INR, AUD, JPY, AED and 13 more. Pick one and every amount reformats.',
   },
   {
     icon: Users,
     value: 100,
     suffix: '%',
     label: 'Your data',
-    description: 'Multi-tenant Postgres, RLS on every table, OAuth tokens encrypted at rest',
+    description: 'Multi-tenant Postgres, RLS on every table, OAuth tokens encrypted at rest.',
   },
   {
     icon: CheckCircle,
     value: 28,
     suffix: ' day',
     label: 'Full feature trial',
-    description: 'No credit card. Advanced plan unlocks on day one.',
+    description: 'No credit card. Advanced plan (CRM included) unlocks on day one.',
   },
 ];
 

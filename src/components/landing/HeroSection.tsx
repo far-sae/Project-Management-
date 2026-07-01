@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowRight, Check, Sparkles, Bot, TrendingUp, MessageCircle, Video,
+  ArrowRight, Check, Sparkles, Trophy, TrendingUp, Video, StickyNote,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -40,17 +40,18 @@ const HeroSection = () => {
               className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 backdrop-blur px-3 py-1 text-xs text-muted-foreground mb-6"
             >
               <Sparkles className="h-3 w-3 text-orange-500" />
-              <span>New: Telegram bot, CRM dashboards &amp; Google Meet</span>
+              <span>New: CRM Hub with Deal-Won → project handoff</span>
             </motion.div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.05] tracking-tight mb-6">
-              One workspace<br />
-              for <span className="text-gradient">teams that ship.</span>
+              Close the deal.<br />
+              Ship the <span className="text-gradient">work.</span>
             </h1>
 
             <p className="text-lg text-muted-foreground max-w-xl mb-8 leading-relaxed">
-              Plan projects, run a sales pipeline, automate the busywork, and chat with
-              an AI agent. All from one tab. Or one Telegram message.
+              Plan projects, run your sales pipeline, and hand every won deal
+              straight into a project workspace — one login, one data model,
+              one bill.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-3 max-w-md mb-6">
@@ -98,27 +99,25 @@ const HeroSection = () => {
               </div>
             </motion.div>
 
-            {/* Card 2 — Telegram chat (top right, smaller) */}
+            {/* Card 2 — Deal Won → Project handoff (top right) */}
             <motion.div
               animate={float(0.5, 8)}
-              className="absolute -top-2 -right-2 w-56 bg-card rounded-2xl border border-border shadow-xl shadow-sky-500/10 p-3 z-30"
+              className="absolute -top-2 -right-2 w-64 bg-card rounded-2xl border border-border shadow-xl shadow-emerald-500/10 p-3 z-30"
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="h-7 w-7 rounded-full bg-sky-500/15 grid place-items-center">
-                  <MessageCircle className="h-3.5 w-3.5 text-sky-500" />
+                <div className="h-7 w-7 rounded-full bg-emerald-500/15 grid place-items-center">
+                  <Trophy className="h-3.5 w-3.5 text-emerald-500" />
                 </div>
                 <div className="text-xs">
-                  <div className="font-semibold text-foreground/90">@TaskCalendarBot</div>
-                  <div className="text-[10px] text-muted-foreground">via Telegram</div>
+                  <div className="font-semibold text-foreground/90">Deal Won: Acme Corp</div>
+                  <div className="text-[10px] text-muted-foreground">£48,000 · closed today</div>
                 </div>
               </div>
-              <div className="space-y-1.5 text-[11px]">
-                <div className="bg-muted/60 rounded-lg rounded-tl-sm px-2 py-1.5 inline-block">
-                  add task <em>call Acme tomorrow 3pm</em>
-                </div>
-                <div className="bg-orange-500/10 text-foreground rounded-lg rounded-tr-sm px-2 py-1.5 inline-block float-right">
-                  ✅ Created in <strong>Q2 launch</strong>
-                </div>
+              <button className="w-full rounded-lg bg-emerald-500 text-white text-[11px] font-semibold px-2 py-1.5">
+                → Create workspace & project
+              </button>
+              <div className="mt-1.5 text-[10px] text-muted-foreground text-center">
+                One click into <strong>project management</strong>
               </div>
             </motion.div>
 
@@ -149,19 +148,20 @@ const HeroSection = () => {
               </div>
             </motion.div>
 
-            {/* Card 5 — AI suggestion (bottom left) */}
+            {/* Card 5 — Note on contact (bottom left) */}
             <motion.div
               animate={float(1.8, 7)}
-              className="absolute bottom-4 -left-2 w-52 bg-card rounded-xl border border-border shadow-lg shadow-purple-500/10 p-3 z-30"
+              className="absolute bottom-4 -left-2 w-56 bg-card rounded-xl border border-border shadow-lg shadow-amber-500/10 p-3 z-30"
             >
               <div className="flex items-center gap-2 mb-1.5">
-                <div className="h-6 w-6 rounded-full bg-purple-500/15 grid place-items-center">
-                  <Bot className="h-3.5 w-3.5 text-purple-500" />
+                <div className="h-6 w-6 rounded-full bg-amber-500/15 grid place-items-center">
+                  <StickyNote className="h-3.5 w-3.5 text-amber-500" />
                 </div>
-                <span className="text-xs font-semibold text-foreground/90">AI Sales Agent</span>
+                <span className="text-xs font-semibold text-foreground/90">Note · Acme Corp</span>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Acme Corp</strong> looks hot. They opened your proposal 4 times today. Want me to draft a reply?
+                Follow up next Tuesday. They want the pricing PDF and a
+                proposal template.
               </p>
             </motion.div>
           </motion.div>
