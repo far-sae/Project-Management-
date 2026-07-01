@@ -12,7 +12,7 @@ export type PageKey =
   | 'project_management' | 'my_tasks' | 'calendar' | 'workload' | 'inbox'
   | 'team' | 'files' | 'comments' | 'contracts'
   | 'timeline' | 'reports'
-  | 'crm_contacts' | 'crm_companies' | 'crm_deals' | 'crm_tasks' | 'crm_activity'
+  | 'crm_contacts' | 'crm_companies' | 'crm_deals' | 'crm_tasks' | 'crm_activity' | 'crm_tags'
   | 'hr' | 'settings';
 
 export type PageAccessLevel = 'none' | 'view' | 'edit';
@@ -49,6 +49,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { key: 'crm_deals',          label: 'Deals',              group: 'CRM',            routes: ['/crm/deals'] },
   { key: 'crm_tasks',          label: 'CRM Tasks',          group: 'CRM',            routes: ['/crm/tasks'] },
   { key: 'crm_activity',       label: 'CRM Activity',       group: 'CRM',            routes: ['/crm/activity'] },
+  { key: 'crm_tags',           label: 'CRM Tags',           group: 'CRM',            routes: ['/crm/tags'] },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },
   { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses'] },
   { key: 'contracts',          label: 'Contracts',          group: 'People & ops',  routes: ['/contracts'], feature: 'contracts' },

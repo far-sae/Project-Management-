@@ -3,7 +3,7 @@ import { Plus, Search, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useCrmContacts, useCrmCompanies } from '@/hooks/useCrmHub';
+import { useCrmContacts, useCrmCompanies, useContactTagsMap, useCrmTags } from '@/hooks/useCrmHub';
 import { createContact, deleteContact } from '@/services/supabase/crmHub/contacts';
 import { LIFECYCLE_STAGES, LEAD_STATUSES } from '@/types/crmHub';
 import type { LifecycleStage, LeadStatus } from '@/types/crmHub';
@@ -22,6 +22,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { EntityDetailDialog } from '@/components/crmHub/EntityDetailDialog';
+import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import type { CrmContact } from '@/types/crmHub';
 
 const humanize = (s: string) =>
@@ -32,6 +33,8 @@ export const CrmContactsPage: React.FC = () => {
   const { organization } = useOrganization();
   const { items: contacts, loading, refresh } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
+  const { items: allTags } = useCrmTags();
+  const { map: contactTagsMap } = useContactTagsMap();
 
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -49,6 +52,7 @@ export const CrmContactsPage: React.FC = () => {
   const [leadStatus, setLeadStatus] = useState<LeadStatus>('new');
 
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
+  const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -173,10 +177,31 @@ export const CrmContactsPage: React.FC = () => {
                         onClick={() => setDetailContact(c)}
                       >
                         <td className="py-2 pr-4 font-medium text-foreground">
-                          {c.firstName} {c.lastName ?? ''}
+                          <div>{c.firstName} {c.lastName ?? ''}</div>
                           {c.jobTitle && (
                             <div className="text-xs text-muted-foreground font-normal">{c.jobTitle}</div>
                           )}
+                          {(() => {
+                            const tagIds = contactTagsMap.get(c.id) ?? [];
+                            if (tagIds.length === 0) return null;
+                            return (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {tagIds.map((tid) => {
+                                  const t = tagById.get(tid);
+                                  if (!t) return null;
+                                  return (
+                                    <span
+                                      key={tid}
+                                      className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                                      style={{ backgroundColor: `${t.color}22`, color: t.color, border: `1px solid ${t.color}44` }}
+                                    >
+                                      {t.name}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="py-2 pr-4 text-muted-foreground">{c.email ?? '—'}</td>
                         <td className="py-2 pr-4 text-muted-foreground">{c.phone ?? '—'}</td>
@@ -294,7 +319,9 @@ export const CrmContactsPage: React.FC = () => {
           subtitle: [detailContact.jobTitle, detailContact.email, detailContact.phone].filter(Boolean).join(' · ') || null,
         } : null}
         onOpenChange={(o) => !o && setDetailContact(null)}
-      />
+      >
+        {detailContact && <ContactTagPicker contactId={detailContact.id} />}
+      </EntityDetailDialog>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

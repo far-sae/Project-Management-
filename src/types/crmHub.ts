@@ -257,3 +257,11 @@ export interface CreateNoteInput {
   companyId?: string | null;
   dealId?: string | null;
 }
+
+export interface CrmTag {
+  id: string;
+  organizationId: string;
+  name: string;
+  color: string;
+  createdAt: Date;
+}

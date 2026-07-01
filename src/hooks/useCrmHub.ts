@@ -7,7 +7,8 @@ import { listDeals } from '@/services/supabase/crmHub/deals';
 import { listDealStages, seedDefaultDealStages } from '@/services/supabase/crmHub/dealStages';
 import { listTasks } from '@/services/supabase/crmHub/tasks';
 import { listActivities } from '@/services/supabase/crmHub/activities';
-import type { CrmActivity, CrmCompany, CrmContact, CrmDeal, CrmDealStage, CrmTask } from '@/types/crmHub';
+import { listTags, listContactTagsMap } from '@/services/supabase/crmHub/tags';
+import type { CrmActivity, CrmCompany, CrmContact, CrmDeal, CrmDealStage, CrmTag, CrmTask } from '@/types/crmHub';
 
 interface UseListResult<T> {
   items: T[];
@@ -154,6 +155,72 @@ export const useCrmDeals = (): UseListResult<CrmDeal> => {
 
   if (!orgId) return empty as UseListResult<CrmDeal>;
   return { items, loading, error, refresh };
+};
+
+export const useCrmTags = (): UseListResult<CrmTag> => {
+  const orgId = useOrgId();
+  const [items, setItems] = useState<CrmTag[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!orgId) { setItems([]); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      setItems(await listTags(orgId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load tags');
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    const channel = supabase
+      .channel(`crm-tags-${orgId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_tags', filter: `organization_id=eq.${orgId}` }, () => void refresh())
+      .subscribe();
+    return () => { channel.unsubscribe(); };
+  }, [orgId, refresh]);
+
+  if (!orgId) return empty as UseListResult<CrmTag>;
+  return { items, loading, error, refresh };
+};
+
+interface UseContactTagsMapResult {
+  map: Map<string, string[]>;
+  refresh: () => Promise<void>;
+}
+
+export const useContactTagsMap = (): UseContactTagsMapResult => {
+  const orgId = useOrgId();
+  const [map, setMap] = useState<Map<string, string[]>>(new Map());
+
+  const refresh = useCallback(async () => {
+    if (!orgId) { setMap(new Map()); return; }
+    try {
+      setMap(await listContactTagsMap(orgId));
+    } catch {
+      /* silent — the tag pills just don't render */
+    }
+  }, [orgId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    const channel = supabase
+      .channel(`crm-contact-tags-${orgId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_contact_tags' }, () => void refresh())
+      .subscribe();
+    return () => { channel.unsubscribe(); };
+  }, [orgId, refresh]);
+
+  return { map, refresh };
 };
 
 export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
