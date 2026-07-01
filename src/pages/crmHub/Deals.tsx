@@ -25,17 +25,14 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 
-const fmtCurrency = (n: number) => {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(n);
-  } catch { return `$${n.toFixed(0)}`; }
-};
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 
 const DealCard: React.FC<{
   deal: CrmDeal;
   contactName: string | null;
   companyName: string | null;
 }> = ({ deal, contactName, companyName }) => {
+  const { format: fmtCurrency } = useCrmCurrency();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10, opacity: isDragging ? 0.5 : 1 }
@@ -77,6 +74,7 @@ const StageColumn: React.FC<{
   contactById: Map<string, string>;
   companyById: Map<string, string>;
 }> = ({ stage, deals, contactById, companyById }) => {
+  const { format: fmtCurrency } = useCrmCurrency();
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const totalValue = deals.reduce((sum, d) => sum + d.value, 0);
   return (
@@ -113,6 +111,7 @@ export const CrmDealsPage: React.FC = () => {
   const { items: stages, loading: stagesLoading } = useCrmDealStages();
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
+  const { format: fmtCurrency } = useCrmCurrency();
 
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);

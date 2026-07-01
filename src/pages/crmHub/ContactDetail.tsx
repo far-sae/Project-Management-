@@ -42,6 +42,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { useCrmCompanies } from '@/hooks/useCrmHub';
+import { createTask } from '@/services/supabase/crmHub/tasks';
+import { TASK_PRIORITIES } from '@/types/crmHub';
+import type { TaskPriority } from '@/types/crmHub';
 
 const initials = (name: string) => {
   const parts = name.trim().split(/\s+/).slice(0, 2);
@@ -97,6 +102,11 @@ export const CrmContactDetailPage: React.FC = () => {
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDueDate, setTaskDueDate] = useState('');
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>('medium');
+  const { format: fmtCurrency } = useCrmCurrency();
   const [logType, setLogType] = useState<ActivityType>('call');
   const [logBody, setLogBody] = useState('');
 
@@ -299,6 +309,7 @@ export const CrmContactDetailPage: React.FC = () => {
           <Card>
             <CardContent className="space-y-2 p-4">
               <Textarea
+                id="contact-note-composer"
                 rows={3}
                 placeholder="Add a note about this contact…"
                 value={noteBody}
@@ -362,7 +373,12 @@ export const CrmContactDetailPage: React.FC = () => {
 
         {/* RIGHT — Associations */}
         <aside className="space-y-3">
-          <AssocPanel title="Companies" count={company ? 1 : 0}>
+          <AssocPanel
+            title="Companies"
+            count={company ? 1 : 0}
+            onAdd={() => setShowEdit(true)}
+            addLabel={company ? 'Change' : 'Add'}
+          >
             {company ? (
               <Link to={`/crm/companies/${company.id}`} className="flex items-center gap-2 rounded-lg border border-border p-3 hover:border-primary transition-colors">
                 <span className="grid h-9 w-9 place-items-center rounded-md bg-primary/10 text-primary"><Building2 className="h-4 w-4" /></span>
@@ -371,17 +387,25 @@ export const CrmContactDetailPage: React.FC = () => {
             ) : <EmptyAssoc label="company" />}
           </AssocPanel>
 
-          <AssocPanel title="Deals" count={deals.length}>
+          <AssocPanel
+            title="Deals"
+            count={deals.length}
+            onAdd={() => navigate('/crm/deals')}
+          >
             {deals.length === 0 ? <EmptyAssoc label="deal" /> : deals.map((d) => (
               <Link key={d.id} to={`/crm/deals/${d.id}`} className="block rounded-lg border border-border p-3 hover:border-primary transition-colors">
                 <p className="text-sm font-semibold text-primary hover:underline">{d.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{d.value.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{fmtCurrency(d.value)}</p>
                 <Badge variant="secondary" className="mt-2 capitalize">{d.status}</Badge>
               </Link>
             ))}
           </AssocPanel>
 
-          <AssocPanel title="Tasks" count={tasks.length}>
+          <AssocPanel
+            title="Tasks"
+            count={tasks.length}
+            onAdd={() => setShowNewTask(true)}
+          >
             {tasks.length === 0 ? <EmptyAssoc label="task" /> : tasks.slice(0, 5).map((t) => (
               <div key={t.id} className="rounded-lg border border-border p-3">
                 <p className="text-sm font-medium">{t.title}</p>
@@ -393,7 +417,14 @@ export const CrmContactDetailPage: React.FC = () => {
             ))}
           </AssocPanel>
 
-          <AssocPanel title="Notes" count={notes.length}>
+          <AssocPanel
+            title="Notes"
+            count={notes.length}
+            onAdd={() => {
+              document.getElementById('contact-note-composer')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              (document.getElementById('contact-note-composer') as HTMLTextAreaElement | null)?.focus();
+            }}
+          >
             {notes.length === 0 ? <EmptyAssoc label="note" /> : notes.slice(0, 3).map((n) => (
               <div key={n.id} className="rounded-lg border border-border p-3">
                 <p className="text-sm whitespace-pre-wrap break-words line-clamp-3">{n.body}</p>
@@ -438,6 +469,67 @@ export const CrmContactDetailPage: React.FC = () => {
             <Button variant="outline" onClick={() => setShowLog(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleLog} disabled={busy || !logBody.trim()}>
               {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Log
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNewTask} onOpenChange={(o) => { setShowNewTask(o); if (!o) { setTaskTitle(''); setTaskDueDate(''); setTaskPriority('medium'); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>New task for {contact.firstName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Title *</Label>
+              <Input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} disabled={busy} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Due date</Label>
+                <Input type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} disabled={busy} />
+              </div>
+              <div>
+                <Label>Priority</Label>
+                <Select value={taskPriority} onValueChange={(v) => setTaskPriority(v as TaskPriority)} disabled={busy}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TASK_PRIORITIES.map((p) => (
+                      <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewTask(false)} disabled={busy}>Cancel</Button>
+            <Button
+              onClick={async () => {
+                if (!orgId || !taskTitle.trim()) return;
+                setBusy(true);
+                try {
+                  await createTask({
+                    organizationId: orgId,
+                    title: taskTitle.trim(),
+                    dueDate: taskDueDate || null,
+                    priority: taskPriority,
+                    contactId: id,
+                    companyId: contact.companyId,
+                  }, user?.userId ?? null);
+                  toast.success('Task created');
+                  setShowNewTask(false);
+                  setTaskTitle(''); setTaskDueDate(''); setTaskPriority('medium');
+                  await refresh();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Could not create task');
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy || !taskTitle.trim()}
+            >
+              {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Create
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -494,12 +586,24 @@ const KV: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value 
 const AssocPanel: React.FC<{
   title: string;
   count: number;
+  onAdd?: () => void;
+  addLabel?: string;
   children: React.ReactNode;
-}> = ({ title, count, children }) => (
+}> = ({ title, count, onAdd, addLabel = 'Add', children }) => (
   <Card>
     <CardContent className="space-y-2 p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">{title} ({count})</h3>
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {addLabel}
+          </button>
+        )}
       </div>
       <Separator />
       <div className="space-y-2 pt-1">{children}</div>
@@ -519,11 +623,13 @@ const EditContactDialog: React.FC<{
   onOpenChange: (o: boolean) => void;
   onSaved: () => void | Promise<void>;
 }> = ({ contact, open, onOpenChange, onSaved }) => {
+  const { items: companies } = useCrmCompanies();
   const [firstName, setFirstName] = useState(contact.firstName);
   const [lastName, setLastName] = useState(contact.lastName ?? '');
   const [email, setEmail] = useState(contact.email ?? '');
   const [phone, setPhone] = useState(contact.phone ?? '');
   const [jobTitle, setJobTitle] = useState(contact.jobTitle ?? '');
+  const [companyId, setCompanyId] = useState(contact.companyId ?? '');
   const [source, setSource] = useState(contact.source ?? '');
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>(contact.lifecycleStage);
   const [leadStatus, setLeadStatus] = useState<LeadStatus>(contact.leadStatus);
@@ -536,6 +642,7 @@ const EditContactDialog: React.FC<{
       setEmail(contact.email ?? '');
       setPhone(contact.phone ?? '');
       setJobTitle(contact.jobTitle ?? '');
+      setCompanyId(contact.companyId ?? '');
       setSource(contact.source ?? '');
       setLifecycleStage(contact.lifecycleStage);
       setLeadStatus(contact.leadStatus);
@@ -551,6 +658,7 @@ const EditContactDialog: React.FC<{
         email: email.trim() || null,
         phone: phone.trim() || null,
         jobTitle: jobTitle.trim() || null,
+        companyId: companyId || null,
         source: source.trim() || null,
         lifecycleStage,
         leadStatus,
@@ -595,6 +703,18 @@ const EditContactDialog: React.FC<{
           <div>
             <Label>Job title</Label>
             <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} disabled={busy} />
+          </div>
+          <div>
+            <Label>Company</Label>
+            <Select value={companyId || '__none__'} onValueChange={(v) => setCompanyId(v === '__none__' ? '' : v)} disabled={busy}>
+              <SelectTrigger><SelectValue placeholder="No company" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— None —</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>Source</Label>

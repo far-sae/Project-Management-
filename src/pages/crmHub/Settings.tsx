@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Save, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { CURRENCIES, type CurrencyCode } from '@/lib/crmCurrency';
 import { useCrmDealStages } from '@/hooks/useCrmHub';
 import {
   createDealStage, updateDealStage, deleteDealStage,
@@ -34,11 +36,13 @@ export const CrmSettingsPage: React.FC = () => {
           </p>
         </div>
 
-        <Tabs defaultValue="pipeline">
+        <Tabs defaultValue="general">
           <TabsList>
+            <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
             <TabsTrigger value="workspace">Workspace</TabsTrigger>
           </TabsList>
+          <TabsContent value="general" className="mt-4"><GeneralSettings /></TabsContent>
           <TabsContent value="pipeline" className="mt-4"><PipelineSettings /></TabsContent>
           <TabsContent value="workspace" className="mt-4"><WorkspaceSettings /></TabsContent>
         </Tabs>
@@ -48,6 +52,50 @@ export const CrmSettingsPage: React.FC = () => {
 };
 
 const STATUS_OPTIONS: DealStatus[] = ['open', 'won', 'lost'];
+
+const GeneralSettings: React.FC = () => {
+  const { code, loading, setCurrency, format } = useCrmCurrency();
+  const [busy, setBusy] = useState(false);
+
+  const handleChange = async (next: CurrencyCode) => {
+    setBusy(true);
+    try {
+      await setCurrency(next);
+      toast.success('Currency updated');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">General</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-1.5 max-w-md">
+          <Label>Currency</Label>
+          <Select value={code} onValueChange={(v) => void handleChange(v as CurrencyCode)} disabled={loading || busy}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CURRENCIES.map((c) => (
+                <SelectItem key={c.code} value={c.code}>
+                  {c.symbol} · {c.code} · {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Applies to every money amount in the CRM (deals, dashboards, reports, company revenue).
+            Preview: {format(1234567)}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const PipelineSettings: React.FC = () => {
   const { organization } = useOrganization();

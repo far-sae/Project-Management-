@@ -73,6 +73,7 @@ export interface CrmCompany {
   updatedAt: Date;
 }
 
+
 export interface CrmContact {
   id: string;
   organizationId: string;
@@ -107,6 +108,10 @@ export interface CrmDeal {
   source: string | null;
   notes: string | null;
   sortOrder: number;
+  /** Set when the deal has been handed off to project management. */
+  workspaceId: string | null;
+  /** Set when the deal has been handed off to a specific project. */
+  projectId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -118,6 +123,7 @@ export interface CreateCompanyInput {
   industry?: string | null;
   phone?: string | null;
   email?: string | null;
+  address?: string | null;
   city?: string | null;
   country?: string | null;
   companySize?: string | null;

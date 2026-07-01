@@ -67,6 +67,7 @@ export const createCompany = async (input: CreateCompanyInput, ownerId: string |
       industry: input.industry ?? null,
       phone: input.phone ?? null,
       email: input.email ?? null,
+      address: input.address ?? null,
       city: input.city ?? null,
       country: input.country ?? null,
       company_size: input.companySize ?? null,
@@ -96,6 +97,7 @@ export const updateCompany = async (id: string, input: UpdateCompanyInput): Prom
   if (input.industry !== undefined) patch.industry = input.industry;
   if (input.phone !== undefined) patch.phone = input.phone;
   if (input.email !== undefined) patch.email = input.email;
+  if (input.address !== undefined) patch.address = input.address;
   if (input.city !== undefined) patch.city = input.city;
   if (input.country !== undefined) patch.country = input.country;
   if (input.companySize !== undefined) patch.company_size = input.companySize;

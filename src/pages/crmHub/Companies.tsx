@@ -18,24 +18,33 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { toCSV, downloadCSV } from '@/lib/csv';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
+import { Download, Upload } from 'lucide-react';
 
 export const CrmCompaniesPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const { items: companies, loading, refresh } = useCrmCompanies();
+  const orgCurrency = useCrmCurrency();
 
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [name, setName] = useState('');
   const [website, setWebsite] = useState('');
   const [industry, setIndustry] = useState('');
+  const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [country, setCountry] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [companySize, setCompanySize] = useState('');
+  const [annualRevenue, setAnnualRevenue] = useState('');
   const [notes, setNotes] = useState('');
 
   const filtered = useMemo(() => {
@@ -50,8 +59,9 @@ export const CrmCompaniesPage: React.FC = () => {
   }, [companies, search]);
 
   const resetForm = () => {
-    setName(''); setWebsite(''); setIndustry(''); setCity('');
-    setCountry(''); setPhone(''); setEmail(''); setNotes('');
+    setName(''); setWebsite(''); setIndustry(''); setAddress('');
+    setCity(''); setCountry(''); setPhone(''); setEmail('');
+    setCompanySize(''); setAnnualRevenue(''); setNotes('');
   };
 
   const handleCreate = async () => {
@@ -65,10 +75,13 @@ export const CrmCompaniesPage: React.FC = () => {
           name: name.trim(),
           website: website.trim() || null,
           industry: industry.trim() || null,
+          address: address.trim() || null,
           city: city.trim() || null,
           country: country.trim() || null,
           phone: phone.trim() || null,
           email: email.trim() || null,
+          companySize: companySize.trim() || null,
+          annualRevenue: annualRevenue ? Number(annualRevenue) : null,
           notes: notes.trim() || null,
         },
         user?.userId ?? null,
@@ -108,9 +121,27 @@ export const CrmCompaniesPage: React.FC = () => {
               The businesses your contacts work for.
             </p>
           </div>
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4 mr-2" /> New company
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4 mr-2" /> Import CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              if (!filtered.length) { toast.error('Nothing to export'); return; }
+              const csv = toCSV(filtered.map((c) => ({
+                name: c.name, website: c.website ?? '', industry: c.industry ?? '',
+                phone: c.phone ?? '', email: c.email ?? '', address: c.address ?? '',
+                city: c.city ?? '', country: c.country ?? '',
+                company_size: c.companySize ?? '', annual_revenue: c.annualRevenue ?? '',
+              })));
+              downloadCSV('companies.csv', csv);
+              toast.success(`Exported ${filtered.length} companies`);
+            }}>
+              <Download className="w-4 h-4 mr-2" /> Export CSV
+            </Button>
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4 mr-2" /> New company
+            </Button>
+          </div>
         </div>
 
         <div className="relative max-w-md">
@@ -237,6 +268,20 @@ export const CrmCompaniesPage: React.FC = () => {
                 <Input id="cem" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="csize">Company size</Label>
+                <Input id="csize" value={companySize} onChange={(e) => setCompanySize(e.target.value)} disabled={busy} placeholder="e.g. 51-200" />
+              </div>
+              <div>
+                <Label htmlFor="crev">Annual revenue ({orgCurrency.def.symbol})</Label>
+                <Input id="crev" type="number" min={0} value={annualRevenue} onChange={(e) => setAnnualRevenue(e.target.value)} disabled={busy} />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="caddr">Address</Label>
+              <Input id="caddr" value={address} onChange={(e) => setAddress(e.target.value)} disabled={busy} />
+            </div>
             <div>
               <Label htmlFor="cnotes">Notes</Label>
               <Textarea id="cnotes" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} rows={3} />
@@ -250,6 +295,13 @@ export const CrmCompaniesPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CsvImportWizard
+        open={showImport}
+        onOpenChange={setShowImport}
+        resource="companies"
+        onImported={refresh}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

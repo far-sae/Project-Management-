@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ChevronLeft, Pencil, Trash2, Loader2, StickyNote, ArrowRightCircle,
+  ChevronLeft, Pencil, Trash2, Loader2, StickyNote, ArrowRightCircle, Briefcase, Trophy, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -36,12 +36,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { DealHandoffDialog } from '@/components/crmHub/DealHandoffDialog';
 
-const fmtCurrency = (n: number) => {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-  } catch { return `$${Math.round(n)}`; }
-};
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 
 export const CrmDealDetailPage: React.FC = () => {
   const { id = '' } = useParams();
@@ -49,6 +46,7 @@ export const CrmDealDetailPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
+  const { format: fmtCurrency } = useCrmCurrency();
 
   const [deal, setDeal] = useState<CrmDeal | null>(null);
   const [stages, setStages] = useState<CrmDealStage[]>([]);
@@ -61,6 +59,7 @@ export const CrmDealDetailPage: React.FC = () => {
   const [notFound, setNotFound] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showHandoff, setShowHandoff] = useState(false);
   const [noteBody, setNoteBody] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -167,6 +166,24 @@ export const CrmDealDetailPage: React.FC = () => {
           <Link to="/crm/deals"><ChevronLeft className="h-4 w-4" />Pipeline</Link>
         </Button>
         <div className="flex items-center gap-2">
+          {deal.status === 'won' && !deal.projectId && (
+            <Button
+              size="sm"
+              onClick={() => setShowHandoff(true)}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white"
+            >
+              <Trophy className="mr-1.5 h-4 w-4" />Hand off to PM
+            </Button>
+          )}
+          {deal.projectId && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigate(`/project/${deal.projectId}`)}
+            >
+              <Briefcase className="mr-1.5 h-4 w-4" />Open project
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
             <Pencil className="mr-1.5 h-4 w-4" />Edit
           </Button>
@@ -227,6 +244,43 @@ export const CrmDealDetailPage: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            {deal.status === 'won' && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                    <Briefcase className="w-3 h-3" /> Delivery
+                  </p>
+                  {deal.projectId ? (
+                    <div className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/project/${deal.projectId}`)}
+                        className="w-full text-left rounded-md border border-border p-2 hover:border-primary transition-colors"
+                      >
+                        <p className="text-sm font-medium flex items-center gap-1">
+                          <Briefcase className="w-3.5 h-3.5 text-primary" />
+                          Linked project
+                          <ExternalLink className="w-3 h-3 opacity-60" />
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Click to open the project board
+                        </p>
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white"
+                      onClick={() => setShowHandoff(true)}
+                    >
+                      <Trophy className="mr-1.5 h-4 w-4" />Hand off to PM
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -299,6 +353,13 @@ export const CrmDealDetailPage: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      <DealHandoffDialog
+        deal={deal}
+        open={showHandoff}
+        onOpenChange={setShowHandoff}
+        onLinked={refresh}
+      />
 
       <EditDealDialog deal={deal} open={showEdit} onOpenChange={setShowEdit} onSaved={refresh} />
 

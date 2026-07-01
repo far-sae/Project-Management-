@@ -18,15 +18,12 @@ const sameDay = (a: Date, b: Date) =>
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const fmtCurrency = (n: number) => {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-  } catch { return `$${Math.round(n)}`; }
-};
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 
 export const CrmCalendarPage: React.FC = () => {
   const { items: tasks, loading: tasksLoading } = useCrmTasks();
   const { items: deals, loading: dealsLoading } = useCrmDeals();
+  const { format: fmtCurrency } = useCrmCurrency();
 
   const [cursor, setCursor] = useState(() => {
     const d = new Date();

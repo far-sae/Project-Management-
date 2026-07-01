@@ -4,6 +4,7 @@ import {
   Contact, Building2, Handshake, ListChecks, Waypoints, Tag,
   PieChart as PieIcon, CalendarRange, LayoutDashboard, Settings as SettingsIcon,
 } from 'lucide-react';
+import { CrmCurrencyProvider } from '@/context/CrmCurrencyContext';
 
 interface Tab {
   to: string;
@@ -25,6 +26,12 @@ const TABS: Tab[] = [
 ];
 
 export const CrmLayout: React.FC = () => (
+  <CrmCurrencyProvider>
+    <CrmLayoutInner />
+  </CrmCurrencyProvider>
+);
+
+const CrmLayoutInner: React.FC = () => (
   <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
     <div className="border-b border-border bg-card/60 backdrop-blur-sm">
       <div className="px-4 sm:px-6 lg:px-8 pt-3">

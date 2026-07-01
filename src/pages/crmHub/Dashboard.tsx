@@ -16,11 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-const fmtCurrency = (n: number) => {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-  } catch { return `$${Math.round(n)}`; }
-};
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 
 interface KpiProps {
   label: string;
@@ -53,6 +49,7 @@ export const CrmDashboardPage: React.FC = () => {
   const { items: stages, loading: stagesLoading } = useCrmDealStages();
   const { items: tasks } = useCrmTasks();
   const { items: activities } = useCrmActivities(10);
+  const { format: fmtCurrency } = useCrmCurrency();
 
   const loading = dealsLoading || stagesLoading;
 

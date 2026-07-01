@@ -17,6 +17,8 @@ interface DealRow {
   source: string | null;
   notes: string | null;
   sort_order: number;
+  workspace_id: string | null;
+  project_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,6 +38,8 @@ const mapDeal = (r: DealRow): CrmDeal => ({
   source: r.source,
   notes: r.notes,
   sortOrder: r.sort_order,
+  workspaceId: r.workspace_id ?? null,
+  projectId: r.project_id ?? null,
   createdAt: new Date(r.created_at),
   updatedAt: new Date(r.updated_at),
 });
@@ -158,4 +162,39 @@ export const moveDealToStage = async (
 export const deleteDeal = async (id: string): Promise<void> => {
   const { error } = await supabase.from('crm_deals').delete().eq('id', id);
   if (error) throw error;
+};
+
+/** Store the workspace/project link created by a Deal-Won handoff. */
+export const linkDealHandoff = async (
+  id: string,
+  patch: { workspaceId?: string | null; projectId?: string | null },
+): Promise<CrmDeal> => {
+  const row: Record<string, unknown> = {};
+  if (patch.workspaceId !== undefined) row.workspace_id = patch.workspaceId;
+  if (patch.projectId !== undefined) row.project_id = patch.projectId;
+  const { data, error } = await supabase
+    .from('crm_deals')
+    .update(row)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  const deal = mapDeal(data);
+  tryLogActivity(
+    {
+      organizationId: deal.organizationId,
+      type: 'deal_updated',
+      dealId: deal.id,
+      contactId: deal.contactId,
+      companyId: deal.companyId,
+      description: patch.projectId
+        ? 'Handed off to project'
+        : patch.workspaceId
+        ? 'Handed off to workspace'
+        : 'Handoff cleared',
+      metadata: { workspaceId: patch.workspaceId ?? null, projectId: patch.projectId ?? null },
+    },
+    deal.ownerId,
+  );
+  return deal;
 };

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Trash2, Loader2, Download } from 'lucide-react';
+import { Plus, Search, Trash2, Loader2, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -23,6 +23,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toCSV, downloadCSV } from '@/lib/csv';
+import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
 
 const humanize = (s: string) =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -39,6 +40,7 @@ export const CrmContactsPage: React.FC = () => {
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleStage | 'all'>('all');
   const [view, setView] = useState<'all' | 'mine'>('all');
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -146,6 +148,9 @@ export const CrmContactsPage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+              <Upload className="w-4 h-4 mr-2" /> Import CSV
+            </Button>
             <Button variant="outline" size="sm" onClick={handleExportCsv}>
               <Download className="w-4 h-4 mr-2" /> Export CSV
             </Button>
@@ -366,6 +371,13 @@ export const CrmContactsPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CsvImportWizard
+        open={showImport}
+        onOpenChange={setShowImport}
+        resource="contacts"
+        onImported={refresh}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

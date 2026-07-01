@@ -8,18 +8,11 @@ import {
   Building2, Trophy, DollarSign, Loader2,
 } from 'lucide-react';
 import {
-  useCrmDeals, useCrmDealStages, useCrmContacts, useCrmCompanies, useCrmActivities,
+  useCrmDeals, useCrmDealStages, useCrmContacts, useCrmCompanies, useCrmActivities, useCrmTasks,
 } from '@/hooks/useCrmHub';
 import type { CrmDeal } from '@/types/crmHub';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-const fmtCurrency = (n: number) => {
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency', currency: 'USD', maximumFractionDigits: 0,
-    }).format(n);
-  } catch { return `$${Math.round(n)}`; }
-};
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 
 const STAGE_PIE_COLORS = ['#f97316', '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#64748b'];
 
@@ -60,6 +53,8 @@ export const CrmReportsPage: React.FC = () => {
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const { items: activities } = useCrmActivities(50);
+  const { items: tasks } = useCrmTasks();
+  const { format: fmtCurrency } = useCrmCurrency();
 
   const loading = dealsLoading || stagesLoading;
 
@@ -111,6 +106,42 @@ export const CrmReportsPage: React.FC = () => {
   const stageById = useMemo(() => new Map(stages.map((s) => [s.id, s])), [stages]);
 
   const recentActivity = activities.slice(0, 6);
+
+  // Lead source pie: bucket contacts by `source` (unknown → "Other")
+  const sourceData = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of contacts) {
+      const k = (c.source && c.source.trim()) || 'Other';
+      map.set(k, (map.get(k) ?? 0) + 1);
+    }
+    return Array.from(map.entries()).map(([name, value], i) => ({
+      name,
+      value,
+      fill: STAGE_PIE_COLORS[i % STAGE_PIE_COLORS.length],
+    }));
+  }, [contacts]);
+
+  // Contact + company growth: cumulative counts at the end of each of the
+  // last 6 months.
+  const growthData = useMemo(() => {
+    const months: { month: string; contacts: number; companies: number }[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const dt = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+      months.push({
+        month: dt.toLocaleString(undefined, { month: 'short' }),
+        contacts: contacts.filter((c) => c.createdAt <= dt).length,
+        companies: companies.filter((c) => c.createdAt <= dt).length,
+      });
+    }
+    return months;
+  }, [contacts, companies]);
+
+  const taskCompletionRate = useMemo(() => {
+    if (tasks.length === 0) return 0;
+    const done = tasks.filter((t) => t.status === 'completed').length;
+    return Math.round((done / tasks.length) * 100);
+  }, [tasks]);
 
   if (loading) {
     return (
@@ -232,6 +263,64 @@ export const CrmReportsPage: React.FC = () => {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+
+        {/* Lead source + Task completion rate */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Lead source</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {sourceData.length === 0 ? (
+                <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                  No contact sources yet.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={224}>
+                  <PieChart>
+                    <Pie data={sourceData} dataKey="value" nameKey="name" outerRadius={80} label>
+                      {sourceData.map((s, i) => (
+                        <Cell key={i} fill={s.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Task completion rate</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center h-56">
+              <div className="text-5xl font-black text-primary">{taskCompletionRate}%</div>
+              <p className="mt-2 text-sm text-muted-foreground text-center">
+                Across {tasks.length} CRM task{tasks.length === 1 ? '' : 's'}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Contact + company growth</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={224}>
+                <LineChart data={growthData}>
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip labelStyle={{ fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line type="monotone" dataKey="contacts" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="companies" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Top open deals + recent activity */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

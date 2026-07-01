@@ -34,11 +34,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-const fmtCurrency = (n: number) => {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-  } catch { return `$${Math.round(n)}`; }
-};
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 
 export const CrmCompanyDetailPage: React.FC = () => {
   const { id = '' } = useParams();
@@ -46,6 +42,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
+  const { format: fmtCurrency } = useCrmCurrency();
 
   const [company, setCompany] = useState<CrmCompany | null>(null);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
