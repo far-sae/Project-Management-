@@ -33,6 +33,9 @@ const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ 
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
+const CrmContactsPage = React.lazy(() => import('@/pages/crmHub/Contacts').then((m) => ({ default: m.CrmContactsPage })));
+const CrmCompaniesPage = React.lazy(() => import('@/pages/crmHub/Companies').then((m) => ({ default: m.CrmCompaniesPage })));
+const CrmDealsPage = React.lazy(() => import('@/pages/crmHub/Deals').then((m) => ({ default: m.CrmDealsPage })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
@@ -274,6 +277,30 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requirePage="reports">
                   {lazyAppRoute(<Reports />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/crm/contacts',
+              element: (
+                <ProtectedRoute requireSubscription requirePage="crm_contacts">
+                  {lazyAppRoute(<CrmContactsPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/crm/companies',
+              element: (
+                <ProtectedRoute requireSubscription requirePage="crm_companies">
+                  {lazyAppRoute(<CrmCompaniesPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/crm/deals',
+              element: (
+                <ProtectedRoute requireSubscription requirePage="crm_deals">
+                  {lazyAppRoute(<CrmDealsPage />)}
                 </ProtectedRoute>
               ),
             },

@@ -1,0 +1,159 @@
+// CRM Hub types — mirror the SQL schema in migration 144.
+
+export type LifecycleStage =
+  | 'subscriber'
+  | 'lead'
+  | 'marketing_qualified_lead'
+  | 'sales_qualified_lead'
+  | 'opportunity'
+  | 'customer'
+  | 'evangelist'
+  | 'other';
+
+export const LIFECYCLE_STAGES: LifecycleStage[] = [
+  'subscriber',
+  'lead',
+  'marketing_qualified_lead',
+  'sales_qualified_lead',
+  'opportunity',
+  'customer',
+  'evangelist',
+  'other',
+];
+
+export type LeadStatus =
+  | 'new'
+  | 'open'
+  | 'in_progress'
+  | 'open_deal'
+  | 'unqualified'
+  | 'attempted_to_contact'
+  | 'connected'
+  | 'bad_timing';
+
+export const LEAD_STATUSES: LeadStatus[] = [
+  'new',
+  'open',
+  'in_progress',
+  'open_deal',
+  'unqualified',
+  'attempted_to_contact',
+  'connected',
+  'bad_timing',
+];
+
+export type DealStatus = 'open' | 'won' | 'lost';
+
+export interface CrmDealStage {
+  id: string;
+  organizationId: string;
+  name: string;
+  sortOrder: number;
+  probability: number;
+  status: DealStatus;
+  createdAt: Date;
+}
+
+export interface CrmCompany {
+  id: string;
+  organizationId: string;
+  ownerId: string | null;
+  name: string;
+  website: string | null;
+  industry: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  companySize: string | null;
+  annualRevenue: number | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CrmContact {
+  id: string;
+  organizationId: string;
+  ownerId: string | null;
+  companyId: string | null;
+  firstName: string;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+  jobTitle: string | null;
+  lifecycleStage: LifecycleStage;
+  leadStatus: LeadStatus;
+  source: string | null;
+  notes: string | null;
+  lastContactedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CrmDeal {
+  id: string;
+  organizationId: string;
+  ownerId: string | null;
+  stageId: string;
+  companyId: string | null;
+  contactId: string | null;
+  name: string;
+  value: number;
+  probability: number;
+  status: DealStatus;
+  expectedCloseDate: string | null;
+  source: string | null;
+  notes: string | null;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateCompanyInput {
+  organizationId: string;
+  name: string;
+  website?: string | null;
+  industry?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  city?: string | null;
+  country?: string | null;
+  companySize?: string | null;
+  annualRevenue?: number | null;
+  notes?: string | null;
+}
+
+export type UpdateCompanyInput = Partial<Omit<CreateCompanyInput, 'organizationId'>>;
+
+export interface CreateContactInput {
+  organizationId: string;
+  firstName: string;
+  lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  jobTitle?: string | null;
+  companyId?: string | null;
+  lifecycleStage?: LifecycleStage;
+  leadStatus?: LeadStatus;
+  source?: string | null;
+  notes?: string | null;
+}
+
+export type UpdateContactInput = Partial<Omit<CreateContactInput, 'organizationId'>>;
+
+export interface CreateDealInput {
+  organizationId: string;
+  name: string;
+  stageId: string;
+  value?: number;
+  probability?: number;
+  companyId?: string | null;
+  contactId?: string | null;
+  expectedCloseDate?: string | null;
+  source?: string | null;
+  notes?: string | null;
+}
+
+export type UpdateDealInput = Partial<Omit<CreateDealInput, 'organizationId'>>;

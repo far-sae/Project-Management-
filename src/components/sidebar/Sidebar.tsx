@@ -24,6 +24,9 @@ import {
   X,
   UserCircle,
   TrendingUp,
+  Contact,
+  Building2,
+  Handshake,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -63,6 +66,9 @@ const QUICK_ITEMS_FULL = [
   { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
+  { icon: Contact, label: 'Contacts', href: '/crm/contacts', page: 'crm_contacts' as PageKey },
+  { icon: Building2, label: 'Companies', href: '/crm/companies', page: 'crm_companies' as PageKey },
+  { icon: Handshake, label: 'Deals', href: '/crm/deals', page: 'crm_deals' as PageKey },
   { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
 ];
 

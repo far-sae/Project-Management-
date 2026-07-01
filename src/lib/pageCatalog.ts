@@ -12,6 +12,7 @@ export type PageKey =
   | 'project_management' | 'my_tasks' | 'calendar' | 'workload' | 'inbox'
   | 'team' | 'files' | 'comments' | 'contracts'
   | 'timeline' | 'reports'
+  | 'crm_contacts' | 'crm_companies' | 'crm_deals'
   | 'hr' | 'settings';
 
 export type PageAccessLevel = 'none' | 'view' | 'edit';
@@ -43,6 +44,9 @@ export const PAGE_CATALOG: PageDef[] = [
   { key: 'inbox',              label: 'Inbox',              group: 'Work',          routes: ['/inbox'] },
   { key: 'timeline',           label: 'Timeline',           group: 'Work',           routes: ['/timeline'], feature: 'timeline_overview' },
   { key: 'reports',            label: 'Reports',            group: 'Work',           routes: ['/reports'] },
+  { key: 'crm_contacts',       label: 'Contacts',           group: 'CRM',            routes: ['/crm/contacts'] },
+  { key: 'crm_companies',      label: 'Companies',          group: 'CRM',            routes: ['/crm/companies'] },
+  { key: 'crm_deals',          label: 'Deals',              group: 'CRM',            routes: ['/crm/deals'] },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },
   { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses'] },
   { key: 'contracts',          label: 'Contracts',          group: 'People & ops',  routes: ['/contracts'], feature: 'contracts' },
