@@ -12,6 +12,7 @@ import {
 } from '@/hooks/useCrmHub';
 import { createDeal, moveDealToStage } from '@/services/supabase/crmHub/deals';
 import type { CrmDeal, CrmDealStage } from '@/types/crmHub';
+import { EntityDetailDialog } from '@/components/crmHub/EntityDetailDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,7 +33,8 @@ const DealCard: React.FC<{
   deal: CrmDeal;
   contactName: string | null;
   companyName: string | null;
-}> = ({ deal, contactName, companyName }) => {
+  onOpen: () => void;
+}> = ({ deal, contactName, companyName, onOpen }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10, opacity: isDragging ? 0.5 : 1 }
@@ -41,12 +43,14 @@ const DealCard: React.FC<{
     <div
       ref={setNodeRef}
       style={style}
-      className="rounded-lg border border-border bg-card p-3 shadow-sm hover:border-primary/40 transition-colors"
+      onClick={onOpen}
+      className="rounded-lg border border-border bg-card p-3 shadow-sm hover:border-primary/40 transition-colors cursor-pointer"
     >
       <div className="flex items-start gap-2">
         <button
           {...listeners}
           {...attributes}
+          onClick={(e) => e.stopPropagation()}
           className="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing mt-0.5"
           aria-label="Drag deal"
         >
@@ -71,7 +75,8 @@ const StageColumn: React.FC<{
   deals: CrmDeal[];
   contactById: Map<string, string>;
   companyById: Map<string, string>;
-}> = ({ stage, deals, contactById, companyById }) => {
+  onOpenDeal: (deal: CrmDeal) => void;
+}> = ({ stage, deals, contactById, companyById, onOpenDeal }) => {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const totalValue = deals.reduce((sum, d) => sum + d.value, 0);
   return (
@@ -91,6 +96,7 @@ const StageColumn: React.FC<{
             deal={d}
             contactName={d.contactId ? contactById.get(d.contactId) ?? null : null}
             companyName={d.companyId ? companyById.get(d.companyId) ?? null : null}
+            onOpen={() => onOpenDeal(d)}
           />
         ))}
         {deals.length === 0 && (
@@ -111,6 +117,7 @@ export const CrmDealsPage: React.FC = () => {
 
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [detailDeal, setDetailDeal] = useState<CrmDeal | null>(null);
   const [name, setName] = useState('');
   const [value, setValue] = useState('0');
   const [stageId, setStageId] = useState('');
@@ -215,12 +222,23 @@ export const CrmDealsPage: React.FC = () => {
                   deals={dealsByStage.get(stage.id) ?? []}
                   contactById={contactById}
                   companyById={companyById}
+                  onOpenDeal={setDetailDeal}
                 />
               ))}
             </div>
           </DndContext>
         </div>
       )}
+
+      <EntityDetailDialog
+        scope={detailDeal ? {
+          kind: 'deal',
+          id: detailDeal.id,
+          label: detailDeal.name,
+          subtitle: `${fmtCurrency(detailDeal.value)} · ${stageById.get(detailDeal.stageId)?.name ?? '(no stage)'}`,
+        } : null}
+        onOpenChange={(o) => !o && setDetailDeal(null)}
+      />
 
       <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
         <DialogContent className="max-w-md">

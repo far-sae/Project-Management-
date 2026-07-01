@@ -17,6 +17,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { EntityDetailDialog } from '@/components/crmHub/EntityDetailDialog';
+import type { CrmCompany } from '@/types/crmHub';
 
 export const CrmCompaniesPage: React.FC = () => {
   const { user } = useAuth();
@@ -27,6 +29,7 @@ export const CrmCompaniesPage: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [detailCompany, setDetailCompany] = useState<CrmCompany | null>(null);
 
   const [name, setName] = useState('');
   const [website, setWebsite] = useState('');
@@ -150,7 +153,11 @@ export const CrmCompaniesPage: React.FC = () => {
                   </thead>
                   <tbody>
                     {filtered.map((c) => (
-                      <tr key={c.id} className="border-b border-border/60 hover:bg-muted/40">
+                      <tr
+                        key={c.id}
+                        className="border-b border-border/60 hover:bg-muted/40 cursor-pointer"
+                        onClick={() => setDetailCompany(c)}
+                      >
                         <td className="py-2 pr-4 font-medium text-foreground">{c.name}</td>
                         <td className="py-2 pr-4 text-muted-foreground">{c.industry ?? '—'}</td>
                         <td className="py-2 pr-4 text-muted-foreground">
@@ -162,6 +169,7 @@ export const CrmCompaniesPage: React.FC = () => {
                               href={c.website.startsWith('http') ? c.website : `https://${c.website}`}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
                               className="inline-flex items-center gap-1 text-primary hover:underline"
                             >
                               {c.website} <ExternalLink className="w-3 h-3" />
@@ -173,7 +181,7 @@ export const CrmCompaniesPage: React.FC = () => {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => setConfirmDelete(c.id)}
+                            onClick={(e) => { e.stopPropagation(); setConfirmDelete(c.id); }}
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -243,6 +251,16 @@ export const CrmCompaniesPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EntityDetailDialog
+        scope={detailCompany ? {
+          kind: 'company',
+          id: detailCompany.id,
+          label: detailCompany.name,
+          subtitle: [detailCompany.industry, [detailCompany.city, detailCompany.country].filter(Boolean).join(', ')].filter(Boolean).join(' · ') || null,
+        } : null}
+        onOpenChange={(o) => !o && setDetailCompany(null)}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

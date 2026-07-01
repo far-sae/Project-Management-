@@ -237,3 +237,23 @@ export interface CreateActivityInput {
   taskId?: string | null;
   metadata?: Record<string, unknown>;
 }
+
+export interface CrmNote {
+  id: string;
+  organizationId: string;
+  userId: string | null;
+  body: string;
+  contactId: string | null;
+  companyId: string | null;
+  dealId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateNoteInput {
+  organizationId: string;
+  body: string;
+  contactId?: string | null;
+  companyId?: string | null;
+  dealId?: string | null;
+}

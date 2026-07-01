@@ -21,6 +21,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { EntityDetailDialog } from '@/components/crmHub/EntityDetailDialog';
+import type { CrmContact } from '@/types/crmHub';
 
 const humanize = (s: string) =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -35,6 +37,7 @@ export const CrmContactsPage: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [detailContact, setDetailContact] = useState<CrmContact | null>(null);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -164,7 +167,11 @@ export const CrmContactsPage: React.FC = () => {
                   </thead>
                   <tbody>
                     {filtered.map((c) => (
-                      <tr key={c.id} className="border-b border-border/60 hover:bg-muted/40">
+                      <tr
+                        key={c.id}
+                        className="border-b border-border/60 hover:bg-muted/40 cursor-pointer"
+                        onClick={() => setDetailContact(c)}
+                      >
                         <td className="py-2 pr-4 font-medium text-foreground">
                           {c.firstName} {c.lastName ?? ''}
                           {c.jobTitle && (
@@ -186,7 +193,7 @@ export const CrmContactsPage: React.FC = () => {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => setConfirmDelete(c.id)}
+                            onClick={(e) => { e.stopPropagation(); setConfirmDelete(c.id); }}
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -278,6 +285,16 @@ export const CrmContactsPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EntityDetailDialog
+        scope={detailContact ? {
+          kind: 'contact',
+          id: detailContact.id,
+          label: `${detailContact.firstName} ${detailContact.lastName ?? ''}`.trim(),
+          subtitle: [detailContact.jobTitle, detailContact.email, detailContact.phone].filter(Boolean).join(' · ') || null,
+        } : null}
+        onOpenChange={(o) => !o && setDetailContact(null)}
+      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
