@@ -196,3 +196,44 @@ export interface CreateTaskInput {
 }
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, 'organizationId'>>;
+
+export type ActivityType =
+  | 'note'
+  | 'call'
+  | 'email'
+  | 'meeting'
+  | 'task_completed'
+  | 'contact_created'
+  | 'company_created'
+  | 'deal_created'
+  | 'deal_updated'
+  | 'deal_stage_changed'
+  | 'deal_won'
+  | 'deal_lost';
+
+export const MANUAL_ACTIVITY_TYPES: ActivityType[] = ['note', 'call', 'email', 'meeting'];
+
+export interface CrmActivity {
+  id: string;
+  organizationId: string;
+  userId: string | null;
+  type: ActivityType;
+  description: string | null;
+  contactId: string | null;
+  companyId: string | null;
+  dealId: string | null;
+  taskId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+}
+
+export interface CreateActivityInput {
+  organizationId: string;
+  type: ActivityType;
+  description?: string | null;
+  contactId?: string | null;
+  companyId?: string | null;
+  dealId?: string | null;
+  taskId?: string | null;
+  metadata?: Record<string, unknown>;
+}

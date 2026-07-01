@@ -141,7 +141,7 @@ export const CrmDealsPage: React.FC = () => {
     const targetStage = stageById.get(targetStageId);
     if (!deal || !targetStage || deal.stageId === targetStageId) return;
     try {
-      await moveDealToStage(dealId, targetStageId, targetStage.status);
+      await moveDealToStage(dealId, targetStageId, targetStage.status, targetStage.name);
       await refreshDeals();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not move deal');

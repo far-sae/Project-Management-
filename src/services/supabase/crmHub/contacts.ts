@@ -6,6 +6,7 @@ import type {
   LifecycleStage,
   LeadStatus,
 } from '@/types/crmHub';
+import { tryLogActivity } from './activities';
 
 interface ContactRow {
   id: string;
@@ -81,7 +82,17 @@ export const createContact = async (input: CreateContactInput, ownerId: string |
     .select()
     .single();
   if (error) throw error;
-  return mapContact(data);
+  const contact = mapContact(data);
+  tryLogActivity(
+    {
+      organizationId: contact.organizationId,
+      type: 'contact_created',
+      contactId: contact.id,
+      description: `${contact.firstName} ${contact.lastName ?? ''}`.trim(),
+    },
+    ownerId,
+  );
+  return contact;
 };
 
 export const updateContact = async (id: string, input: UpdateContactInput): Promise<CrmContact> => {

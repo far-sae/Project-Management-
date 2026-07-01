@@ -2,6 +2,7 @@ import { supabase } from '../config';
 import type {
   CrmTask, CreateTaskInput, UpdateTaskInput, TaskPriority, TaskStatus,
 } from '@/types/crmHub';
+import { tryLogActivity } from './activities';
 
 interface TaskRow {
   id: string;
@@ -94,7 +95,22 @@ export const updateTask = async (id: string, input: UpdateTaskInput): Promise<Cr
     .select()
     .single();
   if (error) throw error;
-  return mapTask(data);
+  const task = mapTask(data);
+  if (input.status === 'completed') {
+    tryLogActivity(
+      {
+        organizationId: task.organizationId,
+        type: 'task_completed',
+        taskId: task.id,
+        contactId: task.contactId,
+        companyId: task.companyId,
+        dealId: task.dealId,
+        description: task.title,
+      },
+      task.ownerId,
+    );
+  }
+  return task;
 };
 
 export const deleteTask = async (id: string): Promise<void> => {

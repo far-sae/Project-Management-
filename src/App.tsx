@@ -37,6 +37,7 @@ const CrmContactsPage = React.lazy(() => import('@/pages/crmHub/Contacts').then(
 const CrmCompaniesPage = React.lazy(() => import('@/pages/crmHub/Companies').then((m) => ({ default: m.CrmCompaniesPage })));
 const CrmDealsPage = React.lazy(() => import('@/pages/crmHub/Deals').then((m) => ({ default: m.CrmDealsPage })));
 const CrmTasksPage = React.lazy(() => import('@/pages/crmHub/Tasks').then((m) => ({ default: m.CrmTasksPage })));
+const CrmActivityPage = React.lazy(() => import('@/pages/crmHub/Activity').then((m) => ({ default: m.CrmActivityPage })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
@@ -310,6 +311,14 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requirePage="crm_tasks">
                   {lazyAppRoute(<CrmTasksPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/crm/activity',
+              element: (
+                <ProtectedRoute requireSubscription requirePage="crm_activity">
+                  {lazyAppRoute(<CrmActivityPage />)}
                 </ProtectedRoute>
               ),
             },

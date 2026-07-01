@@ -1,5 +1,6 @@
 import { supabase } from '../config';
 import type { CrmDeal, CreateDealInput, UpdateDealInput, DealStatus } from '@/types/crmHub';
+import { tryLogActivity } from './activities';
 
 interface DealRow {
   id: string;
@@ -74,7 +75,20 @@ export const createDeal = async (input: CreateDealInput, ownerId: string | null)
     .select()
     .single();
   if (error) throw error;
-  return mapDeal(data);
+  const deal = mapDeal(data);
+  tryLogActivity(
+    {
+      organizationId: deal.organizationId,
+      type: 'deal_created',
+      dealId: deal.id,
+      contactId: deal.contactId,
+      companyId: deal.companyId,
+      description: deal.name,
+      metadata: { value: deal.value },
+    },
+    ownerId,
+  );
+  return deal;
 };
 
 export const updateDeal = async (id: string, input: UpdateDealInput): Promise<CrmDeal> => {
@@ -104,6 +118,7 @@ export const moveDealToStage = async (
   id: string,
   stageId: string,
   stageStatus: DealStatus,
+  stageName?: string,
 ): Promise<CrmDeal> => {
   const { data, error } = await supabase
     .from('crm_deals')
@@ -112,7 +127,24 @@ export const moveDealToStage = async (
     .select()
     .single();
   if (error) throw error;
-  return mapDeal(data);
+  const deal = mapDeal(data);
+  const activityType =
+    stageStatus === 'won' ? 'deal_won'
+    : stageStatus === 'lost' ? 'deal_lost'
+    : 'deal_stage_changed';
+  tryLogActivity(
+    {
+      organizationId: deal.organizationId,
+      type: activityType,
+      dealId: deal.id,
+      contactId: deal.contactId,
+      companyId: deal.companyId,
+      description: stageName ? `Moved to ${stageName}` : null,
+      metadata: { stageId, stageStatus },
+    },
+    deal.ownerId,
+  );
+  return deal;
 };
 
 export const deleteDeal = async (id: string): Promise<void> => {

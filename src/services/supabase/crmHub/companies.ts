@@ -1,5 +1,6 @@
 import { supabase } from '../config';
 import type { CrmCompany, CreateCompanyInput, UpdateCompanyInput } from '@/types/crmHub';
+import { tryLogActivity } from './activities';
 
 interface CompanyRow {
   id: string;
@@ -75,7 +76,17 @@ export const createCompany = async (input: CreateCompanyInput, ownerId: string |
     .select()
     .single();
   if (error) throw error;
-  return mapCompany(data);
+  const company = mapCompany(data);
+  tryLogActivity(
+    {
+      organizationId: company.organizationId,
+      type: 'company_created',
+      companyId: company.id,
+      description: company.name,
+    },
+    ownerId,
+  );
+  return company;
 };
 
 export const updateCompany = async (id: string, input: UpdateCompanyInput): Promise<CrmCompany> => {
