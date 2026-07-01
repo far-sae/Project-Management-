@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { Plus, Search, Trash2, Loader2, Check, Circle, CircleDashed } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Plus, Trash2, Loader2, Check, Circle, CircleDashed, Pencil,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -13,7 +15,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -27,18 +28,61 @@ import {
 
 const humanize = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-const priorityColor: Record<TaskPriority, string> = {
-  low: 'bg-slate-500/10 text-slate-500',
-  medium: 'bg-blue-500/10 text-blue-500',
-  high: 'bg-amber-500/10 text-amber-500',
-  urgent: 'bg-destructive/10 text-destructive',
+// Filled pill badges for priority (matches the screenshot).
+const priorityBadge: Record<TaskPriority, string> = {
+  low: 'bg-slate-500/25 text-slate-200 border-slate-500/30',
+  medium: 'bg-slate-500/25 text-slate-200 border-slate-500/30',
+  high: 'bg-orange-500 text-white border-orange-500',
+  urgent: 'bg-red-500 text-white border-red-500',
 };
 
-const StatusIcon: React.FC<{ status: TaskStatus }> = ({ status }) => {
-  if (status === 'completed') return <Check className="w-4 h-4 text-emerald-500" />;
-  if (status === 'in_progress') return <CircleDashed className="w-4 h-4 text-amber-500" />;
-  return <Circle className="w-4 h-4 text-muted-foreground" />;
+// Outline pill badges for status.
+const statusBadge: Record<TaskStatus, string> = {
+  pending: 'border-slate-500/40 text-slate-300 bg-transparent',
+  in_progress: 'border-blue-500/40 text-blue-400 bg-transparent',
+  completed: 'border-emerald-500/40 text-emerald-400 bg-transparent',
 };
+
+const StatusCircle: React.FC<{ status: TaskStatus; onClick: () => void; busy: boolean }> = ({ status, onClick, busy }) => {
+  if (busy) return <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />;
+  if (status === 'completed') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="grid place-items-center w-5 h-5 rounded-full bg-primary text-primary-foreground hover:opacity-80"
+        title="Mark pending"
+      >
+        <Check className="w-3 h-3" />
+      </button>
+    );
+  }
+  if (status === 'in_progress') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="grid place-items-center w-5 h-5 rounded-full ring-2 ring-primary text-primary hover:bg-primary/10"
+        title="Mark completed"
+      >
+        <CircleDashed className="w-3 h-3" />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="grid place-items-center w-5 h-5 rounded-full border border-muted-foreground/40 hover:border-primary hover:text-primary text-muted-foreground"
+      title="Mark in progress"
+    >
+      <Circle className="w-3 h-3 opacity-0" />
+    </button>
+  );
+};
+
+const formatDue = (d: Date): string =>
+  `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}, ${d.toLocaleTimeString(undefined, { hour12: false })}`;
 
 const nextStatus = (s: TaskStatus): TaskStatus =>
   s === 'pending' ? 'in_progress' : s === 'in_progress' ? 'completed' : 'pending';
@@ -52,13 +96,15 @@ export const CrmTasksPage: React.FC = () => {
   const { items: deals } = useCrmDeals();
   const workspaceId = useWorkspaceForCreate();
 
-  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
+  const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'all'>('all');
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<CrmTask | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
 
+  // shared form state for both create + edit dialogs
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -68,30 +114,32 @@ export const CrmTasksPage: React.FC = () => {
   const [companyId, setCompanyId] = useState('');
   const [dealId, setDealId] = useState('');
 
-  const contactById = useMemo(
-    () => new Map(contacts.map((c) => [c.id, `${c.firstName} ${c.lastName ?? ''}`.trim()])),
-    [contacts],
-  );
-  const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c.name])), [companies]);
-  const dealById = useMemo(() => new Map(deals.map((d) => [d.id, d.name])), [deals]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return tasks.filter((t) => {
-      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
-      if (!q) return true;
-      return (
-        t.title.toLowerCase().includes(q) ||
-        (t.description?.toLowerCase().includes(q) ?? false)
-      );
-    });
-  }, [tasks, search, statusFilter]);
-
   const resetForm = () => {
     setTitle(''); setDescription(''); setDueDate('');
     setPriority('medium'); setStatus('pending');
     setContactId(''); setCompanyId(''); setDealId('');
   };
+
+  // When the edit dialog opens, prefill the shared form state from the task.
+  useEffect(() => {
+    if (!editing) return;
+    setTitle(editing.title);
+    setDescription(editing.description ?? '');
+    setDueDate(editing.dueDate ? editing.dueDate.toISOString().slice(0, 16) : '');
+    setPriority(editing.priority);
+    setStatus(editing.status);
+    setContactId(editing.contactId ?? '');
+    setCompanyId(editing.companyId ?? '');
+    setDealId(editing.dealId ?? '');
+  }, [editing]);
+
+  const filtered = useMemo(() => {
+    return tasks.filter((t) => {
+      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+      if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
+      return true;
+    });
+  }, [tasks, statusFilter, priorityFilter]);
 
   const handleCreate = async () => {
     if (!organization) return;
@@ -119,6 +167,32 @@ export const CrmTasksPage: React.FC = () => {
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create task');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing) return;
+    if (!title.trim()) { toast.error('Title is required'); return; }
+    setBusy(true);
+    try {
+      await updateTask(editing.id, {
+        title: title.trim(),
+        description: description.trim() || null,
+        dueDate: dueDate || null,
+        priority,
+        status,
+        contactId: contactId || null,
+        companyId: companyId || null,
+        dealId: dealId || null,
+      });
+      toast.success('Task updated');
+      setEditing(null);
+      resetForm();
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update task');
     } finally {
       setBusy(false);
     }
@@ -157,26 +231,20 @@ export const CrmTasksPage: React.FC = () => {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Tasks</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Follow-ups tied to a contact, company, or deal.
+              Stay on top of follow-ups and deadlines.
             </p>
           </div>
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => { resetForm(); setShowCreate(true); }} className="bg-primary hover:bg-primary/90">
             <Plus className="w-4 h-4 mr-2" /> New task
           </Button>
         </div>
 
+        {/* Filters — two side-by-side dropdowns like the screenshot */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by title or description…"
-              className="pl-9"
-            />
-          </div>
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as TaskStatus | 'all')}>
-            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-52 rounded-full bg-card/60 border-border">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               {TASK_STATUSES.map((s) => (
@@ -184,174 +252,156 @@ export const CrmTasksPage: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
+          <Select value={priorityFilter} onValueChange={(v) => setPriorityFilter(v as TaskPriority | 'all')}>
+            <SelectTrigger className="w-52 rounded-full bg-card/60 border-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All priorities</SelectItem>
+              {TASK_PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p}>{humanize(p)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{filtered.length} task{filtered.length === 1 ? '' : 's'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="py-12 text-center">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto" />
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                {search || statusFilter !== 'all' ? 'No tasks match your filters.' : 'No tasks yet.'}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filtered.map((t) => {
-                  const linkedLabel = t.dealId
-                    ? `Deal · ${dealById.get(t.dealId) ?? '(deleted)'}`
-                    : t.contactId
-                    ? `Contact · ${contactById.get(t.contactId) ?? '(deleted)'}`
-                    : t.companyId
-                    ? `Company · ${companyById.get(t.companyId) ?? '(deleted)'}`
-                    : null;
-                  const overdue = t.dueDate && t.status !== 'completed' && t.dueDate.getTime() < Date.now();
-                  return (
-                    <div
-                      key={t.id}
-                      className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-muted/40 transition-colors"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void handleAdvance(t)}
-                        disabled={statusBusyId === t.id}
-                        className="mt-1 shrink-0"
-                        title="Cycle status"
+        {/* Table */}
+        <div className="rounded-2xl border border-border bg-card/40 overflow-hidden">
+          {loading ? (
+            <div className="py-16 text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-16 text-center text-muted-foreground">
+              {statusFilter !== 'all' || priorityFilter !== 'all' ? 'No tasks match your filters.' : 'No tasks yet.'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-muted-foreground border-b border-border">
+                    <th className="w-10 py-3 pl-6" />
+                    <th className="py-3 pr-4 font-medium">Title</th>
+                    <th className="py-3 pr-4 font-medium">Due</th>
+                    <th className="py-3 pr-4 font-medium">Priority</th>
+                    <th className="py-3 pr-4 font-medium">Status</th>
+                    <th className="py-3 pr-6 w-24" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((t) => {
+                    const overdue = t.dueDate && t.status !== 'completed' && t.dueDate.getTime() < Date.now();
+                    return (
+                      <tr
+                        key={t.id}
+                        className="border-b border-border/40 last:border-b-0 hover:bg-muted/20 transition-colors"
                       >
-                        {statusBusyId === t.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                        ) : (
-                          <StatusIcon status={t.status} />
-                        )}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className={`font-medium text-sm ${t.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                        <td className="py-3 pl-6">
+                          <StatusCircle
+                            status={t.status}
+                            onClick={() => void handleAdvance(t)}
+                            busy={statusBusyId === t.id}
+                          />
+                        </td>
+                        <td className="py-3 pr-4">
+                          <button
+                            type="button"
+                            onClick={() => setEditing(t)}
+                            className={`font-semibold text-left ${t.status === 'completed' ? 'line-through text-muted-foreground' : 'text-foreground'} hover:text-primary`}
+                          >
                             {t.title}
-                          </div>
-                          <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${priorityColor[t.priority]}`}>
+                          </button>
+                        </td>
+                        <td className={`py-3 pr-4 ${overdue ? 'text-red-500 font-semibold' : 'text-foreground/80'}`}>
+                          {t.dueDate ? formatDue(t.dueDate) : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span className={`inline-block px-3 py-0.5 rounded-full text-xs font-medium capitalize border ${priorityBadge[t.priority]}`}>
                             {t.priority}
                           </span>
-                          {overdue && (
-                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
-                              overdue
-                            </span>
-                          )}
-                        </div>
-                        {t.description && (
-                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.description}</p>
-                        )}
-                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                          {t.dueDate && <span>Due {t.dueDate.toLocaleDateString()}</span>}
-                          {linkedLabel && <span>{linkedLabel}</span>}
-                        </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setConfirmDelete(t.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <span className={`inline-block px-3 py-0.5 rounded-full text-xs font-medium capitalize border ${statusBadge[t.status]}`}>
+                            {humanize(t.status)}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-6">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditing(t)}
+                              className="text-muted-foreground hover:text-foreground h-8 w-8 p-0"
+                              title="Edit"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setConfirmDelete(t.id)}
+                              className="text-red-500 hover:text-red-600 h-8 w-8 p-0"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* Create dialog */}
       <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>New task</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="ttitle">Title *</Label>
-              <Input id="ttitle" value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} />
-            </div>
-            <div>
-              <Label htmlFor="tdesc">Description</Label>
-              <Textarea id="tdesc" value={description} onChange={(e) => setDescription(e.target.value)} disabled={busy} rows={2} />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label htmlFor="tdue">Due date</Label>
-                <Input id="tdue" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={busy} />
-              </div>
-              <div>
-                <Label>Priority</Label>
-                <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)} disabled={busy}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TASK_PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p}>{humanize(p)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Status</Label>
-                <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)} disabled={busy}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TASK_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>Contact</Label>
-                <Select value={contactId || '__none__'} onValueChange={(v) => setContactId(v === '__none__' ? '' : v)} disabled={busy}>
-                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {contacts.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.firstName} {c.lastName ?? ''}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Company</Label>
-                <Select value={companyId || '__none__'} onValueChange={(v) => setCompanyId(v === '__none__' ? '' : v)} disabled={busy}>
-                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {companies.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Deal</Label>
-                <Select value={dealId || '__none__'} onValueChange={(v) => setDealId(v === '__none__' ? '' : v)} disabled={busy}>
-                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {deals.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
+          <DialogHeader><DialogTitle>New task</DialogTitle></DialogHeader>
+          <TaskFormFields
+            title={title} setTitle={setTitle}
+            description={description} setDescription={setDescription}
+            dueDate={dueDate} setDueDate={setDueDate}
+            priority={priority} setPriority={setPriority}
+            status={status} setStatus={setStatus}
+            contactId={contactId} setContactId={setContactId}
+            companyId={companyId} setCompanyId={setCompanyId}
+            dealId={dealId} setDealId={setDealId}
+            contacts={contacts} companies={companies} deals={deals}
+            busy={busy}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleCreate} disabled={busy || !title.trim()}>
               {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog — same fields, prefilled from `editing` */}
+      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) { setEditing(null); resetForm(); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Edit task</DialogTitle></DialogHeader>
+          <TaskFormFields
+            title={title} setTitle={setTitle}
+            description={description} setDescription={setDescription}
+            dueDate={dueDate} setDueDate={setDueDate}
+            priority={priority} setPriority={setPriority}
+            status={status} setStatus={setStatus}
+            contactId={contactId} setContactId={setContactId}
+            companyId={companyId} setCompanyId={setCompanyId}
+            dealId={dealId} setDealId={setDealId}
+            contacts={contacts} companies={companies} deals={deals}
+            busy={busy}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditing(null); resetForm(); }} disabled={busy}>Cancel</Button>
+            <Button onClick={handleSaveEdit} disabled={busy || !title.trim()}>
+              {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Save
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -378,5 +428,106 @@ export const CrmTasksPage: React.FC = () => {
     </main>
   );
 };
+
+// ─── Shared form fields for Create + Edit dialogs ─────────────────
+
+interface FieldsProps {
+  title: string; setTitle: (v: string) => void;
+  description: string; setDescription: (v: string) => void;
+  dueDate: string; setDueDate: (v: string) => void;
+  priority: TaskPriority; setPriority: (v: TaskPriority) => void;
+  status: TaskStatus; setStatus: (v: TaskStatus) => void;
+  contactId: string; setContactId: (v: string) => void;
+  companyId: string; setCompanyId: (v: string) => void;
+  dealId: string; setDealId: (v: string) => void;
+  contacts: { id: string; firstName: string; lastName: string | null }[];
+  companies: { id: string; name: string }[];
+  deals: { id: string; name: string }[];
+  busy: boolean;
+}
+
+const TaskFormFields: React.FC<FieldsProps> = ({
+  title, setTitle, description, setDescription, dueDate, setDueDate,
+  priority, setPriority, status, setStatus,
+  contactId, setContactId, companyId, setCompanyId, dealId, setDealId,
+  contacts, companies, deals, busy,
+}) => (
+  <div className="space-y-3">
+    <div>
+      <Label htmlFor="ttitle">Title *</Label>
+      <Input id="ttitle" value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} />
+    </div>
+    <div>
+      <Label htmlFor="tdesc">Description</Label>
+      <Textarea id="tdesc" value={description} onChange={(e) => setDescription(e.target.value)} disabled={busy} rows={2} />
+    </div>
+    <div className="grid grid-cols-3 gap-3">
+      <div>
+        <Label htmlFor="tdue">Due date</Label>
+        <Input id="tdue" type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={busy} />
+      </div>
+      <div>
+        <Label>Priority</Label>
+        <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)} disabled={busy}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {TASK_PRIORITIES.map((p) => (
+              <SelectItem key={p} value={p}>{humanize(p)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Status</Label>
+        <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)} disabled={busy}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {TASK_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+    <div className="grid grid-cols-3 gap-3">
+      <div>
+        <Label>Lead</Label>
+        <Select value={contactId || '__none__'} onValueChange={(v) => setContactId(v === '__none__' ? '' : v)} disabled={busy}>
+          <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— None —</SelectItem>
+            {contacts.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.firstName} {c.lastName ?? ''}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Business</Label>
+        <Select value={companyId || '__none__'} onValueChange={(v) => setCompanyId(v === '__none__' ? '' : v)} disabled={busy}>
+          <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— None —</SelectItem>
+            {companies.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Contract</Label>
+        <Select value={dealId || '__none__'} onValueChange={(v) => setDealId(v === '__none__' ? '' : v)} disabled={busy}>
+          <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— None —</SelectItem>
+            {deals.map((d) => (
+              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  </div>
+);
 
 export default CrmTasksPage;

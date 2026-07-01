@@ -67,7 +67,7 @@ export const CrmCompaniesPage: React.FC = () => {
 
   const handleCreate = async () => {
     if (!organization) return;
-    if (!name.trim()) { toast.error('Company name is required'); return; }
+    if (!name.trim()) { toast.error('Business name is required'); return; }
     setBusy(true);
     try {
       await createCompany(
@@ -88,12 +88,12 @@ export const CrmCompaniesPage: React.FC = () => {
         },
         user?.userId ?? null,
       );
-      toast.success('Company created');
+      toast.success('Business created');
       resetForm();
       setShowCreate(false);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create company');
+      toast.error(err instanceof Error ? err.message : 'Could not create business');
     } finally {
       setBusy(false);
     }
@@ -103,11 +103,11 @@ export const CrmCompaniesPage: React.FC = () => {
     setBusy(true);
     try {
       await deleteCompany(id);
-      toast.success('Company deleted');
+      toast.success('Business deleted');
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete company');
+      toast.error(err instanceof Error ? err.message : 'Could not delete business');
     } finally {
       setBusy(false);
     }
@@ -118,9 +118,9 @@ export const CrmCompaniesPage: React.FC = () => {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Companies</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Business</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              The businesses your contacts work for.
+              The businesses your leads work for.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -136,12 +136,12 @@ export const CrmCompaniesPage: React.FC = () => {
                 company_size: c.companySize ?? '', annual_revenue: c.annualRevenue ?? '',
               })));
               downloadCSV('companies.csv', csv);
-              toast.success(`Exported ${filtered.length} companies`);
+              toast.success(`Exported ${filtered.length} businesses`);
             }}>
               <Download className="w-4 h-4 mr-2" /> Export CSV
             </Button>
             <Button onClick={() => setShowCreate(true)}>
-              <Plus className="w-4 h-4 mr-2" /> New company
+              <Plus className="w-4 h-4 mr-2" /> New business
             </Button>
           </div>
         </div>
@@ -158,7 +158,7 @@ export const CrmCompaniesPage: React.FC = () => {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">{filtered.length} compan{filtered.length === 1 ? 'y' : 'ies'}</CardTitle>
+            <CardTitle className="text-base">{filtered.length} business{filtered.length === 1 ? '' : 'es'}</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -167,7 +167,7 @@ export const CrmCompaniesPage: React.FC = () => {
               </div>
             ) : filtered.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
-                {search ? 'No companies match your search.' : 'No companies yet. Create your first one.'}
+                {search ? 'No businesses match your search.' : 'No businesses yet. Create your first one.'}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -232,7 +232,7 @@ export const CrmCompaniesPage: React.FC = () => {
       <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>New company</DialogTitle>
+            <DialogTitle>New business</DialogTitle>
             <DialogDescription>Add a business to your CRM.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -308,9 +308,9 @@ export const CrmCompaniesPage: React.FC = () => {
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this company?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this business?</AlertDialogTitle>
             <AlertDialogDescription>
-              Contacts and deals linked to this company will lose the reference. This can't be undone.
+              Leads and contracts linked to this business will lose the reference. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

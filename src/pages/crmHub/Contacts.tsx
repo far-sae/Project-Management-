@@ -86,7 +86,7 @@ export const CrmContactsPage: React.FC = () => {
       lead_status: c.leadStatus,
     })));
     downloadCSV('contacts.csv', csv);
-    toast.success(`Exported ${filtered.length} contacts`);
+    toast.success(`Exported ${filtered.length} leads`);
   };
 
   const resetForm = () => {
@@ -114,12 +114,12 @@ export const CrmContactsPage: React.FC = () => {
         },
         user?.userId ?? null,
       );
-      toast.success('Contact created');
+      toast.success('Lead created');
       resetForm();
       setShowCreate(false);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create contact');
+      toast.error(err instanceof Error ? err.message : 'Could not create lead');
     } finally {
       setBusy(false);
     }
@@ -129,11 +129,11 @@ export const CrmContactsPage: React.FC = () => {
     setBusy(true);
     try {
       await deleteContact(id);
-      toast.success('Contact deleted');
+      toast.success('Lead deleted');
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete contact');
+      toast.error(err instanceof Error ? err.message : 'Could not delete lead');
     } finally {
       setBusy(false);
     }
@@ -144,7 +144,7 @@ export const CrmContactsPage: React.FC = () => {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Contacts</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Leads</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Every person in your pipeline — sorted by first name.
             </p>
@@ -157,7 +157,7 @@ export const CrmContactsPage: React.FC = () => {
               <Download className="w-4 h-4 mr-2" /> Export CSV
             </Button>
             <Button onClick={() => setShowCreate(true)}>
-              <Plus className="w-4 h-4 mr-2" /> New contact
+              <Plus className="w-4 h-4 mr-2" /> New lead
             </Button>
           </div>
         </div>
@@ -170,7 +170,7 @@ export const CrmContactsPage: React.FC = () => {
               view === 'all' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            All contacts
+            All leads
           </button>
           <button
             type="button"
@@ -179,7 +179,7 @@ export const CrmContactsPage: React.FC = () => {
               view === 'mine' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            My contacts
+            My leads
           </button>
         </div>
 
@@ -206,7 +206,7 @@ export const CrmContactsPage: React.FC = () => {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">{filtered.length} contact{filtered.length === 1 ? '' : 's'}</CardTitle>
+            <CardTitle className="text-base">{filtered.length} lead{filtered.length === 1 ? '' : 's'}</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -215,7 +215,7 @@ export const CrmContactsPage: React.FC = () => {
               </div>
             ) : filtered.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
-                {search ? 'No contacts match your search.' : 'No contacts yet. Create your first one.'}
+                {search ? 'No leads match your search.' : 'No leads yet. Create your first one.'}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -300,7 +300,7 @@ export const CrmContactsPage: React.FC = () => {
       <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>New contact</DialogTitle>
+            <DialogTitle>New lead</DialogTitle>
             <DialogDescription>Add a person to your pipeline.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -384,9 +384,9 @@ export const CrmContactsPage: React.FC = () => {
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this contact?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
             <AlertDialogDescription>
-              This can't be undone. Any deals or activities linked to this contact will lose the reference.
+              This can't be undone. Any contracts or activities linked to this lead will lose the reference.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

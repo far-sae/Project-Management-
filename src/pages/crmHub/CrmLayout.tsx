@@ -16,9 +16,9 @@ interface Tab {
 
 const TABS: Tab[] = [
   { to: '/crm/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/crm/contacts', label: 'Contacts', icon: Contact },
-  { to: '/crm/companies', label: 'Companies', icon: Building2 },
-  { to: '/crm/deals', label: 'Deals', icon: Handshake },
+  { to: '/crm/contacts', label: 'Leads', icon: Contact },
+  { to: '/crm/companies', label: 'Business', icon: Building2 },
+  { to: '/crm/deals', label: 'Contract', icon: Handshake },
   { to: '/crm/tasks', label: 'Tasks', icon: ListChecks },
   { to: '/crm/activity', label: 'Activity', icon: Waypoints },
   { to: '/crm/calendar', label: 'Calendar', icon: CalendarRange },

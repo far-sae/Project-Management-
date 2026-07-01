@@ -140,7 +140,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
     <main className="flex-1 min-w-0 overflow-y-auto bg-background">
       <div className="flex items-center justify-between border-b border-border bg-card/40 px-4 py-2 sm:px-6">
         <Button variant="ghost" size="sm" asChild className="gap-1">
-          <Link to="/crm/companies"><ChevronLeft className="h-4 w-4" />Companies</Link>
+          <Link to="/crm/companies"><ChevronLeft className="h-4 w-4" />Business</Link>
         </Button>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
