@@ -64,7 +64,7 @@ const QUICK_ITEMS_FULL = [
   { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
-  { icon: Handshake, label: 'CRM', href: '/crm', page: 'crm' as PageKey },
+  { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
   { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
 ];
 
@@ -236,7 +236,9 @@ export const Sidebar: React.FC = () => {
           items={
             canSeePeopleOps
               ? QUICK_ITEMS_FULL.filter(
-                  (i) => i.href !== '/team' || hasFeature('team_collaboration'),
+                  (i) =>
+                    (i.href !== '/team' || hasFeature('team_collaboration')) &&
+                    (i.href !== '/crm' || hasFeature('crm')),
                 )
               : isViewer
                 ? QUICK_ITEMS_VIEWER

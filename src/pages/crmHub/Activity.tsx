@@ -6,7 +6,7 @@ import {
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
 import {
-  useCrmActivities, useCrmContacts, useCrmCompanies, useCrmDeals,
+  useCrmActivities, useCrmContacts, useCrmCompanies, useCrmDeals, useWorkspaceForCreate,
 } from '@/hooks/useCrmHub';
 import { logActivity } from '@/services/supabase/crmHub/activities';
 import { MANUAL_ACTIVITY_TYPES } from '@/types/crmHub';
@@ -79,6 +79,7 @@ export const CrmActivityPage: React.FC = () => {
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const { items: deals } = useCrmDeals();
+  const workspaceId = useWorkspaceForCreate();
 
   const [filter, setFilter] = useState<ActivityType | 'all'>('all');
   const [showLog, setShowLog] = useState(false);
@@ -115,6 +116,7 @@ export const CrmActivityPage: React.FC = () => {
       await logActivity(
         {
           organizationId: organization.organizationId,
+          workspaceId,
           type: logType,
           description: description.trim(),
           contactId: contactId || null,

@@ -1,9 +1,11 @@
 import { supabase } from '../config';
 import type { CrmActivity, CreateActivityInput, ActivityType } from '@/types/crmHub';
+import { applyWorkspaceFilter } from './workspaceFilter';
 
 interface ActivityRow {
   id: string;
   organization_id: string;
+  workspace_id: string | null;
   user_id: string | null;
   type: ActivityType;
   description: string | null;
@@ -18,6 +20,7 @@ interface ActivityRow {
 const mapActivity = (r: ActivityRow): CrmActivity => ({
   id: r.id,
   organizationId: r.organization_id,
+  workspaceId: r.workspace_id ?? null,
   userId: r.user_id,
   type: r.type,
   description: r.description,
@@ -37,7 +40,10 @@ interface ListOptions {
   limit?: number;
 }
 
-export const listActivities = async (organizationId: string, opts: ListOptions = {}): Promise<CrmActivity[]> => {
+export const listActivities = async (
+  organizationId: string,
+  opts: ListOptions & { workspaceId?: string | null } = {},
+): Promise<CrmActivity[]> => {
   let q = supabase
     .from('crm_activities')
     .select('*')
@@ -48,6 +54,7 @@ export const listActivities = async (organizationId: string, opts: ListOptions =
   if (opts.companyId) q = q.eq('company_id', opts.companyId);
   if (opts.dealId) q = q.eq('deal_id', opts.dealId);
   if (opts.type) q = q.eq('type', opts.type);
+  q = applyWorkspaceFilter(q, opts.workspaceId);
   if (opts.limit) q = q.limit(opts.limit);
 
   const { data, error } = await q;
@@ -65,6 +72,7 @@ export const logActivity = async (
     .from('crm_activities')
     .insert({
       organization_id: input.organizationId,
+      workspace_id: input.workspaceId ?? null,
       user_id: userId,
       type: input.type,
       description: input.description ?? null,

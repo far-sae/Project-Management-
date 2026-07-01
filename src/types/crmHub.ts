@@ -57,6 +57,7 @@ export interface CrmDealStage {
 export interface CrmCompany {
   id: string;
   organizationId: string;
+  workspaceId: string | null;
   ownerId: string | null;
   name: string;
   website: string | null;
@@ -77,6 +78,7 @@ export interface CrmCompany {
 export interface CrmContact {
   id: string;
   organizationId: string;
+  workspaceId: string | null;
   ownerId: string | null;
   companyId: string | null;
   firstName: string;
@@ -108,7 +110,8 @@ export interface CrmDeal {
   source: string | null;
   notes: string | null;
   sortOrder: number;
-  /** Set when the deal has been handed off to project management. */
+  /** Set when the deal has been handed off to project management (also
+   *  serves as the workspace-scope for pipeline filtering). */
   workspaceId: string | null;
   /** Set when the deal has been handed off to a specific project. */
   projectId: string | null;
@@ -118,6 +121,7 @@ export interface CrmDeal {
 
 export interface CreateCompanyInput {
   organizationId: string;
+  workspaceId?: string | null;
   name: string;
   website?: string | null;
   industry?: string | null;
@@ -135,6 +139,7 @@ export type UpdateCompanyInput = Partial<Omit<CreateCompanyInput, 'organizationI
 
 export interface CreateContactInput {
   organizationId: string;
+  workspaceId?: string | null;
   firstName: string;
   lastName?: string | null;
   email?: string | null;
@@ -151,6 +156,7 @@ export type UpdateContactInput = Partial<Omit<CreateContactInput, 'organizationI
 
 export interface CreateDealInput {
   organizationId: string;
+  workspaceId?: string | null;
   name: string;
   stageId: string;
   value?: number;
@@ -173,6 +179,7 @@ export const TASK_STATUSES: TaskStatus[] = ['pending', 'in_progress', 'completed
 export interface CrmTask {
   id: string;
   organizationId: string;
+  workspaceId: string | null;
   ownerId: string | null;
   assignedTo: string | null;
   contactId: string | null;
@@ -190,6 +197,7 @@ export interface CrmTask {
 
 export interface CreateTaskInput {
   organizationId: string;
+  workspaceId?: string | null;
   title: string;
   description?: string | null;
   dueDate?: string | null;
@@ -222,6 +230,7 @@ export const MANUAL_ACTIVITY_TYPES: ActivityType[] = ['note', 'call', 'email', '
 export interface CrmActivity {
   id: string;
   organizationId: string;
+  workspaceId: string | null;
   userId: string | null;
   type: ActivityType;
   description: string | null;
@@ -235,6 +244,7 @@ export interface CrmActivity {
 
 export interface CreateActivityInput {
   organizationId: string;
+  workspaceId?: string | null;
   type: ActivityType;
   description?: string | null;
   contactId?: string | null;
@@ -247,6 +257,7 @@ export interface CreateActivityInput {
 export interface CrmNote {
   id: string;
   organizationId: string;
+  workspaceId: string | null;
   userId: string | null;
   body: string;
   contactId: string | null;
@@ -258,6 +269,7 @@ export interface CrmNote {
 
 export interface CreateNoteInput {
   organizationId: string;
+  workspaceId?: string | null;
   body: string;
   contactId?: string | null;
   companyId?: string | null;

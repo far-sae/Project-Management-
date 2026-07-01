@@ -294,7 +294,7 @@ const router = createBrowserRouter(
             {
               path: '/crm',
               element: (
-                <ProtectedRoute requireSubscription requirePage="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
                   {lazyAppRoute(<CrmLayout />)}
                 </ProtectedRoute>
               ),

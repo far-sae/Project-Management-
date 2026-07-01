@@ -4,7 +4,7 @@ import { Plus, Search, Trash2, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useCrmCompanies } from '@/hooks/useCrmHub';
+import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { createCompany, deleteCompany } from '@/services/supabase/crmHub/companies';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,7 @@ export const CrmCompaniesPage: React.FC = () => {
   const { organization } = useOrganization();
   const { items: companies, loading, refresh } = useCrmCompanies();
   const orgCurrency = useCrmCurrency();
+  const workspaceId = useWorkspaceForCreate();
 
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -72,6 +73,7 @@ export const CrmCompaniesPage: React.FC = () => {
       await createCompany(
         {
           organizationId: organization.organizationId,
+          workspaceId,
           name: name.trim(),
           website: website.trim() || null,
           industry: industry.trim() || null,

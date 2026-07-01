@@ -78,6 +78,8 @@ const plans = [
       "Team collaboration",
       "Advanced analytics",
       "Timeline & Contracts",
+      "CRM: Contacts, Companies, Deals + Reports",
+      "Deal-Won → workspace/project handoff",
       "Priority support",
     ],
     cta: "Get Started",

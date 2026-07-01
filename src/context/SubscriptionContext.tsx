@@ -30,6 +30,7 @@ export type AppFeature =
   | "contracts"
   | "ai_assistant"
   | "reports"
+  | "crm"
   | "api_access"
   | "custom_integrations";
 
@@ -51,6 +52,7 @@ const FEATURE_TIERS: Record<AppFeature, Array<SubscriptionTier | "trial" | "star
   advanced_analytics: ["trial", "advanced", "premium"],
   timeline_overview: ["trial", "advanced", "premium"],
   contracts: ["trial", "advanced", "premium"],
+  crm: ["trial", "advanced", "premium"],
   api_access: ["premium"],
   custom_integrations: ["premium"],
 };

@@ -3,10 +3,12 @@ import type {
   CrmTask, CreateTaskInput, UpdateTaskInput, TaskPriority, TaskStatus,
 } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
+import { applyWorkspaceFilter } from './workspaceFilter';
 
 interface TaskRow {
   id: string;
   organization_id: string;
+  workspace_id: string | null;
   owner_id: string | null;
   assigned_to: string | null;
   contact_id: string | null;
@@ -25,6 +27,7 @@ interface TaskRow {
 const mapTask = (r: TaskRow): CrmTask => ({
   id: r.id,
   organizationId: r.organization_id,
+  workspaceId: r.workspace_id ?? null,
   ownerId: r.owner_id,
   assignedTo: r.assigned_to,
   contactId: r.contact_id,
@@ -46,7 +49,10 @@ interface ListTasksOptions {
   dealId?: string;
 }
 
-export const listTasks = async (organizationId: string, opts: ListTasksOptions = {}): Promise<CrmTask[]> => {
+export const listTasks = async (
+  organizationId: string,
+  opts: ListTasksOptions & { workspaceId?: string | null } = {},
+): Promise<CrmTask[]> => {
   let q = supabase
     .from('crm_tasks')
     .select('*')
@@ -56,6 +62,7 @@ export const listTasks = async (organizationId: string, opts: ListTasksOptions =
   if (opts.contactId) q = q.eq('contact_id', opts.contactId);
   if (opts.companyId) q = q.eq('company_id', opts.companyId);
   if (opts.dealId) q = q.eq('deal_id', opts.dealId);
+  q = applyWorkspaceFilter(q, opts.workspaceId);
   const { data, error } = await q;
   if (error) throw error;
   return (data ?? []).map(mapTask);
@@ -66,6 +73,7 @@ export const createTask = async (input: CreateTaskInput, ownerId: string | null)
     .from('crm_tasks')
     .insert({
       organization_id: input.organizationId,
+      workspace_id: input.workspaceId ?? null,
       owner_id: ownerId,
       assigned_to: input.assignedTo ?? ownerId,
       contact_id: input.contactId ?? null,

@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { supabase } from '@/services/supabase/config';
 import { parseCSV } from '@/lib/csv';
 import {
@@ -86,6 +87,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
+  const workspaceId = useWorkspaceForCreate();
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -131,6 +133,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
       const payload = rows.map((r) => {
         const o: Record<string, unknown> = {
           organization_id: orgId,
+          workspace_id: workspaceId,
           owner_id: user?.userId ?? null,
         };
         for (const [header, key] of Object.entries(mapping)) {

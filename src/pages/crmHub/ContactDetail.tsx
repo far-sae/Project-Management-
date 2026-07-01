@@ -157,7 +157,7 @@ export const CrmContactDetailPage: React.FC = () => {
     if (!orgId || !noteBody.trim()) return;
     setBusy(true);
     try {
-      await createNote({ organizationId: orgId, body: noteBody.trim(), contactId: id }, user?.userId ?? null);
+      await createNote({ organizationId: orgId, workspaceId: contact?.workspaceId ?? null, body: noteBody.trim(), contactId: id }, user?.userId ?? null);
       toast.success('Note added');
       setNoteBody('');
       await refresh();
@@ -174,6 +174,7 @@ export const CrmContactDetailPage: React.FC = () => {
     try {
       await logActivity({
         organizationId: orgId,
+        workspaceId: contact?.workspaceId ?? null,
         type: logType,
         description: logBody.trim(),
         contactId: id,
@@ -554,6 +555,7 @@ export const CrmContactDetailPage: React.FC = () => {
                 try {
                   await createTask({
                     organizationId: orgId,
+                    workspaceId: contact.workspaceId ?? null,
                     title: taskTitle.trim(),
                     dueDate: taskDueDate || null,
                     priority: taskPriority,

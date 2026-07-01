@@ -9,7 +9,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
-  useCrmDeals, useCrmDealStages, useCrmContacts, useCrmCompanies,
+  useCrmDeals, useCrmDealStages, useCrmContacts, useCrmCompanies, useWorkspaceForCreate,
 } from '@/hooks/useCrmHub';
 import { createDeal, moveDealToStage } from '@/services/supabase/crmHub/deals';
 import type { CrmDeal, CrmDealStage } from '@/types/crmHub';
@@ -112,6 +112,7 @@ export const CrmDealsPage: React.FC = () => {
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const { format: fmtCurrency } = useCrmCurrency();
+  const workspaceId = useWorkspaceForCreate();
 
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -174,6 +175,7 @@ export const CrmDealsPage: React.FC = () => {
       await createDeal(
         {
           organizationId: organization.organizationId,
+          workspaceId,
           name: name.trim(),
           stageId,
           value: Number(value) || 0,

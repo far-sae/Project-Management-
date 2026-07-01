@@ -8,6 +8,7 @@ import { listDealStages, seedDefaultDealStages } from '@/services/supabase/crmHu
 import { listTasks } from '@/services/supabase/crmHub/tasks';
 import { listActivities } from '@/services/supabase/crmHub/activities';
 import { listTags, listContactTagsMap } from '@/services/supabase/crmHub/tags';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import type { CrmActivity, CrmCompany, CrmContact, CrmDeal, CrmDealStage, CrmTag, CrmTask } from '@/types/crmHub';
 
 interface UseListResult<T> {
@@ -24,8 +25,40 @@ const useOrgId = () => {
   return organization?.organizationId ?? null;
 };
 
+/**
+ * Maps the sidebar workspace switcher's state to the workspace_id filter
+ * every list* service uses. Semantics:
+ *   isAll        → undefined (no filter — every workspace + unassigned)
+ *   isUnassigned → null      (workspace_id IS NULL only — org-wide rows)
+ *   selectedId   → string    (workspace_id = <id> only)
+ *
+ * Returning `undefined` for "All" is important — the hooks include this in
+ * their dep array, and switching to "All" would otherwise keep the old
+ * filter cached.
+ */
+const useWorkspaceFilter = (): string | null | undefined => {
+  const { selectedId, isAll, isUnassigned } = useSelectedWorkspace();
+  if (isAll) return undefined;
+  if (isUnassigned) return null;
+  return selectedId;
+};
+
+/**
+ * Returns the workspace_id to tag on a newly created CRM entity. When the
+ * user is on "All workspaces" or "Unassigned" we tag the row as org-wide
+ * (null); when they have a specific workspace selected the entity belongs
+ * to that workspace so it stays visible after creation without needing to
+ * switch scopes.
+ */
+export const useWorkspaceForCreate = (): string | null => {
+  const { selectedId, isAll, isUnassigned } = useSelectedWorkspace();
+  if (isAll || isUnassigned) return null;
+  return selectedId;
+};
+
 export const useCrmCompanies = (): UseListResult<CrmCompany> => {
   const orgId = useOrgId();
+  const workspaceId = useWorkspaceFilter();
   const [items, setItems] = useState<CrmCompany[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,13 +68,13 @@ export const useCrmCompanies = (): UseListResult<CrmCompany> => {
     setLoading(true);
     setError(null);
     try {
-      setItems(await listCompanies(orgId));
+      setItems(await listCompanies(orgId, { workspaceId }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load companies');
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -60,6 +93,7 @@ export const useCrmCompanies = (): UseListResult<CrmCompany> => {
 
 export const useCrmContacts = (): UseListResult<CrmContact> => {
   const orgId = useOrgId();
+  const workspaceId = useWorkspaceFilter();
   const [items, setItems] = useState<CrmContact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,13 +103,13 @@ export const useCrmContacts = (): UseListResult<CrmContact> => {
     setLoading(true);
     setError(null);
     try {
-      setItems(await listContacts(orgId));
+      setItems(await listContacts(orgId, { workspaceId }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load contacts');
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -125,6 +159,7 @@ export const useCrmDealStages = (): UseListResult<CrmDealStage> => {
 
 export const useCrmDeals = (): UseListResult<CrmDeal> => {
   const orgId = useOrgId();
+  const workspaceId = useWorkspaceFilter();
   const [items, setItems] = useState<CrmDeal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,13 +169,13 @@ export const useCrmDeals = (): UseListResult<CrmDeal> => {
     setLoading(true);
     setError(null);
     try {
-      setItems(await listDeals(orgId));
+      setItems(await listDeals(orgId, { workspaceId }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load deals');
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -225,6 +260,7 @@ export const useContactTagsMap = (): UseContactTagsMapResult => {
 
 export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
   const orgId = useOrgId();
+  const workspaceId = useWorkspaceFilter();
   const [items, setItems] = useState<CrmActivity[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -234,13 +270,13 @@ export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
     setLoading(true);
     setError(null);
     try {
-      setItems(await listActivities(orgId, { limit }));
+      setItems(await listActivities(orgId, { limit, workspaceId }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load activity');
     } finally {
       setLoading(false);
     }
-  }, [orgId, limit]);
+  }, [orgId, limit, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -259,6 +295,7 @@ export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
 
 export const useCrmTasks = (): UseListResult<CrmTask> => {
   const orgId = useOrgId();
+  const workspaceId = useWorkspaceFilter();
   const [items, setItems] = useState<CrmTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -268,13 +305,13 @@ export const useCrmTasks = (): UseListResult<CrmTask> => {
     setLoading(true);
     setError(null);
     try {
-      setItems(await listTasks(orgId));
+      setItems(await listTasks(orgId, { workspaceId }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 

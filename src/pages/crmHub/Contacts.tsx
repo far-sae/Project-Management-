@@ -4,7 +4,7 @@ import { Plus, Search, Trash2, Loader2, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useCrmContacts, useCrmCompanies, useContactTagsMap, useCrmTags } from '@/hooks/useCrmHub';
+import { useCrmContacts, useCrmCompanies, useContactTagsMap, useCrmTags, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { createContact, deleteContact } from '@/services/supabase/crmHub/contacts';
 import { LIFECYCLE_STAGES, LEAD_STATUSES } from '@/types/crmHub';
 import type { LifecycleStage, LeadStatus } from '@/types/crmHub';
@@ -35,6 +35,7 @@ export const CrmContactsPage: React.FC = () => {
   const { items: companies } = useCrmCompanies();
   const { items: allTags } = useCrmTags();
   const { map: contactTagsMap } = useContactTagsMap();
+  const workspaceId = useWorkspaceForCreate();
 
   const [search, setSearch] = useState('');
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleStage | 'all'>('all');
@@ -101,6 +102,7 @@ export const CrmContactsPage: React.FC = () => {
       await createContact(
         {
           organizationId: organization.organizationId,
+          workspaceId,
           firstName: firstName.trim(),
           lastName: lastName.trim() || null,
           email: email.trim() || null,

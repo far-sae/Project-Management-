@@ -117,6 +117,8 @@ const TIER_FEATURES = {
     "Team collaboration",
     "Advanced analytics",
     "Timeline & Contracts",
+    "CRM: Contacts, Companies, Deals, Reports",
+    "Deal-Won → workspace/project handoff",
     "Priority support",
   ],
   premium: [

@@ -7,10 +7,12 @@ import type {
   LeadStatus,
 } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
+import { applyWorkspaceFilter } from './workspaceFilter';
 
 interface ContactRow {
   id: string;
   organization_id: string;
+  workspace_id: string | null;
   owner_id: string | null;
   company_id: string | null;
   first_name: string;
@@ -30,6 +32,7 @@ interface ContactRow {
 const mapContact = (r: ContactRow): CrmContact => ({
   id: r.id,
   organizationId: r.organization_id,
+  workspaceId: r.workspace_id ?? null,
   ownerId: r.owner_id,
   companyId: r.company_id,
   firstName: r.first_name,
@@ -46,13 +49,17 @@ const mapContact = (r: ContactRow): CrmContact => ({
   updatedAt: new Date(r.updated_at),
 });
 
-export const listContacts = async (organizationId: string, opts: { companyId?: string } = {}): Promise<CrmContact[]> => {
+export const listContacts = async (
+  organizationId: string,
+  opts: { companyId?: string; workspaceId?: string | null } = {},
+): Promise<CrmContact[]> => {
   let q = supabase
     .from('crm_contacts')
     .select('*')
     .eq('organization_id', organizationId)
     .order('first_name', { ascending: true });
   if (opts.companyId) q = q.eq('company_id', opts.companyId);
+  q = applyWorkspaceFilter(q, opts.workspaceId);
   const { data, error } = await q;
   if (error) throw error;
   return (data ?? []).map(mapContact);
@@ -69,6 +76,7 @@ export const createContact = async (input: CreateContactInput, ownerId: string |
     .from('crm_contacts')
     .insert({
       organization_id: input.organizationId,
+      workspace_id: input.workspaceId ?? null,
       owner_id: ownerId,
       company_id: input.companyId ?? null,
       first_name: input.firstName,

@@ -1,10 +1,12 @@
 import { supabase } from '../config';
 import type { CrmNote, CreateNoteInput } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
+import { applyWorkspaceFilter } from './workspaceFilter';
 
 interface NoteRow {
   id: string;
   organization_id: string;
+  workspace_id: string | null;
   user_id: string | null;
   body: string;
   contact_id: string | null;
@@ -17,6 +19,7 @@ interface NoteRow {
 const mapNote = (r: NoteRow): CrmNote => ({
   id: r.id,
   organizationId: r.organization_id,
+  workspaceId: r.workspace_id ?? null,
   userId: r.user_id,
   body: r.body,
   contactId: r.contact_id,
@@ -32,7 +35,10 @@ interface ListOptions {
   dealId?: string;
 }
 
-export const listNotes = async (organizationId: string, opts: ListOptions = {}): Promise<CrmNote[]> => {
+export const listNotes = async (
+  organizationId: string,
+  opts: ListOptions & { workspaceId?: string | null } = {},
+): Promise<CrmNote[]> => {
   let q = supabase
     .from('crm_notes')
     .select('*')
@@ -42,6 +48,7 @@ export const listNotes = async (organizationId: string, opts: ListOptions = {}):
   if (opts.contactId) q = q.eq('contact_id', opts.contactId);
   if (opts.companyId) q = q.eq('company_id', opts.companyId);
   if (opts.dealId) q = q.eq('deal_id', opts.dealId);
+  q = applyWorkspaceFilter(q, opts.workspaceId);
 
   const { data, error } = await q;
   if (error) throw error;
@@ -53,6 +60,7 @@ export const createNote = async (input: CreateNoteInput, userId: string | null):
     .from('crm_notes')
     .insert({
       organization_id: input.organizationId,
+      workspace_id: input.workspaceId ?? null,
       user_id: userId,
       body: input.body,
       contact_id: input.contactId ?? null,

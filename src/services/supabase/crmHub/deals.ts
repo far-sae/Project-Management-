@@ -1,6 +1,7 @@
 import { supabase } from '../config';
 import type { CrmDeal, CreateDealInput, UpdateDealInput, DealStatus } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
+import { applyWorkspaceFilter } from './workspaceFilter';
 
 interface DealRow {
   id: string;
@@ -49,7 +50,10 @@ interface ListDealsOptions {
   companyId?: string;
 }
 
-export const listDeals = async (organizationId: string, opts: ListDealsOptions = {}): Promise<CrmDeal[]> => {
+export const listDeals = async (
+  organizationId: string,
+  opts: ListDealsOptions & { workspaceId?: string | null } = {},
+): Promise<CrmDeal[]> => {
   let q = supabase
     .from('crm_deals')
     .select('*')
@@ -57,6 +61,7 @@ export const listDeals = async (organizationId: string, opts: ListDealsOptions =
     .order('sort_order', { ascending: true });
   if (opts.contactId) q = q.eq('contact_id', opts.contactId);
   if (opts.companyId) q = q.eq('company_id', opts.companyId);
+  q = applyWorkspaceFilter(q, opts.workspaceId);
   const { data, error } = await q;
   if (error) throw error;
   return (data ?? []).map(mapDeal);
@@ -73,6 +78,7 @@ export const createDeal = async (input: CreateDealInput, ownerId: string | null)
     .from('crm_deals')
     .insert({
       organization_id: input.organizationId,
+      workspace_id: input.workspaceId ?? null,
       owner_id: ownerId,
       stage_id: input.stageId,
       company_id: input.companyId ?? null,

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
-  useCrmTasks, useCrmContacts, useCrmCompanies, useCrmDeals,
+  useCrmTasks, useCrmContacts, useCrmCompanies, useCrmDeals, useWorkspaceForCreate,
 } from '@/hooks/useCrmHub';
 import { createTask, updateTask, deleteTask } from '@/services/supabase/crmHub/tasks';
 import { TASK_PRIORITIES, TASK_STATUSES } from '@/types/crmHub';
@@ -50,6 +50,7 @@ export const CrmTasksPage: React.FC = () => {
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const { items: deals } = useCrmDeals();
+  const workspaceId = useWorkspaceForCreate();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
@@ -100,6 +101,7 @@ export const CrmTasksPage: React.FC = () => {
       await createTask(
         {
           organizationId: organization.organizationId,
+          workspaceId,
           title: title.trim(),
           description: description.trim() || null,
           dueDate: dueDate || null,

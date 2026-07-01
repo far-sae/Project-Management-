@@ -100,7 +100,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
     if (!orgId || !noteBody.trim()) return;
     setBusy(true);
     try {
-      await createNote({ organizationId: orgId, body: noteBody.trim(), companyId: id }, user?.userId ?? null);
+      await createNote({ organizationId: orgId, workspaceId: company?.workspaceId ?? null, body: noteBody.trim(), companyId: id }, user?.userId ?? null);
       toast.success('Note added');
       setNoteBody('');
       await refresh();

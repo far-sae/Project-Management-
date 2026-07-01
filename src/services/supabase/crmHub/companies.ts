@@ -1,10 +1,12 @@
 import { supabase } from '../config';
 import type { CrmCompany, CreateCompanyInput, UpdateCompanyInput } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
+import { applyWorkspaceFilter } from './workspaceFilter';
 
 interface CompanyRow {
   id: string;
   organization_id: string;
+  workspace_id: string | null;
   owner_id: string | null;
   name: string;
   website: string | null;
@@ -24,6 +26,7 @@ interface CompanyRow {
 const mapCompany = (r: CompanyRow): CrmCompany => ({
   id: r.id,
   organizationId: r.organization_id,
+  workspaceId: r.workspace_id ?? null,
   ownerId: r.owner_id,
   name: r.name,
   website: r.website,
@@ -40,12 +43,17 @@ const mapCompany = (r: CompanyRow): CrmCompany => ({
   updatedAt: new Date(r.updated_at),
 });
 
-export const listCompanies = async (organizationId: string): Promise<CrmCompany[]> => {
-  const { data, error } = await supabase
+export const listCompanies = async (
+  organizationId: string,
+  opts: { workspaceId?: string | null } = {},
+): Promise<CrmCompany[]> => {
+  let q = supabase
     .from('crm_companies')
     .select('*')
     .eq('organization_id', organizationId)
     .order('name', { ascending: true });
+  q = applyWorkspaceFilter(q, opts.workspaceId);
+  const { data, error } = await q;
   if (error) throw error;
   return (data ?? []).map(mapCompany);
 };
@@ -61,6 +69,7 @@ export const createCompany = async (input: CreateCompanyInput, ownerId: string |
     .from('crm_companies')
     .insert({
       organization_id: input.organizationId,
+      workspace_id: input.workspaceId ?? null,
       owner_id: ownerId,
       name: input.name,
       website: input.website ?? null,

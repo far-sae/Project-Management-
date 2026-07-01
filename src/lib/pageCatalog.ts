@@ -44,7 +44,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { key: 'inbox',              label: 'Inbox',              group: 'Work',          routes: ['/inbox'] },
   { key: 'timeline',           label: 'Timeline',           group: 'Work',           routes: ['/timeline'], feature: 'timeline_overview' },
   { key: 'reports',            label: 'Reports',            group: 'Work',           routes: ['/reports'] },
-  { key: 'crm',                label: 'CRM',                group: 'CRM',            routes: ['/crm'] },
+  { key: 'crm',                label: 'CRM',                group: 'CRM',            routes: ['/crm'], feature: 'crm' },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },
   { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses'] },
   { key: 'contracts',          label: 'Contracts',          group: 'People & ops',  routes: ['/contracts'], feature: 'contracts' },
