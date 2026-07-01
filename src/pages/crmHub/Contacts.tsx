@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Search, Trash2, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Search, Trash2, Loader2, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -21,9 +22,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { EntityDetailDialog } from '@/components/crmHub/EntityDetailDialog';
-import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
-import type { CrmContact } from '@/types/crmHub';
+import { toCSV, downloadCSV } from '@/lib/csv';
 
 const humanize = (s: string) =>
   s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -37,10 +36,11 @@ export const CrmContactsPage: React.FC = () => {
   const { map: contactTagsMap } = useContactTagsMap();
 
   const [search, setSearch] = useState('');
+  const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleStage | 'all'>('all');
+  const [view, setView] = useState<'all' | 'mine'>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [detailContact, setDetailContact] = useState<CrmContact | null>(null);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -56,8 +56,10 @@ export const CrmContactsPage: React.FC = () => {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return contacts;
     return contacts.filter((c) => {
+      if (view === 'mine' && user && c.ownerId !== user.userId) return false;
+      if (lifecycleFilter !== 'all' && c.lifecycleStage !== lifecycleFilter) return false;
+      if (!q) return true;
       const name = `${c.firstName} ${c.lastName ?? ''}`.toLowerCase();
       return (
         name.includes(q) ||
@@ -66,7 +68,23 @@ export const CrmContactsPage: React.FC = () => {
         (c.jobTitle?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [contacts, search]);
+  }, [contacts, search, lifecycleFilter, view, user]);
+
+  const handleExportCsv = () => {
+    if (!filtered.length) { toast.error('Nothing to export'); return; }
+    const csv = toCSV(filtered.map((c) => ({
+      first_name: c.firstName,
+      last_name: c.lastName ?? '',
+      email: c.email ?? '',
+      phone: c.phone ?? '',
+      job_title: c.jobTitle ?? '',
+      company: companyById.get(c.companyId ?? '')?.name ?? '',
+      lifecycle_stage: c.lifecycleStage,
+      lead_status: c.leadStatus,
+    })));
+    downloadCSV('contacts.csv', csv);
+    toast.success(`Exported ${filtered.length} contacts`);
+  };
 
   const resetForm = () => {
     setFirstName(''); setLastName(''); setEmail(''); setPhone('');
@@ -127,19 +145,56 @@ export const CrmContactsPage: React.FC = () => {
               Every person in your pipeline — sorted by first name.
             </p>
           </div>
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4 mr-2" /> New contact
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportCsv}>
+              <Download className="w-4 h-4 mr-2" /> Export CSV
+            </Button>
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4 mr-2" /> New contact
+            </Button>
+          </div>
         </div>
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, phone…"
-            className="pl-9"
-          />
+        <div className="flex items-center gap-2 border-b border-border">
+          <button
+            type="button"
+            onClick={() => setView('all')}
+            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+              view === 'all' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            All contacts
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('mine')}
+            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+              view === 'mine' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            My contacts
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-60 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, email, phone…"
+              className="pl-9"
+            />
+          </div>
+          <Select value={lifecycleFilter} onValueChange={(v) => setLifecycleFilter(v as LifecycleStage | 'all')}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All lifecycle stages</SelectItem>
+              {LIFECYCLE_STAGES.map((s) => (
+                <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Card>
@@ -173,11 +228,12 @@ export const CrmContactsPage: React.FC = () => {
                     {filtered.map((c) => (
                       <tr
                         key={c.id}
-                        className="border-b border-border/60 hover:bg-muted/40 cursor-pointer"
-                        onClick={() => setDetailContact(c)}
+                        className="border-b border-border/60 hover:bg-muted/40"
                       >
                         <td className="py-2 pr-4 font-medium text-foreground">
-                          <div>{c.firstName} {c.lastName ?? ''}</div>
+                          <Link to={`/crm/contacts/${c.id}`} className="hover:text-primary">
+                            {c.firstName} {c.lastName ?? ''}
+                          </Link>
                           {c.jobTitle && (
                             <div className="text-xs text-muted-foreground font-normal">{c.jobTitle}</div>
                           )}
@@ -218,7 +274,7 @@ export const CrmContactsPage: React.FC = () => {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={(e) => { e.stopPropagation(); setConfirmDelete(c.id); }}
+                            onClick={() => setConfirmDelete(c.id)}
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -310,18 +366,6 @@ export const CrmContactsPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <EntityDetailDialog
-        scope={detailContact ? {
-          kind: 'contact',
-          id: detailContact.id,
-          label: `${detailContact.firstName} ${detailContact.lastName ?? ''}`.trim(),
-          subtitle: [detailContact.jobTitle, detailContact.email, detailContact.phone].filter(Boolean).join(' · ') || null,
-        } : null}
-        onOpenChange={(o) => !o && setDetailContact(null)}
-      >
-        {detailContact && <ContactTagPicker contactId={detailContact.id} />}
-      </EntityDetailDialog>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

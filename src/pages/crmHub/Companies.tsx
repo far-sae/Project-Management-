@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, Search, Trash2, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -17,8 +18,6 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { EntityDetailDialog } from '@/components/crmHub/EntityDetailDialog';
-import type { CrmCompany } from '@/types/crmHub';
 
 export const CrmCompaniesPage: React.FC = () => {
   const { user } = useAuth();
@@ -29,7 +28,6 @@ export const CrmCompaniesPage: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [detailCompany, setDetailCompany] = useState<CrmCompany | null>(null);
 
   const [name, setName] = useState('');
   const [website, setWebsite] = useState('');
@@ -155,10 +153,11 @@ export const CrmCompaniesPage: React.FC = () => {
                     {filtered.map((c) => (
                       <tr
                         key={c.id}
-                        className="border-b border-border/60 hover:bg-muted/40 cursor-pointer"
-                        onClick={() => setDetailCompany(c)}
+                        className="border-b border-border/60 hover:bg-muted/40"
                       >
-                        <td className="py-2 pr-4 font-medium text-foreground">{c.name}</td>
+                        <td className="py-2 pr-4 font-medium text-foreground">
+                          <Link to={`/crm/companies/${c.id}`} className="hover:text-primary">{c.name}</Link>
+                        </td>
                         <td className="py-2 pr-4 text-muted-foreground">{c.industry ?? '—'}</td>
                         <td className="py-2 pr-4 text-muted-foreground">
                           {[c.city, c.country].filter(Boolean).join(', ') || '—'}
@@ -181,7 +180,7 @@ export const CrmCompaniesPage: React.FC = () => {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={(e) => { e.stopPropagation(); setConfirmDelete(c.id); }}
+                            onClick={() => setConfirmDelete(c.id)}
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -251,16 +250,6 @@ export const CrmCompaniesPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <EntityDetailDialog
-        scope={detailCompany ? {
-          kind: 'company',
-          id: detailCompany.id,
-          label: detailCompany.name,
-          subtitle: [detailCompany.industry, [detailCompany.city, detailCompany.country].filter(Boolean).join(', ')].filter(Boolean).join(' · ') || null,
-        } : null}
-        onOpenChange={(o) => !o && setDetailCompany(null)}
-      />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

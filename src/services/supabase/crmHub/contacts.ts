@@ -46,12 +46,14 @@ const mapContact = (r: ContactRow): CrmContact => ({
   updatedAt: new Date(r.updated_at),
 });
 
-export const listContacts = async (organizationId: string): Promise<CrmContact[]> => {
-  const { data, error } = await supabase
+export const listContacts = async (organizationId: string, opts: { companyId?: string } = {}): Promise<CrmContact[]> => {
+  let q = supabase
     .from('crm_contacts')
     .select('*')
     .eq('organization_id', organizationId)
     .order('first_name', { ascending: true });
+  if (opts.companyId) q = q.eq('company_id', opts.companyId);
+  const { data, error } = await q;
   if (error) throw error;
   return (data ?? []).map(mapContact);
 };

@@ -40,12 +40,20 @@ const mapDeal = (r: DealRow): CrmDeal => ({
   updatedAt: new Date(r.updated_at),
 });
 
-export const listDeals = async (organizationId: string): Promise<CrmDeal[]> => {
-  const { data, error } = await supabase
+interface ListDealsOptions {
+  contactId?: string;
+  companyId?: string;
+}
+
+export const listDeals = async (organizationId: string, opts: ListDealsOptions = {}): Promise<CrmDeal[]> => {
+  let q = supabase
     .from('crm_deals')
     .select('*')
     .eq('organization_id', organizationId)
     .order('sort_order', { ascending: true });
+  if (opts.contactId) q = q.eq('contact_id', opts.contactId);
+  if (opts.companyId) q = q.eq('company_id', opts.companyId);
+  const { data, error } = await q;
   if (error) throw error;
   return (data ?? []).map(mapDeal);
 };

@@ -12,7 +12,7 @@ export type PageKey =
   | 'project_management' | 'my_tasks' | 'calendar' | 'workload' | 'inbox'
   | 'team' | 'files' | 'comments' | 'contracts'
   | 'timeline' | 'reports'
-  | 'crm_contacts' | 'crm_companies' | 'crm_deals' | 'crm_tasks' | 'crm_activity' | 'crm_tags' | 'crm_reports' | 'crm_calendar'
+  | 'crm'
   | 'hr' | 'settings';
 
 export type PageAccessLevel = 'none' | 'view' | 'edit';
@@ -44,14 +44,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { key: 'inbox',              label: 'Inbox',              group: 'Work',          routes: ['/inbox'] },
   { key: 'timeline',           label: 'Timeline',           group: 'Work',           routes: ['/timeline'], feature: 'timeline_overview' },
   { key: 'reports',            label: 'Reports',            group: 'Work',           routes: ['/reports'] },
-  { key: 'crm_contacts',       label: 'Contacts',           group: 'CRM',            routes: ['/crm/contacts'] },
-  { key: 'crm_companies',      label: 'Companies',          group: 'CRM',            routes: ['/crm/companies'] },
-  { key: 'crm_deals',          label: 'Deals',              group: 'CRM',            routes: ['/crm/deals'] },
-  { key: 'crm_tasks',          label: 'CRM Tasks',          group: 'CRM',            routes: ['/crm/tasks'] },
-  { key: 'crm_activity',       label: 'CRM Activity',       group: 'CRM',            routes: ['/crm/activity'] },
-  { key: 'crm_tags',           label: 'CRM Tags',           group: 'CRM',            routes: ['/crm/tags'] },
-  { key: 'crm_reports',        label: 'CRM Reports',        group: 'CRM',            routes: ['/crm/reports'] },
-  { key: 'crm_calendar',       label: 'CRM Calendar',       group: 'CRM',            routes: ['/crm/calendar'] },
+  { key: 'crm',                label: 'CRM',                group: 'CRM',            routes: ['/crm'] },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },
   { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses'] },
   { key: 'contracts',          label: 'Contracts',          group: 'People & ops',  routes: ['/contracts'], feature: 'contracts' },

@@ -41,6 +41,12 @@ const CrmActivityPage = React.lazy(() => import('@/pages/crmHub/Activity').then(
 const CrmTagsPage = React.lazy(() => import('@/pages/crmHub/Tags').then((m) => ({ default: m.CrmTagsPage })));
 const CrmReportsPage = React.lazy(() => import('@/pages/crmHub/Reports').then((m) => ({ default: m.CrmReportsPage })));
 const CrmCalendarPage = React.lazy(() => import('@/pages/crmHub/Calendar').then((m) => ({ default: m.CrmCalendarPage })));
+const CrmLayout = React.lazy(() => import('@/pages/crmHub/CrmLayout').then((m) => ({ default: m.CrmLayout })));
+const CrmContactDetailPage = React.lazy(() => import('@/pages/crmHub/ContactDetail').then((m) => ({ default: m.CrmContactDetailPage })));
+const CrmCompanyDetailPage = React.lazy(() => import('@/pages/crmHub/CompanyDetail').then((m) => ({ default: m.CrmCompanyDetailPage })));
+const CrmDealDetailPage = React.lazy(() => import('@/pages/crmHub/DealDetail').then((m) => ({ default: m.CrmDealDetailPage })));
+const CrmDashboardPage = React.lazy(() => import('@/pages/crmHub/Dashboard').then((m) => ({ default: m.CrmDashboardPage })));
+const CrmSettingsPage = React.lazy(() => import('@/pages/crmHub/Settings').then((m) => ({ default: m.CrmSettingsPage })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
@@ -286,68 +292,28 @@ const router = createBrowserRouter(
               ),
             },
             {
-              path: '/crm/contacts',
+              path: '/crm',
               element: (
-                <ProtectedRoute requireSubscription requirePage="crm_contacts">
-                  {lazyAppRoute(<CrmContactsPage />)}
+                <ProtectedRoute requireSubscription requirePage="crm">
+                  {lazyAppRoute(<CrmLayout />)}
                 </ProtectedRoute>
               ),
-            },
-            {
-              path: '/crm/companies',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="crm_companies">
-                  {lazyAppRoute(<CrmCompaniesPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/crm/deals',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="crm_deals">
-                  {lazyAppRoute(<CrmDealsPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/crm/tasks',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="crm_tasks">
-                  {lazyAppRoute(<CrmTasksPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/crm/activity',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="crm_activity">
-                  {lazyAppRoute(<CrmActivityPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/crm/tags',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="crm_tags">
-                  {lazyAppRoute(<CrmTagsPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/crm/reports',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="crm_reports">
-                  {lazyAppRoute(<CrmReportsPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/crm/calendar',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="crm_calendar">
-                  {lazyAppRoute(<CrmCalendarPage />)}
-                </ProtectedRoute>
-              ),
+              children: [
+                { index: true, element: <Navigate to="/crm/dashboard" replace /> },
+                { path: 'dashboard',    element: lazyAppRoute(<CrmDashboardPage />) },
+                { path: 'reports',      element: lazyAppRoute(<CrmReportsPage />) },
+                { path: 'contacts',     element: lazyAppRoute(<CrmContactsPage />) },
+                { path: 'contacts/:id', element: lazyAppRoute(<CrmContactDetailPage />) },
+                { path: 'companies',    element: lazyAppRoute(<CrmCompaniesPage />) },
+                { path: 'companies/:id', element: lazyAppRoute(<CrmCompanyDetailPage />) },
+                { path: 'deals',        element: lazyAppRoute(<CrmDealsPage />) },
+                { path: 'deals/:id',    element: lazyAppRoute(<CrmDealDetailPage />) },
+                { path: 'tasks',        element: lazyAppRoute(<CrmTasksPage />) },
+                { path: 'activity',     element: lazyAppRoute(<CrmActivityPage />) },
+                { path: 'tags',         element: lazyAppRoute(<CrmTagsPage />) },
+                { path: 'calendar',     element: lazyAppRoute(<CrmCalendarPage />) },
+                { path: 'settings',     element: lazyAppRoute(<CrmSettingsPage />) },
+              ],
             },
             {
               path: '/timeline',

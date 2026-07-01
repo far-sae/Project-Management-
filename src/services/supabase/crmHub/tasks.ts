@@ -40,13 +40,23 @@ const mapTask = (r: TaskRow): CrmTask => ({
   updatedAt: new Date(r.updated_at),
 });
 
-export const listTasks = async (organizationId: string): Promise<CrmTask[]> => {
-  const { data, error } = await supabase
+interface ListTasksOptions {
+  contactId?: string;
+  companyId?: string;
+  dealId?: string;
+}
+
+export const listTasks = async (organizationId: string, opts: ListTasksOptions = {}): Promise<CrmTask[]> => {
+  let q = supabase
     .from('crm_tasks')
     .select('*')
     .eq('organization_id', organizationId)
     .order('due_date', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false });
+  if (opts.contactId) q = q.eq('contact_id', opts.contactId);
+  if (opts.companyId) q = q.eq('company_id', opts.companyId);
+  if (opts.dealId) q = q.eq('deal_id', opts.dealId);
+  const { data, error } = await q;
   if (error) throw error;
   return (data ?? []).map(mapTask);
 };
