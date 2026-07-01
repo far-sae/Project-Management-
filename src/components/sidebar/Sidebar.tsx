@@ -31,6 +31,7 @@ import {
   Waypoints,
   Tag,
   PieChart,
+  CalendarRange,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -77,6 +78,7 @@ const QUICK_ITEMS_FULL = [
   { icon: Waypoints, label: 'CRM Activity', href: '/crm/activity', page: 'crm_activity' as PageKey },
   { icon: Tag, label: 'CRM Tags', href: '/crm/tags', page: 'crm_tags' as PageKey },
   { icon: PieChart, label: 'CRM Reports', href: '/crm/reports', page: 'crm_reports' as PageKey },
+  { icon: CalendarRange, label: 'CRM Calendar', href: '/crm/calendar', page: 'crm_calendar' as PageKey },
   { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
 ];
 
