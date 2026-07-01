@@ -18,11 +18,14 @@ const PrivacyPolicyPage = () => {
         <p className="text-muted-foreground mb-6 leading-relaxed">
           This Privacy Policy explains how {LEGAL_COMPANY_NAME} (&quot;we&quot;, &quot;us&quot;, or
           &quot;our&quot;) collects, uses, discloses, and safeguards personal information when you access or
-          use {LEGAL_PRODUCT_NAME}, our web-based project management and collaboration platform
-          (the &quot;Service&quot;). The Service includes project and task workflows, analytics
-          dashboards, and Google / Gmail / Calendar integrations. We respect your privacy and aim
-          to comply with applicable data protection laws, including the EU and UK General Data
-          Protection Regulation (GDPR) where they apply.
+          use {LEGAL_PRODUCT_NAME}, our web-based project management and CRM collaboration
+          platform (the &quot;Service&quot;). The Service includes project and task workflows,
+          a CRM hub (Contacts, Companies, Deals, CRM Tasks, activity timeline, notes, tags,
+          reports and calendar), a Deal-Won handoff that creates workspaces and projects for
+          delivery, HR / time-tracking / payroll modules, and optional Google / Gmail /
+          Calendar / Meet integrations. We respect your privacy and aim to comply with
+          applicable data protection laws, including the EU and UK General Data Protection
+          Regulation (GDPR) where they apply.
         </p>
         <p className="text-muted-foreground mb-8 leading-relaxed text-sm border-l-2 border-border pl-4">
           This policy is provided for transparency. It does not constitute legal advice. If you need
@@ -69,6 +72,21 @@ const PrivacyPolicyPage = () => {
             notifications, and other content you or your colleagues submit to the Service.
           </li>
           <li>
+            <strong className="text-foreground">CRM Hub data</strong> (Advanced and Premium tiers).
+            Contacts, Companies, Deals, CRM Tasks, notes, activity events (calls, emails,
+            meetings, deal stage changes, task completions), tags, deal-pipeline configuration,
+            and a chosen display currency. CRM records typically include third-party personal
+            data (your leads&apos; / customers&apos; names, emails, phone numbers, job titles,
+            company addresses, revenue figures) that <strong className="text-foreground">you
+            control</strong> — your organisation is the controller of that data and you are
+            responsible for the lawful basis under which it was collected. We process it as
+            your processor under{' '}
+            <Link to="/terms" className="text-primary underline underline-offset-2">our Terms</Link>.
+            When you use the Deal-Won handoff, the linkage from a won deal to the workspace
+            and project you created is also stored so we can render the &quot;Open project&quot;
+            shortcut.
+          </li>
+          <li>
             <strong className="text-foreground">Billing and subscription data.</strong> Where you
             purchase a paid plan, our payment processor may collect billing contact details and
             payment method metadata; we typically receive limited information needed for invoicing
@@ -110,6 +128,17 @@ const PrivacyPolicyPage = () => {
           </li>
           <li>Comply with legal obligations and enforce our terms.</li>
         </ul>
+
+        <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">
+          4a. Signup consent
+        </h2>
+        <p className="text-muted-foreground mb-4 leading-relaxed">
+          Creating an account on {LEGAL_PRODUCT_NAME} — whether by email + password or via
+          Google single sign-on — requires you to check a consent box confirming that you have
+          read and agree to these Terms and this Privacy Policy. We record the timestamp of
+          that acceptance locally so we can prove consent was given at signup if you ever ask.
+          If you do not agree, you must not proceed with account creation.
+        </p>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">
           5. Legal bases (EEA/UK GDPR)
@@ -176,7 +205,7 @@ const PrivacyPolicyPage = () => {
         </p>
 
         <h3 className="text-base font-semibold text-foreground mt-6 mb-2">
-          Google API Services (Google Calendar, Google Meet, Gmail)
+          Google API Services (Google Calendar and Google Meet)
         </h3>
         <p className="text-muted-foreground mb-3 leading-relaxed">
           When you choose to connect a Google account, {LEGAL_PRODUCT_NAME} uses Google API Services and

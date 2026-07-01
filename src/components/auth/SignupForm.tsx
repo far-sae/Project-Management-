@@ -35,6 +35,7 @@ export const SignupForm: React.FC = () => {
       return parts.currency ?? 'USD';
     } catch { return 'USD'; }
   });
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const redirectParam = new URLSearchParams(location.search).get('redirect');
 
@@ -81,6 +82,16 @@ export const SignupForm: React.FC = () => {
       return;
     }
 
+    if (!agreedToTerms) {
+      toast.error('Please accept the Terms of Service and Privacy Policy to continue');
+      return;
+    }
+
+    // Persist consent so it survives the email-confirm redirect + later audit.
+    try {
+      localStorage.setItem('pm_terms_accepted_at', new Date().toISOString());
+    } catch { /* ignore */ }
+
     // Persist the chosen currency BEFORE signup so OrganizationContext can
     // apply it as the org-level default the first time the org loads.
     try { localStorage.setItem('pm_preferred_currency', currency); } catch { /* ignore */ }
@@ -110,6 +121,13 @@ export const SignupForm: React.FC = () => {
 
   const handleGoogleSignIn = async () => {
     clearError();
+    if (!agreedToTerms) {
+      toast.error('Please accept the Terms of Service and Privacy Policy to continue');
+      return;
+    }
+    try {
+      localStorage.setItem('pm_terms_accepted_at', new Date().toISOString());
+    } catch { /* ignore */ }
     // Same currency persist for Google sign-up — the rep won't see the
     // form again, so we lock in their choice now.
     try { localStorage.setItem('pm_preferred_currency', currency); } catch { /* ignore */ }
@@ -281,10 +299,32 @@ export const SignupForm: React.FC = () => {
               </p>
             </div>
 
+            {/* Terms + Privacy consent — required for both password + Google signup */}
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                disabled={loading}
+                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/40 shrink-0"
+                aria-required="true"
+              />
+              <span className="text-xs text-muted-foreground leading-relaxed">
+                I agree to the{' '}
+                <Link to="/terms" target="_blank" className="text-primary hover:underline">
+                  Terms of Service
+                </Link>
+                {' '}and{' '}
+                <Link to="/privacy" target="_blank" className="text-primary hover:underline">
+                  Privacy Policy
+                </Link>.
+              </span>
+            </label>
+
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
-              disabled={loading || isFormEmpty}
+              disabled={loading || isFormEmpty || !agreedToTerms}
             >
               {loading ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating account...</>
@@ -308,11 +348,17 @@ export const SignupForm: React.FC = () => {
             variant="outline"
             className="w-full"
             onClick={handleGoogleSignIn}
-            disabled={loading}
+            disabled={loading || !agreedToTerms}
+            title={!agreedToTerms ? 'Accept the Terms and Privacy Policy first' : undefined}
           >
             <FcGoogle className="mr-2 h-4 w-4" />
             Google
           </Button>
+          {!agreedToTerms && (
+            <p className="text-[11px] text-muted-foreground text-center">
+              Tick the box above to enable Google sign-up.
+            </p>
+          )}
         </CardContent>
 
         <CardFooter className="flex flex-col space-y-2">

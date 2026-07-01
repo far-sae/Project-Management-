@@ -55,16 +55,30 @@ const TermsPage = () => {
         <ul className="list-disc pl-5 space-y-1 text-muted-foreground mb-4 leading-relaxed text-sm">
           <li>
             <strong className="text-foreground">Project management</strong> — projects, tasks,
-            subtasks, kanban + timeline views, file attachments, comments, time tracking, calendar
-            sync with Google Calendar.
+            subtasks, kanban / list / timeline / calendar / workload views, file attachments,
+            comments, mentions, presence, notifications, mind-map view.
+          </li>
+          <li>
+            <strong className="text-foreground">CRM Hub</strong> (Advanced and Premium tiers) —
+            Contacts, Companies, Deals with kanban + list views, CRM Tasks, per-contact / per-
+            company / per-deal notes and activity timeline, Tags, CSV import + export, reports
+            (pipeline value, forecast, win rate, monthly revenue, top open deals, lead source),
+            CRM Calendar, workspace-scoped filtering, and a Deal-Won handoff that creates or
+            links a workspace + project inside the same account.
+          </li>
+          <li>
+            <strong className="text-foreground">Team operations</strong> — Team, per-project roles,
+            Contracts, Expenses, HR directory, Time tracking, Payroll, Files, audit log, Reports.
           </li>
           <li>
             <strong className="text-foreground">Integrations</strong> — optional connections to
-            Gmail, Google Calendar, and Google Meet for task scheduling and notifications.
+            Gmail, Google Calendar, and Google Meet for task-level scheduling and notifications.
+            Stripe for subscription billing.
           </li>
           <li>
-            <strong className="text-foreground">Team operations</strong> — Team, Contracts,
-            Expenses, HR, Payroll, file storage, audit log.
+            <strong className="text-foreground">Multi-currency</strong> — the CRM formats every
+            money amount (deal value, revenue reports, company annual revenue) in the currency
+            you pick per organisation.
           </li>
         </ul>
         <p className="text-muted-foreground mb-4 leading-relaxed text-sm">

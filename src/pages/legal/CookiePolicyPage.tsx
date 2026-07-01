@@ -55,8 +55,15 @@ const CookiePolicyPage = () => {
           </li>
           <li>
             <strong className="text-foreground">Preferences and UI state.</strong> We store your
-            cookie choice, theme (light/dark), selected workspace, pinned projects, and a few small
-            UI flags locally on your device so the app remembers them between visits.
+            cookie choice, theme (light/dark), selected workspace, pinned projects, preferred
+            CRM display currency, and a few small UI flags locally on your device so the app
+            remembers them between visits.
+          </li>
+          <li>
+            <strong className="text-foreground">Consent timestamp.</strong> When you agree to
+            the Terms and Privacy Policy at signup, we save the acceptance timestamp in local
+            storage (key: <code>pm_terms_accepted_at</code>) so we can prove consent was given.
+            No third party can read this value.
           </li>
           <li>
             <strong className="text-foreground">Plan and feature state.</strong> A short-lived
