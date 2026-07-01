@@ -24,6 +24,7 @@ interface ContactRow {
   lead_status: LeadStatus;
   source: string | null;
   notes: string | null;
+  category: string | null;
   last_contacted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -44,6 +45,7 @@ const mapContact = (r: ContactRow): CrmContact => ({
   leadStatus: r.lead_status,
   source: r.source,
   notes: r.notes,
+  category: r.category ?? null,
   lastContactedAt: r.last_contacted_at ? new Date(r.last_contacted_at) : null,
   createdAt: new Date(r.created_at),
   updatedAt: new Date(r.updated_at),
@@ -88,6 +90,7 @@ export const createContact = async (input: CreateContactInput, ownerId: string |
       lead_status: input.leadStatus ?? 'new',
       source: input.source ?? null,
       notes: input.notes ?? null,
+      category: input.category?.trim() || null,
     })
     .select()
     .single();
@@ -117,6 +120,7 @@ export const updateContact = async (id: string, input: UpdateContactInput): Prom
   if (input.leadStatus !== undefined) patch.lead_status = input.leadStatus;
   if (input.source !== undefined) patch.source = input.source;
   if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.category !== undefined) patch.category = input.category?.trim() || null;
 
   const { data, error } = await supabase
     .from('crm_contacts')
@@ -131,4 +135,24 @@ export const updateContact = async (id: string, input: UpdateContactInput): Prom
 export const deleteContact = async (id: string): Promise<void> => {
   const { error } = await supabase.from('crm_contacts').delete().eq('id', id);
   if (error) throw error;
+};
+
+/**
+ * Distinct non-null lead categories in an org, sorted alphabetically. Used
+ * to populate suggestion dropdowns in the create dialog and the CSV import
+ * wizard's category step.
+ */
+export const listLeadCategories = async (organizationId: string): Promise<string[]> => {
+  const { data, error } = await supabase
+    .from('crm_contacts')
+    .select('category')
+    .eq('organization_id', organizationId)
+    .not('category', 'is', null);
+  if (error) throw error;
+  const set = new Set<string>();
+  for (const row of data ?? []) {
+    const v = (row as { category: string | null }).category?.trim();
+    if (v) set.add(v);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
 };

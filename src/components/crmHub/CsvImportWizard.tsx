@@ -1,14 +1,17 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { supabase } from '@/services/supabase/config';
 import { parseCSV } from '@/lib/csv';
+import { listLeadCategories } from '@/services/supabase/crmHub/contacts';
 import {
-  ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, Upload, Loader2,
+  ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, Upload, Loader2, Tag as TagIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -34,9 +37,12 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'phone', label: 'Phone' },
     { key: 'job_title', label: 'Job title' },
     { key: 'source', label: 'Source' },
+    { key: 'lifecycle_stage', label: 'Lifecycle stage' },
+    { key: 'lead_status', label: 'Lead status' },
+    { key: 'category', label: 'Category' },
   ],
   companies: [
-    { key: 'name', label: 'Company name', required: true },
+    { key: 'name', label: 'Business name', required: true },
     { key: 'website', label: 'Website' },
     { key: 'industry', label: 'Industry' },
     { key: 'phone', label: 'Phone' },
@@ -44,7 +50,7 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'address', label: 'Address' },
     { key: 'city', label: 'City' },
     { key: 'country', label: 'Country' },
-    { key: 'company_size', label: 'Company size' },
+    { key: 'company_size', label: 'Business size' },
     { key: 'annual_revenue', label: 'Annual revenue' },
   ],
 };
@@ -53,6 +59,23 @@ const TABLE: Record<ImportResource, string> = {
   contacts: 'crm_contacts',
   companies: 'crm_companies',
 };
+
+const RESOURCE_LABEL: Record<ImportResource, { singular: string; plural: string; titleCase: string }> = {
+  contacts: { singular: 'lead', plural: 'leads', titleCase: 'Leads' },
+  companies: { singular: 'business', plural: 'businesses', titleCase: 'Businesses' },
+};
+
+// Only these values are valid for the two enum-constrained contact columns —
+// if a CSV cell doesn't match, we drop the field so Postgres doesn't reject
+// the row.
+const LIFECYCLE_STAGES = new Set([
+  'subscriber', 'lead', 'marketing_qualified_lead', 'sales_qualified_lead',
+  'opportunity', 'customer', 'evangelist', 'other',
+]);
+const LEAD_STATUSES = new Set([
+  'new', 'open', 'in_progress', 'open_deal', 'unqualified',
+  'attempted_to_contact', 'connected', 'bad_timing',
+]);
 
 const SKIP = '__skip__';
 
@@ -69,9 +92,12 @@ function autoMatch(header: string, fields: FieldDef[]): string {
   if ((h.includes('title') || h === 'role') && has('job_title')) return 'job_title';
   if (h.includes('mail') && has('email')) return 'email';
   if ((h.includes('tel') || h.includes('mobile') || h.includes('phone')) && has('phone')) return 'phone';
-  if ((h.includes('org') || h.includes('companyname')) && has('name')) return 'name';
+  if ((h.includes('org') || h.includes('businessname') || h.includes('companyname')) && has('name')) return 'name';
   if (h.includes('size') && has('company_size')) return 'company_size';
   if (h.includes('revenue') && has('annual_revenue')) return 'annual_revenue';
+  if ((h === 'category' || h === 'segment' || h === 'bucket' || h === 'tier') && has('category')) return 'category';
+  if ((h === 'lifecycle' || h.includes('lifecyclestage')) && has('lifecycle_stage')) return 'lifecycle_stage';
+  if ((h === 'status' || h.includes('leadstatus')) && has('lead_status')) return 'lead_status';
   return SKIP;
 }
 
@@ -84,22 +110,45 @@ interface Props {
 
 export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource, onImported }) => {
   const fields = FIELDS[resource];
+  const totalSteps = resource === 'contacts' ? 4 : 3;
+  const label = RESOURCE_LABEL[resource];
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
   const workspaceId = useWorkspaceForCreate();
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [fileName, setFileName] = useState('');
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
+  // Categories — only used when resource === 'contacts'.
+  const [existingCategories, setExistingCategories] = useState<string[]>([]);
+  const [categoryMode, setCategoryMode] = useState<'none' | 'pick' | 'new'>('none');
+  const [categoryPick, setCategoryPick] = useState<string>('');
+  const [categoryNew, setCategoryNew] = useState<string>('');
+
   const reset = () => {
-    setStep(1); setFileName(''); setRows([]); setHeaders([]); setMapping({});
+    setStep(1);
+    setFileName('');
+    setRows([]);
+    setHeaders([]);
+    setMapping({});
+    setCategoryMode('none');
+    setCategoryPick('');
+    setCategoryNew('');
   };
+
+  // Load existing categories on open (contacts only)
+  useEffect(() => {
+    if (!open || resource !== 'contacts' || !orgId) return;
+    listLeadCategories(orgId)
+      .then((rows) => setExistingCategories(rows))
+      .catch(() => setExistingCategories([]));
+  }, [open, resource, orgId]);
 
   const handleFile = async (file: File) => {
     try {
@@ -126,6 +175,21 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
 
   const mappedCount = Object.values(mapping).filter((v) => v && v !== SKIP).length;
 
+  // Is the `category` column mapped to any file column?
+  const categoryMappedFromCsv = useMemo(
+    () => resource === 'contacts' && Object.values(mapping).some((v) => v === 'category'),
+    [mapping, resource],
+  );
+
+  // The final category the user chose in Step 3, resolved to a string or null.
+  const resolvedCategory = useMemo<string | null>(() => {
+    if (resource !== 'contacts') return null;
+    if (categoryMappedFromCsv) return null; // per-row from CSV wins
+    if (categoryMode === 'pick' && categoryPick.trim()) return categoryPick.trim();
+    if (categoryMode === 'new' && categoryNew.trim()) return categoryNew.trim();
+    return null;
+  }, [resource, categoryMappedFromCsv, categoryMode, categoryPick, categoryNew]);
+
   const handleImport = async () => {
     if (!orgId) return;
     setBusy(true);
@@ -140,13 +204,23 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
           if (!key || key === SKIP) continue;
           const v = r[header]?.trim();
           if (!v) continue;
-          // Numeric coercion for known number columns
           if (key === 'annual_revenue') {
             const n = Number(v.replace(/[^\d.-]/g, ''));
             if (Number.isFinite(n)) o[key] = n;
+          } else if (key === 'lifecycle_stage') {
+            const norm = v.toLowerCase().replace(/[\s-]+/g, '_');
+            if (LIFECYCLE_STAGES.has(norm)) o[key] = norm;
+          } else if (key === 'lead_status') {
+            const norm = v.toLowerCase().replace(/[\s-]+/g, '_');
+            if (LEAD_STATUSES.has(norm)) o[key] = norm;
           } else {
             o[key] = v;
           }
+        }
+        // If the user picked an org-wide category in step 3 and didn't map a
+        // per-row category column, apply the picked value.
+        if (resource === 'contacts' && !categoryMappedFromCsv && resolvedCategory) {
+          o.category = resolvedCategory;
         }
         return o;
       }).filter((o) => fields.filter((f) => f.required).every((f) => o[f.key]));
@@ -156,7 +230,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
       const { error } = await supabase.from(TABLE[resource]).insert(payload as never);
       if (error) throw error;
 
-      toast.success(`Imported ${payload.length} ${resource}`);
+      toast.success(`Imported ${payload.length} ${label.plural}`);
       await onImported?.();
       onOpenChange(false);
       reset();
@@ -167,19 +241,36 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
     }
   };
 
+  const stepDescription = (() => {
+    if (step === 1) return 'upload a CSV file';
+    if (step === 2) return 'match your columns to fields';
+    if (step === 3 && resource === 'contacts') return 'assign a category';
+    return 'review & import';
+  })();
+
+  const goNext = () => {
+    if (step === 1 || step === 2) setStep((step + 1) as 1 | 2 | 3 | 4);
+    else if (step === 3 && resource === 'contacts') setStep(4);
+  };
+  const goBack = () => {
+    if (step === 1) onOpenChange(false);
+    else setStep((step - 1) as 1 | 2 | 3 | 4);
+  };
+  const isFinalStep = (resource === 'contacts' && step === 4) || (resource === 'companies' && step === 3);
+
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
       <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="capitalize">Import {resource}</DialogTitle>
+          <DialogTitle>Import {label.titleCase}</DialogTitle>
           <DialogDescription>
-            Step {step} of 3 — {step === 1 ? 'upload a CSV file' : step === 2 ? 'match your columns to fields' : 'review & import'}
+            Step {step} of {totalSteps} — {stepDescription}
           </DialogDescription>
         </DialogHeader>
 
         {/* Progress */}
         <div className="flex items-center gap-2 pb-2">
-          {[1, 2, 3].map((n) => (
+          {Array.from({ length: totalSteps }, (_, i) => i + 1).map((n) => (
             <div key={n} className="flex flex-1 items-center gap-2">
               <div className={cn(
                 'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
@@ -189,7 +280,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               )}>
                 {step > n ? <CheckCircle2 className="h-4 w-4" /> : n}
               </div>
-              <div className={cn('h-1 flex-1 rounded-full', step > n ? 'bg-primary' : 'bg-muted')} />
+              {n < totalSteps && (
+                <div className={cn('h-1 flex-1 rounded-full', step > n ? 'bg-primary' : 'bg-muted')} />
+              )}
             </div>
           ))}
         </div>
@@ -207,7 +300,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               <div>
                 <p className="text-base font-semibold">Drop a CSV file or click to browse</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  We'll auto-match your columns to {resource === 'contacts' ? 'contact' : 'company'} fields in the next step.
+                  We'll auto-match your columns to {label.singular} fields in the next step.
                 </p>
               </div>
             </button>
@@ -222,6 +315,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               <p className="font-medium">Expected columns</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {fields.map((f) => f.label + (f.required ? ' *' : '')).join(', ')}
+              </p>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Optional — if your CSV doesn't have a category column, you'll get to assign one in step 3.
               </p>
             </div>
           </div>
@@ -275,13 +371,122 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
           </div>
         )}
 
-        {step === 3 && (
+        {step === 3 && resource === 'contacts' && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border bg-muted/30 p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <TagIcon className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold">Assign a category to these leads</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Tag every imported lead with the same category so you can filter them later
+                (e.g. <em>VIP</em>, <em>Q4 outreach</em>, <em>Warm intro</em>). Optional —
+                you can skip this and leave them uncategorised.
+              </p>
+            </div>
+
+            {categoryMappedFromCsv ? (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
+                <p className="font-medium text-foreground">Using your CSV's category column</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  You mapped a Category column in Step 2, so each row will keep its own value.
+                  This step is skipped.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer hover:border-primary/40">
+                  <input
+                    type="radio"
+                    checked={categoryMode === 'none'}
+                    onChange={() => setCategoryMode('none')}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Skip — leave them uncategorised</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      You can categorise leads one by one later.
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer hover:border-primary/40">
+                  <input
+                    type="radio"
+                    checked={categoryMode === 'pick'}
+                    onChange={() => setCategoryMode('pick')}
+                    className="mt-0.5"
+                    disabled={existingCategories.length === 0}
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      Pick an existing category
+                      {existingCategories.length === 0 && (
+                        <span className="text-xs text-muted-foreground font-normal ml-2">(none yet)</span>
+                      )}
+                    </p>
+                    {categoryMode === 'pick' && existingCategories.length > 0 && (
+                      <Select value={categoryPick} onValueChange={setCategoryPick}>
+                        <SelectTrigger className="mt-2 h-9"><SelectValue placeholder="Choose category" /></SelectTrigger>
+                        <SelectContent>
+                          {existingCategories.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer hover:border-primary/40">
+                  <input
+                    type="radio"
+                    checked={categoryMode === 'new'}
+                    onChange={() => setCategoryMode('new')}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Create a new category</p>
+                    {categoryMode === 'new' && (
+                      <div className="mt-2 space-y-1.5">
+                        <Label className="text-xs">Name</Label>
+                        <Input
+                          value={categoryNew}
+                          onChange={(e) => setCategoryNew(e.target.value)}
+                          placeholder="e.g. VIP customers"
+                          maxLength={64}
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Free text. Anything you type becomes a reusable category next time.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isFinalStep && (
           <div className="space-y-3">
             <div className="rounded-xl border border-border bg-muted/40 p-5">
               <p className="text-sm font-semibold">Ready to import</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {rows.length} rows from <span className="font-medium">{fileName}</span> will be added to {resource}.
+                {rows.length} rows from <span className="font-medium">{fileName}</span> will be added to {label.plural}.
               </p>
+              {resource === 'contacts' && (
+                <div className="mt-2">
+                  <span className="text-xs text-muted-foreground">Category:</span>
+                  <span className="ml-1 text-xs font-medium">
+                    {categoryMappedFromCsv
+                      ? 'from CSV column (per row)'
+                      : resolvedCategory
+                      ? `all rows → ${resolvedCategory}`
+                      : 'none'}
+                  </span>
+                </div>
+              )}
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {Object.entries(mapping).filter(([, v]) => v && v !== SKIP).map(([h, v]) => (
                   <Badge key={h} variant="secondary" className="font-normal">
@@ -291,25 +496,21 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Duplicates are not checked. Records will be created with your user as the owner.
+              Duplicates are not checked. Records will be created with you as the owner
+              (so they'll show up under &quot;My {label.plural}&quot;).
             </p>
           </div>
         )}
 
         <div className="flex items-center justify-between border-t border-border pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => { if (step === 1) onOpenChange(false); else setStep((step - 1) as 1 | 2 | 3); }}
-            disabled={busy}
-          >
+          <Button variant="ghost" size="sm" onClick={goBack} disabled={busy}>
             <ArrowLeft className="mr-1 h-4 w-4" />{step === 1 ? 'Cancel' : 'Back'}
           </Button>
-          {step < 3 ? (
+          {!isFinalStep ? (
             <Button
               size="sm"
               disabled={step === 2 && !requiredOk}
-              onClick={() => setStep((step + 1) as 1 | 2 | 3)}
+              onClick={goNext}
             >
               Next <ArrowRight className="ml-1 h-4 w-4" />
             </Button>

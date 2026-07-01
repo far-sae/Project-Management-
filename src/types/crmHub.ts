@@ -90,6 +90,8 @@ export interface CrmContact {
   leadStatus: LeadStatus;
   source: string | null;
   notes: string | null;
+  /** Free-text user-defined bucket (e.g. "VIP", "Q4 outreach", "Warm intro"). */
+  category: string | null;
   lastContactedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -150,6 +152,7 @@ export interface CreateContactInput {
   leadStatus?: LeadStatus;
   source?: string | null;
   notes?: string | null;
+  category?: string | null;
 }
 
 export type UpdateContactInput = Partial<Omit<CreateContactInput, 'organizationId'>>;

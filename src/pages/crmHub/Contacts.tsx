@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Trash2, Loader2, Download, Upload } from 'lucide-react';
+import { Plus, Search, Trash2, Loader2, Download, Upload, Tag as TagIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmContacts, useCrmCompanies, useContactTagsMap, useCrmTags, useWorkspaceForCreate } from '@/hooks/useCrmHub';
-import { createContact, deleteContact } from '@/services/supabase/crmHub/contacts';
+import { createContact, deleteContact, listLeadCategories } from '@/services/supabase/crmHub/contacts';
 import { LIFECYCLE_STAGES, LEAD_STATUSES } from '@/types/crmHub';
 import type { LifecycleStage, LeadStatus } from '@/types/crmHub';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,7 @@ export const CrmContactsPage: React.FC = () => {
 
   const [search, setSearch] = useState('');
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleStage | 'all'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [view, setView] = useState<'all' | 'mine'>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -53,6 +54,25 @@ export const CrmContactsPage: React.FC = () => {
   const [companyId, setCompanyId] = useState<string>('');
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>('lead');
   const [leadStatus, setLeadStatus] = useState<LeadStatus>('new');
+  const [categoryMode, setCategoryMode] = useState<'none' | 'pick' | 'new'>('none');
+  const [categoryPick, setCategoryPick] = useState<string>('');
+  const [categoryNew, setCategoryNew] = useState<string>('');
+  const [existingCategories, setExistingCategories] = useState<string[]>([]);
+
+  // Merge server-known categories with values already on loaded contacts so
+  // filters and picklists don't miss anything.
+  const allCategories = useMemo(() => {
+    const set = new Set<string>(existingCategories);
+    for (const c of contacts) if (c.category?.trim()) set.add(c.category.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [existingCategories, contacts]);
+
+  useEffect(() => {
+    if (!organization) return;
+    listLeadCategories(organization.organizationId)
+      .then(setExistingCategories)
+      .catch(() => { /* non-fatal */ });
+  }, [organization, contacts.length]);
 
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
   const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);
@@ -62,6 +82,13 @@ export const CrmContactsPage: React.FC = () => {
     return contacts.filter((c) => {
       if (view === 'mine' && user && c.ownerId !== user.userId) return false;
       if (lifecycleFilter !== 'all' && c.lifecycleStage !== lifecycleFilter) return false;
+      if (categoryFilter !== 'all') {
+        if (categoryFilter === '__none__') {
+          if (c.category?.trim()) return false;
+        } else if ((c.category ?? '') !== categoryFilter) {
+          return false;
+        }
+      }
       if (!q) return true;
       const name = `${c.firstName} ${c.lastName ?? ''}`.toLowerCase();
       return (
@@ -71,7 +98,7 @@ export const CrmContactsPage: React.FC = () => {
         (c.jobTitle?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [contacts, search, lifecycleFilter, view, user]);
+  }, [contacts, search, lifecycleFilter, categoryFilter, view, user]);
 
   const handleExportCsv = () => {
     if (!filtered.length) { toast.error('Nothing to export'); return; }
@@ -84,6 +111,7 @@ export const CrmContactsPage: React.FC = () => {
       company: companyById.get(c.companyId ?? '')?.name ?? '',
       lifecycle_stage: c.lifecycleStage,
       lead_status: c.leadStatus,
+      category: c.category ?? '',
     })));
     downloadCSV('contacts.csv', csv);
     toast.success(`Exported ${filtered.length} leads`);
@@ -92,7 +120,13 @@ export const CrmContactsPage: React.FC = () => {
   const resetForm = () => {
     setFirstName(''); setLastName(''); setEmail(''); setPhone('');
     setJobTitle(''); setCompanyId(''); setLifecycleStage('lead'); setLeadStatus('new');
+    setCategoryMode('none'); setCategoryPick(''); setCategoryNew('');
   };
+
+  const resolvedCreateCategory =
+    categoryMode === 'pick' ? categoryPick.trim() || null
+    : categoryMode === 'new' ? categoryNew.trim() || null
+    : null;
 
   const handleCreate = async () => {
     if (!organization) return;
@@ -111,6 +145,7 @@ export const CrmContactsPage: React.FC = () => {
           companyId: companyId || null,
           lifecycleStage,
           leadStatus,
+          category: resolvedCreateCategory,
         },
         user?.userId ?? null,
       );
@@ -202,6 +237,16 @@ export const CrmContactsPage: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              <SelectItem value="__none__">— Uncategorised —</SelectItem>
+              {allCategories.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Card>
@@ -227,6 +272,7 @@ export const CrmContactsPage: React.FC = () => {
                       <th className="text-left py-2 pr-4 font-medium">Phone</th>
                       <th className="text-left py-2 pr-4 font-medium">Company</th>
                       <th className="text-left py-2 pr-4 font-medium">Lifecycle</th>
+                      <th className="text-left py-2 pr-4 font-medium">Category</th>
                       <th className="text-left py-2 pr-4 font-medium">Status</th>
                       <th className="text-right py-2 pl-4 font-medium">Actions</th>
                     </tr>
@@ -275,6 +321,21 @@ export const CrmContactsPage: React.FC = () => {
                           <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                             {humanize(c.lifecycleStage)}
                           </span>
+                          {view === 'all' && user && c.ownerId === user.userId && (
+                            <span className="ml-1 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                              Mine
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {c.category ? (
+                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                              <TagIcon className="w-3 h-3" />
+                              {c.category}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="py-2 pr-4 text-xs text-muted-foreground">{humanize(c.leadStatus)}</td>
                         <td className="py-2 pl-4 text-right">
@@ -363,6 +424,50 @@ export const CrmContactsPage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+              <div className="flex items-center gap-1.5">
+                <TagIcon className="w-3.5 h-3.5 text-primary" />
+                <Label className="mb-0">Category (optional)</Label>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={categoryMode === 'none'} onChange={() => setCategoryMode('none')} />
+                  None
+                </label>
+                <label className={`flex items-center gap-1.5 ${allCategories.length === 0 ? 'text-muted-foreground cursor-not-allowed' : 'cursor-pointer'}`}>
+                  <input
+                    type="radio"
+                    checked={categoryMode === 'pick'}
+                    onChange={() => setCategoryMode('pick')}
+                    disabled={allCategories.length === 0}
+                  />
+                  Pick existing
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={categoryMode === 'new'} onChange={() => setCategoryMode('new')} />
+                  New
+                </label>
+              </div>
+              {categoryMode === 'pick' && allCategories.length > 0 && (
+                <Select value={categoryPick} onValueChange={setCategoryPick} disabled={busy}>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Choose category" /></SelectTrigger>
+                  <SelectContent>
+                    {allCategories.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {categoryMode === 'new' && (
+                <Input
+                  value={categoryNew}
+                  onChange={(e) => setCategoryNew(e.target.value)}
+                  placeholder="e.g. VIP customers"
+                  maxLength={64}
+                  disabled={busy}
+                />
+              )}
             </div>
           </div>
           <DialogFooter>
