@@ -37,28 +37,13 @@
 -- them around after their tables are gone would just produce
 -- confusing errors.
 --
--- Also drops the 'attachments' Storage bucket + its RLS policies.
+-- MANUAL STEP after this migration applies: delete the 'attachments'
+-- Storage bucket via Supabase Studio → Storage → attachments → Delete
+-- bucket. Supabase blocks direct DELETE on storage.objects from SQL
+-- migrations (SQLSTATE 42501), so the bucket cleanup has to go through
+-- the Storage API / dashboard, not this file.
 
 set search_path = public;
-
--- ─── Storage cleanup ─────────────────────────────────────────────────
--- Remove the 'attachments' bucket + associated RLS policies. Blob
--- contents will be permanently deleted.
-do $$
-begin
-  if exists (select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='attachments_member_read') then
-    execute 'drop policy "attachments_member_read" on storage.objects';
-  end if;
-  if exists (select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='attachments_member_write') then
-    execute 'drop policy "attachments_member_write" on storage.objects';
-  end if;
-  if exists (select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='attachments_member_delete') then
-    execute 'drop policy "attachments_member_delete" on storage.objects';
-  end if;
-end $$;
--- Delete blobs before dropping the bucket row (FK dependency).
-delete from storage.objects where bucket_id = 'attachments';
-delete from storage.buckets where id = 'attachments';
 
 -- ─── Triggers on non-CRM tables that reference CRM ───────────────────
 -- automation_enqueue_* triggers on projects/tasks/workspaces/
