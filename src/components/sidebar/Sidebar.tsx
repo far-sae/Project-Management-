@@ -27,6 +27,7 @@ import {
   Contact,
   Building2,
   Handshake,
+  ListChecks,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -69,6 +70,7 @@ const QUICK_ITEMS_FULL = [
   { icon: Contact, label: 'Contacts', href: '/crm/contacts', page: 'crm_contacts' as PageKey },
   { icon: Building2, label: 'Companies', href: '/crm/companies', page: 'crm_companies' as PageKey },
   { icon: Handshake, label: 'Deals', href: '/crm/deals', page: 'crm_deals' as PageKey },
+  { icon: ListChecks, label: 'CRM Tasks', href: '/crm/tasks', page: 'crm_tasks' as PageKey },
   { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
 ];
 

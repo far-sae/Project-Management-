@@ -5,7 +5,8 @@ import { listCompanies } from '@/services/supabase/crmHub/companies';
 import { listContacts } from '@/services/supabase/crmHub/contacts';
 import { listDeals } from '@/services/supabase/crmHub/deals';
 import { listDealStages, seedDefaultDealStages } from '@/services/supabase/crmHub/dealStages';
-import type { CrmCompany, CrmContact, CrmDeal, CrmDealStage } from '@/types/crmHub';
+import { listTasks } from '@/services/supabase/crmHub/tasks';
+import type { CrmCompany, CrmContact, CrmDeal, CrmDealStage, CrmTask } from '@/types/crmHub';
 
 interface UseListResult<T> {
   items: T[];
@@ -151,5 +152,39 @@ export const useCrmDeals = (): UseListResult<CrmDeal> => {
   }, [orgId, refresh]);
 
   if (!orgId) return empty as UseListResult<CrmDeal>;
+  return { items, loading, error, refresh };
+};
+
+export const useCrmTasks = (): UseListResult<CrmTask> => {
+  const orgId = useOrgId();
+  const [items, setItems] = useState<CrmTask[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!orgId) { setItems([]); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      setItems(await listTasks(orgId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load tasks');
+    } finally {
+      setLoading(false);
+    }
+  }, [orgId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    const channel = supabase
+      .channel(`crm-tasks-${orgId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_tasks', filter: `organization_id=eq.${orgId}` }, () => void refresh())
+      .subscribe();
+    return () => { channel.unsubscribe(); };
+  }, [orgId, refresh]);
+
+  if (!orgId) return empty as UseListResult<CrmTask>;
   return { items, loading, error, refresh };
 };

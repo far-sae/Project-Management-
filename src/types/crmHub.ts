@@ -157,3 +157,42 @@ export interface CreateDealInput {
 }
 
 export type UpdateDealInput = Partial<Omit<CreateDealInput, 'organizationId'>>;
+
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export const TASK_PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
+
+export type TaskStatus = 'pending' | 'in_progress' | 'completed';
+export const TASK_STATUSES: TaskStatus[] = ['pending', 'in_progress', 'completed'];
+
+export interface CrmTask {
+  id: string;
+  organizationId: string;
+  ownerId: string | null;
+  assignedTo: string | null;
+  contactId: string | null;
+  companyId: string | null;
+  dealId: string | null;
+  title: string;
+  description: string | null;
+  dueDate: Date | null;
+  priority: TaskPriority;
+  status: TaskStatus;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateTaskInput {
+  organizationId: string;
+  title: string;
+  description?: string | null;
+  dueDate?: string | null;
+  priority?: TaskPriority;
+  status?: TaskStatus;
+  assignedTo?: string | null;
+  contactId?: string | null;
+  companyId?: string | null;
+  dealId?: string | null;
+}
+
+export type UpdateTaskInput = Partial<Omit<CreateTaskInput, 'organizationId'>>;
