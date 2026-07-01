@@ -1,5 +1,4 @@
 import { supabase } from "./config";
-import { kickAutomationWorker } from "./automations";
 import {
   Project,
   CreateProjectInput,
@@ -442,7 +441,6 @@ export const createProject = async (
   }
 
   console.log("✅ Project created successfully:", data.project_id);
-  void kickAutomationWorker({ force: true });
 
   return {
     projectId: data.project_id,
@@ -990,7 +988,6 @@ export const createTask = async (
     logger.error("Failed to create task:", error);
     throw error;
   }
-  void kickAutomationWorker({ force: true });
 
   // Fire notifications for the new assignees — this is what makes the
   // bell light up + the email fire when a task is created with assignees
@@ -1283,7 +1280,6 @@ export const updateTask = async (
     logger.error("Failed to update task:", error);
     throw error;
   }
-  void kickAutomationWorker({ force: true });
 };
 
 export const deleteTask = async (

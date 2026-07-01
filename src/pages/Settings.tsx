@@ -35,22 +35,12 @@ import {
   Loader2,
   Palette,
   Activity,
-  Plug,
-  GitBranch,
-  Target,
-  ClipboardList,
-  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TIMEZONES } from "@/lib/timezones";
-import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
 import { CapacitySettings } from "@/components/settings/CapacitySettings";
-import { PipelinesSettingsTab } from "@/components/settings/PipelinesSettingsTab";
-import { LeadScoringSettingsTab } from "@/components/settings/LeadScoringSettingsTab";
-import { LeadFormsSettingsTab } from "@/components/settings/LeadFormsSettingsTab";
-import { EmailTemplatesSettingsTab } from "@/components/settings/EmailTemplatesSettingsTab";
 import { AuditLogSettingsTab } from "@/components/settings/AuditLogSettingsTab";
 import { MfaSettingsTab } from "@/components/settings/MfaSettingsTab";
 import { OrganizationSettings } from "@/components/organization/OrganizationSettings";
@@ -76,9 +66,7 @@ export const Settings: React.FC = () => {
     trialInfo,
     refreshSubscription,
     loading: subscriptionLoading,
-    hasFeature,
   } = useSubscription();
-  const hasCrm = hasFeature('crm');
   // Organization tab is owner/admin-only — regular members don't see workspace
   // settings like country, currency, branding, or feature toggles.
   const { canManageSettings } = useOrganization();
@@ -522,15 +510,6 @@ export const Settings: React.FC = () => {
               {/* ───── Workspace ───── */}
               <SettingsSectionLabel>Workspace</SettingsSectionLabel>
               <SettingsTab value="capacity" icon={Activity}>Capacity</SettingsTab>
-              {/* Integrations is Advanced/Premium-gated — all the
-                  providers it surfaces (Gmail/Meet/Calendar for CRM
-                  notifications, Slack for automations, Telegram +
-                  WhatsApp bots, Twilio SMS, SendGrid sequences) feed
-                  CRM-tier features. Basic + Starter users would just
-                  see a card grid they can't actually use. */}
-              {hasCrm && (
-                <SettingsTab value="integrations" icon={Plug}>Integrations</SettingsTab>
-              )}
               {canManageSettings && (
                 <SettingsTab value="organization" icon={Building2}>Organization</SettingsTab>
               )}
@@ -538,24 +517,6 @@ export const Settings: React.FC = () => {
                 <SettingsTab value="audit-log" icon={Shield}>Audit log</SettingsTab>
               )}
               <SettingsTab value="mfa" icon={Shield}>Two-factor</SettingsTab>
-
-              {/* ───── CRM (Advanced plan and up) ─────
-                  Pipelines is admin/owner-only (it defines the deal
-                  stages everyone else has to live by). Lead scoring,
-                  Lead forms, Email templates are surface-level
-                  authoring tools reps need day-to-day, so they're
-                  visible to members too. */}
-              {hasCrm && (
-                <>
-                  <SettingsSectionLabel>CRM</SettingsSectionLabel>
-                  {canManageSettings && (
-                    <SettingsTab value="pipelines" icon={GitBranch}>Pipelines</SettingsTab>
-                  )}
-                  <SettingsTab value="lead-scoring" icon={Target}>Lead scoring</SettingsTab>
-                  <SettingsTab value="lead-forms" icon={ClipboardList}>Lead forms</SettingsTab>
-                  <SettingsTab value="email-templates" icon={Mail}>Email templates</SettingsTab>
-                </>
-              )}
 
             </TabsList>
           </div>
@@ -572,46 +533,6 @@ export const Settings: React.FC = () => {
             <CapacitySettings />
           </TabsContent>
 
-          {/* INTEGRATIONS TAB — Advanced/Premium only. Wrapped (not
-              just the trigger) so /settings?tab=integrations on
-              Starter/Basic shows nothing instead of leaking the
-              provider grid. */}
-          {hasCrm && (
-            <TabsContent value="integrations">
-              <IntegrationsTab />
-            </TabsContent>
-          )}
-
-          {/* PIPELINES TAB — admin/owner only (defines deal stages
-              everyone else has to live by). */}
-          {canManageSettings && (
-            <TabsContent value="pipelines">
-              <SettingsHelp
-                title="Pipelines"
-                description="Set up the sales stages your team moves deals through, from first conversation to won or lost."
-              />
-              <PipelinesSettingsTab />
-            </TabsContent>
-          )}
-
-          {/* LEAD SCORING TAB */}
-          <TabsContent value="lead-scoring">
-            <SettingsHelp
-              title="Lead scoring"
-              description="Choose the signals that make a client or deal hot, warm, or cold so the team knows who to contact first."
-            />
-            <LeadScoringSettingsTab />
-          </TabsContent>
-
-          {/* LEAD FORMS TAB */}
-          <TabsContent value="lead-forms">
-            <SettingsHelp
-              title="Lead forms"
-              description="Create simple public forms that collect new leads and send them into your CRM."
-            />
-            <LeadFormsSettingsTab />
-          </TabsContent>
-
           {/* AUDIT LOG TAB — admin/owner only. */}
           {canManageSettings && (
             <TabsContent value="audit-log">
@@ -622,15 +543,6 @@ export const Settings: React.FC = () => {
           {/* MFA TAB */}
           <TabsContent value="mfa">
             <MfaSettingsTab />
-          </TabsContent>
-
-          {/* EMAIL TEMPLATES TAB */}
-          <TabsContent value="email-templates">
-            <SettingsHelp
-              title="Email templates"
-              description="Save reusable subjects and bodies your reps can pick from when emailing a client. Merge tokens like {{client.name}} get filled in automatically."
-            />
-            <EmailTemplatesSettingsTab />
           </TabsContent>
 
           {/* ORGANIZATION TAB — owner/admin only */}
@@ -1089,18 +1001,6 @@ const SettingsSectionLabel: React.FC<{ children: React.ReactNode }> = ({ childre
   <p className="hidden md:block px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground first:pt-1">
     {children}
   </p>
-);
-
-const SettingsHelp: React.FC<{ title: string; description: string }> = ({
-  title,
-  description,
-}) => (
-  <Card className="mb-4">
-    <CardContent className="py-4">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-sm text-muted-foreground mt-1">{description}</p>
-    </CardContent>
-  </Card>
 );
 
 export default Settings;

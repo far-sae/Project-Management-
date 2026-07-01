@@ -117,13 +117,6 @@ const TIER_FEATURES = {
     "Team collaboration",
     "Advanced analytics",
     "Timeline & Contracts",
-    // CRM stack — gated by hasFeature('crm') across the app.
-    "CRM: Leads, Contacts, Accounts, Pipeline",
-    "CRM Activities hub (Tasks, Meetings, Calls)",
-    "AI Sales Agent",
-    "Automations & Sequences",
-    "Email templates & merge tokens",
-    "Lead scoring & lead forms",
     "Priority support",
   ],
   premium: [

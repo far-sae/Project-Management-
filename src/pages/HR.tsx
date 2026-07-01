@@ -22,7 +22,6 @@ import {
 import { TimeTracking } from '@/pages/TimeTracking';
 import { Payroll } from '@/pages/Payroll';
 import { Expenses } from '@/pages/Expenses';
-import { Billing } from '@/pages/Billing';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -271,7 +270,6 @@ export const HR: React.FC = () => {
               <TabsTrigger value="time-tracking">Time Tracking</TabsTrigger>
               <TabsTrigger value="payroll">Payroll</TabsTrigger>
               <TabsTrigger value="expenses">Expenses</TabsTrigger>
-              <TabsTrigger value="billing">Billing</TabsTrigger>
             </TabsList>
           </div>
 
@@ -422,10 +420,6 @@ export const HR: React.FC = () => {
 
           <TabsContent value="expenses" className="flex-1 min-h-0 mt-0">
             <Expenses />
-          </TabsContent>
-
-          <TabsContent value="billing" className="flex-1 min-h-0 mt-0">
-            <Billing />
           </TabsContent>
         </Tabs>
       </main>

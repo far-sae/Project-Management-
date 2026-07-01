@@ -8,11 +8,11 @@
 // Pure data + a route→key resolver. No React, so it's trivially testable.
 
 export type PageKey =
-  | 'dashboard' | 'projects_analytics' | 'crm_analytics' | 'insights'
+  | 'dashboard' | 'projects_analytics'
   | 'project_management' | 'my_tasks' | 'calendar' | 'workload' | 'inbox'
   | 'team' | 'files' | 'comments' | 'contracts'
-  | 'crm' | 'ai_agent' | 'timeline' | 'reports'
-  | 'hr' | 'billing' | 'settings';
+  | 'timeline' | 'reports'
+  | 'hr' | 'settings';
 
 export type PageAccessLevel = 'none' | 'view' | 'edit';
 
@@ -36,20 +36,15 @@ export interface PageDef {
 export const PAGE_CATALOG: PageDef[] = [
   { key: 'dashboard',          label: 'Dashboard',          group: 'Overview',      routes: ['/dashboard'] },
   { key: 'projects_analytics', label: 'Projects analytics', group: 'Overview',      routes: ['/dashboard/projects'] },
-  { key: 'crm_analytics',      label: 'CRM analytics',      group: 'Overview',      routes: ['/dashboard/clients'], feature: 'crm' },
-  { key: 'insights',           label: 'Insights',           group: 'Overview',      routes: ['/dashboard/insights'] },
   { key: 'project_management', label: 'Project management', group: 'Work',          routes: ['/project'] },
   { key: 'my_tasks',           label: 'My Tasks',           group: 'Work',          routes: ['/tasks'], alwaysAvailable: true },
   { key: 'calendar',           label: 'Calendar',           group: 'Work',          routes: ['/calendar'], alwaysAvailable: true },
   { key: 'workload',           label: 'Workload',           group: 'Work',          routes: ['/workload'] },
   { key: 'inbox',              label: 'Inbox',              group: 'Work',          routes: ['/inbox'] },
-  { key: 'crm',                label: 'CRM',                group: 'CRM',           routes: ['/clients'], feature: 'crm' },
-  { key: 'ai_agent',           label: 'AI Agent',           group: 'CRM',           routes: ['/ai-agent'], feature: 'crm' },
-  { key: 'timeline',           label: 'Timeline',           group: 'CRM',           routes: ['/timeline'], feature: 'timeline_overview' },
-  { key: 'reports',            label: 'Reports',            group: 'CRM',           routes: ['/reports'] },
+  { key: 'timeline',           label: 'Timeline',           group: 'Work',           routes: ['/timeline'], feature: 'timeline_overview' },
+  { key: 'reports',            label: 'Reports',            group: 'Work',           routes: ['/reports'] },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },
   { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses'] },
-  { key: 'billing',            label: 'Billing',            group: 'People & ops',  routes: ['/billing'] },
   { key: 'contracts',          label: 'Contracts',          group: 'People & ops',  routes: ['/contracts'], feature: 'contracts' },
   { key: 'comments',           label: 'Comments',           group: 'Workspace',     routes: ['/comments'] },
   { key: 'files',              label: 'Files',              group: 'Workspace',     routes: ['/files'] },

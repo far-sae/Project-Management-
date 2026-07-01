@@ -1,8 +1,8 @@
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useParams } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { OrganizationProvider, useOrganization } from '@/context/OrganizationContext';
+import { OrganizationProvider } from '@/context/OrganizationContext';
 import { SubscriptionProvider } from '@/context/SubscriptionContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -11,7 +11,6 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Login } from '@/pages/auth/Login';
 import { Signup } from '@/pages/auth/Signup';
 import LandingPage from '@/pages/landing/LandingPage';
-import { PublicLeadForm } from '@/pages/PublicLeadForm';
 
 // Lazy — every authenticated/heavy page is fetched on demand. This shrinks the initial JS
 // bundle from "everything" to "shell + landing/auth", which is the single biggest perf win
@@ -33,19 +32,10 @@ const TimeTracking = React.lazy(() => import('@/pages/TimeTracking').then((m) =>
 const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ default: m.Expenses })));
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
-const BillingPage = React.lazy(() => import('@/pages/Billing').then((m) => ({ default: m.Billing })));
-const PublicInvoicePage = React.lazy(() => import('@/pages/public/PublicInvoice').then((m) => ({ default: m.PublicInvoice })));
-const ClientsPage = React.lazy(() => import('@/pages/Clients').then((m) => ({ default: m.Clients })));
-const BusinessAccountPage = React.lazy(() => import('@/pages/BusinessAccountPage').then((m) => ({ default: m.BusinessAccountPage })));
-const AIAgentPage = React.lazy(() => import('@/pages/AIAgent').then((m) => ({ default: m.AIAgent })));
-const ClientsActivity = React.lazy(() => import('@/pages/ClientsActivity').then((m) => ({ default: m.ClientsActivity })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
-const IntegrationCallback = React.lazy(() => import('@/components/integrations/IntegrationCallback').then((m) => ({ default: m.IntegrationCallback })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
-const ClientsDashboardPage = React.lazy(() => import('@/pages/dashboards/ClientsDashboard').then((m) => ({ default: m.ClientsDashboard })));
-const InsightsDashboard = React.lazy(() => import('@/pages/dashboards/InsightsDashboard').then((m) => ({ default: m.InsightsDashboard })));
 const AboutPage = React.lazy(() => import('@/pages/legal/AboutPage'));
 const ContractsInfoPage = React.lazy(() => import('@/pages/legal/ContractsInfoPage'));
 const PrivacyPolicyPage = React.lazy(() => import('@/pages/legal/PrivacyPolicyPage'));
@@ -60,8 +50,6 @@ import { CommandPalette } from '@/components/command/CommandPalette';
 import { CallProvider } from '@/components/calling/CallProvider';
 import { CallOverlay } from '@/components/calling/CallOverlay';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { kickAutomationWorker } from '@/services/supabase/automations';
-
 // Used for non-app routes (auth, landing, legal). Authenticated routes get
 // their own scoped fallback inside <AppLayout> so the sidebar stays visible
 // while the page area lazy-loads.
@@ -129,23 +117,6 @@ const RouterShell: React.FC = () => {
   );
 };
 
-const AutomationWorkerPulse: React.FC = () => {
-  const { user } = useAuth();
-  const { organization } = useOrganization();
-  const orgId = organization?.organizationId ?? null;
-
-  useEffect(() => {
-    if (!user || !orgId) return;
-    void kickAutomationWorker({ force: true });
-    const id = window.setInterval(() => {
-      void kickAutomationWorker();
-    }, 30_000);
-    return () => window.clearInterval(id);
-  }, [user?.userId, orgId]);
-
-  return null;
-};
-
 // Router is created once at module level — NOT inside App() — so it is stable
 // across re-renders. Previously it was recreated on every render, which caused
 // the entire component tree to remount (the biggest performance issue).
@@ -158,9 +129,6 @@ const router = createBrowserRouter(
         // Public lead-capture form pages — mounted OUTSIDE the authenticated
         // AppLayout so they render with no sidebar / no auth guard. Placed
         // first so they match before any catch-alls.
-        { path: '/invoice/:token', element: lazyRoute(<PublicInvoicePage />) },
-        { path: '/forms/:slug', element: <PublicLeadForm /> },
-        { path: '/forms/:slug/embed', element: <PublicLeadForm embed /> },
         { path: '/login', element: <Login /> },
         { path: '/signup', element: <Signup /> },
         { path: '/pricing', element: lazyRoute(<Pricing />) },
@@ -170,7 +138,6 @@ const router = createBrowserRouter(
         { path: '/cookies', element: lazyRoute(<CookiePolicyPage />) },
         { path: '/terms', element: lazyRoute(<TermsPage />) },
         { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
-        { path: '/integrations/callback', element: lazyRoute(<IntegrationCallback />) },
         { path: '/', element: <LandingPage /> },
         {
           // All authenticated app routes share a single layout — the sidebar
@@ -192,22 +159,6 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requirePage="projects_analytics">
                   {lazyAppRoute(<ProjectsDashboard />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/dashboard/clients',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm_analytics">
-                  {lazyAppRoute(<ClientsDashboardPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              path: '/dashboard/insights',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="insights">
-                  {lazyAppRoute(<InsightsDashboard />)}
                 </ProtectedRoute>
               ),
             },
@@ -319,59 +270,6 @@ const router = createBrowserRouter(
               ),
             },
             {
-              path: '/billing',
-              element: (
-                <ProtectedRoute requireSubscription requirePage="billing">
-                  {lazyAppRoute(<BillingPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              // Org-wide CRM activity feed. Listed BEFORE `/clients` so the
-              // more specific path matches first. Open to members
-              // (previously admin-only) — RLS on client_notes / meetings
-              // / calls / tasks already enforces per-org isolation, and
-              // reps need to log + close their own activities from here.
-              path: '/clients/activity',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
-                  {lazyAppRoute(<ClientsActivity />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              // CRM clients page — open to members. Per-row RLS handles
-              // workspace + org gating; admin-only mutations (delete
-              // account, bulk edit) are gated inside the page itself.
-              path: '/clients',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
-                  {lazyAppRoute(<ClientsPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              // Standalone Business page (reuses the company/account record):
-              // business details + its leads. Reached from a lead's "Business"
-              // link or by navigating here directly.
-              path: '/business/:clientId',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
-                  {lazyAppRoute(<BusinessAccountPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
-              // AI Agent — open to members so reps can use the assistant
-              // on their own deals/contacts.
-              path: '/ai-agent',
-              element: (
-                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="ai_agent">
-                  {lazyAppRoute(<AIAgentPage />)}
-                </ProtectedRoute>
-              ),
-            },
-            {
               path: '/reports',
               element: (
                 <ProtectedRoute requireSubscription requirePage="reports">
@@ -426,7 +324,6 @@ export default function App() {
           <OrganizationProvider>
             <SubscriptionProvider>
               <CallProvider>
-                <AutomationWorkerPulse />
                 <RouterProvider router={router} future={{ v7_startTransition: true }} />
                 <CallOverlay />
                 <Toaster position='bottom-right' />

@@ -78,13 +78,6 @@ const plans = [
       "Team collaboration",
       "Advanced analytics",
       "Timeline & Contracts",
-      // CRM stack — gated on hasFeature('crm'), Advanced + Premium only.
-      "CRM: Leads, Contacts, Accounts, Pipeline",
-      "Activities hub (Tasks, Meetings, Calls)",
-      "AI Sales Agent",
-      "Automations & Sequences",
-      "Email templates & merge tokens",
-      "Lead scoring & lead forms",
       "Priority support",
     ],
     cta: "Get Started",

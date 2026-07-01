@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, Upload, KeyRound, Lock, Network } from 'lucide-react';
+import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, KeyRound, Lock, Network } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -29,7 +29,6 @@ import {
   UNASSIGNED_WORKSPACE_ID,
   useSelectedWorkspace,
 } from '@/hooks/useSelectedWorkspace';
-import { CsvImportDialog } from '@/components/import/CsvImportDialog';
 import { SavedViewsMenu } from '@/components/views/SavedViewsMenu';
 import { tasksToCsv, downloadCsv } from '@/services/csv/tasksCsv';
 import type { SavedView } from '@/types/savedView';
@@ -241,7 +240,6 @@ export const ProjectView: React.FC = () => {
     }
   }, [sortOption]);
   const [showTrialBanner, setShowTrialBanner] = useState(true);
-  const [showCsvImport, setShowCsvImport] = useState(false);
   const [rightRailOpen, setRightRailOpen] = useState<boolean>(() => {
     try {
       return window.localStorage.getItem('project_right_rail_open') !== '0';
@@ -841,10 +839,6 @@ export const ProjectView: React.FC = () => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setShowCsvImport(true)}>
-                    <Upload className="w-4 h-4 mr-2" />
-                    Import CSV…
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleExportCsv}>
                     <Download className="w-4 h-4 mr-2" />
                     Export tasks to CSV
@@ -1065,14 +1059,6 @@ export const ProjectView: React.FC = () => {
         message={limitModal.message}
       />
 
-      <CsvImportDialog
-        open={showCsvImport}
-        onOpenChange={setShowCsvImport}
-        projectId={project.projectId}
-        projectName={project.name}
-        columns={boardColumns}
-        addTask={addTask}
-      />
     </>
   );
 };

@@ -31,11 +31,7 @@ export type AppFeature =
   | "ai_assistant"
   | "reports"
   | "api_access"
-  | "custom_integrations"
-  // CRM umbrella: gates the Clients page, AI sales agent, automation engine,
-  // sequences, AI blocks, and the CRM analytics dashboard. Basic plan keeps
-  // pure project management; Advanced+ unlocks CRM.
-  | "crm";
+  | "custom_integrations";
 
 // ── Subscription flow ────────────────────────────────────────────────
 // 1. First login: no subscription row → we create one with 28-day trial (Advanced access).
@@ -57,7 +53,6 @@ const FEATURE_TIERS: Record<AppFeature, Array<SubscriptionTier | "trial" | "star
   contracts: ["trial", "advanced", "premium"],
   api_access: ["premium"],
   custom_integrations: ["premium"],
-  crm: ["trial", "advanced", "premium"],
 };
 
 interface SubscriptionContextType {

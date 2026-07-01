@@ -20,10 +20,9 @@ const TermsPage = () => {
         <p className="text-muted-foreground mb-6 leading-relaxed">
           These Terms of Service (&quot;Terms&quot;) constitute a legal agreement between you and{' '}
           {LEGAL_COMPANY_NAME} (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) governing access to and use of{' '}
-          {LEGAL_PRODUCT_NAME}, our software product for project management, sales CRM, automation,
-          analytics, team collaboration, and related features (the &quot;Service&quot;), including any
-          websites, applications, Telegram and WhatsApp chat-bot integrations, and services we make
-          available in connection with {LEGAL_PRODUCT_NAME}.
+          {LEGAL_PRODUCT_NAME}, our software product for project management, analytics, team
+          collaboration, and related features (the &quot;Service&quot;), including any websites,
+          applications, and services we make available in connection with {LEGAL_PRODUCT_NAME}.
         </p>
         <p className="text-muted-foreground mb-8 leading-relaxed">
           By creating an account, accepting an invitation, or otherwise using the Service, you confirm
@@ -60,26 +59,8 @@ const TermsPage = () => {
             sync with Google Calendar.
           </li>
           <li>
-            <strong className="text-foreground">Sales CRM</strong> (Advanced and Premium tiers) —
-            Leads, Contacts, Accounts, Deals + sales Pipeline, Activities hub (Tasks, Meetings,
-            Calls with notes + attachments), CRM analytics, lead scoring, lead forms, email
-            templates with merge tokens.
-          </li>
-          <li>
-            <strong className="text-foreground">Automations and Sequences</strong> (Advanced and
-            Premium) — triggered recipes that perform actions on the user&apos;s behalf
-            (send_email, create_task, tag, change_owner, wait, AI blocks, etc.) when CRM events
-            occur, with manual enrolment on records.
-          </li>
-          <li>
-            <strong className="text-foreground">AI Sales Agent</strong> (Advanced and Premium) — an
-            assistant that proposes follow-ups, drafts emails, and summarises records using
-            large-language-model APIs.
-          </li>
-          <li>
             <strong className="text-foreground">Integrations</strong> — optional connections to
-            Gmail (sending and inbound), Google Calendar, Google Meet, Slack, Telegram, WhatsApp,
-            Twilio (SMS), and SendGrid (sequence email and inbound reply tracking).
+            Gmail, Google Calendar, and Google Meet for task scheduling and notifications.
           </li>
           <li>
             <strong className="text-foreground">Team operations</strong> — Team, Contracts,
@@ -218,19 +199,6 @@ const TermsPage = () => {
             </a>
             .
           </li>
-          <li>
-            <strong className="text-foreground">Slack.</strong> Subject to{' '}
-            <a
-              href="https://slack.com/terms-of-service"
-              className="text-primary underline underline-offset-2"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Slack&apos;s Terms of Service
-            </a>
-            . Org administrators can disconnect from <strong className="text-foreground">Settings &rarr; Integrations</strong>{' '}
-            at any time.
-          </li>
         </ul>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">9. Confidentiality</h2>
@@ -262,36 +230,11 @@ const TermsPage = () => {
         </p>
         <p className="text-muted-foreground mb-4 leading-relaxed">
           <strong className="text-foreground">AI features.</strong> Parts of the Service use
-          large-language-model APIs to generate suggestions — including task descriptions, lead
-          scoring rationale, intent parsing for the Telegram bot, AI Blocks inside automations and
-          sequences, AI Sales Agent recommendations, AI-drafted emails, AI summaries of records, and
-          AI classification of inbound enquiries. AI output is probabilistic and may be inaccurate,
-          incomplete, biased, out of date, or fabricated. You are responsible for reviewing any AI
-          output before relying on it for business, financial, legal, or other decisions, and for
-          sending it to a third party (e.g. an AI-drafted email to a customer). We do not warrant
-          that AI output is fit for any particular purpose. Where the Service performs an action on
-          your behalf (sending an email, creating a record, posting to Slack), responsibility for
-          the action rests with you and your organisation; see also Section 4 (Acceptable use).
-        </p>
-        <p className="text-muted-foreground mb-4 leading-relaxed">
-          <strong className="text-foreground">Outbound communications.</strong> When you connect
-          Gmail, Twilio (SMS), SendGrid, Telegram, WhatsApp, or Slack, the Service can send
-          messages on your behalf — including notification emails, sequence steps, SMS, chat-bot
-          replies, and ad-hoc messages composed in the app. You are responsible for ensuring that
-          every recipient has appropriate lawful basis to receive those messages (opt-in,
-          legitimate-interest, business-customer relationship, etc.) and that the content complies
-          with applicable marketing, anti-spam, and accessibility laws (including but not limited
-          to GDPR, the UK PECR, the US CAN-SPAM Act, and the US TCPA for SMS). We may rate-limit or
-          disable outbound channels if abuse is detected.
-        </p>
-        <p className="text-muted-foreground mb-4 leading-relaxed">
-          <strong className="text-foreground">Chat-bot integrations.</strong> Optional integrations
-          on Telegram and WhatsApp are provided on a best-effort basis and depend on the third-party
-          platform&apos;s availability and policies (Telegram Bot API and Meta WhatsApp Cloud API).
-          We do not guarantee delivery of any individual message and we may rate-limit or disable a
-          bot connection if abuse is detected. Outside the standard customer-service window,
-          WhatsApp requires pre-approved template messages — we will only initiate such messages on
-          your behalf if you have configured an automation that does so.
+          large-language-model APIs to generate suggestions — for example, task descriptions and
+          summaries. AI output is probabilistic and may be inaccurate, incomplete, biased, out of
+          date, or fabricated. You are responsible for reviewing any AI output before relying on it
+          for business, financial, legal, or other decisions. We do not warrant that AI output is
+          fit for any particular purpose.
         </p>
 
         <h2 className="text-xl font-semibold text-foreground mt-10 mb-3">12. Limitation of liability</h2>

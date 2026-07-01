@@ -13,5 +13,3 @@ export * from "./timeEntries";
 export * from "./expenses";
 export * from "./employees";
 export * from "./payroll";
-export * from "./deals";
-export * from "./clientTasks";

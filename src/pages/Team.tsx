@@ -5,7 +5,6 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { updateOrganization } from '@/services/supabase/organizations';
 import { upsertProjectMember, type ProjectRole } from '@/services/supabase/projectMembers';
 import type { Organization, OrganizationMember } from '@/types/organization';
-import type { CustomRole } from '@/services/supabase/customRoles';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useProjects } from '@/hooks/useProjects';
 import { useSubscription } from '@/context/SubscriptionContext';
@@ -35,39 +34,28 @@ import { checkTeamMemberLimit, supabase } from '@/services/supabase';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { SUPPORT_EMAIL } from '@/lib/support-email';
-import { RolesAndAccessSection } from '@/components/team/RolesAndAccessSection';
 import {
   Select as RoleSelect, SelectContent as RoleSelectContent, SelectItem as RoleSelectItem,
   SelectTrigger as RoleSelectTrigger, SelectValue as RoleSelectValue,
 } from '@/components/ui/select';
 
 /**
- * Inline role picker for a member row — assigns a built-in role or a custom
- * role (reusing the org-wide roles). Persists customRoleId on the members
- * jsonb via updateOrganization. Owner-only changes are gated by the caller.
+ * Inline role picker for a member row — assigns a built-in role.
  */
 const MemberRoleSelect: React.FC<{
   userId: string;
   organization: Organization;
-  customRoles: CustomRole[];
   onChanged: () => Promise<void> | void;
-}> = ({ userId, organization, customRoles, onChanged }) => {
+}> = ({ userId, organization, onChanged }) => {
   const [busy, setBusy] = useState(false);
   const orgMember = (organization.members ?? []).find((m) => m.userId === userId);
   const role = orgMember?.role ?? 'member';
-  const value = orgMember?.customRoleId && customRoles.some((r) => r.roleId === orgMember.customRoleId)
-    ? `custom:${orgMember.customRoleId}`
-    : `builtin:${role}`;
+  const value = `builtin:${role}`;
 
   const assign = async (v: string) => {
     const next = (organization.members ?? []).map((m) => {
       if (m.userId !== userId) return m;
-      if (v.startsWith('custom:')) {
-        // Keep a safe built-in baseline so deleting the custom role degrades
-        // gracefully rather than leaving stale access.
-        return { ...m, role: 'member' as const, customRoleId: v.slice('custom:'.length) };
-      }
-      return { ...m, role: v.slice('builtin:'.length) as OrganizationMember['role'], customRoleId: null };
+      return { ...m, role: v.slice('builtin:'.length) as OrganizationMember['role'] };
     });
     setBusy(true);
     try {
@@ -89,9 +77,6 @@ const MemberRoleSelect: React.FC<{
           <RoleSelectItem value="builtin:admin">Admin (full)</RoleSelectItem>
           <RoleSelectItem value="builtin:member">Member</RoleSelectItem>
           <RoleSelectItem value="builtin:viewer">Viewer</RoleSelectItem>
-          {customRoles.map((r) => (
-            <RoleSelectItem key={r.roleId} value={`custom:${r.roleId}`}>{r.name}</RoleSelectItem>
-          ))}
         </RoleSelectContent>
       </RoleSelect>
     </div>
@@ -100,7 +85,7 @@ const MemberRoleSelect: React.FC<{
 
 export const Team: React.FC = () => {
   const { user } = useAuth();
-  const { organization, refreshOrganization, isAdmin, customRoles } = useOrganization();
+  const { organization, refreshOrganization, isAdmin } = useOrganization();
   const { projects, refreshProjects } = useProjects();
   const { hasFeature, currentTier, pricing } = useSubscription();
   const navigate = useNavigate();
@@ -561,17 +546,8 @@ export const Team: React.FC = () => {
     const failed: { email: string; reason: string }[] = [];
     const manualLinks: { email: string; link: string; reason: string }[] = [];
 
-    // Split the combined picker value into a built-in baseline + optional
-    // custom role, and a human label for the invite email.
-    const inviteCustomRoleId = inviteRoleValue.startsWith('custom:')
-      ? inviteRoleValue.slice('custom:'.length)
-      : null;
-    const inviteBuiltinRole = (inviteCustomRoleId
-      ? 'member'
-      : inviteRoleValue.slice('builtin:'.length)) as 'admin' | 'member' | 'viewer';
-    const inviteRoleLabel = inviteCustomRoleId
-      ? (customRoles.find((r) => r.roleId === inviteCustomRoleId)?.name ?? 'Custom role')
-      : inviteBuiltinRole;
+    const inviteBuiltinRole = inviteRoleValue.slice('builtin:'.length) as 'admin' | 'member' | 'viewer';
+    const inviteRoleLabel = inviteBuiltinRole;
 
     try {
       // Sequential — gives each createInvitation a clean turn for RLS / DB writes.
@@ -582,7 +558,7 @@ export const Team: React.FC = () => {
             user.displayName, user.email, projectOrgId,
             {
               projectId: selectedProject, inviteeEmail: email,
-              role: inviteBuiltinRole, customRoleId: inviteCustomRoleId,
+              role: inviteBuiltinRole,
             },
           );
           setInvitations((prev) => [invitation, ...prev]);
@@ -791,9 +767,6 @@ export const Team: React.FC = () => {
           </Card>
         </div>
 
-        {/* Owner/admin: custom roles + per-page access (No access / View / Edit). */}
-        <RolesAndAccessSection />
-
         <Card className="mb-6">
           <CardHeader><CardTitle>Team Members</CardTitle></CardHeader>
           <CardContent>
@@ -841,7 +814,6 @@ export const Team: React.FC = () => {
                         <MemberRoleSelect
                           userId={member.userId}
                           organization={organization}
-                          customRoles={customRoles}
                           onChanged={refreshOrganization}
                         />
                       ) : (
@@ -1024,16 +996,6 @@ export const Team: React.FC = () => {
                     <SelectItem value="builtin:viewer">
                       <div className="flex items-center gap-2"><User className="w-4 h-4 text-muted-foreground" />Viewer - Read-only access</div>
                     </SelectItem>
-                    {customRoles.length > 0 && (
-                      <>
-                        <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground">Custom roles</div>
-                        {customRoles.map((r) => (
-                          <SelectItem key={r.roleId} value={`custom:${r.roleId}`}>
-                            <div className="flex items-center gap-2"><Shield className="w-4 h-4 text-emerald-500" />{r.name}</div>
-                          </SelectItem>
-                        ))}
-                      </>
-                    )}
                   </SelectContent>
                 </Select>
               </div>

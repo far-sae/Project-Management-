@@ -94,13 +94,6 @@ const CookiePolicyPage = () => {
         </p>
         <ul className="list-disc pl-5 space-y-2 text-muted-foreground mb-4 leading-relaxed">
           <li>
-            <strong className="text-foreground">Cloudflare Turnstile</strong> — public lead-capture
-            forms render a Turnstile challenge widget which may set short-lived cookies on the
-            challenge subdomain to detect automated submissions. Required for the form to load; no
-            opt-out without disabling Turnstile at the organisation level (Settings &rarr; Lead
-            forms). Cloudflare&apos;s privacy practices apply.
-          </li>
-          <li>
             <strong className="text-foreground">Stripe</strong> — when you visit the Stripe-hosted
             checkout from the Subscription page, Stripe sets cookies on its own domain to operate the
             payment session and detect fraud. {LEGAL_PRODUCT_NAME} does not set or read these

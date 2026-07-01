@@ -3,8 +3,6 @@ import { useAuth } from './AuthContext';
 import { Organization, OrganizationMember } from '@/types/organization';
 import { getOrganization } from '@/services/supabase/organizations';
 import { supabase } from '@/services/supabase/config';
-import { type CrmModule } from "@/services/supabase/crmGrants";
-import { listCustomRoles, type CustomRole } from "@/services/supabase/customRoles";
 import { resolvePagePermissions, type BuiltinRole } from "@/lib/pagePermissions";
 import { type PageKey, type PageAccessLevel } from "@/lib/pageCatalog";
 
@@ -21,10 +19,6 @@ interface OrganizationContextType {
   canInviteMembers: boolean;
   canManageBilling: boolean;
   canManageSettings: boolean;
-  canViewModule: (m: CrmModule) => boolean;
-  canEditModule: (m: CrmModule) => boolean;
-  /** Owner-defined roles in this org (for the Team editor). */
-  customRoles: CustomRole[];
   /** Current user's effective access to a page: 'none' | 'view' | 'edit'.
    *  Owner is always 'edit'; otherwise driven by the assigned custom role, or
    *  the built-in role's today-equivalent surface. Does NOT include the plan
@@ -44,10 +38,6 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
-  // False until the org's custom roles have been fetched at least once, so
-  // route guards don't decide page access before a member's role is known.
-  const [customRolesLoaded, setCustomRolesLoaded] = useState(false);
 
   // ============================================
   // Helper Functions
@@ -301,56 +291,17 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [user?.userId]);
 
-  // Load the org's custom roles (drives per-page access). Non-fatal on error
-  // (e.g. local-only org) — falls back to [] and the built-in role surface.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (organization?.organizationId) {
-          const roles = await listCustomRoles(organization.organizationId);
-          if (!cancelled) setCustomRoles(roles);
-        } else if (!cancelled) {
-          setCustomRoles([]);
-        }
-      } catch {
-        if (!cancelled) setCustomRoles([]);
-      } finally {
-        if (!cancelled) setCustomRolesLoaded(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [organization?.organizationId]);
-
   // ============================================
   // Provider value
   // ============================================
 
   const value = useMemo(() => {
-    // Resolve the current user's per-page access from their assigned custom
-    // role (if any), else the built-in role's today-equivalent surface.
-    const me = organization?.members.find((m) => m.userId === user?.userId);
-    const myCustomRole = me?.customRoleId
-      ? customRoles.find((r) => r.roleId === me.customRoleId) ?? null
-      : null;
     const pagePerms = resolvePagePermissions({
       isOwner,
       builtinRole: (role as BuiltinRole | null),
-      customRole: myCustomRole,
+      customRole: null,
     });
     const pageLevel = (page: PageKey): PageAccessLevel => pagePerms[page] ?? 'none';
-
-    // CRM module access (Deals/Leads) is governed by the assigned custom role,
-    // not a separate per-member grant matrix (removed). Owner/admin = full.
-    // A member with no custom role can VIEW by default (matches the CRM
-    // default-open read) but can't EDIT until a role grants 'crm' = edit.
-    const crmRoleLevel: PageAccessLevel | null = myCustomRole
-      ? (myCustomRole.permissions['crm'] ?? 'none')
-      : null;
-    const canViewModule = (_m: CrmModule): boolean =>
-      isAdmin || (crmRoleLevel !== null ? crmRoleLevel !== 'none' : true);
-    const canEditModule = (_m: CrmModule): boolean =>
-      isAdmin || crmRoleLevel === 'edit';
 
     return {
       organization,
@@ -363,16 +314,13 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       canInviteMembers,
       canManageBilling,
       canManageSettings,
-      canViewModule,
-      canEditModule,
-      customRoles,
       pageLevel,
       canAccessPage: (page: PageKey) => pageLevel(page) !== 'none',
       canEditPage: (page: PageKey) => pageLevel(page) === 'edit',
-      permissionsLoading: loading || !customRolesLoaded,
+      permissionsLoading: loading,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, customRoles, customRolesLoaded, role, user?.userId]);
+  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, role, user?.userId]);
 
   return (
     <OrganizationContext.Provider value={value}>

@@ -1,5 +1,4 @@
 import { supabase } from "./config";
-import { kickAutomationWorker } from "./automations";
 import { logger } from "@/lib/logger";
 
 export interface Workspace {
@@ -46,7 +45,6 @@ export const createWorkspace = async (
     logger.error("Failed to create workspace:", error);
     throw error;
   }
-  void kickAutomationWorker({ force: true });
 
   return {
     workspaceId: data.workspace_id,

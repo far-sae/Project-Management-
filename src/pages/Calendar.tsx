@@ -1,18 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, AlertCircle, RefreshCw, Video, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  ExternalCalendarEvent,
-  listExternalCalendarEvents,
-  syncGoogleCalendar,
-} from '@/services/integrations/googleCalendarSync';
-import {
-  listActivities, type Activity as CrmActivity,
-} from '@/services/supabase/activities';
-import { onMeetingsChanged } from '@/services/supabase/meetings';
-import { onCallsChanged } from '@/services/supabase/calls';
-import { ActivityDetailDialog } from '@/components/activities/ActivityDetailDialog';
 
 import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -56,19 +45,6 @@ export const Calendar: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  // Google Calendar events synced via sync-google-calendar edge fn.
-  // Mirrored from the user's primary Google Calendar so Gmail-delivered
-  // meeting invites + scheduled meetings show up next to TaskCalendar
-  // tasks without flipping tabs.
-  const [externalEvents, setExternalEvents] = useState<ExternalCalendarEvent[]>([]);
-  const [syncingCal, setSyncingCal] = useState(false);
-  const [selectedExternal, setSelectedExternal] = useState<ExternalCalendarEvent | null>(null);
-  // CRM activities (client_tasks + meetings + calls) — pulled via the
-  // same aggregator the Activities hub uses, then placed on the
-  // calendar by whenAt so reps see one date-keyed view of everything
-  // they're scheduled for / have to follow up on.
-  const [crmActivities, setCrmActivities] = useState<CrmActivity[]>([]);
-  const [selectedCrm, setSelectedCrm] = useState<CrmActivity | null>(null);
 
   const orgId =
     organization?.organizationId ||
@@ -152,74 +128,6 @@ export const Calendar: React.FC = () => {
     fetchTasks();
   }, [orgId, user]);
 
-  // Pull cached Google Calendar events for the current month ±. Reads
-  // only — the sync happens via the Sync button below (or automatically
-  // on first mount if the user has a real org).
-  const loadExternal = async () => {
-    if (!user || !orgId || orgId.startsWith('local-')) {
-      setExternalEvents([]);
-      return;
-    }
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const start = new Date(year, month - 1, 1);
-    const end = new Date(year, month + 2, 0, 23, 59, 59);
-    const next = await listExternalCalendarEvents(start, end);
-    setExternalEvents(next);
-  };
-  useEffect(() => {
-    void loadExternal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.userId, orgId, currentDate]);
-
-  // Pull CRM activities (Tasks + Meetings + Calls) so they appear on
-  // the calendar alongside project tasks + Google Calendar events.
-  // Independent of the project-tasks fetch so a failure in one
-  // doesn't blank the other.
-  useEffect(() => {
-    if (!orgId || orgId.startsWith('local-')) { setCrmActivities([]); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const rows = await listActivities(orgId, {
-          openDealIds: new Set(),
-          customerClientIds: new Set(),
-        });
-        if (!cancelled) setCrmActivities(rows);
-      } catch {
-        if (!cancelled) setCrmActivities([]);
-      }
-    })();
-    // Cross-tab sync: refetch when a meeting or call gets created
-    // anywhere in the app.
-    const off1 = onMeetingsChanged((o) => { if (o === orgId) void (async () => {
-      const next = await listActivities(orgId, { openDealIds: new Set(), customerClientIds: new Set() });
-      if (!cancelled) setCrmActivities(next);
-    })(); });
-    const off2 = onCallsChanged((o) => { if (o === orgId) void (async () => {
-      const next = await listActivities(orgId, { openDealIds: new Set(), customerClientIds: new Set() });
-      if (!cancelled) setCrmActivities(next);
-    })(); });
-    return () => { cancelled = true; off1(); off2(); };
-  }, [orgId]);
-
-  const handleSyncCalendar = async () => {
-    if (!orgId || orgId.startsWith('local-')) {
-      toast.error('Calendar sync needs a real organization. Connect Supabase first.');
-      return;
-    }
-    setSyncingCal(true);
-    try {
-      const result = await syncGoogleCalendar(orgId, { pastDays: 30, futureDays: 60 });
-      toast.success(`Synced ${result.inserted} calendar event${result.inserted === 1 ? '' : 's'} from Google`);
-      await loadExternal();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Sync failed');
-    } finally {
-      setSyncingCal(false);
-    }
-  };
-
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -259,32 +167,6 @@ export const Calendar: React.FC = () => {
     });
   };
 
-  // Google Calendar mirror events for one day. Handles both timed
-  // events (start_at) and all-day events (start_date YYYY-MM-DD).
-  const getExternalForDay = (day: number) => {
-    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    const sameDay = (d: Date | null) => d
-      && d.getDate() === date.getDate()
-      && d.getMonth() === date.getMonth()
-      && d.getFullYear() === date.getFullYear();
-    const yyyymmdd = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return externalEvents.filter((e) => sameDay(e.startAt) || e.startDate === yyyymmdd);
-  };
-
-  // CRM activities (Task/Meeting/Call) bound to one day via whenAt.
-  // Activities without a date (no due_at / no start_at) don't appear
-  // here — they're still visible on the Activities hub.
-  const getCrmForDay = (day: number) => {
-    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return crmActivities.filter((a) => {
-      if (!a.whenAt) return false;
-      const d = a.whenAt;
-      return d.getDate() === date.getDate()
-        && d.getMonth() === date.getMonth()
-        && d.getFullYear() === date.getFullYear();
-    });
-  };
-
   const getProjectName = (projectId: string) => {
     const p = projects.find((x) => x.projectId === projectId);
     return p?.name || 'Unknown';
@@ -315,8 +197,6 @@ export const Calendar: React.FC = () => {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const dayTasks = getTasksForDay(day);
-      const dayExternal = getExternalForDay(day);
-      const dayCrm = getCrmForDay(day);
 
       days.push(
         <div
@@ -363,62 +243,6 @@ export const Calendar: React.FC = () => {
               )}
             </div>
           )}
-
-          {dayExternal.length > 0 && (
-            <div className="mt-1 space-y-0.5">
-              {dayExternal.slice(0, 2).map((ev) => (
-                <div
-                  key={ev.id}
-                  className="flex cursor-pointer items-center gap-1 truncate rounded-md border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-1 text-xs text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedExternal(ev);
-                  }}
-                  title={`${ev.summary}${ev.organizerName ? ` · invited by ${ev.organizerName}` : ''}`}
-                >
-                  <CalendarIcon className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{ev.summary}</span>
-                </div>
-              ))}
-              {dayExternal.length > 2 && (
-                <div className="px-1 text-[11px] text-muted-foreground">
-                  +{dayExternal.length - 2} Google
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* CRM activities — tinted per kind so reps tell at a glance
-              whether a date holds a task / meeting / call.   */}
-          {dayCrm.length > 0 && (
-            <div className="mt-1 space-y-0.5">
-              {dayCrm.slice(0, 2).map((a) => {
-                const cls = a.kind === 'meeting'
-                  ? 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300 hover:bg-violet-500/20'
-                  : a.kind === 'call'
-                    ? 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/20'
-                    : 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300 hover:bg-rose-500/20';
-                return (
-                  <div
-                    key={a.id}
-                    className={`flex cursor-pointer items-center gap-1 truncate rounded-md border px-1.5 py-1 text-xs ${cls}`}
-                    onClick={(e) => { e.stopPropagation(); setSelectedCrm(a); }}
-                    title={`${a.kind[0].toUpperCase()}${a.kind.slice(1)}: ${a.title}`}
-                  >
-                    <span className="text-[10px] uppercase tracking-wide opacity-70">
-                      {a.kind === 'meeting' ? 'M' : a.kind === 'call' ? 'C' : 'T'}
-                    </span>
-                    <span className="truncate">{a.title}</span>
-                  </div>
-                );
-              })}
-              {dayCrm.length > 2 && (
-                <div className="px-1 text-[11px] text-muted-foreground">
-                  +{dayCrm.length - 2} CRM
-                </div>
-              )}
-            </div>
-          )}
         </div>
       );
     }
@@ -439,16 +263,6 @@ export const Calendar: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSyncCalendar}
-              disabled={syncingCal}
-              className="rounded-lg bg-background/80"
-              title="Pull events from your connected Google Calendar"
-            >
-              {syncingCal ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-              Sync Google Calendar
-            </Button>
             <Button
               variant="outline"
               onClick={() => setCurrentDate(new Date())}
@@ -552,92 +366,6 @@ export const Calendar: React.FC = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* External calendar (Google Meet / invite) details */}
-      <AlertDialog open={!!selectedExternal} onOpenChange={(open) => !open && setSelectedExternal(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <CalendarIcon className="w-4 h-4 text-emerald-600" />
-              {selectedExternal?.summary ?? '(no title)'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <div className="space-y-2 mt-2 text-sm">
-                {selectedExternal?.startAt && (
-                  <p><strong>When:</strong> {selectedExternal.startAt.toLocaleString()}
-                    {selectedExternal.endAt ? ` → ${selectedExternal.endAt.toLocaleTimeString()}` : ''}
-                  </p>
-                )}
-                {!selectedExternal?.startAt && selectedExternal?.startDate && (
-                  <p><strong>When:</strong> {new Date(selectedExternal.startDate).toLocaleDateString()} (all day)</p>
-                )}
-                {selectedExternal?.organizerName && (
-                  <p><strong>Organizer:</strong> {selectedExternal.organizerName}
-                    {selectedExternal.organizerEmail ? ` <${selectedExternal.organizerEmail}>` : ''}
-                  </p>
-                )}
-                {selectedExternal && selectedExternal.attendees.length > 0 && (
-                  <p>
-                    <strong>{selectedExternal.attendees.length} attendee{selectedExternal.attendees.length === 1 ? '' : 's'}:</strong>
-                    {' '}
-                    <span className="text-muted-foreground">
-                      {selectedExternal.attendees.slice(0, 5).map((a) => a.displayName || a.email).filter(Boolean).join(', ')}
-                      {selectedExternal.attendees.length > 5 ? `, +${selectedExternal.attendees.length - 5} more` : ''}
-                    </span>
-                  </p>
-                )}
-                {selectedExternal?.location && (
-                  <p><strong>Location:</strong> {selectedExternal.location}</p>
-                )}
-                {selectedExternal?.description && (
-                  <p className="whitespace-pre-wrap break-words"><strong>Notes:</strong> {selectedExternal.description}</p>
-                )}
-                <div className="flex flex-wrap gap-2 pt-2">
-                  {selectedExternal?.meetLink && (
-                    <a
-                      href={selectedExternal.meetLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
-                    >
-                      <Video className="w-3.5 h-3.5" /> Join Meet
-                      <ExternalLink className="w-3 h-3 opacity-70" />
-                    </a>
-                  )}
-                  {selectedExternal?.htmlLink && (
-                    <a
-                      href={selectedExternal.htmlLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted/40"
-                    >
-                      Open in Google Calendar <ExternalLink className="w-3 h-3 opacity-70" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setSelectedExternal(null)}>Close</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Click a CRM pill on a calendar cell → opens the full Activities
-          detail dialog. Mark-closed / Edit / Delete actions all work
-          here too, since it's the same component the Activities hub uses. */}
-      <ActivityDetailDialog
-        activity={selectedCrm}
-        onOpenChange={(open) => { if (!open) setSelectedCrm(null); }}
-        onChanged={() => {
-          // Refetch so closing / editing reflects on the calendar.
-          if (orgId && !orgId.startsWith('local-')) {
-            void listActivities(orgId, {
-              openDealIds: new Set(), customerClientIds: new Set(),
-            }).then(setCrmActivities);
-          }
-        }}
-      />
     </>
   );
 };
