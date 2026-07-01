@@ -1,4 +1,4 @@
--- 123_remove_crm_system.sql
+-- 143_remove_crm_system.sql
 --
 -- User asked to remove the entire CRM stack (Leads, Contacts,
 -- Accounts, Deals, Pipeline, Activities, Automations, Sequences, AI
