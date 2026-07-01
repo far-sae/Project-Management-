@@ -266,17 +266,17 @@ export const CrmContactDetailPage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-5 gap-1">
-                <QuickAction icon={StickyNote} label="Note" onClick={() => { setLogType('note'); setShowLog(true); }} />
+                <QuickAction icon={StickyNote} label="Note" onClick={() => { setLogType('note'); setLogBody(''); setShowLog(true); }} />
                 <QuickAction icon={Mail} label="Email" onClick={() => {
                   if (contact.email) window.location.href = `mailto:${contact.email}`;
-                  else toast.error('No email');
+                  else { setLogType('email'); setLogBody(''); setShowLog(true); }
                 }} />
                 <QuickAction icon={Phone} label="Call" onClick={() => {
                   if (contact.phone) window.location.href = `tel:${contact.phone}`;
-                  else toast.error('No phone');
+                  else { setLogType('call'); setLogBody(''); setShowLog(true); }
                 }} />
-                <QuickAction icon={CalendarIcon} label="Task" onClick={() => toast.info('Use the Tasks tab to create — coming soon')} />
-                <QuickAction icon={Video} label="Meet" onClick={() => { setLogType('meeting'); setShowLog(true); }} />
+                <QuickAction icon={CalendarIcon} label="Task" onClick={() => setShowNewTask(true)} />
+                <QuickAction icon={Video} label="Meet" onClick={() => { setLogType('meeting'); setLogBody(''); setShowLog(true); }} />
               </div>
             </CardContent>
           </Card>
@@ -298,8 +298,6 @@ export const CrmContactDetailPage: React.FC = () => {
               <KV label="Lead status" value={<Badge variant="outline" className="capitalize">{humanize(contact.leadStatus)}</Badge>} />
               <KV label="Lifecycle stage" value={<Badge className="capitalize bg-primary/15 text-primary hover:bg-primary/20">{humanize(contact.lifecycleStage)}</Badge>} />
               <KV label="Source" value={contact.source} />
-              <Separator />
-              <ContactTagPicker contactId={contact.id} />
             </CardContent>
           </Card>
         </aside>
@@ -317,7 +315,7 @@ export const CrmContactDetailPage: React.FC = () => {
                 disabled={busy}
               />
               <div className="flex items-center justify-between">
-                <Button variant="ghost" size="sm" onClick={() => setShowLog(true)}>
+                <Button variant="ghost" size="sm" onClick={() => { setLogType('call'); setLogBody(''); setShowLog(true); }}>
                   <Plus className="mr-1 h-4 w-4" />Log activity
                 </Button>
                 <Button size="sm" onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
@@ -327,25 +325,58 @@ export const CrmContactDetailPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          <div className="flex items-center gap-2 border-b border-border overflow-x-auto">
-            {ACTIVITY_TABS.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className={`px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-                  tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
+          <div className="flex items-center justify-between gap-2 border-b border-border">
+            <div className="flex items-center gap-2 overflow-x-auto">
+              {ACTIVITY_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                    tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {tab !== 'all' && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mb-1 whitespace-nowrap"
+                onClick={() => { setLogType(tab as ActivityType); setLogBody(''); setShowLog(true); }}
               >
-                {t.label}
-              </button>
-            ))}
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Log {tab}
+              </Button>
+            )}
           </div>
 
           <div className="space-y-3">
             {filteredActivities.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-                No {tab === 'all' ? 'activity' : `${tab}s`} yet.
+              <div className="rounded-xl border border-dashed border-border p-10 text-center space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  No {tab === 'all' ? 'activity' : `${tab}s`} yet.
+                </p>
+                {tab !== 'all' && (
+                  <Button
+                    size="sm"
+                    onClick={() => { setLogType(tab as ActivityType); setLogBody(''); setShowLog(true); }}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Log first {tab}
+                  </Button>
+                )}
+                {tab === 'all' && (
+                  <Button
+                    size="sm"
+                    onClick={() => { setLogType('call'); setLogBody(''); setShowLog(true); }}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Log activity
+                  </Button>
+                )}
               </div>
             ) : filteredActivities.map((a) => {
               const Icon = activityIcon(a.type);
@@ -432,6 +463,18 @@ export const CrmContactDetailPage: React.FC = () => {
               </div>
             ))}
           </AssocPanel>
+
+          <Card>
+            <CardContent className="space-y-2 p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Tags</h3>
+              </div>
+              <Separator />
+              <div className="pt-1">
+                <ContactTagPicker contactId={contact.id} />
+              </div>
+            </CardContent>
+          </Card>
         </aside>
       </div>
 
@@ -445,7 +488,7 @@ export const CrmContactDetailPage: React.FC = () => {
       <Dialog open={showLog} onOpenChange={setShowLog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Log activity</DialogTitle>
+            <DialogTitle>Log {humanize(logType).toLowerCase()}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
