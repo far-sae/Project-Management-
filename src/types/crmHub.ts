@@ -70,6 +70,8 @@ export interface CrmCompany {
   companySize: string | null;
   annualRevenue: number | null;
   notes: string | null;
+  /** Arbitrary user-defined columns captured during CSV import. */
+  customFields: Record<string, string>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +94,8 @@ export interface CrmContact {
   notes: string | null;
   /** Free-text user-defined bucket (e.g. "VIP", "Q4 outreach", "Warm intro"). */
   category: string | null;
+  /** Arbitrary user-defined columns captured during CSV import. */
+  customFields: Record<string, string>;
   lastContactedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -135,6 +139,7 @@ export interface CreateCompanyInput {
   companySize?: string | null;
   annualRevenue?: number | null;
   notes?: string | null;
+  customFields?: Record<string, string> | null;
 }
 
 export type UpdateCompanyInput = Partial<Omit<CreateCompanyInput, 'organizationId'>>;
@@ -153,6 +158,7 @@ export interface CreateContactInput {
   source?: string | null;
   notes?: string | null;
   category?: string | null;
+  customFields?: Record<string, string> | null;
 }
 
 export type UpdateContactInput = Partial<Omit<CreateContactInput, 'organizationId'>>;

@@ -78,6 +78,15 @@ const LEAD_STATUSES = new Set([
 ]);
 
 const SKIP = '__skip__';
+const CUSTOM = '__custom__';
+
+// Normalises a header (or user-typed override) into a clean JSONB key.
+// Preserves alphanumerics + underscore, collapses everything else to '_',
+// caps length, and lowercases.
+const toCustomKey = (raw: string): string => {
+  const s = raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  return s.slice(0, 40) || 'field';
+};
 
 function autoMatch(header: string, fields: FieldDef[]): string {
   const h = header.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -123,6 +132,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  // For headers mapped to CUSTOM, the JSONB key the user wants to store under.
+  // Seeded from the header name whenever CUSTOM is picked.
+  const [customNames, setCustomNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   // Categories — only used when resource === 'contacts'.
@@ -137,6 +149,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
     setRows([]);
     setHeaders([]);
     setMapping({});
+    setCustomNames({});
     setCategoryMode('none');
     setCategoryPick('');
     setCategoryNew('');
@@ -174,6 +187,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   }, [mapping, fields]);
 
   const mappedCount = Object.values(mapping).filter((v) => v && v !== SKIP).length;
+  const customCount = Object.values(mapping).filter((v) => v === CUSTOM).length;
 
   // Is the `category` column mapped to any file column?
   const categoryMappedFromCsv = useMemo(
@@ -200,10 +214,16 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
           workspace_id: workspaceId,
           owner_id: user?.userId ?? null,
         };
+        const custom: Record<string, string> = {};
         for (const [header, key] of Object.entries(mapping)) {
           if (!key || key === SKIP) continue;
           const v = r[header]?.trim();
           if (!v) continue;
+          if (key === CUSTOM) {
+            const k = toCustomKey(customNames[header] ?? header);
+            custom[k] = v;
+            continue;
+          }
           if (key === 'annual_revenue') {
             const n = Number(v.replace(/[^\d.-]/g, ''));
             if (Number.isFinite(n)) o[key] = n;
@@ -217,6 +237,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
             o[key] = v;
           }
         }
+        if (Object.keys(custom).length) o.custom_fields = custom;
         // If the user picked an org-wide category in step 3 and didn't map a
         // per-row category column, apply the picked value.
         if (resource === 'contacts' && !categoryMappedFromCsv && resolvedCategory) {
@@ -317,7 +338,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                 {fields.map((f) => f.label + (f.required ? ' *' : '')).join(', ')}
               </p>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Optional — if your CSV doesn't have a category column, you'll get to assign one in step 3.
+                Anything else in your file (columns not in this list) can be saved as
+                a <span className="font-medium">Custom field</span> during mapping.
+                {resource === 'contacts' && ' Optional — if your CSV doesn’t have a category column, you’ll assign one in step 3.'}
               </p>
             </div>
           </div>
@@ -331,7 +354,14 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                 <span className="font-medium">{fileName}</span>
                 <Badge variant="secondary">{rows.length} rows</Badge>
               </div>
-              <Badge variant={requiredOk ? 'secondary' : 'destructive'}>{mappedCount} mapped</Badge>
+              <div className="flex items-center gap-2">
+                {customCount > 0 && (
+                  <Badge variant="outline" className="text-xs">
+                    {customCount} custom
+                  </Badge>
+                )}
+                <Badge variant={requiredOk ? 'secondary' : 'destructive'}>{mappedCount} mapped</Badge>
+              </div>
             </div>
             <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-border">
               <table className="w-full text-sm">
@@ -348,15 +378,36 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                       <td className="px-3 py-2 font-medium">{h}</td>
                       <td className="px-3 py-2 text-muted-foreground">{rows[0]?.[h] || '—'}</td>
                       <td className="px-3 py-2">
-                        <Select value={mapping[h] ?? SKIP} onValueChange={(v) => setMapping({ ...mapping, [h]: v })}>
+                        <Select
+                          value={mapping[h] ?? SKIP}
+                          onValueChange={(v) => {
+                            setMapping({ ...mapping, [h]: v });
+                            if (v === CUSTOM && !customNames[h]) {
+                              setCustomNames({ ...customNames, [h]: toCustomKey(h) });
+                            }
+                          }}
+                        >
                           <SelectTrigger className="h-9 w-56"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value={SKIP}>— Don't import —</SelectItem>
                             {fields.map((f) => (
                               <SelectItem key={f.key} value={f.key}>{f.label}{f.required ? ' *' : ''}</SelectItem>
                             ))}
+                            <SelectItem value={CUSTOM}>+ Custom field…</SelectItem>
                           </SelectContent>
                         </Select>
+                        {mapping[h] === CUSTOM && (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">Save as</span>
+                            <Input
+                              value={customNames[h] ?? ''}
+                              onChange={(e) => setCustomNames({ ...customNames, [h]: e.target.value })}
+                              placeholder="e.g. company_size_v2"
+                              maxLength={40}
+                              className="h-7 text-xs w-44"
+                            />
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -488,11 +539,16 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                 </div>
               )}
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {Object.entries(mapping).filter(([, v]) => v && v !== SKIP).map(([h, v]) => (
-                  <Badge key={h} variant="secondary" className="font-normal">
-                    {h} → {fields.find((f) => f.key === v)?.label ?? v}
-                  </Badge>
-                ))}
+                {Object.entries(mapping).filter(([, v]) => v && v !== SKIP).map(([h, v]) => {
+                  const target = v === CUSTOM
+                    ? `custom · ${toCustomKey(customNames[h] ?? h)}`
+                    : fields.find((f) => f.key === v)?.label ?? v;
+                  return (
+                    <Badge key={h} variant={v === CUSTOM ? 'outline' : 'secondary'} className="font-normal">
+                      {h} → {target}
+                    </Badge>
+                  );
+                })}
               </div>
             </div>
             <p className="text-xs text-muted-foreground">

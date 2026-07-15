@@ -19,6 +19,7 @@ interface CompanyRow {
   company_size: string | null;
   annual_revenue: number | null;
   notes: string | null;
+  custom_fields: Record<string, string> | null;
   created_at: string;
   updated_at: string;
 }
@@ -39,6 +40,7 @@ const mapCompany = (r: CompanyRow): CrmCompany => ({
   companySize: r.company_size,
   annualRevenue: r.annual_revenue == null ? null : Number(r.annual_revenue),
   notes: r.notes,
+  customFields: r.custom_fields ?? {},
   createdAt: new Date(r.created_at),
   updatedAt: new Date(r.updated_at),
 });
@@ -82,6 +84,7 @@ export const createCompany = async (input: CreateCompanyInput, ownerId: string |
       company_size: input.companySize ?? null,
       annual_revenue: input.annualRevenue ?? null,
       notes: input.notes ?? null,
+      custom_fields: input.customFields ?? {},
     })
     .select()
     .single();
@@ -112,6 +115,7 @@ export const updateCompany = async (id: string, input: UpdateCompanyInput): Prom
   if (input.companySize !== undefined) patch.company_size = input.companySize;
   if (input.annualRevenue !== undefined) patch.annual_revenue = input.annualRevenue;
   if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.customFields !== undefined) patch.custom_fields = input.customFields ?? {};
 
   const { data, error } = await supabase
     .from('crm_companies')

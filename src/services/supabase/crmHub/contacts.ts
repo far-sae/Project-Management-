@@ -25,6 +25,7 @@ interface ContactRow {
   source: string | null;
   notes: string | null;
   category: string | null;
+  custom_fields: Record<string, string> | null;
   last_contacted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -46,6 +47,7 @@ const mapContact = (r: ContactRow): CrmContact => ({
   source: r.source,
   notes: r.notes,
   category: r.category ?? null,
+  customFields: r.custom_fields ?? {},
   lastContactedAt: r.last_contacted_at ? new Date(r.last_contacted_at) : null,
   createdAt: new Date(r.created_at),
   updatedAt: new Date(r.updated_at),
@@ -91,6 +93,7 @@ export const createContact = async (input: CreateContactInput, ownerId: string |
       source: input.source ?? null,
       notes: input.notes ?? null,
       category: input.category?.trim() || null,
+      custom_fields: input.customFields ?? {},
     })
     .select()
     .single();
@@ -121,6 +124,7 @@ export const updateContact = async (id: string, input: UpdateContactInput): Prom
   if (input.source !== undefined) patch.source = input.source;
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.category !== undefined) patch.category = input.category?.trim() || null;
+  if (input.customFields !== undefined) patch.custom_fields = input.customFields ?? {};
 
   const { data, error } = await supabase
     .from('crm_contacts')

@@ -196,6 +196,20 @@ export const CrmCompanyDetailPage: React.FC = () => {
                 </div>
               </>
             )}
+            {Object.keys(company.customFields ?? {}).length > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Custom fields</p>
+                  {Object.entries(company.customFields).map(([k, v]) => (
+                    <div key={k} className="flex items-start justify-between gap-3 text-sm">
+                      <span className="text-muted-foreground capitalize">{k.replace(/_/g, ' ')}</span>
+                      <span className="font-medium text-right break-words min-w-0">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
