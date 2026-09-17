@@ -4,6 +4,7 @@ import { MotionConfig } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { OrganizationProvider } from '@/context/OrganizationContext';
 import { SubscriptionProvider } from '@/context/SubscriptionContext';
+import { WorkspaceProvider } from '@/context/WorkspaceContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
@@ -123,11 +124,11 @@ const RootRedirect: React.FC = () => {
 const RouterShell: React.FC = () => {
   const { user } = useAuth();
   return (
-    <>
+    <WorkspaceProvider>
       <Outlet />
       {/* Command palette is global but only useful while authenticated */}
       {user && <CommandPalette />}
-    </>
+    </WorkspaceProvider>
   );
 };
 
