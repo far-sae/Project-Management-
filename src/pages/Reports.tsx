@@ -26,6 +26,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useProjects } from '@/hooks/useProjects';
 import { useAllTasks } from '@/hooks/useAllTasks';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useUserComments } from '@/hooks/useComments';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -66,8 +67,11 @@ const CURRENCY_SYMBOLS: Record<string, { symbol: string, name: string; }> = {
 export const Reports: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { projects } = useProjects();
-  const { tasks, loading } = useAllTasks();
+  const { projects: allProjects } = useProjects();
+  const { tasks: allTasks, loading } = useAllTasks();
+  const { filterProjects, filterTasks } = useSelectedWorkspace();
+  const projects = useMemo(() => filterProjects(allProjects), [allProjects, filterProjects]);
+  const tasks = useMemo(() => filterTasks(allTasks), [allTasks, filterTasks]);
   const { comments } = useUserComments(user?.userId ?? null);
   const { organization, refreshOrganization, isAdmin } = useOrganization();
   const { hasFeature } = useSubscription();

@@ -31,6 +31,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAllTasks } from '@/hooks/useAllTasks';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
   fetchUserCapacities,
   DEFAULT_HOURS_PER_WEEK,
@@ -75,7 +76,9 @@ const initialsOf = (name: string): string =>
 export const Workload: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin } = useOrganization();
-  const { tasks, loading: tasksLoading } = useAllTasks();
+  const { tasks: allTasks, loading: tasksLoading } = useAllTasks();
+  const { filterTasks } = useSelectedWorkspace();
+  const tasks = useMemo(() => filterTasks(allTasks), [allTasks, filterTasks]);
   const navigate = useNavigate();
   // Owner + admin see the whole team's workload (planning view).
   // Plain members see only their own row — they shouldn't be able to peek at

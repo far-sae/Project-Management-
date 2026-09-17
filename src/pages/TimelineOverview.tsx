@@ -15,6 +15,7 @@ import {
   FileBarChart, Calendar, Settings, Loader2, Lock, Users, ChevronDown,
 } from 'lucide-react';
 import { useProjects } from '@/hooks/useProjects';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -437,7 +438,9 @@ function buildCalendar(start: Date, end: Date, days: number, offset: number, tod
 // ── Main Component ────────────────────────────────────────────────────────────
 export const TimelineOverview: React.FC = () => {
   const navigate = useNavigate();
-  const { projects, loading: projectsLoading } = useProjects();
+  const { projects: allProjects, loading: projectsLoading } = useProjects();
+  const { filterProjects } = useSelectedWorkspace();
+  const projects = useMemo(() => filterProjects(allProjects), [allProjects, filterProjects]);
   const { hasFeature, loading: subscriptionLoading } = useSubscription();
   const { user } = useAuth();
   const { organization } = useOrganization();
