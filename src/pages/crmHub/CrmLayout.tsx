@@ -15,7 +15,6 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-  { to: '/crm/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/crm/contacts', label: 'Leads', icon: Contact },
   { to: '/crm/companies', label: 'Business', icon: Building2 },
   { to: '/crm/deals', label: 'Contract', icon: Handshake },
@@ -25,6 +24,7 @@ const TABS: Tab[] = [
   { to: '/crm/reports', label: 'Reports', icon: PieIcon },
   { to: '/crm/tags', label: 'Tags', icon: Tag },
   { to: '/crm/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/crm/dashboard', label: 'Dashboard', icon: LayoutDashboard },
 ];
 
 export const CrmLayout: React.FC = () => (
