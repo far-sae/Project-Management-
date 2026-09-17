@@ -1,11 +1,14 @@
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
+import type { PageKey } from "@/lib/pageCatalog";
+import { normalizeMenuPages } from "@/lib/workspaceScope";
 
 export interface Workspace {
   workspaceId: string;
   name: string;
   organizationId: string;
   isDefault: boolean;
+  menuPages: PageKey[] | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -18,7 +21,29 @@ export interface CreateWorkspaceInput {
 
 export interface UpdateWorkspaceInput {
   name?: string;
+  menuPages?: PageKey[] | null;
 }
+
+/** Raw shape of a `workspaces` row as returned by PostgREST. */
+export interface WorkspaceRow {
+  workspace_id: string;
+  name: string;
+  organization_id: string;
+  is_default: boolean;
+  menu_pages?: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
+export const mapWorkspaceRow = (row: WorkspaceRow): Workspace => ({
+  workspaceId: row.workspace_id,
+  name: row.name,
+  organizationId: row.organization_id,
+  isDefault: row.is_default,
+  menuPages: normalizeMenuPages(row.menu_pages),
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+});
 
 export const createWorkspace = async (
   input: CreateWorkspaceInput,
@@ -46,14 +71,7 @@ export const createWorkspace = async (
     throw error;
   }
 
-  return {
-    workspaceId: data.workspace_id,
-    name: data.name,
-    organizationId: data.organization_id,
-    isDefault: data.is_default,
-    createdAt: new Date(data.created_at),
-    updatedAt: new Date(data.updated_at),
-  };
+  return mapWorkspaceRow(data as WorkspaceRow);
 };
 
 export const getWorkspace = async (
@@ -67,14 +85,7 @@ export const getWorkspace = async (
 
   if (error || !data) return null;
 
-  return {
-    workspaceId: data.workspace_id,
-    name: data.name,
-    organizationId: data.organization_id,
-    isDefault: data.is_default,
-    createdAt: new Date(data.created_at),
-    updatedAt: new Date(data.updated_at),
-  };
+  return mapWorkspaceRow(data as WorkspaceRow);
 };
 
 export const getOrganizationWorkspaces = async (
@@ -91,14 +102,7 @@ export const getOrganizationWorkspaces = async (
     return [];
   }
 
-  return (data || []).map((workspace) => ({
-    workspaceId: workspace.workspace_id,
-    name: workspace.name,
-    organizationId: workspace.organization_id,
-    isDefault: workspace.is_default,
-    createdAt: new Date(workspace.created_at),
-    updatedAt: new Date(workspace.updated_at),
-  }));
+  return ((data || []) as WorkspaceRow[]).map(mapWorkspaceRow);
 };
 
 export const updateWorkspace = async (
@@ -110,6 +114,7 @@ export const updateWorkspace = async (
   };
 
   if (input.name) updateData.name = input.name;
+  if (input.menuPages !== undefined) updateData.menu_pages = input.menuPages;
 
   const { error } = await supabase
     .from("workspaces")
