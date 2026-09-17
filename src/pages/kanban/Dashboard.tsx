@@ -84,6 +84,8 @@ import type { ProjectTemplate } from '@/types/projectTemplate';
 import { createTask, verifyProjectLockPin } from '@/services/supabase/database';
 import { LayoutTemplate, Lock, LockOpen, KeyRound } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { getPageDef, type PageKey } from '@/lib/pageCatalog';
+import { QUICK_MENU_PAGE_KEYS, menuPagesForSave } from '@/lib/workspaceScope';
 import {
   hashLockPin,
   clearProjectLockUnlockedInSession,
@@ -104,7 +106,7 @@ function projectPinLocked(project: Project) {
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, isAdmin: canEditWorkspaceMenu } = useOrganization();
   const location = useLocation();
   const { refreshSubscription } = useSubscription();
 
@@ -168,6 +170,7 @@ export const Dashboard: React.FC = () => {
   const [showEditWorkspaceModal, setShowEditWorkspaceModal] = useState(false);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [editingWorkspaceName, setEditingWorkspaceName] = useState('');
+  const [editingMenuPages, setEditingMenuPages] = useState<PageKey[]>(QUICK_MENU_PAGE_KEYS);
 
   const [deleteDialog, setDeleteDialog] = useState<{
     open: boolean;
@@ -480,6 +483,8 @@ export const Dashboard: React.FC = () => {
     if (w) {
       setEditingWorkspaceId(workspaceId);
       setEditingWorkspaceName(w.name);
+      // null = all enabled → every toggle on.
+      setEditingMenuPages(w.menuPages ?? QUICK_MENU_PAGE_KEYS);
       setShowEditWorkspaceModal(true);
     }
   };
@@ -489,7 +494,12 @@ export const Dashboard: React.FC = () => {
     if (!editingWorkspaceId || !editingWorkspaceName.trim()) return;
     const toastId = toast.loading('Updating workspace...');
     try {
-      await editWorkspace(editingWorkspaceId, { name: editingWorkspaceName.trim() });
+      await editWorkspace(editingWorkspaceId, {
+        name: editingWorkspaceName.trim(),
+        ...(canEditWorkspaceMenu
+          ? { menuPages: menuPagesForSave(editingMenuPages) }
+          : {}),
+      });
       toast.success('Workspace updated', { id: toastId });
       setShowEditWorkspaceModal(false);
       setEditingWorkspaceId(null);
@@ -1613,6 +1623,49 @@ export const Dashboard: React.FC = () => {
                 required
               />
             </div>
+            {canEditWorkspaceMenu && (
+              <div className="space-y-2">
+                <Label>Menu items in this workspace</Label>
+                <p className="text-xs text-muted-foreground">
+                  Hidden items disappear from the sidebar for everyone in this
+                  workspace. Role permissions still apply on top.
+                </p>
+                <div className="rounded-md border divide-y">
+                  {QUICK_MENU_PAGE_KEYS.map((key) => {
+                    const def = getPageDef(key);
+                    const on = editingMenuPages.includes(key);
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {def?.label ?? key}
+                          </p>
+                          {def?.group && (
+                            <p className="text-xs text-muted-foreground">{def.group}</p>
+                          )}
+                        </div>
+                        <Switch
+                          checked={on}
+                          onCheckedChange={(checked) =>
+                            setEditingMenuPages((prev) =>
+                              checked
+                                ? QUICK_MENU_PAGE_KEYS.filter(
+                                    (k) => k === key || prev.includes(k),
+                                  )
+                                : prev.filter((k) => k !== key),
+                            )
+                          }
+                          aria-label={`Show ${def?.label ?? key}`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <DialogFooter>
               <Button
                 type="button"
