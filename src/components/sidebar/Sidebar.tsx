@@ -38,6 +38,7 @@ import {
   useSelectedWorkspace,
 } from '@/hooks/useSelectedWorkspace';
 import { usePinnedProjects } from '@/hooks/usePinnedProjects';
+import { resolveWorkspaceMenu } from '@/lib/workspaceScope';
 import { QuickMenu } from './QuickMenu';
 import { StatusFilters } from './StatusFilters';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -71,16 +72,16 @@ const QUICK_ITEMS_FULL = [
 // Members get a deliberately small surface: just the personal-productivity
 // pages. No Dashboard / Inbox / Reports — those are admin/owner views.
 const QUICK_ITEMS_MEMBER = [
-  { icon: CheckSquare, label: 'My Tasks', href: '/tasks' },
-  { icon: Calendar, label: 'Calendar', href: '/calendar' },
-  { icon: Activity, label: 'Workload', href: '/workload' },
+  { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
+  { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
+  { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
 ];
 
 // Viewers are read-only observers (clients, auditors). They don't get tasks
 // assigned, don't clock in, don't have a workload. Just Calendar to see what's
 // scheduled — the project list in the sidebar handles browsing.
 const QUICK_ITEMS_VIEWER = [
-  { icon: Calendar, label: 'Calendar', href: '/calendar' },
+  { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
 ];
 
 export const Sidebar: React.FC = () => {
@@ -98,7 +99,7 @@ export const Sidebar: React.FC = () => {
   const canSeePeopleOps = isOrgAdminOrOwner || isAppOwner(user?.userId);
 
   const { projects } = useProjects();
-  const { selectedId: selectedWorkspaceId, isAll, isUnassigned } =
+  const { selectedId: selectedWorkspaceId, isAll, isUnassigned, menuPages } =
     useSelectedWorkspace();
   const { pinnedIds, isPinned, toggle: togglePin } = usePinnedProjects();
 
@@ -125,6 +126,21 @@ export const Sidebar: React.FC = () => {
     const self = sortedProjects.find((p) => p.projectId === project.projectId) ?? project;
     return [self, ...others];
   }, [sortedProjects, project]);
+
+  // Quick Menu = role/plan surface (may only shrink) ∩ the workspace's enabled
+  // items. Under "All workspaces" menuPages is null and the role list shows whole.
+  const quickItems = useMemo(() => {
+    const roleItems = canSeePeopleOps
+      ? QUICK_ITEMS_FULL.filter(
+          (i) =>
+            (i.href !== '/team' || hasFeature('team_collaboration')) &&
+            (i.href !== '/crm' || hasFeature('crm')),
+        )
+      : isViewer
+        ? QUICK_ITEMS_VIEWER
+        : QUICK_ITEMS_MEMBER;
+    return resolveWorkspaceMenu(roleItems, menuPages);
+  }, [canSeePeopleOps, isViewer, hasFeature, menuPages]);
 
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);
@@ -231,20 +247,8 @@ export const Sidebar: React.FC = () => {
       )}
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
-        {/* Quick navigation — full / member / viewer surfaces. */}
-        <QuickMenu
-          items={
-            canSeePeopleOps
-              ? QUICK_ITEMS_FULL.filter(
-                  (i) =>
-                    (i.href !== '/team' || hasFeature('team_collaboration')) &&
-                    (i.href !== '/crm' || hasFeature('crm')),
-                )
-              : isViewer
-                ? QUICK_ITEMS_VIEWER
-                : QUICK_ITEMS_MEMBER
-          }
-        />
+        {/* Quick navigation — full / member / viewer surfaces, narrowed per workspace. */}
+        <QuickMenu items={quickItems} />
 
         {/* Project context: status filters + members live here when in a project */}
         {project && onStatusChange && (
