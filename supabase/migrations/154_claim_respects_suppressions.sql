@@ -17,6 +17,12 @@
 --      suppressed in the window between the two statements is still never
 --      claimed. The sweep alone would leave that race open.
 
+-- Both new predicates below compare lower(s.email) = lower(m.to_email), which
+-- no plain index on email can serve. This expression index matches them, so the
+-- per-tick sweep is a lookup rather than a scan of every queued row.
+create index if not exists idx_email_suppressions_org_lower_email
+  on public.email_suppressions (organization_id, lower(email));
+
 create or replace function public.claim_email_batch(p_limit integer default 25)
 returns table (
   message_id uuid,

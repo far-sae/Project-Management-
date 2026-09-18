@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env, serviceClient } from '../_lib/context';
-import { verifyUnsubscribeToken } from '../../src/lib/email/unsubscribe';
+import { verifyUnsubscribeToken } from '../_lib/unsubscribe';
 
 // Public and token-authenticated. POST is the RFC 8058 one-click path that
 // Gmail and Yahoo call directly; GET is the human-visible link.

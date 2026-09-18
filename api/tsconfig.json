@@ -11,5 +11,5 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["**/*.ts", "../src/lib/email/**/*.ts"]
+  "include": ["**/*.ts"]
 }

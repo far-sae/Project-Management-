@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
 import { env, serviceClient } from '../_lib/context';
-import { decryptSecret } from '../../src/lib/email/crypto';
+import { decryptSecret } from '../_lib/crypto';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });

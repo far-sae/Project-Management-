@@ -2,9 +2,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { env, serviceClient, secretEquals, siteUrl } from '../_lib/context';
-import { decryptSecret } from '../../src/lib/email/crypto';
-import { buildMessage } from '../../src/lib/email/message';
-import { signUnsubscribeToken, unsubscribeUrl } from '../../src/lib/email/unsubscribe';
+import { decryptSecret } from '../_lib/crypto';
+import { buildMessage } from '../_lib/message';
+import { signUnsubscribeToken, unsubscribeUrl } from '../_lib/unsubscribe';
 
 const BATCH = 25;
 
@@ -152,11 +152,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select('id', { count: 'exact', head: true })
       .eq('campaign_id', id)
       .eq('status', 'failed');
+    // claim_email_batch() parks recipients on the suppression list here, so
+    // without this the campaign's numbers would not add up to its recipients.
+    const { count: suppressedCount } = await db
+      .from('email_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('campaign_id', id)
+      .eq('status', 'suppressed');
     await db
       .from('email_campaigns')
       .update({
         sent_count: sentCount ?? 0,
         failed_count: failedCount ?? 0,
+        suppressed_count: suppressedCount ?? 0,
         status: (remaining ?? 0) === 0 ? 'sent' : 'sending',
         updated_at: new Date().toISOString(),
       })
