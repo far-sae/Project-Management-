@@ -56,13 +56,22 @@ async function main(): Promise<void> {
   let stopping = false;
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
-      if (stopping) return;
+      if (stopping) {
+        // An operator with no way out reaches for kill -9, and THAT is the case
+        // that strands rows. A second signal leaves immediately instead.
+        console.error(
+          `[${stamp()}] second ${signal} — exiting now. Rows this cycle had claimed stay ` +
+            "'sending' until the recovery sweep requeues them.",
+        );
+        process.exit(130);
+      }
       stopping = true;
       running = false;
-      // Finish the cycle in flight rather than exiting mid-batch: rows already
-      // claimed would sit in 'sending' until the ten-minute recovery sweep, and
-      // on Railway a redeploy sends SIGTERM every single time.
-      console.log(`[${stamp()}] ${signal} received — finishing this cycle, then stopping.`);
+      // The cycle checks this between mailboxes and between messages, so it
+      // stops at the next message boundary rather than at the end of a batch
+      // that can run for twenty minutes — longer than any shutdown grace
+      // period, and on Railway a redeploy sends SIGTERM every single time.
+      console.log(`[${stamp()}] ${signal} received — stopping after the message in flight.`);
     });
   }
 
@@ -83,6 +92,7 @@ async function main(): Promise<void> {
         now: () => new Date(),
         env: { tokenKey, unsubscribeSecret, siteUrl },
         maxPerCycle,
+        shouldStop: () => !running,
       });
 
       // Counts and reasons only: never a password, never a recipient list.

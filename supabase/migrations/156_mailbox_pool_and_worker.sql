@@ -523,15 +523,36 @@ grant execute on function public.claim_email_batch(uuid, integer) to service_rol
 -- The four outcomes are exactly what classifySmtpError() in
 -- src/lib/email/smtpErrors.ts returns, plus 'sent'.
 --
+-- p_restore_attempt gives back the attempt the claim stamped on a row, and
+-- applies to the transient branch only. The worker passes it for rows it
+-- claimed but never handed to SMTP: the remainder of a batch abandoned after a
+-- permanent failure, a batch whose campaign bodies could not be read, and the
+-- rows still unsent when the worker is told to shut down. Without it, a
+-- mailbox with a rotated password answers 535 on the first row of three
+-- consecutive cycles -- exactly how long it takes for the mailbox to leave
+-- rotation -- while the other rows of each batch silently reach attempts = 3
+-- and become unclaimable forever, for a failure that was never theirs.
+--
 -- Column references are table-qualified throughout, for the same reason they
--- are in the claim: the alias is what keeps `status`, `last_error` and
--- `consecutive_failures` unambiguous in a body that touches three tables.
+-- are in the claim: the alias is what keeps `status`, `last_error`,
+-- `attempts` and `consecutive_failures` unambiguous in a body that touches
+-- three tables.
+--
+-- Adding an argument creates an OVERLOAD rather than replacing the function,
+-- and two candidate signatures would leave PostgREST binding whichever one
+-- resolution happened to pick -- one of which silently ignores the flag. Drop
+-- the five-argument form explicitly, first. (It exists only where an earlier
+-- revision of this same migration was already applied; `if exists` covers the
+-- ordinary case where it never was.)
+drop function if exists public.record_send_result(uuid, uuid, text, text, text);
+
 create or replace function public.record_send_result(
   p_message uuid,
   p_account uuid,
   p_outcome text,
   p_error text default null,
-  p_provider_message_id text default null
+  p_provider_message_id text default null,
+  p_restore_attempt boolean default false
 )
 returns void
 language plpgsql
@@ -570,10 +591,19 @@ begin
     -- times it is tried. Clearing claimed_at hands it back immediately rather
     -- than making it wait for the 10-minute stuck-row sweep. The mailbox is
     -- not at fault, so its health is untouched.
+    --
+    -- The attempt comes back only when the caller says this row was never
+    -- actually tried; a row that really was handed to SMTP and refused must
+    -- keep spending its budget, or it cycles through the queue forever.
+    -- greatest(..., 0) because a row could in principle arrive here twice.
     update public.email_messages m
        set status = 'queued',
            claimed_at = null,
-           last_error = p_error
+           last_error = p_error,
+           attempts = case
+                        when p_restore_attempt then greatest(m.attempts - 1, 0)
+                        else m.attempts
+                      end
      where m.id = p_message;
 
   elsif p_outcome = 'permanent' then
@@ -638,9 +668,9 @@ begin
 end;
 $$;
 
-revoke execute on function public.record_send_result(uuid, uuid, text, text, text)
+revoke execute on function public.record_send_result(uuid, uuid, text, text, text, boolean)
   from public, anon, authenticated;
-grant execute on function public.record_send_result(uuid, uuid, text, text, text)
+grant execute on function public.record_send_result(uuid, uuid, text, text, text, boolean)
   to service_role;
 
 -- ── g. Retire the Vercel tick ───────────────────────────────────────

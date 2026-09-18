@@ -55,8 +55,22 @@ npm start
 Both run `tsx`, so there is no build step. On Railway, use `npm run worker` as
 the start command, set the variables above, and keep the replica count at one.
 
-A redeploy sends `SIGTERM`: the worker finishes the cycle it is in and then
-exits, so a deploy never leaves rows stranded in `sending`.
+### Shutdown
+
+A redeploy sends `SIGTERM`. The worker stops at the next message boundary — it
+checks between organisations, between mailboxes and between messages — settles
+the message in flight, hands the rest of that mailbox's claimed batch back to the
+queue, and exits. A batch of 50 with the default jitter runs up to twenty
+minutes, which is why it does not wait for the cycle to end.
+
+It is not instant, and it is not a guarantee. Anything that kills the process
+outright — `SIGKILL`, an OOM kill, a shutdown grace period that expires while a
+message is on the wire, or a **second** `SIGINT`/`SIGTERM`, which exits
+immediately by design — leaves the rows that cycle had claimed in `sending`.
+They are not lost: `claim_email_batch()` sweeps rows stuck there for more than
+ten minutes and either settles them as `sent` (when a `provider_message_id`
+proves delivery), retires them at three attempts, or returns them to the queue.
+The cost is a delay of up to ten minutes, not a dropped message.
 
 ## Logs
 

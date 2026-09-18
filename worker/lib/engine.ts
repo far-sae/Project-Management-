@@ -10,7 +10,8 @@
 //   * A claimed row is settled through ONE call to record_send_result(). The
 //     Vercel tick this replaces wrote the status and then the provider message
 //     id separately, and a failure between the two left the row in 'sending'
-//     until the recovery sweep found it.
+//     until the recovery sweep found it. A 'sent' settlement that fails is
+//     RETRIED — the same call, to the same fixed state — never split in two.
 //   * Settlements are never batched into one transaction. record_send_result()
 //     raises on an outcome it does not know, and a raise inside a batch would
 //     roll back every settlement in it.
@@ -19,6 +20,10 @@
 //   * A mailbox's secret is decrypted BEFORE its budget is claimed, so a
 //     credential the worker cannot read leaves the queue untouched instead of
 //     stranding rows behind a mailbox that was never going to send them.
+//   * One tenant cannot take down the cycle. Each organisation and each
+//     mailbox runs inside its own try/catch, because a thrown error — an
+//     invalid timezone, a transport that will not construct — would otherwise
+//     end the pass for every organisation iterated after it.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Transporter } from 'nodemailer';
@@ -51,6 +56,14 @@ export interface CycleDeps {
   env: { tokenKey: string; unsubscribeSecret: string; siteUrl: string };
   /** The per-organisation budget for this cycle, so one tenant cannot starve the rest. */
   maxPerCycle: number;
+  /**
+   * True once the process has been asked to stop. Checked between
+   * organisations, between mailboxes and between messages: a batch of 50 at up
+   * to 25s of jitter runs far longer than a container shutdown grace period,
+   * so a cycle that only checked at its end would be SIGKILLed mid-batch with
+   * rows still claimed.
+   */
+  shouldStop?: () => boolean;
 }
 
 export interface CycleResult {
@@ -124,6 +137,15 @@ interface ClaimedRow {
 const ACCOUNT_COLUMNS =
   'id, from_name, from_email, reply_to, smtp_host, smtp_port, smtp_secure, smtp_username';
 
+/** PostgREST returns 1000 rows by default, so both reads are paged explicitly. */
+const PAGE_SIZE = 1000;
+/** A stop for a page that never shrinks; 50 pages is 50,000 mailboxes. */
+const MAX_PAGES = 50;
+
+/** Attempts at a 'sent' settlement, and the pause before the 2nd and 3rd. */
+const SETTLE_ATTEMPTS = 3;
+const SETTLE_BACKOFF_MS = [200, 1_000];
+
 /* ---------------------------------------------------------------- defaults */
 
 // email_settings has no row until someone saves one, so a missing row means
@@ -162,6 +184,32 @@ function toSettings(organizationId: string, row: EmailSettingsRow | undefined): 
   };
 }
 
+/**
+ * `send_timezone` is plain text with no constraint, and `Intl.DateTimeFormat`
+ * throws RangeError on a name it does not know — which, inside the window
+ * check, would end the cycle for every organisation after this one. One
+ * tenant's typo degrades that tenant to UTC instead.
+ */
+function withUsableTimezone(window: SendWindow, onInvalid: (message: string) => void): SendWindow {
+  try {
+    // The same construction isWithinSendWindow makes, so it fails here or not
+    // at all.
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: window.timezone,
+      hour: 'numeric',
+      weekday: 'short',
+      hour12: false,
+    });
+    return window;
+  } catch {
+    onInvalid(
+      `send_timezone "${window.timezone}" is not a timezone this runtime knows; ` +
+        'the send window was read in UTC instead. Fix it in email settings.',
+    );
+    return { ...window, timezone: DEFAULT_WINDOW.timezone };
+  }
+}
+
 function toMailboxHealth(row: MailboxStatusRow): MailboxHealth {
   return {
     id: row.id,
@@ -186,6 +234,8 @@ function jitterMs(settings: EmailSettings): number {
 
 const short = (err: unknown): string =>
   String((err as { message?: string } | null)?.message ?? err).slice(0, 500);
+
+const stopped = (deps: CycleDeps): boolean => deps.shouldStop?.() === true;
 
 /* ------------------------------------------------------------------- cycle */
 
@@ -233,29 +283,53 @@ export async function runCycle(deps: CycleDeps): Promise<CycleResult> {
 
 type Note = (scope: string, message: string) => void;
 
+/**
+ * Reads a whole table a page at a time. Without an explicit range PostgREST
+ * stops at 1000 rows, and the tenants past that boundary would simply never be
+ * served — silently, and worse as the product grows. The order makes the paging
+ * stable; both columns are unique.
+ */
+async function readAll<T>(
+  deps: CycleDeps,
+  table: string,
+  orderBy: string,
+): Promise<{ rows: T[]; error: string | null }> {
+  const rows: T[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE_SIZE;
+    const res = await deps.db
+      .from(table)
+      .select('*')
+      .order(orderBy, { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (res.error) return { rows, error: res.error.message };
+    const batch = (res.data ?? []) as T[];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) return { rows, error: null };
+  }
+  return { rows, error: `more than ${MAX_PAGES * PAGE_SIZE} rows in ${table}; the rest were skipped` };
+}
+
 async function drain(
   deps: CycleDeps,
   result: CycleResult,
   note: Note,
   noteBlocked: (reason: string) => void,
 ): Promise<void> {
-  const settingsRes = await deps.db.from('email_settings').select('*');
-  if (settingsRes.error) {
-    note('email_settings', settingsRes.error.message);
+  const settings = await readAll<EmailSettingsRow>(deps, 'email_settings', 'organization_id');
+  if (settings.error) {
+    note('email_settings', settings.error);
     return;
   }
   const settingsByOrg = new Map<string, EmailSettingsRow>();
-  for (const row of (settingsRes.data ?? []) as EmailSettingsRow[]) {
-    settingsByOrg.set(row.organization_id, row);
-  }
+  for (const row of settings.rows) settingsByOrg.set(row.organization_id, row);
 
-  const statusRes = await deps.db.from('mailbox_status').select('*');
-  if (statusRes.error) {
-    note('mailbox_status', statusRes.error.message);
+  const status = await readAll<MailboxStatusRow>(deps, 'mailbox_status', 'id');
+  if (status.error) {
+    note('mailbox_status', status.error);
     return;
   }
-  const statusRows = (statusRes.data ?? []) as MailboxStatusRow[];
-  if (statusRows.length === 0) {
+  if (status.rows.length === 0) {
     noteBlocked(blockedReason([]) ?? 'No mailboxes are configured.');
     return;
   }
@@ -263,39 +337,76 @@ async function drain(
   // The worker serves every tenant, and the window, the pacing and the budget
   // are all per organisation, so the pool is split before any of them apply.
   const byOrg = new Map<string, MailboxStatusRow[]>();
-  for (const row of statusRows) {
+  for (const row of status.rows) {
     const list = byOrg.get(row.organization_id);
     if (list) list.push(row);
     else byOrg.set(row.organization_id, [row]);
   }
 
   for (const [organizationId, orgRows] of byOrg) {
-    const settings = toSettings(organizationId, settingsByOrg.get(organizationId));
-
-    // Checked before a single row is claimed: outside working hours nothing
-    // goes out and the queue simply waits.
-    if (!isWithinSendWindow(settings.window, deps.now())) {
-      noteBlocked(describeSendWindow(settings.window));
-      continue;
+    if (stopped(deps)) return;
+    // One tenant's bad data is one tenant's problem. Without this, the first
+    // throw ends the pass for every organisation after it, in map order — which
+    // is to say, invisibly and unevenly.
+    try {
+      await runOrganisation(
+        deps,
+        result,
+        note,
+        noteBlocked,
+        organizationId,
+        orgRows,
+        settingsByOrg.get(organizationId),
+      );
+    } catch (err) {
+      note(`organisation ${organizationId}`, short(err));
     }
+  }
+}
 
-    const pool = orgRows.map(toMailboxHealth);
-    const selection = selectMailboxes(pool, deps.maxPerCycle);
-    if (selection.length === 0) {
-      noteBlocked(blockedReason(pool) ?? 'No mailbox is currently able to send.');
-      continue;
-    }
+async function runOrganisation(
+  deps: CycleDeps,
+  result: CycleResult,
+  note: Note,
+  noteBlocked: (reason: string) => void,
+  organizationId: string,
+  orgRows: MailboxStatusRow[],
+  settingsRow: EmailSettingsRow | undefined,
+): Promise<void> {
+  const settings = toSettings(organizationId, settingsRow);
+  settings.window = withUsableTimezone(settings.window, (message) =>
+    note(`organisation ${organizationId}`, message),
+  );
 
-    for (const { mailbox, take } of selection) {
+  // Checked before a single row is claimed: outside working hours nothing goes
+  // out and the queue simply waits.
+  if (!isWithinSendWindow(settings.window, deps.now())) {
+    noteBlocked(describeSendWindow(settings.window));
+    return;
+  }
+
+  const pool = orgRows.map(toMailboxHealth);
+  const selection = selectMailboxes(pool, deps.maxPerCycle);
+  if (selection.length === 0) {
+    noteBlocked(blockedReason(pool) ?? 'No mailbox is currently able to send.');
+    return;
+  }
+
+  for (const { mailbox, take } of selection) {
+    if (stopped(deps)) return;
+    // A failure here stops this mailbox and no other — that is the point of a
+    // pool, and it is only true if a throw is caught somewhere.
+    try {
       await runMailbox(deps, result, note, mailbox, take, settings);
+    } catch (err) {
+      note(mailbox.fromEmail, short(err));
     }
   }
 }
 
 /**
  * One mailbox's pass: open its credential, take its slice of the queue, send
- * it, and close the connection. A failure here stops this mailbox and no
- * other — that is the point of a pool.
+ * it, and close the connection.
  */
 async function runMailbox(
   deps: CycleDeps,
@@ -378,25 +489,61 @@ async function sendBatch(
   transport: Transporter,
   who: string,
 ): Promise<void> {
+  /**
+   * The one call that settles a message, and the only place that writes a
+   * result. It carries the outcome, the error and the provider id together, in
+   * one transaction — splitting it in two is what stranded rows in 'sending'
+   * before.
+   *
+   * A 'sent' settlement is retried, because by then the message is already on
+   * its way to the recipient: a row left 'sending' with a null
+   * provider_message_id is exactly what the claim's ten-minute sweep decides
+   * was never delivered, and it requeues it, mailing the same person twice.
+   * The call is one idempotent UPDATE to a fixed state, so making it again is
+   * still one settlement, not a second write. The other outcomes are not
+   * retried on purpose: nothing was delivered, so the sweep requeueing them is
+   * the correct recovery rather than a duplicate.
+   *
+   * Returns whether the result actually reached the database.
+   */
   const settle = async (
     messageId: string,
     outcome: Outcome,
     error: string | null,
     providerMessageId: string | null = null,
-  ): Promise<void> => {
-    // One call settles the message and the mailbox's health together, in one
-    // transaction, and carries the provider id with it. Splitting it in two is
-    // what stranded rows in 'sending' before.
-    const { error: rpcError } = await deps.db.rpc('record_send_result', {
-      p_message: messageId,
-      p_account: mailbox.id,
-      p_outcome: outcome,
-      p_error: error,
-      p_provider_message_id: providerMessageId,
-    });
-    if (rpcError) {
-      note(who, `the result for ${messageId} could not be recorded: ${rpcError.message}`);
+    /** True only for a row this worker never handed to SMTP. */
+    restoreAttempt = false,
+  ): Promise<boolean> => {
+    const attempts = outcome === 'sent' ? SETTLE_ATTEMPTS : 1;
+    let lastError = '';
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) {
+        await deps.sleep(SETTLE_BACKOFF_MS[attempt - 1] ?? SETTLE_BACKOFF_MS[SETTLE_BACKOFF_MS.length - 1]);
+      }
+      const { error: rpcError } = await deps.db.rpc('record_send_result', {
+        p_message: messageId,
+        p_account: mailbox.id,
+        p_outcome: outcome,
+        p_error: error,
+        p_provider_message_id: providerMessageId,
+        p_restore_attempt: restoreAttempt,
+      });
+      if (!rpcError) return true;
+      lastError = rpcError.message;
     }
+
+    if (outcome === 'sent') {
+      note(
+        who,
+        `DELIVERED BUT NOT RECORDED: ${messageId} was accepted by the mail server, but its ` +
+          `result could not be written after ${attempts} attempts (${lastError}). The recovery ` +
+          'sweep may send it again — check this row by hand.',
+      );
+    } else {
+      note(who, `the result for ${messageId} could not be recorded: ${lastError}`);
+    }
+    return false;
   };
 
   const claimRes = await deps.db.rpc('claim_email_batch', {
@@ -411,6 +558,19 @@ async function sendBatch(
   if (rows.length === 0) return;
   result.claimed += rows.length;
 
+  /**
+   * Hands rows this worker never attempted straight back to the queue. They
+   * carry the attempt the claim stamped on them, and three of those makes a row
+   * unclaimable forever — so `p_restore_attempt` gives it back. Without that, a
+   * mailbox with a rotated password retires nine innocent recipients per cycle.
+   */
+  const returnUnattempted = async (from: number, reason: string): Promise<void> => {
+    for (const rest of rows.slice(from)) {
+      await settle(rest.message_id, 'transient', reason.slice(0, 500), null, true);
+      result.skipped += 1;
+    }
+  };
+
   // The bodies, once for the batch rather than once per recipient.
   const campaignIds = [...new Set(rows.map((r) => r.campaign_id))];
   const campaignRes = await deps.db
@@ -421,10 +581,7 @@ async function sendBatch(
     // Without the bodies nothing in this batch can be built. Hand every row
     // straight back rather than leaving the whole batch stranded in 'sending'.
     note(who, campaignRes.error.message);
-    for (const row of rows) {
-      await settle(row.message_id, 'transient', campaignRes.error.message.slice(0, 500));
-      result.skipped += 1;
-    }
+    await returnUnattempted(0, campaignRes.error.message);
     return;
   }
   const byCampaign = new Map(
@@ -432,6 +589,13 @@ async function sendBatch(
   );
 
   for (let i = 0; i < rows.length; i++) {
+    if (stopped(deps)) {
+      // Shutting down. Give the rest of the batch back now rather than leaving
+      // it to the ten-minute sweep, so a redeploy costs the queue nothing.
+      await returnUnattempted(i, 'The worker was asked to stop before this message was attempted.');
+      return;
+    }
+
     const row = rows[i];
     const campaign = byCampaign.get(row.campaign_id);
     if (!campaign) {
@@ -482,6 +646,9 @@ async function sendBatch(
       });
     } catch (err) {
       // Nothing has been handed to SMTP, so the row goes back on the queue.
+      // The attempt is NOT restored here: a merge field that throws throws
+      // every time, and a row that never spends an attempt is a row that is
+      // retried forever. Three tries and it retires, like any other bad row.
       const message = short(err);
       note(who, message);
       await settle(row.message_id, 'transient', message);
@@ -505,8 +672,10 @@ async function sendBatch(
       });
       // Delivered. The provider id goes down with the status in the same call,
       // so a row can never be 'sent' without it or carry it while 'sending'.
-      await settle(row.message_id, 'sent', null, info?.messageId ?? null);
-      result.sent += 1;
+      // Counted only once that call has actually landed: a summary claiming a
+      // delivery the database never heard about is worse than no summary.
+      const recorded = await settle(row.message_id, 'sent', null, info?.messageId ?? null);
+      if (recorded) result.sent += 1;
     } catch (err) {
       const message = friendlySmtpError(err, account.smtp_host);
       // Exactly one of 'permanent' | 'hard_bounce' | 'transient'.
@@ -524,10 +693,7 @@ async function sendBatch(
     }
 
     if (abort) {
-      for (const rest of rows.slice(i + 1)) {
-        await settle(rest.message_id, 'transient', `Not attempted: ${abort}`.slice(0, 500));
-        result.skipped += 1;
-      }
+      await returnUnattempted(i + 1, `Not attempted: ${abort}`);
       break;
     }
 
