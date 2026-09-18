@@ -14,8 +14,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (userError || !userData?.user) return res.status(401).json({ error: 'Unauthorized' });
 
   const accountId = String((req.body ?? {}).accountId ?? '');
-  const to = String((req.body ?? {}).to ?? userData.user.email ?? '');
-  if (!accountId || !to) return res.status(400).json({ error: 'accountId and to are required' });
+  // The recipient is never caller-supplied. A test send always goes to the
+  // address on the caller's own verified JWT, so this route cannot be used to
+  // mail a third party from the organization's sending identity.
+  const to = String(userData.user.email ?? '');
+  if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+  if (!to) return res.status(400).json({ error: 'Your account has no email address' });
 
   const { data: account } = await db
     .from('email_accounts')
@@ -24,13 +28,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .single();
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  // The caller must belong to the account's organization.
-  const { data: profile } = await db
-    .from('user_profiles')
-    .select('organization_id')
-    .eq('id', userData.user.id)
+  // Only the organization's owner or an admin may send from its SMTP identity;
+  // a plain member must not be able to spend the account's reputation.
+  // is_org_admin_or_owner() is no use here: it reads auth.uid(), which is null
+  // under the service-role client, so the membership test is done in the open.
+  const callerId = userData.user.id;
+  const { data: org } = await db
+    .from('organizations')
+    .select('owner_id, members')
+    .eq('organization_id', account.organization_id)
     .maybeSingle();
-  if (!profile || profile.organization_id !== account.organization_id) {
+  const rawMembers = (org as any)?.members;
+  const members: any[] = Array.isArray(rawMembers) ? rawMembers : [];
+  const isAdmin = members.some(
+    (m: any) =>
+      String(m?.userId ?? m?.user_id ?? '') === callerId &&
+      (m?.role === 'owner' || m?.role === 'admin'),
+  );
+  if (!org || (org.owner_id !== callerId && !isAdmin)) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
