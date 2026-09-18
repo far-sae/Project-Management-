@@ -54,7 +54,7 @@ begin
 end;
 $$;
 
-revoke execute on function public.claim_email_batch(integer) from anon, authenticated;
+revoke execute on function public.claim_email_batch(integer) from public, anon, authenticated;
 grant execute on function public.claim_email_batch(integer) to service_role;
 
 -- ── 2. Poke the Vercel worker every minute ──────────────────────────
@@ -106,6 +106,8 @@ begin
   );
 end;
 $$;
+
+revoke execute on function public.kick_email_worker() from public, anon, authenticated;
 
 do $$
 begin
