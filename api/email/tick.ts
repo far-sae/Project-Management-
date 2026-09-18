@@ -125,6 +125,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // The batch is sent; release the SMTP connections rather than leaving
+  // sockets open in a warm lambda between invocations.
+  for (const transport of transports.values()) {
+    try {
+      transport.close();
+    } catch {
+      // A transport that never connected has nothing to close.
+    }
+  }
+
   // Roll the per-campaign counters up and close finished campaigns.
   for (const id of campaignIds) {
     const { count: remaining } = await db
