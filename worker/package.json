@@ -1,0 +1,8 @@
+{
+  "name": "taskcalendar-email-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts"
+  }
+}
