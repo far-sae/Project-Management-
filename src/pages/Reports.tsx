@@ -26,6 +26,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useProjects } from '@/hooks/useProjects';
 import { useAllTasks } from '@/hooks/useAllTasks';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useUserComments } from '@/hooks/useComments';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -66,8 +67,11 @@ const CURRENCY_SYMBOLS: Record<string, { symbol: string, name: string; }> = {
 export const Reports: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { projects } = useProjects();
-  const { tasks, loading } = useAllTasks();
+  const { projects: allProjects } = useProjects();
+  const { tasks: allTasks, loading } = useAllTasks();
+  const { filterProjects, filterTasks, isAll, selected: sidebarWorkspace } = useSelectedWorkspace();
+  const projects = useMemo(() => filterProjects(allProjects), [allProjects, filterProjects]);
+  const tasks = useMemo(() => filterTasks(allTasks), [allTasks, filterTasks]);
   const { comments } = useUserComments(user?.userId ?? null);
   const { organization, refreshOrganization, isAdmin } = useOrganization();
   const { hasFeature } = useSubscription();
@@ -78,6 +82,13 @@ export const Reports: React.FC = () => {
   // Tab state
   const [activeTab, setActiveTab] = useState<'projects' | 'business'>('projects');
   const [reportWorkspaceId, setReportWorkspaceId] = useState<string>(ALL_WORKSPACES_ID);
+  // The sidebar already scopes `projects`/`tasks` to one workspace; a second,
+  // independent in-page filter on top of that can only subtract (and would
+  // report 0 for every other workspace). While the sidebar scopes, the report
+  // covers exactly that workspace: drop any stale in-page filter.
+  useEffect(() => {
+    if (!isAll) setReportWorkspaceId(ALL_WORKSPACES_ID);
+  }, [isAll]);
   // Filters tasks/contracts by their creation date. AI snapshot windows
   // (7d/14d) keep their absolute meaning — they're computed off `now`, not
   // off this filter — so insights still show "what happened in the last 7
@@ -337,7 +348,8 @@ export const Reports: React.FC = () => {
 
     const workspaceLabel =
       reportWorkspaceId === ALL_WORKSPACES_ID
-        ? 'All workspaces'
+        // The sidebar scope, when there is one, is what this report covers.
+        ? (isAll ? 'All workspaces' : sidebarWorkspace?.name || 'Workspace')
         : workspaces.find((w) => w.workspaceId === reportWorkspaceId)?.name || 'Workspace';
 
     return {
@@ -370,6 +382,8 @@ export const Reports: React.FC = () => {
     timeLoggedMinutes,
     reportWorkspaceId,
     workspaces,
+    isAll,
+    sidebarWorkspace,
   ]);
 
   const handleGenerateAiInsights = async () => {
@@ -538,20 +552,26 @@ export const Reports: React.FC = () => {
           {activeTab === 'projects' && (
             <div className="flex items-center gap-2 flex-wrap">
               <DateRangeFilter value={dateRange} onChange={setDateRange} />
-              <span className="text-sm font-medium text-foreground">Workspace</span>
-              <Select value={reportWorkspaceId} onValueChange={setReportWorkspaceId}>
-                <SelectTrigger className="w-[220px] bg-background">
-                  <SelectValue placeholder="All workspaces" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_WORKSPACES_ID}>All workspaces</SelectItem>
-                  {workspaceListForSelect.map((w) => (
-                    <SelectItem key={w.workspaceId} value={w.workspaceId}>
-                      {getWorkspaceDisplayName(w)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* Only offer the in-page workspace filter while the sidebar
+                  shows all workspaces — otherwise the sidebar owns the scope. */}
+              {isAll && (
+                <>
+                  <span className="text-sm font-medium text-foreground">Workspace</span>
+                  <Select value={reportWorkspaceId} onValueChange={setReportWorkspaceId}>
+                    <SelectTrigger className="w-[220px] bg-background">
+                      <SelectValue placeholder="All workspaces" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_WORKSPACES_ID}>All workspaces</SelectItem>
+                      {workspaceListForSelect.map((w) => (
+                        <SelectItem key={w.workspaceId} value={w.workspaceId}>
+                          {getWorkspaceDisplayName(w)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -952,7 +972,9 @@ export const Reports: React.FC = () => {
                   </Card>
                 </div>
 
-                {/* Workspace Dashboard */}
+                {/* Workspace Dashboard — a per-workspace breakdown only makes
+                    sense while the sidebar isn't already scoping to one. */}
+                {isAll && (
                 <Card className="mb-6 border border-border shadow-md bg-card">
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
@@ -985,6 +1007,7 @@ export const Reports: React.FC = () => {
                     </div>
                   </CardContent>
                 </Card>
+                )}
 
                 {/* Organization Members */}
                 {organization?.members && organization.members.length > 0 && (

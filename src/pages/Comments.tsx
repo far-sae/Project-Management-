@@ -28,6 +28,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useUserComments } from '@/hooks/useComments';
 import { useProjects } from '@/hooks/useProjects';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import AttachmentPreview from '@/components/ui/AttachmentPreview';
 import { toast } from 'sonner';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -49,7 +50,9 @@ export const Comments: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { comments, loading, error } = useUserComments(user?.userId || null);
-  const { projects } = useProjects();
+  const { projects: allProjects } = useProjects();
+  const { filterProjects } = useSelectedWorkspace();
+  const projects = useMemo(() => filterProjects(allProjects), [allProjects, filterProjects]);
   const [selectedComment, setSelectedComment] = useState<typeof comments[0] | null>(null);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<CommentTab>('all');

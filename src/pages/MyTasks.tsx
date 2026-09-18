@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAllTasks } from '@/hooks/useAllTasks';
 import { useProjects } from '@/hooks/useProjects';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useOrganization } from '@/context/OrganizationContext';
 import {
   isTaskLockUnlockedInSession,
@@ -107,7 +108,9 @@ function getDueCalendarDayStartMs(task: {
 export const MyTasks: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
-  const { projects } = useProjects();
+  const { projects: allProjects } = useProjects();
+  const { filterProjects, filterTasks } = useSelectedWorkspace();
+  const projects = useMemo(() => filterProjects(allProjects), [allProjects, filterProjects]);
   const columnsByProjectId = useMemo(() => {
     const m = new Map<string, KanbanColumn[]>();
     for (const p of projects) {
@@ -115,7 +118,17 @@ export const MyTasks: React.FC = () => {
     }
     return m;
   }, [projects]);
-  const { tasksAssignedToMe, loading, tasks: allTasks, refresh } = useAllTasks();
+  const {
+    tasksAssignedToMe: allAssignedToMe,
+    loading,
+    tasks: unscopedTasks,
+    refresh,
+  } = useAllTasks();
+  const tasksAssignedToMe = useMemo(
+    () => filterTasks(allAssignedToMe),
+    [allAssignedToMe, filterTasks],
+  );
+  const allTasks = useMemo(() => filterTasks(unscopedTasks), [unscopedTasks, filterTasks]);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);

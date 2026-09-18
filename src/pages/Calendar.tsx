@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useProjects } from '@/hooks/useProjects';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
   getOrganizationTasks,
   TASKS_SAFE_SELECT,
@@ -38,10 +39,13 @@ export const Calendar: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { organization } = useOrganization();
-  const { projects } = useProjects();
+  const { projects: allProjects } = useProjects();
+  const { filterProjects, filterTasks } = useSelectedWorkspace();
+  const projects = useMemo(() => filterProjects(allProjects), [allProjects, filterProjects]);
 
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [allTasks, setTasks] = useState<Task[]>([]);
+  const tasks = useMemo(() => filterTasks(allTasks), [allTasks, filterTasks]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
