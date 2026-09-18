@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import { env, serviceClient } from '../_lib/context';
 import { decryptSecret } from '../_lib/crypto';
 
@@ -49,6 +50,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
+  // Held outside the try so the finally below can close it whichever way the
+  // send goes; an unclosed transport leaks a socket in a warm lambda.
+  let transport: Transporter | null = null;
   try {
     const { data: secretRow } = await db
       .from('email_account_secrets')
@@ -58,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!secretRow) throw new Error('No stored password for this account');
     const password = await decryptSecret(secretRow.secret_encrypted, env('INTEGRATION_TOKEN_KEY'));
 
-    const transport = nodemailer.createTransport({
+    transport = nodemailer.createTransport({
       host: account.smtp_host,
       port: account.smtp_port,
       secure: account.smtp_secure,
@@ -66,8 +70,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     await transport.sendMail({
-      from: `"${account.from_name}" <${account.from_email}>`,
-      to,
+      // Objects, not `"name" <addr>` strings: a from_name holding a quote
+      // would otherwise inject a second address into the header.
+      from: { name: String(account.from_name ?? ''), address: String(account.from_email) },
+      to: { name: '', address: to },
       subject: 'TaskCalendar test email',
       text: 'This is a test message. Your sending account works.',
     });
@@ -84,5 +90,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .update({ status: 'error', last_error: message })
       .eq('id', accountId);
     return res.status(400).json({ ok: false, error: message });
+  } finally {
+    try {
+      transport?.close();
+    } catch {
+      // A transport that never connected has nothing to close.
+    }
   }
 }
