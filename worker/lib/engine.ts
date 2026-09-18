@@ -293,21 +293,43 @@ async function readAll<T>(
   deps: CycleDeps,
   table: string,
   orderBy: string,
-): Promise<{ rows: T[]; error: string | null }> {
+): Promise<{ rows: T[]; error: string | null; truncated: string | null }> {
   const rows: T[] = [];
+  // Advanced by what actually came back, never by PAGE_SIZE: PostgREST's
+  // `db-max-rows` is a server setting, and on a project configured below this
+  // constant a fixed stride would step straight over the rows the server
+  // withheld — the very gap paging is here to close.
+  let offset = 0;
+
   for (let page = 0; page < MAX_PAGES; page++) {
-    const from = page * PAGE_SIZE;
     const res = await deps.db
       .from(table)
       .select('*')
       .order(orderBy, { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-    if (res.error) return { rows, error: res.error.message };
+      .range(offset, offset + PAGE_SIZE - 1);
+    // A failed read is fatal for the cycle rather than partial: half a
+    // settings table would silently hand some organisation the default window
+    // and send outside the hours it actually configured.
+    if (res.error) return { rows, error: res.error.message, truncated: null };
+
     const batch = (res.data ?? []) as T[];
     rows.push(...batch);
-    if (batch.length < PAGE_SIZE) return { rows, error: null };
+    // Keep going while anything at all comes back, and stop on the first empty
+    // page, so the loop cannot end early against a smaller server cap.
+    if (batch.length === 0) return { rows, error: null, truncated: null };
+    offset += batch.length;
   }
-  return { rows, error: `more than ${MAX_PAGES * PAGE_SIZE} rows in ${table}; the rest were skipped` };
+
+  // Serve what was read rather than nothing: refusing to send past some row
+  // count is a harder failure than the unpaged read this replaced, which at
+  // least served the first page.
+  return {
+    rows,
+    error: null,
+    truncated:
+      `stopped after ${MAX_PAGES} pages (${rows.length} rows) of ${table}; ` +
+      'the rest were not read this cycle',
+  };
 }
 
 async function drain(
@@ -321,6 +343,10 @@ async function drain(
     note('email_settings', settings.error);
     return;
   }
+  // Reported, not fatal. An organisation whose settings row fell past the
+  // truncation is served with the column defaults, which is the same treatment
+  // as an organisation that never saved one.
+  if (settings.truncated) note('email_settings', settings.truncated);
   const settingsByOrg = new Map<string, EmailSettingsRow>();
   for (const row of settings.rows) settingsByOrg.set(row.organization_id, row);
 
@@ -329,6 +355,7 @@ async function drain(
     note('mailbox_status', status.error);
     return;
   }
+  if (status.truncated) note('mailbox_status', status.truncated);
   if (status.rows.length === 0) {
     noteBlocked(blockedReason([]) ?? 'No mailboxes are configured.');
     return;
@@ -521,16 +548,25 @@ async function sendBatch(
       if (attempt > 0) {
         await deps.sleep(SETTLE_BACKOFF_MS[attempt - 1] ?? SETTLE_BACKOFF_MS[SETTLE_BACKOFF_MS.length - 1]);
       }
-      const { error: rpcError } = await deps.db.rpc('record_send_result', {
-        p_message: messageId,
-        p_account: mailbox.id,
-        p_outcome: outcome,
-        p_error: error,
-        p_provider_message_id: providerMessageId,
-        p_restore_attempt: restoreAttempt,
-      });
-      if (!rpcError) return true;
-      lastError = rpcError.message;
+      // postgrest-js answers with `{ error }` rather than rejecting, but only
+      // until someone sets throwOnError() or the fetch itself fails. This
+      // function must never throw: the only caller that could catch it is the
+      // send's own catch block, which would read a settlement failure as a
+      // send failure.
+      try {
+        const { error: rpcError } = await deps.db.rpc('record_send_result', {
+          p_message: messageId,
+          p_account: mailbox.id,
+          p_outcome: outcome,
+          p_error: error,
+          p_provider_message_id: providerMessageId,
+          p_restore_attempt: restoreAttempt,
+        });
+        if (!rpcError) return true;
+        lastError = rpcError.message;
+      } catch (err) {
+        lastError = short(err);
+      }
     }
 
     if (outcome === 'sent') {
@@ -657,6 +693,14 @@ async function sendBatch(
     }
 
     let abort: string | null = null;
+    // Set the moment sendMail resolves, and read after the catch. The
+    // settlement CANNOT live inside this try: anything thrown below the send —
+    // a settlement that rejects rather than returning `{ error }` — would be
+    // handed to classifySmtpError(), which reads an ordinary Error as
+    // 'transient' and would put an already-delivered message back on the queue
+    // with claimed_at cleared, to be re-claimed and re-sent seconds later.
+    // Once delivery has happened, nothing may reinterpret it as a failure.
+    let delivered: { providerMessageId: string | null } | null = null;
     try {
       const info = await transport.sendMail({
         // Objects, not `"name" <addr>` strings: a CSV-sourced name holding a
@@ -670,12 +714,7 @@ async function sendBatch(
         text: built.text,
         headers: built.headers,
       });
-      // Delivered. The provider id goes down with the status in the same call,
-      // so a row can never be 'sent' without it or carry it while 'sending'.
-      // Counted only once that call has actually landed: a summary claiming a
-      // delivery the database never heard about is worse than no summary.
-      const recorded = await settle(row.message_id, 'sent', null, info?.messageId ?? null);
-      if (recorded) result.sent += 1;
+      delivered = { providerMessageId: info?.messageId ?? null };
     } catch (err) {
       const message = friendlySmtpError(err, account.smtp_host);
       // Exactly one of 'permanent' | 'hard_bounce' | 'transient'.
@@ -692,14 +731,27 @@ async function sendBatch(
       if (outcome === 'permanent') abort = message;
     }
 
+    if (delivered) {
+      // Outside the catch, on purpose. The provider id goes down with the
+      // status in one call, so a row can never be 'sent' without it or carry it
+      // while 'sending'; and it is counted only once that call has actually
+      // landed, because a summary claiming a delivery the database never heard
+      // about is worse than no summary.
+      const recorded = await settle(row.message_id, 'sent', null, delivered.providerMessageId);
+      if (recorded) result.sent += 1;
+    }
+
     if (abort) {
       await returnUnattempted(i + 1, `Not attempted: ${abort}`);
       break;
     }
 
     // Between messages, not after the last one: an idle pause at the end of a
-    // batch buys no deliverability and delays a shutdown by up to the full
-    // interval.
-    if (i < rows.length - 1) await deps.sleep(jitterMs(settings));
+    // batch buys no deliverability. And never while stopping — the stop is
+    // checked HERE as well as at the top of the loop, because a signal that
+    // arrives during a send would otherwise cost the send, then a full jitter
+    // pause of up to 25 seconds, before anything noticed. That is most of a
+    // container's shutdown grace on its own.
+    if (i < rows.length - 1 && !stopped(deps)) await deps.sleep(jitterMs(settings));
   }
 }

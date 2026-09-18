@@ -115,6 +115,10 @@ interface Fixtures {
   claims?: Record<string, Row[]>;
   /** How many leading record_send_result calls answer with an error. */
   settleErrors?: number;
+  /** How many leading record_send_result calls REJECT instead of answering. */
+  settleRejects?: number;
+  /** A server-side row ceiling, as PostgREST's `db-max-rows` imposes one. */
+  rowCap?: number;
 }
 
 interface RpcCall {
@@ -148,7 +152,10 @@ function makeDb(fx: Fixtures) {
     let range: [number, number] | null = null;
     const rows = () => {
       const matched = (tables[table] ?? []).filter((r) => filters.every((f) => f(r)));
-      return range ? matched.slice(range[0], range[1] + 1) : matched;
+      const page = range ? matched.slice(range[0], range[1] + 1) : matched;
+      // The server may hand back fewer rows than were asked for, whatever the
+      // range says, and never says that it did.
+      return fx.rowCap === undefined ? page : page.slice(0, fx.rowCap);
     };
     const write = (op: string) => {
       writes.push({ table, op });
@@ -198,6 +205,10 @@ function makeDb(fx: Fixtures) {
     }
     if (name === 'record_send_result') {
       settleCalls += 1;
+      if (settleCalls <= (fx.settleRejects ?? 0)) {
+        // What a client with throwOnError(), or a failed fetch, does.
+        throw new Error('network error writing the result');
+      }
       if (settleCalls <= (fx.settleErrors ?? 0)) {
         return { data: null, error: { message: 'could not serialize access' } };
       }
@@ -613,8 +624,12 @@ describe('worker/lib/engine — a mailbox that cannot be used', () => {
 
     const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
 
+    // The guard's own words, asserted first and on their own. "Mars/Olympus"
+    // would not do: V8's RangeError quotes the offending zone too, so that
+    // substring passes even when the guard is gone and the per-organisation
+    // catch is what produced the line.
+    expect(result.errors.join(' ')).toContain('the send window was read in UTC instead');
     expect(result.sent).toBe(1);
-    expect(result.errors.join(' ')).toContain('Mars/Olympus');
   });
 });
 
@@ -638,6 +653,26 @@ describe('worker/lib/engine — a settlement that does not land', () => {
     // Retried settlement, not a retried send.
     expect(mailer.sent).toHaveLength(1);
     expect(result.sent).toBe(1);
+  });
+
+  it('never lets a rejecting settlement requeue a message that was delivered', async () => {
+    // The settle throws rather than answering — a client with throwOnError(),
+    // or a fetch that failed outright. If that call sat inside the send's own
+    // try/catch, classifySmtpError() would read the Error as 'transient', the
+    // delivered row would go back to 'queued' with claimed_at cleared, and the
+    // next cycle would mail the same person again within seconds.
+    const stub = oneMailbox([claimedRow(1)], { settleRejects: 99 });
+    const mailer = makeMailer(okSend);
+
+    const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+    expect(mailer.sent).toHaveLength(1);
+    // Every settlement attempted was the 'sent' one. Nothing requeued it, and
+    // nothing counted it as a send failure.
+    expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual(['sent', 'sent', 'sent']);
+    expect(result.failed).toBe(0);
+    expect(result.sent).toBe(0);
+    expect(result.errors.join(' ')).toContain('DELIVERED BUT NOT RECORDED');
   });
 
   it('does not count a delivery it could never record, and says so loudly', async () => {
@@ -686,10 +721,15 @@ describe('worker/lib/engine — rows that were never attempted', () => {
       return { messageId: '<a@smtp>' };
     });
 
+    const sleep = vi.fn(async () => undefined);
     const result = await runCycle(
-      makeDeps(stub.db, mailer.createTransport, { shouldStop: () => stop }),
+      makeDeps(stub.db, mailer.createTransport, { shouldStop: () => stop, sleep }),
     );
 
+    // Not one jitter pause after the signal. Checked before the sleep as well
+    // as after it, because a pause of up to 25 seconds on the way out is most
+    // of a container's shutdown grace spent doing nothing.
+    expect(sleep).not.toHaveBeenCalled();
     // One message went out; the other two went back on the queue immediately
     // rather than sitting in 'sending' until the ten-minute sweep.
     expect(mailer.sent).toHaveLength(1);
@@ -729,6 +769,65 @@ describe('worker/lib/engine — reading the pool', () => {
     await runCycle(makeDeps(stub.db, mailer.createTransport));
 
     expect(stub.claims().map((c) => c.args.p_account)).toEqual(['mbx-1001']);
+  });
+
+  it('pages correctly when the server caps rows below the page size', async () => {
+    // `db-max-rows` is a server setting. At 500, a read that asks for 1000 gets
+    // 500 — and a loop that stepped by its own page size, or stopped on a short
+    // page, would skip or never reach the rest.
+    const mailboxes: Row[] = [];
+    for (let n = 1; n <= 1200; n++) {
+      mailboxes.push(
+        mailboxRow({ id: `mbx-${n}`, from_email: `m${n}@example.com`, paused_reason: 'manual' }),
+      );
+    }
+    // Row 700 of 1200: past the server's 500-row answer to the first request,
+    // and inside the block a loop that stepped by its own 1000-row page size
+    // would step straight over.
+    mailboxes.splice(700, 0, mailboxRow({ id: 'mbx-last', from_email: 'last@example.com' }));
+
+    const stub = makeDb({
+      mailboxes,
+      rowCap: 500,
+      accounts: [accountRow({ id: 'mbx-last', from_email: 'last@example.com' })],
+      secrets: [{ account_id: 'mbx-last', secret_encrypted: CIPHERTEXT }],
+      campaigns: [campaignRow()],
+      claims: {},
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+    expect(stub.claims().map((c) => c.args.p_account)).toEqual(['mbx-last']);
+  });
+
+  it('serves what it read when the page limit is reached, and reports the truncation', async () => {
+    // A tiny server cap turns a modest table into more pages than the loop
+    // will take, which is the same shape as a very large one.
+    const mailboxes: Row[] = [mailboxRow({ id: 'mbx-first', from_email: 'first@example.com' })];
+    for (let n = 1; n <= 599; n++) {
+      mailboxes.push(
+        mailboxRow({ id: `mbx-${n}`, from_email: `m${n}@example.com`, paused_reason: 'manual' }),
+      );
+    }
+
+    const stub = makeDb({
+      mailboxes,
+      rowCap: 10,
+      accounts: [accountRow({ id: 'mbx-first', from_email: 'first@example.com' })],
+      secrets: [{ account_id: 'mbx-first', secret_encrypted: CIPHERTEXT }],
+      campaigns: [campaignRow()],
+      claims: {},
+    });
+    const mailer = makeMailer(okSend);
+
+    const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+    // Sending nothing at all would be a harder failure than the unpaged read
+    // this replaced, so the mailboxes that were read are still served...
+    expect(stub.claims().map((c) => c.args.p_account)).toEqual(['mbx-first']);
+    // ...and the gap is reported rather than swallowed.
+    expect(result.errors.join(' ')).toContain('the rest were not read this cycle');
   });
 });
 

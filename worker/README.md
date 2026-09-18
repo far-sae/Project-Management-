@@ -60,8 +60,10 @@ the start command, set the variables above, and keep the replica count at one.
 A redeploy sends `SIGTERM`. The worker stops at the next message boundary — it
 checks between organisations, between mailboxes and between messages — settles
 the message in flight, hands the rest of that mailbox's claimed batch back to the
-queue, and exits. A batch of 50 with the default jitter runs up to twenty
-minutes, which is why it does not wait for the cycle to end.
+queue, and exits. It takes no pacing pause on the way out, so what a shutdown
+costs is the message already on the wire and nothing else: at worst the SMTP
+socket timeout, 30 seconds. A batch of 50 with the default jitter runs up to
+twenty minutes, which is why it does not wait for the cycle to end.
 
 It is not instant, and it is not a guarantee. Anything that kills the process
 outright — `SIGKILL`, an OOM kill, a shutdown grace period that expires while a
