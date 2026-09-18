@@ -48,6 +48,7 @@ const CrmCompanyDetailPage = React.lazy(() => import('@/pages/crmHub/CompanyDeta
 const CrmDealDetailPage = React.lazy(() => import('@/pages/crmHub/DealDetail').then((m) => ({ default: m.CrmDealDetailPage })));
 const CrmDashboardPage = React.lazy(() => import('@/pages/crmHub/Dashboard').then((m) => ({ default: m.CrmDashboardPage })));
 const CrmSettingsPage = React.lazy(() => import('@/pages/crmHub/Settings').then((m) => ({ default: m.CrmSettingsPage })));
+const EmailPage = React.lazy(() => import('@/pages/Email').then((m) => ({ default: m.Email })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
@@ -315,6 +316,14 @@ const router = createBrowserRouter(
                 { path: 'calendar',     element: lazyAppRoute(<CrmCalendarPage />) },
                 { path: 'settings',     element: lazyAppRoute(<CrmSettingsPage />) },
               ],
+            },
+            {
+              path: '/email',
+              element: (
+                <ProtectedRoute requireSubscription requireFeature="email_campaigns" requirePage="email">
+                  {lazyAppRoute(<EmailPage />)}
+                </ProtectedRoute>
+              ),
             },
             {
               path: '/timeline',

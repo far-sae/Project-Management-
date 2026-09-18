@@ -25,6 +25,7 @@ import {
   UserCircle,
   TrendingUp,
   Handshake,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -66,6 +67,7 @@ const QUICK_ITEMS_FULL = [
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
   { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
+  { icon: Mail, label: 'Email', href: '/email', feature: 'email_campaigns' as const, page: 'email' as PageKey },
   { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
 ];
 
@@ -134,6 +136,7 @@ export const Sidebar: React.FC = () => {
       ? QUICK_ITEMS_FULL.filter(
           (i) =>
             (i.href !== '/team' || hasFeature('team_collaboration')) &&
+            (i.href !== '/email' || hasFeature('email_campaigns')) &&
             (i.href !== '/crm' || hasFeature('crm')),
         )
       : isViewer
