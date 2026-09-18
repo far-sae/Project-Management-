@@ -8,6 +8,8 @@ import React, {
 } from "react";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useProjects } from "@/hooks/useProjects";
+import { useAuth } from "@/context/AuthContext";
+import { useOrganization } from "@/context/OrganizationContext";
 import type { Workspace } from "@/types/workspace";
 import type { PageKey } from "@/lib/pageCatalog";
 import {
@@ -70,6 +72,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { workspaces, loading, DEFAULT_WORKSPACE_ID } = useWorkspaces();
   const { projects } = useProjects();
+  const { user, loading: authLoading } = useAuth();
+  const { loading: orgLoading } = useOrganization();
   const [id, setId] = useState<string>(() => readStored() || ALL_WORKSPACES_ID);
 
   useEffect(() => {
@@ -86,15 +90,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // If the stored workspace is no longer visible (deleted, switched org), show all.
+  // Only once the list is authoritative: on a reload AuthContext starts with
+  // `user === null` and OrganizationContext hasn't resolved the org yet, so
+  // useWorkspaces reports an empty, non-loading list — resetting on that would
+  // wipe the persisted selection on every reload and on every public route.
   useEffect(() => {
-    if (loading) return;
+    if (!user || authLoading || orgLoading || loading) return;
     if (id === ALL_WORKSPACES_ID || id === UNASSIGNED_WORKSPACE_ID) return;
     const exists = workspaces.some((w) => w.workspaceId === id);
     if (!exists) {
       setId(ALL_WORKSPACES_ID);
       writeStored(ALL_WORKSPACES_ID);
     }
-  }, [workspaces, loading, id]);
+  }, [workspaces, loading, id, user, authLoading, orgLoading]);
 
   const select = useCallback((newId: string) => {
     setId(newId);
