@@ -3,9 +3,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
-import { AccountsTab, ComposeTab, CampaignsTab, SuppressionTab } from '@/components/email';
+import {
+  AccountsTab, ComposeTab, CampaignsTab, SuppressionTab, SettingsTab,
+} from '@/components/email';
 
-type EmailTabValue = 'campaigns' | 'compose' | 'accounts' | 'suppression';
+type EmailTabValue = 'campaigns' | 'compose' | 'accounts' | 'suppression' | 'settings';
 
 export const Email: React.FC = () => {
   const { user } = useAuth();
@@ -31,6 +33,7 @@ export const Email: React.FC = () => {
           <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="suppression">Suppression</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="campaigns">
@@ -52,6 +55,10 @@ export const Email: React.FC = () => {
 
         <TabsContent value="suppression">
           <SuppressionTab orgId={orgId} isAdmin={isAdmin} />
+        </TabsContent>
+
+        <TabsContent value="settings">
+          <SettingsTab orgId={orgId} isAdmin={isAdmin} orgTimezone={organization?.settings?.timezone ?? 'UTC'} />
         </TabsContent>
       </Tabs>
     </main>

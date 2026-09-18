@@ -87,6 +87,19 @@ export interface MailboxHealth {
   lastSentAt: Date | null;
   effectiveLimit: number;
   sentToday: number;
+  /**
+   * The raw ramp inputs behind `effectiveLimit`, so a screen can render
+   * "Warmup day N" versus "Full volume" without recomputing migration 156's
+   * ramp arithmetic. Optional because the worker's own `toMailboxHealth()`
+   * (worker/lib/engine.ts) only needs `effectiveLimit`/`sentToday` for
+   * sending and does not set these; `mapMailboxStatusRow` (which the
+   * screens use) populates all five from the same `mailbox_status` view row.
+   */
+  dailyLimit?: number;
+  warmupEnabled?: boolean;
+  warmupStartedOn?: Date | null;
+  warmupStartVolume?: number;
+  warmupIncrement?: number;
 }
 
 export interface EmailSettings {

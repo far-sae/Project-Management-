@@ -250,6 +250,14 @@ export const mapMailboxStatusRow = (row: MailboxStatusRow): MailboxHealth => ({
   lastSentAt: row.last_sent_at ? new Date(row.last_sent_at) : null,
   effectiveLimit: row.effective_limit,
   sentToday: row.sent_today,
+  // The raw ramp inputs, straight off the same mailbox_status row — used by
+  // MailboxCard to render the warmup line without redoing the view's own
+  // arithmetic.
+  dailyLimit: row.daily_limit,
+  warmupEnabled: row.warmup_enabled,
+  warmupStartedOn: row.warmup_started_on ? new Date(row.warmup_started_on) : null,
+  warmupStartVolume: row.warmup_start_volume,
+  warmupIncrement: row.warmup_increment,
 });
 
 export const mapEmailSettingsRow = (row: EmailSettingsRow): EmailSettings => ({
@@ -272,14 +280,14 @@ export const mapEmailSettingsRow = (row: EmailSettingsRow): EmailSettings => ({
  * migration's own column defaults: window enabled, 08:00-18:00, Monday to
  * Friday, UTC, jitter 8000-25000ms.
  */
-const defaultEmailSettings = (orgId: string): EmailSettings => ({
+const defaultEmailSettings = (orgId: string, timezone: string = "UTC"): EmailSettings => ({
   organizationId: orgId,
   window: {
     enabled: true,
     startHour: 8,
     endHour: 18,
     days: [1, 2, 3, 4, 5],
-    timezone: "UTC",
+    timezone,
   },
   jitterMinMs: 8000,
   jitterMaxMs: 25000,
@@ -434,7 +442,17 @@ export const resumeAccount = async (accountId: string): Promise<void> => {
   }
 };
 
-export const getEmailSettings = async (orgId: string): Promise<EmailSettings> => {
+/**
+ * `defaultTimezone` is only used when the organization has never saved a row
+ * here — the Settings screen passes the organization's own timezone so a
+ * first-ever visit pre-selects that instead of a hardcoded UTC. Once a row
+ * exists, its saved `send_timezone` is returned as-is, including a
+ * deliberately-chosen "UTC".
+ */
+export const getEmailSettings = async (
+  orgId: string,
+  defaultTimezone?: string,
+): Promise<EmailSettings> => {
   const { data, error } = await supabase
     .from("email_settings")
     .select("*")
@@ -446,7 +464,9 @@ export const getEmailSettings = async (orgId: string): Promise<EmailSettings> =>
     throw error;
   }
 
-  return data ? mapEmailSettingsRow(data as EmailSettingsRow) : defaultEmailSettings(orgId);
+  return data
+    ? mapEmailSettingsRow(data as EmailSettingsRow)
+    : defaultEmailSettings(orgId, defaultTimezone);
 };
 
 /**

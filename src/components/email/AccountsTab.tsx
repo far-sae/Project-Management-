@@ -1,20 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Mail, Plus, Loader2, CheckCircle2, AlertCircle, Clock, Trash2, SendHorizonal, Lock,
-} from 'lucide-react';
+import { Mail, Plus, Loader2, Lock, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
-import { listAccounts, createAccount, deleteAccount } from '@/services/supabase/email';
-import type { EmailAccount } from '@/lib/email/types';
+import {
+  listMailboxStatus, createAccount, deleteAccount, resumeAccount, updateAccountPool,
+} from '@/services/supabase/email';
+import type { MailboxHealth } from '@/lib/email/types';
 import { verifyAccount } from './verifyAccount';
-import { AccountFormDialog, EMPTY_ACCOUNT_FORM } from './AccountFormDialog';
+import {
+  AccountFormDialog, EMPTY_ACCOUNT_FORM, MailboxLimitsDialog, type PoolFormState,
+} from './AccountFormDialog';
+import { MailboxCard } from './MailboxCard';
+import { DomainAuthPanel } from './DomainAuthPanel';
 
 interface AccountsTabProps {
   orgId: string;
@@ -22,31 +25,16 @@ interface AccountsTabProps {
   isAdmin: boolean;
 }
 
-const statusBadge = (account: EmailAccount) => {
-  if (account.status === 'active') {
-    return (
-      <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-        <CheckCircle2 className="w-3 h-3 mr-1" />Active
-      </Badge>
-    );
-  }
-  if (account.status === 'error') {
-    return (
-      <Badge className="bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30">
-        <AlertCircle className="w-3 h-3 mr-1" />Error
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="secondary">
-      <Clock className="w-3 h-3 mr-1" />Unverified
-    </Badge>
-  );
+const EMPTY_POOL_FORM: PoolFormState = {
+  dailyLimit: '40',
+  warmupEnabled: true,
+  warmupStartVolume: '5',
+  warmupIncrement: '3',
 };
 
 export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, isAdmin }) => {
   const { user } = useAuth();
-  const [accounts, setAccounts] = useState<EmailAccount[]>([]);
+  const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
@@ -54,14 +42,19 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   const [createError, setCreateError] = useState<string | null>(null);
   const [pendingAccountId, setPendingAccountId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<EmailAccount | null>(null);
+  const [resumingId, setResumingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MailboxHealth | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editTarget, setEditTarget] = useState<MailboxHealth | null>(null);
+  const [editForm, setEditForm] = useState<PoolFormState>(EMPTY_POOL_FORM);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const refresh = () => {
-    if (!orgId) { setAccounts([]); setLoading(false); return Promise.resolve(); }
-    return listAccounts(orgId)
-      .then(setAccounts)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load accounts'));
+    if (!orgId) { setMailboxes([]); setLoading(false); return Promise.resolve(); }
+    return listMailboxStatus(orgId)
+      .then(setMailboxes)
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailboxes'));
   };
 
   useEffect(() => {
@@ -83,14 +76,9 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
 
   const runVerify = async (accountId: string) => {
     const result = await verifyAccount(accountId);
-    setAccounts((prev) => prev.map((a) => (a.id === accountId
-      ? {
-        ...a,
-        status: result.ok ? 'active' : 'error',
-        lastError: result.ok ? null : (result.error ?? 'Verification failed'),
-        lastVerifiedAt: result.ok ? new Date() : a.lastVerifiedAt,
-      }
-      : a)));
+    setMailboxes((prev) => prev.map((m) => (m.id === accountId
+      ? { ...m, status: result.ok ? 'active' : 'error' }
+      : m)));
     return result;
   };
 
@@ -113,14 +101,25 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         smtpSecure: form.smtpSecure,
         smtpUsername: form.smtpUsername.trim(),
         password: form.password,
+        dailyLimit: Number(form.dailyLimit) || 40,
       });
-      setAccounts((prev) => [account, ...prev]);
+      // createAccount has no warmup arguments, so the ramp the admin picked
+      // in the Sending section is applied right after — starting it today
+      // when warmup is on, since a null warmup_started_on would otherwise
+      // hold the mailbox at its start volume forever (migration 156).
+      await updateAccountPool(account.id, {
+        warmupEnabled: form.warmupEnabled,
+        warmupStartedOn: form.warmupEnabled ? new Date() : null,
+        warmupStartVolume: Number(form.warmupStartVolume) || 0,
+        warmupIncrement: Number(form.warmupIncrement) || 0,
+      });
+      await refresh();
       setPendingAccountId(account.id);
       setCreating(false);
 
       const result = await runVerify(account.id);
       if (result.ok) {
-        toast.success('Sending account created and verified');
+        toast.success('Sending mailbox created and verified');
         closeAddDialog();
       } else {
         // The account row already exists (createAccount succeeded); leave
@@ -129,7 +128,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         setCreateError(result.error ?? 'Verification failed');
       }
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create account');
+      setCreateError(err instanceof Error ? err.message : 'Failed to create mailbox');
       void refresh();
     } finally {
       setCreating(false);
@@ -142,17 +141,17 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     const result = await runVerify(pendingAccountId);
     setCreating(false);
     if (result.ok) {
-      toast.success('Sending account verified');
+      toast.success('Sending mailbox verified');
       closeAddDialog();
     } else {
       setCreateError(result.error ?? 'Verification failed');
     }
   };
 
-  const handleTest = async (account: EmailAccount) => {
+  const handleTest = async (mailbox: MailboxHealth) => {
     if (!isAdmin) return;
-    setTestingId(account.id);
-    const result = await runVerify(account.id);
+    setTestingId(mailbox.id);
+    const result = await runVerify(mailbox.id);
     if (result.ok) {
       toast.success(`Test email sent to ${user?.email ?? 'your inbox'}`);
     } else {
@@ -166,13 +165,66 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     setDeleting(true);
     try {
       await deleteAccount(deleteTarget.id);
-      setAccounts((prev) => prev.filter((a) => a.id !== deleteTarget.id));
-      toast.success('Account deleted');
+      setMailboxes((prev) => prev.filter((m) => m.id !== deleteTarget.id));
+      toast.success('Mailbox deleted');
       setDeleteTarget(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete account');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete mailbox');
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleResume = async (mailbox: MailboxHealth) => {
+    if (!isAdmin) return;
+    setResumingId(mailbox.id);
+    try {
+      await resumeAccount(mailbox.id);
+      setMailboxes((prev) => prev.map((m) => (m.id === mailbox.id
+        ? { ...m, pausedReason: null, consecutiveFailures: 0, isActive: true }
+        : m)));
+      toast.success('Mailbox resumed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to resume mailbox');
+    } finally {
+      setResumingId(null);
+    }
+  };
+
+  const openEdit = (mailbox: MailboxHealth) => {
+    if (!isAdmin) return;
+    setEditTarget(mailbox);
+    setEditForm({
+      dailyLimit: String(mailbox.dailyLimit ?? 40),
+      warmupEnabled: mailbox.warmupEnabled ?? false,
+      warmupStartVolume: String(mailbox.warmupStartVolume ?? 5),
+      warmupIncrement: String(mailbox.warmupIncrement ?? 3),
+    });
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !editTarget) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      await updateAccountPool(editTarget.id, {
+        dailyLimit: Number(editForm.dailyLimit) || 1,
+        warmupEnabled: editForm.warmupEnabled,
+        warmupStartVolume: Number(editForm.warmupStartVolume) || 0,
+        warmupIncrement: Number(editForm.warmupIncrement) || 0,
+        // Only starts the ramp when it wasn't already running, so re-saving
+        // limits on a mailbox mid-warmup doesn't reset its day count to zero.
+        warmupStartedOn: editForm.warmupEnabled ? (editTarget.warmupStartedOn ?? new Date()) : null,
+      });
+      toast.success('Sending limits updated');
+      setEditTarget(null);
+      await refresh();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to update sending limits');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -180,84 +232,60 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     && form.smtpHost.trim() && form.smtpUsername.trim() && form.password);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
-        <div>
-          <CardTitle>Sending accounts</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">SMTP identities campaigns send from.</p>
-        </div>
-        {isAdmin && (
-          <Button onClick={() => { resetForm(); setShowAddDialog(true); }}>
-            <Plus className="w-4 h-4 mr-2" />Add account
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        {!isAdmin && (
-          <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
-            <Lock className="w-4 h-4" />Only an organization owner or admin can add, test or delete accounts.
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle>Sending mailboxes</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              The pool campaigns send from, rotated and warmed up.
+            </p>
           </div>
-        )}
-        {loading ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <Loader2 className="w-10 h-10 mx-auto mb-4 animate-spin text-muted-foreground/60" />
-            <p>Loading accounts...</p>
-          </div>
-        ) : accounts.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <Mail className="w-14 h-14 mx-auto mb-4 text-muted-foreground/60" />
-            <p className="text-lg font-medium text-foreground">No sending accounts yet</p>
-            <p className="text-sm">Add an SMTP account to start sending campaigns.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {accounts.map((account) => (
-              <div key={account.id} className="p-4 bg-secondary/40 border border-border rounded-lg">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-medium text-foreground">{account.label}</p>
-                      {statusBadge(account)}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {account.fromName} &lt;{account.fromEmail}&gt;
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {account.smtpHost}:{account.smtpPort}
-                    </p>
-                    {account.status === 'error' && account.lastError && (
-                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">{account.lastError}</p>
-                    )}
-                  </div>
-                  {isAdmin && (
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={testingId === account.id}
-                        onClick={() => handleTest(account)}
-                      >
-                        {testingId === account.id
-                          ? <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          : <SendHorizonal className="w-4 h-4 mr-1" />}
-                        Send test to me
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Delete account"
-                        onClick={() => setDeleteTarget(account)}
-                      >
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+          {isAdmin && (
+            <Button onClick={() => { resetForm(); setShowAddDialog(true); }}>
+              <Plus className="w-4 h-4 mr-2" />Add mailbox
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {!isAdmin && (
+            <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
+              <Lock className="w-4 h-4" />
+              Only an organization owner or admin can add, test, delete or reconfigure mailboxes.
+            </div>
+          )}
+          {loading ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <Loader2 className="w-10 h-10 mx-auto mb-4 animate-spin text-muted-foreground/60" />
+              <p>Loading mailboxes...</p>
+            </div>
+          ) : mailboxes.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <Mail className="w-14 h-14 mx-auto mb-4 text-muted-foreground/60" />
+              <p className="text-lg font-medium text-foreground">No sending mailboxes yet</p>
+              <p className="text-sm">Add an SMTP mailbox to start sending campaigns.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {mailboxes.map((mailbox) => (
+                <MailboxCard
+                  key={mailbox.id}
+                  mailbox={mailbox}
+                  isAdmin={isAdmin}
+                  testing={testingId === mailbox.id}
+                  resuming={resumingId === mailbox.id}
+                  onSendTest={() => handleTest(mailbox)}
+                  onDelete={() => setDeleteTarget(mailbox)}
+                  onResume={() => handleResume(mailbox)}
+                  onReconfigure={() => openEdit(mailbox)}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <DomainAuthPanel mailboxes={mailboxes} />
 
       <AccountFormDialog
         open={showAddDialog}
@@ -272,10 +300,21 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         onRetry={handleRetryVerify}
       />
 
+      <MailboxLimitsDialog
+        open={!!editTarget}
+        onOpenChange={(open) => { if (!open) setEditTarget(null); }}
+        label={editTarget?.label ?? ''}
+        form={editForm}
+        onFormChange={setEditForm}
+        saving={savingEdit}
+        error={editError}
+        onSubmit={handleSaveEdit}
+      />
+
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete sending account?</AlertDialogTitle>
+            <AlertDialogTitle>Delete mailbox?</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget && `"${deleteTarget.label}" will be removed. Campaigns already sent from it keep their history.`}
               {' '}This cannot be undone.
@@ -294,7 +333,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </div>
   );
 };
 
