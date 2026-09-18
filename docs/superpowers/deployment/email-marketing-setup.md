@@ -65,6 +65,20 @@ Verify in **Table Editor** that `email_accounts`, `email_account_secrets`,
 that `public.claim_email_batch` and `public.finalize_email_campaigns` both
 exist under **Database → Functions**.
 
+Then run this in the **SQL Editor**. Checking that the function exists is not
+enough: Postgres does not analyse a function body at creation time, so a
+function with a broken body is created happily and only fails when something
+calls it. Calling it once proves the body runs.
+
+```sql
+select * from public.claim_email_batch(1);
+select public.finalize_email_campaigns();
+```
+
+Both should return without error — an empty result from the first is correct
+when nothing is queued yet. An error here means the worker would fail on
+every tick while appearing installed, so fix it before going further.
+
 ---
 
 ## Step 2 — Generate the two new secrets
