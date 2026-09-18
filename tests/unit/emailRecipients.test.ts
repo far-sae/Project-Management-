@@ -4,9 +4,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // hitting a database. `fromMock` is asserted against per test; the table-
 // specific builders below just return enough shape for queueRecipients to
 // complete without throwing.
-const { fromMock, insertedRows } = vi.hoisted(() => ({
+const { fromMock, insertedRows, suppressions } = vi.hoisted(() => ({
   fromMock: vi.fn(),
   insertedRows: [] as Record<string, unknown>[],
+  // Rows the fake `email_suppressions` table hands back; a test pushes to it
+  // to put an address on the list.
+  suppressions: [] as { email: string }[],
 }));
 
 vi.mock("@/services/supabase/config", () => ({
@@ -17,12 +20,13 @@ import { parseRecipientsCsv, parsePastedRecipients, queueRecipients } from "@/se
 
 beforeEach(() => {
   insertedRows.length = 0;
+  suppressions.length = 0;
   fromMock.mockReset();
   fromMock.mockImplementation((table: string) => {
     if (table === "email_suppressions") {
       return {
         select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+        eq: vi.fn(() => Promise.resolve({ data: suppressions, error: null })),
       };
     }
     if (table === "email_messages") {
@@ -128,5 +132,28 @@ describe("queueRecipients", () => {
     for (const row of insertedRows) {
       expect(row).not.toHaveProperty("send_after");
     }
+  });
+
+  it("never hands a suppressed address to insert(), and counts it as suppressed", async () => {
+    // Stored in a different case on purpose: the match is case-insensitive.
+    suppressions.push({ email: "B@X.com" });
+
+    const result = await queueRecipients("camp-1", "org-1", recipients);
+
+    expect(insertedRows).toHaveLength(1);
+    expect(insertedRows[0].to_email).toBe("a@x.com");
+    expect(
+      insertedRows.some((row) => String(row.to_email).toLowerCase() === "b@x.com"),
+    ).toBe(false);
+    expect(result).toEqual({ queued: 1, suppressed: 1 });
+  });
+
+  it("inserts nothing at all when every recipient is suppressed", async () => {
+    suppressions.push({ email: "a@x.com" }, { email: "b@x.com" });
+
+    const result = await queueRecipients("camp-1", "org-1", recipients);
+
+    expect(insertedRows).toEqual([]);
+    expect(result).toEqual({ queued: 0, suppressed: 2 });
   });
 });

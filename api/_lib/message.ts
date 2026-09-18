@@ -53,9 +53,17 @@ export function buildMessage(input: BuildMessageInput): BuiltMessage {
     headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
   }
 
-  const text = input.bodyText
+  let text = input.bodyText
     ? substitutePlaceholders(input.bodyText, input.mergeData)
     : htmlToText(html);
+
+  // htmlToText() strips the anchor, leaving the bare word "Unsubscribe" with
+  // nothing to act on, so the plain-text part carries the URL itself.
+  if (input.kind === 'bulk' && input.unsubscribeUrl && !text.includes(input.unsubscribeUrl)) {
+    text = `${text}
+
+Unsubscribe: ${input.unsubscribeUrl}`;
+  }
 
   return { subject, html, text, headers };
 }

@@ -193,9 +193,13 @@ Or from the dashboard: **Deployments → ⋯ → Redeploy**.
    `x-worker-secret` header yourself to force one pass).
 3. To test unsubscribe, send a second campaign to **two or more** recipients
    (making it `kind: 'bulk'`) so the outgoing mail carries the unsubscribe
-   link. Click that link (or POST to it, per RFC 8058) and confirm a new row
-   appears in `public.email_suppressions` — visible in the **Suppression**
-   tab in the app.
+   link. Opening that link in a browser renders a confirmation page and
+   writes nothing — a `GET` deliberately has no effect, because corporate
+   link scanners fetch every URL in inbound mail and would otherwise
+   unsubscribe the recipient automatically. Press **Confirm unsubscribe**
+   (or POST to the same URL, which is what Gmail and Yahoo do for RFC 8058
+   one-click) and confirm a new row appears in `public.email_suppressions` —
+   visible in the **Suppression** tab in the app.
 
 ---
 
