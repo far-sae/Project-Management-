@@ -27,6 +27,22 @@
 -- can only stop doing its own budget arithmetic once the worker has a budget
 -- to pass. The cron goes last (g), after everything that replaces it exists.
 
+-- ── 0. Refuse to run on PostgreSQL 14 or older ──────────────────────
+--
+-- `alter view ... set (security_invoker = on)` is PostgreSQL 15 and later, and
+-- `on delete set null (column_list)` below is too. On 14 the view would be
+-- CREATED and the security_invoker statement would then error, aborting the
+-- migration with a definer-rights view over every organization's mailboxes
+-- left behind -- precisely the leak the option exists to prevent. Fail before
+-- anything is created instead, where the only cost is a clear error message.
+do $$
+begin
+  if current_setting('server_version_num')::int < 150000 then
+    raise exception 'This migration needs PostgreSQL 15 or later for security_invoker views (found %).',
+      current_setting('server_version');
+  end if;
+end $$;
+
 -- ── a. Pool columns on email_accounts ───────────────────────────────
 --
 -- All "add column if not exists", because this migration must be re-runnable
@@ -72,6 +88,48 @@ alter table public.email_accounts
 -- changing a default never rewrites stored values.
 alter table public.email_accounts alter column daily_limit set default 40;
 
+-- Sanity bounds on the ramp. A negative start volume or increment is not a
+-- configuration anyone means, and it would make effective_limit nonsense.
+-- Added through pg_constraint lookups because ALTER TABLE ADD CONSTRAINT has
+-- no IF NOT EXISTS, and this migration must survive a re-run.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'email_accounts_warmup_start_volume_check'
+       and conrelid = 'public.email_accounts'::regclass
+  ) then
+    alter table public.email_accounts
+      add constraint email_accounts_warmup_start_volume_check
+      check (warmup_start_volume >= 0);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'email_accounts_warmup_increment_check'
+       and conrelid = 'public.email_accounts'::regclass
+  ) then
+    alter table public.email_accounts
+      add constraint email_accounts_warmup_increment_check
+      check (warmup_increment >= 0);
+  end if;
+end $$;
+
+-- Existing mailboxes must not silently drop to 5 sends a day. warmup_enabled
+-- defaults true and warmup_started_on is null for every row that predates this
+-- migration, which would pin effective_limit at warmup_start_volume and never
+-- ramp, because nothing sets the start date on its own -- a mailbox on a
+-- daily_limit of 500 would look like an outage. Warmup is for a new mailbox
+-- proving itself, not for one that has been sending for months: these keep the
+-- limit they were already configured with. New mailboxes get warmup on by
+-- default, and an admin starts the ramp from the Accounts screen.
+--
+-- This is a one-time backfill, not an idempotent statement: re-running the
+-- whole migration later would also switch off warmup for mailboxes added since.
+update public.email_accounts
+   set warmup_enabled = false
+ where warmup_started_on is null;
+
 -- Which mailbox actually delivered a message. A campaign may send from the
 -- whole pool (see (d) below), so the campaign's account_id cannot say which
 -- mailbox delivered any particular message -- for a pooled campaign it says
@@ -79,15 +137,48 @@ alter table public.email_accounts alter column daily_limit set default 40;
 -- what every per-mailbox cap is measured against: without it mailbox_status's
 -- sent_today would read zero for every pool send, and neither the warmup ramp
 -- nor the daily limit would bind.
---
--- on delete set null rather than cascade: deleting a mailbox must not delete
--- the record that mail went out. History outlives the account that made it.
 alter table public.email_messages
-  add column if not exists sent_account_id uuid
-    references public.email_accounts (id) on delete set null;
+  add column if not exists sent_account_id uuid;
 
--- The view's sent_today subquery runs once per mailbox per worker cycle, and
--- it filters on exactly this pair.
+-- The reference is composite, on (sent_account_id, organization_id), for the
+-- same reason migration 155 made the campaign's account reference composite: a
+-- single-column foreign key would make a cross-organization reference
+-- representable again. Members hold INSERT on email_messages checked only by
+-- is_org_member(organization_id), with no column restriction, and foreign key
+-- validation bypasses row level security -- so with a single-column key a
+-- member of org A could insert a row carrying org A's organization_id and org
+-- B's mailbox in sent_account_id. Org B's UI would never show it, because
+-- mailbox_status is security_invoker, but the worker reads that view as
+-- service_role, which bypasses RLS, so the row would inflate org B's
+-- sent_today and throttle their real sending while the two disagreed about
+-- why. The composite key makes it unrepresentable. Its target is the
+-- email_accounts_id_org_key unique constraint added by 155.
+--
+-- ON DELETE SET NULL names its column explicitly (PostgreSQL 15 and later,
+-- which section 0 has already insisted on). Without the column list the
+-- action nulls *every* referencing column, including organization_id, which
+-- is NOT NULL -- so deleting a mailbox that had ever sent anything would fail
+-- on a not-null violation instead of quietly forgetting which mailbox it was.
+-- History has to outlive the account that made it.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'email_messages_sent_account_org_fkey'
+       and conrelid = 'public.email_messages'::regclass
+  ) then
+    alter table public.email_messages
+      add constraint email_messages_sent_account_org_fkey
+      foreign key (sent_account_id, organization_id)
+      references public.email_accounts (id, organization_id)
+      on delete set null (sent_account_id);
+  end if;
+end $$;
+
+-- The view's sent_today subquery runs once per mailbox per worker cycle and
+-- filters on exactly this pair. sent_account_id leading also serves the
+-- referential check that runs when a mailbox is deleted, which is why there is
+-- no second index for the foreign key.
 create index if not exists idx_email_messages_sent_account
   on public.email_messages (sent_account_id, sent_at);
 
@@ -118,33 +209,54 @@ select
   -- Today's ceiling: the full daily limit when warmup is off; the start
   -- volume while the ramp has no start date; otherwise the start volume plus
   -- one increment per elapsed day, never above the daily limit.
-  case
-    when not a.warmup_enabled then a.daily_limit
-    when a.warmup_started_on is null then a.warmup_start_volume
-    else least(
-      a.daily_limit,
-      a.warmup_start_volume + a.warmup_increment * (current_date - a.warmup_started_on)
-    )
-  end as effective_limit,
+  --
+  -- greatest(..., 0) because a warmup_started_on in the future makes
+  -- (current_date - a.warmup_started_on) negative. A negative ceiling would
+  -- read as "less than nothing left" everywhere downstream; zero is what a
+  -- ramp that has not begun actually means.
+  greatest(
+    case
+      when not a.warmup_enabled then a.daily_limit
+      when a.warmup_started_on is null then a.warmup_start_volume
+      else least(
+        a.daily_limit,
+        a.warmup_start_volume + a.warmup_increment * (current_date - a.warmup_started_on)
+      )
+    end,
+    0
+  ) as effective_limit,
   -- What this mailbox has already put out today, counted from the mailbox
   -- that actually delivered each message rather than from the campaign's
   -- account_id -- which is null for every pooled campaign and so would make
   -- this read zero exactly when the cap matters most.
-  -- date_trunc('day', now()) is the server's day boundary, which is what the
-  -- daily limit has always meant here.
+  --
+  -- 'sending' counts as well as 'sent', which is the rule migration 155's
+  -- claim used: a row handed to SMTP has consumed the allowance whether or not
+  -- its result has been written back yet. Without it a second worker, or the
+  -- same worker restarted with a batch still in flight, reads the full
+  -- allowance again and claims it -- and the claim's only other bound is
+  -- p_limit, which the worker computes from this very view.
+  --
+  -- The two statuses are dated by different columns because an in-flight row
+  -- has no sent_at yet: a 'sent' row is placed by sent_at, a 'sending' row by
+  -- the claimed_at the claim stamped on it. date_trunc('day', now()) is the
+  -- server's day boundary, which is what the daily limit has always meant here.
   (
     select count(*)::integer
       from public.email_messages m
      where m.sent_account_id = a.id
-       and m.status = 'sent'
-       and m.sent_at >= date_trunc('day', now())
+       and (
+         (m.status = 'sent'    and m.sent_at    >= date_trunc('day', now()))
+         or
+         (m.status = 'sending' and m.claimed_at >= date_trunc('day', now()))
+       )
   ) as sent_today
 from public.email_accounts a;
 
 -- Without this the view would run as its owner and bypass row level security,
 -- which would turn it into a way to read every organization's mailboxes. With
--- it, the caller's own policies on email_accounts, email_campaigns and
--- email_messages apply exactly as they do to a direct select.
+-- it, the caller's own policies on email_accounts and email_messages apply
+-- exactly as they do to a direct select.
 alter view public.mailbox_status set (security_invoker = on);
 
 grant select on public.mailbox_status to authenticated;
@@ -171,7 +283,15 @@ create table if not exists public.email_settings (
   send_timezone text not null default 'UTC',
   jitter_min_ms integer not null default 8000,
   jitter_max_ms integer not null default 25000,
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- Bounds, so a saved-but-impossible setting cannot silently stop all
+  -- sending: a window that ends before it starts is empty for every hour of
+  -- the day, and a jitter range with min above max has no interval to pick
+  -- from. Both are table-level checks because they span two columns.
+  constraint email_settings_window_order_check
+    check (send_window_start < send_window_end),
+  constraint email_settings_jitter_order_check
+    check (jitter_min_ms <= jitter_max_ms)
 );
 
 alter table public.email_settings enable row level security;
@@ -372,8 +492,15 @@ begin
      limit greatest(p_limit, 1)
      for update of m skip locked
   )
+  -- sent_account_id is stamped at claim time, not only on success, so that an
+  -- in-flight row can be attributed to the mailbox holding it: that is what
+  -- lets mailbox_status count 'sending' rows against today's allowance and so
+  -- bound a second or restarted worker. A row that later fails keeps the value
+  -- but is never counted, because sent_today requires the status to match too,
+  -- and a re-claim overwrites it with whichever mailbox took it next.
   update public.email_messages m
-     set status = 'sending', claimed_at = now(), attempts = m.attempts + 1
+     set status = 'sending', claimed_at = now(), attempts = m.attempts + 1,
+         sent_account_id = p_account
     from claimed
    where m.id = claimed.id
   returning m.id, m.campaign_id, m.organization_id, m.to_email, m.to_name,
@@ -416,9 +543,12 @@ begin
     -- provider_message_id is what lets the stuck-row recovery in
     -- claim_email_batch() tell "SMTP accepted it and the write-back failed"
     -- apart from "it never went out", so it is stored on the way through.
-    -- sent_account_id is stamped here and only here. A failed or bounced
-    -- message did not consume the mailbox's allowance for the day, so
-    -- counting it would throttle a mailbox for mail it never delivered.
+    -- sent_account_id is re-stated rather than assumed: the claim already
+    -- stamped the mailbox that took the row, and this confirms the one that
+    -- actually delivered it. It is set on this branch only. A failed or
+    -- bounced message did not consume the mailbox's allowance for the day,
+    -- and the stale value it carries is never counted, because sent_today
+    -- matches on status as well.
     update public.email_messages m
        set status = 'sent',
            sent_at = now(),
