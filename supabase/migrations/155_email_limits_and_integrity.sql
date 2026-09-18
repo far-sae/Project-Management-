@@ -1,6 +1,6 @@
 -- 155_email_limits_and_integrity.sql
 --
--- Four fixes from the whole-branch review of the email marketing feature:
+-- Fixes from the whole-branch review of the email marketing feature:
 --
 --   1. Cross-organization integrity. A user who belongs to two organizations
 --      could create a campaign in org A whose account_id pointed at org B's
@@ -16,6 +16,12 @@
 --      from real row counts, replacing the per-campaign loop the worker ran,
 --      and kick_email_worker() stops POSTing to Vercel every minute forever
 --      because of a campaign parked in 'draft' or 'paused'.
+--   5. Dead accounts. An account whose credentials fail is set to
+--      status = 'error' by the worker, but nothing stopped the next tick from
+--      claiming its rows and replaying the same SMTP authentication failure
+--      every minute -- which is how a Google or Microsoft 365 mailbox gets
+--      locked. Both the claim and the cron kick now skip it. The rows stay
+--      'queued' and resume when the account is re-verified to 'active'.
 --
 -- Section 1 runs first because the claim in section 2 joins on the keys it
 -- adds. Note that section 1 is strict on purpose: if this database already
@@ -131,9 +137,17 @@ create index if not exists idx_email_messages_campaign_org
 --
 -- Everything migration 154 established is kept: the signature, the returns
 -- table column list, security definer, the search_path, the stuck-row
--- recovery, the suppression sweep, the NOT EXISTS guard inside the claim, and
--- FOR UPDATE OF m SKIP LOCKED. What is added is a per-account budget and the
--- attempts < 3 predicate.
+-- recovery, the suppression sweep, the NOT EXISTS guard inside the claim, the
+-- status recheck at the locking level, and FOR UPDATE OF m SKIP LOCKED. What
+-- is added is a per-account budget, the attempts < 3 predicate, and skipping
+-- accounts the worker has disabled.
+--
+-- Every column reference in the body is table-qualified. Seven of this
+-- function's OUT parameters (message_id, campaign_id, organization_id,
+-- to_email, to_name, merge_data, attempts) share a name with a column of
+-- public.email_messages, and an unqualified reference to one of those is an
+-- execution-time "column reference is ambiguous" error that CREATE OR REPLACE
+-- cannot catch.
 create or replace function public.claim_email_batch(p_limit integer default 25)
 returns table (
   message_id uuid,
@@ -157,24 +171,30 @@ begin
   --   * attempts >= 3 means the retry budget is spent, so it is 'failed'
   --     rather than a row that cycles through the queue forever;
   --   * anything else goes back to the queue for another try.
-  update public.email_messages
+  --
+  -- The target is aliased and every reference below it is qualified with that
+  -- alias. `attempts` is one of this function's OUT parameters, so a bare
+  -- `attempts` here is ambiguous and PL/pgSQL's default variable_conflict =
+  -- error would raise on the first execution -- which CREATE OR REPLACE never
+  -- catches, because it does not analyse the body.
+  update public.email_messages m
      set status = case
-                    when provider_message_id is not null then 'sent'
-                    when attempts >= 3 then 'failed'
+                    when m.provider_message_id is not null then 'sent'
+                    when m.attempts >= 3 then 'failed'
                     else 'queued'
                   end,
          claimed_at = null,
          sent_at = case
-                     when provider_message_id is not null then coalesce(sent_at, now())
-                     else sent_at
+                     when m.provider_message_id is not null then coalesce(m.sent_at, now())
+                     else m.sent_at
                    end,
          last_error = case
-                        when provider_message_id is null and attempts >= 3
-                          then coalesce(last_error, 'Abandoned after 3 delivery attempts')
-                        else last_error
+                        when m.provider_message_id is null and m.attempts >= 3
+                          then coalesce(m.last_error, 'Abandoned after 3 delivery attempts')
+                        else m.last_error
                       end
-   where status = 'sending'
-     and claimed_at < now() - interval '10 minutes';
+   where m.status = 'sending'
+     and m.claimed_at < now() - interval '10 minutes';
 
   -- An unsubscribe mid-campaign must stop the mail that is already queued.
   update public.email_messages m
@@ -223,6 +243,13 @@ begin
        -- sweep's problem, not something to claim again.
        and m.attempts < 3
        and c.status in ('sending','scheduled')
+       -- An account whose credentials failed is disabled by api/email/tick.ts
+       -- (status = 'error'). Claiming its rows again just replays the same
+       -- SMTP authentication failure every minute, which is what gets a
+       -- mailbox locked at Google and Microsoft 365. The rows stay 'queued'
+       -- and resume once an admin re-verifies the account and
+       -- api/email/verify.ts sets it back to 'active'.
+       and a.status <> 'error'
        -- Belt and braces: the sweep above already flipped these rows, but a
        -- suppression written between the two statements must not slip through.
        and not exists (
@@ -248,12 +275,12 @@ begin
              0
            ) as allowance
       from (
-        select account_id,
-               min(hourly_limit)  as hourly_limit,
-               min(daily_limit)   as daily_limit,
-               min(rate_per_hour) as rate_per_hour
-          from candidates
-         group by account_id
+        select cd0.account_id,
+               min(cd0.hourly_limit)  as hourly_limit,
+               min(cd0.daily_limit)   as daily_limit,
+               min(cd0.rate_per_hour) as rate_per_hour
+          from candidates cd0
+         group by cd0.account_id
       ) cd
       left join account_usage u on u.account_id = cd.account_id
   ),
@@ -270,6 +297,15 @@ begin
       join ranked r on r.id = m.id
       join budget b on b.account_id = r.account_id
      where r.rn <= b.allowance
+       -- These two also live in `candidates`, and they are repeated here on
+       -- purpose. Under READ COMMITTED, when a concurrent claim commits
+       -- between this statement's snapshot and its lock attempt, Postgres
+       -- re-evaluates only the quals present at THIS level against the updated
+       -- tuple. Without them the row is claimed a second time while already
+       -- 'sending' or 'sent' and the recipient is mailed twice -- exactly what
+       -- FOR UPDATE SKIP LOCKED is here to prevent.
+       and m.status = 'queued'
+       and m.attempts < 3
      order by r.send_after
      limit greatest(p_limit, 1)
      for update of m skip locked
@@ -336,7 +372,8 @@ grant execute on function public.finalize_email_campaigns() to service_role;
 --
 -- The count ignored campaigns entirely, so one campaign left in 'draft' or
 -- 'paused' with queued rows made the cron POST to Vercel every minute for
--- ever. Join the campaign and count only what claim_email_batch() would
+-- ever, and so did rows whose sending account the worker had disabled. Join
+-- the campaign and the account and count only what claim_email_batch() would
 -- actually claim. Everything else about the function is unchanged from 153.
 create or replace function public.kick_email_worker()
 returns void
@@ -353,10 +390,16 @@ begin
     from public.email_messages m
     join public.email_campaigns c
       on c.id = m.campaign_id and c.organization_id = m.organization_id
+    join public.email_accounts a
+      on a.id = c.account_id and a.organization_id = c.organization_id
    where m.status = 'queued'
      and m.send_after <= now()
      and m.attempts < 3
-     and c.status in ('sending','scheduled');
+     and c.status in ('sending','scheduled')
+     -- Mirrors claim_email_batch(): rows whose only sending account is
+     -- disabled are not claimable, so waking the worker for them would POST
+     -- to Vercel every minute for ever.
+     and a.status <> 'error';
   if v_pending = 0 then
     return;  -- nothing to do; don't spend an HTTP call
   end if;
