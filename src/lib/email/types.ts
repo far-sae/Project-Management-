@@ -67,3 +67,31 @@ export interface EmailSuppression {
   reason: SuppressionReason;
   createdAt: Date;
 }
+
+export interface SendWindow {
+  enabled: boolean;
+  startHour: number; // 0-23, inclusive
+  endHour: number; // 0-23, exclusive
+  days: number[]; // 1 = Monday … 7 = Sunday
+  timezone: string; // IANA, e.g. 'Europe/London'
+}
+
+export interface MailboxHealth {
+  id: string;
+  label: string;
+  fromEmail: string;
+  isActive: boolean;
+  pausedReason: string | null;
+  status: AccountStatus;
+  consecutiveFailures: number;
+  lastSentAt: Date | null;
+  effectiveLimit: number;
+  sentToday: number;
+}
+
+export interface EmailSettings {
+  organizationId: string;
+  window: SendWindow;
+  jitterMinMs: number;
+  jitterMaxMs: number;
+}
