@@ -34,27 +34,36 @@ Background: `docs/superpowers/specs/2026-09-18-email-marketing-design.md`.
 
 ## Step 1 — Apply the migrations
 
-Three migrations ship this feature: `152_email_marketing_schema.sql` (the
+Four migrations ship this feature: `152_email_marketing_schema.sql` (the
 tables), `153_email_claim_and_cron.sql` (the atomic claim function + the
 cron job, and it also drops the dead `crm_automation_worker_minute` cron left
-over from migration 143), and `154_claim_respects_suppressions.sql` (closes a
-race where a mid-campaign unsubscribe didn't stop already-queued mail).
-Apply all three, in order — they must not be split up or reordered.
+over from migration 143), `154_claim_respects_suppressions.sql` (closes a
+race where a mid-campaign unsubscribe didn't stop already-queued mail), and
+`155_email_limits_and_integrity.sql` (cross-organization foreign keys, the
+per-account send limits, the retry budget, and `finalize_email_campaigns()`).
+Apply all four, in order — they must not be split up or reordered.
 
 ```bash
 npx supabase db push --linked
 ```
 
 This applies every migration newer than what's already on the linked
-project, which includes 152, 153 and 154 as long as nothing later depends on
+project, which includes 152 through 155 as long as nothing later depends on
 skipping them. If you'd rather apply them by hand (e.g. no linked CLI
 project), open the Supabase dashboard → **SQL Editor** and paste the contents
 of each file, in numeric order: `152_email_marketing_schema.sql`, then
-`153_email_claim_and_cron.sql`, then `154_claim_respects_suppressions.sql`.
+`153_email_claim_and_cron.sql`, then `154_claim_respects_suppressions.sql`,
+then `155_email_limits_and_integrity.sql`.
+
+Migration 155 adds composite foreign keys, so it fails loudly if the database
+already holds a campaign whose sending account belongs to another
+organization. That is the point — fix the offending row and re-run rather
+than skipping the migration.
 
 Verify in **Table Editor** that `email_accounts`, `email_account_secrets`,
 `email_campaigns`, `email_messages` and `email_suppressions` now exist, and
-that `public.claim_email_batch` exists under **Database → Functions**.
+that `public.claim_email_batch` and `public.finalize_email_campaigns` both
+exist under **Database → Functions**.
 
 ---
 

@@ -128,12 +128,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const summary = () => ({ sent, failed, requeued, unconfirmed, accountsDisabled, updateErrors });
 
+  /**
+   * Recompute every in-flight campaign's counters from real row counts and
+   * close the ones with nothing left outstanding (migration 155). This runs
+   * at the end of EVERY tick, including the tick that claimed nothing — a
+   * campaign whose last recipients were all suppressed never gets another
+   * claim, so that is the only tick that can ever close it.
+   */
+  const finalizeCampaigns = async () => {
+    const { error } = await db.rpc('finalize_email_campaigns');
+    if (error) {
+      console.error(`email/tick: finalize_email_campaigns failed: ${error.message}`);
+      updateErrors++;
+    }
+  };
+
   // -- Claim -----------------------------------------------------------
   const { data: claimed, error: claimError } = await db.rpc('claim_email_batch', {
     p_limit: BATCH,
   });
-  if (claimError) return res.status(500).json({ error: claimError.message });
+  if (claimError) {
+    await finalizeCampaigns();
+    return res.status(500).json({ error: claimError.message });
+  }
   if (!claimed || claimed.length === 0) {
+    await finalizeCampaigns();
     return res.status(200).json({ ...summary(), claimed: 0 });
   }
 
@@ -149,6 +168,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // No bodies means nothing in this batch can be built. Hand every row back
     // rather than leaving the whole batch stranded in 'sending'.
     await returnRowsToQueue(rows, campaignError.message);
+    await finalizeCampaigns();
     return res
       .status(500)
       .json({ error: campaignError.message, ...summary(), claimed: rows.length });
@@ -301,41 +321,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Roll the per-campaign counters up and close finished campaigns.
-  for (const id of campaignIds) {
-    const { count: remaining } = await db
-      .from('email_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('campaign_id', id)
-      .in('status', ['queued', 'sending']);
-    const { count: sentCount } = await db
-      .from('email_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('campaign_id', id)
-      .eq('status', 'sent');
-    const { count: failedCount } = await db
-      .from('email_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('campaign_id', id)
-      .eq('status', 'failed');
-    // claim_email_batch() parks recipients on the suppression list here, so
-    // without this the campaign's numbers would not add up to its recipients.
-    const { count: suppressedCount } = await db
-      .from('email_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('campaign_id', id)
-      .eq('status', 'suppressed');
-    await db
-      .from('email_campaigns')
-      .update({
-        sent_count: sentCount ?? 0,
-        failed_count: failedCount ?? 0,
-        suppressed_count: suppressedCount ?? 0,
-        status: (remaining ?? 0) === 0 ? 'sent' : 'sending',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id);
-  }
+  await finalizeCampaigns();
 
   return res.status(200).json({ ...summary(), claimed: rows.length });
 }
