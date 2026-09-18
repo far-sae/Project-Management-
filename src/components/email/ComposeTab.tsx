@@ -1,0 +1,302 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { Loader2, Send, SendHorizonal, Info } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
+import {
+  listAccounts, listSuppressions, contactsForCampaign, createCampaign, queueRecipients,
+  setCampaignStatus, parsePastedRecipients, parseRecipientsCsv,
+} from '@/services/supabase/email';
+import type { Recipient } from '@/services/supabase/email';
+import type { EmailAccount } from '@/lib/email/types';
+import { filterSuppressed } from '@/lib/email/suppression';
+import { verifyAccount } from './verifyAccount';
+import { RecipientPicker, recipientKey, type RecipientMode } from './RecipientPicker';
+
+interface ComposeTabProps {
+  orgId: string;
+  workspaceId: string | null;
+  isAdmin: boolean;
+  onSent: () => void;
+}
+
+const EMPTY_FORM = { name: '', accountId: '', subject: '', bodyHtml: '' };
+
+export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAdmin, onSent }) => {
+  const { user } = useAuth();
+  const [accounts, setAccounts] = useState<EmailAccount[]>([]);
+  const [suppressionEmails, setSuppressionEmails] = useState<string[]>([]);
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  const [mode, setMode] = useState<RecipientMode>('contacts');
+  const [contacts, setContacts] = useState<Recipient[]>([]);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(new Set());
+  const [pasteText, setPasteText] = useState('');
+  const [csvFileName, setCsvFileName] = useState('');
+  const [csvText, setCsvText] = useState('');
+
+  const [scheduleMode, setScheduleMode] = useState<'now' | 'schedule'>('now');
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [ratePerHour, setRatePerHour] = useState('60');
+  const [sending, setSending] = useState(false);
+  const [testSending, setTestSending] = useState(false);
+
+  useEffect(() => {
+    if (!orgId) return;
+    listAccounts(orgId)
+      .then(setAccounts)
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load sending accounts'));
+    listSuppressions(orgId)
+      .then((rows) => setSuppressionEmails(rows.map((r) => r.email)))
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
+  }, [orgId]);
+
+  useEffect(() => {
+    if (mode !== 'contacts' || contactsLoaded || !orgId) return;
+    setContactsLoading(true);
+    contactsForCampaign(orgId, workspaceId)
+      .then((list) => {
+        setContacts(list);
+        setSelectedContactKeys(new Set(list.map(recipientKey)));
+        setContactsLoaded(true);
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load contacts'))
+      .finally(() => setContactsLoading(false));
+  }, [mode, contactsLoaded, orgId, workspaceId]);
+
+  const pastedParsed = useMemo(() => parsePastedRecipients(pasteText), [pasteText]);
+  const csvParsed = useMemo(
+    () => (csvText ? parseRecipientsCsv(csvText) : { recipients: [] as Recipient[], errors: [] as string[] }),
+    [csvText],
+  );
+  const csvColumns = useMemo(() => {
+    const cols = new Set<string>();
+    csvParsed.recipients.forEach((r) => Object.keys(r.mergeData).forEach((k) => cols.add(k)));
+    return Array.from(cols);
+  }, [csvParsed.recipients]);
+
+  const activeRecipients = useMemo<Recipient[]>(() => {
+    if (mode === 'contacts') return contacts.filter((c) => selectedContactKeys.has(recipientKey(c)));
+    if (mode === 'paste') return pastedParsed.recipients;
+    return csvParsed.recipients;
+  }, [mode, contacts, selectedContactKeys, pastedParsed, csvParsed]);
+
+  const { sendable, suppressed } = useMemo(
+    () => filterSuppressed(activeRecipients, suppressionEmails),
+    [activeRecipients, suppressionEmails],
+  );
+
+  const mergeFields = useMemo(() => {
+    const base = ['first_name', 'last_name', 'full_name', 'email'];
+    if (mode !== 'csv') return base;
+    return [...base, ...csvColumns.filter((c) => !base.includes(c))];
+  }, [mode, csvColumns]);
+
+  const selectedAccount = accounts.find((a) => a.id === form.accountId) ?? null;
+  const activeAccounts = accounts.filter((a) => a.status === 'active');
+
+  const scheduledDate = scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
+  const scheduleInPast = scheduleMode === 'schedule' && !!scheduledDate && scheduledDate.getTime() <= Date.now();
+
+  const canSubmit = !!selectedAccount && selectedAccount.status === 'active'
+    && form.subject.trim().length > 0 && form.bodyHtml.trim().length > 0
+    && sendable.length > 0 && !sending
+    && (scheduleMode === 'now' || (scheduledAt.length > 0 && !scheduleInPast));
+
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setPasteText('');
+    setCsvFileName('');
+    setCsvText('');
+    setScheduleMode('now');
+    setScheduledAt('');
+    setRatePerHour('60');
+  };
+
+  const toggleContact = (key: string) => {
+    setSelectedContactKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const handleTestSend = async () => {
+    if (!isAdmin || !selectedAccount) return;
+    setTestSending(true);
+    const result = await verifyAccount(selectedAccount.id);
+    if (result.ok) toast.success(`Test email sent to ${user?.email ?? 'your inbox'}`);
+    else toast.error(result.error ?? 'Test send failed');
+    setTestSending(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!canSubmit || !selectedAccount || !orgId) return;
+    if (scheduleMode === 'schedule' && scheduleInPast) {
+      toast.error('Pick a schedule time in the future.');
+      return;
+    }
+    setSending(true);
+    try {
+      const campaign = await createCampaign({
+        organizationId: orgId,
+        workspaceId,
+        createdBy: user?.userId ?? null,
+        accountId: selectedAccount.id,
+        kind: activeRecipients.length === 1 ? 'single' : 'bulk',
+        name: form.name.trim() || form.subject.trim(),
+        subject: form.subject.trim(),
+        bodyHtml: form.bodyHtml,
+        scheduledAt: scheduledDate,
+        ratePerHour: Number(ratePerHour) || 60,
+      });
+
+      // Recipients are queued first, then the campaign is flipped out of
+      // draft — the worker must never see a claimable campaign with no rows
+      // yet. `scheduledDate` becomes every row's `send_after`, so a
+      // scheduled campaign's messages aren't claimable until that time
+      // (claim_email_batch only gates on send_after <= now() and status).
+      const { queued, suppressed: suppressedCount } = await queueRecipients(
+        campaign.id, orgId, activeRecipients, scheduledDate,
+      );
+
+      // createCampaign inserts with the table's default status ('draft').
+      // claim_email_batch only claims messages whose campaign status is
+      // 'sending' or 'scheduled', so the campaign has to be flipped out of
+      // draft now that its outbox rows exist.
+      await setCampaignStatus(campaign.id, scheduleMode === 'schedule' ? 'scheduled' : 'sending');
+
+      toast.success(
+        `Queued ${queued} message${queued === 1 ? '' : 's'}${suppressedCount ? `, ${suppressedCount} suppressed` : ''}`,
+      );
+      resetForm();
+      onSent();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create campaign');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader><CardTitle>Message</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="cmp-name">Campaign name</Label>
+              <Input id="cmp-name" value={form.name} placeholder="September newsletter"
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Sending account</Label>
+              <Select value={form.accountId} onValueChange={(v) => setForm((f) => ({ ...f, accountId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Choose an active account" /></SelectTrigger>
+                <SelectContent>
+                  {activeAccounts.length === 0
+                    ? <div className="px-3 py-2 text-sm text-muted-foreground">No active accounts — verify one first</div>
+                    : activeAccounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.label} ({a.fromEmail})</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cmp-subject">Subject</Label>
+            <Input id="cmp-subject" value={form.subject}
+              onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cmp-body">Body (HTML allowed)</Label>
+            <Textarea id="cmp-body" value={form.bodyHtml} className="min-h-[180px] font-mono text-xs"
+              onChange={(e) => setForm((f) => ({ ...f, bodyHtml: e.target.value }))} />
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              Personalize with {mergeFields.map((f) => `{{${f}}}`).join(', ')} in the subject or body.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Recipients</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <RecipientPicker
+            mode={mode} onModeChange={setMode}
+            contacts={contacts} contactsLoading={contactsLoading}
+            selectedContactKeys={selectedContactKeys} onToggleContact={toggleContact}
+            onSelectAllContacts={() => setSelectedContactKeys(new Set(contacts.map(recipientKey)))}
+            onSelectNoneContacts={() => setSelectedContactKeys(new Set())}
+            pasteText={pasteText} onPasteTextChange={setPasteText}
+            pastedRecipients={pastedParsed.recipients} pastedErrors={pastedParsed.errors}
+            csvFileName={csvFileName}
+            onCsvFile={(file) => { file.text().then((t) => { setCsvFileName(file.name); setCsvText(t); }); }}
+            csvRecipients={csvParsed.recipients} csvErrors={csvParsed.errors} csvColumns={csvColumns}
+          />
+          <p className="text-sm font-medium text-foreground">
+            {sendable.length} recipient{sendable.length === 1 ? '' : 's'}
+            {suppressed.length > 0 && `, ${suppressed.length} suppressed and will be skipped`}
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Send</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-2">
+              <Label>When</Label>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant={scheduleMode === 'now' ? 'default' : 'outline'}
+                  onClick={() => setScheduleMode('now')}>Send now</Button>
+                <Button type="button" size="sm" variant={scheduleMode === 'schedule' ? 'default' : 'outline'}
+                  onClick={() => setScheduleMode('schedule')}>Schedule</Button>
+              </div>
+            </div>
+            {scheduleMode === 'schedule' && (
+              <div className="space-y-2">
+                <Label htmlFor="cmp-schedule">Date &amp; time</Label>
+                <Input id="cmp-schedule" type="datetime-local" value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)} />
+                {scheduleInPast && (
+                  <p className="text-xs text-red-600 dark:text-red-400">Pick a time in the future.</p>
+                )}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="cmp-rate">Rate per hour</Label>
+              <Input id="cmp-rate" type="number" min="1" value={ratePerHour} className="w-32"
+                onChange={(e) => setRatePerHour(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-border pt-4">
+            {isAdmin ? (
+              <Button type="button" variant="outline" disabled={!selectedAccount || testSending} onClick={handleTestSend}>
+                {testSending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <SendHorizonal className="w-4 h-4 mr-2" />}
+                Send test to me
+              </Button>
+            ) : <span />}
+            <Button type="button" disabled={!canSubmit} onClick={handleSubmit}>
+              {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+              {scheduleMode === 'schedule' ? 'Schedule campaign' : 'Send now'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default ComposeTab;

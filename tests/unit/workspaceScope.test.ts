@@ -117,7 +117,7 @@ describe("QUICK_MENU_PAGE_KEYS", () => {
   it("matches the items the sidebar can show", () => {
     expect(QUICK_MENU_PAGE_KEYS).toEqual([
       "dashboard", "projects_analytics", "my_tasks", "inbox",
-      "calendar", "workload", "reports", "crm", "team",
+      "calendar", "workload", "reports", "crm", "email", "team",
     ]);
   });
 });

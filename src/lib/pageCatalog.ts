@@ -13,6 +13,7 @@ export type PageKey =
   | 'team' | 'files' | 'comments' | 'contracts'
   | 'timeline' | 'reports'
   | 'crm'
+  | 'email'
   | 'hr' | 'settings';
 
 export type PageAccessLevel = 'none' | 'view' | 'edit';
@@ -45,6 +46,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { key: 'timeline',           label: 'Timeline',           group: 'Work',           routes: ['/timeline'], feature: 'timeline_overview' },
   { key: 'reports',            label: 'Reports',            group: 'Work',           routes: ['/reports'] },
   { key: 'crm',                label: 'CRM',                group: 'CRM',            routes: ['/crm'], feature: 'crm' },
+  { key: 'email',              label: 'Email',              group: 'CRM',            routes: ['/email'], feature: 'email_campaigns' },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },
   { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses'] },
   { key: 'contracts',          label: 'Contracts',          group: 'People & ops',  routes: ['/contracts'], feature: 'contracts' },

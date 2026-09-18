@@ -209,53 +209,9 @@ export const isNotificationEmailConfigured = (): boolean => {
   );
 };
 
-/**
- * Try the server-side Gmail edge function first (uses the signed-in
- * actor's connected Gmail integration via OAuth — no extra env vars
- * required in the browser bundle). Returns true on success, false on
- * any non-200 so the caller can fall back to EmailJS. Never throws.
- */
-const trySendViaGmailEdgeFn = async (params: {
-  toEmail: string;
-  toName?: string;
-  title: string;
-  body: string;
-  actionUrl?: string;
-}): Promise<boolean> => {
-  try {
-    const { supabase } = await import("@/services/supabase/config");
-    const { data: session } = await supabase.auth.getSession();
-    const token = session.session?.access_token;
-    if (!token) return false;
-    const base = (import.meta as { env?: { VITE_SUPABASE_URL?: string } }).env?.VITE_SUPABASE_URL ?? "";
-    if (!base) return false;
-    const res = await fetch(`${base}/functions/v1/notify-send-gmail`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        toEmail: params.toEmail,
-        toName: params.toName,
-        subject: params.title,
-        body: params.body,
-        actionUrl: params.actionUrl,
-      }),
-    });
-    if (res.ok) {
-      logger.log("Notification email sent via Gmail edge fn to:", params.toEmail);
-      return true;
-    }
-    // 412 = actor hasn't connected Gmail — totally fine, EmailJS is the
-    // intended fallback. Anything else, log a single line.
-    if (res.status !== 412) {
-      const text = await res.text().catch(() => "");
-      logger.warn(`notify-send-gmail returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-    return false;
-  } catch (err) {
-    logger.warn("notify-send-gmail call threw — falling back to EmailJS:", err);
-    return false;
-  }
-};
+// The notify-send-gmail edge function was removed with the CRM stack in
+// migration 143; calling it 404'd on every notification. Notifications go
+// through EmailJS until they are migrated onto the email_messages outbox.
 
 export const sendNotificationEmail = async (params: {
   toEmail: string;
@@ -269,18 +225,6 @@ export const sendNotificationEmail = async (params: {
 }): Promise<InvitationEmailResult> => {
   const cleanedEmail = params.toEmail.trim();
   if (!cleanedEmail || !cleanedEmail.includes("@")) return { ok: false };
-
-  // Prefer Gmail (server-side, no client env vars). If the actor has
-  // connected Gmail in Settings → Integrations, the email is sent
-  // through their own account so the recipient sees the actor's name.
-  const gmailSent = await trySendViaGmailEdgeFn({
-    toEmail: cleanedEmail,
-    toName: params.toName,
-    title: params.title,
-    body: params.body,
-    actionUrl: params.actionUrl,
-  });
-  if (gmailSent) return { ok: true };
 
   if (!isNotificationEmailConfigured()) {
     // Promote to console.error so it's visible in production. The dev-only
