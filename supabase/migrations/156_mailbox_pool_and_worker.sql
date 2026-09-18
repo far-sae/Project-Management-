@@ -72,6 +72,25 @@ alter table public.email_accounts
 -- changing a default never rewrites stored values.
 alter table public.email_accounts alter column daily_limit set default 40;
 
+-- Which mailbox actually delivered a message. A campaign may send from the
+-- whole pool (see (d) below), so the campaign's account_id cannot say which
+-- mailbox delivered any particular message -- for a pooled campaign it says
+-- nothing at all. This records the mailbox that actually sent it, which is
+-- what every per-mailbox cap is measured against: without it mailbox_status's
+-- sent_today would read zero for every pool send, and neither the warmup ramp
+-- nor the daily limit would bind.
+--
+-- on delete set null rather than cascade: deleting a mailbox must not delete
+-- the record that mail went out. History outlives the account that made it.
+alter table public.email_messages
+  add column if not exists sent_account_id uuid
+    references public.email_accounts (id) on delete set null;
+
+-- The view's sent_today subquery runs once per mailbox per worker cycle, and
+-- it filters on exactly this pair.
+create index if not exists idx_email_messages_sent_account
+  on public.email_messages (sent_account_id, sent_at);
+
 -- ── b. mailbox_status: one definition of today's allowance ──────────
 --
 -- The worker reads this to decide which mailboxes can send and how much each
@@ -107,16 +126,16 @@ select
       a.warmup_start_volume + a.warmup_increment * (current_date - a.warmup_started_on)
     )
   end as effective_limit,
-  -- What this mailbox has already put out today. A message carries no account
-  -- of its own, so the sending mailbox is the one on the message's campaign.
+  -- What this mailbox has already put out today, counted from the mailbox
+  -- that actually delivered each message rather than from the campaign's
+  -- account_id -- which is null for every pooled campaign and so would make
+  -- this read zero exactly when the cap matters most.
   -- date_trunc('day', now()) is the server's day boundary, which is what the
   -- daily limit has always meant here.
   (
     select count(*)::integer
       from public.email_messages m
-      join public.email_campaigns c
-        on c.id = m.campaign_id and c.organization_id = m.organization_id
-     where c.account_id = a.id
+     where m.sent_account_id = a.id
        and m.status = 'sent'
        and m.sent_at >= date_trunc('day', now())
   ) as sent_today
@@ -397,9 +416,13 @@ begin
     -- provider_message_id is what lets the stuck-row recovery in
     -- claim_email_batch() tell "SMTP accepted it and the write-back failed"
     -- apart from "it never went out", so it is stored on the way through.
+    -- sent_account_id is stamped here and only here. A failed or bounced
+    -- message did not consume the mailbox's allowance for the day, so
+    -- counting it would throttle a mailbox for mail it never delivered.
     update public.email_messages m
        set status = 'sent',
            sent_at = now(),
+           sent_account_id = p_account,
            provider_message_id = p_provider_message_id
      where m.id = p_message;
 
