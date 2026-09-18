@@ -43,6 +43,16 @@ import {
 import { buildMessage as srcBuildMessage } from '@/lib/email/message';
 import { buildMessage as apiBuildMessage } from '../../api/_lib/message';
 
+import {
+  interpretDomainAuth as srcInterpretDomainAuth,
+  DKIM_SELECTORS as srcDkimSelectors,
+  type RawDnsRecords,
+} from '@/lib/email/domainAuth';
+import {
+  interpretDomainAuth as apiInterpretDomainAuth,
+  DKIM_SELECTORS as apiDkimSelectors,
+} from '../../api/_lib/domainAuth';
+
 const KEY = 'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDEyMzQ1Njc';
 const SECRET = 'unsub-secret';
 const MESSAGE_ID = '3f7c1c64-9a6e-4d2a-bb0a-0b6f1f0c2d11';
@@ -142,5 +152,59 @@ describe('buildMessage parity', () => {
     // Transactional mail must not carry the bulk headers, in either copy.
     expect(Object.keys(built.headers)).toEqual([]);
     expect(Object.keys(srcBuildMessage(input).headers)).toEqual([]);
+  });
+});
+
+describe('interpretDomainAuth parity', () => {
+  // The two copies must agree on the selector list too — a divergence there
+  // would silently probe different DNS names per copy while the pure
+  // interpretation logic below stayed byte-identical.
+  it('publishes the same DKIM selector list from both copies', () => {
+    expect(apiDkimSelectors).toEqual(srcDkimSelectors);
+  });
+
+  const FULLY_CONFIGURED: RawDnsRecords = {
+    domain: 'Example.com',
+    rootTxt: ['v=spf1 include:_spf.google.com ~all'],
+    dmarcTxt: ['v=DMARC1; p=reject; rua=mailto:dmarc@example.com'],
+    mx: ['ASPMX.L.GOOGLE.COM'],
+    dkimSelectors: [{ selector: 'default', records: ['v=DKIM1; k=rsa; p=ABC123'] }],
+  };
+
+  it('returns a deeply equal report for a fully-configured domain', () => {
+    const apiReport = apiInterpretDomainAuth(FULLY_CONFIGURED);
+    const srcReport = srcInterpretDomainAuth(FULLY_CONFIGURED);
+    expect(apiReport).toEqual(srcReport);
+    // And the two copies still agree that this domain passes every check —
+    // a shared bug that flipped both to `ok: false` would pass a bare
+    // toEqual, so this pins the expected shape independently.
+    expect(apiReport).toEqual({
+      domain: 'example.com',
+      spf: { ok: true, value: 'v=spf1 include:_spf.google.com ~all', detail: expect.any(String) },
+      dkim: { ok: true, value: 'default', detail: expect.any(String) },
+      dmarc: { ok: true, value: FULLY_CONFIGURED.dmarcTxt[0], detail: expect.any(String) },
+      mx: ['aspmx.l.google.com'],
+    });
+  });
+
+  it('agrees on the missing-SPF branch', () => {
+    const raw: RawDnsRecords = { ...FULLY_CONFIGURED, rootTxt: [] };
+    const apiReport = apiInterpretDomainAuth(raw);
+    const srcReport = srcInterpretDomainAuth(raw);
+    expect(apiReport).toEqual(srcReport);
+    expect(apiReport.spf).toEqual({ ok: false, value: null, detail: expect.any(String) });
+  });
+
+  it('agrees on the foreign-DKIM branch', () => {
+    // "google" is a foreign selector: a key is published, but it signs mail
+    // for Google Workspace, not for this SMTP mailbox.
+    const raw: RawDnsRecords = {
+      ...FULLY_CONFIGURED,
+      dkimSelectors: [{ selector: 'google', records: ['v=DKIM1; k=rsa; p=XYZ789'] }],
+    };
+    const apiReport = apiInterpretDomainAuth(raw);
+    const srcReport = srcInterpretDomainAuth(raw);
+    expect(apiReport).toEqual(srcReport);
+    expect(apiReport.dkim).toEqual({ ok: false, value: 'google', detail: expect.any(String) });
   });
 });

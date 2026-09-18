@@ -9,10 +9,13 @@ import type {
   EmailAccount,
   EmailCampaign,
   EmailMessage,
+  EmailSettings,
   EmailSuppression,
+  MailboxHealth,
   MessageStatus,
   SuppressionReason,
 } from "@/lib/email/types";
+import type { DomainAuthReport } from "@/lib/email/domainAuth";
 
 /** A recipient collected from CRM contacts, a pasted list, or a CSV upload. */
 export interface Recipient {
@@ -39,6 +42,17 @@ export interface CreateAccountInput {
   password: string;
   dailyLimit?: number;
   hourlyLimit?: number;
+}
+
+/** Partial update to a mailbox's pool settings — Accounts screen only sends the fields that changed. */
+export interface PoolInput {
+  dailyLimit?: number;
+  warmupEnabled?: boolean;
+  /** null clears the ramp's start date; undefined leaves it untouched. */
+  warmupStartedOn?: Date | null;
+  warmupStartVolume?: number;
+  warmupIncrement?: number;
+  isActive?: boolean;
 }
 
 export interface CreateCampaignInput {
@@ -121,6 +135,38 @@ interface EmailSuppressionRow {
   created_at: string;
 }
 
+/** Raw shape of a `mailbox_status` view row (migration 156). */
+interface MailboxStatusRow {
+  id: string;
+  organization_id: string;
+  label: string;
+  from_email: string;
+  status: AccountStatus;
+  is_active: boolean;
+  paused_reason: string | null;
+  consecutive_failures: number;
+  last_sent_at: string | null;
+  daily_limit: number;
+  warmup_enabled: boolean;
+  warmup_started_on: string | null;
+  warmup_start_volume: number;
+  warmup_increment: number;
+  effective_limit: number;
+  sent_today: number;
+}
+
+/** Raw shape of an `email_settings` row (migration 156). */
+interface EmailSettingsRow {
+  organization_id: string;
+  send_window_enabled: boolean;
+  send_window_start: number;
+  send_window_end: number;
+  send_days: number[];
+  send_timezone: string;
+  jitter_min_ms: number;
+  jitter_max_ms: number;
+}
+
 /** Raw shape of the `crm_contacts` columns `contactsForCampaign` selects. */
 interface CrmContactRow {
   id: string;
@@ -191,6 +237,52 @@ export const mapSuppressionRow = (row: EmailSuppressionRow): EmailSuppression =>
   email: row.email,
   reason: row.reason,
   createdAt: new Date(row.created_at),
+});
+
+export const mapMailboxStatusRow = (row: MailboxStatusRow): MailboxHealth => ({
+  id: row.id,
+  label: row.label,
+  fromEmail: row.from_email,
+  isActive: row.is_active,
+  pausedReason: row.paused_reason,
+  status: row.status,
+  consecutiveFailures: row.consecutive_failures,
+  lastSentAt: row.last_sent_at ? new Date(row.last_sent_at) : null,
+  effectiveLimit: row.effective_limit,
+  sentToday: row.sent_today,
+});
+
+export const mapEmailSettingsRow = (row: EmailSettingsRow): EmailSettings => ({
+  organizationId: row.organization_id,
+  window: {
+    enabled: row.send_window_enabled,
+    startHour: row.send_window_start,
+    endHour: row.send_window_end,
+    days: row.send_days,
+    timezone: row.send_timezone,
+  },
+  jitterMinMs: row.jitter_min_ms,
+  jitterMaxMs: row.jitter_max_ms,
+});
+
+/**
+ * Documented defaults for an organization with no `email_settings` row.
+ * Migration 156 seeds no row for any organization, so the settings screen
+ * would otherwise have nothing to render on first visit. Mirrors that
+ * migration's own column defaults: window enabled, 08:00-18:00, Monday to
+ * Friday, UTC, jitter 8000-25000ms.
+ */
+const defaultEmailSettings = (orgId: string): EmailSettings => ({
+  organizationId: orgId,
+  window: {
+    enabled: true,
+    startHour: 8,
+    endHour: 18,
+    days: [1, 2, 3, 4, 5],
+    timezone: "UTC",
+  },
+  jitterMinMs: 8000,
+  jitterMaxMs: 25000,
 });
 
 // ── Accounts ──────────────────────────────────────────────────────────
@@ -280,6 +372,143 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
     logger.error("Failed to delete email account:", error);
     throw error;
   }
+};
+
+// ── Pool, warmup and health ──────────────────────────────────────────
+
+export const listMailboxStatus = async (orgId: string): Promise<MailboxHealth[]> => {
+  const { data, error } = await supabase
+    .from("mailbox_status")
+    .select("*")
+    .eq("organization_id", orgId)
+    .order("label", { ascending: true });
+
+  if (error) {
+    logger.error("Failed to list mailbox status:", error);
+    throw error;
+  }
+
+  return ((data ?? []) as MailboxStatusRow[]).map(mapMailboxStatusRow);
+};
+
+const toDateOnly = (d: Date): string => d.toISOString().slice(0, 10);
+
+export const updateAccountPool = async (accountId: string, input: PoolInput): Promise<void> => {
+  const row: Record<string, unknown> = {
+    ...(input.dailyLimit !== undefined ? { daily_limit: input.dailyLimit } : {}),
+    ...(input.warmupEnabled !== undefined ? { warmup_enabled: input.warmupEnabled } : {}),
+    ...(input.warmupStartedOn !== undefined
+      ? { warmup_started_on: input.warmupStartedOn ? toDateOnly(input.warmupStartedOn) : null }
+      : {}),
+    ...(input.warmupStartVolume !== undefined
+      ? { warmup_start_volume: input.warmupStartVolume }
+      : {}),
+    ...(input.warmupIncrement !== undefined ? { warmup_increment: input.warmupIncrement } : {}),
+    ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
+  };
+
+  const { error } = await supabase.from("email_accounts").update(row).eq("id", accountId);
+
+  if (error) {
+    logger.error("Failed to update mailbox pool settings:", error);
+    throw error;
+  }
+};
+
+/**
+ * Un-pauses a mailbox by hand: clears the reason shown on the Accounts
+ * screen and the failure streak that record_send_result() (migration 156)
+ * would otherwise keep counting from, and puts it back in the pool. Does not
+ * touch `status`, which reflects whether the credentials last verified —
+ * resuming a mailbox is not the same claim as re-verifying it.
+ */
+export const resumeAccount = async (accountId: string): Promise<void> => {
+  const { error } = await supabase
+    .from("email_accounts")
+    .update({ paused_reason: null, consecutive_failures: 0, is_active: true })
+    .eq("id", accountId);
+
+  if (error) {
+    logger.error("Failed to resume email account:", error);
+    throw error;
+  }
+};
+
+export const getEmailSettings = async (orgId: string): Promise<EmailSettings> => {
+  const { data, error } = await supabase
+    .from("email_settings")
+    .select("*")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error("Failed to load email settings:", error);
+    throw error;
+  }
+
+  return data ? mapEmailSettingsRow(data as EmailSettingsRow) : defaultEmailSettings(orgId);
+};
+
+/**
+ * Validates the window and jitter ordering client-side before writing, so an
+ * admin sees "start hour must be before the end hour" instead of migration
+ * 156's `email_settings_window_order_check` / `_jitter_order_check`
+ * constraint violations, which PostgREST reports as an opaque 23514.
+ */
+export const saveEmailSettings = async (orgId: string, settings: EmailSettings): Promise<void> => {
+  if (settings.window.startHour >= settings.window.endHour) {
+    throw new Error("Send window start hour must be before the end hour.");
+  }
+  if (settings.jitterMinMs > settings.jitterMaxMs) {
+    throw new Error("Jitter minimum must not be greater than the jitter maximum.");
+  }
+
+  const row = {
+    organization_id: orgId,
+    send_window_enabled: settings.window.enabled,
+    send_window_start: settings.window.startHour,
+    send_window_end: settings.window.endHour,
+    send_days: settings.window.days,
+    send_timezone: settings.window.timezone,
+    jitter_min_ms: settings.jitterMinMs,
+    jitter_max_ms: settings.jitterMaxMs,
+  };
+
+  const { error } = await supabase
+    .from("email_settings")
+    .upsert(row, { onConflict: "organization_id" });
+
+  if (error) {
+    logger.error("Failed to save email settings:", error);
+    throw error;
+  }
+};
+
+/**
+ * Posts to `POST /api/email/domain-auth` with the caller's own session
+ * token — the same pattern `saveAccountSecret` uses for its own route — since
+ * the DNS lookups run server-side; a browser cannot open a raw resolver
+ * connection.
+ */
+export const checkDomainAuth = async (domain: string): Promise<DomainAuthReport> => {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error("Not authenticated");
+
+  const res = await fetch("/api/email/domain-auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ domain }),
+  });
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    const message = body.error ?? `Failed to check domain authentication: ${res.status}`;
+    logger.error("Failed to check domain authentication:", message);
+    throw new Error(message);
+  }
+
+  return (await res.json()) as DomainAuthReport;
 };
 
 // ── Campaigns ─────────────────────────────────────────────────────────
