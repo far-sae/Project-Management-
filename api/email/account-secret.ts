@@ -1,11 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { serviceClient } from '../_lib/context';
+import { env, serviceClient } from '../_lib/context';
+import { encryptSecret } from '../_lib/crypto';
 
 // Stores the encrypted SMTP password for a sending account.
 // `email_account_secrets` denies all access to `authenticated` (migration
-// 152), so the browser cannot write it directly — it encrypts the password
-// client-side and posts the ciphertext here, and this route writes it with
-// the service-role client. The plaintext password never reaches this route.
+// 152), so the browser cannot write it directly — it posts the plaintext
+// password over TLS to this route, which encrypts it here with the
+// server-only `INTEGRATION_TOKEN_KEY` and writes the ciphertext with the
+// service-role client. The key is never shipped to a browser, so reading the
+// deployed JS bundle no longer hands anyone the key to every stored SMTP
+// password and OAuth token. The plaintext is never logged.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -17,9 +21,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (userError || !userData?.user) return res.status(401).json({ error: 'Unauthorized' });
 
   const accountId = String((req.body ?? {}).accountId ?? '');
-  const secretEncrypted = String((req.body ?? {}).secretEncrypted ?? '');
+  const password = String((req.body ?? {}).password ?? '');
   if (!accountId) return res.status(400).json({ error: 'accountId is required' });
-  if (!secretEncrypted) return res.status(400).json({ error: 'secretEncrypted is required' });
+  if (!password) return res.status(400).json({ error: 'password is required' });
 
   const { data: account } = await db
     .from('email_accounts')
@@ -48,6 +52,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   );
   if (!org || (org.owner_id !== callerId && !isAdmin)) {
     return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  let secretEncrypted: string;
+  try {
+    secretEncrypted = await encryptSecret(password, env('INTEGRATION_TOKEN_KEY'));
+  } catch {
+    // Never echo the exception: a crypto failure message could carry the
+    // plaintext or the key. The cause is always a missing or malformed key.
+    return res.status(500).json({ error: 'Server is not configured to store secrets' });
   }
 
   const { error } = await db

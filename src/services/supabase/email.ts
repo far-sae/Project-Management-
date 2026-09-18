@@ -1,7 +1,6 @@
 import Papa from "papaparse";
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
-import { encryptSecret } from "@/lib/email/crypto";
 import { dedupeRecipients, filterSuppressed, normalizeEmail } from "@/lib/email/suppression";
 import type {
   AccountStatus,
@@ -35,8 +34,8 @@ export interface CreateAccountInput {
   smtpPort: number;
   smtpSecure: boolean;
   smtpUsername: string;
-  /** Plaintext SMTP password. Never stored as-is — encrypted client-side and
-   *  written through `saveAccountSecret`. */
+  /** Plaintext SMTP password. Never stored as-is — posted over TLS to
+   *  `POST /api/email/account-secret`, which encrypts it server-side. */
   password: string;
   dailyLimit?: number;
   hourlyLimit?: number;
@@ -245,21 +244,17 @@ export const createAccount = async (input: CreateAccountInput): Promise<EmailAcc
 };
 
 /**
- * Encrypts the SMTP password in the browser and writes it through
- * `POST /api/email/account-secret`. `email_account_secrets` denies all
- * access to `authenticated` (migration 152), so a direct insert from here
- * would always fail — the ciphertext has to go through a service-role route.
+ * Posts the SMTP password over TLS to `POST /api/email/account-secret`,
+ * which encrypts it there with the server-only `INTEGRATION_TOKEN_KEY` and
+ * writes the ciphertext with the service-role client. Encryption is
+ * deliberately NOT done here: a browser-side key would have to be a `VITE_*`
+ * variable, and Vite inlines those into the public JS bundle, handing the
+ * key to every stored SMTP password and OAuth token to anyone who can read
+ * the deployed JavaScript. `email_account_secrets` denies all access to
+ * `authenticated` (migration 152), so the write has to go through that
+ * service-role route either way.
  */
 export const saveAccountSecret = async (accountId: string, password: string): Promise<void> => {
-  const key = import.meta.env.VITE_INTEGRATION_TOKEN_KEY as string | undefined;
-  if (!key) {
-    throw new Error(
-      "Missing required env var: VITE_INTEGRATION_TOKEN_KEY. Set it before saving an SMTP password.",
-    );
-  }
-
-  const secretEncrypted = await encryptSecret(password, key);
-
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   if (!token) throw new Error("Not authenticated");
@@ -267,7 +262,7 @@ export const saveAccountSecret = async (accountId: string, password: string): Pr
   const res = await fetch("/api/email/account-secret", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ accountId, secretEncrypted }),
+    body: JSON.stringify({ accountId, password }),
   });
 
   if (!res.ok) {

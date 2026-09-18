@@ -21,10 +21,13 @@ Background: `docs/superpowers/specs/2026-09-18-email-marketing-design.md`.
   `<site>/api/email/tick`. If those two `app_secrets` rows aren't set,
   the cron job runs but the function returns immediately — nothing sends,
   silently.
-- **SMTP passwords are encrypted in the browser** before they ever reach the
-  database (`src/services/supabase/email.ts` → `POST /api/email/account-secret`).
-  `email_account_secrets` has a deny-all RLS policy (migration `152`), so only
-  the service-role client — used by the Vercel routes — can read the
+- **SMTP passwords are encrypted server-side.** The browser posts the
+  plaintext password over TLS to `POST /api/email/account-secret`
+  (`src/services/supabase/email.ts` → `api/email/account-secret.ts`), which
+  encrypts it there with the server-only `INTEGRATION_TOKEN_KEY` and writes
+  the ciphertext with the service-role client. The key is never shipped to a
+  browser. `email_account_secrets` has a deny-all RLS policy (migration
+  `152`), so only the service role — used by the Vercel routes — can read the
   ciphertext back out.
 
 ---
@@ -78,8 +81,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"  
 ## Step 3 — Reuse (or generate) `INTEGRATION_TOKEN_KEY`
 
 `INTEGRATION_TOKEN_KEY` is the AES-256 key (`api/_lib/crypto.ts`) that
-encrypts SMTP passwords in the browser and decrypts them again in
-`api/email/verify.ts` and `api/email/tick.ts`. This project already uses
+encrypts SMTP passwords in `api/email/account-secret.ts` and decrypts them
+again in `api/email/verify.ts` and `api/email/tick.ts`. It is a server-only
+variable — it must never be exposed to the browser. This project already uses
 `INTEGRATION_TOKEN_KEY` for the OAuth-integrations framework
 (`docs/superpowers/deployment/integrations-deployment-setup.md`), so:
 
@@ -102,11 +106,10 @@ unsubscribe routes all run in both environments):
 |---|---|---|
 | `SUPABASE_URL` | `api/_lib/context.ts` (`serviceClient`) | Your Supabase project URL, e.g. `https://xxxx.supabase.co` (Project Settings → API) |
 | `SUPABASE_SERVICE_ROLE_KEY` | `api/_lib/context.ts` (`serviceClient`) | The service-role secret key (Project Settings → API). Never expose this to the browser. |
-| `INTEGRATION_TOKEN_KEY` | `api/email/verify.ts`, `api/email/tick.ts` (`decryptSecret`) | From Step 3 |
+| `INTEGRATION_TOKEN_KEY` | `api/email/account-secret.ts` (`encryptSecret`), `api/email/verify.ts`, `api/email/tick.ts` (`decryptSecret`) | From Step 3. Server-only — do **not** mirror it into a `VITE_*` variable. |
 | `EMAIL_WORKER_SECRET` | `api/email/tick.ts` (checked against the `x-worker-secret` header) | From Step 2 |
 | `EMAIL_UNSUBSCRIBE_SECRET` | `api/email/unsubscribe.ts`, `api/email/tick.ts` | From Step 2 |
 | `PUBLIC_SITE_URL` | `api/_lib/context.ts` (`siteUrl`), used by `api/email/tick.ts` to build unsubscribe links | Your production site origin, no trailing slash, e.g. `https://taskcalendar.app` |
-| `VITE_INTEGRATION_TOKEN_KEY` | `src/services/supabase/email.ts` (`saveAccountSecret`, browser-side `encryptSecret`) | **Same value as `INTEGRATION_TOKEN_KEY`** — see the limitation below |
 
 Using the Vercel CLI, for each variable:
 
@@ -123,8 +126,6 @@ vercel env add EMAIL_UNSUBSCRIBE_SECRET production
 vercel env add EMAIL_UNSUBSCRIBE_SECRET preview
 vercel env add PUBLIC_SITE_URL production
 vercel env add PUBLIC_SITE_URL preview
-vercel env add VITE_INTEGRATION_TOKEN_KEY production
-vercel env add VITE_INTEGRATION_TOKEN_KEY preview
 ```
 
 Each prompts for the value on stdin. Equivalently, in the Vercel dashboard:
@@ -155,17 +156,15 @@ they don't match, every cron tick gets a 401 (see Troubleshooting below).
 
 ## Step 6 — Redeploy
 
-Vite inlines `VITE_*` variables at **build time**, not at runtime, so setting
-`VITE_INTEGRATION_TOKEN_KEY` in Vercel does nothing until a fresh build runs.
-Trigger a new deploy — a plain redeploy that reuses the existing build cache
-is not enough if the cache predates the env var change:
+Every variable above is read at runtime by the `api/` functions, so a plain
+redeploy picks them up — but deploy again anyway so the functions restart
+with the new environment:
 
 ```bash
 vercel --prod
 ```
 
-Or from the dashboard: **Deployments → ⋯ → Redeploy**, with **"Use existing
-Build Cache" unchecked**.
+Or from the dashboard: **Deployments → ⋯ → Redeploy**.
 
 ---
 
@@ -204,16 +203,17 @@ Build Cache" unchecked**.
 
 ## Known limitations
 
-- **The browser-side encryption key ships in the JS bundle.** Because Vite
-  inlines `VITE_INTEGRATION_TOKEN_KEY` into the client bundle at build time,
-  anyone who can read the deployed JavaScript can read this key. It protects
-  stored SMTP passwords **at rest in the database** (a database leak alone
-  doesn't expose plaintext passwords) — it does **not** protect them from a
-  determined authenticated user of your own app, who could extract the key
-  from the bundle. Follow-up: move encryption server-side, into
-  `api/email/account-secret.ts`, so the plaintext password is sent over TLS
-  to that route and encrypted there with the server-only
-  `INTEGRATION_TOKEN_KEY`, and drop `VITE_INTEGRATION_TOKEN_KEY` entirely.
+- **`INTEGRATION_TOKEN_KEY` and the database together are enough to recover
+  every SMTP password.** Encryption happens in `api/email/account-secret.ts`
+  with a single long-lived symmetric key held in the Vercel environment, and
+  the same key encrypts the Google and Slack OAuth tokens in
+  `supabase/functions/_shared/tokens.ts`. State it plainly: anyone holding
+  both the database contents and `INTEGRATION_TOKEN_KEY` can decrypt every
+  stored SMTP password and every stored OAuth token. The key is no longer in
+  the JS bundle, so a browser visitor cannot obtain it, but it is not a KMS,
+  there is no per-secret key and there is no rotation story — treat the
+  Vercel environment and the database as two halves of the same secret, and
+  do not let a single person or a single backup hold both.
 - **Scheduled/bulk sending depends on the Supabase cron reaching the Vercel
   endpoint.** If `public.app_secrets` isn't configured (Step 5), or the
   values there drift from what's set in Vercel, `kick_email_worker()` either
