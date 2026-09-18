@@ -10,10 +10,9 @@ import {
 import { Loader2, Send, SendHorizonal, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/services/supabase/config';
 import {
   listAccounts, listSuppressions, contactsForCampaign, createCampaign, queueRecipients,
-  parsePastedRecipients, parseRecipientsCsv,
+  setCampaignStatus, parsePastedRecipients, parseRecipientsCsv,
 } from '@/services/supabase/email';
 import type { Recipient } from '@/services/supabase/email';
 import type { EmailAccount } from '@/lib/email/types';
@@ -24,12 +23,13 @@ import { RecipientPicker, recipientKey, type RecipientMode } from './RecipientPi
 interface ComposeTabProps {
   orgId: string;
   workspaceId: string | null;
+  isAdmin: boolean;
   onSent: () => void;
 }
 
 const EMPTY_FORM = { name: '', accountId: '', subject: '', bodyHtml: '' };
 
-export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSent }) => {
+export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAdmin, onSent }) => {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   const [suppressionEmails, setSuppressionEmails] = useState<string[]>([]);
@@ -52,10 +52,12 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSe
 
   useEffect(() => {
     if (!orgId) return;
-    listAccounts(orgId).then(setAccounts).catch(() => { /* surfaced via empty Select */ });
+    listAccounts(orgId)
+      .then(setAccounts)
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load sending accounts'));
     listSuppressions(orgId)
       .then((rows) => setSuppressionEmails(rows.map((r) => r.email)))
-      .catch(() => { /* summary just won't subtract suppressions */ });
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
   }, [orgId]);
 
   useEffect(() => {
@@ -102,10 +104,13 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSe
   const selectedAccount = accounts.find((a) => a.id === form.accountId) ?? null;
   const activeAccounts = accounts.filter((a) => a.status === 'active');
 
+  const scheduledDate = scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
+  const scheduleInPast = scheduleMode === 'schedule' && !!scheduledDate && scheduledDate.getTime() <= Date.now();
+
   const canSubmit = !!selectedAccount && selectedAccount.status === 'active'
     && form.subject.trim().length > 0 && form.bodyHtml.trim().length > 0
     && sendable.length > 0 && !sending
-    && (scheduleMode === 'now' || scheduledAt.length > 0);
+    && (scheduleMode === 'now' || (scheduledAt.length > 0 && !scheduleInPast));
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
@@ -126,7 +131,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSe
   };
 
   const handleTestSend = async () => {
-    if (!selectedAccount) return;
+    if (!isAdmin || !selectedAccount) return;
     setTestSending(true);
     const result = await verifyAccount(selectedAccount.id);
     if (result.ok) toast.success(`Test email sent to ${user?.email ?? 'your inbox'}`);
@@ -136,6 +141,10 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSe
 
   const handleSubmit = async () => {
     if (!canSubmit || !selectedAccount || !orgId) return;
+    if (scheduleMode === 'schedule' && scheduleInPast) {
+      toast.error('Pick a schedule time in the future.');
+      return;
+    }
     setSending(true);
     try {
       const campaign = await createCampaign({
@@ -147,24 +156,24 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSe
         name: form.name.trim() || form.subject.trim(),
         subject: form.subject.trim(),
         bodyHtml: form.bodyHtml,
-        scheduledAt: scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null,
+        scheduledAt: scheduledDate,
         ratePerHour: Number(ratePerHour) || 60,
       });
 
-      const { queued, suppressed: suppressedCount } = await queueRecipients(campaign.id, orgId, activeRecipients);
+      // Recipients are queued first, then the campaign is flipped out of
+      // draft — the worker must never see a claimable campaign with no rows
+      // yet. `scheduledDate` becomes every row's `send_after`, so a
+      // scheduled campaign's messages aren't claimable until that time
+      // (claim_email_batch only gates on send_after <= now() and status).
+      const { queued, suppressed: suppressedCount } = await queueRecipients(
+        campaign.id, orgId, activeRecipients, scheduledDate,
+      );
 
       // createCampaign inserts with the table's default status ('draft').
       // claim_email_batch only claims messages whose campaign status is
       // 'sending' or 'scheduled', so the campaign has to be flipped out of
-      // draft now that its outbox rows exist. email_campaigns grants every
-      // org member full RLS read/write (migration 152), so this direct
-      // update is allowed the same way queueRecipients writes email_messages
-      // directly from the client.
-      const { error: statusError } = await supabase
-        .from('email_campaigns')
-        .update({ status: scheduleMode === 'schedule' ? 'scheduled' : 'sending' })
-        .eq('id', campaign.id);
-      if (statusError) throw statusError;
+      // draft now that its outbox rows exist.
+      await setCampaignStatus(campaign.id, scheduleMode === 'schedule' ? 'scheduled' : 'sending');
 
       toast.success(
         `Queued ${queued} message${queued === 1 ? '' : 's'}${suppressedCount ? `, ${suppressedCount} suppressed` : ''}`,
@@ -260,6 +269,9 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSe
                 <Label htmlFor="cmp-schedule">Date &amp; time</Label>
                 <Input id="cmp-schedule" type="datetime-local" value={scheduledAt}
                   onChange={(e) => setScheduledAt(e.target.value)} />
+                {scheduleInPast && (
+                  <p className="text-xs text-red-600 dark:text-red-400">Pick a time in the future.</p>
+                )}
               </div>
             )}
             <div className="space-y-2">
@@ -270,10 +282,12 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, onSe
           </div>
 
           <div className="flex items-center justify-between border-t border-border pt-4">
-            <Button type="button" variant="outline" disabled={!selectedAccount || testSending} onClick={handleTestSend}>
-              {testSending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <SendHorizonal className="w-4 h-4 mr-2" />}
-              Send test to me
-            </Button>
+            {isAdmin ? (
+              <Button type="button" variant="outline" disabled={!selectedAccount || testSending} onClick={handleTestSend}>
+                {testSending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <SendHorizonal className="w-4 h-4 mr-2" />}
+                Send test to me
+              </Button>
+            ) : <span />}
             <Button type="button" disabled={!canSubmit} onClick={handleSubmit}>
               {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
               {scheduleMode === 'schedule' ? 'Schedule campaign' : 'Send now'}

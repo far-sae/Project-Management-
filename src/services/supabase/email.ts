@@ -336,6 +336,26 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<EmailC
   return mapCampaignRow(data as EmailCampaignRow);
 };
 
+/**
+ * Flips a campaign's status — e.g. out of the table's default `'draft'` and
+ * into `'sending'` or `'scheduled'` once its outbox rows exist. Nothing else
+ * does this: `createCampaign` never sets a status on insert, and
+ * `claim_email_batch` (the worker's claim query) only picks up messages
+ * whose campaign is already `'sending'` or `'scheduled'`, so a campaign left
+ * at `'draft'` would sit forever.
+ */
+export const setCampaignStatus = async (campaignId: string, status: CampaignStatus): Promise<void> => {
+  const { error } = await supabase
+    .from("email_campaigns")
+    .update({ status })
+    .eq("id", campaignId);
+
+  if (error) {
+    logger.error("Failed to update campaign status:", error);
+    throw error;
+  }
+};
+
 const QUEUE_CHUNK_SIZE = 500;
 
 /**
@@ -344,11 +364,18 @@ const QUEUE_CHUNK_SIZE = 500;
  * recipients are filtered out by `filterSuppressed` *before* any insert is
  * built, so the insert payload never contains one — there is no code path
  * where a suppressed address reaches `.insert(...)`.
+ *
+ * `sendAfter`, when given, is written onto every inserted row's `send_after`
+ * so a scheduled campaign's messages aren't claimable by the worker until
+ * that time (`claim_email_batch` gates on `send_after <= now()`). Omit it —
+ * or pass `null` — to keep the column's default of `now()`, i.e. claimable
+ * immediately.
  */
 export const queueRecipients = async (
   campaignId: string,
   orgId: string,
   recipients: Recipient[],
+  sendAfter?: Date | null,
 ): Promise<{ queued: number; suppressed: number }> => {
   const { data: suppressionRows, error: suppressionError } = await supabase
     .from("email_suppressions")
@@ -371,6 +398,7 @@ export const queueRecipients = async (
       to_email: r.email,
       to_name: r.name ?? null,
       merge_data: r.mergeData ?? {},
+      ...(sendAfter ? { send_after: sendAfter.toISOString() } : {}),
     }));
 
     const { error } = await supabase.from("email_messages").insert(chunk);

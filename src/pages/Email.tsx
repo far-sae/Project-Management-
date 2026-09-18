@@ -41,6 +41,7 @@ export const Email: React.FC = () => {
           <ComposeTab
             orgId={orgId}
             workspaceId={workspaceId}
+            isAdmin={isAdmin}
             onSent={() => setActiveTab('campaigns')}
           />
         </TabsContent>
