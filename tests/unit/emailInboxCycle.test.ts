@@ -85,6 +85,8 @@ interface Fixtures {
   matched?: string | null;
   /** How many leading record_inbox_result calls answer with an error instead. */
   recordErrors?: number;
+  /** How many leading reads of email_messages answer with an error instead. */
+  sentReadErrors?: number;
 }
 
 interface RpcCall {
@@ -110,9 +112,14 @@ function makeDb(fx: Fixtures) {
   const reads: Array<{ table: string; start: number | null }> = [];
   const writes: Array<{ table: string; op: string }> = [];
 
+  let sentReads = 0;
   const from = (table: string) => {
     const read: { table: string; start: number | null } = { table, start: null };
     reads.push(read);
+    if (table === 'email_messages') sentReads += 1;
+    // Which page of which read failed matters here, so the failure is decided
+    // when from() is called rather than when the builder is awaited.
+    const failed = table === 'email_messages' && sentReads <= (fx.sentReadErrors ?? 0);
     const filters: Array<(r: Row) => boolean> = [];
     let range: [number, number] | null = null;
     const rows = () => {
@@ -157,7 +164,11 @@ function makeDb(fx: Fixtures) {
       },
       maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
       then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) =>
-        Promise.resolve({ data: rows(), error: null }).then(ok, bad),
+        Promise.resolve(
+          failed
+            ? { data: null, error: { message: 'could not read email_messages' } }
+            : { data: rows(), error: null },
+        ).then(ok, bad),
     };
     return builder;
   };
@@ -388,6 +399,11 @@ describe('runInboxCycle', () => {
     const args = h.touches()[0].args as { p_status: string; p_error: string };
     expect(args.p_status).toBe('error');
     expect(args.p_error).toMatch(/rejected the IMAP login/i);
+    // The sentence that makes an auth failure readable as a settings problem
+    // rather than an outage, and that promises sending is untouched. It is the
+    // only thing distinguishing this class, so it is asserted, not assumed.
+    expect(args.p_error).toMatch(/keep failing until the credential is fixed/i);
+    expect(args.p_error).toMatch(/sending is unaffected/i);
 
     // Rule 1: sending is untouched. No strike, no direct write to the mailbox
     // row, nothing that claim_email_batch() would read.
@@ -395,6 +411,67 @@ describe('runInboxCycle', () => {
     expect(h.writes).toEqual([]);
     expect(result.scanned).toBe(0);
     expect(result.errors).toHaveLength(1);
+  });
+
+  it('holds the cursor when what it found could not be recorded', async () => {
+    const h = makeDeps(
+      {
+        mailboxes: [mailboxRow()],
+        secrets: [secretRow()],
+        messages: [sentRow('ada@acme.com')],
+        recordErrors: 1,
+      },
+      { envelopes: [envelope()] },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    expect(h.results()).toHaveLength(1);
+    // Not 'active': that advances inbox_last_scan_at, and with a three-minute
+    // overlap against a five-minute loop this reply would be behind the next
+    // window immediately. 'error' is the status that holds the cursor.
+    const args = h.touches()[0].args as { p_status: string; p_error: string };
+    expect(args.p_status).toBe('error');
+    expect(args.p_error).toMatch(/could not all be recorded/i);
+    expect(args.p_error).toMatch(/sending is unaffected/i);
+    expect(result.replies).toBe(0);
+    expect(result.scanned).toBe(0);
+    expect(result.errors).toHaveLength(1);
+
+    // Still nothing charged to the send path.
+    expect(h.names()).not.toContain('record_mailbox_failure');
+    expect(h.writes).toEqual([]);
+  });
+
+  it('never caches a failed address read, and holds the cursor of what it could not serve', async () => {
+    const h = makeDeps(
+      {
+        mailboxes: [
+          mailboxRow(),
+          mailboxRow({ id: 'mbx-2', from_email: 'grace@example.com' }),
+        ],
+        secrets: [secretRow(), secretRow('mbx-2')],
+        messages: [sentRow('ada@acme.com')],
+        // The first read of email_messages fails; the retry succeeds.
+        sentReadErrors: 1,
+      },
+      { envelopes: [envelope()] },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    // Retried rather than served an empty set from the cache: an empty match
+    // set is not the same answer as "the match set could not be read".
+    const sentReads = h.reads.filter((r) => r.table === 'email_messages' && r.start === 0);
+    expect(sentReads).toHaveLength(2);
+
+    // Mailbox A could not be served, so its window is held for the next pass;
+    // mailbox B got the retried read and completed.
+    expect(h.touches().map((c) => c.args.p_status)).toEqual(['error', 'active']);
+    expect(h.results()).toHaveLength(1);
+    expect(h.results()[0].args).toMatchObject({ p_account: 'mbx-2', p_kind: 'reply' });
+    expect(result.replies).toBe(1);
+    expect(result.scanned).toBe(1);
   });
 
   it('records a successful scan as active', async () => {

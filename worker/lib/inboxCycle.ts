@@ -98,6 +98,16 @@ export interface InboxResult {
   errors: string[];
 }
 
+/**
+ * The match set, and whether it is the whole of it. `ok: false` means a page
+ * failed, NOT that the organisation has written to nobody — a distinction the
+ * cursor depends on.
+ */
+interface SentAddresses {
+  addresses: string[];
+  ok: boolean;
+}
+
 interface MailboxRow {
   id: string;
   organization_id: string;
@@ -178,14 +188,22 @@ export async function runInboxCycle(deps: InboxDeps): Promise<InboxResult> {
    * Lazy rather than read up front: an organisation whose inboxes were all
    * empty this pass never needs the list at all, and that is the common case
    * on a five-minute loop.
+   *
+   * ONLY A SUCCESSFUL READ IS CACHED. A failed one returns `ok: false` and is
+   * not remembered, so the next mailbox in the same organisation tries again
+   * rather than being served an empty set. Caching the failure would turn one
+   * transient database error into "nobody replied" for every mailbox that
+   * tenant has, for that whole window — and, before this, into an advanced
+   * cursor for each of them too, which is how the replies would have been lost
+   * for good rather than merely late.
    */
   const sentByOrg = new Map<string, string[]>();
-  const sentAddresses = async (organizationId: string, now: Date): Promise<string[]> => {
+  const sentAddresses = async (organizationId: string, now: Date): Promise<SentAddresses> => {
     const cached = sentByOrg.get(organizationId);
-    if (cached) return cached;
-    const addresses = await readSentAddresses(deps, note, organizationId, now);
-    sentByOrg.set(organizationId, addresses);
-    return addresses;
+    if (cached) return { addresses: cached, ok: true };
+    const read = await readSentAddresses(deps, note, organizationId, now);
+    if (read.ok) sentByOrg.set(organizationId, read.addresses);
+    return read;
   };
 
   for (const row of mailboxes.rows) {
@@ -234,6 +252,9 @@ async function readMailboxes(
   let offset = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
+    // Offset paging, as in engine.ts: a mailbox added or deleted between pages
+    // shifts the window and can skip or repeat one. Recoverable on the next
+    // pass — a skipped mailbox keeps its cursor — and the established pattern.
     const res = await deps.db
       .from('email_accounts')
       .select(MAILBOX_COLUMNS)
@@ -265,13 +286,17 @@ async function readMailboxes(
  *
  * Throws on anything that goes wrong with the connection; the caller turns
  * that into a recorded 'error' and moves on.
+ *
+ * A scan that read the mailbox but could not finish its work — a
+ * record_inbox_result that would not write, a match set that could not be
+ * built — does NOT report 'active'. See `incomplete` below.
  */
 async function scanMailbox(
   deps: InboxDeps,
   result: InboxResult,
   note: Note,
   row: MailboxRow,
-  sentAddresses: (organizationId: string, now: Date) => Promise<string[]>,
+  sentAddresses: (organizationId: string, now: Date) => Promise<SentAddresses>,
 ): Promise<void> {
   // The mailbox is named by its address in every error: a label is free text
   // and two mailboxes can share one, but the address is what an admin has to
@@ -315,6 +340,23 @@ async function scanMailbox(
 
   const envelopes = await deps.connect.envelopes(cfg, since);
 
+  /**
+   * True once this scan has failed at any part of its work: a result that
+   * would not write, or a match set that could not be built.
+   *
+   * It decides the status at the end, and it exists because 'active' advances
+   * inbox_last_scan_at. The overlap is three minutes against a five-minute
+   * loop, so a reply this scan found but failed to record would be behind the
+   * next window immediately and gone for good. A scan that did not manage to
+   * record what it found did not complete, whatever the mailbox did.
+   *
+   * Re-reading the same window costs almost nothing: record_inbox_result()
+   * coalesces replied_at and bounced_at and inserts the suppression `on
+   * conflict do nothing`, so recording the same reply or bounce twice is the
+   * same single outcome.
+   */
+  let incomplete = false;
+
   // ── replies ──────────────────────────────────────────────────────
   // Only worth a database read when something actually arrived — and the read
   // is the ORGANISATION's, not this mailbox's, so a reply that lands here for
@@ -322,9 +364,15 @@ async function scanMailbox(
   // readSentAddresses for why anything narrower is wrong.
   if (envelopes.length > 0) {
     const sentTo = await sentAddresses(row.organization_id, now);
-    for (const reply of matchReplies(envelopes, sentTo)) {
+    // A match set that could not be read is not an empty one. Matching what
+    // did arrive is still worth doing — recording is idempotent — but this
+    // scan cannot claim to have looked at everything, so the cursor is held
+    // and the same window is read again next pass.
+    if (!sentTo.ok) incomplete = true;
+    for (const reply of matchReplies(envelopes, sentTo.addresses)) {
       const recorded = await record(deps, note, row, 'reply', reply.address, reply.at, who);
       if (recorded) result.replies += 1;
+      else incomplete = true;
     }
   }
 
@@ -353,12 +401,26 @@ async function scanMailbox(
         who,
       );
       if (recorded) result.bounces += 1;
+      else incomplete = true;
     }
   }
 
-  // Last, and only once everything above has been read: this advances the
-  // cursor, so anything not yet fetched when it runs is behind the window for
-  // good.
+  // Last, and only once everything above has been read AND written: 'active'
+  // advances the cursor, so anything still outstanding when it runs is behind
+  // the window for good.
+  if (incomplete) {
+    // The mailbox itself was readable — this is not an IMAP fault and the
+    // reasons are already in `errors` — but the window has not been fully
+    // dealt with, so it is held for the next pass. 'error' is the only status
+    // that holds the cursor; the sentence says plainly that this is not a
+    // credential problem, because it is what an admin will read.
+    const detail =
+      'The mailbox was read, but what the scan found could not all be recorded. ' +
+      'The same window will be read again; sending is unaffected.';
+    await touch(deps, note, row, 'error', detail, who);
+    return;
+  }
+
   await touch(deps, note, row, 'active', null, who);
   result.scanned += 1;
 }
@@ -387,31 +449,40 @@ async function scanMailbox(
  * On the index: this predicate is exactly what
  * idx_email_messages_org_sent_at — (organization_id, sent_at desc), migration
  * 157b — exists for, and the comment there explains why the other two
- * candidates cannot serve it. Both of the columns filtered on are in it, so
- * the thirty-day bound narrows inside the index rather than afterwards. If
- * this read ever needs to be cheaper still, the next step is a `select
- * distinct` view, NOT a narrower scope — that would re-open the gap above.
+ * candidates cannot serve it. Both of the columns filtered on are in it, and
+ * the ORDER matches it too: `sent_at desc` first, `id` only as the tiebreak
+ * that makes the paging stable. Ordering by `id` alone, as an earlier revision
+ * did, would have made the planner sort the whole matched set on every page —
+ * the filter would narrow inside the index and the ordering would throw the
+ * benefit away. If this read ever needs to be cheaper still, the next step is
+ * a `select distinct` view, NOT a narrower scope — that would re-open the gap
+ * above.
  *
- * A failed read is reported and answered with what was collected rather than
- * aborting the scan: a missed reply is recoverable on the next pass, and the
- * bounce half of the scan is unaffected by it.
+ * Returns `ok: false` when a page failed, with whatever was collected. The
+ * caller must not treat that as "nobody was written to": it holds the
+ * mailbox's cursor so the same window is read again, and the cycle does not
+ * cache it, so the next mailbox in this organisation retries the read.
  */
 async function readSentAddresses(
   deps: InboxDeps,
   note: Note,
   organizationId: string,
   now: Date,
-): Promise<string[]> {
+): Promise<SentAddresses> {
   const floor = new Date(now.getTime() - SENT_LOOKBACK_MS).toISOString();
   const addresses = new Set<string>();
   let offset = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
+    // Offset paging, as in engine.ts: a row inserted or deleted between pages
+    // shifts the window and can skip or repeat one. Recoverable — the next
+    // pass reads the same thirty days — and the established pattern here.
     const res = await deps.db
       .from('email_messages')
       .select('id, to_email')
       .eq('organization_id', organizationId)
       .gte('sent_at', floor)
+      .order('sent_at', { ascending: false })
       .order('id', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (res.error) {
@@ -419,7 +490,7 @@ async function readSentAddresses(
         `organisation ${organizationId}`,
         `the recently sent addresses could not be read: ${res.error.message}`,
       );
-      break;
+      return { addresses: [...addresses], ok: false };
     }
 
     const batch = (res.data ?? []) as unknown as Array<{ to_email: string | null }>;
@@ -430,6 +501,13 @@ async function readSentAddresses(
     // Said out loud rather than truncating in silence: past this point the
     // match set is incomplete, so a genuine reply can go unrecognised and
     // nothing else in the system would ever say why.
+    //
+    // Reported but NOT `ok: false`, which is the one place those two come
+    // apart. A failed page is transient and worth retrying, so it holds the
+    // cursor. Hitting the page cap is deterministic: the next pass reads the
+    // same first 50,000 addresses and stops in the same place, so holding the
+    // cursor for it would stall that mailbox permanently instead of fixing
+    // anything. The fix for this one is a `select distinct` read, not a retry.
     if (page === MAX_PAGES - 1) {
       note(
         `organisation ${organizationId}`,
@@ -439,7 +517,7 @@ async function readSentAddresses(
     }
   }
 
-  return [...addresses];
+  return { addresses: [...addresses], ok: true };
 }
 
 /**

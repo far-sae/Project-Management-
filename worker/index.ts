@@ -32,15 +32,15 @@ import { createTransport } from './lib/mailer.js';
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = (): string => new Date().toISOString().replace('T', ' ').slice(0, 19);
 
+/** How long the inbox loop holds off after start-up. See inboxLoop for why. */
+const INBOX_START_DELAY_MS = 10_000;
+
 /**
  * Sleeps in short slices so a shutdown signal is never held for a whole
  * interval. The inbox loop waits five minutes between passes, and a process
  * that only noticed SIGTERM at the end of that wait would be SIGKILLed long
  * before it got there — Railway's redeploy grace period is far shorter.
  */
-/** How long the inbox loop holds off after start-up. See inboxLoop for why. */
-const INBOX_START_DELAY_MS = 10_000;
-
 async function waitFor(ms: number, running: () => boolean): Promise<void> {
   const deadline = Date.now() + ms;
   while (running()) {

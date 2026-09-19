@@ -170,9 +170,12 @@ drop index if exists public.idx_email_messages_org_to_email;
 -- sent_account_id left to offer.
 --
 -- Hence both of the columns it actually filters on, in that order. The
--- direction is immaterial to a >= bound -- a btree reads either way -- and
--- DESC matches the newest-first order anything else reading a tenant's recent
--- sends would want. This is NOT a duplicate of the expression index above:
+-- direction is immaterial to the >= bound itself -- a btree reads either way
+-- -- but it is not immaterial to the read: that query pages, and it orders by
+-- sent_at desc with id as the tiebreak precisely so the index can supply the
+-- order as well as the range. Ordering by anything else would make the planner
+-- sort the whole matched set on every page and throw away most of what this
+-- index is for. This is NOT a duplicate of the expression index above:
 -- they share a leading column and nothing else, and neither can do the other's
 -- job. Deleting either one makes a read that runs every few minutes scan a
 -- table that only ever grows.
