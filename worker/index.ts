@@ -10,6 +10,12 @@
  * that poked it, are gone (migration 156): two senders claiming from the same
  * outbox is how a recipient gets the same message twice.
  *
+ * It also runs a second, much slower loop that reads each mailbox that has an
+ * IMAP host and records the replies and bounces it finds (migration 157). The
+ * two loops share only the shutdown flag: an inbox that cannot be read must
+ * never stop, slow or pause the sending, because at every provider reading a
+ * mailbox and sending from it are separate permissions.
+ *
  * Run it with `npm run worker` from the repository root — the only supported
  * invocation; this directory has no package.json of its own, since it shares
  * the packages and the src/lib/email helpers declared at the repository
@@ -19,10 +25,27 @@
 import { env, serviceClient } from './lib/db.js';
 import { domainAcceptsMail } from './lib/dns.js';
 import { runCycle } from './lib/engine.js';
+import { fetchBounceSources, fetchRecentEnvelopes } from './lib/imap.js';
+import { runInboxCycle } from './lib/inboxCycle.js';
 import { createTransport } from './lib/mailer.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = (): string => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+/**
+ * Sleeps in short slices so a shutdown signal is never held for a whole
+ * interval. The inbox loop waits five minutes between passes, and a process
+ * that only noticed SIGTERM at the end of that wait would be SIGKILLed long
+ * before it got there — Railway's redeploy grace period is far shorter.
+ */
+async function waitFor(ms: number, running: () => boolean): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (running()) {
+    const left = deadline - Date.now();
+    if (left <= 0) return;
+    await sleep(Math.min(1_000, left));
+  }
+}
 
 function positiveInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -46,6 +69,10 @@ async function main(): Promise<void> {
 
   const intervalMs = positiveInt('WORKER_INTERVAL_MS', 15_000);
   const maxPerCycle = positiveInt('WORKER_BATCH', 50);
+  // Five minutes, against the send loop's fifteen seconds. A reply noticed four
+  // minutes late costs nothing, and an IMAP login per mailbox every fifteen
+  // seconds is itself a throttling trigger at most providers.
+  const inboxIntervalMs = positiveInt('INBOX_INTERVAL_MS', 300_000);
 
   if (siteUrl.includes('localhost')) {
     console.warn(
@@ -79,49 +106,107 @@ async function main(): Promise<void> {
 
   console.log(
     `[${stamp()}] email worker started — one cycle every ${Math.round(intervalMs / 1000)}s, ` +
-      `up to ${maxPerCycle} messages per organisation per cycle.`,
+      `up to ${maxPerCycle} messages per organisation per cycle; inbox scan every ` +
+      `${Math.round(inboxIntervalMs / 60000)}m.`,
   );
 
   let lastBlocked: string | null = null;
 
-  while (running) {
-    try {
-      const result = await runCycle({
-        db,
-        createTransport,
-        domainAcceptsMail,
-        sleep,
-        now: () => new Date(),
-        env: { tokenKey, unsubscribeSecret, siteUrl },
-        maxPerCycle,
-        shouldStop: () => !running,
-      });
+  const sendLoop = async (): Promise<void> => {
+    while (running) {
+      try {
+        const result = await runCycle({
+          db,
+          createTransport,
+          domainAcceptsMail,
+          sleep,
+          now: () => new Date(),
+          env: { tokenKey, unsubscribeSecret, siteUrl },
+          maxPerCycle,
+          shouldStop: () => !running,
+        });
 
-      // Counts and reasons only: never a password, never a recipient list.
-      if (result.claimed > 0 || result.errors.length > 0) {
-        lastBlocked = null;
-        console.log(
-          `[${stamp()}] claimed ${result.claimed}, sent ${result.sent}, ` +
-            `failed ${result.failed}, skipped ${result.skipped}`,
-        );
-      } else if (result.blocked && result.blocked !== lastBlocked) {
-        // Logged on change only: an idle worker outside its send window would
-        // otherwise write the same line four times a minute, all night.
-        lastBlocked = result.blocked;
-        console.log(`[${stamp()}] idle — ${result.blocked}`);
+        // Counts and reasons only: never a password, never a recipient list.
+        if (result.claimed > 0 || result.errors.length > 0) {
+          lastBlocked = null;
+          console.log(
+            `[${stamp()}] claimed ${result.claimed}, sent ${result.sent}, ` +
+              `failed ${result.failed}, skipped ${result.skipped}`,
+          );
+        } else if (result.blocked && result.blocked !== lastBlocked) {
+          // Logged on change only: an idle worker outside its send window would
+          // otherwise write the same line four times a minute, all night.
+          lastBlocked = result.blocked;
+          console.log(`[${stamp()}] idle — ${result.blocked}`);
+        }
+
+        for (const error of result.errors.slice(0, 5)) {
+          console.error(`[${stamp()}] ${error}`);
+        }
+      } catch (err) {
+        // Never exit on one bad cycle: the queue outlives any single failure, and
+        // a crash loop on Railway would stop sending entirely.
+        console.error(`[${stamp()}] cycle failed:`, err instanceof Error ? err.message : err);
       }
 
-      for (const error of result.errors.slice(0, 5)) {
-        console.error(`[${stamp()}] ${error}`);
-      }
-    } catch (err) {
-      // Never exit on one bad cycle: the queue outlives any single failure, and
-      // a crash loop on Railway would stop sending entirely.
-      console.error(`[${stamp()}] cycle failed:`, err instanceof Error ? err.message : err);
+      if (running) await sleep(intervalMs);
     }
+  };
 
-    if (running) await sleep(intervalMs);
-  }
+  /**
+   * The inbox scan, on its own interval and in its own loop.
+   *
+   * It never shares a failure with the send loop: every pass is wrapped here,
+   * runInboxCycle wraps each mailbox, and the promise itself is caught where
+   * the two are started. An unreadable mailbox — an app password with IMAP
+   * left disabled is the ordinary case — must cost the outbox nothing.
+   */
+  const inboxLoop = async (): Promise<void> => {
+    while (running) {
+      try {
+        const result = await runInboxCycle({
+          db,
+          connect: { envelopes: fetchRecentEnvelopes, bounces: fetchBounceSources },
+          now: () => new Date(),
+          env: { tokenKey },
+          shouldStop: () => !running,
+        });
+
+        // Counts and reasons only: never a subject, never a body, never a
+        // recipient list. Silent when there is nothing to scan, so a
+        // deployment with no IMAP configured writes no line at all.
+        if (result.scanned > 0 || result.errors.length > 0) {
+          console.log(
+            `[${stamp()}] inbox: scanned ${result.scanned}, replies ${result.replies}, ` +
+              `bounces ${result.bounces}`,
+          );
+        }
+
+        for (const error of result.errors.slice(0, 5)) {
+          console.error(`[${stamp()}] inbox ${error}`);
+        }
+      } catch (err) {
+        // Never exit, and never let this reach the send loop.
+        console.error(
+          `[${stamp()}] inbox cycle failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+
+      await waitFor(inboxIntervalMs, () => running);
+    }
+  };
+
+  // Both loops run to completion; neither can end the other. `running` is the
+  // one shutdown flag, so a signal stops them both at their next boundary.
+  await Promise.all([
+    sendLoop().catch((err: unknown) => {
+      console.error(`[${stamp()}] send loop stopped:`, err instanceof Error ? err.message : err);
+    }),
+    inboxLoop().catch((err: unknown) => {
+      console.error(`[${stamp()}] inbox loop stopped:`, err instanceof Error ? err.message : err);
+    }),
+  ]);
 
   console.log(`[${stamp()}] email worker stopped.`);
 }
