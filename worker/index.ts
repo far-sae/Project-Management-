@@ -16,6 +16,13 @@
  * never stop, slow or pause the sending, because at every provider reading a
  * mailbox and sending from it are separate permissions.
  *
+ * And a third, on a minute, that turns due sequence enrollments into queued
+ * messages (migration 159). It never sends: it writes ordinary email_messages
+ * rows that the send loop above then claims with the pool, the caps, the
+ * warmup, the window and the suppression list all applied. Same rule as the
+ * inbox loop — it shares only the shutdown flag, so a sequence cycle that
+ * throws cannot stop the outbox draining.
+ *
  * Run it with `npm run worker` from the repository root — the only supported
  * invocation; this directory has no package.json of its own, since it shares
  * the packages and the src/lib/email helpers declared at the repository
@@ -28,12 +35,23 @@ import { runCycle } from './lib/engine.js';
 import { appendToSent, scanInbox } from './lib/imap.js';
 import { runInboxCycle } from './lib/inboxCycle.js';
 import { buildRaw, createTransport } from './lib/mailer.js';
+import { runSequenceCycle } from './lib/sequenceCycle.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = (): string => new Date().toISOString().replace('T', ' ').slice(0, 19);
 
 /** How long the inbox loop holds off after start-up. See inboxLoop for why. */
 const INBOX_START_DELAY_MS = 10_000;
+
+/**
+ * How long the sequence loop holds off after start-up.
+ *
+ * Between the send loop's first cycle (immediately) and the inbox loop's
+ * (ten seconds), so a restart does not run all three against the database in
+ * the same second. Five seconds costs a sequence step nothing — the step
+ * becomes a queued row that waits for the send loop anyway.
+ */
+const SEQUENCE_START_DELAY_MS = 5_000;
 
 /**
  * Sleeps in short slices so a shutdown signal is never held for a whole
@@ -76,6 +94,11 @@ async function main(): Promise<void> {
   // minutes late costs nothing, and an IMAP login per mailbox every fifteen
   // seconds is itself a throttling trigger at most providers.
   const inboxIntervalMs = positiveInt('INBOX_INTERVAL_MS', 300_000);
+  // One minute. A sequence step's delay is measured in hours, so a step
+  // materialized up to a minute after it fell due is indistinguishable to the
+  // recipient — and the claim is one indexed read of a small table, which is
+  // not worth running four times a minute alongside the send loop.
+  const sequenceIntervalMs = positiveInt('SEQUENCE_INTERVAL_MS', 60_000);
 
   if (siteUrl.includes('localhost')) {
     console.warn(
@@ -110,7 +133,8 @@ async function main(): Promise<void> {
   console.log(
     `[${stamp()}] email worker started — one cycle every ${Math.round(intervalMs / 1000)}s, ` +
       `up to ${maxPerCycle} messages per organisation per cycle; inbox scan every ` +
-      `${Math.round(inboxIntervalMs / 60000)}m.`,
+      `${Math.round(inboxIntervalMs / 60000)}m; sequence cycle every ` +
+      `${Math.round(sequenceIntervalMs / 1000)}s.`,
   );
 
   let lastBlocked: string | null = null;
@@ -211,14 +235,77 @@ async function main(): Promise<void> {
     }
   };
 
-  // Both loops run to completion; neither can end the other. `running` is the
-  // one shutdown flag, so a signal stops them both at their next boundary.
+  /**
+   * The sequence materializer, on its own interval and in its own loop.
+   *
+   * It never sends. Each pass reconciles the enrollments nothing can move any
+   * more, then turns the due ones into queued email_messages rows — which the
+   * send loop above claims like any other mail, with every gate phase 1 put in
+   * front of a send still in front of it.
+   *
+   * Wrapped here, per enrollment inside runSequenceCycle, and again where the
+   * loops are started: a sequence cycle that throws must cost the outbox
+   * nothing.
+   */
+  const sequenceLoop = async (): Promise<void> => {
+    // Staggered off the send loop's first cycle. See SEQUENCE_START_DELAY_MS.
+    await waitFor(SEQUENCE_START_DELAY_MS, () => running);
+
+    while (running) {
+      try {
+        const result = await runSequenceCycle({
+          db,
+          now: () => new Date(),
+          shouldStop: () => !running,
+        });
+
+        // Counts and reasons only: never an address, never a subject, never a
+        // body. Silent when there is nothing due, so a deployment with no
+        // sequences writes no line at all.
+        if (result.queued > 0 || result.errors.length > 0) {
+          console.log(`[${stamp()}] sequences: queued ${result.queued}`);
+        }
+
+        // Said out loud on its own line, because it is not routine: every row
+        // the sweep fixed is an enrollment that had been left active with
+        // nothing that could ever move it again, which means one of the paths
+        // that ends a message without ending its enrollment has fired.
+        if (result.reconciled > 0) {
+          console.warn(
+            `[${stamp()}] sequences: reconciled ${result.reconciled} stalled ` +
+              'enrollment(s) — a message ended without ending or rescheduling its enrollment.',
+          );
+        }
+
+        for (const error of result.errors.slice(0, 5)) {
+          console.error(`[${stamp()}] sequences ${error}`);
+        }
+      } catch (err) {
+        // Never exit, and never let this reach the send loop.
+        console.error(
+          `[${stamp()}] sequence cycle failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+
+      await waitFor(sequenceIntervalMs, () => running);
+    }
+  };
+
+  // All three loops run to completion; none can end another. `running` is the
+  // one shutdown flag, so a signal stops them all at their next boundary.
   await Promise.all([
     sendLoop().catch((err: unknown) => {
       console.error(`[${stamp()}] send loop stopped:`, err instanceof Error ? err.message : err);
     }),
     inboxLoop().catch((err: unknown) => {
       console.error(`[${stamp()}] inbox loop stopped:`, err instanceof Error ? err.message : err);
+    }),
+    sequenceLoop().catch((err: unknown) => {
+      console.error(
+        `[${stamp()}] sequence loop stopped:`,
+        err instanceof Error ? err.message : err,
+      );
     }),
   ]);
 
