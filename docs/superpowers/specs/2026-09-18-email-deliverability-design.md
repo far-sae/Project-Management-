@@ -174,9 +174,18 @@ that a permanent failure pauses the mailbox at the third strike.
 ## Migration safety
 
 One migration adds the columns with defaults, the view, and the settings
-table, and drops the retired cron. Existing accounts get `warmup_enabled` true
-with no start date, which resolves to the start volume until an admin starts
-the ramp, so nobody's existing account suddenly sends more than before.
+table, and drops the retired cron.
+
+`warmup_enabled` defaults to true, but every account that predates the
+migration has it switched **off** by a one-time backfill (`where
+warmup_started_on is null`). Leaving it on would be the harmful direction, not
+the safe one: with no start date the ramp resolves to `warmup_start_volume`,
+five a day, and never climbs, because nothing sets the start date on its own —
+so a mailbox configured for 500 a day would read as an outage. Existing
+accounts therefore keep the `daily_limit` they already had. Warmup is for a new
+mailbox proving itself: new ones get it on by default, and an admin starts the
+ramp from the Accounts screen. Either way nobody's existing account suddenly
+sends *more* than before.
 
 ## Out of scope for this phase
 

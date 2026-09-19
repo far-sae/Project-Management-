@@ -76,6 +76,16 @@ ten minutes and either settles them as `sent` (when a `provider_message_id`
 proves delivery), retires them at three attempts, or returns them to the queue.
 The cost is a delay of up to ten minutes, not a dropped message.
 
+The residual risk runs the other way, and it is a duplicate rather than a loss:
+a message SMTP already accepted, killed before `record_send_result()` could
+store its `provider_message_id`, looks to the sweep exactly like one that never
+went out, so it is requeued and sent again. The pathological ceiling on that is
+**three deliveries, not two** — the sweep will requeue such a row on each pass
+until the three-attempt budget is spent, and every pass can be one that was
+killed the same way. It needs the process to be killed outright during the same
+message three times over, which is why it is a residual rather than an expected
+cost; but two is the wrong number to plan around.
+
 ## Logs
 
 One line per cycle that did something, plus up to five distinct failure reasons,

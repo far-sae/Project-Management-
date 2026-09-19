@@ -16,6 +16,20 @@ const WEEKDAY_TO_ISO: Record<string, number> = {
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
+ * The largest pause between messages anyone may configure, in milliseconds.
+ *
+ * The pause is what paces a batch, and the window is what bounds it: at five
+ * minutes a batch of fifty already runs over four hours, which is most of an
+ * ordinary working day, and anything past that would simply push the tail of
+ * every batch out beyond the window's end — where it waits until tomorrow. A
+ * value typed with one zero too many should be refused, not obeyed.
+ *
+ * Mirrored by `email_settings_jitter_ceiling_check` in migration 156, so a
+ * value that gets past the screen is still refused by the database.
+ */
+export const MAX_JITTER_MS = 300_000;
+
+/**
  * Reads the hour and ISO weekday (1 = Monday … 7 = Sunday) of `date` *in the
  * given IANA timezone*, via `Intl.DateTimeFormat`. Using `Date` getters
  * (`getHours`, `getDay`) would evaluate the window in the host's own

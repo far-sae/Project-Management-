@@ -74,11 +74,18 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     resetForm();
   };
 
+  // A successful test send is proof the credentials work, so api/email/verify
+  // clears the automatic pause and the failure streak along with the status —
+  // the same state Resume clears. Mirror all of it here, or the card keeps
+  // showing a paused mailbox that the database has already let back in.
   const runVerify = async (accountId: string) => {
     const result = await verifyAccount(accountId);
-    setMailboxes((prev) => prev.map((m) => (m.id === accountId
-      ? { ...m, status: result.ok ? 'active' : 'error' }
-      : m)));
+    setMailboxes((prev) => prev.map((m) => {
+      if (m.id !== accountId) return m;
+      return result.ok
+        ? { ...m, status: 'active' as const, consecutiveFailures: 0, pausedReason: null, isActive: true }
+        : { ...m, status: 'error' as const };
+    }));
     return result;
   };
 

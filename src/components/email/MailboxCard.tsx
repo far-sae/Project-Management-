@@ -21,11 +21,17 @@ interface MailboxCardProps {
 }
 
 /**
- * Whole calendar days between `from` and today, floored at zero — the same
- * "day N" migration 156's mailbox_status view counts with
- * `current_date - warmup_started_on`. Computed here purely for the label;
- * the allowance itself always comes from `effectiveLimit`, which the view
- * already worked out.
+ * Whole calendar days between `from` and today, floored at zero — the "day N"
+ * migration 156's mailbox_status view counts as
+ * `(now() at time zone <org zone>)::date - warmup_started_on`. This counts it
+ * in the reader's own timezone instead, so the two can differ by a day for
+ * someone working outside the organization's zone. That is accepted: this is
+ * a label, and the allowance it sits next to always comes from
+ * `effectiveLimit`, which is the view's own arithmetic.
+ *
+ * `from` is local midnight on the stored date — see `fromDateOnly` in
+ * services/supabase/email.ts — so these local getters read the day the column
+ * actually names.
  */
 const daysSince = (from: Date): number => {
   const start = new Date(from.getFullYear(), from.getMonth(), from.getDate());
@@ -121,6 +127,18 @@ export const MailboxCard: React.FC<MailboxCardProps> = ({
               </Button>
             )}
           </div>
+        )}
+
+        {/* Resume clears the pause and the failure count but not a credential
+            error — only a send that actually works can do that — so a mailbox
+            can look un-paused and still be out of rotation. Say which action
+            does what rather than leaving that to be discovered. */}
+        {(mailbox.pausedReason || mailbox.status === 'error') && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Sending resumes once this mailbox is back in the pool with working credentials:
+            Resume clears the pause and the failure count, and a successful test send clears a
+            credential error.
+          </p>
         )}
       </CardContent>
     </Card>

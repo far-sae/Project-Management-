@@ -2,6 +2,7 @@ import Papa from "papaparse";
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
 import { dedupeRecipients, filterSuppressed, normalizeEmail } from "@/lib/email/suppression";
+import { MAX_JITTER_MS } from "@/lib/email/sendWindow";
 import type {
   AccountStatus,
   CampaignKind,
@@ -180,6 +181,31 @@ interface CrmContactRow {
   company_id: string | null;
 }
 
+/**
+ * A `date` column in the shape PostgREST wants, read from the LOCAL calendar
+ * fields. `toISOString()` would project the instant into UTC first, so a
+ * local-midnight Date east of UTC would be written as the day before — the
+ * mirror image of the bug `fromDateOnly` exists to fix, and it would make the
+ * pair fail to round-trip.
+ */
+const toDateOnly = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/**
+ * Reads a `date` column back. PostgREST returns it as 'YYYY-MM-DD', and
+ * `new Date('2026-09-18')` parses a bare date as UTC midnight — which every
+ * reader then inspects with local getters (`getFullYear`, `getMonth`,
+ * `getDate`). West of UTC those answer the *previous* day, so "Warmup day N"
+ * on the mailbox card is off by one for every user in the Americas. Taking
+ * the year, month and day out of the string gives local midnight on the day
+ * the column actually names.
+ */
+const fromDateOnly = (value: string): Date | null => {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!parts) return null;
+  return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+};
+
 export const mapAccountRow = (row: EmailAccountRow): EmailAccount => ({
   id: row.id,
   organizationId: row.organization_id,
@@ -257,7 +283,7 @@ export const mapMailboxStatusRow = (row: MailboxStatusRow): MailboxHealth => ({
   // arithmetic.
   dailyLimit: row.daily_limit,
   warmupEnabled: row.warmup_enabled,
-  warmupStartedOn: row.warmup_started_on ? new Date(row.warmup_started_on) : null,
+  warmupStartedOn: row.warmup_started_on ? fromDateOnly(row.warmup_started_on) : null,
   warmupStartVolume: row.warmup_start_volume,
   warmupIncrement: row.warmup_increment,
 });
@@ -400,8 +426,6 @@ export const listMailboxStatus = async (orgId: string): Promise<MailboxHealth[]>
   return ((data ?? []) as MailboxStatusRow[]).map(mapMailboxStatusRow);
 };
 
-const toDateOnly = (d: Date): string => d.toISOString().slice(0, 10);
-
 export const updateAccountPool = async (accountId: string, input: PoolInput): Promise<void> => {
   const row: Record<string, unknown> = {
     ...(input.dailyLimit !== undefined ? { daily_limit: input.dailyLimit } : {}),
@@ -482,6 +506,16 @@ export const saveEmailSettings = async (orgId: string, settings: EmailSettings):
   }
   if (settings.jitterMinMs > settings.jitterMaxMs) {
     throw new Error("Jitter minimum must not be greater than the jitter maximum.");
+  }
+  if (settings.jitterMaxMs > MAX_JITTER_MS) {
+    throw new Error(
+      `The pause between messages cannot be longer than ${MAX_JITTER_MS / 1000} seconds.`,
+    );
+  }
+  // An empty day list saves cleanly and then matches no day of the week, so
+  // the organization silently stops sending with nothing on screen saying why.
+  if (settings.window.days.length === 0) {
+    throw new Error("Pick at least one day to send on.");
   }
 
   const row = {

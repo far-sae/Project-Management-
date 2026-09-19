@@ -10,7 +10,7 @@ import {
 import { Loader2, Save, Lock, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { getEmailSettings, saveEmailSettings } from '@/services/supabase/email';
-import { describeSendWindow } from '@/lib/email/sendWindow';
+import { describeSendWindow, MAX_JITTER_MS } from '@/lib/email/sendWindow';
 import type { EmailSettings } from '@/lib/email/types';
 
 interface SettingsTabProps {
@@ -112,9 +112,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
     }));
   };
 
+  // Turning off the last remaining day is refused rather than saved. An empty
+  // list is a perfectly valid array as far as the column is concerned, and
+  // isWithinSendWindow() then matches no day of the week — so the whole
+  // organization stops sending, silently, with a screen that looks saved.
   const toggleDay = (day: number) => {
     update((s) => {
       const has = s.window.days.includes(day);
+      if (has && s.window.days.length === 1) return s;
       const days = has ? s.window.days.filter((d) => d !== day) : [...s.window.days, day].sort((a, b) => a - b);
       return { ...s, window: { ...s.window, days } };
     });
@@ -130,8 +135,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
   // settings are saved. Accepted rather than fixed: this UI is meant to be
   // read and set in seconds, and a sub-second difference in a random pause
   // has no practical effect on pacing.
+  // Clamped at both ends. MAX_JITTER_MS is the same ceiling
+  // email_settings_jitter_ceiling_check enforces in migration 156: a pause
+  // long enough to push the tail of every batch past the end of the window is
+  // a typo, not a setting, and it would stop sending rather than slow it.
   const setJitterMinSeconds = (raw: string) => {
-    const minMs = Math.max(0, Number(raw) || 0) * 1000;
+    const minMs = Math.min(MAX_JITTER_MS, Math.max(0, Number(raw) || 0) * 1000);
     update((s) => ({
       ...s,
       jitterMinMs: minMs,
@@ -140,7 +149,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
   };
 
   const setJitterMaxSeconds = (raw: string) => {
-    const maxMs = Math.max(0, Number(raw) || 0) * 1000;
+    const maxMs = Math.min(MAX_JITTER_MS, Math.max(0, Number(raw) || 0) * 1000);
     update((s) => ({
       ...s,
       jitterMaxMs: maxMs,
@@ -297,6 +306,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
               </Button>
             ))}
           </div>
+          <p className="text-xs text-muted-foreground">
+            At least one day. With none selected nothing would ever send.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -317,7 +329,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
         <div className="space-y-2 border-t border-border pt-4">
           <Label>Pause between messages</Label>
           <p className="text-xs text-muted-foreground">
-            A random pause between messages, drawn fresh each time, keeps sending from looking automated.
+            A random pause between messages, drawn fresh each time, keeps sending from looking
+            automated. At most {MAX_JITTER_MS / 1000} seconds — a longer pause would push the end
+            of a batch past the end of the window instead of pacing it.
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
@@ -326,6 +340,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
                 id="jitter-min"
                 type="number"
                 min={0}
+                max={MAX_JITTER_MS / 1000}
                 value={Math.round(settings.jitterMinMs / 1000)}
                 onChange={(e) => setJitterMinSeconds(e.target.value)}
               />
@@ -336,6 +351,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
                 id="jitter-max"
                 type="number"
                 min={0}
+                max={MAX_JITTER_MS / 1000}
                 value={Math.round(settings.jitterMaxMs / 1000)}
                 onChange={(e) => setJitterMaxSeconds(e.target.value)}
               />

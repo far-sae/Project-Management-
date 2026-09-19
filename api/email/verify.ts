@@ -78,9 +78,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       text: 'This is a test message. Your sending account works.',
     });
 
+    // A send that actually worked settles every automatic doubt about this
+    // mailbox at once: the credential error, the failure streak
+    // record_mailbox_failure() has been counting, and the pause it imposed at
+    // three. Clearing only `status` left a mailbox that had been paused
+    // automatically still out of rotation with nothing on screen explaining
+    // why the test it just passed changed nothing.
     await db
       .from('email_accounts')
-      .update({ status: 'active', last_error: null, last_verified_at: new Date().toISOString() })
+      .update({
+        status: 'active',
+        last_error: null,
+        last_verified_at: new Date().toISOString(),
+        consecutive_failures: 0,
+        paused_reason: null,
+        is_active: true,
+      })
       .eq('id', accountId);
     return res.status(200).json({ ok: true });
   } catch (err: any) {

@@ -215,7 +215,18 @@ create table if not exists public.email_settings (
   constraint email_settings_window_order_check
     check (send_window_start < send_window_end),
   constraint email_settings_jitter_order_check
-    check (jitter_min_ms <= jitter_max_ms)
+    check (jitter_min_ms <= jitter_max_ms),
+  -- ...and a ceiling on the pause itself. The window bounds a batch and the
+  -- pause paces it, so a pause big enough to carry the tail of a batch past
+  -- send_window_end does not slow sending down, it stops it: those rows wait
+  -- for tomorrow's window. Five minutes already stretches a batch of fifty
+  -- over four hours, which is most of a working day, so anything past it is a
+  -- value typed with one zero too many. MAX_JITTER_MS in
+  -- src/lib/email/sendWindow.ts is the same number, and the settings screen
+  -- clamps to it; this is what catches a write that never went through the
+  -- screen.
+  constraint email_settings_jitter_ceiling_check
+    check (jitter_max_ms <= 300000)
 );
 
 alter table public.email_settings enable row level security;
@@ -688,11 +699,18 @@ begin
     -- bounced message did not consume the mailbox's allowance for the day,
     -- and the stale value it carries is never counted, because sent_today
     -- matches on status as well.
+    --
+    -- last_error is cleared too. A row that was greylisted, went back on the
+    -- queue and then delivered would otherwise keep the failure text from the
+    -- attempt before, and the campaign view reads that column straight out --
+    -- so a delivered message would sit in the list explaining why it had not
+    -- been sent.
     update public.email_messages m
        set status = 'sent',
            sent_at = now(),
            sent_account_id = p_account,
-           provider_message_id = p_provider_message_id
+           provider_message_id = p_provider_message_id,
+           last_error = null
      where m.id = p_message;
 
     -- A success clears the failure streak outright: three failures means
