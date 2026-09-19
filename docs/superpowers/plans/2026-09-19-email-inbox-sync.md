@@ -455,8 +455,9 @@ recording its calls, covering:
 
 1. A mailbox with no `imap_host` is skipped entirely: no connection attempted,
    no scan recorded.
-2. A reply from an address the mailbox sent to calls `record_inbox_result` with
-   kind `reply`, that address, and the envelope's time.
+2. A reply from an address the ORGANIZATION sent to calls `record_inbox_result`
+   with kind `reply`, that address, and the envelope's time. (Amended after the
+   org-wide ruling; see the design spec's "Matching a reply".)
 3. A sender the mailbox never wrote to produces no call at all.
 4. A bounce-shaped message calls `record_inbox_result` with kind `bounce` and
    the extracted address.
@@ -479,14 +480,18 @@ Expected: FAIL, the module does not exist.
 
 `worker/lib/inboxCycle.ts`: page through mailboxes with an `imap_host`, the way
 `readAll` in `engine.ts` pages, ordered deterministically. For each: decrypt the
-stored secret, compute the window with `scanWindow`, fetch envelopes, match
-against the addresses that mailbox sent to, record each reply, then fetch bounce
-candidates and record each extracted address, then `touch_inbox_scan`. Wrap each
+stored secret, compute the window with `scanWindow`, scan the mailbox in ONE
+IMAP session, match against the addresses the ORGANIZATION sent to, record each
+reply and each bounce the session brought back, then `touch_inbox_scan`. (Both
+amended after review: the scope is organization-wide, and the envelope walk and
+the bounce-source fetch are one session -- an IMAP command issued inside a
+`fetch` loop deadlocks. See the design spec.) Wrap each
 mailbox in its own try/catch so one failure cannot end the cycle, and classify a
 failure with `classifyImapError` so an authentication error is recorded as such.
 
-To match replies, read the distinct `to_email` values this account sent within a
-bounded window, for example the last thirty days, rather than the whole history.
+To match replies, read the distinct `to_email` values this ORGANIZATION sent
+within a bounded window, for example the last thirty days, rather than the whole
+history.
 Say so in a comment: an unbounded read would grow without limit.
 
 `worker/index.ts`: add the second loop on `INBOX_INTERVAL_MS`, defaulting to

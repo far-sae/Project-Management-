@@ -58,14 +58,43 @@ worker
 
 For each mailbox the worker fetches the envelopes of INBOX messages received
 since that mailbox's last scan, and matches each sender address against
-addresses that mailbox actually sent to. A match marks the most recent sent
-message to that address as replied, and stamps the contact.
+addresses **this organization** sent to recently — not against that one
+mailbox's own sends. The scope is organization-wide because pooled sending is
+the point of the mailbox pool: a campaign goes out through whichever mailbox
+was free, and the reply lands wherever From or Reply-To pointed, which is
+routinely a different mailbox. Matching per mailbox would drop those replies
+before the database saw them. Suppression is organization-wide in any case, so
+the tenant is the boundary that means anything here. A match marks the most
+recent sent message to that address as replied, and stamps the contact.
 
-Envelope-only fetching means no message body is ever pulled into the system.
-That keeps the scan fast and means a customer's inbox contents are not copied
-into our database, which matters because these are their own private mailboxes.
+**What counts as a reply:** any message in the scan window whose sender
+address matches one this organization sent to recently. That is a deliberately
+blunt definition and it includes automatic mail — an out-of-office autoresponder
+sent from the recipient's own address is currently counted as a reply, and so
+is a one-line "please use my new address". Phase 3 makes a reply STOP a
+sequence, which turns this into a decision with consequences: an out-of-office
+would then silence a follow-up for someone who never read the first message.
+Phase 3 should settle that deliberately rather than inherit it — either by
+detecting the auto-submitted headers (`Auto-Submitted: auto-replied`,
+`X-Autoreply`) and recording such a message as something other than a reply, or
+by ruling explicitly that it counts.
+
+Envelope-only fetching means no message body is ever pulled into the system for
+reply detection. That keeps the scan fast and means a customer's inbox contents
+are not copied into our database, which matters because these are their own
+private mailboxes.
 
 A sender that matches nothing we sent to is ignored entirely.
+
+Each mailbox is read in **one IMAP session**: connect, walk the window's
+envelopes, fetch the bodies of the bounce-shaped ones, disconnect. No IMAP
+command may be issued while a fetch is being iterated — the client serialises
+commands through one queue and the in-flight fetch holds it, so a nested
+command deadlocks until the socket times out.
+
+The scan window's own message times come from the server's `internalDate`,
+never from the `Date:` header, which is the sender's clock and is both
+routinely wrong and trivially forged.
 
 ### Detecting a bounce
 
@@ -75,13 +104,26 @@ the usual wording such as undeliverable, delivery status or returned mail. Only
 then is the body downloaded, and the failed address is extracted from the
 standard `Final-Recipient` field, falling back to an inline pattern.
 
+**Being a candidate is not evidence.** A subject line is whatever the person
+typing it decided to type, and a human reply to a forwarded bounce carries "Re:
+Undeliverable:" like any other reply. So a subject match earns a download and
+nothing else. To SUPPRESS, the message must additionally either come from a
+bounce notifier address, or declare itself a delivery status report by its
+content type (`multipart/report; report-type=delivery-status`, or
+`message/delivery-status`). Which of the two fired is recorded on the event, so
+a disputed suppression can be answered months later.
+
 The extracted address is suppressed with reason `bounced`, which the existing
 claim already enforces for every future campaign in that organization, and the
 matching sent message is marked bounced so the campaign's numbers are honest.
 
-An address is suppressed only when it matches something that mailbox sent to.
-A bounce for an address we never mailed is someone else's problem and must not
-land on the customer's suppression list.
+An address is suppressed only when it matches something **this organization**
+sent to, within the last thirty days. A bounce for an address we never mailed
+is someone else's problem and must not land on the customer's suppression list;
+and a notification naming an address last mailed in another quarter is not
+reporting on that message, so it must not mark it bounced either. The address
+that gets suppressed is the one we hold on the matched message, never the
+spelling the notification chose.
 
 ### Sent-folder sync
 
@@ -114,13 +156,31 @@ question about why an address was suppressed has an answer.
 IMAP failures are classified like SMTP ones, with provider-specific advice:
 Zoho needs an app password and IMAP access enabled, Google needs an app
 password, port 993 with TLS is standard. An authentication failure sets
-`imap_status` to error and stops scanning that mailbox until it is fixed. It
-must never pause sending, because a mailbox that cannot be read can still
-deliver perfectly well.
+`imap_status` to `error`, and every later scan goes on trying — there is no
+lockout, because the fix is a credential the admin changes and the next scan
+should simply pick it up. It must never pause sending, because a mailbox that
+cannot be read can still deliver perfectly well.
+
+`imap_status` has a fourth value, `incomplete`, and it is deliberately not
+`error`. It means the mailbox was read perfectly well and the scan then could
+not finish recording what it found — a failed write, a match set that could not
+be read, a credential that could not be opened out of the database, a cap
+reached before the window was read out. Nothing is wrong with the mailbox, so
+the Accounts screen must not say there is: an admin told `error` goes and
+re-enters a password that was never wrong.
 
 The scan window is bounded. The first scan of a mailbox looks back one day
 rather than its whole history, and each later scan starts from the last one,
 with an overlap of a few minutes so nothing falls between scans.
+
+`inbox_last_scan_at` is the scan CURSOR, not a log of when we last tried. Only
+a scan that read its whole window and recorded everything in it (`active`) may
+move it, and it moves to the moment that scan STARTED, so mail that arrived
+while a slow scan was running is read by the next one instead of stepped over.
+`error`, `incomplete` and `unconfigured` all leave it exactly where it was:
+there is unread mail behind the window in the first two cases and no window at
+all in the third, and advancing in any of them loses mail that fixing the cause
+will not bring back.
 
 ## Testing
 
