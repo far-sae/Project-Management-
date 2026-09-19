@@ -430,6 +430,9 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
                       </Badge>
                     )}
                     {!form.id && <Badge variant="secondary">Not saved yet</Badge>}
+                    {form.id && !form.campaignId && (
+                      <Badge variant="destructive">Will not send</Badge>
+                    )}
                   </div>
                 </div>
                 <div className="p-4 space-y-4">
@@ -437,6 +440,22 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
                     <p className="text-sm text-muted-foreground">
                       This step has already been sent, so its wording is fixed. Add a step after it
                       instead.
+                    </p>
+                  )}
+                  {/*
+                    A saved step with no campaign behind it cannot send: the
+                    claim refuses it, and the people who reach it wait here
+                    indefinitely rather than being skipped or dropped. It is
+                    reachable only when a save failed part way through, which
+                    is rare and self-inflicted by a dropped connection — but
+                    invisible is the one thing it must not be, because the
+                    sequence otherwise looks like it is running.
+                  */}
+                  {form.id && !form.campaignId && (
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      This step did not finish saving, so it will not be sent and anybody who
+                      reaches it will wait here. Save it again to fix it — nobody is lost in the
+                      meantime.
                     </p>
                   )}
                   {form.stepIndex > 0 && (

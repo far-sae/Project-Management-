@@ -473,6 +473,25 @@ export const saveStep = async (input: SaveStepInput): Promise<EmailSequenceStep>
 
     if (linkError) {
       logger.error("Failed to link a sequence step to its campaign:", linkError);
+      // Put the campaign back, because nothing else ever will. These three
+      // writes are not one transaction, and a failure here leaves a step that
+      // cannot send (claim_sequence_enrollments() refuses a step with no
+      // campaign) beside a campaign nothing points at. The step is recoverable
+      // -- saving it again builds a new campaign and links that -- but each
+      // retry would strand another one, and a 'sequence' campaign is invisible
+      // in the Campaigns list and never finalized, so they accumulate silently
+      // for ever.
+      //
+      // The delete is best-effort and its own failure is swallowed: the error
+      // the user needs is the one below, about the step, and reporting a
+      // cleanup failure instead would name the wrong problem.
+      const { error: cleanupError } = await supabase
+        .from("email_campaigns")
+        .delete()
+        .eq("id", campaign.id);
+      if (cleanupError) {
+        logger.error("Failed to clean up an orphaned step campaign:", cleanupError);
+      }
       throw linkError;
     }
 
