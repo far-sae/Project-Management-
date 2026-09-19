@@ -103,6 +103,14 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         password: form.password,
         dailyLimit: Number(form.dailyLimit) || 40,
       });
+      // Set the instant the account row exists, before anything else that
+      // could fail — updateAccountPool, refresh, or verification. Otherwise a
+      // failure in one of those lands in the catch block with
+      // pendingAccountId still null, canRetry reads false, the dialog offers
+      // "Save and verify" instead of "Retry verification", and a second
+      // submit creates a second mailbox row for the same SMTP account (there
+      // is no uniqueness constraint to stop it).
+      setPendingAccountId(account.id);
       // createAccount has no warmup arguments, so the ramp the admin picked
       // in the Sending section is applied right after — starting it today
       // when warmup is on, since a null warmup_started_on would otherwise
@@ -114,7 +122,6 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         warmupIncrement: Number(form.warmupIncrement) || 0,
       });
       await refresh();
-      setPendingAccountId(account.id);
       setCreating(false);
 
       const result = await runVerify(account.id);

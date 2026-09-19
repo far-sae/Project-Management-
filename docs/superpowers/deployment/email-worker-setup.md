@@ -45,8 +45,19 @@ Railway's replica count for this service must stay at 1.
 
 ## Deploying on Railway
 
+**Deploy from the repository root, not from `worker/`.** The worker cannot be
+built as an isolated folder: `worker/lib/engine.ts` and `worker/lib/dns.ts`
+import `@/lib/email/...`, which `worker/tsconfig.json`'s path mapping resolves
+to `../src/lib/email` — the same pure send-window, mailbox-pool and SMTP-error
+helpers the rest of the app uses, living outside `worker/` entirely. A build
+scoped to `worker/` would see neither those source files nor the packages
+(`tsx`, `@supabase/supabase-js`, `nodemailer`) that only the root
+`package.json` declares. There is nothing to fix inside `worker/` to make it
+self-contained — the fix is to not scope the build to it.
+
 1. In the Railway project, add a new service from this repository.
-2. Set **Root Directory** to `worker`.
+2. Leave **Root Directory** empty (or set it to the repository root — do
+   **not** set it to `worker`).
 3. Set **Build Command** to:
 
    ```
@@ -56,31 +67,19 @@ Railway's replica count for this service must stay at 1.
 4. Set **Start Command** to:
 
    ```
-   npm start
+   npm run worker
    ```
 
-   (`worker/package.json`'s `start` script runs `tsx index.ts` — there is no
-   compile step; `tsx` runs the TypeScript source directly.)
+   This is the root `package.json`'s own `worker` script
+   (`"worker": "tsx worker/index.ts"`) — it already exists, runs from the
+   repository root, and needs nothing added. There is no compile step; `tsx`
+   runs the TypeScript source directly.
 
 5. Set the five environment variables below (Production only — this project
    has no separate Railway "preview" environment for the worker).
 6. Deploy, then confirm it started (next section).
 7. Set the service's **replica count to 1**. Running two copies is the one
    configuration this guide exists to prevent — see the warning above.
-
-> **`worker/package.json` deliberately lists no dependencies of its own.**
-> `tsx`, `@supabase/supabase-js` and `nodemailer` are declared once, in the
-> repository's root `package.json`, and `worker/index.ts` imports them the
-> same way the rest of the app does. Node resolves a bare import by walking
-> up from the importing file's directory, so this works as long as the root
-> `node_modules` actually exists on the same checkout the worker runs from.
-> If Railway's build logs show `tsx: command not found` or a
-> `Cannot find module '@supabase/supabase-js'` error, the Root Directory
-> setting caused the install step to run only inside `worker/` against its
-> (empty) dependency list. The fix is to make the build command install the
-> repository root's dependencies too, e.g. `npm install --prefix ..`
-> alongside the `worker/` install, rather than adding a duplicate copy of
-> these packages to `worker/package.json`.
 
 ### The five environment variables
 
@@ -115,9 +114,10 @@ On a clean start, the very first line is:
 ```
 
 If that line never appears, the process did not start — check the build logs
-for a missing dependency (see the callout above) or a startup error naming a
-missing environment variable (`worker/lib/db.ts`'s `env()` names the variable,
-never its value).
+for a missing dependency or module (see the Root Directory note above and the
+matching Troubleshooting row below) or a startup error naming a missing
+environment variable (`worker/lib/db.ts`'s `env()` names the variable, never
+its value).
 
 After that, a healthy worker logs **only when there's something to say**:
 
@@ -149,6 +149,7 @@ does and does not guarantee.
 
 | Symptom | What's actually happening | Check |
 |---|---|---|
+| The worker exits immediately, or the build fails with `tsx: command not found` / `Cannot find module '@supabase/supabase-js'` / `Cannot find module '@/lib/email/...'` | Root Directory was set to `worker` instead of the repository root. Scoped that way, the build never sees the root `package.json`'s dependencies or the `src/lib/email` source the worker imports — see the note at the top of "Deploying on Railway" above. | Set Root Directory back to empty/repository root, Build Command `npm install`, Start Command `npm run worker`, and redeploy. |
 | Nothing sends, campaigns stay `queued`/`sending` | Not a crash — this is the normal shape of "nothing to do." Either the pool is empty (`blockedReason()`: no mailboxes configured, every mailbox paused, or every mailbox has used its daily allowance) or every organization is currently outside its configured send window (`describeSendWindow()`). | Read the worker's `idle — <reason>` log line — it says which of the two, in words. Cross-check against the **Accounts** tab (mailbox status, paused reason) and the **Settings** tab (send window) in `/email`. |
 | A mailbox stops sending and shows a red reason on the Accounts screen | Three consecutive SMTP failures paused it (`record_send_result()`'s `permanent` branch, matching `MAX_CONSECUTIVE_FAILURES` in `src/lib/email/mailboxPool.ts`). The reason is `friendlySmtpError()`'s message, which **names the provider** — Zoho, IONOS, Google or Microsoft — and what to do about it (an app password, re-enabling SMTP AUTH, etc.), because the fix differs by host. | Read the paused reason on the mailbox card, fix the credential or provider setting it names, then use **Resume** (admin only) to put it back in rotation. |
 | A campaign's messages are stuck in `sending` after the worker crashed or was killed mid-batch | Expected, and self-healing — not a bug to chase. `claim_email_batch()`'s stuck-row sweep (migration 156, carried over from 155) runs on every claim and settles any row that has been `sending` for more than ten minutes: `sent` if a `provider_message_id` proves it was actually delivered, `failed` once its three attempts are spent, otherwise back to `queued`. | Give it up to ten minutes and check again — no manual intervention needed. If rows are still stuck well past that, confirm the worker is actually running (see the previous section) rather than editing rows by hand. |

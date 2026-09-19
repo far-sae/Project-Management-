@@ -7,9 +7,10 @@ import { Switch } from '@/components/ui/switch';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Save, Lock } from 'lucide-react';
+import { Loader2, Save, Lock, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { getEmailSettings, saveEmailSettings } from '@/services/supabase/email';
+import { describeSendWindow } from '@/lib/email/sendWindow';
 import type { EmailSettings } from '@/lib/email/types';
 
 interface SettingsTabProps {
@@ -23,6 +24,9 @@ const WEEKDAYS: { value: number; label: string }[] = [
   { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' }, { value: 6, label: 'Sat' },
   { value: 7, label: 'Sun' },
 ];
+
+const dayLabels = (days: number[]): string =>
+  WEEKDAYS.filter((d) => days.includes(d.value)).map((d) => d.label).join(', ') || 'No days selected';
 
 // A short curated list, not every IANA zone — same "plain Select" pattern as
 // the currency picker on the Contracts page. The organization's saved zone is
@@ -46,22 +50,34 @@ const formatHour = (h: number): string => {
 /**
  * The send window, weekday and jitter settings for the whole organization.
  * Migration 156 constrains send_window_start to 0-23, send_window_end to
- * 1-24, and requires start < end — the two selects below only ever offer
- * choices that keep that true, so an invalid pair cannot be built here.
+ * 1-24, and requires start < end, and jitter_min_ms <= jitter_max_ms — the
+ * two hour selects and the two jitter inputs below only ever offer, or nudge
+ * toward, choices that keep both true, so an invalid pair cannot be built
+ * here and submitted.
+ *
+ * Only an admin ever sees the editable form: a member gets a read-only
+ * summary instead of the same controls disabled, per the admin-only gate —
+ * omitted from the DOM, not just styled unusable.
  */
 export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTimezone }) => {
   const [settings, setSettings] = useState<EmailSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     if (!orgId) { setLoading(false); return; }
     setLoading(true);
+    setLoadError(null);
     getEmailSettings(orgId, orgTimezone)
       .then(setSettings)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load email settings'))
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Failed to load email settings'))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
@@ -104,17 +120,45 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
     });
   };
 
+  // Same nudge-the-other-bound approach as the hour selects, so
+  // jitterMinMs <= jitterMaxMs holds after every edit rather than only being
+  // checked (and rejected) by saveEmailSettings once Save is pressed.
+  //
+  // Displayed and edited in whole seconds. If the stored value isn't an
+  // exact multiple of 1000ms — e.g. seeded directly in the database —
+  // touching either field rounds it to the nearest second the next time
+  // settings are saved. Accepted rather than fixed: this UI is meant to be
+  // read and set in seconds, and a sub-second difference in a random pause
+  // has no practical effect on pacing.
+  const setJitterMinSeconds = (raw: string) => {
+    const minMs = Math.max(0, Number(raw) || 0) * 1000;
+    update((s) => ({
+      ...s,
+      jitterMinMs: minMs,
+      jitterMaxMs: s.jitterMaxMs < minMs ? minMs : s.jitterMaxMs,
+    }));
+  };
+
+  const setJitterMaxSeconds = (raw: string) => {
+    const maxMs = Math.max(0, Number(raw) || 0) * 1000;
+    update((s) => ({
+      ...s,
+      jitterMaxMs: maxMs,
+      jitterMinMs: s.jitterMinMs > maxMs ? maxMs : s.jitterMinMs,
+    }));
+  };
+
   const handleSave = async () => {
     if (!isAdmin || !settings) return;
     setSaving(true);
-    setError(null);
+    setSaveError(null);
     try {
       await saveEmailSettings(orgId, settings);
       toast.success('Email settings saved');
     } catch (err) {
       // saveEmailSettings throws a readable message for an out-of-order
       // window or jitter range — surfaced as-is rather than a generic failure.
-      setError(err instanceof Error ? err.message : 'Failed to save email settings');
+      setSaveError(err instanceof Error ? err.message : 'Failed to save email settings');
     } finally {
       setSaving(false);
     }
@@ -131,7 +175,50 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
     );
   }
 
+  if (loadError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Sending schedule</CardTitle>
+        </CardHeader>
+        <CardContent className="py-12 text-center">
+          <p className="text-sm text-red-600 dark:text-red-400 mb-4">{loadError}</p>
+          <Button variant="outline" onClick={load}>
+            <RefreshCw className="w-4 h-4 mr-2" />Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!settings) return null;
+
+  if (!isAdmin) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Sending schedule</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            When your organization sends, and how it paces messages between them.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Lock className="w-4 h-4" />Only an organization owner or admin can change these settings.
+          </div>
+          <div className="p-4 bg-secondary/40 border border-border rounded-lg space-y-1.5 text-sm">
+            <p className="text-foreground">{describeSendWindow(settings.window)}</p>
+            <p className="text-muted-foreground">Days: {dayLabels(settings.window.days)}</p>
+            <p className="text-muted-foreground">Timezone: {settings.window.timezone}</p>
+            <p className="text-muted-foreground">
+              Pauses {Math.round(settings.jitterMinMs / 1000)}–{Math.round(settings.jitterMaxMs / 1000)}{' '}
+              seconds between messages.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const timezoneOptions = COMMON_TIMEZONES.includes(settings.window.timezone)
     ? COMMON_TIMEZONES
@@ -148,14 +235,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
-        {!isAdmin && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Lock className="w-4 h-4" />Only an organization owner or admin can change these settings.
-          </div>
-        )}
-        {error && (
+        {saveError && (
           <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-md">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-red-700 dark:text-red-300">{saveError}</p>
           </div>
         )}
 
@@ -167,7 +249,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
           <Switch
             id="window-enabled"
             checked={settings.window.enabled}
-            disabled={!isAdmin}
             onCheckedChange={(v) => update((s) => ({ ...s, window: { ...s.window, enabled: v } }))}
           />
         </div>
@@ -175,7 +256,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Start hour</Label>
-            <Select value={String(settings.window.startHour)} onValueChange={setStartHour} disabled={!isAdmin}>
+            <Select value={String(settings.window.startHour)} onValueChange={setStartHour}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {startOptions.map((h) => (
@@ -186,7 +267,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
           </div>
           <div className="space-y-2">
             <Label>End hour</Label>
-            <Select value={String(settings.window.endHour)} onValueChange={setEndHour} disabled={!isAdmin}>
+            <Select value={String(settings.window.endHour)} onValueChange={setEndHour}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {endOptions.map((h) => (
@@ -206,7 +287,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
                 type="button"
                 size="sm"
                 variant={settings.window.days.includes(d.value) ? 'default' : 'outline'}
-                disabled={!isAdmin}
                 onClick={() => toggleDay(d.value)}
               >
                 {d.label}
@@ -219,7 +299,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
           <Label>Timezone</Label>
           <Select
             value={settings.window.timezone}
-            disabled={!isAdmin}
             onValueChange={(v) => update((s) => ({ ...s, window: { ...s.window, timezone: v } }))}
           >
             <SelectTrigger className="w-full sm:w-80"><SelectValue /></SelectTrigger>
@@ -243,11 +322,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
                 id="jitter-min"
                 type="number"
                 min={0}
-                disabled={!isAdmin}
                 value={Math.round(settings.jitterMinMs / 1000)}
-                onChange={(e) => update((s) => ({
-                  ...s, jitterMinMs: Math.max(0, Number(e.target.value) || 0) * 1000,
-                }))}
+                onChange={(e) => setJitterMinSeconds(e.target.value)}
               />
             </div>
             <div className="space-y-1">
@@ -256,24 +332,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
                 id="jitter-max"
                 type="number"
                 min={0}
-                disabled={!isAdmin}
                 value={Math.round(settings.jitterMaxMs / 1000)}
-                onChange={(e) => update((s) => ({
-                  ...s, jitterMaxMs: Math.max(0, Number(e.target.value) || 0) * 1000,
-                }))}
+                onChange={(e) => setJitterMaxSeconds(e.target.value)}
               />
             </div>
           </div>
         </div>
 
-        {isAdmin && (
-          <div className="flex justify-end">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Save settings
-            </Button>
-          </div>
-        )}
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+            Save settings
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
