@@ -1,7 +1,7 @@
 // Tests for worker/lib/inboxCycle.ts — the inbox cycle.
 //
 // Like the send cycle's test, every side effect reaches the cycle through its
-// deps: the Supabase client, the two IMAP reads and the clock are all stubs
+// deps: the Supabase client, the one IMAP session and the clock are all stubs
 // here, so this runs with no network, no mail server and no database. The
 // assertions are on the calls that were RECORDED — which mailbox was scanned,
 // from what window, and what was written back — rather than on what the stubs
@@ -259,8 +259,9 @@ describe('runInboxCycle', () => {
     const result = await runInboxCycle(h.deps);
 
     // Nothing connected, and — the point of rule 3 — no scan recorded either:
-    // touch_inbox_scan('unconfigured') here would advance the cursor of a
-    // mailbox somebody may configure five minutes from now.
+    // Not even touch_inbox_scan('unconfigured'): a scan that was never made
+    // should leave no trace of having been made, on a mailbox somebody may
+    // configure five minutes from now.
     expect(h.scan).not.toHaveBeenCalled();
     expect(h.rpcCalls).toHaveLength(0);
     expect(result.scanned).toBe(0);
@@ -288,6 +289,78 @@ describe('runInboxCycle', () => {
     });
     expect(result.replies).toBe(1);
     expect(result.errors).toEqual([]);
+  });
+
+  it('records a reply once, not again on every overlapping window', async () => {
+    // The scan window overlaps the last one by three minutes against a
+    // five-minute loop, so the same reply is seen at least twice by
+    // construction. record_inbox_result writes an email_inbox_events row for
+    // every match it is handed, so this used to leave at least one duplicate
+    // per reply in the table support reads.
+    const h = makeDeps(
+      {
+        mailboxes: [mailboxRow()],
+        secrets: [secretRow()],
+        messages: [sentRow('ada@acme.com', { replied_at: '2026-09-19T11:55:00Z' })],
+      },
+      { envelopes: [envelope()] },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    expect(h.results()).toHaveLength(0);
+    expect(result.replies).toBe(0);
+    // And the scan completed: there was nothing left to do, not something left
+    // undone.
+    expect(h.touches()[0].args).toMatchObject({ p_status: 'active' });
+  });
+
+  it('still records a reply when the last message to that address has none', async () => {
+    // The other half of the same check: a second campaign to somebody who
+    // replied to the first one is a new reply, not a duplicate.
+    const h = makeDeps(
+      {
+        mailboxes: [mailboxRow()],
+        secrets: [secretRow()],
+        messages: [
+          sentRow('ada@acme.com', { id: 'msg-new', sent_at: '2026-09-19T08:00:00Z' }),
+          sentRow('ada@acme.com', {
+            id: 'msg-old',
+            sent_at: '2026-08-01T09:00:00Z',
+            replied_at: '2026-08-01T10:00:00Z',
+          }),
+        ],
+      },
+      { envelopes: [envelope()] },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    expect(h.results()).toHaveLength(1);
+    expect(result.replies).toBe(1);
+  });
+
+  it('reports a database failure opening the credential as incomplete', async () => {
+    // The secret read and the decrypt used to sit outside the try that maps to
+    // 'incomplete', so a rejected query there was classified by
+    // classifyImapError as a mailbox failure: a red CREDENTIAL error on the
+    // Accounts card, carrying a raw database message, for a mailbox whose host
+    // and app password were both fine.
+    const h = makeDeps({ mailboxes: [mailboxRow()], secrets: [] });
+
+    const result = await runInboxCycle(h.deps);
+
+    const args = h.touches()[0].args as { p_status: string; p_error: string };
+    expect(args.p_status).toBe('incomplete');
+    expect(args.p_status).not.toBe('error');
+    expect(args.p_error).toMatch(/could not be opened/i);
+    expect(args.p_error).toMatch(/sending is unaffected/i);
+    // Nothing was connected to, and nothing was charged to the send path.
+    expect(h.scan).not.toHaveBeenCalled();
+    expect(h.names()).not.toContain('record_mailbox_failure');
+    expect(h.writes).toEqual([]);
+    expect(result.scanned).toBe(0);
+    expect(result.errors).toHaveLength(1);
   });
 
   it('records a reply that lands in one mailbox for what a sibling sent', async () => {

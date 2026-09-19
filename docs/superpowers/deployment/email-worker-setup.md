@@ -274,15 +274,35 @@ inline definition, specifically so a database that already ran an earlier
 revision of this migration ends up with the same four-value constraint either
 way. That rewrite is the one assumption in the whole migration nobody has
 been able to exercise against a real database before this feature saw
-traffic — run this once, right after applying it, against any mailbox row in
-the Supabase SQL editor:
+traffic — run this once, right after applying it, in the Supabase SQL editor.
+
+**Pick a mailbox with no `imap_host`.** The first query below finds one. A
+mailbox that is being scanned must not be used here: the check writes
+`imap_status` and `imap_last_error` on the row it names, and while the two
+statuses used below both leave `inbox_last_scan_at` alone, restoring a row
+whose status was `'active'` would mean calling `touch_inbox_scan(..., 'active',
+...)`, and `'active'` is the one status that moves the scan cursor. Moving it
+by hand skips whatever arrived in the window it steps over, which is a day of
+that customer's replies and bounces, unrecoverably. An unconfigured mailbox
+has no cursor to lose.
 
 ```sql
+-- A mailbox that is not being scanned, which is the only safe subject for
+-- this check. If this returns nothing, every mailbox on this database has
+-- IMAP configured: skip the check rather than running it against a live one
+-- (the constraint rewrite will be exercised by the first real scan anyway,
+-- and a failure shows up as a raise from the worker, not as lost mail).
+select id, from_email, imap_status
+  from public.email_accounts
+ where coalesce(trim(imap_host), '') = ''
+ limit 1;
+
 -- Confirms the constraint accepts 'incomplete' specifically -- the one
 -- status value nothing else in the app writes until a real scan hits the
--- code path that produces it. Replace <account-id> with any row from
--- email_accounts; this writes and reads back, then restores what it found.
-select imap_status as before_value from public.email_accounts where id = '<account-id>';
+-- code path that produces it. Replace <account-id> with the id printed
+-- above; this writes and reads back, then restores what it found.
+select imap_status as before_value, inbox_last_scan_at as before_cursor
+  from public.email_accounts where id = '<account-id>';
 
 select public.touch_inbox_scan('<account-id>', 'incomplete', null);
 
@@ -293,9 +313,14 @@ select imap_status, imap_last_error, inbox_last_scan_at
 -- the scan cursor rather than advancing it (migration 157, part e), which is
 -- what lets the next real scan re-read the same window.
 
--- Put the row back the way it was found (use the value the first select
--- above printed, typically 'unconfigured' for a mailbox with no imap_host):
+-- Put the row back the way it was found. 'unconfigured' is what an unscanned
+-- mailbox carries, and it holds the cursor too, so this restore changes
+-- nothing but the status column.
 select public.touch_inbox_scan('<account-id>', 'unconfigured', null);
+
+-- Confirm the cursor is exactly where before_cursor said it was.
+select imap_status, inbox_last_scan_at
+  from public.email_accounts where id = '<account-id>';
 ```
 
 If the middle `select` instead raises a constraint violation, the rewrite did

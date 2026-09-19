@@ -594,13 +594,24 @@ begin
   -- at twenty-four hours, so a mailbox broken for a week looks back one day
   -- when it recovers, not a week.
   --
-  -- 'error' and 'incomplete' are the two statuses that hold the cursor, for
-  -- the same reason and about two different failures: 'error' is the mailbox
-  -- we could not read, 'incomplete' is the mailbox we read but whose replies
-  -- and bounces we could not finish recording. Either way there is work behind
-  -- this window that has not been done, so the window must come round again.
-  -- 'active' advances the cursor, and so does 'unconfigured' -- there is
-  -- nothing unread behind a mailbox that is not being scanned.
+  -- 'error' and 'incomplete' both hold the cursor, for the same reason and
+  -- about two different failures: 'error' is the mailbox we could not read,
+  -- 'incomplete' is the mailbox we read but whose replies and bounces we could
+  -- not finish recording. Either way there is work behind this window that has
+  -- not been done, so the window must come round again.
+  -- 'unconfigured' holds it too, and for a plainer reason than the other two:
+  -- there is nothing to advance TO for a mailbox nobody scanned. The cursor is
+  -- the START of the next window, so moving it forward on behalf of a scan
+  -- that read nothing can only ever skip mail. It used to advance on the
+  -- grounds that there is nothing unread behind a mailbox that is not being
+  -- scanned, which is true of the mailbox this status describes and not true
+  -- of the ways the status is actually reached: it is the default every row
+  -- carries, it is what the deployment guide's own verification step writes
+  -- back by hand, and a mailbox is 'unconfigured' for exactly as long as it
+  -- takes somebody to paste a host in. Advancing there costs a real customer a
+  -- day of replies for a status check. 'active' is now the only status that
+  -- moves it, which is the only one that has read the window it is stepping
+  -- over.
   --
   -- What it advances TO is p_scanned_at, the moment the scan STARTED, falling
   -- back to now() only for a caller that passes nothing. The difference is not
@@ -627,7 +638,7 @@ begin
   -- email_accounts, and the three columns set here are the only ones touched.
   update public.email_accounts a
      set inbox_last_scan_at = case
-                                when p_status in ('error','incomplete')
+                                when p_status in ('error','incomplete','unconfigured')
                                   then a.inbox_last_scan_at
                                 else coalesce(p_scanned_at, now())
                               end,

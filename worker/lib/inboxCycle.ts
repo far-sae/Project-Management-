@@ -5,7 +5,7 @@
 // recipient replied, or the message bounced some time after SMTP accepted it —
 // and hands each of them to record_inbox_result() (migration 157).
 //
-// Everything with a side effect — the database, the two IMAP reads, the clock
+// Everything with a side effect — the database, the IMAP session, the clock
 // — arrives through `InboxDeps`, so `runInboxCycle` runs end to end in
 // tests/unit/emailInboxCycle.test.ts with no network, no database and no mail
 // server. No decision about what an envelope MEANS lives here either: that is
@@ -23,12 +23,12 @@
 //     may still deliver perfectly well, and pausing the pool over an unreadable
 //     inbox would be a self-inflicted outage. The inbox's own outcome goes to
 //     touch_inbox_scan() and nowhere else.
-//   * A mailbox with no imap_host is skipped WITHOUT recording a scan.
-//     'unconfigured' is never reported for a mailbox that has a host, because
-//     touch_inbox_scan() holds the cursor only on 'error' and 'incomplete' —
-//     every other status advances inbox_last_scan_at, so reporting
-//     'unconfigured' for a configured mailbox would step the window straight
-//     over mail nobody could read.
+//   * A mailbox with no imap_host is skipped WITHOUT recording a scan, and
+//     'unconfigured' is never reported from here for any mailbox. Since this
+//     file was written, touch_inbox_scan() holds the cursor for that status
+//     too — nothing has been read, so there is nothing to advance over — but
+//     the rule stands for a second reason the status could not fix: a scan
+//     that was never made should leave no trace of having been made.
 //   * Those two cursor-holding statuses mean different things and must stay
 //     apart: 'error' is a mailbox that could not be READ (the login, the
 //     host), 'incomplete' is one that was read but whose findings could not
@@ -112,6 +112,20 @@ export interface InboxResult {
  */
 interface SentAddresses {
   addresses: string[];
+  /**
+   * Of those, the ones whose MOST RECENT sent message already carries a
+   * replied_at. Normalised, so it can be looked up with what matchReplies
+   * returns.
+   *
+   * This is what keeps the same reply from being written as an event on every
+   * pass. The scan window overlaps the previous one by three minutes against a
+   * five-minute loop, so a reply is seen at least twice by construction, and
+   * record_inbox_result() writes an email_inbox_events row for every match it
+   * is handed — matched or not, repeat or not. The reply itself is already
+   * idempotent (the update is gated on `replied_at is null`); the event table
+   * was not, and it is the table support reads.
+   */
+  alreadyReplied: Set<string>;
   ok: boolean;
 }
 
@@ -201,12 +215,12 @@ export async function runInboxCycle(deps: InboxDeps): Promise<InboxResult> {
    * cursor for each of them too, which is how the replies would have been lost
    * for good rather than merely late.
    */
-  const sentByOrg = new Map<string, string[]>();
+  const sentByOrg = new Map<string, SentAddresses>();
   const sentAddresses = async (organizationId: string, now: Date): Promise<SentAddresses> => {
     const cached = sentByOrg.get(organizationId);
-    if (cached) return { addresses: cached, ok: true };
+    if (cached) return cached;
     const read = await readSentAddresses(deps, note, organizationId, now);
-    if (read.ok) sentByOrg.set(organizationId, read.addresses);
+    if (read.ok) sentByOrg.set(organizationId, read);
     return read;
   };
 
@@ -215,10 +229,10 @@ export async function runInboxCycle(deps: InboxDeps): Promise<InboxResult> {
     if (stopped(deps)) return result;
 
     // IMAP is optional and stays optional. No host means this mailbox is not
-    // scanned at all — no connection, and no scan recorded: touch_inbox_scan()
-    // advances the cursor for every status but 'error', and a mailbox somebody
-    // configures an hour from now would then start with a day of its inbox
-    // already behind the window.
+    // scanned at all — no connection, and no scan recorded, not even an
+    // 'unconfigured' one. There is nothing to say about a mailbox nobody
+    // looked at, and a row that has never been scanned is exactly what the
+    // first scan after somebody fills the host in needs to find.
     // A blank host is no host; `hasImapHost` is the one place that decides.
     if (!hasImapHost(row)) continue;
 
@@ -308,28 +322,49 @@ async function scanMailbox(
   // go and fix.
   const who = row.from_email;
 
-  const secretRes = await deps.db
-    .from('email_account_secrets')
-    .select('secret_encrypted')
-    .eq('account_id', row.id)
-    .single();
-  if (secretRes.error || !secretRes.data) {
-    // Recorded as a failed scan, not as 'unconfigured': there IS a host, so
-    // there is mail behind this window that nobody read, and the cursor has to
-    // stay where it is until the credential can be opened again.
-    throw new Error(secretRes.error?.message ?? 'this mailbox has no stored password');
-  }
-
+  /**
+   * Opening the credential is 'incomplete', never 'error'.
+   *
+   * This whole block sat outside the try that maps to 'incomplete', so a
+   * rejected `email_account_secrets` read — a database blip, a dropped
+   * connection, PostgREST restarting — was thrown into the caller's catch,
+   * classified by classifyImapError() as a mailbox failure and shown on the
+   * Accounts card as a red CREDENTIAL error carrying a raw database message.
+   * That is precisely what 'incomplete' was added to prevent: it sends an
+   * admin to re-enter an app password that was never wrong.
+   *
+   * The decrypt is in here for the same reason. A stored value that will not
+   * open is not a rejected login and not an unreachable host; the mailbox has
+   * not been contacted at all. Both statuses hold the cursor (migration 157e),
+   * so nothing behind this window is lost either way — the difference is only
+   * what the admin is told, and 'error' would be telling them something
+   * untrue. The sentence written alongside still names what failed, so a
+   * mailbox stuck here is not stuck silently.
+   */
   let password: string;
   try {
+    const secretRes = await deps.db
+      .from('email_account_secrets')
+      .select('secret_encrypted')
+      .eq('account_id', row.id)
+      .single();
+    if (secretRes.error || !secretRes.data) {
+      throw new Error(secretRes.error?.message ?? 'this mailbox has no stored password');
+    }
     password = await decryptSecret(
       String((secretRes.data as { secret_encrypted: string }).secret_encrypted),
       deps.env.tokenKey,
     );
   } catch (err) {
-    // Never echo the stored value: the reason it would not decrypt is not
-    // worth leaking a credential over.
-    throw new Error(`the stored password could not be decrypted (${short(err)})`);
+    // Never echo the stored value: the reason it would not open is not worth
+    // leaking a credential over, and `short` bounds whatever the database
+    // said to one line.
+    const detail =
+      `The stored password for this mailbox could not be opened (${short(err)}). ` +
+      'The same window will be read again; sending is unaffected.';
+    note(who, detail);
+    await touch(deps, note, row, 'incomplete', detail, who);
+    return;
   }
 
   const cfg = imapConfigFor(row, password);
@@ -398,6 +433,13 @@ async function scanMailbox(
     // and the same window is read again next pass.
     if (!sentTo.ok) incomplete = true;
     for (const reply of matchReplies(envelopes, sentTo.addresses)) {
+      // Already answered, already recorded. The overlap between windows means
+      // this scan sees the same reply the last one did, and every pass used to
+      // write another email_inbox_events row for it — at least one duplicate
+      // per reply, for ever, in the table support reads to answer "when did
+      // this person get back to us". The flag comes back from the address read
+      // that had to happen anyway, so this costs nothing.
+      if (sentTo.alreadyReplied.has(reply.address)) continue;
       const recorded = await record(deps, note, row, 'reply', reply.address, reply.at, who);
       if (recorded) result.replies += 1;
       else incomplete = true;
@@ -510,6 +552,14 @@ async function readSentAddresses(
 ): Promise<SentAddresses> {
   const floor = new Date(now.getTime() - SENT_LOOKBACK_MS).toISOString();
   const addresses = new Set<string>();
+  /**
+   * Normalised address → whether the FIRST row seen for it carried a
+   * replied_at. The read is ordered `sent_at desc`, so the first row for an
+   * address is its most recent message, which is the one record_inbox_result()
+   * would match a reply against. `has()` guards it so a later, older message
+   * to the same person cannot overwrite the answer.
+   */
+  const latest = new Map<string, boolean>();
   let offset = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -518,7 +568,9 @@ async function readSentAddresses(
     // pass reads the same thirty days — and the established pattern here.
     const res = await deps.db
       .from('email_messages')
-      .select('id, to_email')
+      // replied_at comes back with the address it belongs to, which is what
+      // makes the duplicate-event check free: the read has to happen anyway.
+      .select('id, to_email, replied_at')
       .eq('organization_id', organizationId)
       .gte('sent_at', floor)
       .order('sent_at', { ascending: false })
@@ -529,11 +581,19 @@ async function readSentAddresses(
         `organisation ${organizationId}`,
         `the recently sent addresses could not be read: ${res.error.message}`,
       );
-      return { addresses: [...addresses], ok: false };
+      return { addresses: [...addresses], alreadyReplied: repliedSet(latest), ok: false };
     }
 
-    const batch = (res.data ?? []) as unknown as Array<{ to_email: string | null }>;
-    for (const sent of batch) if (sent.to_email) addresses.add(sent.to_email);
+    const batch = (res.data ?? []) as unknown as Array<{
+      to_email: string | null;
+      replied_at: string | null;
+    }>;
+    for (const sent of batch) {
+      if (!sent.to_email) continue;
+      addresses.add(sent.to_email);
+      const key = normalizeAddress(sent.to_email);
+      if (key !== '' && !latest.has(key)) latest.set(key, sent.replied_at != null);
+    }
     if (batch.length === 0) break;
     offset += batch.length;
 
@@ -556,7 +616,14 @@ async function readSentAddresses(
     }
   }
 
-  return { addresses: [...addresses], ok: true };
+  return { addresses: [...addresses], alreadyReplied: repliedSet(latest), ok: true };
+}
+
+/** The addresses whose most recent message already carries a reply time. */
+function repliedSet(latest: Map<string, boolean>): Set<string> {
+  const out = new Set<string>();
+  for (const [address, replied] of latest) if (replied) out.add(address);
+  return out;
 }
 
 /**
@@ -619,10 +686,11 @@ async function touch(
   note: Note,
   row: MailboxRow,
   /**
-   * Never 'unconfigured': a mailbox with no host reaches no scan at all, and
-   * that status advances the cursor. 'error' is a mailbox that could not be
-   * read; 'incomplete' is one that was read but not fully recorded. Both hold
-   * the cursor, and they stay apart because the Accounts screen shows them.
+   * Never 'unconfigured': a mailbox with no host reaches no scan at all, so
+   * there is nothing for this function to say about it. 'error' is a mailbox
+   * that could not be read; 'incomplete' is one that was read but not fully
+   * recorded. Both hold the cursor, and they stay apart because the Accounts
+   * screen shows them.
    */
   status: 'active' | 'error' | 'incomplete',
   error: string | null,
