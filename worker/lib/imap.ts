@@ -23,6 +23,55 @@ export interface ImapConfig {
   password: string;
 }
 
+/** The default migration 157 gives imap_port, for a row read before it applied. */
+const DEFAULT_IMAP_PORT = 993;
+
+/**
+ * The mailbox columns an IMAP login is built from.
+ *
+ * There is no imap_username on purpose: the same credential serves both
+ * protocols (migration 157a), so the SMTP username and the stored secret are
+ * what the IMAP login uses too.
+ */
+export interface ImapAccountColumns {
+  imap_host: string | null;
+  imap_port: number | null;
+  imap_secure: boolean | null;
+  smtp_username: string;
+}
+
+/**
+ * Whether a mailbox has IMAP configured at all.
+ *
+ * A BLANK host is no host. The column is free text with no constraint, so a
+ * row saved with a cleared field holds '' rather than null, and a config built
+ * from it would connect to nothing and report the failure as a broken mailbox
+ * — for a customer who simply never turned IMAP on.
+ */
+export function hasImapHost(row: Pick<ImapAccountColumns, 'imap_host'>): boolean {
+  return (row.imap_host ?? '').trim() !== '';
+}
+
+/**
+ * The IMAP login for a mailbox row, or null when it has none.
+ *
+ * One definition for both cycles: worker/lib/inboxCycle.ts reads the mailbox
+ * with it and worker/lib/engine.ts files its sent copies with it. The rule
+ * that a mailbox without a host is skipped ENTIRELY — no connection, no
+ * failure reported — is load-bearing in both, and two copies of it would
+ * eventually disagree about a blank string or a missing port.
+ */
+export function imapConfigFor(row: ImapAccountColumns, password: string): ImapConfig | null {
+  if (!hasImapHost(row)) return null;
+  return {
+    host: String(row.imap_host).trim(),
+    port: row.imap_port ?? DEFAULT_IMAP_PORT,
+    secure: row.imap_secure ?? true,
+    user: row.smtp_username,
+    password,
+  };
+}
+
 /**
  * Builds a client with an `error` listener already attached.
  *

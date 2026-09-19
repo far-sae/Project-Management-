@@ -67,7 +67,7 @@ import {
 } from '@/lib/email/inbox';
 import type { InboxEnvelope } from '@/lib/email/types';
 
-import type { ImapConfig } from './imap.js';
+import { hasImapHost, imapConfigFor, type ImapConfig } from './imap.js';
 
 /* ------------------------------------------------------------------- types */
 
@@ -137,9 +137,6 @@ const MAILBOX_COLUMNS =
 const PAGE_SIZE = 1000;
 /** A stop for a page that never shrinks; 50 pages is 50,000 rows. */
 const MAX_PAGES = 50;
-
-/** The defaults migration 157 gives the columns, for a row read before they applied. */
-const DEFAULT_IMAP_PORT = 993;
 
 /**
  * How far back the "who did this organisation write to" read looks.
@@ -221,7 +218,8 @@ export async function runInboxCycle(deps: InboxDeps): Promise<InboxResult> {
     // advances the cursor for every status but 'error', and a mailbox somebody
     // configures an hour from now would then start with a day of its inbox
     // already behind the window.
-    if (!row.imap_host || row.imap_host.trim() === '') continue;
+    // A blank host is no host; `hasImapHost` is the one place that decides.
+    if (!hasImapHost(row)) continue;
 
     // One tenant's unreadable mailbox is one tenant's problem. Without this,
     // the first throw ends the pass for every mailbox ordered after it.
@@ -333,13 +331,13 @@ async function scanMailbox(
     throw new Error(`the stored password could not be decrypted (${short(err)})`);
   }
 
-  const cfg: ImapConfig = {
-    host: String(row.imap_host),
-    port: row.imap_port ?? DEFAULT_IMAP_PORT,
-    secure: row.imap_secure ?? true,
-    user: row.smtp_username,
-    password,
-  };
+  const cfg = imapConfigFor(row, password);
+  if (!cfg) {
+    // Unreachable from the caller above, which skips a mailbox with no host.
+    // Thrown rather than defaulted, so a future caller that forgets that
+    // filter is a recorded scan failure and not a connection to nowhere.
+    throw new Error('this mailbox has no IMAP host');
+  }
 
   const now = deps.now();
   const since = scanWindow(row.inbox_last_scan_at ? new Date(row.inbox_last_scan_at) : null, now);

@@ -44,7 +44,12 @@ import { decryptSecret } from '@/lib/email/crypto';
 import { blockedReason, selectMailboxes } from '@/lib/email/mailboxPool';
 import { buildMessage, type BuiltMessage } from '@/lib/email/message';
 import { describeSendWindow, isWithinSendWindow } from '@/lib/email/sendWindow';
-import { classifySmtpError, friendlySmtpError, isMailboxFault } from '@/lib/email/smtpErrors';
+import {
+  classifySmtpError,
+  friendlySmtpError,
+  isMailboxFault,
+  providerOf,
+} from '@/lib/email/smtpErrors';
 import type {
   AccountStatus,
   CampaignKind,
@@ -55,7 +60,7 @@ import type {
 import { signUnsubscribeToken, unsubscribeUrl } from '@/lib/email/unsubscribe';
 
 import { domainOfEmail } from './dns.js';
-import type { ImapConfig } from './imap.js';
+import { imapConfigFor, type ImapConfig } from './imap.js';
 import type { SmtpConfig } from './mailer.js';
 
 /* ------------------------------------------------------------------- types */
@@ -141,8 +146,8 @@ interface AccountRow {
   smtp_username: string;
   // IMAP is optional, and everything here works without it: these three are
   // read only so a delivered message can be filed in this mailbox's own Sent
-  // folder. There is no imap_username column on purpose — the same credential
-  // serves both protocols (migration 157a).
+  // folder. `ImapAccountColumns` in worker/lib/imap.ts is the same set, and
+  // `imapConfigFor` is the one place that turns them into a login.
   imap_host: string | null;
   imap_port: number | null;
   imap_secure: boolean | null;
@@ -175,8 +180,21 @@ const PAGE_SIZE = 1000;
 /** A stop for a page that never shrinks; 50 pages is 50,000 mailboxes. */
 const MAX_PAGES = 50;
 
-/** The default migration 157 gives imap_port, for a row read before it applied. */
-const DEFAULT_IMAP_PORT = 993;
+/**
+ * How long the whole Sent-folder append may take before the cycle walks away
+ * from it.
+ *
+ * The worker is ONE sequential loop across every organisation, so anything
+ * unbounded here is paid by every other customer's queue. imapflow's own
+ * timers are per operation, not per session: a server that accepts a
+ * connection and then stalls costs the greeting timeout plus a socket timeout
+ * for the folder list, for each append and for the logout — minutes, for one
+ * mailbox, filing copies of messages that were all delivered already.
+ *
+ * Generous against the real thing (ten small messages over one open session is
+ * seconds) and an order of magnitude under what an unbounded stall can cost.
+ */
+const SENT_APPEND_TIMEOUT_MS = 30_000;
 
 /** Attempts at a 'sent' settlement, and the pause before the 2nd and 3rd. */
 const SETTLE_ATTEMPTS = 3;
@@ -532,16 +550,7 @@ async function runMailbox(
   // IMAP is optional and a mailbox without it must send exactly as before,
   // never attempting a connection. The same credential serves both protocols,
   // so the password just decrypted is the one the append logs in with.
-  const imap: ImapConfig | null =
-    account.imap_host && account.imap_host.trim() !== ''
-      ? {
-          host: account.imap_host.trim(),
-          port: account.imap_port ?? DEFAULT_IMAP_PORT,
-          secure: account.imap_secure ?? true,
-          user: account.smtp_username,
-          password,
-        }
-      : null;
+  const imap = imapConfigFor(account, password);
 
   try {
     await sendBatch(deps, result, note, mailbox, take, settings, account, transport, imap, who);
@@ -682,10 +691,15 @@ async function sendBatch(
 
   /**
    * The raw bytes of every message this batch actually delivered, filed in
-   * the mailbox's Sent folder once the batch is done. Bounded by the claim:
-   * a mailbox is handed at most PER_MAILBOX_SLICE rows in one pass, so this
-   * holds at most that many message sources at a time and is dropped with
-   * the batch.
+   * the mailbox's Sent folder once the batch is done, then dropped.
+   *
+   * The bound is a COUNT, not a size: at most PER_MAILBOX_SLICE (10) rows are
+   * claimed in one pass, so this holds at most ten message sources — but each
+   * is a whole composed message, and the body is admin-authored HTML that can
+   * carry inline `data:` images. The real ceiling is therefore ten times
+   * whatever the largest body in the batch composes to, base64 included, and
+   * a campaign with a 5 MB inline image is 50 MB resident here. If that
+   * becomes a real shape of message, append in chunks rather than at the end.
    */
   const copies: Buffer[] = [];
 
@@ -724,8 +738,9 @@ async function sendBatch(
       // Shutting down. Give the rest of the batch back now rather than leaving
       // it to the ten-minute sweep, so a redeploy costs the queue nothing.
       await returnUnattempted(i, 'The worker was asked to stop before this message was attempted.');
-      // `break`, not `return`: whatever this batch already delivered still has
-      // to be filed in the Sent folder below.
+      // `break`, not `return`: the batch has one exit, and whether the
+      // copies are filed on the way out is fileSentCopies' decision to make
+      // and to explain — it is not one this loop should make twice.
       break;
     }
 
@@ -935,7 +950,7 @@ async function sendBatch(
     if (i < rows.length - 1 && !stopped(deps)) await deps.sleep(jitterMs(settings));
   }
 
-  await fileSentCopies(deps, note, imap, copies, who);
+  await fileSentCopies(deps, note, imap, account.smtp_host, copies, who);
 }
 
 /**
@@ -946,7 +961,7 @@ async function sendBatch(
  * no record of anything the app sent from it, which looks broken and leaves
  * support nothing to look at.
  *
- * Two rules shape this function, and neither is negotiable:
+ * The rules that shape this function, and none of them is negotiable:
  *
  *   * A failure to file NEVER fails a send. Every buffer here belongs to a
  *     message that has already been delivered and already been settled; the
@@ -955,6 +970,10 @@ async function sendBatch(
  *     it touches no result count and no mailbox health. A mailbox whose IMAP
  *     credential is refused — which providers routinely do while SMTP works
  *     perfectly — must keep sending.
+ *   * It never fails a send, and it must not DELAY one either. The worker is
+ *     one sequential loop across every tenant, so this races a deadline: past
+ *     it the cycle walks away and the next organisation's queue moves. See
+ *     SENT_APPEND_TIMEOUT_MS.
  *   * Nothing it reports may carry a body, a subject or a recipient. The
  *     buffers are whole message sources, so the notes below are counts, and
  *     `short` caps whatever the IMAP error itself says.
@@ -963,6 +982,7 @@ async function fileSentCopies(
   deps: CycleDeps,
   note: Note,
   imap: ImapConfig | null,
+  smtpHost: string,
   copies: Buffer[],
   who: string,
 ): Promise<void> {
@@ -970,11 +990,39 @@ async function fileSentCopies(
   // and a mailbox without it sends exactly as it always did.
   if (!imap || copies.length === 0) return;
 
+  // Google files an SMTP send into its own Sent folder server-side, so
+  // appending there gives the customer TWO copies of every message they send
+  // — which reads as a bug in this product and which they cannot undo from
+  // their end. That is worse than the problem the append solves, so Google
+  // mailboxes are left alone. The accepted cost: a Google account configured
+  // NOT to save SMTP sends gets no copy at all. That is the rarer setting,
+  // and a missing copy is at least visible rather than silently doubled.
+  if (providerOf(smtpHost) === 'google') return;
+
+  // Never on the way out. The paragraphs above this in the send loop are
+  // about not spending a container's shutdown grace, and an IMAP session is
+  // exactly the kind of thing that spends it. NOTHING is lost by skipping:
+  // every message in `copies` is already delivered and already settled, so
+  // the only casualty is the copy — and the next cycle's sends will still be
+  // filed. Do not restore this out of completeness.
+  if (stopped(deps)) return;
+
   try {
     // One connection for the batch. A session per message would cost more
     // than the sends did and would multiply the logins that get a mailbox
     // rate-limited.
-    const saved = await deps.appendToSent(imap, copies);
+    const saved = await withDeadline(deps.appendToSent(imap, copies), SENT_APPEND_TIMEOUT_MS);
+
+    if (saved === TIMED_OUT) {
+      note(
+        who,
+        `filing ${copies.length} delivered messages in this mailbox's Sent folder took longer ` +
+          `than ${Math.round(SENT_APPEND_TIMEOUT_MS / 1000)}s, so the cycle moved on without ` +
+          'waiting for it. They were sent.',
+      );
+      return;
+    }
+
     if (saved < copies.length) {
       note(
         who,
@@ -988,5 +1036,34 @@ async function fileSentCopies(
       `this mailbox's Sent folder could not be written, so ${copies.length} delivered ` +
         `messages were not filed in it (${short(err)}). They were sent.`,
     );
+  }
+}
+
+/** What `withDeadline` answers with when the work did not finish in time. */
+const TIMED_OUT = Symbol('timed out');
+
+/**
+ * Runs `work`, giving up on WAITING for it after `ms`.
+ *
+ * It cannot cancel anything — an IMAP session that has stopped answering goes
+ * on until imapflow's own socket timers tear it down — so what this buys is
+ * that the cycle stops waiting, not that the work stops. That is the part
+ * that matters: every other tenant is queued behind this one loop.
+ *
+ * `Promise.race` attaches a handler to `work`, so a rejection that arrives
+ * after the deadline is still handled and never surfaces as an unhandled
+ * rejection. `setTimeout` is a platform global, not a Node API, and the timer
+ * is always cleared so a fast path leaves nothing pending.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }

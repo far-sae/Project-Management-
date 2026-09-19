@@ -18,6 +18,7 @@ import type { Transporter } from 'nodemailer';
 
 import { encryptSecret } from '@/lib/email/crypto';
 import { runCycle, type CycleDeps } from '../../worker/lib/engine';
+import { buildRaw } from '../../worker/lib/mailer';
 
 /* ------------------------------------------------------------------ fixtures */
 
@@ -1228,7 +1229,10 @@ describe('worker/lib/engine — filing a copy in the mailbox\'s Sent folder', ()
     // a recipient. The buffers are whole message sources.
     const errors = result.errors.join(' ');
     expect(errors).toContain('Sent folder');
-    expect(errors).toContain('2');
+    // The phrase, not a bare '2': a lone digit matches a port number, a
+    // timestamp or half an address, so the assertion would survive the note
+    // losing its count entirely.
+    expect(errors).toContain('2 delivered messages were not filed');
     expect(errors).not.toContain('person1@recipient.test');
     expect(errors).not.toContain('Hello');
   });
@@ -1264,11 +1268,10 @@ describe('worker/lib/engine — filing a copy in the mailbox\'s Sent folder', ()
     expect(result.errors).toEqual([]);
   });
 
-  it('files what it already delivered when the worker is told to stop mid-batch', async () => {
+  it('opens no IMAP session at all when the worker is told to stop', async () => {
     const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)], {
       accounts: [imapAccountRow()],
     });
-    const composer = makeComposer();
     const sent = makeSentFolder();
     let stop = false;
     const mailer = makeMailer(async () => {
@@ -1278,18 +1281,135 @@ describe('worker/lib/engine — filing a copy in the mailbox\'s Sent folder', ()
 
     const result = await runCycle(
       makeDeps(stub.db, mailer.createTransport, {
-        buildRaw: composer.buildRaw,
         appendToSent: sent.appendToSent,
         shouldStop: () => stop,
       }),
     );
 
-    // The batch ends early and the rest goes back on the queue — but the one
-    // message that did go out is still filed. A shutdown is not a reason for
-    // the mailbox to have no record of what it sent.
+    // The batch ends early and the rest goes back on the queue. The copy of
+    // the one message that did go out is DROPPED rather than filed: an IMAP
+    // session is exactly the kind of thing that eats a container's shutdown
+    // grace, and nothing is at stake — that message is delivered and settled,
+    // and only the convenience copy is lost.
     expect(result.sent).toBe(1);
     expect(result.skipped).toBe(2);
-    expect(sent.calls).toHaveLength(1);
-    expect(sent.calls[0].messages).toEqual([composer.built[0].raw]);
+    expect(sent.calls).toHaveLength(0);
+    // And it is not an error, so a redeploy does not fill the log with it.
+    expect(result.errors).toEqual([]);
+  });
+
+  it('never appends for a Google mailbox, which files its own SMTP sends', async () => {
+    const stub = oneMailbox([claimedRow(1)], {
+      accounts: [imapAccountRow({ smtp_host: 'smtp.gmail.com' })],
+    });
+    const mailer = makeMailer(okSend);
+    const sent = makeSentFolder();
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { appendToSent: sent.appendToSent }),
+    );
+
+    // Appending here would give the customer two copies of every message they
+    // send, which reads as a bug in this product and which they cannot undo.
+    expect(sent.calls).toHaveLength(0);
+    expect(result.sent).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('walks away from an append that never finishes, and keeps the cycle moving', async () => {
+    const stub = oneMailbox([claimedRow(1)], { accounts: [imapAccountRow()] });
+    const mailer = makeMailer(okSend);
+    // A server that accepts the connection and then says nothing. imapflow's
+    // own timers are per operation, so without a deadline of our own this
+    // hangs the one loop every other tenant is queued behind.
+    let appendStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      appendStarted = resolve;
+    });
+    const sent = makeSentFolder(() => {
+      appendStarted();
+      return new Promise<number>(() => undefined);
+    });
+
+    vi.useFakeTimers();
+    try {
+      const cycle = runCycle(
+        makeDeps(stub.db, mailer.createTransport, { appendToSent: sent.appendToSent }),
+      );
+      // Waited for rather than assumed: the send path decrypts a real
+      // credential, which settles off the microtask queue, so advancing the
+      // clock before the append is in flight would advance past nothing.
+      await started;
+      // Past the engine's SENT_APPEND_TIMEOUT_MS. If that constant is ever
+      // raised above this, the cycle never returns and this test says so.
+      await vi.advanceTimersByTimeAsync(31_000);
+      const result = await cycle;
+
+      // The append was attempted, never finished, and the cycle completed
+      // anyway with the message still recorded as sent.
+      expect(sent.calls).toHaveLength(1);
+      expect(result.sent).toBe(1);
+      expect(result.failed).toBe(0);
+      expect(result.errors.join(' ')).toContain('took longer than 30s');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * The nodemailer behaviours this design rests on, pinned against the REAL
+ * library — the way the real crypto is used above rather than mocked away.
+ * Every other assertion in this file runs against a buildRaw stub that never
+ * loads nodemailer, so without this a version bump that changed any of them
+ * would break sending in production and no test would notice. Nothing here
+ * opens a socket: composing a message is pure.
+ */
+describe('worker/lib/mailer — the nodemailer contract the engine depends on', () => {
+  const options = {
+    from: { name: 'Ada Lovelace', address: 'ada@example.com' },
+    to: { name: 'Person 1', address: 'person1@recipient.test' },
+    subject: 'Hello',
+    html: '<p>Hi</p>',
+    text: 'Hi',
+    headers: { 'List-Unsubscribe': '<https://tasks.example.com/u/msg-1>' },
+  };
+
+  const headersOf = (raw: Buffer): string => raw.toString('utf8').split('\r\n\r\n')[0];
+
+  it('puts exactly the Message-ID it was given in the bytes, once', async () => {
+    const raw = await buildRaw({ ...options, messageId: '<msg-1@example.com>' });
+    expect(Buffer.isBuffer(raw)).toBe(true);
+
+    // ONE Message-ID, and ours. Nodemailer mints one when it is not told, and
+    // the engine records the id it passed as provider_message_id — so a
+    // second id, or a replaced one, would put a value in the database naming
+    // a message nobody ever received.
+    const head = headersOf(raw);
+    expect(head.match(/^Message-ID:/gim) ?? []).toHaveLength(1);
+    expect(head).toContain('Message-ID: <msg-1@example.com>');
+  });
+
+  it('carries the sender and the recipient in the bytes themselves', async () => {
+    const head = headersOf(await buildRaw({ ...options, messageId: '<msg-1@example.com>' }));
+
+    // These are what the recipient's client shows. The SMTP envelope is named
+    // separately in the engine precisely because nodemailer reads nothing back
+    // out of pre-built bytes.
+    expect(head).toMatch(/^From: .*ada@example\.com/m);
+    expect(head).toMatch(/^To: .*person1@recipient\.test/m);
+    expect(head).toMatch(/^Subject: /m);
+    expect(head).toMatch(/^List-Unsubscribe: /m);
+  });
+
+  it('produces a DIFFERENT message each time the same inputs are composed', async () => {
+    const first = await buildRaw(options);
+    const second = await buildRaw(options);
+
+    // The whole reason the engine builds once and hands the same buffer to
+    // SMTP and to the Sent folder: a fresh Message-ID and fresh MIME
+    // boundaries every compile mean a second build is a different message
+    // that merely looks alike.
+    expect(first.equals(second)).toBe(false);
   });
 });
