@@ -294,7 +294,8 @@ git commit -m "feat(email): the sequences schema"
 **Interfaces:**
 - Consumes: everything Task 1 created, plus `public.record_send_result(uuid, uuid, text, text, text, boolean)`, `public.record_inbox_result(uuid, text, text, timestamptz, text)`, `public.finalize_email_campaigns()`, `public.email_suppressions`.
 - Produces:
-  - `public.claim_sequence_enrollments(p_limit integer) returns table(enrollment_id uuid, sequence_id uuid, organization_id uuid, step_id uuid, step_index integer, campaign_id uuid, account_id uuid, to_email text, to_name text, merge_data jsonb, subject text, body_html text, first_subject text, last_message_id uuid)`
+  - `public.claim_sequence_enrollments(p_limit integer) returns table(enrollment_id uuid, sequence_id uuid, organization_id uuid, contact_id uuid, step_id uuid, step_index integer, campaign_id uuid, account_id uuid, to_email text, to_name text, merge_data jsonb, last_message_id uuid)`
+  - **Pre-flight ruling (verified against the schema, not assumed):** `email_messages` has NO `subject` or `body_html` column — both live on `email_campaigns` (migration 152). So the claim returns neither, and the step's hidden campaign carries the wording. `followUpSubject()` is therefore applied when that campaign is created or updated (Task 7's service), not when a message is materialized. `email_campaigns.account_id` is nullable as of migration 156 line 410, so a step's campaign is created with `account_id: null`, meaning the pool.
   - `public.stop_enrollments_for_address(p_org uuid, p_address text, p_reason text) returns integer`
   - `record_send_result` extended to advance an enrollment on `'sent'` and stop it on `'permanent'` / `'hard_bounce'`
   - `record_inbox_result` extended to stop enrollments on `'reply'` and `'bounce'`, and to accept `p_kind = 'auto_reply'`
@@ -374,6 +375,7 @@ returns table (
   enrollment_id uuid,
   sequence_id uuid,
   organization_id uuid,
+  contact_id uuid,
   step_id uuid,
   step_index integer,
   campaign_id uuid,
@@ -381,9 +383,6 @@ returns table (
   to_email text,
   to_name text,
   merge_data jsonb,
-  subject text,
-  body_html text,
-  first_subject text,
   last_message_id uuid
 )
 language plpgsql
@@ -466,12 +465,17 @@ begin
            next_due_at = null
      where e.id = any(v_ids)
        and e.status = 'active'
-    returning e.id, e.sequence_id, e.organization_id, e.current_step - 1 as taking_step,
+    returning e.id, e.sequence_id, e.organization_id, e.contact_id,
+              e.current_step - 1 as taking_step,
               e.account_id, e.to_email, e.to_name, e.merge_data, e.last_message_id
   )
+  -- No subject and no body: email_messages carries neither (migration 152).
+  -- The step's own hidden campaign holds the wording, which is why the step
+  -- must have a campaign_id before it can be claimed at all.
   select c.id,
          c.sequence_id,
          c.organization_id,
+         c.contact_id,
          st.id,
          st.step_index,
          st.campaign_id,
@@ -479,17 +483,11 @@ begin
          c.to_email,
          c.to_name,
          c.merge_data,
-         st.subject,
-         st.body_html,
-         first_step.subject,
          c.last_message_id
     from claimed c
     join public.email_sequence_steps st
       on st.sequence_id = c.sequence_id
      and st.step_index = c.taking_step
-    join public.email_sequence_steps first_step
-      on first_step.sequence_id = c.sequence_id
-     and first_step.step_index = 0
    where st.campaign_id is not null;
 
   -- An enrollment whose current_step has no step row has reached the end.
@@ -650,7 +648,7 @@ git commit -m "feat(email): the sequence engine in SQL"
 - Produces:
   - `nextDueAt(sentAt: Date, delayHours: number): Date`
   - `threadHeaders(previousMessageIds: string[], senderDomain: string): Record<string, string>`
-  - `followUpSubject(stepSubject: string, firstSubject: string): string`
+  - `followUpSubject(stepSubject: string, firstSubject: string): string` — called from Task 7's service when a step's hidden campaign is saved, NOT from the worker: the subject lives on the campaign, so it is resolved once when the step is written rather than on every message.
   - `isAutoReply(headers: Record<string, string>): boolean`
   - types `EmailSequence`, `EmailSequenceStep`, `EmailEnrollment`, `SequenceStatus`, `EnrollmentStatus`, `StopReason`
 
@@ -1051,16 +1049,6 @@ Against a stubbed `db` in the same shape `tests/unit/emailInboxCycle.test.ts` us
     expect(result.queued).toBe(1);
   });
 
-  it('inherits the first step’s subject on a follow-up that has none', async () => {
-    const h = makeDeps({
-      claimed: [enrollment({ stepIndex: 1, subject: '', firstSubject: 'Quick question' })],
-    });
-
-    await runSequenceCycle(h.deps);
-
-    expect(h.inserted('email_messages')[0].subject).toBe('Re: Quick question');
-  });
-
   it('does not queue twice for an enrollment the claim already advanced', async () => {
     // The claim advances current_step in the same statement that returns the
     // row, so a second cycle over the same data claims nothing. This asserts
@@ -1121,11 +1109,12 @@ One `claim_sequence_enrollments(50)` call per cycle. For each row returned, inse
   to_email: row.to_email,
   to_name: row.to_name,
   merge_data: row.merge_data,
-  subject: row.step_index === 0 ? row.subject : followUpSubject(row.subject, row.first_subject),
   status: 'queued',
   send_after: new Date().toISOString(),
 }
 ```
+
+No `subject` and no `body_html`: `email_messages` has neither column. The step's hidden campaign carries the wording, and `worker/lib/engine.ts` already reads it from there for every message it sends.
 
 Rules this file must hold to, each as a comment saying why:
 
@@ -1133,7 +1122,7 @@ Rules this file must hold to, each as a comment saying why:
 - **One enrollment cannot end the cycle.** Each is in its own try/catch and a failure is recorded and stepped past — the next enrollment is somebody else's tenant.
 - **A failed insert is loud.** The claim has already advanced `current_step`, so a row that fails to insert is a step that will never be sent. It goes into `errors` naming the enrollment id, never the address, never the body.
 - **`shouldStop` is checked between enrollments, never inside one.**
-- If `email_campaigns.subject` is the column the send path reads, write the resolved subject onto the message row only if `email_messages` carries a subject column; otherwise the step's campaign carries it. **Check which before writing this** — read `worker/lib/engine.ts` to see where the subject comes from, and follow that. Do not add a column in this task.
+- **Do not add a subject or body column to `email_messages`.** The pre-flight scan confirmed it has neither and that `engine.ts` reads both from the campaign. Adding one would give a message two places to disagree about its own wording.
 
 - [ ] **Step 5: Wire it into `worker/index.ts`**
 
@@ -1222,7 +1211,14 @@ Read `src/components/email/CampaignsTab.tsx`, `src/components/email/ComposeTab.t
 
 `listSequences(organizationId)`, `getSequence(id)` (with its steps), `createSequence`, `updateSequence`, `saveStep`, `deleteStep`, `enroll(sequenceId, recipients)`, `listEnrollments(sequenceId)`, `stopEnrollment(id)`.
 
-`createSequence` and `saveStep` must also create the step's hidden campaign row — `kind: 'sequence'`, `status: 'sending'`, `name: '<sequence name> — step <n+1>'`, `account_id: null` (the pool) — and set `campaign_id` on the step. A step with no campaign is never claimed, so this is not optional.
+`createSequence` and `saveStep` must also create or update the step's hidden campaign row and set `campaign_id` on the step. A step with no campaign is never claimed, so this is not optional. The campaign is where the wording actually lives — `email_messages` has no subject or body column — so `saveStep` writes:
+
+- `kind: 'sequence'`, `status: 'sending'`, `account_id: null` (the pool; nullable since migration 156)
+- `name: '<sequence name> — step <n+1>'`
+- `subject:` for step 0, the step's own subject; for any later step, `followUpSubject(step.subject, stepZero.subject)`
+- `body_html:` the step's body
+
+Because the subject is resolved here, editing step 0's subject must re-resolve every later step that inherits — `saveStep` on step 0 updates the campaigns of the steps after it. A step that is already frozen (Step 4) is not re-resolved: its wording is fixed, including the subject people have already received.
 
 `enroll` writes one `email_sequence_enrollments` row per recipient with `next_due_at: now()`, and tolerates the partial unique index rejecting a duplicate: a re-enrolled address that is already active is skipped and reported, not an error the user sees as a failure.
 
