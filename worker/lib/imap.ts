@@ -88,13 +88,25 @@ export async function fetchRecentEnvelopes(
   const client = createImapClient(cfg);
   const out: InboxEnvelope[] = [];
 
-  await client.connect();
+  // connect() sits inside this try, not before it. TCP connect and the
+  // greeting can succeed and the session negotiation that follows —
+  // capability, STARTTLS, authenticate, namespace — can still reject, and a
+  // rejected login is exactly where that happens: a wrong password, a
+  // revoked app password, IMAP not enabled on the mailbox. imapflow does not
+  // close the socket for that rejection path itself, so if connect() were
+  // outside the try, closeImapClient() below would never run for it and the
+  // connection would leak. Providers cap concurrent connections per mailbox
+  // and this worker runs the scan every few minutes, so a single
+  // misconfigured mailbox would otherwise accumulate dead connections until
+  // the provider starts refusing new ones — which then looks like an
+  // unrelated failure.
   try {
+    await client.connect();
     const lock = await client.getMailboxLock('INBOX');
     try {
       for await (const msg of client.fetch({ since }, { envelope: true })) {
-        out.push(toEnvelope(msg));
         if (out.length >= limit) break;
+        out.push(toEnvelope(msg));
       }
     } finally {
       lock.release();
@@ -126,8 +138,8 @@ export async function fetchBounceSources(
   const client = createImapClient(cfg);
   const out: Array<{ envelope: InboxEnvelope; source: string }> = [];
 
-  await client.connect();
   try {
+    await client.connect();
     const lock = await client.getMailboxLock('INBOX');
     try {
       for await (const msg of client.fetch({ since }, { envelope: true })) {
@@ -167,8 +179,8 @@ export async function appendToSent(cfg: ImapConfig, messages: Buffer[]): Promise
   const client = createImapClient(cfg);
   let saved = 0;
 
-  await client.connect();
   try {
+    await client.connect();
     // Providers disagree on the name — IONOS uses "Sent", Gmail
     // "[Gmail]/Sent Mail". The \Sent special-use flag is the reliable way to
     // find it regardless of provider; the literal name is only a fallback
