@@ -144,6 +144,8 @@ interface EmailCampaignRow {
   /** Nullable here, not in the column: a database that has not run 161 yet. */
   opened_count?: number | null;
   opened_prefetch_count?: number | null;
+  /** Nullable here, not only in the column: a database before migration 162. */
+  template_id?: string | null;
   bounced_count: number;
   created_at: string;
 }
@@ -311,6 +313,7 @@ export const mapCampaignRow = (row: EmailCampaignRow): EmailCampaign => ({
   // thing the column's own default says.
   openedCount: row.opened_count ?? 0,
   openedPrefetchCount: row.opened_prefetch_count ?? 0,
+  templateId: row.template_id ?? null,
   bouncedCount: row.bounced_count,
   createdAt: new Date(row.created_at),
 });

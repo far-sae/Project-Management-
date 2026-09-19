@@ -192,6 +192,16 @@ export interface EmailCampaign {
    * is a floor. Every screen that shows one shows the other.
    */
   openedPrefetchCount: number;
+  /**
+   * The template this campaign's wording was copied from, or null when it was
+   * written from scratch.
+   *
+   * A record of provenance, not a live link: the campaign carries its own
+   * subject and body, so editing the template afterwards cannot rewrite mail
+   * that has already gone out. ON DELETE SET NULL, so deleting a template does
+   * not take the record of what was sent with it.
+   */
+  templateId: string | null;
   bouncedCount: number;
   createdAt: Date;
 }
@@ -321,5 +331,65 @@ export interface InboxEvent {
   address: string;
   messageId: string | null;
   detail: string | null;
+  createdAt: Date;
+}
+
+/** A named segment, and the angle it is approached with. See migration 162a. */
+export interface EmailGroup {
+  id: string;
+  organizationId: string;
+  workspaceId: string | null;
+  name: string;
+  /**
+   * How this segment is written to — "lead with the white-label workflow".
+   * Available as `{{angle}}` in a template, so one template can serve several
+   * groups.
+   */
+  angle: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Reusable wording. A campaign copies from one; it never points at one. */
+export interface EmailTemplate {
+  id: string;
+  organizationId: string;
+  workspaceId: string | null;
+  createdBy: string | null;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Somebody to write to: a `crm_contacts` row, read for outreach.
+ *
+ * Not a new table — those rows already exist, `email_messages.contact_id`
+ * already references them, and the CRM hub's removal in migration 143 left
+ * them with no screen rather than deleting them.
+ */
+export interface EmailProspect {
+  id: string;
+  organizationId: string;
+  firstName: string;
+  lastName: string | null;
+  email: string | null;
+  jobTitle: string | null;
+  /** The merge field that makes a cold email land. Migration 162d. */
+  painPoint: string | null;
+  groupId: string | null;
+  /**
+   * Whether this address is on the organization's suppression list, and why.
+   *
+   * Read from `email_suppressions` rather than stored on the contact. That
+   * table is what claim_email_batch() enforces, what the unsubscribe endpoint
+   * writes and what a hard bounce adds to; a second flag here would be a
+   * second source of truth for the one question the law cares about, and the
+   * two would disagree within a week.
+   */
+  suppressedReason: SuppressionReason | null;
+  lastContactedAt: Date | null;
   createdAt: Date;
 }
