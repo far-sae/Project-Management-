@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -20,6 +19,7 @@ import { isUsable } from '@/lib/email/mailboxPool';
 import { filterSuppressed } from '@/lib/email/suppression';
 import { verifyAccount } from './verifyAccount';
 import { RecipientPicker, recipientKey, type RecipientMode } from './RecipientPicker';
+import { RichTextEditor } from './RichTextEditor';
 
 interface ComposeTabProps {
   orgId: string;
@@ -278,9 +278,15 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
               onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="cmp-body">Body (HTML allowed)</Label>
-            <Textarea id="cmp-body" value={form.bodyHtml} className="min-h-[180px] font-mono text-xs"
-              onChange={(e) => setForm((f) => ({ ...f, bodyHtml: e.target.value }))} />
+            <Label>Body</Label>
+            {/* The merge fields offered here are the ones this campaign's
+                recipients actually carry — a CSV's own columns included — so
+                the menu never offers a field that would substitute to nothing. */}
+            <RichTextEditor
+              value={form.bodyHtml} mergeFields={mergeFields}
+              placeholder="Write the message. Source shows the raw HTML."
+              onChange={(html) => setForm((f) => ({ ...f, bodyHtml: html }))}
+            />
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               Personalize with {mergeFields.map((f) => `{{${f}}}`).join(', ')} in the subject or body.
