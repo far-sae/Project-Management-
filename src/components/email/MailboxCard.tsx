@@ -49,13 +49,22 @@ const InboxHealth: React.FC<{ account: EmailAccount }> = ({ account }) => {
         </p>
       );
     case 'active':
+      // 'active' with a note on it is a scan that finished and did not read
+      // its whole window: the mailbox takes more mail than one pass covers,
+      // so the cursor moved to where the scan stopped and the messages in
+      // between went unchecked. Nothing is broken and nothing needs fixing,
+      // but it must not read as an ordinary healthy scan -- the whole point
+      // of advancing there was to stop the mailbox stalling silently.
       return (
-        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-          <Inbox className="w-3 h-3 shrink-0" />
-          Inbox: last scanned{' '}
-          {account.inboxLastScanAt
-            ? formatDistanceToNow(account.inboxLastScanAt, { addSuffix: true })
-            : 'not yet'}.
+        <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+          <Inbox className="w-3 h-3 mt-0.5 shrink-0" />
+          <span>
+            Inbox: last scanned{' '}
+            {account.inboxLastScanAt
+              ? formatDistanceToNow(account.inboxLastScanAt, { addSuffix: true })
+              : 'not yet'}.
+            {account.imapLastError ? ` ${account.imapLastError}` : ''}
+          </span>
         </p>
       );
     case 'incomplete':

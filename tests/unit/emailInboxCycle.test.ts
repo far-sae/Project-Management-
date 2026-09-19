@@ -88,6 +88,8 @@ interface Fixtures {
   recordErrors?: number;
   /** How many leading reads of email_messages answer with an error instead. */
   sentReadErrors?: number;
+  /** True when the read of email_account_secrets answers with an error. */
+  secretReadError?: boolean;
 }
 
 interface RpcCall {
@@ -163,7 +165,10 @@ function makeDb(fx: Fixtures) {
           ? { data: found[0], error: null }
           : { data: null, error: { message: `no row in ${table}` } };
       },
-      maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
+      maybeSingle: async () =>
+        table === 'email_account_secrets' && fx.secretReadError
+          ? { data: null, error: { message: 'could not read email_account_secrets' } }
+          : { data: rows()[0] ?? null, error: null },
       then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) =>
         Promise.resolve(
           failed
@@ -206,6 +211,8 @@ interface Stubs {
   bounces?: Array<{ envelope: InboxEnvelope; source: string }>;
   /** False when the stubbed session hit a cap and did not read the window out. */
   complete?: boolean;
+  /** The newest message a truncated stubbed session read; see MailboxScan. */
+  resumeAt?: Date | null;
   shouldStop?: () => boolean;
 }
 
@@ -227,6 +234,7 @@ function makeDeps(fx: Fixtures, stubs: Stubs = {}) {
       bounces: stubs.bounces ?? [],
       complete,
       truncated: complete ? null : 'stopped after 500 messages; the rest of this window was not read',
+      resumeAt: complete ? null : (stubs.resumeAt ?? null),
     };
   });
 
@@ -346,7 +354,7 @@ describe('runInboxCycle', () => {
     // classifyImapError as a mailbox failure: a red CREDENTIAL error on the
     // Accounts card, carrying a raw database message, for a mailbox whose host
     // and app password were both fine.
-    const h = makeDeps({ mailboxes: [mailboxRow()], secrets: [] });
+    const h = makeDeps({ mailboxes: [mailboxRow()], secrets: [secretRow()], secretReadError: true });
 
     const result = await runInboxCycle(h.deps);
 
@@ -354,6 +362,26 @@ describe('runInboxCycle', () => {
     expect(args.p_status).toBe('incomplete');
     expect(args.p_status).not.toBe('error');
     expect(args.p_error).toMatch(/could not be opened/i);
+    expect(args.p_error).toMatch(/sending is unaffected/i);
+    expect(h.scan).not.toHaveBeenCalled();
+    expect(h.names()).not.toContain('record_mailbox_failure');
+    expect(result.scanned).toBe(0);
+  });
+
+  it('reports a mailbox with no stored password as an error the admin must fix', async () => {
+    // A row that is absent is not a row that failed to read. This one can
+    // never succeed — no retry conjures a password nobody saved — so telling
+    // the admin 'nothing is wrong, the next scan picks it up' would be false,
+    // and they would believe it while replies went unread indefinitely.
+    const h = makeDeps({ mailboxes: [mailboxRow()], secrets: [] });
+
+    const result = await runInboxCycle(h.deps);
+
+    const args = h.touches()[0].args as { p_status: string; p_error: string };
+    expect(args.p_status).toBe('error');
+    expect(args.p_error).toMatch(/no password is stored/i);
+    expect(args.p_error).toMatch(/re-enter the password/i);
+    // Still never charged to the send path: an unreadable inbox sends fine.
     expect(args.p_error).toMatch(/sending is unaffected/i);
     // Nothing was connected to, and nothing was charged to the send path.
     expect(h.scan).not.toHaveBeenCalled();
@@ -540,13 +568,49 @@ describe('runInboxCycle', () => {
     expect(h.scan).toHaveBeenCalledTimes(1);
   });
 
-  it('holds the cursor when the session hit a cap and left part of the window unread', async () => {
-    // Not 'active'. The cap is not deterministic the way the address-page cap
-    // is — the next pass over a quieter window finishes — so the window has to
-    // come round again rather than be stepped over.
+  it('resumes from where a capped scan stopped, rather than reading the same window for ever', async () => {
+    // Holding the cursor here was the obvious answer and the wrong one. The
+    // window is DERIVED from the cursor, so an unmoved cursor recomputes the
+    // same window, whose first 500 messages are the same 500, and the walk
+    // stops in the same place — permanently, for any mailbox busy enough to
+    // reach the cap at all. So the cursor moves to the newest message actually
+    // read, and the messages between there and the end of the window are the
+    // cap's stated cost.
+    const resumeAt = new Date('2026-09-19T11:58:00Z');
     const h = makeDeps(
       { mailboxes: [mailboxRow()], secrets: [secretRow()] },
-      { envelopes: [], complete: false },
+      { envelopes: [], complete: false, resumeAt },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    const args = h.touches()[0].args as {
+      p_status: string;
+      p_error: string;
+      p_scanned_at: string;
+    };
+    // 'active', because nothing failed — and 'active' is the only status
+    // touch_inbox_scan() lets move the cursor.
+    expect(args.p_status).toBe('active');
+    expect(args.p_scanned_at).toBe(resumeAt.toISOString());
+    // Not the scan's own start time: that would step over everything the cap
+    // missed, which is the loss holding the cursor was trying to avoid.
+    expect(args.p_scanned_at).not.toBe(NOW.toISOString());
+    // And the mailbox does not get to look healthy while dropping mail.
+    expect(args.p_error).toMatch(/more mail than one scan reads/i);
+    expect(args.p_error).toMatch(/sending is unaffected/i);
+    expect(result.scanned).toBe(1);
+    expect(result.errors.join(' ')).toMatch(/did not finish the window/i);
+  });
+
+  it('holds the cursor when a capped scan read nothing it could resume from', async () => {
+    // No resume point means no progress to write: a whole cap's worth of
+    // messages sharing one timestamp, or a cap of zero. Advancing on a guess
+    // would skip mail, and unlike the steady-volume case this one does clear
+    // on its own.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()] },
+      { envelopes: [], complete: false, resumeAt: null },
     );
 
     const result = await runInboxCycle(h.deps);
@@ -554,7 +618,6 @@ describe('runInboxCycle', () => {
     const args = h.touches()[0].args as { p_status: string };
     expect(args.p_status).toBe('incomplete');
     expect(result.scanned).toBe(0);
-    expect(result.errors.join(' ')).toMatch(/did not finish the window/i);
   });
 
   it('records an authentication failure without touching the sending columns', async () => {

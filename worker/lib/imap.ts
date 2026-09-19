@@ -171,12 +171,36 @@ export interface MailboxScan {
   bounces: Array<{ envelope: InboxEnvelope; source: string }>;
   /**
    * False when a cap stopped the scan before the window had been read out.
-   * The caller must hold its cursor on this: part of the window was never
-   * looked at, and advancing past it loses whatever was in there.
+   *
+   * The caller must NOT simply hold its cursor on this. Holding it recomputes
+   * the same window on the next pass, which hits the same cap at the same
+   * place, for ever: a mailbox taking more than ENVELOPE_LIMIT messages a day
+   * would never record a reply past the first few hundred, and would report
+   * itself healthy while doing it. What the caller does instead is advance to
+   * `resumeAt` -- the newest message this scan actually read -- so the next
+   * window starts where this one stopped. See the ruling on `resumeAt`.
    */
   complete: boolean;
   /** One safe-to-log line naming the cap that was hit, or null. */
   truncated: string | null;
+  /**
+   * The internalDate of the newest in-window message this scan read, set only
+   * when a cap cut the walk short; null on a complete scan, which has its own
+   * cursor (the scan's start time).
+   *
+   * This is the cost of the cap, stated honestly: messages between the cap and
+   * the end of the window are stepped over. The alternative -- never advancing
+   * -- steps over the same messages AND every message after them, on every
+   * pass, permanently. Partial progress wins, and the mailbox says so on the
+   * Accounts screen rather than claiming to be fine.
+   *
+   * The envelopes are walked in the server's order, which is arrival order and
+   * so very nearly internalDate order, but nothing in IMAP guarantees it: an
+   * APPEND can file an older message at a newer UID. Taking the MAXIMUM rather
+   * than the last one read means an out-of-order tail cannot pull the cursor
+   * backwards into ground the previous window already covered.
+   */
+  resumeAt: Date | null;
 }
 
 /**
@@ -256,17 +280,22 @@ export async function scanInbox(
         { since },
         { uid: true, envelope: true, internalDate: true },
       )) {
-        if (envelopes.length >= envelopeLimit) {
-          truncated = `stopped after ${envelopeLimit} messages; the rest of this window was not read`;
-          break;
-        }
-
         const envelope = toEnvelope(msg, since, ceiling);
         // The SINCE widening, undone. A message the server volunteered from
         // before the window is not this scan's to look at: the scan that
         // owned it has already been and gone, and re-matching it here would
         // re-record a reply the cursor moved past hours ago.
+        //
+        // This runs BEFORE the cap is tested, so a window the server padded
+        // out with a day of older mail cannot be declared truncated on the
+        // strength of messages that were never in it. The cap counts what was
+        // kept, and only a message that would have been kept can trip it.
         if (envelope.at.getTime() < since.getTime()) continue;
+
+        if (envelopes.length >= envelopeLimit) {
+          truncated = `stopped after ${envelopeLimit} messages; the rest of this window was not read`;
+          break;
+        }
 
         envelopes.push(envelope);
 
@@ -304,7 +333,14 @@ export async function scanInbox(
     await closeImapClient(client);
   }
 
-  return { envelopes, bounces, complete: truncated === null, truncated };
+  // Only meaningful for a truncated scan, so only computed for one: a complete
+  // scan's cursor is its own start time, which is later than any message in it.
+  const resumeAt =
+    truncated === null || envelopes.length === 0
+      ? null
+      : new Date(Math.max(...envelopes.map((e) => e.at.getTime())));
+
+  return { envelopes, bounces, complete: truncated === null, truncated, resumeAt };
 }
 
 /**

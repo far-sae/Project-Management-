@@ -116,14 +116,28 @@ vi.mock('imapflow', () => {
     async *fetch(
       range: { since?: Date } | number[] | string,
       query: { source?: boolean },
-      _options?: unknown,
+      options?: { uid?: boolean },
     ): AsyncGenerator<Record<string, unknown>, void, undefined> {
       this.command('fetch');
       state.fetching = true;
       try {
         let selected: FakeMessage[];
         if (Array.isArray(range)) {
-          // A UID set — what the source pass asks for.
+          // A UID set — what the source pass asks for — and ONLY if the call
+          // said so. imapflow reads a bare range as SEQUENCE NUMBERS unless
+          // `{ uid: true }` is passed in the options, and sequence numbers
+          // renumber as the mailbox changes, so the same array would fetch
+          // different messages. A fake that ignored the flag made dropping it
+          // a green test and a production bug: the source pass would download
+          // whichever messages happened to sit at those positions and attribute
+          // their bounce content to the envelopes it collected.
+          if (options?.uid !== true) {
+            state.violations.push(
+              'imapflow contract violated: an array range was fetched without { uid: true }, ' +
+                'so it would be read as sequence numbers',
+            );
+            throw new Error('fetch() given a UID array without { uid: true }');
+          }
           selected = state.messages.filter((m) => range.includes(m.uid));
         } else if (typeof range === 'object' && range.since) {
           // IMAP SINCE: a DATE, so midnight of that day, not the instant.
@@ -133,11 +147,12 @@ vi.mock('imapflow', () => {
           selected = [...state.messages];
         }
 
-        // Sequence order: oldest first, which is why a limit that stops early
-        // keeps exactly the wrong end of the window.
-        selected = [...selected].sort(
-          (a, b) => a.internalDate.getTime() - b.internalDate.getTime(),
-        );
+        // Sequence order, which is UID order — arrival order, NOT date order.
+        // The two usually agree, which is why sorting this by internalDate
+        // looked right: it also made it impossible to write a test where they
+        // disagree, and an APPEND filing an older message at a newer UID is
+        // exactly how they disagree in practice.
+        selected = [...selected].sort((a, b) => a.uid - b.uid);
 
         for (const message of selected) {
           if (query.source) state.sourcesFetched.push(message.uid);
@@ -277,17 +292,57 @@ describe('scanInbox', () => {
   });
 
   it('says so, rather than truncating in silence, when the cap is reached', async () => {
-    state.messages = [message(), message(), message()];
+    state.messages = [
+      message({ internalDate: new Date('2026-09-19T11:56:00Z') }),
+      message({ internalDate: new Date('2026-09-19T11:57:00Z') }),
+      message({ internalDate: new Date('2026-09-19T11:58:00Z') }),
+    ];
 
     const scan = await scanInbox(CFG, SINCE, { envelopes: 2 });
 
     expect(scan.envelopes).toHaveLength(2);
-    // complete: false is the signal the cycle turns into a held cursor. The
-    // dropped messages are the NEWEST in the window — sequence order is oldest
-    // first — so advancing past them loses exactly the mail the scan exists
-    // for.
     expect(scan.complete).toBe(false);
     expect(scan.truncated).toMatch(/not read/i);
+    // And it says WHERE it stopped. The dropped messages are the newest in the
+    // window — sequence order is oldest first — so the cycle needs somewhere to
+    // resume that is neither the start of this window (which would read the
+    // same messages again for ever) nor its end (which would step over
+    // everything the cap missed).
+    expect(scan.resumeAt?.toISOString()).toBe('2026-09-19T11:57:00.000Z');
+  });
+
+  it('resumes from the newest message read, even out of arrival order', async () => {
+    // An APPEND can file an older message at a newer UID, so the last envelope
+    // walked is not necessarily the newest one. Taking the last would drag the
+    // cursor backwards into a window that has already been scanned.
+    state.messages = [
+      message({ uid: 1, internalDate: new Date('2026-09-19T11:59:00Z') }),
+      message({ uid: 2, internalDate: new Date('2026-09-19T11:56:00Z') }),
+      message({ uid: 3, internalDate: new Date('2026-09-19T11:57:00Z') }),
+    ];
+
+    const scan = await scanInbox(CFG, SINCE, { envelopes: 2 });
+
+    expect(scan.complete).toBe(false);
+    expect(scan.resumeAt?.toISOString()).toBe('2026-09-19T11:59:00.000Z');
+  });
+
+  it('does not count what the server volunteered from before the window against the cap', async () => {
+    // The server answers a SINCE date from midnight, so a quiet mailbox can
+    // still be handed a day of older mail ahead of the window. Counting that
+    // against the cap would report a window as truncated that was read in
+    // full, and move the cursor on a scan that had no need to.
+    state.messages = [
+      message({ internalDate: new Date('2026-09-19T02:00:00Z') }),
+      message({ internalDate: new Date('2026-09-19T03:00:00Z') }),
+      message({ internalDate: new Date('2026-09-19T11:58:00Z') }),
+    ];
+
+    const scan = await scanInbox(CFG, SINCE, { envelopes: 2 });
+
+    expect(scan.envelopes).toHaveLength(1);
+    expect(scan.complete).toBe(true);
+    expect(scan.resumeAt).toBeNull();
   });
 
   it('says so when more bounce notifications arrived than it will download', async () => {
@@ -305,6 +360,23 @@ describe('scanInbox', () => {
     expect(scan.bounces).toHaveLength(2);
     expect(scan.complete).toBe(false);
     expect(scan.truncated).toMatch(/bounce notifications/i);
+    expect(scan.resumeAt).not.toBeNull();
+  });
+
+  it('fetches sources by UID and not by sequence number', async () => {
+    // The fake throws on an array range without { uid: true }, because
+    // imapflow reads one as sequence numbers — which renumber as the mailbox
+    // changes, so the source pass would download whichever messages happened
+    // to sit at those positions.
+    state.messages = [
+      message({ uid: 9, from: 'mailer-daemon@example.com', subject: 'Undeliverable', source: DSN_SOURCE }),
+    ];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(state.violations).toEqual([]);
+    expect(state.sourcesFetched).toEqual([9]);
+    expect(scan.bounces).toHaveLength(1);
   });
 
   it('logs in once and logs out once, whatever the window held', async () => {

@@ -92,9 +92,12 @@ command may be issued while a fetch is being iterated — the client serialises
 commands through one queue and the in-flight fetch holds it, so a nested
 command deadlocks until the socket times out.
 
-The scan window's own message times come from the server's `internalDate`,
-never from the `Date:` header, which is the sender's clock and is both
-routinely wrong and trivially forged.
+The scan window's own message times come from the server's `internalDate`.
+The sender's `Date:` header is not trusted for this: it is the sender's clock,
+routinely wrong and trivially forged. It is read only where a server returns no
+`internalDate` at all, and then only clamped into the scan's own window, so a
+header claiming 1970 or 2099 cannot move a message out of the window it was
+actually read in.
 
 ### Detecting a bounce
 
@@ -164,10 +167,21 @@ cannot be read can still deliver perfectly well.
 `imap_status` has a fourth value, `incomplete`, and it is deliberately not
 `error`. It means the mailbox was read perfectly well and the scan then could
 not finish recording what it found — a failed write, a match set that could not
-be read, a credential that could not be opened out of the database, a cap
-reached before the window was read out. Nothing is wrong with the mailbox, so
-the Accounts screen must not say there is: an admin told `error` goes and
-re-enters a password that was never wrong.
+be read, a credential that could not be opened out of the database. Nothing is
+wrong with the mailbox, so the Accounts screen must not say there is: an admin
+told `error` goes and re-enters a password that was never wrong. A mailbox for
+which no password was ever stored is the exception and reports `error`: no
+retry can clear that one, and only the admin can.
+
+A cap reached before the window was read out is NOT `incomplete`, because
+`incomplete` holds the cursor and holding it here stalls the mailbox for good:
+the window is derived from the cursor, so the next scan recomputes the same
+window, reads the same first few hundred messages and stops in the same place.
+A mailbox busy enough to reach the cap would never read past it. So a truncated
+scan reports `active` and advances the cursor to the newest message it actually
+read, and the mailbox's card says that some messages in the window went
+unchecked. Stepping over that gap is the cap's cost; holding the cursor costs
+the gap and everything after it, permanently.
 
 The scan window is bounded. The first scan of a mailbox looks back one day
 rather than its whole history, and each later scan starts from the last one,
@@ -180,7 +194,9 @@ while a slow scan was running is read by the next one instead of stepped over.
 `error`, `incomplete` and `unconfigured` all leave it exactly where it was:
 there is unread mail behind the window in the first two cases and no window at
 all in the third, and advancing in any of them loses mail that fixing the cause
-will not bring back.
+will not bring back. The one scan that moves the cursor anywhere other than its
+own start time is the truncated one above, which moves it to the newest message
+it read — the only value that is neither a stall nor a skip.
 
 ## Testing
 

@@ -323,7 +323,9 @@ async function scanMailbox(
   const who = row.from_email;
 
   /**
-   * Opening the credential is 'incomplete', never 'error'.
+   * A credential that FAILS TO OPEN is 'incomplete', never 'error'. A
+   * credential that was never stored is 'error' -- see that branch below; it
+   * is the one fault here that no retry can clear.
    *
    * This whole block sat outside the try that maps to 'incomplete', so a
    * rejected `email_account_secrets` read — a database blip, a dropped
@@ -343,13 +345,31 @@ async function scanMailbox(
    */
   let password: string;
   try {
+    // maybeSingle(), not single(): "no password stored for this mailbox" and
+    // "the read failed" are different faults with different audiences, and
+    // single() collapses them into one PostgREST row-count error whose text
+    // (PGRST116, 'JSON object requested, multiple (or no) rows returned') is
+    // what the admin would have been shown. A missing secret is a setting
+    // somebody has to fix; a failed read fixes itself on the next pass.
     const secretRes = await deps.db
       .from('email_account_secrets')
       .select('secret_encrypted')
       .eq('account_id', row.id)
-      .single();
-    if (secretRes.error || !secretRes.data) {
-      throw new Error(secretRes.error?.message ?? 'this mailbox has no stored password');
+      .maybeSingle();
+    if (secretRes.error) throw new Error(secretRes.error.message);
+    if (!secretRes.data) {
+      // 'error', and the one place in this file that reports one without an
+      // IMAP failure behind it. No password was ever saved for this mailbox,
+      // so no scan of it can ever succeed and no number of retries will help;
+      // 'incomplete' would tell the admin there is nothing to do, and they
+      // would believe it while replies went unread indefinitely. The cursor
+      // holds either way, and sending is untouched either way.
+      const missing =
+        'No password is stored for this mailbox, so its inbox cannot be read. ' +
+        'Re-enter the password on this mailbox to fix it. Sending is unaffected.';
+      note(who, missing);
+      await touch(deps, note, row, 'error', missing, who);
+      return;
     }
     password = await decryptSecret(
       String((secretRes.data as { secret_encrypted: string }).secret_encrypted),
@@ -407,17 +427,37 @@ async function scanMailbox(
    */
   let incomplete = false;
 
-  // A cap reached inside the session means part of this window was never
-  // looked at. Said out loud AND treated as incomplete, which is the opposite
-  // of how the address-page cap in readSentAddresses is handled, and the two
-  // differ for a reason: that cap is deterministic — the next pass reads the
-  // same rows and stops in the same place, so holding the cursor would stall
-  // the mailbox permanently. This one is not. A mailbox that took a flood in
-  // one window is usually quieter in the next, and the same window re-read
-  // then finishes. Advancing over it would lose every message past the cap.
+    /**
+   * A cap reached inside the session means part of this window was never
+   * looked at -- but NOT that the scan made no progress, and the difference
+   * decides whether this feature works at all for a busy mailbox.
+   *
+   * This used to be treated as `incomplete`, which holds the cursor. Holding
+   * it does not re-read the missed tail on the next pass: scanWindow() derives
+   * the window from the cursor, so an unmoved cursor recomputes the SAME
+   * window, whose first ENVELOPE_LIMIT messages are the same ones, and the
+   * walk stops in the same place. A mailbox taking more than that many
+   * messages a day would never read past the first few hundred, never record a
+   * reply behind them, and report 'nothing wrong with this mailbox' every five
+   * minutes while doing it -- exactly the high-volume mailbox this phase is
+   * for.
+   *
+   * So a truncated scan advances to the newest message it actually READ. The
+   * gap between that message and the end of the window is lost, which is the
+   * honest cost of a cap; holding the cursor loses that gap and everything
+   * after it, for ever. The admin is told, on the mailbox's own card.
+   *
+   * `resumeAt` must be strictly ahead of the window's own start, or there is
+   * no progress to make: ENVELOPE_LIMIT messages sharing one timestamp would
+   * otherwise write back a cursor the next scanWindow() call rounds straight
+   * back to `since`. That case is left `incomplete` -- a flood inside a single
+   * second is transient in a way a day of steady volume is not.
+   */
+  let resumeAt: Date | null = null;
   if (!scan.complete) {
-    incomplete = true;
     note(who, `the inbox scan did not finish the window: ${scan.truncated ?? 'a limit was reached'}`);
+    if (scan.resumeAt && scan.resumeAt.getTime() > since.getTime()) resumeAt = scan.resumeAt;
+    else incomplete = true;
   }
 
   // ── replies ──────────────────────────────────────────────────────
@@ -499,6 +539,24 @@ async function scanMailbox(
       'The mailbox was read, but what the scan found could not all be recorded. ' +
       'The same window will be read again; sending is unaffected.';
     await touch(deps, note, row, 'incomplete', detail, who, now);
+    return;
+  }
+
+  if (resumeAt) {
+    // 'active' and not 'incomplete', because nothing failed and nothing is
+    // waiting to be retried: this scan read a window it could not finish and
+    // moved the cursor to where it stopped. The sentence rides along on
+    // imap_last_error so the Accounts card can say so -- a mailbox quietly
+    // dropping part of every window must not look identical to one that reads
+    // all of it. touch_inbox_scan() advances the cursor to what is passed, so
+    // what is passed is resumeAt, NOT the scan's start time: the start time
+    // would step over the very messages the cap stopped short of.
+    const detail =
+      `This mailbox takes more mail than one scan reads (${scan.truncated ?? 'a limit was reached'}). ` +
+      'The next scan continues from where this one stopped, so some messages in ' +
+      'between are not checked for replies or bounces. Sending is unaffected.';
+    await touch(deps, note, row, 'active', detail, who, resumeAt);
+    result.scanned += 1;
     return;
   }
 
