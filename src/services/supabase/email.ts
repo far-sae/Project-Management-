@@ -662,11 +662,25 @@ export const checkDomainAuth = async (domain: string): Promise<DomainAuthReport>
 
 // ── Campaigns ─────────────────────────────────────────────────────────
 
+/**
+ * The campaigns a person composed, newest first.
+ *
+ * `kind = 'sequence'` is excluded at the query, not on screen: those are the
+ * hidden campaigns that carry one sequence step's wording (migration 158e),
+ * one per step per sequence, and listing them would bury the campaigns
+ * somebody actually wrote under rows they never created and cannot act on.
+ * They are reached through the Sequences tab, which is where they mean
+ * something.
+ */
 export const listCampaigns = async (
   orgId: string,
   workspaceId: string | null,
 ): Promise<EmailCampaign[]> => {
-  let query = supabase.from("email_campaigns").select("*").eq("organization_id", orgId);
+  let query = supabase
+    .from("email_campaigns")
+    .select("*")
+    .eq("organization_id", orgId)
+    .neq("kind", "sequence");
   if (workspaceId !== null) {
     query = query.eq("workspace_id", workspaceId);
   }

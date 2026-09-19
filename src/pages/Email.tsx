@@ -4,10 +4,11 @@ import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
-  AccountsTab, ComposeTab, CampaignsTab, SuppressionTab, SettingsTab,
+  AccountsTab, ComposeTab, CampaignsTab, SequencesTab, SuppressionTab, SettingsTab,
 } from '@/components/email';
 
-type EmailTabValue = 'campaigns' | 'compose' | 'accounts' | 'suppression' | 'settings';
+type EmailTabValue =
+  | 'campaigns' | 'sequences' | 'compose' | 'accounts' | 'suppression' | 'settings';
 
 export const Email: React.FC = () => {
   const { user } = useAuth();
@@ -30,6 +31,7 @@ export const Email: React.FC = () => {
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as EmailTabValue)}>
         <TabsList>
           <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+          <TabsTrigger value="sequences">Sequences</TabsTrigger>
           <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="suppression">Suppression</TabsTrigger>
@@ -38,6 +40,10 @@ export const Email: React.FC = () => {
 
         <TabsContent value="campaigns">
           <CampaignsTab orgId={orgId} workspaceId={workspaceId} />
+        </TabsContent>
+
+        <TabsContent value="sequences">
+          <SequencesTab orgId={orgId} workspaceId={workspaceId} />
         </TabsContent>
 
         <TabsContent value="compose">

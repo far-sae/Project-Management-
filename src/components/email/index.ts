@@ -1,6 +1,9 @@
 export { AccountsTab } from './AccountsTab';
 export { ComposeTab } from './ComposeTab';
 export { CampaignsTab } from './CampaignsTab';
+export { SequencesTab } from './SequencesTab';
+export { SequenceEditor } from './SequenceEditor';
+export { EnrollmentTable } from './EnrollmentTable';
 export { SuppressionTab } from './SuppressionTab';
 export { SettingsTab } from './SettingsTab';
 export { MailboxCard } from './MailboxCard';

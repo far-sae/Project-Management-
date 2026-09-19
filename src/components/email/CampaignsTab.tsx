@@ -87,6 +87,9 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
     if (!orgId) { setCampaigns([]); setLoading(false); return; }
     if (silent) setRefreshing(true); else setLoading(true);
     try {
+      // Excludes kind 'sequence' at the query — the hidden campaign behind a
+      // sequence step is not a campaign anybody composed, and one row per step
+      // per sequence would be this list's usefulness gone. See listCampaigns.
       const list = await listCampaigns(orgId, workspaceId);
       setCampaigns(list);
     } catch (err) {
