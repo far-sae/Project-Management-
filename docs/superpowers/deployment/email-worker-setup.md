@@ -1,8 +1,9 @@
 # Email Worker — Deployment
 
 This guide covers deploying `worker/` — the persistent Node process that now
-sends the email outbox and scans each mailbox's own inbox for replies and
-bounces — and confirming it is actually running. It supersedes the sending
+sends the email outbox, scans each mailbox's own inbox for replies and
+bounces, and moves multi-step sequences along — and confirming it is actually
+running. It supersedes the sending
 mechanism described in `email-marketing-setup.md`: read that guide first for
 the migrations, the Vercel routes and the encryption key, then use this one to
 stand up the worker itself.
@@ -17,8 +18,25 @@ adds defaults to the "not configured" state, and a database that has not run
 it yet still sends exactly as `email-marketing-setup.md` describes — the inbox
 loop below simply finds no mailbox with an `imap_host` to scan.
 
+It also assumes migrations `158_email_sequences.sql`,
+`159_sequence_engine.sql` and `160_claim_respects_pinned_mailbox.sql` have been
+applied, in that order and after 157. They add the sequence tables, the
+functions that move an enrollment along, and one condition in
+`claim_email_batch()` so a follow-up leaves from the mailbox its thread started
+on. Like 157, none of it is required for sending: a database that has not run
+them still sends campaigns exactly as before, and the sequence loop below finds
+no enrollment to move.
+
+**160 drops and re-creates `claim_email_batch()`**, because its return type
+gains two columns. It is dropped by exact signature and re-created in the same
+file, so the only window in which the worker has no claim is the moment
+between the two statements — but run 160 in one go rather than statement by
+statement, and if the worker logs `could not claim` immediately after, re-run
+the file.
+
 Background: `docs/superpowers/specs/2026-09-18-email-deliverability-design.md`,
-`docs/superpowers/specs/2026-09-19-email-inbox-sync-design.md`, and
+`docs/superpowers/specs/2026-09-19-email-inbox-sync-design.md`,
+`docs/superpowers/specs/2026-09-19-email-sequences-design.md`, and
 `worker/README.md` for the send cycle in detail.
 
 ---
@@ -91,6 +109,58 @@ after that stopped the scan from finishing, so the next pass simply re-reads
 the same window. The Accounts screen renders it as a plain, non-red remark
 for exactly that reason; do not go looking for a credential problem on a
 mailbox that says `incomplete`.
+
+---
+
+## What the sequence loop is, and why it sends nothing itself
+
+A third loop, slower again, runs once a minute. It does exactly two things:
+
+1. It calls `reconcile_stalled_enrollments()`, which is a safety net rather
+   than routine work — see below.
+2. It calls `claim_sequence_enrollments()` for up to fifty people whose next
+   step has fallen due, and writes one ordinary `email_messages` row for each.
+
+**It never sends.** It writes a queued row and stops. Everything that decides
+whether that row may go out — the mailbox pool, the daily and hourly caps, the
+warmup ramp, the send window, the suppression list, the three-attempt retry
+budget — is applied afterwards by the send loop, unchanged, because a sequence
+step is an ordinary message. That is the whole design: a second sender would
+drift from those rules, and what drift costs here is the customer's sending
+domain.
+
+Two consequences worth knowing before somebody reports them as bugs:
+
+- **A sequence makes a mailbox's queue longer, never its daily volume larger.**
+  A three-step sequence to 200 people is 600 messages over its run, and the
+  same daily limit and warmup ramp still bound how fast they leave. So a
+  campaign started while a sequence is running will look slower. It is not
+  throttled or stuck; it is queued behind mail that is also queued.
+- **A follow-up is pinned to the mailbox its thread started on.** The first
+  step goes out through whichever pool member was free, and every later step
+  for that person waits for the same one. So a person's follow-up can sit
+  queued while other mailboxes in the pool are idle. The alternative is a
+  reply arriving from a different address than the message it answers, which
+  the recipient's client will not thread and which reads as a second stranger.
+
+### `reconcile_stalled_enrollments()`, and what a non-zero count means
+
+The worker logs a line whenever this returns anything other than zero, and it
+is worth reading when it does.
+
+The claim advances a person to their next step and clears their due date in
+one statement, and it takes nothing with a null due date. From that instant the
+only thing that can move them again is their message reaching a final state —
+so any path that ends a message without ending or rescheduling its enrollment
+leaves that person frozen while every screen still shows them active. The
+function sweeps up anyone in that state: an active enrollment with no due date
+whose most recent message is `failed` or `suppressed`.
+
+A non-zero count is not an error and needs no action — the sweep has already
+fixed it. It does mean one of those paths fired, most often an address
+suppressed between the step being queued and the send claim picking it up,
+which is ordinary. A count that is non-zero on most cycles is worth
+investigating.
 
 ---
 
@@ -353,7 +423,15 @@ safe to run again on its own).
   equivalent) is wired up for this service.
 - **One instance only, and nothing enforces that but this document.** Railway
   will happily run more replicas if the count is raised; there is no
-  application-level lock that refuses a second sender.
+  application-level lock that refuses a second sender. The sequence claim uses
+  `FOR UPDATE SKIP LOCKED`, so a second instance would not send a step twice —
+  but the send loop's pacing and the warmup ramp both assume one sender.
+- **A sequence's step delays are a floor, not a schedule.** "72 hours" means
+  the follow-up becomes eligible 72 hours after the previous step was actually
+  sent. It then waits for the send window, the mailbox's remaining daily
+  allowance and its turn in the queue, so it goes out at or after that mark,
+  never before and sometimes well after. There is no way to schedule a step
+  for a specific clock time.
 - **The inbox loop reads envelopes, and bodies only for bounce candidates.**
   Every message's envelope (from, subject, date) is read to recognise a reply
   or a bounce; a message's body is downloaded, in-memory, only once its

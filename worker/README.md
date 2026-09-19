@@ -27,6 +27,30 @@ migration `156_mailbox_pool_and_worker.sql`.
 A mailbox whose credential cannot be read is skipped *before* anything is
 claimed, so its share of the queue stays queued for a mailbox that can send it.
 
+A claimed row that belongs to a sequence step past the first also gets
+`In-Reply-To` and `References` naming the steps already sent to that person, so
+the follow-up lands in the same conversation. The ids come from the rows
+themselves: every Message-ID is derived as `<{email_messages.id}@{sender
+domain}>`, so the thread is reconstructable without a header ever being stored.
+
+## The other two loops
+
+The same process runs two slower loops beside the sender. They share nothing
+with it but the shutdown flag.
+
+- **Inbox, every five minutes.** Reads each mailbox that has an `imap_host`,
+  matches incoming senders against what the organisation sent recently, and
+  records replies, auto-replies and bounces. An IMAP failure never touches the
+  send path: reading a mailbox and sending from it are separate permissions at
+  every provider.
+- **Sequences, every minute.** Turns enrollments whose next step has fallen due
+  into ordinary queued `email_messages` rows, and runs
+  `reconcile_stalled_enrollments()` first. It never sends — the send loop above
+  picks those rows up with the pool, the caps, the warmup, the window and the
+  suppression list all applied as they are to any other message. See
+  `docs/superpowers/deployment/email-worker-setup.md` for what a non-zero
+  reconcile count means.
+
 ## Environment
 
 | Variable | Required | Meaning |
