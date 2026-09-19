@@ -254,6 +254,35 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
           </div>
         )}
 
+        {/*
+          Off until somebody turns it on, and worded so that what it does is
+          clear before they do. Recording when a recipient opened an email is
+          surveillance, however ordinary it has become; some users of this
+          product need consent for it and some simply would not want it.
+
+          The second sentence is not a disclaimer to be trimmed. Apple Mail
+          pre-fetches every image in every message and has since 2021, so a
+          user who turns this on and reads the number as "how many people read
+          my email" is being misled by us. Saying it here is cheaper than the
+          decision they would otherwise make on it.
+        */}
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
+          <div>
+            <Label htmlFor="track-opens">Track opens</Label>
+            <p className="text-xs text-muted-foreground">
+              Adds an invisible image to bulk and sequence mail so you can see which messages were
+              opened. Never added to single sends. Apple Mail and most security scanners load
+              images automatically, so the count is an estimate — the screens separate what looks
+              automatic from what does not.
+            </p>
+          </div>
+          <Switch
+            id="track-opens"
+            checked={settings.trackOpens}
+            onCheckedChange={(v) => update((s) => ({ ...s, trackOpens: v }))}
+          />
+        </div>
+
         <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
           <div>
             <Label htmlFor="window-enabled">Only send within a window</Label>

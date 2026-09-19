@@ -172,6 +172,16 @@ export interface EmailCampaign {
    * writes `EmailMessage.repliedAt`/`bouncedAt`.
    */
   repliedCount: number;
+  /**
+   * Messages of this campaign that were opened — a count of MESSAGES, not of
+   * image fetches, so somebody who opens one message fifty times counts once.
+   *
+   * It is an estimate and every screen that shows it says so. Apple Mail
+   * pre-fetches every image in every message and has since 2021, so a share of
+   * this number is nobody reading anything; `openWasPrefetch` on the message is
+   * what separates the two.
+   */
+  openedCount: number;
   bouncedCount: number;
   createdAt: Date;
 }
@@ -249,6 +259,14 @@ export interface EmailSettings {
   window: SendWindow;
   jitterMinMs: number;
   jitterMaxMs: number;
+  /**
+   * Whether a tracking pixel is put in this organization's bulk mail.
+   *
+   * False unless somebody turned it on, and that is a decision rather than
+   * caution: recording when a customer's customer opened an email is
+   * surveillance however ordinary it has become. See migration 161a.
+   */
+  trackOpens: boolean;
 }
 
 /** A single INBOX message, as read over IMAP. Envelope only — no body. */

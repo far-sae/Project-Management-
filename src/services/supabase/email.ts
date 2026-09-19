@@ -141,6 +141,8 @@ interface EmailCampaignRow {
   // reply/bounce transition — never recomputed by finalize_email_campaigns()
   // the way the four counts above are.
   replied_count: number;
+  /** Nullable here, not in the column: a database that has not run 161 yet. */
+  opened_count?: number | null;
   bounced_count: number;
   created_at: string;
 }
@@ -202,6 +204,8 @@ interface EmailSettingsRow {
   send_timezone: string;
   jitter_min_ms: number;
   jitter_max_ms: number;
+  /** Nullable here, not in the column: a database that has not run 161 yet. */
+  track_opens?: boolean | null;
 }
 
 /** Raw shape of the `crm_contacts` columns `contactsForCampaign` selects. */
@@ -296,6 +300,9 @@ export const mapCampaignRow = (row: EmailCampaignRow): EmailCampaign => ({
   failedCount: row.failed_count,
   suppressedCount: row.suppressed_count,
   repliedCount: row.replied_count,
+  // Zero on a database that has not run migration 161 yet, which is the same
+  // thing the column's own default says.
+  openedCount: row.opened_count ?? 0,
   bouncedCount: row.bounced_count,
   createdAt: new Date(row.created_at),
 });
@@ -356,6 +363,9 @@ export const mapEmailSettingsRow = (row: EmailSettingsRow): EmailSettings => ({
   },
   jitterMinMs: row.jitter_min_ms,
   jitterMaxMs: row.jitter_max_ms,
+  // Null on a database that has not run migration 161 yet, which reads as off
+  // — the same answer the column's own default gives.
+  trackOpens: row.track_opens === true,
 });
 
 /**
@@ -376,6 +386,9 @@ const defaultEmailSettings = (orgId: string, timezone: string = "UTC"): EmailSet
   },
   jitterMinMs: 8000,
   jitterMaxMs: 25000,
+  // No settings row means nobody has been to this screen, which cannot mean
+  // they asked to be tracking opens.
+  trackOpens: false,
 });
 
 // ── Accounts ──────────────────────────────────────────────────────────
@@ -621,6 +634,7 @@ export const saveEmailSettings = async (orgId: string, settings: EmailSettings):
     send_timezone: settings.window.timezone,
     jitter_min_ms: settings.jitterMinMs,
     jitter_max_ms: settings.jitterMaxMs,
+    track_opens: settings.trackOpens,
   };
 
   const { error } = await supabase

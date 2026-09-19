@@ -18,6 +18,20 @@ adds defaults to the "not configured" state, and a database that has not run
 it yet still sends exactly as `email-marketing-setup.md` describes — the inbox
 loop below simply finds no mailbox with an `imap_host` to scan.
 
+Migration `161_email_open_tracking.sql` adds open tracking, and it is inert
+until somebody switches it on: the `track_opens` column defaults to false, and
+nothing is tracked, recorded or inferred for an organization that has not been
+to **Email -> Settings** and turned it on. The pixel is served by
+`/api/email/open` on Vercel, which needs no new environment variable -- it
+signs with the same `EMAIL_UNSUBSCRIBE_SECRET` the unsubscribe link uses.
+
+What to tell a user who asks why the number looks low, or high: Apple Mail
+pre-fetches every image in every message and has done since 2021, and security
+scanners fetch every URL in inbound mail within seconds of delivery. Both are
+counted and flagged as automatic, and the screens separate them. Clients that
+block images record nothing at all, so the honest reading is that an open count
+is a floor with false positives on top -- never a read receipt.
+
 It also assumes migrations `158_email_sequences.sql`,
 `159_sequence_engine.sql` and `160_claim_respects_pinned_mailbox.sql` have been
 applied, in that order and after 157. They add the sequence tables, the

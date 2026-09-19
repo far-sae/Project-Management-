@@ -1595,3 +1595,107 @@ describe('worker/lib/engine — threading a sequence follow-up', () => {
     expect(refs).not.toMatch(/msg-2/);
   });
 });
+
+/** A settings row with tracking switched on; everything else is the default. */
+function trackingOn(over: Row = {}): Row {
+  return {
+    organization_id: 'org-1',
+    send_window_enabled: false,
+    send_window_start: 0,
+    send_window_end: 24,
+    send_days: [1, 2, 3, 4, 5, 6, 7],
+    send_timezone: 'UTC',
+    jitter_min_ms: 0,
+    jitter_max_ms: 0,
+    track_opens: true,
+    ...over,
+  };
+}
+
+describe('worker/lib/engine — the open-tracking pixel', () => {
+  it('adds nothing unless the organisation switched tracking on', async () => {
+    // Off is the default and the switch is the only thing that turns it on.
+    // Nothing infers consent from anything else.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)]);
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    expect(String(composer.built[0].mail.html)).not.toContain('/api/email/open');
+  });
+
+  it('puts one pixel in a bulk message when it is on', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], { settings: [trackingOn()] });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    const html = String(composer.built[0].mail.html);
+    expect(html).toContain('/api/email/open?m=msg-1&t=');
+    expect(html.match(/api\/email\/open/g)).toHaveLength(1);
+    // The recipient must never see a broken-image placeholder or an alt
+    // caption where the pixel is.
+    expect(html).toContain('width="1"');
+    expect(html).toContain('alt=""');
+  });
+
+  it('never tracks a single send', async () => {
+    // Transactional mail is somebody confirming a password or a booking.
+    // Whether they opened it is not what they came for, and it carries no
+    // unsubscribe link either — the token that signs the pixel is the same one.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      settings: [trackingOn()],
+      campaigns: [campaignRow({ kind: 'single' })],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    expect(String(composer.built[0].mail.html)).not.toContain('/api/email/open');
+  });
+
+  it('tracks a sequence step, which is outreach like any other', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      settings: [trackingOn()],
+      campaigns: [campaignRow({ kind: 'sequence' })],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    expect(String(composer.built[0].mail.html)).toContain('/api/email/open?m=msg-1&t=');
+  });
+
+  it('keeps the tracking URL out of the plain-text part', async () => {
+    // A text/plain alternative cannot load an image, so a bare tracking URL
+    // sitting in the text of somebody's email is both useless and alarming to
+    // read.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], { settings: [trackingOn()] });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    expect(String(composer.built[0].mail.text)).not.toContain('/api/email/open');
+  });
+
+  it('signs the pixel with the same token as the unsubscribe link', async () => {
+    // One secret, one HMAC of the message id. A second scheme would be a
+    // second thing to rotate and a second thing to get wrong.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], { settings: [trackingOn()] });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    const html = String(composer.built[0].mail.html);
+    const open = /api\/email\/open\?m=msg-1&t=([^"&]+)/.exec(html);
+    const unsub = /api\/email\/unsubscribe\?m=msg-1&t=([^"&]+)/.exec(html);
+    expect(open?.[1]).toBeTruthy();
+    expect(open?.[1]).toBe(unsub?.[1]);
+  });
+});

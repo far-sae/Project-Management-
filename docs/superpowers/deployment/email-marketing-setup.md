@@ -53,7 +53,8 @@ mailbox pool, warmup and worker that superseded the tick).
 Nine migrations ship this feature. The five below are the sending core;
 `157_inbox_sync.sql` (replies, bounces and the Sent-folder copy) and
 `158_email_sequences.sql` + `159_sequence_engine.sql` +
-`160_claim_respects_pinned_mailbox.sql` (multi-step sequences) come after
+`160_claim_respects_pinned_mailbox.sql` (multi-step sequences) and
+`161_email_open_tracking.sql` (open tracking, off until switched on) come after
 them, in that order, and are covered by `email-worker-setup.md`. Everything in
 157 through 160 is optional for sending: a database that stops at 156 sends
 campaigns exactly as this guide describes.
@@ -70,8 +71,8 @@ organization-wide send window and jitter, changes `claim_email_batch()` to
 take the mailbox and budget it's claiming for, and **removes** the
 `email_worker_minute` cron and `public.kick_email_worker()` — sending moves to
 the persistent worker from here on). Apply all five, in order — they must not
-be split up or reordered — then 157, 158, 159 and 160 on top if you want
-inbox sync and sequences.
+be split up or reordered — then 157 through 161 on top if you want
+inbox sync, sequences and open tracking.
 
 ```bash
 npx supabase db push --linked

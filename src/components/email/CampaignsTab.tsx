@@ -185,6 +185,18 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
                           the expanded recipient list, which loads lazily and
                           would otherwise make this row show nothing, not
                           even a zero, until an admin happened to expand it. */}
+                      {/* An estimate, and labelled as one. Apple Mail
+                          pre-fetches every image in every message and has
+                          since 2021, so a share of this is nobody reading
+                          anything — which is why the title says so and why it
+                          sits to the LEFT of replies rather than being the
+                          headline. A reply is a fact; an open is a signal. */}
+                      <span
+                        className="text-violet-600 dark:text-violet-400"
+                        title="Opened (estimate — Apple Mail and scanners load images automatically)"
+                      >
+                        O {campaign.openedCount}
+                      </span>
                       <span className="text-blue-600 dark:text-blue-400" title="Replied">R {campaign.repliedCount}</span>
                       <span className="text-amber-600 dark:text-amber-400" title="Bounced">B {campaign.bouncedCount}</span>
                     </div>

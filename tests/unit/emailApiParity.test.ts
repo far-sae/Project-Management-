@@ -15,6 +15,19 @@
 
 import { describe, it, expect } from 'vitest';
 
+import {
+  openPixelUrl as srcOpenPixelUrl,
+  isPrefetch as srcIsPrefetch,
+  injectTrackingPixel as srcInjectTrackingPixel,
+  TRANSPARENT_GIF_BASE64 as srcGif,
+} from '@/lib/email/openTracking';
+import {
+  openPixelUrl as apiOpenPixelUrl,
+  isPrefetch as apiIsPrefetch,
+  injectTrackingPixel as apiInjectTrackingPixel,
+  TRANSPARENT_GIF_BASE64 as apiGif,
+} from '../../api/_lib/openTracking';
+
 import { encryptSecret as srcEncrypt, decryptSecret as srcDecrypt } from '@/lib/email/crypto';
 import { encryptSecret as apiEncrypt, decryptSecret as apiDecrypt } from '../../api/_lib/crypto';
 
@@ -206,5 +219,52 @@ describe('interpretDomainAuth parity', () => {
     const srcReport = srcInterpretDomainAuth(raw);
     expect(apiReport).toEqual(srcReport);
     expect(apiReport.dkim).toEqual({ ok: false, value: 'google', detail: expect.any(String) });
+  });
+});
+
+describe('openTracking, in both copies', () => {
+  it('agrees on the pixel URL', () => {
+    expect(srcOpenPixelUrl('https://tasks.example.com/', 'msg-1', 'tok')).toBe(
+      apiOpenPixelUrl('https://tasks.example.com/', 'msg-1', 'tok'),
+    );
+    expect(apiOpenPixelUrl('https://tasks.example.com', 'msg-1', 'tok')).toContain(
+      '/api/email/open?m=msg-1&t=tok',
+    );
+  });
+
+  it('agrees on what looks like a machine', () => {
+    const sent = new Date('2026-09-19T09:00:00Z');
+    const cases: Array<[string | null, Date]> = [
+      ['Mozilla/5.0 (compatible; GoogleImageProxy)', new Date('2026-09-19T14:00:00Z')],
+      ['AppleMailProxy/1.0', new Date('2026-09-19T14:00:00Z')],
+      [null, new Date('2026-09-19T09:00:02Z')],
+      ['Mozilla/5.0 (Macintosh)', new Date('2026-09-19T14:00:00Z')],
+      [null, new Date('2026-09-19T08:59:00Z')],
+    ];
+    for (const [agent, now] of cases) {
+      expect(apiIsPrefetch(agent, sent, now)).toBe(srcIsPrefetch(agent, sent, now));
+    }
+  });
+
+  it('agrees on the injected pixel, and injects it once', () => {
+    const url = 'https://tasks.example.com/api/email/open?m=1&t=t';
+    const html = '<html><body><p>Hello</p></body></html>';
+    expect(apiInjectTrackingPixel(html, url)).toBe(srcInjectTrackingPixel(html, url));
+    const once = srcInjectTrackingPixel(html, url);
+    expect(srcInjectTrackingPixel(once, url)).toBe(once);
+    // Before the closing tag, never after it: a trailing element outside
+    // </body> is invalid and some clients drop it, which would silently record
+    // nothing.
+    expect(once.indexOf('<img')).toBeLessThan(once.indexOf('</body>'));
+  });
+
+  it('agrees on the bytes of the pixel itself', () => {
+    expect(apiGif).toBe(srcGif);
+    const bytes = Buffer.from(srcGif, 'base64');
+    expect(bytes).toHaveLength(42);
+    // A real GIF, not a placeholder somebody meant to replace: the header, and
+    // the trailer that tells a decoder the image ended.
+    expect(bytes.subarray(0, 6).toString('ascii')).toBe('GIF89a');
+    expect(bytes[bytes.length - 1]).toBe(0x3b);
   });
 });

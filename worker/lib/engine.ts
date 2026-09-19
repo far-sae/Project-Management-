@@ -44,6 +44,7 @@ import { decryptSecret } from '@/lib/email/crypto';
 import { blockedReason, selectMailboxes } from '@/lib/email/mailboxPool';
 import { buildMessage, type BuiltMessage } from '@/lib/email/message';
 import { threadHeaders } from '@/lib/email/sequence';
+import { injectTrackingPixel, openPixelUrl } from '@/lib/email/openTracking';
 import { describeSendWindow, isWithinSendWindow } from '@/lib/email/sendWindow';
 import {
   classifySmtpError,
@@ -134,6 +135,7 @@ interface EmailSettingsRow {
   send_timezone: string;
   jitter_min_ms: number;
   jitter_max_ms: number;
+  track_opens: boolean | null;
 }
 
 interface AccountRow {
@@ -234,6 +236,9 @@ function toSettings(organizationId: string, row: EmailSettingsRow | undefined): 
       window: { ...DEFAULT_WINDOW, days: [...DEFAULT_WINDOW.days] },
       jitterMinMs: DEFAULT_JITTER_MIN_MS,
       jitterMaxMs: DEFAULT_JITTER_MAX_MS,
+      // No settings row means nobody has been to the settings screen, which
+      // cannot mean they asked to be tracking opens.
+      trackOpens: false,
     };
   }
   return {
@@ -247,6 +252,9 @@ function toSettings(organizationId: string, row: EmailSettingsRow | undefined): 
     },
     jitterMinMs: row.jitter_min_ms,
     jitterMaxMs: row.jitter_max_ms,
+    // Null on a database that has not run migration 161, which reads as off —
+    // the same answer the column's own default gives.
+    trackOpens: row.track_opens === true,
   };
 }
 
@@ -811,11 +819,24 @@ async function sendBatch(
     let raw: Buffer;
     try {
       let unsubscribe: string | undefined;
-      if (campaign.kind === 'bulk') {
+      let pixel: string | undefined;
+      if (campaign.kind === 'bulk' || campaign.kind === 'sequence') {
         // Bulk mail must carry one-click unsubscribe (RFC 8058); single sends
-        // are transactional and must not.
+        // are transactional and must not. A sequence step is bulk outreach by
+        // any reading of the rule, so it carries one too.
         const token = await signUnsubscribeToken(row.message_id, deps.env.unsubscribeSecret);
         unsubscribe = unsubscribeUrl(deps.env.siteUrl, row.message_id, token);
+
+        // The pixel, only when this organization has asked for it. Off is the
+        // default and the switch is the only thing that turns it on: nothing
+        // here infers consent from anything else.
+        //
+        // Never on a single send. Transactional mail is somebody confirming a
+        // password or a booking, and tracking whether they opened it is not
+        // what they came for.
+        if (settings.trackOpens) {
+          pixel = openPixelUrl(deps.env.siteUrl, row.message_id, token);
+        }
       }
       built = buildMessage({
         kind: campaign.kind,
@@ -824,6 +845,15 @@ async function sendBatch(
         mergeData: row.merge_data ?? {},
         unsubscribeUrl: unsubscribe,
       });
+
+      // After buildMessage, so the pixel goes in once, into the final HTML,
+      // rather than into the template where substitution could duplicate it.
+      // It is deliberately NOT added to the plain-text part: a text/plain
+      // alternative cannot load an image, and a bare tracking URL sitting in
+      // the text of somebody's email is both useless and alarming to read.
+      if (pixel) {
+        built = { ...built, html: injectTrackingPixel(built.html, pixel) };
+      }
 
       // A sequence follow-up belongs in the same conversation as the message
       // before it. Without In-Reply-To and References it opens a second
