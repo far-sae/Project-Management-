@@ -738,9 +738,11 @@ async function sendBatch(
       // Shutting down. Give the rest of the batch back now rather than leaving
       // it to the ten-minute sweep, so a redeploy costs the queue nothing.
       await returnUnattempted(i, 'The worker was asked to stop before this message was attempted.');
-      // `break`, not `return`: the batch has one exit, and whether the
-      // copies are filed on the way out is fileSentCopies' decision to make
-      // and to explain — it is not one this loop should make twice.
+      // `break`, not `return` — belt and braces, and say so plainly:
+      // fileSentCopies bails on the stop flag however this loop exited, so
+      // nothing currently depends on reaching it. It stays because the batch
+      // having ONE exit is what keeps the decision about the copies in the
+      // one function that explains it, instead of split across two.
       break;
     }
 

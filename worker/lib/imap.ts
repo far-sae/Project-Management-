@@ -60,6 +60,12 @@ export function hasImapHost(row: Pick<ImapAccountColumns, 'imap_host'>): boolean
  * that a mailbox without a host is skipped ENTIRELY — no connection, no
  * failure reported — is load-bearing in both, and two copies of it would
  * eventually disagree about a blank string or a missing port.
+ *
+ * The trim is deliberate, and it is a deliberate CHANGE for the inbox cycle,
+ * which did not trim before these two were unified. Trimming is the safer of
+ * the two behaviours: a host pasted with a trailing space resolves nowhere,
+ * and the failure then reads to an admin as an unreachable mail server rather
+ * than as the invisible typo it actually is.
  */
 export function imapConfigFor(row: ImapAccountColumns, password: string): ImapConfig | null {
   if (!hasImapHost(row)) return null;

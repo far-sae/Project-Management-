@@ -19,6 +19,9 @@ import type { Transporter } from 'nodemailer';
 import { encryptSecret } from '@/lib/email/crypto';
 import { runCycle, type CycleDeps } from '../../worker/lib/engine';
 import { buildRaw } from '../../worker/lib/mailer';
+// Reached through the same public entry point worker/lib/mailer.ts itself
+// uses. See the envelope tests at the bottom of this file for why.
+import MailComposer from 'nodemailer/lib/mail-composer';
 
 /* ------------------------------------------------------------------ fixtures */
 
@@ -1411,5 +1414,44 @@ describe('worker/lib/mailer — the nodemailer contract the engine depends on', 
     // boundaries every compile mean a second build is a different message
     // that merely looks alike.
     expect(first.equals(second)).toBe(false);
+  });
+
+  it('reads no sender and no recipient back out of pre-built bytes', async () => {
+    const raw = await buildRaw({ ...options, messageId: '<msg-1@example.com>' });
+
+    // PROTECTS: a send that reaches nobody. Pre-built bytes are streamed
+    // verbatim and nothing is parsed back out of them, so a message handed
+    // over without an envelope named is a MAIL FROM with no RCPT TO —
+    // accepted by the call, delivered to no one, and silent. This is why the
+    // engine names the envelope on every send rather than letting nodemailer
+    // derive one. If this ever comes back populated, that explicit envelope
+    // has become redundant; if it stays empty, it is load-bearing.
+    const envelope = new MailComposer({ raw }).compile().getEnvelope();
+
+    expect(envelope.from).toBe(false);
+    expect(envelope.to).toEqual([]);
+  });
+
+  it('splits a comma in an envelope STRING into a second recipient, but not in an address object', async () => {
+    const raw = await buildRaw({ ...options, messageId: '<msg-1@example.com>' });
+    // A contact whose address field carries a comma — from a CSV import, or
+    // from someone who meant to type two addresses into one box.
+    const smuggled = 'person1@recipient.test, attacker@evil.test';
+
+    const recipientsFor = (to: string | { address: string }): string[] =>
+      new MailComposer({ raw, envelope: { from: 'ada@example.com', to } })
+        .compile()
+        .getEnvelope().to;
+
+    // PROTECTS: mail to somebody no suppression check ever saw. As a bare
+    // string the value is parsed as an address LIST, and the extra name
+    // becomes a second RCPT TO on a message the queue only ever approved for
+    // one recipient.
+    expect(recipientsFor(smuggled)).toHaveLength(2);
+
+    // As an address object — the form the engine passes — the whole value is
+    // taken as one address. It is a mangled one, which bounces and is
+    // somebody's data problem; what it is not is delivery to a stranger.
+    expect(recipientsFor({ address: smuggled })).toHaveLength(1);
   });
 });
