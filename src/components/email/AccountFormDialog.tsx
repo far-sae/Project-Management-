@@ -6,7 +6,14 @@ import { Switch } from '@/components/ui/switch';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, Plus, Save, SendHorizonal } from 'lucide-react';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { AlertTriangle, Info, Loader2, Plus, Save, SendHorizonal } from 'lucide-react';
+import {
+  MAIL_PROVIDERS, providerById, providerForEmail, providerForHost, settingsFor,
+  type ProviderId,
+} from '@/lib/email/providers';
 import { MailboxImapFields, type ImapFieldsValues } from './MailboxImapFields';
 import { MailboxSendingFields, type SendingFieldsValues } from './MailboxSendingFields';
 
@@ -75,6 +82,44 @@ interface AccountFormDialogProps {
 export const AccountFormDialog: React.FC<AccountFormDialogProps> = ({
   open, onOpenChange, form, onFormChange, creating, createError, canRetry, canSubmit, onSubmit, onRetry,
 }) => {
+  // Derived, never stored: the picker reflects whatever host the form holds.
+  const selectedProvider: ProviderId = providerForHost(form.smtpHost);
+  const activeProvider = providerById(selectedProvider);
+
+  /**
+   * Fills the sending and inbox servers in from a preset.
+   *
+   * IMAP goes in alongside SMTP deliberately. It is optional — a mailbox with
+   * no IMAP host is simply never scanned — but leaving it blank when the
+   * answer is known means replies and bounces go undetected for a mailbox
+   * that could have had both for free, and no screen ever says that is why.
+   *
+   * "Other" clears nothing. Somebody who picked Gmail by mistake and then
+   * chose Other wants to edit those fields, not retype them from memory.
+   */
+  const applyProvider = (id: string) => {
+    const settings = settingsFor(id as ProviderId);
+    if (!settings) return;
+    onFormChange((f) => ({ ...f, ...settings }));
+  };
+
+  /**
+   * The address, and a suggestion drawn from its domain.
+   *
+   * It only ever fills a host that is still EMPTY. Rewriting a host somebody
+   * typed — because they later corrected a typo in the address — would be the
+   * form quietly undoing their work, and they would not see it happen: the
+   * server fields are further down the dialog.
+   */
+  const onEmailChange = (value: string) => {
+    const suggestion = providerForEmail(value);
+    onFormChange((f) => {
+      const next = { ...f, fromEmail: value };
+      if (!suggestion || f.smtpHost.trim() !== '') return next;
+      return { ...next, ...(settingsFor(suggestion.id) ?? {}) };
+    });
+  };
+
   const setPort = (value: string) => {
     onFormChange((f) => ({
       ...f,
@@ -113,11 +158,56 @@ export const AccountFormDialog: React.FC<AccountFormDialogProps> = ({
             </div>
           </div>
 
+          {/*
+            Read back from the host rather than held as its own field, so the
+            picker tells the truth about a mailbox saved before this existed
+            and about one whose host somebody has since edited by hand. There
+            is no fourth state to get out of step.
+          */}
+          <div className="space-y-2">
+            <Label htmlFor="acct-provider">Provider</Label>
+            <Select value={selectedProvider} onValueChange={applyProvider}>
+              <SelectTrigger id="acct-provider">
+                <SelectValue placeholder="Pick a provider, or set the server up by hand" />
+              </SelectTrigger>
+              <SelectContent>
+                {MAIL_PROVIDERS.map((provider) => (
+                  <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
+                ))}
+                <SelectItem value="other">Other — enter the server settings myself</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Fills in the sending and inbox servers for you. Everything below stays editable.
+            </p>
+          </div>
+
+          {/*
+            Shown BEFORE Verify is pressed, which is the whole point: almost
+            none of these providers accept an account password any more, and
+            the alternative is somebody pasting the password they log in with
+            and being handed an SMTP code for their trouble.
+          */}
+          {activeProvider && (
+            <div className="rounded-md border border-border bg-secondary/40 p-3 space-y-2">
+              <p className="text-xs text-muted-foreground flex items-start gap-2">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>{activeProvider.setup}</span>
+              </p>
+              {activeProvider.warning && (
+                <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{activeProvider.warning}</span>
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="acct-from-email">From email *</Label>
               <Input id="acct-from-email" type="email" value={form.fromEmail} placeholder="hello@acme.com"
-                onChange={(e) => onFormChange((f) => ({ ...f, fromEmail: e.target.value }))} required />
+                onChange={(e) => onEmailChange(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="acct-reply-to">Reply-to</Label>
