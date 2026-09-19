@@ -43,6 +43,7 @@ import type Mail from 'nodemailer/lib/mailer';
 import { decryptSecret } from '@/lib/email/crypto';
 import { blockedReason, selectMailboxes } from '@/lib/email/mailboxPool';
 import { buildMessage, type BuiltMessage } from '@/lib/email/message';
+import { threadHeaders } from '@/lib/email/sequence';
 import { describeSendWindow, isWithinSendWindow } from '@/lib/email/sendWindow';
 import {
   classifySmtpError,
@@ -175,6 +176,10 @@ interface ClaimedRow {
   to_name: string | null;
   merge_data: Record<string, unknown> | null;
   attempts: number;
+  /** Null for a campaign message, which is most of them. Migration 160. */
+  enrollment_id: string | null;
+  /** 0 is the first step of a sequence; null for a campaign message. */
+  step_index: number | null;
 }
 
 /** The columns of email_accounts the send needs; the pool data comes from the view. */
@@ -819,6 +824,30 @@ async function sendBatch(
         mergeData: row.merge_data ?? {},
         unsubscribeUrl: unsubscribe,
       });
+
+      // A sequence follow-up belongs in the same conversation as the message
+      // before it. Without In-Reply-To and References it opens a second
+      // thread, and the recipient sees a stranger repeating themselves.
+      //
+      // The chain is read from the rows: phase 1 derives every Message-ID from
+      // the row id (see `messageId` above), so the ids of this enrollment's
+      // already-sent steps ARE the thread, and nothing had to be stored to
+      // make that true.
+      //
+      // One read, and only for a follow-up: a first step has no chain and a
+      // campaign message has no enrollment. Failure to read it sends the
+      // message WITHOUT the headers rather than failing the send -- an
+      // unthreaded follow-up is a cosmetic loss, a message not sent is the
+      // feature not working.
+      if (row.enrollment_id && (row.step_index ?? 0) > 0) {
+        Object.assign(
+          built.headers,
+          threadHeaders(
+            await sentChain(deps, note, row.enrollment_id, who),
+            domainOfEmail(account.from_email),
+          ),
+        );
+      }
       // Composed here and not inside the send's own try/catch: a message that
       // will not compose is not an SMTP failure, and classifySmtpError would
       // read it as a transient one while isMailboxFault charged it to the
@@ -987,6 +1016,46 @@ async function sendBatch(
  *     buffers are whole message sources, so the notes below are counts, and
  *     `short` caps whatever the IMAP error itself says.
  */
+/**
+ * The ids of the messages already SENT in this enrollment, oldest step first.
+ *
+ * That list is the thread. Phase 1 derives every Message-ID from the row id
+ * (`<{email_messages.id}@{sender domain}>`), so a follow-up can name its
+ * parent and its whole ancestry without a single header having been stored.
+ *
+ * 'sent' and nothing else: a queued sibling has no Message-ID in anyone's
+ * mailbox, and naming one in References points the recipient's client at a
+ * message that does not exist.
+ *
+ * A failed read returns an empty chain, which sends the follow-up unthreaded.
+ * That is the deliberate trade: the reply lands in a new conversation, which
+ * is untidy, where failing the send would mean the follow-up never arrives.
+ */
+async function sentChain(
+  deps: CycleDeps,
+  note: Note,
+  enrollmentId: string,
+  who: string,
+): Promise<string[]> {
+  try {
+    const { data, error } = await deps.db
+      .from('email_messages')
+      .select('id, step_index')
+      .eq('enrollment_id', enrollmentId)
+      .eq('status', 'sent')
+      .order('step_index', { ascending: true });
+
+    if (error) {
+      note(who, `the thread for this follow-up could not be read: ${error.message}`);
+      return [];
+    }
+    return (data ?? []).map((r) => String((r as { id: string }).id));
+  } catch (err) {
+    note(who, `the thread for this follow-up could not be read: ${short(err)}`);
+    return [];
+  }
+}
+
 async function fileSentCopies(
   deps: CycleDeps,
   note: Note,

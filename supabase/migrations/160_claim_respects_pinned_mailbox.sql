@@ -1,7 +1,7 @@
 -- 160_claim_respects_pinned_mailbox.sql
 --
--- Phase 3, part three: claim_email_batch() learns about a message that names
--- the mailbox it has to go through.
+-- Phase 3, part three: claim_email_batch() learns two things about a sequence
+-- step -- the mailbox it has to go through, and the enrollment it belongs to.
 --
 -- 158 adds email_messages.pinned_account_id and says at length why the pin
 -- belongs on the message and not on the campaign. This file is the other half
@@ -16,6 +16,13 @@
 --
 -- Nothing in this file is applied by the app. The user runs migrations by hand.
 
+-- The return type changes, so the old signature has to go first: CREATE OR
+-- REPLACE cannot alter a function's OUT columns, and a database that ran 156
+-- would otherwise keep the seven-column version. Dropped by exact signature,
+-- and re-created immediately below, so there is never a window where the
+-- worker's only claim is missing.
+drop function if exists public.claim_email_batch(uuid, integer);
+
 create or replace function public.claim_email_batch(
   p_account uuid,
   p_limit integer default 25
@@ -27,7 +34,14 @@ returns table (
   to_email text,
   to_name text,
   merge_data jsonb,
-  attempts integer
+  attempts integer,
+  -- Carried out of the claim rather than read back per message. The send path
+  -- needs them to thread a sequence follow-up onto the message before it, and
+  -- the alternative -- one lookup per claimed row -- would charge every
+  -- campaign message for a column only a sequence step uses. Null for a
+  -- campaign message, which is most of them.
+  enrollment_id uuid,
+  step_index integer
 )
 language plpgsql
 security definer
@@ -163,7 +177,7 @@ begin
     from claimed
    where m.id = claimed.id
   returning m.id, m.campaign_id, m.organization_id, m.to_email, m.to_name,
-            m.merge_data, m.attempts;
+            m.merge_data, m.attempts, m.enrollment_id, m.step_index;
 end;
 $$;
 

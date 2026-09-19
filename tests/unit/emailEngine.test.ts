@@ -136,6 +136,8 @@ interface Fixtures {
   accounts?: Row[];
   secrets?: Row[];
   campaigns?: Row[];
+  /** email_messages rows, which only the sequence thread read consults. */
+  messages?: Row[];
   /** account id -> the rows claim_email_batch hands back for that mailbox. */
   claims?: Record<string, Row[]>;
   /** How many leading record_send_result calls answer with an error. */
@@ -165,6 +167,9 @@ function makeDb(fx: Fixtures) {
     email_accounts: fx.accounts ?? [],
     email_account_secrets: fx.secrets ?? [],
     email_campaigns: fx.campaigns ?? [],
+    // Only the sequence thread read touches this one: sentChain() asks for the
+    // already-sent steps of an enrollment so a follow-up can name them.
+    email_messages: fx.messages ?? [],
   };
 
   const rpcCalls: RpcCall[] = [];
@@ -1490,5 +1495,103 @@ describe('worker/lib/mailer — the nodemailer contract the engine depends on', 
     // taken as one address. It is a mangled one, which bounces and is
     // somebody's data problem; what it is not is delivery to a stranger.
     expect(recipientsFor({ address: smuggled })).toHaveLength(1);
+  });
+});
+
+describe('worker/lib/engine — threading a sequence follow-up', () => {
+  it('names the messages already sent in this enrollment', async () => {
+    // Phase 1 derives every Message-ID from the row id, so the ids of the
+    // steps already sent ARE the thread and nothing had to be stored. Without
+    // these two headers the follow-up opens a second conversation and the
+    // recipient sees a stranger repeating themselves.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(2, { enrollment_id: 'enr-1', step_index: 1 })], {
+      messages: [
+        { id: 'msg-1', enrollment_id: 'enr-1', status: 'sent', step_index: 0 },
+      ],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }),
+    );
+
+    const headers = composer.built[0].mail.headers as Record<string, string>;
+    // sender.test is accountRow()'s from_email domain, which is what the
+    // Message-ID of every message from this mailbox is built on.
+    expect(headers['In-Reply-To']).toMatch(/^<msg-1@/);
+    expect(headers['References']).toBe(headers['In-Reply-To']);
+  });
+
+  it('adds nothing to a campaign message', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1, { enrollment_id: null, step_index: null })]);
+    const mailer = makeMailer(okSend);
+
+    await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }),
+    );
+
+    const headers = composer.built[0].mail.headers as Record<string, string>;
+    expect(headers['In-Reply-To']).toBeUndefined();
+    expect(headers['References']).toBeUndefined();
+  });
+
+  it('adds nothing to the FIRST step, which has no thread to join', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1, { enrollment_id: 'enr-1', step_index: 0 })]);
+    const mailer = makeMailer(okSend);
+
+    await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }),
+    );
+
+    expect(
+      (composer.built[0].mail.headers as Record<string, string>)['In-Reply-To'],
+    ).toBeUndefined();
+    // And it did not go looking for a thread that cannot exist.
+    expect(stub.reads).not.toContain('email_messages');
+  });
+
+  it('sends the follow-up unthreaded rather than not at all', async () => {
+    // A thread that cannot be read is untidy; a follow-up that never arrives
+    // is the feature not working. There is no sent step in the fixture, so the
+    // chain comes back empty.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(2, { enrollment_id: 'enr-1', step_index: 1 })], {
+      messages: [],
+    });
+    const mailer = makeMailer(okSend);
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }),
+    );
+
+    expect(result.sent).toBe(1);
+    expect(
+      (composer.built[0].mail.headers as Record<string, string>)['In-Reply-To'],
+    ).toBeUndefined();
+  });
+
+  it('names only the steps that actually went out', async () => {
+    // A queued sibling has no Message-ID in anybody's mailbox, so naming it in
+    // References points the recipient's client at a message that does not
+    // exist.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(3, { enrollment_id: 'enr-1', step_index: 2 })], {
+      messages: [
+        { id: 'msg-1', enrollment_id: 'enr-1', status: 'sent', step_index: 0 },
+        { id: 'msg-2', enrollment_id: 'enr-1', status: 'queued', step_index: 1 },
+      ],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }),
+    );
+
+    const refs = (composer.built[0].mail.headers as Record<string, string>)['References'];
+    expect(refs).toMatch(/msg-1/);
+    expect(refs).not.toMatch(/msg-2/);
   });
 });
