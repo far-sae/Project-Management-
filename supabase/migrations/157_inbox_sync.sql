@@ -29,7 +29,10 @@
 --     writes `status`, `is_active` or `consecutive_failures`, which are what
 --     claim_email_batch() and record_mailbox_failure() in 156 consult to
 --     decide whether a mailbox may send. Pausing the pool over an unreadable
---     inbox would be a self-inflicted outage.
+--     inbox would be a self-inflicted outage. The other half of the same rule
+--     is that an inbox failure must not quietly lose the mail it failed to
+--     read: (e) holds the scan cursor still on an error, so the first scan
+--     after a repair covers the outage.
 --
 --   * A bounce suppresses only what this organization actually sent. Bounce
 --     notifications are unauthenticated mail from strangers and mailing lists,
@@ -104,28 +107,42 @@ alter table public.email_messages
   add column if not exists bounced_at timestamptz;
 
 -- record_inbox_result() below starts from an address and has to find what this
--- organization sent to it, and the worker's reply matching first reads the
--- distinct addresses a mailbox sent to over a bounded recent window. Both are
--- "this organization's messages to this address", and with no index leading on
--- organization_id both are a sequential scan over every message every tenant
--- has ever queued.
+-- organization sent to it, once per reply and once per bounce on every scan.
+-- The comparison is case-insensitive of necessity -- the address arrives out
+-- of a stranger's mail headers, in whatever case they chose -- so the
+-- predicate is lower(m.to_email) = ..., and a btree on the raw column cannot
+-- serve that at all. It would narrow to the tenant and then scan every message
+-- that tenant has ever queued, which is the one thing that grows without bound
+-- here: a customer's message history only ever gets longer.
 --
--- Not a duplicate of anything already here, which is worth stating because the
--- table already carries four indexes: 152's (status, send_after) for the claim
--- and (campaign_id) for a campaign's rows, 155's (campaign_id,
--- organization_id) for its composite foreign key, and 156's (sent_account_id,
--- sent_at) for mailbox_status.sent_today. None of them leads with
--- organization_id, so none can serve a lookup by recipient address.
+-- The expression index matches that predicate exactly. It is the same pairing
+-- 154 made between its lower(s.email) = lower(m.to_email) sweep and
+-- idx_email_suppressions_org_lower_email, and it works for the same reason:
+-- lower() is immutable, so it may be indexed. The trim() in the predicate sits
+-- on the PARAMETER side of the comparison, where it folds to a constant and
+-- changes nothing about the expression the planner has to match.
 --
--- One honest limitation: (d)'s match compares lower(m.to_email), which a btree
--- on the plain column cannot satisfy on its own. What this index gives that
--- lookup is the organization_id prefix -- the part that turns "every message
--- ever sent" into "this tenant's" -- while the worker's read of distinct
--- to_email values uses the whole key. If the address match ever becomes hot,
--- the answer is the expression index (organization_id, lower(to_email)), which
--- is what 154 added to email_suppressions for exactly this comparison.
-create index if not exists idx_email_messages_org_to_email
-  on public.email_messages (organization_id, to_email);
+-- Nothing already here covers it. The table's four existing indexes are 152's
+-- (status, send_after) for the claim and (campaign_id) for a campaign's rows,
+-- 155's (campaign_id, organization_id) for its composite foreign key, and
+-- 156's (sent_account_id, sent_at) for mailbox_status.sent_today -- which is
+-- also what serves the worker's other new read, the distinct addresses one
+-- mailbox sent to recently, because that one is scoped by mailbox and date
+-- rather than by address. None of the four leads with organization_id, and
+-- none indexes to_email in any form.
+create index if not exists idx_email_messages_org_lower_to_email
+  on public.email_messages (organization_id, lower(to_email));
+
+-- An earlier revision of this same migration created a plain
+-- (organization_id, to_email) index here, before the expression index above
+-- replaced it. Nothing reads a message by its raw recipient address:
+-- api/email/unsubscribe.ts finds the row by id and merely reads the column,
+-- and the distinct-address read is served by (sent_account_id, sent_at). A
+-- second index over the same table earns its write cost on every insert into
+-- the outbox, which is the highest-volume table here, so one with no reader
+-- goes rather than lingering. `if exists` because on any database that never
+-- ran that revision it was never created.
+drop index if exists public.idx_email_messages_org_to_email;
 
 -- ── c. email_inbox_events: what each scan found ─────────────────────
 --
@@ -187,9 +204,24 @@ create policy "email_inbox_events_read" on public.email_inbox_events
 -- address; one who could delete could erase the reason an address is
 -- suppressed, which is the one question this table exists to answer.
 
--- Newest-first for one organization is the only way this is ever read.
+-- Newest-first for one organization is the only way this table is ever read by
+-- a query anyone writes.
 create index if not exists idx_email_inbox_events_org
   on public.email_inbox_events (organization_id, created_at desc);
+
+-- ...but PostgreSQL reads it one other way, and never says so. message_id
+-- references email_messages ON DELETE SET NULL, and that referential action
+-- has to find the referencing rows every time a parent message is deleted --
+-- with no index, by scanning this whole table, once per deleted message.
+-- Messages are not deleted one at a time: deleting a campaign cascades to
+-- every message it ever queued, which is how a routine delete of an old
+-- campaign turns into a timeout once this table has a year of events in it.
+--
+-- account_id deliberately gets no equivalent. It also references ON DELETE SET
+-- NULL, but a mailbox is deleted singly and by hand, so the cost is one scan
+-- for one deliberate action rather than one per row of a cascade.
+create index if not exists idx_email_inbox_events_message
+  on public.email_inbox_events (message_id);
 
 -- ── d. record_inbox_result(): settle a reply or a bounce ────────────
 --
@@ -230,8 +262,13 @@ begin
   -- The scan is always for one mailbox, and the event row's organization_id is
   -- NOT NULL, so a missing account is not something to record quietly: it
   -- means the worker is holding an account row that has since been deleted.
-  -- The caller wraps each mailbox in its own try/catch, so raising costs that
-  -- mailbox's cycle and nothing else.
+  --
+  -- Raising here is deliberate and was reviewed as such. Nothing but the
+  -- worker can call this function -- it is service_role-only -- so an account
+  -- id that does not resolve is not user input to be tolerated, it is a bug or
+  -- a race, and returning null would hide it behind a scan that looked
+  -- successful. The caller wraps each mailbox in its own try/catch, so the
+  -- blast radius is that one mailbox's cycle and nothing else.
   select a.organization_id
     into v_org
     from public.email_accounts a
@@ -372,22 +409,34 @@ begin
   -- an imap_status of 'active'. Same reasoning as record_send_result()
   -- clearing last_error on a successful send.
   --
-  -- inbox_last_scan_at moves whether the scan succeeded or failed, because it
-  -- records when we last tried. The cost is named here rather than left to be
-  -- discovered: a scan that failed before reading anything still moves the
-  -- window on, so mail that arrived while a mailbox was unauthenticated is not
-  -- re-fetched once it is fixed. Holding the timestamp back instead would
-  -- re-read that window, but scanWindow()'s one-day floor caps how far back it
-  -- could ever reach anyway, so the recovery it buys is a day at most -- and
-  -- what is lost is a reply timestamp or an asynchronous bounce, while an
-  -- SMTP-time hard bounce is still suppressed by record_send_result() in 156,
-  -- which does not depend on this scan at all.
+  -- inbox_last_scan_at is the scan CURSOR, not a log of when we last tried,
+  -- and that is why a failure leaves it exactly where it was. scanWindow() in
+  -- src/lib/email/inbox.ts starts the next fetch from this value: advance it
+  -- after a scan that read nothing, and the window steps straight over the
+  -- period nobody could read, so every reply and bounce that arrived while the
+  -- mailbox was unauthenticated stays behind the window forever -- fixing the
+  -- password would not bring them back. Holding it still means the first scan
+  -- after the repair covers the outage, which is the whole point of this
+  -- phase. The re-read cannot run away either: scanWindow() floors the window
+  -- at twenty-four hours, so a mailbox broken for a week looks back one day
+  -- when it recovers, not a week.
+  --
+  -- 'error' is the only status that holds the cursor. 'active' advances it,
+  -- and so does 'unconfigured' -- there is nothing unread behind a mailbox
+  -- that is not being scanned.
+  --
+  -- imap_status and imap_last_error are written either way, because the admin
+  -- has to see the failure to act on it: a scan that goes on failing silently
+  -- while the cursor waits for it is the same outage with no explanation.
   --
   -- The row is addressed by a.id and every reference is qualified, as in 156:
   -- p_account, p_status and p_error share no name with any column of
   -- email_accounts, and the three columns set here are the only ones touched.
   update public.email_accounts a
-     set inbox_last_scan_at = now(),
+     set inbox_last_scan_at = case
+                                when p_status = 'error' then a.inbox_last_scan_at
+                                else now()
+                              end,
          imap_status = p_status,
          imap_last_error = p_error
    where a.id = p_account;
