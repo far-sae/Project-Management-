@@ -136,6 +136,22 @@ create table if not exists public.email_sequence_enrollments (
   -- needs: phase 1 derives each Message-ID from the row id, so the chain is
   -- reconstructable from the rows without storing a single header.
   last_message_id uuid references public.email_messages(id) on delete set null,
+  -- When this enrollment's mailbox was pinned, which is the first time any of
+  -- its steps actually went out.
+  --
+  -- It exists because account_id cannot be trusted to answer that question and
+  -- neither can last_message_id. Both are nullable by a DELETE somewhere else:
+  -- account_id when the mailbox is removed, last_message_id when a step's
+  -- hidden campaign is removed and takes its messages with it by cascade. The
+  -- gate in claim_sequence_enrollments() has to tell "this mailbox was deleted"
+  -- apart from "never pinned", and if the evidence it reads can be erased by
+  -- an unrelated delete then the answer it gives is wrong exactly when it
+  -- matters: the enrollment reads as unpinned, its follow-up is sent from
+  -- whichever mailbox is free, and the recipient gets a correctly threaded
+  -- reply from a stranger.
+  --
+  -- This column references nothing, so nothing can null it.
+  pinned_at timestamptz,
   status text not null default 'active'
     check (status in ('active','stopped','completed')),
   -- Why it ended. 'replied' and 'bounced' come from the inbox scan,

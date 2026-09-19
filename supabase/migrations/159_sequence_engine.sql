@@ -23,6 +23,10 @@
 --      hidden campaign alone.
 --   f. reconcile_stalled_enrollments() -- the net: no enrollment may be left
 --      active with nothing that can ever move it again.
+--   g. stop_enrollment_by_member()    -- the Stop button, so the screens stop
+--      an enrollment the same way everything else does.
+--   h. count_steps_waiting_on_paused_mailbox() -- what the Sequences banner
+--      counts.
 --
 -- The shape of the one bug this file has to keep designing against: the claim
 -- advances current_step and clears next_due_at in the same statement, and the
@@ -308,11 +312,19 @@ begin
        -- -- so the recipient gets a correctly threaded reply from a different
        -- address, which is precisely what pinning exists to prevent.
        --
-       -- last_message_id tells the two apart: it is set the first time a step
-       -- is actually sent, in the same statement that sets account_id, and
-       -- nothing clears it. A null account_id beside a non-null
-       -- last_message_id can only mean the mailbox has gone.
-       or (e.account_id is null and e.last_message_id is not null)
+       -- pinned_at tells the two apart: it is set the first time a step is
+       -- actually sent, in the same statement that sets account_id, and it
+       -- references nothing, so no DELETE can null it. A null account_id
+       -- beside a non-null pinned_at can only mean the mailbox has gone.
+       --
+       -- last_message_id would have looked like the natural column to read
+       -- here and would have been wrong: it references email_messages ON
+       -- DELETE SET NULL, and email_messages cascades from its campaign, so
+       -- deleting a step's hidden campaign silently nulls it on every
+       -- enrollment pointing at one. The gate would then read "never pinned"
+       -- for an enrollment whose mailbox really had gone -- a false negative
+       -- landing exactly on the case this arm exists for.
+       or (e.account_id is null and e.pinned_at is not null)
      );
 
   -- A step that EXISTS but has no campaign is not sendable, and the enrollment
@@ -534,7 +546,11 @@ begin
     update public.email_sequence_enrollments e
        set next_due_at = now() + make_interval(hours => st.delay_hours),
            last_message_id = m.id,
-           account_id = coalesce(e.account_id, p_account)
+           account_id = coalesce(e.account_id, p_account),
+           -- Set with the pin and never cleared. Unlike account_id and
+           -- last_message_id, nothing references it, so no DELETE anywhere can
+           -- erase it -- which is the whole reason it exists. See 158c.
+           pinned_at = coalesce(e.pinned_at, now())
       from public.email_messages m,
            public.email_sequence_steps st
      where m.id = p_message
@@ -550,7 +566,8 @@ begin
     update public.email_sequence_enrollments e
        set status = 'completed',
            next_due_at = null,
-           last_message_id = m.id
+           last_message_id = m.id,
+           pinned_at = coalesce(e.pinned_at, now())
       from public.email_messages m
      where m.id = p_message
        and m.enrollment_id = e.id
@@ -1126,5 +1143,112 @@ $$;
 
 revoke all on function public.reconcile_stalled_enrollments() from public;
 grant execute on function public.reconcile_stalled_enrollments() to service_role;
+
+-- ── g. stop_enrollment_by_member(): the Stop button ─────────────────
+--
+-- The screens cannot call stop_enrollment() -- it is service_role only, as
+-- everything the worker uses is -- and they must not do the work themselves,
+-- which is what they were doing: a plain UPDATE on the enrollment, setting
+-- status and stop_reason and nothing else.
+--
+-- That update is the Critical this file was already written to close, on the
+-- one path a person drives. An operator who stops an enrollment whose next
+-- step is already queued would have had that step delivered anyway, hours
+-- later, because claim_email_batch() has no idea what an enrollment is. And it
+-- was unrecoverable: the status is now 'stopped', so a later reply or bounce
+-- finds nothing to stop and cancels nothing either.
+--
+-- So the button calls this, and this calls the one definition of stopping.
+--
+-- security definer with its own membership check, because the browser's role
+-- must not be handed the underlying grant: authenticated has no UPDATE on
+-- email_messages at all, by design (152), and this is the only thing that
+-- should ever get past that on its behalf.
+create or replace function public.stop_enrollment_by_member(p_enrollment uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_org uuid;
+begin
+  select e.organization_id
+    into v_org
+    from public.email_sequence_enrollments e
+   where e.id = p_enrollment;
+
+  -- Silent on a missing row rather than raising: an enrollment id that does
+  -- not resolve is a stale screen, not an attack, and the caller's own RLS
+  -- already decides what they can see. Returning zero says "nothing stopped".
+  if v_org is null then
+    return 0;
+  end if;
+
+  -- The membership check this function exists to enforce. Without it, a
+  -- definer function taking a bare uuid would stop any enrollment in any
+  -- organization for anyone who could guess one.
+  if not public.is_org_member(v_org) then
+    raise exception 'stop_enrollment_by_member: not a member of that organization';
+  end if;
+
+  return public.stop_enrollment(p_enrollment, 'manual');
+end;
+$$;
+
+revoke all on function public.stop_enrollment_by_member(uuid) from public;
+grant execute on function public.stop_enrollment_by_member(uuid) to authenticated;
+
+-- ── h. count_steps_waiting_on_paused_mailbox() ──────────────────────
+--
+-- How many sequence steps are queued behind a mailbox that cannot send, for
+-- the banner on the Sequences tab.
+--
+-- A definer function rather than a query from the browser, because the join it
+-- needs -- message to enrollment to sequence, to filter by workspace -- is
+-- three levels deep, and doing it client-side meant either counting the whole
+-- organization (telling somebody in workspace A about mail that belongs to
+-- workspace B, on a screen where none of it appears) or shipping thousands of
+-- enrollment ids through a URL.
+--
+-- Archived sequences are excluded: their mail is not going out and nobody is
+-- waiting on anything.
+create or replace function public.count_steps_waiting_on_paused_mailbox(
+  p_org uuid,
+  p_workspace uuid default null
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_count integer;
+begin
+  if not public.is_org_member(p_org) then
+    raise exception 'count_steps_waiting_on_paused_mailbox: not a member of that organization';
+  end if;
+
+  select count(*)
+    into v_count
+    from public.email_messages m
+    join public.email_sequence_enrollments e on e.id = m.enrollment_id
+    join public.email_sequences s on s.id = e.sequence_id
+    join public.email_accounts a on a.id = m.pinned_account_id
+   where m.organization_id = p_org
+     and m.status = 'queued'
+     -- The pin is what makes this different from any other queued message: a
+     -- campaign row would simply be taken by another pool member.
+     and m.pinned_account_id is not null
+     and (not a.is_active or a.status = 'error')
+     and s.status <> 'archived'
+     and (p_workspace is null or s.workspace_id = p_workspace);
+
+  return coalesce(v_count, 0);
+end;
+$$;
+
+revoke all on function public.count_steps_waiting_on_paused_mailbox(uuid, uuid) from public;
+grant execute on function public.count_steps_waiting_on_paused_mailbox(uuid, uuid) to authenticated;
 
 notify pgrst, 'reload schema';

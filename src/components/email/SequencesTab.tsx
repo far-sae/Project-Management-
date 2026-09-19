@@ -71,7 +71,7 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
       const [steps, enrollments, blocked] = await Promise.all([
         listStepCounts(ids),
         listEnrollmentCounts(ids),
-        countStepsWaitingOnPausedMailbox(orgId),
+        countStepsWaitingOnPausedMailbox(orgId, workspaceId),
       ]);
       setStepCounts(steps);
       setCounts(enrollments);

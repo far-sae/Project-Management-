@@ -184,46 +184,39 @@ export const listSequences = async (
  * would otherwise say why. The Accounts tab shows the mailbox is in trouble;
  * this connects that to the mail waiting on it.
  *
+ * Scoped to the workspace the list is showing, not to the whole organization.
+ * Counting organization-wide would tell somebody in workspace A about mail
+ * belonging to workspace B, on a screen where none of it appears — a number
+ * they can neither explain nor act on. The join that needs (message to
+ * enrollment to sequence) is why this is a database function rather than a
+ * query from here.
+ *
  * Returns zero rather than throwing. It annotates a screen that works without
  * it, and failing the whole list over a count would be the wrong trade.
  */
-export const countStepsWaitingOnPausedMailbox = async (orgId: string): Promise<number> => {
+export const countStepsWaitingOnPausedMailbox = async (
+  orgId: string,
+  workspaceId: string | null = null,
+): Promise<number> => {
   try {
-    const { data: stalled, error: accountError } = await supabase
-      .from("email_accounts")
-      .select("id, is_active, status")
-      .eq("organization_id", orgId);
-
-    if (accountError) {
-      logger.error("Failed to read mailbox health for the sequences banner:", accountError);
-      return 0;
-    }
-
-    const unusable = ((stalled ?? []) as Array<{ id: string; is_active: boolean; status: string }>)
-      .filter((a) => a.is_active === false || a.status === "error")
-      .map((a) => a.id);
-
-    if (unusable.length === 0) return 0;
-
-    const { count, error } = await supabase
-      .from("email_messages")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .eq("status", "queued")
-      .not("enrollment_id", "is", null)
-      .in("pinned_account_id", unusable);
+    const { data, error } = await supabase.rpc("count_steps_waiting_on_paused_mailbox", {
+      p_org: orgId,
+      p_workspace: workspaceId,
+    });
 
     if (error) {
       logger.error("Failed to count steps waiting on a paused mailbox:", error);
       return 0;
     }
 
-    return count ?? 0;
+    const count = Number(data ?? 0);
+    return Number.isFinite(count) && count > 0 ? count : 0;
   } catch (err) {
     logger.error("Failed to count steps waiting on a paused mailbox:", err);
     return 0;
   }
 };
+
 
 /**
  * The enrollment counts for a whole page of sequences in one read, keyed by
@@ -759,16 +752,27 @@ export const listEnrollments = async (sequenceId: string): Promise<EmailEnrollme
  * `next_due_at <= now()` claim can never pick it up again.
  */
 export const stopEnrollment = async (id: string): Promise<void> => {
-  const { error } = await supabase
-    .from("email_sequence_enrollments")
-    .update({
-      status: "stopped",
-      stop_reason: "manual",
-      stopped_at: new Date().toISOString(),
-      next_due_at: null,
-    })
-    .eq("id", id)
-    .eq("status", "active");
+  // Through the database function, never as a direct UPDATE here.
+  //
+  // A direct update sets the enrollment's status and nothing else, and
+  // stopping an enrollment is only half of stopping a sequence: the step that
+  // has already been materialized is an ordinary queued email_messages row,
+  // and claim_email_batch() has no idea what an enrollment is. So an operator
+  // who stopped somebody whose next step was already queued would have had it
+  // delivered anyway -- hours or days later, because the send window and the
+  // warmup allowance are what hold a sequence step in the queue.
+  //
+  // And it was unrecoverable. Once the status reads 'stopped', a later reply
+  // or bounce for that address finds nothing to stop, so its cancel matches
+  // nothing either, and the message goes out.
+  //
+  // stop_enrollment_by_member() checks membership and then calls the one
+  // definition of what stopping means, which stops and cancels in a single
+  // statement. It has to be a definer function: `authenticated` has no UPDATE
+  // on email_messages at all, by design.
+  const { error } = await supabase.rpc("stop_enrollment_by_member", {
+    p_enrollment: id,
+  });
 
   if (error) {
     logger.error("Failed to stop enrollment:", error);
