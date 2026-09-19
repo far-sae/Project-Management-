@@ -194,11 +194,18 @@ export interface MailboxScan {
    * pass, permanently. Partial progress wins, and the mailbox says so on the
    * Accounts screen rather than claiming to be fine.
    *
-   * The envelopes are walked in the server's order, which is arrival order and
-   * so very nearly internalDate order, but nothing in IMAP guarantees it: an
-   * APPEND can file an older message at a newer UID. Taking the MAXIMUM rather
-   * than the last one read means an out-of-order tail cannot pull the cursor
-   * backwards into ground the previous window already covered.
+   * It is the time of the message that TRIPPED the cap -- the first one this
+   * scan did not finish with -- so the caller resumes AT it and reads it
+   * again, rather than stepping over it. The newest message read would be the
+   * wrong value: the walk is in arrival order, which is UID order, and an
+   * APPEND or COPY can file an older message at a newer UID, so the newest
+   * message read can sit later than a message that was never handled.
+   *
+   * The caller must make the next window START here, which means writing back
+   * `resumeAt` plus the scan overlap, because scanWindow() subtracts the
+   * overlap from whatever cursor it is given. Writing `resumeAt` itself moves
+   * the window start BACKWARDS by three minutes against this scan, and a
+   * mailbox whose cap fills faster than that then walks backwards for ever.
    */
   resumeAt: Date | null;
 }
@@ -252,6 +259,10 @@ export async function scanInbox(
   const candidates = new Map<number, InboxEnvelope>();
   const bounces: Array<{ envelope: InboxEnvelope; source: string }> = [];
   let truncated: string | null = null;
+  // The time of the first message this scan did NOT finish with -- the one
+  // that tripped a cap. It is what the cursor resumes from, so that message is
+  // read again next pass rather than stepped over. See `resumeAt`.
+  let stopAt: Date | null = null;
 
   const client = createImapClient(cfg);
 
@@ -294,6 +305,7 @@ export async function scanInbox(
 
         if (envelopes.length >= envelopeLimit) {
           truncated = `stopped after ${envelopeLimit} messages; the rest of this window was not read`;
+          stopAt = envelope.at;
           break;
         }
 
@@ -304,6 +316,13 @@ export async function scanInbox(
           truncated =
             `stopped after ${bounceLimit} bounce notifications; ` +
             'the rest of this window was not read';
+          // This envelope IS in `envelopes` -- it was pushed above -- but its
+          // source will not be fetched, so the suppression it may name is not
+          // recorded. The cursor therefore stops HERE and not at the newest
+          // envelope read: a later message already in the list would otherwise
+          // pull the cursor past this bounce and nothing would ever download
+          // it.
+          stopAt = envelope.at;
           break;
         }
         // Collected, not fetched. The fetch is below, once this loop is done.
@@ -335,10 +354,24 @@ export async function scanInbox(
 
   // Only meaningful for a truncated scan, so only computed for one: a complete
   // scan's cursor is its own start time, which is later than any message in it.
+  //
+  // It is the time of the message that TRIPPED the cap, not the newest message
+  // read. The two differ whenever the walk runs out of order -- arrival order
+  // is UID order, and an APPEND or a COPY can file an older message at a newer
+  // UID -- and taking the newest would then move the cursor past a message the
+  // scan never handled. Resuming from the one that stopped it re-reads that
+  // message, which every write on this path is idempotent about.
+  //
+  // Clamped to the scan's own clock. internalDate is the SERVER's, unclamped
+  // (only the Date:-header fallback is bounded), and IMAP's APPEND lets a
+  // client supply any internal date it likes -- so one message stamped 2099
+  // would otherwise write a cursor from which scanWindow() computes an empty
+  // window, and a whole pass of replies and bounces would be stepped over
+  // before the next complete scan repaired it.
   const resumeAt =
-    truncated === null || envelopes.length === 0
+    truncated === null || stopAt === null
       ? null
-      : new Date(Math.max(...envelopes.map((e) => e.at.getTime())));
+      : new Date(Math.min(stopAt.getTime(), ceiling.getTime()));
 
   return { envelopes, bounces, complete: truncated === null, truncated, resumeAt };
 }

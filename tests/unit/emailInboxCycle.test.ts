@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { encryptSecret } from '@/lib/email/crypto';
-import { FIRST_SCAN_LOOKBACK_MS, SCAN_OVERLAP_MS } from '@/lib/email/inbox';
+import { FIRST_SCAN_LOOKBACK_MS, SCAN_OVERLAP_MS, scanWindow } from '@/lib/email/inbox';
 import type { InboxEnvelope } from '@/lib/email/types';
 
 import type { MailboxScan } from '../../worker/lib/imap';
@@ -576,7 +576,7 @@ describe('runInboxCycle', () => {
     // reach the cap at all. So the cursor moves to the newest message actually
     // read, and the messages between there and the end of the window are the
     // cap's stated cost.
-    const resumeAt = new Date('2026-09-19T11:58:00Z');
+    const resumeAt = new Date('2026-09-19T11:50:00Z');
     const h = makeDeps(
       { mailboxes: [mailboxRow()], secrets: [secretRow()] },
       { envelopes: [], complete: false, resumeAt },
@@ -592,7 +592,18 @@ describe('runInboxCycle', () => {
     // 'active', because nothing failed — and 'active' is the only status
     // touch_inbox_scan() lets move the cursor.
     expect(args.p_status).toBe('active');
-    expect(args.p_scanned_at).toBe(resumeAt.toISOString());
+    // The overlap is added back, because scanWindow() subtracts it from
+    // whatever cursor it is handed. The round trip below is the assertion that
+    // matters: without it, a cap that fills in under three minutes walks the
+    // window BACKWARDS on every pass.
+    expect(args.p_scanned_at).toBe(
+      new Date(resumeAt.getTime() + SCAN_OVERLAP_MS).toISOString(),
+    );
+    const nextWindow = scanWindow(new Date(args.p_scanned_at), new Date(NOW.getTime() + 300_000));
+    expect(nextWindow.toISOString()).toBe(resumeAt.toISOString());
+    // Forward, strictly: the next scan starts after this one did, so the
+    // mailbox cannot read the same 500 messages for ever.
+    expect(nextWindow.getTime()).toBeGreaterThan(scanWindow(null, NOW).getTime());
     // Not the scan's own start time: that would step over everything the cap
     // missed, which is the loss holding the cursor was trying to avoid.
     expect(args.p_scanned_at).not.toBe(NOW.toISOString());
@@ -601,6 +612,22 @@ describe('runInboxCycle', () => {
     expect(args.p_error).toMatch(/sending is unaffected/i);
     expect(result.scanned).toBe(1);
     expect(result.errors.join(' ')).toMatch(/did not finish the window/i);
+  });
+
+  it('never writes a cursor ahead of the scan it belongs to', async () => {
+    // resumeAt plus the overlap can land after the scan started, on a window
+    // whose cap filled in the last couple of minutes. A cursor ahead of `now`
+    // opens the next window on the future, which reads nothing.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()] },
+      { envelopes: [], complete: false, resumeAt: new Date(NOW.getTime() - 60_000) },
+    );
+
+    await runInboxCycle(h.deps);
+
+    const args = h.touches()[0].args as { p_status: string; p_scanned_at: string };
+    expect(args.p_status).toBe('active');
+    expect(args.p_scanned_at).toBe(NOW.toISOString());
   });
 
   it('holds the cursor when a capped scan read nothing it could resume from', async () => {

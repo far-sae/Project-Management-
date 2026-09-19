@@ -303,28 +303,47 @@ describe('scanInbox', () => {
     expect(scan.envelopes).toHaveLength(2);
     expect(scan.complete).toBe(false);
     expect(scan.truncated).toMatch(/not read/i);
-    // And it says WHERE it stopped. The dropped messages are the newest in the
-    // window — sequence order is oldest first — so the cycle needs somewhere to
-    // resume that is neither the start of this window (which would read the
-    // same messages again for ever) nor its end (which would step over
-    // everything the cap missed).
-    expect(scan.resumeAt?.toISOString()).toBe('2026-09-19T11:57:00.000Z');
+    // And it says WHERE it stopped: the time of the message that tripped the
+    // cap, which is the first one this scan did not handle. The cycle needs
+    // somewhere to resume that is neither the start of this window (which
+    // would read the same messages again for ever) nor past the messages the
+    // cap missed.
+    expect(scan.resumeAt?.toISOString()).toBe('2026-09-19T11:58:00.000Z');
   });
 
-  it('resumes from the newest message read, even out of arrival order', async () => {
-    // An APPEND can file an older message at a newer UID, so the last envelope
-    // walked is not necessarily the newest one. Taking the last would drag the
-    // cursor backwards into a window that has already been scanned.
+  it('resumes at the message that stopped it, not at the newest one read', async () => {
+    // An APPEND or COPY can file an older message at a newer UID, so the walk
+    // is not in date order. uid 2 is the newest thing read; uid 3 is the one
+    // that tripped the cap and was never handled. A cursor at uid 2's time
+    // would step straight over uid 3.
     state.messages = [
-      message({ uid: 1, internalDate: new Date('2026-09-19T11:59:00Z') }),
-      message({ uid: 2, internalDate: new Date('2026-09-19T11:56:00Z') }),
+      message({ uid: 1, internalDate: new Date('2026-09-19T11:56:00Z') }),
+      message({ uid: 2, internalDate: new Date('2026-09-19T11:59:00Z') }),
       message({ uid: 3, internalDate: new Date('2026-09-19T11:57:00Z') }),
     ];
 
     const scan = await scanInbox(CFG, SINCE, { envelopes: 2 });
 
     expect(scan.complete).toBe(false);
-    expect(scan.resumeAt?.toISOString()).toBe('2026-09-19T11:59:00.000Z');
+    expect(scan.resumeAt?.toISOString()).toBe('2026-09-19T11:57:00.000Z');
+  });
+
+  it('never resumes from a date the server made up', async () => {
+    // internalDate is the server's and is not clamped: IMAP's APPEND lets a
+    // client supply any internal date it likes, and a skewed server clock does
+    // it by accident. A cursor in 2099 makes every later window empty, so a
+    // whole pass of replies and bounces is stepped over in silence.
+    state.messages = [
+      message({ uid: 1, internalDate: new Date('2026-09-19T11:56:00Z') }),
+      message({ uid: 2, internalDate: new Date('2099-01-01T00:00:00Z') }),
+      message({ uid: 3, internalDate: new Date('2099-01-02T00:00:00Z') }),
+    ];
+
+    const scan = await scanInbox(CFG, SINCE, { envelopes: 2 });
+
+    expect(scan.complete).toBe(false);
+    // Clamped to the scan's own clock rather than trusted.
+    expect(scan.resumeAt!.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it('does not count what the server volunteered from before the window against the cap', async () => {
@@ -360,7 +379,13 @@ describe('scanInbox', () => {
     expect(scan.bounces).toHaveLength(2);
     expect(scan.complete).toBe(false);
     expect(scan.truncated).toMatch(/bounce notifications/i);
-    expect(scan.resumeAt).not.toBeNull();
+    // The envelope that tripped the bounce cap IS in `envelopes` — it was
+    // pushed before the cap was tested — but its source was never fetched, so
+    // the suppression it may name has not been recorded. The cursor stops at
+    // it, not past it.
+    expect(scan.resumeAt?.toISOString()).toBe(
+      state.messages[2].internalDate.toISOString(),
+    );
   });
 
   it('fetches sources by UID and not by sequence number', async () => {

@@ -59,10 +59,18 @@ const InboxHealth: React.FC<{ account: EmailAccount }> = ({ account }) => {
         <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
           <Inbox className="w-3 h-3 mt-0.5 shrink-0" />
           <span>
-            Inbox: last scanned{' '}
+            {/*
+              'caught up to', not 'last scanned'. This column is the scan
+              CURSOR: how far through the mailbox the worker has read, which is
+              the scan's start time on an ordinary pass but lags behind on a
+              mailbox that takes more mail than one scan reads. Calling it
+              'last scanned' would show 'a day ago' for a mailbox being scanned
+              every five minutes, and send the admin looking for a dead worker.
+            */}
+            Inbox: caught up to{' '}
             {account.inboxLastScanAt
               ? formatDistanceToNow(account.inboxLastScanAt, { addSuffix: true })
-              : 'not yet'}.
+              : 'nothing yet'}.
             {account.imapLastError ? ` ${account.imapLastError}` : ''}
           </span>
         </p>

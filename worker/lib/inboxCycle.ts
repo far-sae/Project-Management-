@@ -63,6 +63,7 @@ import {
   extractBouncedAddress,
   matchReplies,
   normalizeAddress,
+  SCAN_OVERLAP_MS,
   scanWindow,
 } from '@/lib/email/inbox';
 
@@ -427,7 +428,7 @@ async function scanMailbox(
    */
   let incomplete = false;
 
-    /**
+  /**
    * A cap reached inside the session means part of this window was never
    * looked at -- but NOT that the scan made no progress, and the difference
    * decides whether this feature works at all for a busy mailbox.
@@ -447,11 +448,22 @@ async function scanMailbox(
    * honest cost of a cap; holding the cursor loses that gap and everything
    * after it, for ever. The admin is told, on the mailbox's own card.
    *
-   * `resumeAt` must be strictly ahead of the window's own start, or there is
-   * no progress to make: ENVELOPE_LIMIT messages sharing one timestamp would
-   * otherwise write back a cursor the next scanWindow() call rounds straight
-   * back to `since`. That case is left `incomplete` -- a flood inside a single
-   * second is transient in a way a day of steady volume is not.
+   * The cursor written back is `resumeAt` PLUS the scan overlap, because
+   * scanWindow() subtracts that overlap from whatever cursor it is handed. Any
+   * less and the next window starts BEFORE `resumeAt`: at three minutes of
+   * overlap against a cap that fills in less than three minutes -- a mailbox
+   * taking a few messages a second -- the window start moves backwards a
+   * little on every pass, until it hits the twenty-four hour floor and the
+   * mailbox spends the rest of its life scanning a slice of yesterday while
+   * reporting 'active'. Writing the overlap back makes the next window start
+   * exactly at the message that stopped this one, which is read again (every
+   * write on that path is idempotent) and never skipped.
+   *
+   * `resumeAt` must still be strictly ahead of the window's own start, or
+   * there is nothing to advance to: a whole cap's worth of messages sharing
+   * one timestamp would write back a cursor pointing at the same place. That
+   * case is left 'incomplete' -- a flood inside a single second is transient
+   * in a way a day of steady volume is not.
    */
   let resumeAt: Date | null = null;
   if (!scan.complete) {
@@ -555,7 +567,12 @@ async function scanMailbox(
       `This mailbox takes more mail than one scan reads (${scan.truncated ?? 'a limit was reached'}). ` +
       'The next scan continues from where this one stopped, so some messages in ' +
       'between are not checked for replies or bounces. Sending is unaffected.';
-    await touch(deps, note, row, 'active', detail, who, resumeAt);
+    // The overlap is added back, and the result cannot exceed this scan's own
+    // start: a cursor ahead of `now` would open a window on the future.
+    const cursor = new Date(
+      Math.min(resumeAt.getTime() + SCAN_OVERLAP_MS, now.getTime()),
+    );
+    await touch(deps, note, row, 'active', detail, who, cursor);
     result.scanned += 1;
     return;
   }
