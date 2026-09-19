@@ -1,4 +1,5 @@
 export type CampaignKind = 'single' | 'bulk';
+export type ImapStatus = 'unconfigured' | 'active' | 'error';
 export type MessageStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'suppressed';
 export type CampaignStatus =
   | 'draft' | 'scheduled' | 'sending' | 'paused' | 'sent' | 'failed';
@@ -106,4 +107,23 @@ export interface EmailSettings {
   window: SendWindow;
   jitterMinMs: number;
   jitterMaxMs: number;
+}
+
+/** A single INBOX message, as read over IMAP. Envelope only — no body. */
+export interface InboxEnvelope {
+  from: string;
+  subject: string;
+  at: Date;
+}
+
+/** A reply or bounce discovered during an inbox scan, ready to persist. */
+export interface InboxEvent {
+  id: string;
+  organizationId: string;
+  accountId: string;
+  kind: 'reply' | 'bounce';
+  address: string;
+  messageId: string | null;
+  detail: string | null;
+  createdAt: Date;
 }
