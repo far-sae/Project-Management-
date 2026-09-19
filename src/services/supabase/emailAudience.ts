@@ -285,6 +285,16 @@ export const listProspects = async (
 export const saveProspect = async (input: {
   id?: string;
   organizationId: string;
+  /**
+   * The workspace this prospect belongs to, or null for the whole
+   * organization.
+   *
+   * Written because `listProspects` filters on it: a contact saved without a
+   * workspace while a workspace is selected would be created successfully and
+   * then be absent from the very list the user is looking at. Optional so an
+   * unscoped caller keeps the previous behaviour of leaving the column alone.
+   */
+  workspaceId?: string | null;
   firstName: string;
   lastName: string;
   email: string;
@@ -294,6 +304,7 @@ export const saveProspect = async (input: {
 }): Promise<void> => {
   const row = {
     ...(input.id ? { id: input.id } : {}),
+    ...(input.workspaceId === undefined ? {} : { workspace_id: input.workspaceId }),
     organization_id: input.organizationId,
     first_name: input.firstName.trim(),
     last_name: input.lastName.trim() || null,

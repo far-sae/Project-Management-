@@ -4,11 +4,18 @@ import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
-  AccountsTab, ComposeTab, CampaignsTab, SequencesTab, SuppressionTab, SettingsTab,
+  ProspectsTab, GroupsTab, AccountsTab, ComposeTab, CampaignsTab, SequencesTab,
+  SuppressionTab, SettingsTab,
 } from '@/components/email';
 
+/**
+ * Prospects and Groups lead, in that order: they are the audience, and every
+ * tab after them is something you do to it. Campaigns stays the landing tab —
+ * it is what an admin opens the page to check.
+ */
 type EmailTabValue =
-  | 'campaigns' | 'sequences' | 'compose' | 'accounts' | 'suppression' | 'settings';
+  | 'prospects' | 'groups' | 'campaigns' | 'sequences' | 'compose'
+  | 'accounts' | 'suppression' | 'settings';
 
 export const Email: React.FC = () => {
   const { user } = useAuth();
@@ -30,6 +37,8 @@ export const Email: React.FC = () => {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as EmailTabValue)}>
         <TabsList>
+          <TabsTrigger value="prospects">Prospects</TabsTrigger>
+          <TabsTrigger value="groups">Groups</TabsTrigger>
           <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
           <TabsTrigger value="compose">Compose</TabsTrigger>
@@ -37,6 +46,14 @@ export const Email: React.FC = () => {
           <TabsTrigger value="suppression">Suppression</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="prospects">
+          <ProspectsTab orgId={orgId} workspaceId={workspaceId} />
+        </TabsContent>
+
+        <TabsContent value="groups">
+          <GroupsTab orgId={orgId} workspaceId={workspaceId} />
+        </TabsContent>
 
         <TabsContent value="campaigns">
           <CampaignsTab orgId={orgId} workspaceId={workspaceId} />
