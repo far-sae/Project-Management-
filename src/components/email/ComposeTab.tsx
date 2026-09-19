@@ -60,7 +60,6 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
 
   const [scheduleMode, setScheduleMode] = useState<'now' | 'schedule'>('now');
   const [scheduledAt, setScheduledAt] = useState('');
-  const [ratePerHour, setRatePerHour] = useState('60');
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
 
@@ -152,7 +151,6 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
     setCsvText('');
     setScheduleMode('now');
     setScheduledAt('');
-    setRatePerHour('60');
   };
 
   const toggleContact = (key: string) => {
@@ -193,7 +191,6 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
         subject: form.subject.trim(),
         bodyHtml: form.bodyHtml,
         scheduledAt: scheduledDate,
-        ratePerHour: Number(ratePerHour) || 60,
       });
 
       // Recipients are queued first, then the campaign is flipped out of
@@ -312,12 +309,11 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
                 )}
               </div>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="cmp-rate">Rate per hour</Label>
-              <Input id="cmp-rate" type="number" min="1" value={ratePerHour} className="w-32"
-                onChange={(e) => setRatePerHour(e.target.value)} />
-            </div>
           </div>
+          <p className="text-xs text-muted-foreground">
+            How fast this goes out is set for the whole organization on the Settings tab: the
+            send window, the random pause between messages, and each mailbox&rsquo;s daily limit.
+          </p>
 
           <div className="flex items-center justify-between border-t border-border pt-4">
             {isAdmin ? (

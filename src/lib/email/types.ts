@@ -19,7 +19,6 @@ export interface EmailAccount {
   smtpSecure: boolean;
   smtpUsername: string;
   dailyLimit: number;
-  hourlyLimit: number;
   status: AccountStatus;
   lastError: string | null;
   lastVerifiedAt: Date | null;
@@ -39,7 +38,6 @@ export interface EmailCampaign {
   bodyHtml: string;
   status: CampaignStatus;
   scheduledAt: Date | null;
-  ratePerHour: number;
   queuedCount: number;
   sentCount: number;
   failedCount: number;

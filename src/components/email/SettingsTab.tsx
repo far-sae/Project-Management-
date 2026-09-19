@@ -199,7 +199,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
         <CardHeader>
           <CardTitle>Sending schedule</CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            When your organization sends, and how it paces messages between them.
+            When your organization sends, and how it paces messages between them. Nothing else
+            throttles a campaign: this window, the pause between messages and each
+            mailbox&rsquo;s daily limit are the whole of it.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -231,7 +233,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
       <CardHeader>
         <CardTitle>Sending schedule</CardTitle>
         <p className="text-sm text-muted-foreground mt-1">
-          When your organization sends, and how it paces messages between them.
+          When your organization sends, and how it paces messages between them. Nothing else
+          throttles a campaign: this window, the pause between messages and each
+          mailbox&rsquo;s daily limit are the whole of it.
         </p>
       </CardHeader>
       <CardContent className="space-y-6">

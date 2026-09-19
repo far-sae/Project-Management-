@@ -41,7 +41,6 @@ export interface CreateAccountInput {
    *  `POST /api/email/account-secret`, which encrypts it server-side. */
   password: string;
   dailyLimit?: number;
-  hourlyLimit?: number;
 }
 
 /** Partial update to a mailbox's pool settings — Accounts screen only sends the fields that changed. */
@@ -73,7 +72,6 @@ export interface CreateCampaignInput {
   subject: string;
   bodyHtml: string;
   scheduledAt?: Date | null;
-  ratePerHour?: number;
 }
 
 /** Raw shape of an `email_accounts` row as returned by PostgREST. */
@@ -91,7 +89,6 @@ interface EmailAccountRow {
   smtp_secure: boolean;
   smtp_username: string;
   daily_limit: number;
-  hourly_limit: number;
   status: AccountStatus;
   last_error: string | null;
   last_verified_at: string | null;
@@ -111,7 +108,6 @@ interface EmailCampaignRow {
   body_html: string;
   status: CampaignStatus;
   scheduled_at: string | null;
-  rate_per_hour: number;
   queued_count: number;
   sent_count: number;
   failed_count: number;
@@ -198,7 +194,6 @@ export const mapAccountRow = (row: EmailAccountRow): EmailAccount => ({
   smtpSecure: row.smtp_secure,
   smtpUsername: row.smtp_username,
   dailyLimit: row.daily_limit,
-  hourlyLimit: row.hourly_limit,
   status: row.status,
   lastError: row.last_error,
   lastVerifiedAt: row.last_verified_at ? new Date(row.last_verified_at) : null,
@@ -217,7 +212,6 @@ export const mapCampaignRow = (row: EmailCampaignRow): EmailCampaign => ({
   bodyHtml: row.body_html,
   status: row.status,
   scheduledAt: row.scheduled_at ? new Date(row.scheduled_at) : null,
-  ratePerHour: row.rate_per_hour,
   queuedCount: row.queued_count,
   sentCount: row.sent_count,
   failedCount: row.failed_count,
@@ -332,7 +326,6 @@ export const createAccount = async (input: CreateAccountInput): Promise<EmailAcc
     smtp_secure: input.smtpSecure,
     smtp_username: input.smtpUsername,
     ...(input.dailyLimit !== undefined ? { daily_limit: input.dailyLimit } : {}),
-    ...(input.hourlyLimit !== undefined ? { hourly_limit: input.hourlyLimit } : {}),
   };
 
   const { data, error } = await supabase
@@ -571,7 +564,11 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<EmailC
     subject: input.subject,
     body_html: input.bodyHtml,
     scheduled_at: input.scheduledAt ? input.scheduledAt.toISOString() : null,
-    ...(input.ratePerHour !== undefined ? { rate_per_hour: input.ratePerHour } : {}),
+    // rate_per_hour is deliberately not written. Migration 156 removed the
+    // claim's hourly arithmetic and the worker has no hourly logic, so any
+    // value stored there would be a number the product collects and never
+    // honours. The column stays for the old rows that carry one; pacing comes
+    // from the send window, the jitter and each mailbox's daily limit.
   };
 
   const { data, error } = await supabase
