@@ -1,0 +1,790 @@
+-- 159_sequence_engine.sql
+--
+-- Phase 3, part two: the engine that turns an enrollment into mail.
+--
+-- 158 created the tables. Nothing yet moves an enrollment forward, and nothing
+-- stops one. This file is all of that, and it is deliberately small, because a
+-- sequence step is an ORDINARY email_messages row: the mailbox pool, the daily
+-- and hourly caps, the warmup ramp, the send window, the suppression list and
+-- the retry budget all still belong to claim_email_batch() and are not
+-- reimplemented here. What is here is only the cycle that sits above them:
+--
+--   a. stop_enrollments_for_address() -- one definition of what stopping is,
+--      called by every one of the four things that can stop a sequence.
+--   b. claim_sequence_enrollments()   -- due enrollments out, one step each,
+--      advanced so the same one is never taken twice.
+--   c. record_send_result()           -- re-declared: a 'sent' step schedules
+--      the next one, a permanent failure ends the sequence.
+--   d. record_inbox_result()          -- re-declared: a reply or a bounce ends
+--      the sequence, and 'auto_reply' becomes a kind that does neither.
+--   e. finalize_email_campaigns()     -- re-declared: it must leave a step's
+--      hidden campaign alone.
+--
+-- (c), (d) and (e) are copied verbatim from the migrations that define them --
+-- 156, 157 and 155 respectively -- with only the additions described above.
+-- Every comment in those bodies was written in response to a specific bug and
+-- is carried across unchanged.
+--
+-- Nothing in this file is applied by the app. The user runs migrations by hand.
+
+-- ── a. stop_enrollments_for_address() ───────────────────────────────
+--
+-- One definition of what stopping means, called from four places: the inbox
+-- scan (reply, bounce), the unsubscribe endpoint, and the send result
+-- (permanent failure). Having four callers write this UPDATE themselves is how
+-- the reasons drift apart and one of them forgets the idempotency guard.
+--
+-- Organization-wide by ADDRESS, not per enrollment: somebody enrolled in two
+-- sequences who replies to one has answered a human, and a second machine
+-- still talking to them is the same failure the reply was supposed to prevent.
+--
+-- `status = 'active'` in the WHERE clause is the idempotency guard and the
+-- one-way guard at once. A stopped enrollment is never re-stopped, so
+-- stop_reason and stopped_at record the FIRST thing that ended it -- which is
+-- the one a support question is ever about -- and a later bounce for an
+-- address that already replied does not rewrite the history.
+--
+-- Dropped before it is created, not merely replaced: CREATE OR REPLACE cannot
+-- change a function's return type, so a database where an earlier revision of
+-- this file installed a different shape under this name would fail on the
+-- replace rather than pick the new definition up. This migration has to survive
+-- a re-run against a database where an earlier attempt got part way.
+drop function if exists public.stop_enrollments_for_address(uuid, text, text);
+
+create or replace function public.stop_enrollments_for_address(
+  p_org uuid,
+  p_address text,
+  p_reason text
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_stopped integer;
+begin
+  update public.email_sequence_enrollments e
+     set status = 'stopped',
+         stop_reason = p_reason,
+         stopped_at = now(),
+         next_due_at = null
+   where e.organization_id = p_org
+     and lower(e.to_email) = lower(trim(p_address))
+     and e.status = 'active';
+
+  get diagnostics v_stopped = row_count;
+  return v_stopped;
+end;
+$$;
+
+revoke all on function public.stop_enrollments_for_address(uuid, text, text) from public;
+grant execute on function public.stop_enrollments_for_address(uuid, text, text) to service_role;
+
+-- ── b. claim_sequence_enrollments() ─────────────────────────────────
+--
+-- The materializer's half of the cycle: take due enrollments, hand the worker
+-- everything it needs to write an email_messages row, and advance the
+-- enrollment so the same one is not taken twice.
+--
+-- FOR UPDATE SKIP LOCKED, as claim_email_batch() does, so two workers -- or
+-- one worker overlapping itself after a slow cycle -- cannot take the same
+-- enrollment. Without it the same person gets the same step twice.
+--
+-- What it does NOT do is send, or decide whether sending is allowed. Suppression,
+-- the pool, the caps, the warmup and the send window are all applied later by
+-- claim_email_batch() on the row this produces. The ONE gate here is the
+-- suppression check, and it is here as well as there because materializing a
+-- message that the send claim will refuse leaves a queued row that never sends
+-- and never finalizes, and because an enrollment for a suppressed address
+-- should END rather than accumulate dead rows.
+--
+-- Dropped first for the same reason the helper above is, and more sharply:
+-- CREATE OR REPLACE cannot change the OUT parameter list of an existing
+-- function at all, so a database that ran an earlier revision of this file
+-- would fail on the replace instead of taking the new column list.
+drop function if exists public.claim_sequence_enrollments(integer);
+
+create or replace function public.claim_sequence_enrollments(p_limit integer default 50)
+returns table (
+  enrollment_id uuid,
+  sequence_id uuid,
+  organization_id uuid,
+  contact_id uuid,
+  step_id uuid,
+  step_index integer,
+  campaign_id uuid,
+  account_id uuid,
+  to_email text,
+  to_name text,
+  merge_data jsonb,
+  last_message_id uuid
+)
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_ids uuid[];
+begin
+  -- Every reference below is qualified. An unqualified `step_index` or
+  -- `to_email` here resolves to this function's own OUT parameter, which
+  -- installs cleanly and raises on the first call -- the exact failure this
+  -- codebase has already shipped twice.
+  select array_agg(d.id)
+    into v_ids
+    from (
+      select e.id
+        from public.email_sequence_enrollments e
+        join public.email_sequences s on s.id = e.sequence_id
+       where e.status = 'active'
+         and e.next_due_at is not null
+         and e.next_due_at <= now()
+         and s.status = 'active'
+       order by e.next_due_at
+       limit greatest(p_limit, 0)
+         for update of e skip locked
+    ) d;
+
+  if v_ids is null then
+    return;
+  end if;
+
+  -- Suppressed addresses end their enrollment rather than queue a message the
+  -- send claim would refuse. Done in its own statement, before the advance, so
+  -- a suppressed enrollment is never advanced and never returned.
+  update public.email_sequence_enrollments e
+     set status = 'stopped',
+         stop_reason = 'unsubscribed',
+         stopped_at = now(),
+         next_due_at = null
+   where e.id = any(v_ids)
+     and exists (
+       select 1
+         from public.email_suppressions sup
+        where sup.organization_id = e.organization_id
+          and lower(sup.email) = lower(e.to_email)
+     );
+
+  -- A pinned mailbox that has gone, or that has been taken out of rotation,
+  -- stops the enrollment too. Switching sender mid-conversation would break
+  -- the thread for the recipient and put a stranger's address on a reply they
+  -- were expecting from someone else.
+  update public.email_sequence_enrollments e
+     set status = 'stopped',
+         stop_reason = 'failed',
+         stopped_at = now(),
+         next_due_at = null
+   where e.id = any(v_ids)
+     and e.status = 'active'
+     and e.account_id is not null
+     and not exists (
+       select 1
+         from public.email_accounts a
+        where a.id = e.account_id
+          and a.is_active
+          and a.status <> 'error'
+     );
+
+  -- What is left is sendable. The advance and the read are one statement:
+  -- anything that reads first and writes after can hand the same step out
+  -- twice if the write fails.
+  return query
+  with claimed as (
+    update public.email_sequence_enrollments e
+       set current_step = e.current_step + 1,
+           -- Cleared, not computed. The NEXT step becomes due when THIS one is
+           -- actually sent, which record_send_result() knows and this function
+           -- cannot: the row it is about to create may sit in the queue for
+           -- hours behind a send window.
+           next_due_at = null
+     where e.id = any(v_ids)
+       and e.status = 'active'
+    returning e.id, e.sequence_id, e.organization_id, e.contact_id,
+              e.current_step - 1 as taking_step,
+              e.account_id, e.to_email, e.to_name, e.merge_data, e.last_message_id
+  )
+  -- No subject and no body: email_messages carries neither (migration 152).
+  -- The step's own hidden campaign holds the wording, which is why the step
+  -- must have a campaign_id before it can be claimed at all.
+  select c.id,
+         c.sequence_id,
+         c.organization_id,
+         c.contact_id,
+         st.id,
+         st.step_index,
+         st.campaign_id,
+         c.account_id,
+         c.to_email,
+         c.to_name,
+         c.merge_data,
+         c.last_message_id
+    from claimed c
+    join public.email_sequence_steps st
+      on st.sequence_id = c.sequence_id
+     and st.step_index = c.taking_step
+   where st.campaign_id is not null;
+
+  -- An enrollment whose current_step has no step row has reached the end.
+  -- Marked here rather than by the worker, because this function is the only
+  -- thing that knows the step did not exist: the join above simply dropped it.
+  update public.email_sequence_enrollments e
+     set status = 'completed',
+         next_due_at = null
+   where e.id = any(v_ids)
+     and e.status = 'active'
+     and not exists (
+       select 1
+         from public.email_sequence_steps st
+        where st.sequence_id = e.sequence_id
+          and st.step_index = e.current_step - 1
+     );
+end;
+$$;
+
+revoke all on function public.claim_sequence_enrollments(integer) from public;
+grant execute on function public.claim_sequence_enrollments(integer) to service_role;
+
+-- ── c. record_send_result(): a sent step schedules the next one ─────
+--
+-- Re-declared whole, with the body copied verbatim from migration 156 section
+-- (f). The signature is unchanged, so there is nothing to drop and no overload
+-- to create: this is the same six-argument function, and everything 156
+-- established -- the four outcomes, p_restore_attempt, the three-strike pause
+-- through record_mailbox_failure(), the hard-bounce suppression, the loud
+-- raise on an outcome nobody defined -- is exactly as it was.
+--
+-- What is added is phase 3's half of the cycle, and only that:
+--   * on 'sent', the enrollment's next step becomes due, the mailbox is pinned,
+--     and an enrollment with no further step is completed;
+--   * on 'permanent' and on 'hard_bounce', the address's enrollments stop.
+--
+-- A campaign message is unaffected by every one of those statements: its
+-- enrollment_id is null, so the joins below match nothing.
+create or replace function public.record_send_result(
+  p_message uuid,
+  p_account uuid,
+  p_outcome text,
+  p_error text default null,
+  p_provider_message_id text default null,
+  p_restore_attempt boolean default false
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+begin
+  if p_outcome = 'sent' then
+    -- provider_message_id is what lets the stuck-row recovery in
+    -- claim_email_batch() tell "SMTP accepted it and the write-back failed"
+    -- apart from "it never went out", so it is stored on the way through.
+    -- sent_account_id is re-stated rather than assumed: the claim already
+    -- stamped the mailbox that took the row, and this confirms the one that
+    -- actually delivered it. It is set on this branch only. A failed or
+    -- bounced message did not consume the mailbox's allowance for the day,
+    -- and the stale value it carries is never counted, because sent_today
+    -- matches on status as well.
+    --
+    -- last_error is cleared too. A row that was greylisted, went back on the
+    -- queue and then delivered would otherwise keep the failure text from the
+    -- attempt before, and the campaign view reads that column straight out --
+    -- so a delivered message would sit in the list explaining why it had not
+    -- been sent.
+    update public.email_messages m
+       set status = 'sent',
+           sent_at = now(),
+           sent_account_id = p_account,
+           provider_message_id = p_provider_message_id,
+           last_error = null
+     where m.id = p_message;
+
+    -- A success clears the failure streak outright: three failures means
+    -- three in a row, not three ever. last_sent_at is what rotation orders by.
+    update public.email_accounts a
+       set consecutive_failures = 0,
+           last_sent_at = now(),
+           last_error = null
+     where a.id = p_account;
+
+    -- ── phase 3: the next step becomes due ──────────────────────────
+    --
+    -- HERE and nowhere else, because this is the one place a message becomes
+    -- 'sent'. The delay runs from the actual send, so a queue held overnight
+    -- by the send window releases the follow-up a proper interval later rather
+    -- than minutes after the first message finally went out.
+    --
+    -- The mailbox is pinned on the way through: the first step's sender is the
+    -- sequence's sender, and every later step is queued for it.
+    --
+    -- The step is brought in as a second FROM entry with its join conditions in
+    -- the WHERE clause, rather than as an explicit JOIN. UPDATE ... FROM cannot
+    -- see its own target table from inside a join condition: `from
+    -- public.email_messages m join public.email_sequence_steps st on
+    -- st.sequence_id = e.sequence_id` raises "invalid reference to FROM-clause
+    -- entry for table e" on the first call. Listing both tables and putting
+    -- every condition in WHERE is the identical inner join, spelled the way
+    -- UPDATE allows.
+    --
+    -- A campaign message has a null enrollment_id and a null step_index, so
+    -- `m.enrollment_id = e.id` matches nothing and the ordinary send path is
+    -- untouched by this statement.
+    update public.email_sequence_enrollments e
+       set next_due_at = now() + make_interval(hours => st.delay_hours),
+           last_message_id = m.id,
+           account_id = coalesce(e.account_id, p_account)
+      from public.email_messages m,
+           public.email_sequence_steps st
+     where m.id = p_message
+       and m.enrollment_id = e.id
+       and e.status = 'active'
+       and st.sequence_id = e.sequence_id
+       and st.step_index = m.step_index + 1;
+
+    -- The last step has no successor, so the join above matched nothing and
+    -- the enrollment is done. Separate statement: a single one cannot both
+    -- schedule and complete. `e.next_due_at is null` is what tells the two
+    -- apart -- the claim cleared it, and only the statement above sets it.
+    update public.email_sequence_enrollments e
+       set status = 'completed',
+           next_due_at = null,
+           last_message_id = m.id
+      from public.email_messages m
+     where m.id = p_message
+       and m.enrollment_id = e.id
+       and e.status = 'active'
+       and e.next_due_at is null
+       and not exists (
+         select 1
+           from public.email_sequence_steps st
+          where st.sequence_id = e.sequence_id
+            and st.step_index = m.step_index + 1
+       );
+
+  elsif p_outcome = 'transient' then
+    -- Greylisting, a rate limit, a dropped connection: the message goes back
+    -- on the queue and the claim's attempts < 3 budget decides how many more
+    -- times it is tried. Clearing claimed_at hands it back immediately rather
+    -- than making it wait for the 10-minute stuck-row sweep. The mailbox is
+    -- not at fault, so its health is untouched.
+    --
+    -- The attempt comes back only when the caller says this row was never
+    -- actually tried; a row that really was handed to SMTP and refused must
+    -- keep spending its budget, or it cycles through the queue forever.
+    -- greatest(..., 0) because a row could in principle arrive here twice.
+    --
+    -- ...and once that budget IS spent the row has to be retired here, not
+    -- left 'queued'. The claim only takes attempts < 3, the stuck-row sweep
+    -- above only looks at 'sending', and finalize_email_campaigns counts
+    -- 'queued' as still open: a row claimed at attempts = 2 that fails
+    -- transiently would otherwise sit queued forever, never claimed again,
+    -- never failed, holding its campaign in 'sending' permanently. Three
+    -- tries and it retires, which is what the worker's comments have always
+    -- claimed the database does.
+    --
+    -- Only when the attempt is NOT being restored. A restored row was never
+    -- handed to SMTP -- it is the remainder of a batch this worker abandoned,
+    -- or a batch given back at shutdown -- so it has spent nothing and must
+    -- not be retired for someone else's failure.
+    update public.email_messages m
+       set status = case
+                      when not p_restore_attempt and m.attempts >= 3 then 'failed'
+                      else 'queued'
+                    end,
+           claimed_at = null,
+           last_error = case
+                          when not p_restore_attempt and m.attempts >= 3
+                            then coalesce(p_error, 'Abandoned after 3 delivery attempts')
+                          else p_error
+                        end,
+           attempts = case
+                        when p_restore_attempt then greatest(m.attempts - 1, 0)
+                        else m.attempts
+                      end
+     where m.id = p_message;
+
+  elsif p_outcome = 'permanent' then
+    -- Bad credentials or a rejected sender: retrying sends the identical
+    -- request again, so the message is done.
+    update public.email_messages m
+       set status = 'failed',
+           last_error = p_error
+     where m.id = p_message;
+
+    -- ...and it counts against the mailbox, through the single definition of a
+    -- strike above: at the third consecutive failure the mailbox leaves
+    -- rotation carrying the reason, and its status goes to 'error' so the
+    -- claim stops selecting it.
+    perform public.record_mailbox_failure(p_account, p_error);
+
+    -- A step that cannot be delivered ends the sequence. Stepping forward
+    -- would queue two more messages to an address that has just proved it
+    -- cannot receive one, and a hard bounce has suppressed it in any case.
+    perform public.stop_enrollments_for_address(
+      (select m.organization_id from public.email_messages m where m.id = p_message),
+      (select m.to_email from public.email_messages m where m.id = p_message),
+      'failed'
+    );
+
+  elsif p_outcome = 'hard_bounce' then
+    update public.email_messages m
+       set status = 'failed',
+           last_error = p_error
+     where m.id = p_message;
+
+    -- A bad recipient is not the mailbox's fault, so mailbox health is left
+    -- alone -- but mailing a dead address again is how a sender's reputation
+    -- gets spent, so the address is suppressed for the whole organization.
+    -- Stored lower-cased and trimmed, matching api/email/unsubscribe.ts and
+    -- the suppression sweep's lower(s.email) comparison. on conflict do
+    -- nothing because an address already suppressed for another reason keeps
+    -- the reason it has.
+    insert into public.email_suppressions (organization_id, email, reason, campaign_id)
+    select m.organization_id,
+           lower(trim(m.to_email)),
+           'bounced',
+           m.campaign_id
+      from public.email_messages m
+     where m.id = p_message
+    on conflict do nothing;
+
+    -- A step that cannot be delivered ends the sequence. Stepping forward
+    -- would queue two more messages to an address that has just proved it
+    -- cannot receive one, and a hard bounce has suppressed it in any case.
+    perform public.stop_enrollments_for_address(
+      (select m.organization_id from public.email_messages m where m.id = p_message),
+      (select m.to_email from public.email_messages m where m.id = p_message),
+      'failed'
+    );
+
+  else
+    -- Loud rather than silent: an outcome the caller made up would otherwise
+    -- leave the row stuck in 'sending' until the recovery sweep found it, ten
+    -- minutes later, with no record of why.
+    raise exception 'record_send_result: unknown outcome %', p_outcome;
+  end if;
+end;
+$$;
+
+revoke execute on function public.record_send_result(uuid, uuid, text, text, text, boolean)
+  from public, anon, authenticated;
+grant execute on function public.record_send_result(uuid, uuid, text, text, text, boolean)
+  to service_role;
+
+-- ── d. record_inbox_result(): a reply ends the conversation ─────────
+--
+-- The event kinds this function accepts. 'auto_reply' is new in phase 3: an
+-- out-of-office is recorded so the scan's work is visible and a support
+-- question has an answer, and it does exactly nothing else. It does not mark
+-- replied_at, so it does not inflate the reply rate; it does not stop a
+-- sequence, because the person has not read the message. Phase 2 counted one
+-- as a reply and flagged this as phase 3's to settle. This is it, settled.
+--
+-- Dropped and recreated by name rather than altered, because a check constraint
+-- cannot be extended in place -- the same move 158 made on
+-- email_campaigns.kind. The name is the one PostgreSQL gave the inline column
+-- check in 157 (<table>_<column>_check), and `drop constraint if exists` makes
+-- the pair re-runnable.
+alter table public.email_inbox_events drop constraint if exists email_inbox_events_kind_check;
+alter table public.email_inbox_events
+  add constraint email_inbox_events_kind_check
+  check (kind in ('reply','bounce','auto_reply'));
+
+-- Re-declared whole, with the body copied verbatim from migration 157 section
+-- (d). The signature is unchanged, so there is nothing to drop. Everything 157
+-- established -- the raise on an unknown account, the organization-wide match,
+-- the first-reply-wins transition guard, the thirty-day bound on a bounce, the
+-- evidence-led suppression that inserts the MATCHED message's own address, the
+-- event row written for every kind -- is exactly as it was.
+--
+-- What is added is three things and only three:
+--   * a reply stops every sequence this organization runs at that address;
+--   * a matched bounce does the same;
+--   * 'auto_reply' is accepted, and does neither.
+create or replace function public.record_inbox_result(
+  p_account uuid,
+  p_kind text,
+  p_address text,
+  p_at timestamptz,
+  p_detail text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_org uuid;
+  v_message uuid;
+  -- When that matched message actually went out. Only the bounce path reads
+  -- it; see the recency gate in that branch for why.
+  v_sent_at timestamptz;
+begin
+  -- The scan is always for one mailbox, and the event row's organization_id is
+  -- NOT NULL, so a missing account is not something to record quietly: it
+  -- means the worker is holding an account row that has since been deleted.
+  --
+  -- Raising here is deliberate and was reviewed as such. Nothing but the
+  -- worker can call this function -- it is service_role-only -- so an account
+  -- id that does not resolve is not user input to be tolerated, it is a bug or
+  -- a race, and returning null would hide it behind a scan that looked
+  -- successful. The caller wraps each mailbox in its own try/catch, so the
+  -- blast radius is that one mailbox's cycle and nothing else.
+  select a.organization_id
+    into v_org
+    from public.email_accounts a
+   where a.id = p_account;
+
+  if v_org is null then
+    raise exception 'record_inbox_result: unknown account %', p_account;
+  end if;
+
+  -- The message this is about, if we sent one.
+  --
+  -- Scoped to the ORGANIZATION rather than to p_account: a pooled campaign
+  -- sends from whichever mailbox was free, and a reply goes wherever From or
+  -- Reply-To pointed, so requiring the reply to arrive in the same mailbox
+  -- that sent it would miss ordinary matches. Suppression is organization-wide
+  -- in any case, and the tenant boundary is what actually matters here.
+  --
+  -- status = 'sent' is what makes this a match against something that really
+  -- went out: nobody replied to a queued row, and a bounce quoting a failed
+  -- one is quoting a message that never left.
+  --
+  -- Most recent first, because an address mailed twice is replying to the
+  -- latest. NULLS LAST because DESC sorts nulls first in PostgreSQL, and a
+  -- 'sent' row with no sent_at -- which record_send_result() never produces,
+  -- but 152's schema permits -- would otherwise outrank every real send.
+  select m.id, m.sent_at
+    into v_message, v_sent_at
+    from public.email_messages m
+   where m.organization_id = v_org
+     and m.status = 'sent'
+     and lower(m.to_email) = lower(trim(p_address))
+   order by m.sent_at desc nulls last
+   limit 1;
+
+  if p_kind = 'reply' then
+    -- The WHERE clause carries `and m.replied_at is null` rather than the
+    -- coalesce an earlier revision used, and it is doing the same job that
+    -- coalesce did -- the FIRST reply's time wins, and what follows is more
+    -- of the same conversation, not a second reply, so overwriting it would
+    -- push every "replied after" figure later each time they wrote again.
+    -- Gating the WHERE clause this way, instead of writing the same value
+    -- back unconditionally, is what makes plpgsql's FOUND below tell the
+    -- truth: it is only true when this call is the one that actually made
+    -- the null-to-set transition, never on a repeat, and never when
+    -- v_message is null (m.id = null matches no row either way, exactly as
+    -- it did before) -- a reply from someone we never mailed is not an
+    -- error, it is simply not ours. The event row below still records that
+    -- we saw it.
+    update public.email_messages m
+       set replied_at = p_at
+     where m.id = v_message
+       and m.replied_at is null;
+
+    -- Increments the matched message's own campaign, and only on the
+    -- transition FOUND just confirmed -- never on a repeat reply to a
+    -- message already marked replied, and never for an unmatched reply,
+    -- since FOUND is then false too. campaign_id is NOT NULL on
+    -- email_messages (152), so a matched message always has exactly one
+    -- campaign to credit.
+    if found then
+      update public.email_campaigns c
+         set replied_count = c.replied_count + 1
+        from public.email_messages m
+       where m.id = v_message
+         and c.id = m.campaign_id;
+    end if;
+
+    -- A reply ends every sequence this organisation is running at that
+    -- address, whether or not it matched a message -- somebody writing to a
+    -- mailbox we are sequencing has engaged, and a follow-up after that reads
+    -- as a machine that is not listening. Organisation-wide and by address,
+    -- for the reason on stop_enrollments_for_address().
+    --
+    -- After the `if found` block, never before it: PERFORM sets FOUND, so
+    -- calling this first would decide the campaign counter on this call's
+    -- result instead of the reply's.
+    perform public.stop_enrollments_for_address(v_org, p_address, 'replied');
+
+  elsif p_kind = 'bounce' then
+    -- A bounce for mail sent a year ago is not a bounce for it.
+    --
+    -- The lookup above takes the most recent 'sent' row to that address with
+    -- no bound on how old it may be, which is right for a reply -- somebody
+    -- answering late is still answering -- and wrong for a bounce. A delivery
+    -- failure arrives minutes to hours after the send, occasionally a day or
+    -- two. A notification naming an address this organisation last mailed in
+    -- another quarter is not reporting on that message, and treating it as
+    -- though it were marks a long-settled message bounced, decrements nothing
+    -- back out of the campaign it already counted as delivered, and adds a
+    -- permanent tenant-wide suppression on the strength of it.
+    --
+    -- Thirty days matches SENT_LOOKBACK_MS in worker/lib/inboxCycle.ts, so the
+    -- two ends of this phase bound the same way. A null sent_at cannot be aged
+    -- at all, so it does not qualify either: nothing is suppressed on evidence
+    -- that cannot be dated.
+    if v_sent_at is null or v_sent_at < now() - interval '30 days' then
+      v_message := null;
+    end if;
+
+    -- Same transition guard, same reason: the first failure is when it
+    -- bounced.
+    update public.email_messages m
+       set bounced_at = p_at
+     where m.id = v_message
+       and m.bounced_at is null;
+
+    -- Same increment, same transition-only rule, for the campaign's
+    -- bounced_count. Deliberately BEFORE the suppression insert below: that
+    -- insert runs unconditionally against whatever v_message resolved to,
+    -- repeat bounce or not (it is itself idempotent via `on conflict do
+    -- nothing`), so this count would otherwise have no fixed point to check
+    -- FOUND against once other statements below have run and reset it.
+    if found then
+      update public.email_campaigns c
+         set bounced_count = c.bounced_count + 1
+        from public.email_messages m
+       where m.id = v_message
+         and c.id = m.campaign_id;
+    end if;
+
+    -- The rule this function exists to enforce. A bounce notification is
+    -- unauthenticated mail: anyone who knows a customer's address can post
+    -- their mailbox a delivery-failure report naming that customer's best
+    -- client, and a suppression is permanent and tenant-wide. So suppression
+    -- has to be evidence-led.
+    --
+    -- The address inserted is the MATCHED MESSAGE's own to_email, read back
+    -- out of email_messages -- not p_address. With no match there is no row to
+    -- select from and nothing at all is inserted, so the rule is the shape of
+    -- the statement rather than an `if` that a later edit could quietly drop.
+    -- It also means what gets suppressed is the address we hold, not the
+    -- spelling a stranger chose to put in their DSN.
+    --
+    -- Lower-cased and trimmed, and `on conflict do nothing` so an address
+    -- already suppressed keeps the reason it has -- both matching 156's
+    -- hard_bounce branch and api/email/unsubscribe.ts.
+    insert into public.email_suppressions (organization_id, email, reason, campaign_id)
+    select m.organization_id,
+           lower(trim(m.to_email)),
+           'bounced',
+           m.campaign_id
+      from public.email_messages m
+     where m.id = v_message
+    on conflict do nothing;
+
+    -- ...and the same evidence rule governs stopping a sequence. A bounce for
+    -- an address this organisation never mailed -- or mailed in another
+    -- quarter, which the recency gate above has already turned into no match
+    -- at all -- must not end somebody's sequence on a stranger's say-so. The
+    -- suppression insert above gets that rule from the shape of the statement;
+    -- a PERFORM cannot, so it is guarded explicitly.
+    --
+    -- Last in the branch, after the `if found` block, for the same reason the
+    -- reply's call is: PERFORM sets FOUND.
+    if v_message is not null then
+      perform public.stop_enrollments_for_address(v_org, p_address, 'bounced');
+    end if;
+
+  elsif p_kind = 'auto_reply' then
+    -- An out-of-office, recorded and nothing more. It does NOT mark
+    -- replied_at, so it does not inflate the reply rate, and it does not stop
+    -- a sequence, because nobody has read the message -- a follow-up to
+    -- somebody on holiday is exactly what a sequence is for. Phase 2 counted
+    -- one of these as a reply and flagged this as phase 3's to settle; this is
+    -- it, settled.
+    --
+    -- The branch deliberately touches email_messages not at all. The shared
+    -- insert below still writes the event row, carrying whatever v_message the
+    -- lookup resolved so the auto-reply is filed against the message it
+    -- answered, and the function still returns it.
+    null;
+
+  else
+    -- Loud rather than silent, matching record_send_result()'s contract. A
+    -- kind the caller invented would otherwise reach the insert below and
+    -- surface as a check constraint violation naming a column rather than the
+    -- caller. Raising here also guarantees no event is written for a kind we
+    -- do not understand.
+    raise exception 'record_inbox_result: unknown kind %', p_kind;
+  end if;
+
+  -- Written for both kinds, matched or not. The unmatched bounce is the row
+  -- that answers "we saw this and deliberately did nothing with it", which is
+  -- the answer nothing else in the schema can give.
+  --
+  -- Three kinds now rather than two, and still one insert: an 'auto_reply'
+  -- files its event here with every other, and that is the whole of what its
+  -- branch above does.
+  insert into public.email_inbox_events
+    (organization_id, account_id, kind, address, message_id, detail)
+  values
+    (v_org, p_account, p_kind, lower(trim(p_address)), v_message, p_detail);
+
+  return v_message;
+end;
+$$;
+
+-- This writes to every organization's messages and suppression list as the
+-- definer, so its privileges are not left to chance.
+revoke execute on function public.record_inbox_result(uuid, text, text, timestamptz, text)
+  from public, anon, authenticated;
+grant execute on function public.record_inbox_result(uuid, text, text, timestamptz, text)
+  to service_role;
+
+-- ── e. finalize_email_campaigns() leaves a step's campaign alone ────
+--
+-- Re-declared whole, with the body copied verbatim from migration 155 section
+-- 3, and one condition added to the outer WHERE clause.
+--
+-- The finalizer closes a campaign once no message of it is still open. A
+-- step's campaign is open for as long as the sequence can enroll anybody,
+-- which is not a state the finalizer can see.
+create or replace function public.finalize_email_campaigns()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+begin
+  update public.email_campaigns c
+     set sent_count       = t.sent_count,
+         failed_count     = t.failed_count,
+         suppressed_count = t.suppressed_count,
+         -- Only close a campaign that actually has rows: a scheduled campaign
+         -- whose recipients have not been queued yet has nothing outstanding
+         -- and must not be declared sent.
+         status = case
+                    when t.total > 0 and t.open_count = 0 then 'sent'
+                    else c.status
+                  end,
+         updated_at = now()
+    from (
+      select c2.id,
+             count(m.id)                                                as total,
+             count(*) filter (where m.status = 'sent')                  as sent_count,
+             count(*) filter (where m.status = 'failed')                as failed_count,
+             count(*) filter (where m.status = 'suppressed')            as suppressed_count,
+             count(*) filter (where m.status in ('queued','sending'))   as open_count
+        from public.email_campaigns c2
+        left join public.email_messages m
+          on m.campaign_id = c2.id and m.organization_id = c2.organization_id
+       where c2.status in ('sending','scheduled')
+       group by c2.id
+    ) t
+   where c.id = t.id
+     and c.status in ('sending','scheduled')
+     -- ...and never a sequence step's campaign. Its queue empties every time the
+     -- last enrolled person reaches that step and fills again with the next
+     -- enrollment, so "no open messages" means nothing here -- finalizing it would
+     -- mark a running sequence complete, repeatedly.
+     and c.kind <> 'sequence';
+end;
+$$;
+
+revoke execute on function public.finalize_email_campaigns() from public, anon, authenticated;
+grant execute on function public.finalize_email_campaigns() to service_role;
+
+notify pgrst, 'reload schema';
