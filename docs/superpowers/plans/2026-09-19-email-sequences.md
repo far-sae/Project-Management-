@@ -274,7 +274,7 @@ notify pgrst, 'reload schema';
 
 - [ ] **Step 3: Check it against the constraints**
 
-Confirm by reading: every `create` is `if not exists` or preceded by a `drop ... if exists`; every policy is dropped before being created; no column reference inside a policy is ambiguous; `lower(to_email)` is used in both indexes that compare an address.
+Confirm by reading: every `create` is `if not exists` or preceded by a `drop ... if exists`; every policy is dropped before being created; no column reference inside a policy is ambiguous; `lower(to_email)` is used in both indexes that compare an address; and **every new table carries its grants** — RLS does not replace them, and `authenticated` hits a permission error before any policy is consulted. Follow 152's pattern: `select, insert, update, delete` to `authenticated` and `all` to `service_role`, except `email_sequence_enrollments`, which gets no `delete` — an enrollment is the record of what was sent to somebody and why it stopped, and stopping one sets a status rather than removing the row.
 
 - [ ] **Step 4: Commit**
 
