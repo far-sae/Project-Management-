@@ -33,9 +33,9 @@ Copied from the spec and from what phases 1 and 2 already enforce. Every task's 
 |---|---|
 | `supabase/migrations/158_email_sequences.sql` | The three new tables, their RLS, the two new `email_messages` columns, the `kind` constraint, indexes |
 | `supabase/migrations/159_sequence_engine.sql` | `claim_sequence_enrollments()`, `stop_enrollments_for_address()`, the `record_send_result()` advance, the `record_inbox_result()` stop and `auto_reply` kind, the finalizer skip |
-| `src/lib/email/sequence.ts` | Pure: `nextDueAt`, `threadHeaders`, `followUpSubject`, `stopReasonFor` |
+| `src/lib/email/sequence.ts` | Pure: `nextDueAt`, `threadHeaders`, `followUpSubject` (see Task 3's rulings — no `stopReasonFor`, no window argument) |
 | `src/lib/email/inbox.ts` (modify) | `isAutoReply(headers)` |
-| `src/lib/email/types.ts` (modify) | `EmailSequence`, `EmailSequenceStep`, `EmailEnrollment`, `EnrollmentStatus`, `StopReason` |
+| `src/lib/email/types.ts` (modify) | `EmailSequence`, `EmailSequenceStep`, `EmailEnrollment`, `SequenceStatus`, `EnrollmentStatus`, `StopReason`, `'auto_reply'`, `InboxEnvelope.headers` |
 | `worker/lib/imap.ts` (modify) | Fetch the four auto-reply headers alongside the envelope |
 | `worker/lib/inboxCycle.ts` (modify) | Classify an auto-reply and record it as such |
 | `worker/lib/sequenceCycle.ts` | The materialization loop |
@@ -633,4 +633,648 @@ For each function in this file, read every statement and confirm each column ref
 ```bash
 git add supabase/migrations/159_sequence_engine.sql
 git commit -m "feat(email): the sequence engine in SQL"
+```
+
+---
+
+### Task 3: The pure helpers
+
+**Files:**
+- Create: `src/lib/email/sequence.ts`
+- Modify: `src/lib/email/inbox.ts` (add `isAutoReply`)
+- Modify: `src/lib/email/types.ts` (the new row types)
+- Test: `tests/unit/emailSequence.test.ts`
+
+**Interfaces:**
+- Consumes: `InboxEnvelope` from `src/lib/email/types.ts`.
+- Produces:
+  - `nextDueAt(sentAt: Date, delayHours: number): Date`
+  - `threadHeaders(previousMessageIds: string[], senderDomain: string): Record<string, string>`
+  - `followUpSubject(stepSubject: string, firstSubject: string): string`
+  - `isAutoReply(headers: Record<string, string>): boolean`
+  - types `EmailSequence`, `EmailSequenceStep`, `EmailEnrollment`, `SequenceStatus`, `EnrollmentStatus`, `StopReason`
+
+**Two rulings against the spec's testing list, made here rather than left to an implementer:**
+
+1. The spec writes `nextDueAt(sentAt, delayHours, window)`. It takes **no window**. The send window is enforced by `claim_email_batch()` on the message row, which is where phase 1 put it; applying it again when scheduling would double-apply it — a step due at 5pm Friday would be pushed to Monday here and then held again by the claim, so every step would drift later than the one before.
+2. The spec lists `stopReasonFor(event)`. It is **not built**: every stop is written by SQL (`stop_enrollments_for_address`), so a TypeScript function mapping events to reasons would have no caller, and dead code is what the last review round removed twice.
+
+- [ ] **Step 1: Write the failing tests**
+
+```ts
+import { describe, expect, it } from 'vitest';
+
+import { followUpSubject, nextDueAt, threadHeaders } from '@/lib/email/sequence';
+import { isAutoReply } from '@/lib/email/inbox';
+
+describe('nextDueAt', () => {
+  it('adds the delay to when the previous step was actually sent', () => {
+    expect(nextDueAt(new Date('2026-09-19T09:00:00Z'), 72).toISOString()).toBe(
+      '2026-09-22T09:00:00.000Z',
+    );
+  });
+
+  it('is due immediately on a zero delay', () => {
+    const sent = new Date('2026-09-19T09:00:00Z');
+    expect(nextDueAt(sent, 0).getTime()).toBe(sent.getTime());
+  });
+
+  it('does not apply the send window, which the send claim owns', () => {
+    // The message waits in the queue; the SCHEDULE must not also move, or a
+    // 72-hour delay grows a little every step.
+    const friday = new Date('2026-09-18T17:00:00Z');
+    expect(nextDueAt(friday, 72).toISOString()).toBe('2026-09-21T17:00:00.000Z');
+  });
+});
+
+describe('threadHeaders', () => {
+  it('returns nothing for the first step, which starts the thread', () => {
+    expect(threadHeaders([], 'acme.com')).toEqual({});
+  });
+
+  it('points a follow-up at the message before it', () => {
+    const headers = threadHeaders(['aaa-111'], 'acme.com');
+    expect(headers['In-Reply-To']).toBe('<aaa-111@acme.com>');
+    expect(headers['References']).toBe('<aaa-111@acme.com>');
+  });
+
+  it('accumulates the whole chain in References, oldest first', () => {
+    const headers = threadHeaders(['one', 'two', 'three'], 'acme.com');
+    expect(headers['In-Reply-To']).toBe('<three@acme.com>');
+    expect(headers['References']).toBe('<one@acme.com> <two@acme.com> <three@acme.com>');
+  });
+
+  it('returns nothing when the sender domain is unknown', () => {
+    // A malformed In-Reply-To breaks threading more thoroughly than its
+    // absence does.
+    expect(threadHeaders(['one'], '')).toEqual({});
+  });
+});
+
+describe('followUpSubject', () => {
+  it('uses the step own subject when it has one', () => {
+    expect(followUpSubject('A different angle', 'Quick question')).toBe('A different angle');
+  });
+
+  it('inherits the first subject, prefixed, when the step leaves it blank', () => {
+    expect(followUpSubject('   ', 'Quick question')).toBe('Re: Quick question');
+  });
+
+  it('does not prefix a subject that is already a reply', () => {
+    expect(followUpSubject('', 'Re: Quick question')).toBe('Re: Quick question');
+    expect(followUpSubject('', 're: quick question')).toBe('re: quick question');
+  });
+});
+
+describe('isAutoReply', () => {
+  it('recognises each header that declares one', () => {
+    expect(isAutoReply({ 'auto-submitted': 'auto-replied' })).toBe(true);
+    expect(isAutoReply({ 'x-autoreply': 'yes' })).toBe(true);
+    expect(isAutoReply({ 'x-autorespond': 'anything' })).toBe(true);
+    expect(isAutoReply({ precedence: 'auto_reply' })).toBe(true);
+  });
+
+  it('reads header names case-insensitively, as a mail server writes them', () => {
+    expect(isAutoReply({ 'Auto-Submitted': 'auto-generated' })).toBe(true);
+  });
+
+  it('treats Auto-Submitted: no as ordinary mail, which is what it means', () => {
+    // RFC 3834: an ORDINARY message may carry `Auto-Submitted: no`, and some
+    // clients put it on everything. Matching on the header's presence would
+    // classify real replies as auto-replies, and a real reply that fails to
+    // stop a sequence is the exact failure this phase exists to prevent.
+    expect(isAutoReply({ 'auto-submitted': 'no' })).toBe(false);
+  });
+
+  it('does not guess from wording', () => {
+    // "Out of office until Monday" is a sentence a person can type. Phase 2's
+    // own subject-matching mistake -- suppressing a human who replied to a
+    // forwarded bounce -- is this same mistake in a different place.
+    expect(isAutoReply({ subject: 'Out of office until Monday' })).toBe(false);
+    expect(isAutoReply({})).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run them and watch them fail**
+
+Run: `npx vitest run tests/unit/emailSequence.test.ts`
+Expected: FAIL — `sequence.ts` does not exist and `isAutoReply` is not exported.
+
+- [ ] **Step 3: Write `src/lib/email/sequence.ts`**
+
+```ts
+// Pure helpers for phase 3, the sequence engine. Same contract as the rest of
+// src/lib/email: no Node built-ins, no Supabase, no network, no React, so the
+// worker and the browser share one definition of each of these.
+
+/**
+ * When the step after this one falls due.
+ *
+ * Measured from when the previous step was actually SENT, never from
+ * enrollment: a queue held overnight by the send window would otherwise
+ * release three steps within minutes of each other.
+ *
+ * It takes no send window, deliberately. claim_email_batch() holds a message
+ * until the window opens, which is where phase 1 put that rule and where it
+ * belongs -- the message waits, the schedule does not move. Applying the
+ * window here as well would push this date to the next open hour and the claim
+ * would then hold it again, so every step would drift later than the one
+ * before and a three-day sequence would take a week.
+ */
+export function nextDueAt(sentAt: Date, delayHours: number): Date {
+  return new Date(sentAt.getTime() + Math.max(delayHours, 0) * 60 * 60 * 1000);
+}
+
+/**
+ * `In-Reply-To` and `References` for a follow-up, from the ids of the messages
+ * already sent in this enrollment, oldest first.
+ *
+ * Phase 1 gives every message a derived Message-ID of
+ * `<{email_messages.id}@{sender domain}>`, so the whole thread is
+ * reconstructable from the row ids and nothing has to be stored.
+ *
+ * Returns an empty object for the first step, which starts the thread, and for
+ * an unknown domain -- a malformed In-Reply-To breaks threading more
+ * thoroughly than no In-Reply-To at all.
+ */
+export function threadHeaders(
+  previousMessageIds: string[],
+  senderDomain: string,
+): Record<string, string> {
+  if (previousMessageIds.length === 0 || senderDomain.trim() === '') return {};
+
+  const ids = previousMessageIds.map((id) => `<${id}@${senderDomain}>`);
+  return {
+    'In-Reply-To': ids[ids.length - 1],
+    References: ids.join(' '),
+  };
+}
+
+const ALREADY_A_REPLY = /^\s*re\s*:/i;
+
+/**
+ * The subject a follow-up goes out with.
+ *
+ * A step may carry its own, or leave it blank and inherit the first step's
+ * with `Re: ` in front -- which is what a person would do, and what keeps the
+ * message in the same conversation: most clients break threading on a fresh
+ * subject however correct the References header is.
+ */
+export function followUpSubject(stepSubject: string, firstSubject: string): string {
+  const own = stepSubject.trim();
+  if (own !== '') return own;
+  return ALREADY_A_REPLY.test(firstSubject) ? firstSubject : `Re: ${firstSubject}`;
+}
+```
+
+- [ ] **Step 4: Add `isAutoReply` to `src/lib/email/inbox.ts`**
+
+```ts
+/**
+ * Headers that declare a message machine-generated, per RFC 3834 and the
+ * de-facto ones beside it.
+ *
+ * `Auto-Submitted` is the standard, and its VALUE matters: `no` is what an
+ * ordinary message says, and some clients say it on everything. Matching on
+ * the header's presence would classify real replies as auto-replies, and a
+ * real reply that fails to stop a sequence is exactly the failure phase 3
+ * exists to prevent.
+ *
+ * Wording is deliberately not consulted. "Out of office until Monday" is a
+ * sentence a person can type, and phase 2's own subject-matching mistake is
+ * the same mistake in a different place.
+ */
+export function isAutoReply(headers: Record<string, string>): boolean {
+  const lower: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    lower[key.toLowerCase().trim()] = String(value ?? '').toLowerCase().trim();
+  }
+
+  const submitted = lower['auto-submitted'];
+  if (submitted !== undefined && submitted !== '' && submitted !== 'no') return true;
+  if (lower['x-autoreply'] !== undefined) return true;
+  if (lower['x-autorespond'] !== undefined) return true;
+  if (lower['precedence'] === 'auto_reply') return true;
+
+  return false;
+}
+```
+
+- [ ] **Step 5: Add the row types to `src/lib/email/types.ts`**
+
+Match the existing types in that file exactly: camelCase properties, `Date` for timestamps, a union type per status column. Add `SequenceStatus`, `EnrollmentStatus`, `StopReason`, `EmailSequence`, `EmailSequenceStep`, `EmailEnrollment`, and add `'auto_reply'` to the inbox event kind union. `InboxEnvelope` gains `headers: Record<string, string>`.
+
+- [ ] **Step 6: Run the tests**
+
+Run: `npx vitest run tests/unit/emailSequence.test.ts tests/unit/emailInbox.test.ts`
+Expected: PASS, with no new failure in the inbox suite.
+
+- [ ] **Step 7: Verify and commit**
+
+```bash
+npx tsc --noEmit && npm run build
+git add src/lib/email/sequence.ts src/lib/email/inbox.ts src/lib/email/types.ts tests/unit/emailSequence.test.ts
+git commit -m "feat(email): pure helpers for sequences and auto-reply detection"
+```
+
+---
+
+### Task 4: The scan reads the auto-reply headers
+
+**Files:**
+- Modify: `worker/lib/imap.ts`, `worker/lib/inboxCycle.ts`
+- Test: `tests/unit/emailImap.test.ts`, `tests/unit/emailInboxCycle.test.ts`
+
+**Interfaces:**
+- Consumes: `isAutoReply` from Task 3, `InboxEnvelope.headers` from Task 3.
+- Produces: envelopes carrying parsed headers; a `record_inbox_result` call with `p_kind = 'auto_reply'`.
+
+- [ ] **Step 1: Widen the envelope fetch**
+
+In `scanInbox`'s envelope pass:
+
+```ts
+      for await (const msg of client.fetch(
+        { since },
+        {
+          uid: true,
+          envelope: true,
+          internalDate: true,
+          // Headers, never bodies. The promise this phase makes about the
+          // customer's mailbox is that ordinary mail is not pulled into this
+          // process, and four header lines per message neither move the cost
+          // of the scan nor break it. Named explicitly rather than fetched
+          // whole, so widening this stays a deliberate act.
+          headers: ['auto-submitted', 'x-autoreply', 'x-autorespond', 'precedence'],
+        },
+      )) {
+```
+
+imapflow returns `msg.headers` as a `Buffer` of raw header lines. Parse it inside `toEnvelope` into `Record<string, string>`: lower-case the names, unfold continuation lines (a line beginning with whitespace continues the previous one), ignore any line without a colon. An absent or unparseable value becomes `{}` and never throws — a header the server declined to send must not fail a scan.
+
+- [ ] **Step 2: Test the parse before anything uses it**
+
+Extend the fake in `tests/unit/emailImap.test.ts` to yield a `headers` Buffer when the query asks for one (a `headerLines` field on `FakeMessage`), then:
+
+```ts
+  it('reads the auto-reply headers without pulling a body', async () => {
+    state.messages = [
+      message({
+        from: 'ada@acme.com',
+        headerLines: 'Auto-Submitted: auto-replied\r\nX-Mailer: something\r\n',
+      }),
+    ];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(scan.envelopes[0].headers['auto-submitted']).toBe('auto-replied');
+    // And an ordinary message's body is still never fetched.
+    expect(state.sourcesFetched).toEqual([]);
+  });
+
+  it('unfolds a header split across lines', async () => {
+    state.messages = [message({ headerLines: 'Auto-Submitted: auto-\r\n replied\r\n' })];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(scan.envelopes[0].headers['auto-submitted']).toBe('auto-replied');
+  });
+
+  it('treats a message with no headers as a message with no headers', async () => {
+    state.messages = [message({ headerLines: undefined })];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(scan.envelopes[0].headers).toEqual({});
+  });
+```
+
+- [ ] **Step 3: Classify in the cycle**
+
+In `runInboxCycle`, partition the envelopes into auto-replies and the rest BEFORE matching, so an out-of-office can never reach `replied_at`. Run `matchReplies` over each partition separately — reuse it rather than writing a second matcher — so an auto-reply is recorded only when its sender matches an address this organization sent to, the same gate a reply gets. An out-of-office from a stranger is not an event about us.
+
+The `alreadyReplied` skip applies to replies only: it exists so one reply is not written as an event on every overlapping scan, and an auto-reply sets no `replied_at` to check against. The earliest-per-address collapse inside `matchReplies` already gives one auto-reply event per address per scan.
+
+- [ ] **Step 4: Test the cycle change**
+
+```ts
+  it('records an out-of-office as an auto-reply and never as a reply', async () => {
+    // Phase 2 counted this as a reply. From phase 3 a reply STOPS a sequence,
+    // so counting an out-of-office as one silences the follow-up for somebody
+    // who never read the first message.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentRow()] },
+      {
+        envelopes: [
+          envelope({ from: 'ada@acme.com', headers: { 'auto-submitted': 'auto-replied' } }),
+        ],
+      },
+    );
+
+    await runInboxCycle(h.deps);
+
+    const kinds = h.results().map((c) => (c.args as { p_kind: string }).p_kind);
+    expect(kinds).toEqual(['auto_reply']);
+  });
+
+  it('still records a real reply from a client that stamps Auto-Submitted: no', async () => {
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentRow()] },
+      { envelopes: [envelope({ from: 'ada@acme.com', headers: { 'auto-submitted': 'no' } })] },
+    );
+
+    await runInboxCycle(h.deps);
+
+    expect(h.results().map((c) => (c.args as { p_kind: string }).p_kind)).toEqual(['reply']);
+  });
+
+  it('ignores an out-of-office from somebody this organisation never mailed', async () => {
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [] },
+      {
+        envelopes: [
+          envelope({ from: 'stranger@example.com', headers: { 'x-autoreply': 'yes' } }),
+        ],
+      },
+    );
+
+    await runInboxCycle(h.deps);
+
+    expect(h.results()).toHaveLength(0);
+  });
+```
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+npx tsc -p worker/tsconfig.json --noEmit
+npx vitest run tests/unit/emailImap.test.ts tests/unit/emailInboxCycle.test.ts
+git add -A && git commit -m "feat(email): record an out-of-office as an auto-reply, not a reply"
+```
+
+---
+
+### Task 5: The materialization loop
+
+**Files:**
+- Create: `worker/lib/sequenceCycle.ts`
+- Modify: `worker/index.ts`
+- Test: `tests/unit/emailSequenceCycle.test.ts`
+
+**Interfaces:**
+- Consumes: `claim_sequence_enrollments(p_limit)` from Task 2; `followUpSubject` from Task 3; the `InboxDeps` shape in `worker/lib/inboxCycle.ts` as the pattern to follow.
+- Produces: `runSequenceCycle(deps: SequenceDeps): Promise<SequenceResult>`, where `SequenceResult` is `{ queued: number; completed: number; errors: string[] }`; `SequenceDeps` is `{ db: SupabaseClient; now: () => Date; shouldStop?: () => boolean }`.
+
+- [ ] **Step 1: Read the loop you are matching**
+
+Read `worker/lib/inboxCycle.ts` end to end — its deps injection, its per-item try/catch, its `note()` helper, its comment style — and `worker/index.ts` for how a loop is scheduled. This task adds a third loop beside the existing two; it does not restructure them.
+
+- [ ] **Step 2: Write the failing tests**
+
+Against a stubbed `db` in the same shape `tests/unit/emailInboxCycle.test.ts` uses:
+
+```ts
+  it('queues exactly one message per due enrollment', async () => {
+    const h = makeDeps({ claimed: [enrollment({ stepIndex: 0 })] });
+
+    const result = await runSequenceCycle(h.deps);
+
+    expect(h.inserted('email_messages')).toHaveLength(1);
+    expect(h.inserted('email_messages')[0]).toMatchObject({
+      campaign_id: 'camp-step-0',
+      enrollment_id: 'enr-1',
+      step_index: 0,
+      to_email: 'ada@acme.com',
+      status: 'queued',
+    });
+    expect(result.queued).toBe(1);
+  });
+
+  it('inherits the first step’s subject on a follow-up that has none', async () => {
+    const h = makeDeps({
+      claimed: [enrollment({ stepIndex: 1, subject: '', firstSubject: 'Quick question' })],
+    });
+
+    await runSequenceCycle(h.deps);
+
+    expect(h.inserted('email_messages')[0].subject).toBe('Re: Quick question');
+  });
+
+  it('does not queue twice for an enrollment the claim already advanced', async () => {
+    // The claim advances current_step in the same statement that returns the
+    // row, so a second cycle over the same data claims nothing. This asserts
+    // the cycle adds no second path of its own.
+    const h = makeDeps({ claimed: [enrollment({ stepIndex: 0 })] });
+
+    await runSequenceCycle(h.deps);
+    h.claimReturns([]);
+    await runSequenceCycle(h.deps);
+
+    expect(h.inserted('email_messages')).toHaveLength(1);
+  });
+
+  it('records a failed insert without losing the enrollment', async () => {
+    // The claim has already advanced the enrollment, so a failed insert means
+    // that step will never be sent. It must be loud, and it must not take the
+    // rest of the batch down with it.
+    const h = makeDeps({
+      claimed: [enrollment({ id: 'enr-1' }), enrollment({ id: 'enr-2' })],
+      insertErrors: 1,
+    });
+
+    const result = await runSequenceCycle(h.deps);
+
+    expect(result.queued).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/enr-1/);
+  });
+
+  it('stops between enrollments when the process is shutting down', async () => {
+    const h = makeDeps({
+      claimed: [enrollment({ id: 'enr-1' }), enrollment({ id: 'enr-2' })],
+      shouldStop: () => true,
+    });
+
+    await runSequenceCycle(h.deps);
+
+    expect(h.inserted('email_messages').length).toBeLessThan(2);
+  });
+```
+
+- [ ] **Step 3: Run them and watch them fail**
+
+Run: `npx vitest run tests/unit/emailSequenceCycle.test.ts`
+Expected: FAIL — `worker/lib/sequenceCycle.ts` does not exist.
+
+- [ ] **Step 4: Write the cycle**
+
+One `claim_sequence_enrollments(50)` call per cycle. For each row returned, insert one `email_messages` row:
+
+```ts
+{
+  campaign_id: row.campaign_id,
+  organization_id: row.organization_id,
+  contact_id: row.contact_id,
+  enrollment_id: row.enrollment_id,
+  step_index: row.step_index,
+  to_email: row.to_email,
+  to_name: row.to_name,
+  merge_data: row.merge_data,
+  subject: row.step_index === 0 ? row.subject : followUpSubject(row.subject, row.first_subject),
+  status: 'queued',
+  send_after: new Date().toISOString(),
+}
+```
+
+Rules this file must hold to, each as a comment saying why:
+
+- **It never sends.** No transport, no SMTP, no `claim_email_batch`. It writes a queued row and stops; phase 1's send cycle picks it up with the pool, the caps, the warmup, the window and the suppression list all applied.
+- **One enrollment cannot end the cycle.** Each is in its own try/catch and a failure is recorded and stepped past — the next enrollment is somebody else's tenant.
+- **A failed insert is loud.** The claim has already advanced `current_step`, so a row that fails to insert is a step that will never be sent. It goes into `errors` naming the enrollment id, never the address, never the body.
+- **`shouldStop` is checked between enrollments, never inside one.**
+- If `email_campaigns.subject` is the column the send path reads, write the resolved subject onto the message row only if `email_messages` carries a subject column; otherwise the step's campaign carries it. **Check which before writing this** — read `worker/lib/engine.ts` to see where the subject comes from, and follow that. Do not add a column in this task.
+
+- [ ] **Step 5: Wire it into `worker/index.ts`**
+
+A third loop, every 60 seconds, with a start delay so it does not collide with the first send cycle. It uses the same interruptible `waitFor` and the same shutdown flag as the existing two. A sequence cycle failing must not stop the send cycle.
+
+- [ ] **Step 6: Run the tests, verify, commit**
+
+```bash
+npx vitest run tests/unit/emailSequenceCycle.test.ts
+npx tsc -p worker/tsconfig.json --noEmit && npm run build
+git add -A && git commit -m "feat(email): the sequence materialization loop"
+```
+
+---
+
+### Task 6: Threading in the send path
+
+**Files:**
+- Modify: `worker/lib/engine.ts`
+- Test: `tests/unit/emailEngine.test.ts` (or the existing engine test file — find it first)
+
+**Interfaces:**
+- Consumes: `threadHeaders` from Task 3; `email_messages.enrollment_id` and `step_index` from Task 1.
+- Produces: no new export. The engine's existing send path gains two headers on a sequence follow-up.
+
+This is the ONLY change the send path gets, and it must stay this small.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+  it('threads a follow-up onto the messages already sent in its enrollment', async () => {
+    // Without In-Reply-To and References the follow-up opens a second
+    // conversation, and the recipient sees a stranger repeating themselves.
+    const h = makeEngine({
+      claimed: [row({ id: 'msg-2', enrollment_id: 'enr-1', step_index: 1 })],
+      chain: ['msg-1'],
+      account: { from_email: 'sales@acme.com' },
+    });
+
+    await runSendCycle(h.deps);
+
+    const sent = h.sentMail()[0];
+    expect(sent.headers['In-Reply-To']).toBe('<msg-1@acme.com>');
+    expect(sent.headers['References']).toBe('<msg-1@acme.com>');
+  });
+
+  it('adds no threading headers to a campaign message', async () => {
+    const h = makeEngine({ claimed: [row({ id: 'msg-9', enrollment_id: null })] });
+
+    await runSendCycle(h.deps);
+
+    expect(h.sentMail()[0].headers['In-Reply-To']).toBeUndefined();
+  });
+```
+
+- [ ] **Step 2: Implement**
+
+When the claimed row has an `enrollment_id` and a `step_index` greater than zero, read the ids of that enrollment's already-sent messages in step order — `select id from email_messages where enrollment_id = $1 and status = 'sent' order by step_index` — and merge `threadHeaders(ids, domainOfEmail(account.from_email))` into the headers the message is built with. One read per message is acceptable here and nowhere else: a sequence follow-up is a small fraction of volume, and the alternative is carrying the chain through the claim.
+
+A failed chain read sends the message WITHOUT the headers rather than failing the send. An unthreaded follow-up is a cosmetic loss; a message not sent is the feature not working.
+
+- [ ] **Step 3: Verify and commit**
+
+```bash
+npx vitest run && npx tsc -p worker/tsconfig.json --noEmit
+git add -A && git commit -m "feat(email): thread sequence follow-ups onto the first message"
+```
+
+---
+
+### Task 7: The screens
+
+**Files:**
+- Create: `src/services/supabase/emailSequences.ts`, `src/components/email/SequencesTab.tsx`, `src/components/email/SequenceEditor.tsx`, `src/components/email/EnrollmentTable.tsx`
+- Modify: `src/pages/Email.tsx`
+
+**Interfaces:**
+- Consumes: the tables from Task 1; the types from Task 3; the existing `RecipientPicker` and the existing services in `src/services/supabase/email.ts`.
+- Produces: a `Sequences` tab on the Email page.
+
+- [ ] **Step 1: Read what you are matching**
+
+Read `src/components/email/CampaignsTab.tsx`, `src/components/email/ComposeTab.tsx` and `src/services/supabase/email.ts` in full. Every pattern this task needs already exists there: the list layout, the dialog shape, the way a service maps snake_case rows to camelCase types, the loading and error states, the toast on save. **Nothing here introduces a new visual pattern.** The user's instruction on this feature was that everything should match.
+
+- [ ] **Step 2: The service**
+
+`listSequences(organizationId)`, `getSequence(id)` (with its steps), `createSequence`, `updateSequence`, `saveStep`, `deleteStep`, `enroll(sequenceId, recipients)`, `listEnrollments(sequenceId)`, `stopEnrollment(id)`.
+
+`createSequence` and `saveStep` must also create the step's hidden campaign row — `kind: 'sequence'`, `status: 'sending'`, `name: '<sequence name> — step <n+1>'`, `account_id: null` (the pool) — and set `campaign_id` on the step. A step with no campaign is never claimed, so this is not optional.
+
+`enroll` writes one `email_sequence_enrollments` row per recipient with `next_due_at: now()`, and tolerates the partial unique index rejecting a duplicate: a re-enrolled address that is already active is skipped and reported, not an error the user sees as a failure.
+
+- [ ] **Step 3: The list**
+
+`SequencesTab`: name, status badge, step count, and the enrollment counts (active / replied / stopped / completed). A row opens the editor. A "New sequence" button. Empty state in the same words and layout as `CampaignsTab`'s.
+
+- [ ] **Step 4: The editor**
+
+`SequenceEditor`: the steps in order, each with delay in hours (shown in days where it divides evenly), subject and body, using the same body input and the same `{{placeholder}}` help as Compose. Add a step, remove the last step, reorder is out of scope.
+
+A step that has been sent to anybody is read-only and says so in a sentence — "This step has already been sent, so its wording is fixed. Add a step after it instead." Determined by whether any `email_messages` row exists with that `enrollment_id`'s sequence and `step_index`; ask the service for a count rather than fetching rows.
+
+Activating a sequence requires at least one step with a non-empty body, and step 0 to have a subject. Say which is missing rather than disabling the button silently.
+
+- [ ] **Step 5: The enrollment table**
+
+`EnrollmentTable`: person, current step, next due, status, and the stop reason where there is one, in plain words — "Replied", "Bounced", "Unsubscribed", "Could not be delivered", "Stopped by hand". A row action stops an active enrollment.
+
+- [ ] **Step 6: The tab**
+
+Add `<TabsTrigger value="sequences">Sequences</TabsTrigger>` between Campaigns and Compose, and the matching `TabsContent`.
+
+- [ ] **Step 7: Hide sequence campaigns from the Campaigns tab**
+
+`CampaignsTab`'s query gains `.neq('kind', 'sequence')`. A hidden campaign per step would otherwise fill that list with one row per step per sequence, which is the list's whole usefulness gone.
+
+- [ ] **Step 8: Verify and commit**
+
+```bash
+npx tsc --noEmit && npm run build && npx vitest run
+git add -A && git commit -m "feat(email): the sequences screens"
+```
+
+---
+
+### Task 8: The documentation
+
+**Files:**
+- Modify: `docs/email-worker-setup.md`, `docs/email-marketing-setup.md`
+- Modify: `worker/README.md`
+
+- [ ] **Step 1: Say what the user has to run**
+
+Migrations 158 and 159, in order, after 157. No new environment variable and no new service: the sequence loop runs inside the worker that is already deployed.
+
+- [ ] **Step 2: Say what a sequence does to the send volume**
+
+A sequence multiplies volume by its step count over its duration. The daily limit and the warmup ramp still bound it, so the practical effect is that a mailbox's queue takes longer to drain, not that it sends more than it should. Say this plainly — it is the first thing a user will ask when their campaign appears to slow down.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A && git commit -m "docs: running and operating sequences"
 ```
