@@ -9,6 +9,7 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 
 import { PER_MAILBOX_SLICE } from '@/lib/email/mailboxPool';
+import { MAX_JITTER_MS } from '@/lib/email/sendWindow';
 
 export interface SmtpConfig {
   host: string;
@@ -42,10 +43,25 @@ export function createTransport(cfg: SmtpConfig): Transporter {
     // Past it nodemailer opens a fresh connection, which is the right
     // behaviour for a provider that caps messages per session.
     maxMessages: PER_MAILBOX_SLICE,
-    // Without these a single unresponsive mail server holds the cycle open
-    // indefinitely, and the rows it claimed sit in 'sending' the whole time.
+    // The engine owns every retry. Left unset, the pool requeues a message
+    // without limit whenever a connection closes under it — retries the
+    // database never hears about, that spend no attempt and appear in no
+    // count, running underneath the one place that is supposed to decide how
+    // many times a row is tried.
+    maxRequeues: 0,
+    // These two bound the part of the conversation that happens before
+    // anything is offered, which is where an unreachable host shows up.
     connectionTimeout: 20_000,
     greetingTimeout: 15_000,
-    socketTimeout: 30_000,
+    // Socket INACTIVITY, and on a pooled connection that includes the pacing
+    // pause between two messages. At 30 seconds — the old value — any jitter
+    // longer than that killed the idle socket, so the next message opened a
+    // fresh connection and logged in again: one login per message, which is
+    // the whole of what pooling is here to avoid. It has to sit above the
+    // longest pause an admin can legally configure, which is what
+    // MAX_JITTER_MS is. A server that accepts a connection and then goes
+    // silent mid-transaction now holds this mailbox for that long, which is
+    // the price; the two timeouts above still bound the common case.
+    socketTimeout: MAX_JITTER_MS + 60_000,
   });
 }

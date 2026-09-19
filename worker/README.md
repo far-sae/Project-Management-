@@ -79,12 +79,25 @@ The cost is a delay of up to ten minutes, not a dropped message.
 The residual risk runs the other way, and it is a duplicate rather than a loss:
 a message SMTP already accepted, killed before `record_send_result()` could
 store its `provider_message_id`, looks to the sweep exactly like one that never
-went out, so it is requeued and sent again. The pathological ceiling on that is
-**three deliveries, not two** — the sweep will requeue such a row on each pass
-until the three-attempt budget is spent, and every pass can be one that was
-killed the same way. It needs the process to be killed outright during the same
-message three times over, which is why it is a residual rather than an expected
-cost; but two is the wrong number to plan around.
+went out, so it is requeued and sent again. The same shape reaches the queue
+from a mail server that accepts a message and then drops the connection before
+saying so.
+
+The pathological ceiling on that is **three deliveries, not two**: the sweep
+requeues such a row on each pass until the three-attempt budget is spent, and
+each of those passes can be one that was killed the same way. Two is the wrong
+number to plan around.
+
+Three is a ceiling only because every one of those passes spends an attempt.
+The attempt is restored for exactly one class of row — one this worker knows it
+never offered to a server: the remainder of a batch abandoned after a mailbox
+failure, a batch whose campaign bodies could not be read, and the rows still
+unsent at shutdown. A connection error *after* something has gone out on that
+connection is deliberately not in that class, however identical its error code
+looks (nodemailer labels a socket that dies mid-DATA the same way it labels one
+that never opened). Were it, a recipient whose gateway is merely slow would be
+re-claimed with a full budget every cycle for as long as it stayed slow, and
+this ceiling would not exist at all.
 
 ## Logs
 

@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { isWithinSendWindow, describeSendWindow } from "@/lib/email/sendWindow";
 import {
-  remainingToday, isSendable, selectMailboxes, blockedReason,
+  remainingToday, isUsable, isSendable, selectMailboxes, blockedReason,
   MAX_CONSECUTIVE_FAILURES, PER_MAILBOX_SLICE,
 } from "@/lib/email/mailboxPool";
 import {
   providerOf, classifySmtpError, friendlySmtpError,
-  isAuthFailure, isConnectionFailure, isMailboxFault,
+  isAuthFailure, isConnectionFailure, isPreConversationFailure, isMailboxFault,
 } from "@/lib/email/smtpErrors";
 import { interpretDomainAuth } from "@/lib/email/domainAuth";
 import type { MailboxHealth, SendWindow } from "@/lib/email/types";
@@ -92,6 +92,25 @@ describe("isSendable", () => {
   });
 });
 
+describe("isUsable", () => {
+  // "Is anything in rotation?" rather than "can anything go out this second?".
+  // Compose asks this one before creating a campaign: a pool that has merely
+  // spent today's allowance resumes at midnight and is worth queueing into; a
+  // pool where every mailbox is paused or unverified is not.
+  it("accepts a mailbox that has used up today's allowance", () => {
+    const spent = mb({ effectiveLimit: 10, sentToday: 10 });
+    expect(isUsable(spent)).toBe(true);
+    expect(isSendable(spent)).toBe(false);
+  });
+  it("rejects exactly what takes a mailbox out of rotation", () => {
+    expect(isUsable(mb({ isActive: false }))).toBe(false);
+    expect(isUsable(mb({ pausedReason: "Authentication failed" }))).toBe(false);
+    expect(isUsable(mb({ status: "error" }))).toBe(false);
+    expect(isUsable(mb({ status: "unverified" }))).toBe(false);
+    expect(isUsable(mb({ consecutiveFailures: MAX_CONSECUTIVE_FAILURES }))).toBe(false);
+  });
+});
+
 describe("selectMailboxes", () => {
   it("orders least recently used first, nulls before dates", () => {
     const out = selectMailboxes([
@@ -166,31 +185,62 @@ describe("classifySmtpError", () => {
 
 describe("isMailboxFault", () => {
   // classifySmtpError answers "what should happen to the MESSAGE". This
-  // answers "whose fault was it", which is what decides whether the recipient
-  // in flight is failed or handed back untouched.
-  it("is true for a rejected login, which says nothing about the recipient", () => {
+  // answers "whose fault was it", which decides whether the recipient in
+  // flight is failed, handed back untouched, or simply spends an attempt.
+  //
+  // The second argument is how many messages this transport has already had
+  // accepted. It has to be asked, because nodemailer stamps a socket that goes
+  // quiet mid-DATA with the same code and the same `command: 'CONN'` as a
+  // connect that never completed.
+  const conn = (code: string, message = "could not connect") =>
+    Object.assign(new Error(message), { code, command: "CONN" });
+
+  it("is true for a rejected login wherever in the batch it lands", () => {
     expect(isAuthFailure({ responseCode: 535 })).toBe(true);
     expect(isAuthFailure({ code: "EAUTH" })).toBe(true);
-    expect(isMailboxFault({ responseCode: 535 })).toBe(true);
+    // An AUTH failure carries an AUTH command, so it can only have happened
+    // before anything was offered — position cannot change that.
+    expect(isMailboxFault({ responseCode: 535 }, 0)).toBe(true);
+    expect(isMailboxFault({ code: "EAUTH" }, 7)).toBe(true);
   });
-  it("is true for a conversation that never happened", () => {
-    for (const code of ["ECONNECTION", "ETIMEDOUT", "ESOCKET", "ECONNREFUSED", "EDNS"]) {
-      expect(isConnectionFailure({ code })).toBe(true);
-      expect(isMailboxFault({ code })).toBe(true);
+
+  it("is true for a connection-class code only before the first delivery", () => {
+    for (const code of ["ECONNECTION", "ETIMEDOUT", "ESOCKET", "ECONNRESET", "EDNS"]) {
+      expect(isConnectionFailure(conn(code))).toBe(true);
+      expect(isMailboxFault(conn(code), 0)).toBe(true);
+      // ...and false once the host has demonstrably accepted something: the
+      // connection worked, so this is one recipient's gateway, not the mailbox.
+      expect(isMailboxFault(conn(code), 1)).toBe(false);
     }
   });
+
+  it("is true for nodemailer's two pre-conversation messages, whatever the position", () => {
+    // These carry their phase in the text, which is the only place it survives.
+    for (const message of ["Connection timeout", "Greeting never received"]) {
+      expect(isPreConversationFailure(conn("ETIMEDOUT", message))).toBe(true);
+      expect(isMailboxFault(conn("ETIMEDOUT", message), 5)).toBe(true);
+    }
+    // The socket-inactivity timeout is the same code and command with a
+    // different message, and must NOT be mistaken for one of them.
+    expect(isPreConversationFailure(conn("ETIMEDOUT", "Timeout"))).toBe(false);
+    expect(isMailboxFault(conn("ETIMEDOUT", "Timeout"), 1)).toBe(false);
+    // A message that merely looks like one, with no connection code, is not it.
+    expect(isPreConversationFailure({ message: "Connection timeout" })).toBe(false);
+  });
+
   it("is false once a server has answered with a status code", () => {
-    // A throttle carries both a code and a response: the connection plainly
+    // A throttle can carry both a code and a response: the connection plainly
     // worked, so it is not a connection failure however it is labelled.
     expect(isConnectionFailure({ code: "ESOCKET", responseCode: 421 })).toBe(false);
-    expect(isMailboxFault({ responseCode: 550 })).toBe(false);
-    expect(isMailboxFault({ responseCode: 451 })).toBe(false);
-    expect(isMailboxFault({ responseCode: 501 })).toBe(false);
+    expect(isMailboxFault({ responseCode: 550 }, 0)).toBe(false);
+    expect(isMailboxFault({ responseCode: 451 }, 0)).toBe(false);
+    expect(isMailboxFault({ responseCode: 501 }, 0)).toBe(false);
   });
+
   it("is false for anything unrecognised, so an odd error never pauses a mailbox", () => {
-    expect(isMailboxFault(new Error("something else"))).toBe(false);
-    expect(isMailboxFault(null)).toBe(false);
-    expect(isMailboxFault(undefined)).toBe(false);
+    expect(isMailboxFault(new Error("something else"), 0)).toBe(false);
+    expect(isMailboxFault(null, 0)).toBe(false);
+    expect(isMailboxFault(undefined, 0)).toBe(false);
   });
 });
 

@@ -11,11 +11,12 @@ import { Loader2, Send, SendHorizonal, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import {
-  listAccounts, listSuppressions, contactsForCampaign, createCampaign, queueRecipients,
-  setCampaignStatus, parsePastedRecipients, parseRecipientsCsv,
+  listAccounts, listMailboxStatus, listSuppressions, contactsForCampaign, createCampaign,
+  queueRecipients, setCampaignStatus, parsePastedRecipients, parseRecipientsCsv,
 } from '@/services/supabase/email';
 import type { Recipient } from '@/services/supabase/email';
-import type { EmailAccount } from '@/lib/email/types';
+import type { EmailAccount, MailboxHealth } from '@/lib/email/types';
+import { isUsable } from '@/lib/email/mailboxPool';
 import { filterSuppressed } from '@/lib/email/suppression';
 import { verifyAccount } from './verifyAccount';
 import { RecipientPicker, recipientKey, type RecipientMode } from './RecipientPicker';
@@ -46,6 +47,9 @@ const EMPTY_FORM = { name: '', accountId: WHOLE_POOL, subject: '', bodyHtml: '' 
 export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAdmin, onSent }) => {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
+  // Pool health, which is a different question from "did the credentials ever
+  // verify": a mailbox struck out of rotation still has status 'active'.
+  const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
   const [suppressionEmails, setSuppressionEmails] = useState<string[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
 
@@ -68,6 +72,9 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
     listAccounts(orgId)
       .then(setAccounts)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load sending accounts'));
+    listMailboxStatus(orgId)
+      .then(setMailboxes)
+      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailbox health'));
     listSuppressions(orgId)
       .then((rows) => setSuppressionEmails(rows.map((r) => r.email)))
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
@@ -122,19 +129,37 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
     ? null
     : (accounts.find((a) => a.id === form.accountId) ?? null);
 
-  // The same rule as before, widened to the pool: a campaign cannot be sent
-  // unless at least one mailbox it could use has verified credentials.
+  // Credential status alone is not usability. A mailbox struck out of rotation
+  // by three consecutive failures keeps status 'active' while `is_active` goes
+  // false and `paused_reason` fills in — so a pool with every mailbox paused
+  // still counted as having active accounts, and the campaign was created to
+  // sit queued behind nothing that could ever claim it. `isUsable` asks the
+  // question that matters: is anything in rotation? Today's allowance is
+  // deliberately not part of it — a pool that has sent its quota resumes at
+  // midnight, and queueing for that is exactly right.
+  const usableIds = useMemo(
+    () => new Set(mailboxes.filter(isUsable).map((m) => m.id)),
+    [mailboxes],
+  );
+
   const canSendFrom = usesPool
-    ? activeAccounts.length > 0
-    : !!selectedAccount && selectedAccount.status === 'active';
+    ? usableIds.size > 0
+    : !!selectedAccount && usableIds.has(selectedAccount.id);
+
+  const noneUsable = activeAccounts.length === 0
+    ? 'No verified mailbox to send from — add one on the Accounts tab first.'
+    : 'Every mailbox is paused or needs re-verifying, so nothing would go out. '
+      + 'Fix one on the Accounts tab first.';
 
   const sendsFrom = usesPool
-    ? (activeAccounts.length > 0
-      ? `Sends from the whole pool — ${activeAccounts.length} active mailbox${activeAccounts.length === 1 ? '' : 'es'}, least recently used first.`
-      : 'No active mailbox to send from — verify one on the Accounts tab first.')
-    : (selectedAccount
-      ? `Sends from ${selectedAccount.label} (${selectedAccount.fromEmail}) only.`
-      : 'That mailbox is no longer available — choose another.');
+    ? (usableIds.size > 0
+      ? `Sends from the whole pool — ${usableIds.size} mailbox${usableIds.size === 1 ? '' : 'es'} in rotation, least recently used first.`
+      : noneUsable)
+    : (!selectedAccount
+      ? 'That mailbox is no longer available — choose another.'
+      : usableIds.has(selectedAccount.id)
+        ? `Sends from ${selectedAccount.label} (${selectedAccount.fromEmail}) only.`
+        : `${selectedAccount.label} is paused or needs re-verifying, so nothing would go out from it.`);
 
   const scheduledDate = scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
   const scheduleInPast = scheduleMode === 'schedule' && !!scheduledDate && scheduledDate.getTime() <= Date.now();

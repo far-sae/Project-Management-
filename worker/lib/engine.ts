@@ -22,6 +22,12 @@
 //     first in the batch. That row is handed back like the rest of the batch
 //     and the strike goes to record_mailbox_failure() instead, which is the
 //     one place the three-strike pause is implemented.
+//   * Which of those it is depends on POSITION, not only on the error code.
+//     Nodemailer labels a socket that goes quiet mid-DATA exactly as it labels
+//     a connect that never completed, so `isMailboxFault` is told how many
+//     messages this transport has already had accepted. Before the first one,
+//     the connection is the suspect; after it, the host is demonstrably
+//     reachable and the same code is about the message in flight.
 //   * A mailbox's secret is decrypted BEFORE its budget is claimed, so a
 //     credential the worker cannot read leaves the queue untouched instead of
 //     stranding rows behind a mailbox that was never going to send them.
@@ -624,6 +630,16 @@ async function sendBatch(
   result.claimed += rows.length;
 
   /**
+   * Messages this transport has had accepted so far in this batch. It is the
+   * evidence that the host is reachable and the credentials work, which is
+   * what tells a broken mailbox apart from one slow recipient gateway — see
+   * isMailboxFault(). Counted from SMTP's acceptance, not from a settlement
+   * that landed: the connection is proven by the send, whatever the database
+   * then did with the result.
+   */
+  let deliveredOnTransport = 0;
+
+  /**
    * Hands rows this worker never attempted straight back to the queue. They
    * carry the attempt the claim stamped on them, and three of those makes a row
    * unclaimable forever — so `p_restore_attempt` gives it back. Without that, a
@@ -744,31 +760,39 @@ async function sendBatch(
         headers: built.headers,
       });
       delivered = { providerMessageId: info?.messageId ?? null };
+      deliveredOnTransport += 1;
     } catch (err) {
       const message = friendlySmtpError(err, account.smtp_host);
       note(who, message);
 
-      if (isMailboxFault(err)) {
-        // The login was refused, or the connection never came up. Nothing
-        // about THIS recipient was rejected — nothing was offered for them at
-        // all — so the row is settled exactly like the rest of the batch:
-        // back on the queue with the attempt the claim stamped on it given
-        // back. Without that, three cycles against one rotated password
-        // permanently fail three innocent recipients, one per cycle, with
-        // somebody else's credential error recorded as their reason.
+      if (isMailboxFault(err, deliveredOnTransport)) {
+        // The login was refused, or the connection never came up and nothing
+        // has yet gone out on it. Nothing about THIS recipient was rejected —
+        // nothing was offered for them at all — so the row is settled exactly
+        // like the rest of the batch: back on the queue with the attempt the
+        // claim stamped on it given back. Without that, three cycles against
+        // one rotated password permanently fail three innocent recipients, one
+        // per cycle, with somebody else's credential error as their reason.
         await settle(row.message_id, 'transient', message.slice(0, 500), null, true);
         result.skipped += 1;
         // The strike still has to land, or the mailbox is never paused. A
         // connection failure in particular classifies as 'transient', which
         // leaves mailbox health untouched: a wrong port or blocked egress
         // would otherwise make every queued row wait the full connection
-        // timeout and spend an attempt, forever.
+        // timeout and spend an attempt, forever. Only reachable before this
+        // transport has delivered anything, so it is the connection being
+        // blamed and not a recipient who happened to be slow.
         await strikeMailbox(message);
         // And the rest of this mailbox's batch stops here, exactly as it does
         // for a refused sender: every remaining row would fail identically.
         abort = message;
       } else {
-        // Exactly one of 'permanent' | 'hard_bounce' | 'transient'.
+        // Exactly one of 'permanent' | 'hard_bounce' | 'transient'. This is
+        // also where a connection-class code lands once something has already
+        // gone out on this transport: ordinary per-message accounting, so the
+        // attempt is SPENT and the claim's three-try budget still retires the
+        // row. Restoring it there would make one slow gateway immortal, and
+        // would lift the ceiling off the duplicate window in worker/README.md.
         const outcome = classifySmtpError(err);
         await settle(row.message_id, outcome, message.slice(0, 500));
         result.failed += 1;
@@ -776,7 +800,8 @@ async function sendBatch(
         // address the server will not accept, a 5xx it will repeat. Every
         // remaining recipient in this batch would collect the identical
         // rejection, so they go back on the queue instead and this mailbox
-        // stops. A hard bounce is about one recipient and stops nothing.
+        // stops. A hard bounce, and a transient failure of one recipient,
+        // stop nothing.
         if (outcome === 'permanent') abort = message;
       }
     }

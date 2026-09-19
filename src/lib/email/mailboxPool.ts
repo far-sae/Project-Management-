@@ -15,14 +15,28 @@ export function remainingToday(m: MailboxHealth): number {
   return Math.max(0, m.effectiveLimit - m.sentToday);
 }
 
-/** Whether a mailbox can take on more sends right now: active, unpaused, not errored, under the failure ceiling, and with allowance left. */
-export function isSendable(m: MailboxHealth): boolean {
+/**
+ * Whether a mailbox is in the pool at all: active, unpaused, credentials
+ * verified, and under the failure ceiling. Nothing but today's allowance
+ * stands between a usable mailbox and sending, and that comes back by itself
+ * at midnight.
+ *
+ * Separate from `isSendable` because the two questions have different
+ * answers at different times of day. "Can this campaign ever go out?" is this
+ * one: a pool whose every mailbox is paused or needs re-verifying will not
+ * send tomorrow either, and queueing into it is queueing into nothing.
+ */
+export function isUsable(m: MailboxHealth): boolean {
   if (!m.isActive) return false;
   if (m.pausedReason !== null) return false;
   if (m.status !== 'active') return false;
   if (m.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return false;
-  if (remainingToday(m) <= 0) return false;
   return true;
+}
+
+/** Whether a mailbox can take on more sends right now: usable, and with allowance left today. */
+export function isSendable(m: MailboxHealth): boolean {
+  return isUsable(m) && remainingToday(m) > 0;
 }
 
 function byLeastRecentlyUsed(a: MailboxHealth, b: MailboxHealth): number {

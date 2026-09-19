@@ -95,12 +95,62 @@ export function isConnectionFailure(err: unknown): boolean {
 }
 
 /**
- * True when the failure belongs to the sending mailbox rather than to the
- * recipient — which decides whether the row in flight is failed or handed
- * back untouched.
+ * Nodemailer's own words for the two failures that provably happened before
+ * any conversation began: the TCP connect never completed
+ * (`_onConnectionError('Connection timeout', 'ETIMEDOUT')`), and the server
+ * never sent a greeting (`_onError('Greeting never received', 'ETIMEDOUT',
+ * false, 'CONN')`). Both arrive as `ETIMEDOUT` with `command: 'CONN'` — which
+ * is byte for byte what a socket that goes quiet twenty messages later also
+ * looks like, because `_onTimeout()` raises `new Error('Timeout')` with the
+ * same code and the same command whatever was in flight. The message text is
+ * the only thing that separates them, so it is what this matches on.
  */
-export function isMailboxFault(err: unknown): boolean {
-  return isAuthFailure(err) || isConnectionFailure(err);
+const PRE_CONVERSATION_MESSAGES = [/^connection timeout$/i, /^greeting never received$/i];
+
+/**
+ * True when the failure is known to have happened before the mail server said
+ * anything at all — so it cannot be about a recipient, whatever else was going
+ * on. Narrower than `isConnectionFailure` on purpose: this is the part of that
+ * set that carries its phase.
+ */
+export function isPreConversationFailure(err: unknown): boolean {
+  if (!isConnectionFailure(err)) return false;
+  const message = String((err as { message?: string } | null)?.message ?? '').trim();
+  return PRE_CONVERSATION_MESSAGES.some((pattern) => pattern.test(message));
+}
+
+/**
+ * True when the failure belongs to the sending mailbox rather than to the
+ * recipient — which decides whether the row in flight is failed, handed back
+ * untouched, or left to spend its attempt like any other bad row.
+ *
+ * `deliveredOnTransport` is how many messages this transport has already had
+ * accepted during the current batch, and it is the whole of the difference
+ * between "we cannot talk to this server" and "this one recipient's gateway
+ * went quiet". Nodemailer stamps `ETIMEDOUT`, `ESOCKET`, `ECONNRESET` and
+ * `ECONNECTION` with `command: 'CONN'` whatever was in flight — its
+ * socket-inactivity timeout and every socket error do, and a server that hangs
+ * up after DATA raises `ECONNECTION` — so the code on its own cannot say when
+ * the failure happened. Once a message has been accepted on this connection
+ * the host is demonstrably reachable and the credentials demonstrably work, so
+ * the same code the next time round is about that message, not the mailbox.
+ *
+ * Reading it the other way is expensive: the row is handed back with its
+ * attempt restored, the mailbox is struck, and the batch is abandoned. A
+ * single slow recipient gateway would then be re-claimed every cycle once its
+ * siblings had gone out, strike each mailbox in turn until the whole pool was
+ * paused, and hold its campaign in 'sending' for good — and if the server had
+ * in fact accepted after DATA, every pass would be another delivery, with the
+ * attempt budget restored each time so nothing ever stopped it.
+ *
+ * `EAUTH` and 535 are exempt because they are unambiguous: they carry an AUTH
+ * command, so they can only have happened before any message was offered, and
+ * they stay a mailbox fault wherever in the batch they appear.
+ */
+export function isMailboxFault(err: unknown, deliveredOnTransport: number): boolean {
+  if (isAuthFailure(err)) return true;
+  if (isPreConversationFailure(err)) return true;
+  return isConnectionFailure(err) && deliveredOnTransport === 0;
 }
 
 const LABEL: Record<SmtpProvider, string> = {

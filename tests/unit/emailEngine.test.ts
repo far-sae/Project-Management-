@@ -108,7 +108,10 @@ function smtpError(responseCode: number, message = 'server said no'): Error {
  * string `code` and no `responseCode`, because nothing ever answered.
  */
 function transportError(code: string, message = 'could not connect'): Error {
-  return Object.assign(new Error(message), { code });
+  // `command: 'CONN'` is what nodemailer stamps on every one of these, whatever
+  // was actually in flight when it happened — which is exactly why the engine
+  // cannot classify them on the code alone.
+  return Object.assign(new Error(message), { code, command: 'CONN' });
 }
 
 /* ------------------------------------------------------------- the stub db */
@@ -826,8 +829,8 @@ describe('worker/lib/engine — a failure that belongs to the mailbox, not the r
     expect(String(stub.strikes()[0].args.p_error)).toMatch(/username or password/i);
   });
 
-  it.each(['ECONNECTION', 'ETIMEDOUT', 'ESOCKET'])(
-    'stops the batch and strikes the mailbox on %s rather than burning every row',
+  it.each(['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET'])(
+    'stops the batch and strikes the mailbox on %s BEFORE anything has gone out',
     async (code) => {
       const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)]);
       const mailer = makeMailer(async () => {
@@ -854,6 +857,94 @@ describe('worker/lib/engine — a failure that belongs to the mailbox, not the r
       expect(sleep).not.toHaveBeenCalled();
     },
   );
+
+  it.each(['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET'])(
+    'treats %s AFTER a delivery as this recipient\'s problem, not the mailbox\'s',
+    async (code) => {
+      // Nodemailer stamps a socket that goes quiet mid-DATA exactly as it
+      // stamps a connect that never completed: same code, same command 'CONN'.
+      // Once a message has been accepted on this connection the host is
+      // reachable and the login works, so the next one is about the
+      // recipient's gateway. Read the other way, a single slow gateway is
+      // re-claimed every cycle with its attempt restored, strikes each mailbox
+      // in turn until the whole pool is paused, and holds its campaign in
+      // 'sending' for good.
+      const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)]);
+      let n = 0;
+      const mailer = makeMailer(async () => {
+        n += 1;
+        if (n === 2) throw transportError(code);
+        return { messageId: `<${n}@smtp>` };
+      });
+
+      const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+      // The batch carries on: message 3 still goes out.
+      expect(mailer.sent).toHaveLength(3);
+      expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual([
+        'sent',
+        'transient',
+        'sent',
+      ]);
+      // The attempt is SPENT, so the claim's three-try budget still retires
+      // the row rather than letting it cycle forever.
+      expect(stub.settlements()[1].args.p_restore_attempt).toBe(false);
+      // And the mailbox's health is untouched — it just delivered twice.
+      expect(stub.strikes()).toHaveLength(0);
+      expect(result.sent).toBe(2);
+      expect(result.failed).toBe(1);
+      expect(result.skipped).toBe(0);
+    },
+  );
+
+  it.each(['Connection timeout', 'Greeting never received'])(
+    'still blames the mailbox for a pre-conversation "%s" wherever it lands',
+    async (message) => {
+      // These two are nodemailer's own words for a failure that provably
+      // happened before the server said anything at all, so they carry their
+      // phase with them and stay a mailbox fault even after a delivery.
+      const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)]);
+      let n = 0;
+      const mailer = makeMailer(async () => {
+        n += 1;
+        if (n === 2) throw transportError('ETIMEDOUT', message);
+        return { messageId: `<${n}@smtp>` };
+      });
+
+      const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+      expect(mailer.sent).toHaveLength(2);
+      expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual([
+        'sent',
+        'transient',
+        'transient',
+      ]);
+      expect(stub.settlements().slice(1).every((c) => c.args.p_restore_attempt === true)).toBe(true);
+      expect(stub.strikes()).toHaveLength(1);
+      expect(result.skipped).toBe(2);
+    },
+  );
+
+  it('leaves a row that has spent its budget to the database on that path too', async () => {
+    // A post-delivery connection failure on a row already at three attempts.
+    // The worker must not decide to fail it itself: record_send_result()
+    // retires it because the attempt is spent, and that rule lives in SQL
+    // beside the claim, the sweep and the campaign rollup.
+    const stub = oneMailbox([claimedRow(1), claimedRow(2, { attempts: 3 })]);
+    let n = 0;
+    const mailer = makeMailer(async () => {
+      n += 1;
+      if (n === 2) throw transportError('ETIMEDOUT');
+      return { messageId: `<${n}@smtp>` };
+    });
+
+    const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+    expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual(['sent', 'transient']);
+    expect(stub.settlements()[1].args.p_restore_attempt).toBe(false);
+    expect(stub.strikes()).toHaveLength(0);
+    expect(result.failed).toBe(1);
+  });
 
   it('still fails the recipient, and never strikes the mailbox, for a hard bounce', async () => {
     const stub = oneMailbox([claimedRow(1), claimedRow(2)]);
