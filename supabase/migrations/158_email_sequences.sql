@@ -200,6 +200,53 @@ alter table public.email_messages
 alter table public.email_messages
   add column if not exists step_index integer;
 
+-- The mailbox this message MUST go through, or null for "any pool member".
+--
+-- Phase 1 pins at the campaign: claim_email_batch() takes a row when the
+-- campaign names this mailbox or names none. That is the wrong grain for a
+-- sequence. A step's hidden campaign is shared by every enrollment at that
+-- step, so pinning it would put all of them through one mailbox and undo the
+-- pool for sequences entirely -- while pinning nothing lets a follow-up go out
+-- from a different address than the message it is replying to, which breaks
+-- the recipient's own threading and reads as two strangers.
+--
+-- So the pin lives on the message, set from the enrollment's own account_id,
+-- which record_send_result() stamps the first time a step is sent.
+--
+-- The foreign key is composite, on (pinned_account_id, organization_id), for
+-- the same reason sent_account_id's is (156): a single-column reference would
+-- let one organization's row name another organization's mailbox, and the
+-- claim's own organization join would then simply never match it -- a message
+-- queued for ever, which is worse than the wrong sender.
+--
+-- ON DELETE SET NULL, deliberately, and it is the one place the thread is
+-- allowed to break: a deleted mailbox leaves the message pinned to an id that
+-- no longer exists, and the claim would never take it. Releasing it to the
+-- pool sends it from the wrong address; not releasing it sends it never. The
+-- enrollment-level check in claim_sequence_enrollments() stops the SEQUENCE
+-- when its pinned mailbox goes, so this only ever affects a step already
+-- queued at that moment.
+alter table public.email_messages
+  add column if not exists pinned_account_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'email_messages_pinned_account_fk'
+  ) then
+    alter table public.email_messages
+      add constraint email_messages_pinned_account_fk
+      foreign key (pinned_account_id, organization_id)
+      references public.email_accounts (id, organization_id)
+      on delete set null (pinned_account_id);
+  end if;
+end $$;
+
+-- The claim filters on it for every queued row, so it is not optional.
+create index if not exists email_messages_pinned_account
+  on public.email_messages (pinned_account_id)
+  where pinned_account_id is not null;
+
 -- Reading a person's thread back, which is what the enrollment screen and the
 -- References header both do.
 create index if not exists email_messages_enrollment

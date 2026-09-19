@@ -168,6 +168,36 @@ describe('runSequenceCycle', () => {
     expect(result.errors).toEqual([]);
   });
 
+  it('pins a follow-up to the mailbox the thread started from', async () => {
+    // record_send_result() stamps the enrollment's account_id the first time a
+    // step goes out, and every later step is claimed carrying it. Without the
+    // pin on the message the follow-up leaves from whichever pool member is
+    // free, so it arrives from a different address than the message it is
+    // replying to -- which breaks the recipient's own threading and reads as a
+    // second stranger.
+    //
+    // The pin cannot live on the campaign: a step's hidden campaign is shared
+    // by every enrollment at that step, so pinning it there would route all of
+    // them through one mailbox and undo the pool for sequences entirely.
+    const h = makeDeps({
+      claimed: [enrollment({ stepIndex: 1, account_id: 'mbx-7' })],
+    });
+
+    await runSequenceCycle(h.deps);
+
+    expect(h.inserted('email_messages')[0].pinned_account_id).toBe('mbx-7');
+  });
+
+  it('leaves a first step unpinned, so the pool decides who starts the thread', async () => {
+    const h = makeDeps({
+      claimed: [enrollment({ stepIndex: 0, account_id: null })],
+    });
+
+    await runSequenceCycle(h.deps);
+
+    expect(h.inserted('email_messages')[0].pinned_account_id).toBeNull();
+  });
+
   it('writes no subject and no body, and never claims a send batch', async () => {
     // email_messages has neither column (migration 152); the step's hidden
     // campaign carries the wording and engine.ts reads it from there. Writing

@@ -24,6 +24,7 @@ Copied from the spec and from what phases 1 and 2 already enforce. Every task's 
 - **No message body, subject line, password or recipient list may be written to a log or an error column.** Addresses appear one at a time.
 - **Stopping an enrollment is one-way and idempotent.** A stopped enrollment is never re-stopped or reopened; the recorded reason is the FIRST thing that ended it.
 - **Delays are measured from the previous step's actual send**, never from enrollment.
+- **The mailbox pin is per MESSAGE, not per campaign.** `email_messages.pinned_account_id` (158d) plus one condition in `claim_email_batch()` (160). A step's hidden campaign is shared by every enrollment at that step, so pinning the campaign would route all of them through one mailbox and undo the pool for sequences.
 - **Migration numbering continues at 158.** The user runs migrations by hand, later; do not attempt to apply them.
 - Verification after every task: `npx tsc --noEmit`, `npx tsc -p api/tsconfig.json --noEmit`, `npx tsc -p worker/tsconfig.json --noEmit`, `npm run build`, and `npx vitest run` with **no new failures** against the documented baseline of **34 failed / 20 passed test files, 3 failed tests** (they import CRM code deleted in migration 143 and are unrelated to this work).
 
@@ -32,6 +33,7 @@ Copied from the spec and from what phases 1 and 2 already enforce. Every task's 
 | File | Responsibility |
 |---|---|
 | `supabase/migrations/158_email_sequences.sql` | The three new tables, their RLS, the two new `email_messages` columns, the `kind` constraint, indexes |
+| `supabase/migrations/160_claim_respects_pinned_mailbox.sql` | `claim_email_batch()` re-declared with one added condition, so a follow-up leaves from the mailbox its thread started on |
 | `supabase/migrations/159_sequence_engine.sql` | `claim_sequence_enrollments()`, `stop_enrollments_for_address()`, the `record_send_result()` advance, the `record_inbox_result()` stop and `auto_reply` kind, the finalizer skip |
 | `src/lib/email/sequence.ts` | Pure: `nextDueAt`, `threadHeaders`, `followUpSubject` (see Task 3's rulings — no `stopReasonFor`, no window argument) |
 | `src/lib/email/inbox.ts` (modify) | `isAutoReply(headers)` |

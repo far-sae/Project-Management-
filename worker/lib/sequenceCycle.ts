@@ -262,6 +262,20 @@ async function queueStep(
     to_email: row.to_email,
     to_name: row.to_name,
     merge_data: row.merge_data,
+    // The mailbox this step must go through, or null for "any pool member".
+    //
+    // Null on the first step of an enrollment, which is how it starts a thread
+    // from whichever mailbox the pool had free; record_send_result() stamps
+    // the enrollment's account_id from that send, and every later step is
+    // claimed here carrying it. Without this the follow-up leaves from a
+    // different address than the message it is replying to, which breaks the
+    // recipient's own threading and reads as a second stranger.
+    //
+    // It cannot live on the campaign: a step's hidden campaign is shared by
+    // every enrollment at that step, so pinning it there would route all of
+    // them through one mailbox and undo the pool for sequences. See migrations
+    // 158d and 160.
+    pinned_account_id: row.account_id,
     // 'queued' and nothing else. Every gate that decides whether this may
     // actually go out is applied later, by claim_email_batch().
     status: 'queued',
