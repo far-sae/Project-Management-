@@ -27,7 +27,21 @@ interface ComposeTabProps {
   onSent: () => void;
 }
 
-const EMPTY_FORM = { name: '', accountId: '', subject: '', bodyHtml: '' };
+/**
+ * The sending-account select's value for "use the whole pool", i.e. a
+ * campaign whose `account_id` is null. A sentinel rather than the empty
+ * string because Radix's Select reserves `''` for "nothing chosen" and
+ * refuses it as an item value.
+ *
+ * This is the default: migration 156 made `email_campaigns.account_id`
+ * nullable precisely so a campaign could rotate across the pool, and nothing
+ * else in the product ever produces a null, so without this option the pool,
+ * the rotation and the per-mailbox warmup ramp would never apply to a real
+ * campaign at all.
+ */
+const WHOLE_POOL = '__whole_pool__';
+
+const EMPTY_FORM = { name: '', accountId: WHOLE_POOL, subject: '', bodyHtml: '' };
 
 export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAdmin, onSent }) => {
   const { user } = useAuth();
@@ -101,13 +115,32 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
     return [...base, ...csvColumns.filter((c) => !base.includes(c))];
   }, [mode, csvColumns]);
 
-  const selectedAccount = accounts.find((a) => a.id === form.accountId) ?? null;
   const activeAccounts = accounts.filter((a) => a.status === 'active');
+  const usesPool = form.accountId === WHOLE_POOL;
+  // Null whenever the pool is chosen: there is no one mailbox to name, and
+  // everything that needs a specific one (the test send) must see that.
+  const selectedAccount = usesPool
+    ? null
+    : (accounts.find((a) => a.id === form.accountId) ?? null);
+
+  // The same rule as before, widened to the pool: a campaign cannot be sent
+  // unless at least one mailbox it could use has verified credentials.
+  const canSendFrom = usesPool
+    ? activeAccounts.length > 0
+    : !!selectedAccount && selectedAccount.status === 'active';
+
+  const sendsFrom = usesPool
+    ? (activeAccounts.length > 0
+      ? `Sends from the whole pool — ${activeAccounts.length} active mailbox${activeAccounts.length === 1 ? '' : 'es'}, least recently used first.`
+      : 'No active mailbox to send from — verify one on the Accounts tab first.')
+    : (selectedAccount
+      ? `Sends from ${selectedAccount.label} (${selectedAccount.fromEmail}) only.`
+      : 'That mailbox is no longer available — choose another.');
 
   const scheduledDate = scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
   const scheduleInPast = scheduleMode === 'schedule' && !!scheduledDate && scheduledDate.getTime() <= Date.now();
 
-  const canSubmit = !!selectedAccount && selectedAccount.status === 'active'
+  const canSubmit = canSendFrom
     && form.subject.trim().length > 0 && form.bodyHtml.trim().length > 0
     && sendable.length > 0 && !sending
     && (scheduleMode === 'now' || (scheduledAt.length > 0 && !scheduleInPast));
@@ -140,7 +173,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
   };
 
   const handleSubmit = async () => {
-    if (!canSubmit || !selectedAccount || !orgId) return;
+    if (!canSubmit || !orgId) return;
     if (scheduleMode === 'schedule' && scheduleInPast) {
       toast.error('Pick a schedule time in the future.');
       return;
@@ -151,7 +184,10 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
         organizationId: orgId,
         workspaceId,
         createdBy: user?.userId ?? null,
-        accountId: selectedAccount.id,
+        // Null is the whole pool: claim_email_batch() then hands this
+        // campaign's rows to whichever mailbox is next in rotation, instead of
+        // pinning every message to one address.
+        accountId: usesPool ? null : (selectedAccount?.id ?? null),
         kind: activeRecipients.length === 1 ? 'single' : 'bulk',
         name: form.name.trim() || form.subject.trim(),
         subject: form.subject.trim(),
@@ -203,6 +239,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
               <Select value={form.accountId} onValueChange={(v) => setForm((f) => ({ ...f, accountId: v }))}>
                 <SelectTrigger><SelectValue placeholder="Choose an active account" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={WHOLE_POOL}>Whole pool (rotate across every mailbox)</SelectItem>
                   {activeAccounts.length === 0
                     ? <div className="px-3 py-2 text-sm text-muted-foreground">No active accounts — verify one first</div>
                     : activeAccounts.map((a) => (
@@ -210,6 +247,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
                     ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">{sendsFrom}</p>
             </div>
           </div>
           <div className="space-y-2">
@@ -283,10 +321,17 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
 
           <div className="flex items-center justify-between border-t border-border pt-4">
             {isAdmin ? (
-              <Button type="button" variant="outline" disabled={!selectedAccount || testSending} onClick={handleTestSend}>
-                {testSending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <SendHorizonal className="w-4 h-4 mr-2" />}
-                Send test to me
-              </Button>
+              <div className="space-y-1">
+                <Button type="button" variant="outline" disabled={!selectedAccount || testSending} onClick={handleTestSend}>
+                  {testSending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <SendHorizonal className="w-4 h-4 mr-2" />}
+                  Send test to me
+                </Button>
+                {usesPool && (
+                  <p className="text-xs text-muted-foreground">
+                    A test send goes from one named mailbox, so pick one above instead of the whole pool.
+                  </p>
+                )}
+              </div>
             ) : <span />}
             <Button type="button" disabled={!canSubmit} onClick={handleSubmit}>
               {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}

@@ -31,7 +31,8 @@ export interface EmailCampaign {
   organizationId: string;
   workspaceId: string | null;
   createdBy: string | null;
-  accountId: string;
+  /** null = "the whole pool"; a value pins the campaign to one mailbox. */
+  accountId: string | null;
   kind: CampaignKind;
   name: string;
   subject: string;

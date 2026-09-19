@@ -59,7 +59,15 @@ export interface CreateCampaignInput {
   organizationId: string;
   workspaceId?: string | null;
   createdBy?: string | null;
-  accountId: string;
+  /**
+   * The mailbox this campaign is pinned to, or `null` for "use the whole
+   * pool" — the default since migration 156, which made
+   * `email_campaigns.account_id` nullable. A pooled campaign is claimed by
+   * whichever pool member is next in the least-recently-used rotation, which
+   * is the only way rotation, warmup and the per-mailbox daily cap ever apply
+   * to more than one mailbox.
+   */
+  accountId: string | null;
   kind: CampaignKind;
   name: string;
   subject: string;
@@ -96,7 +104,7 @@ interface EmailCampaignRow {
   organization_id: string;
   workspace_id: string | null;
   created_by: string | null;
-  account_id: string;
+  account_id: string | null;
   kind: CampaignKind;
   name: string;
   subject: string;
