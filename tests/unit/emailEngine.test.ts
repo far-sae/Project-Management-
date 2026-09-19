@@ -103,6 +103,14 @@ function smtpError(responseCode: number, message = 'server said no'): Error {
   return Object.assign(new Error(message), { responseCode });
 }
 
+/**
+ * A failure that never reached a mail server: nodemailer reports these with a
+ * string `code` and no `responseCode`, because nothing ever answered.
+ */
+function transportError(code: string, message = 'could not connect'): Error {
+  return Object.assign(new Error(message), { code });
+}
+
 /* ------------------------------------------------------------- the stub db */
 
 interface Fixtures {
@@ -223,6 +231,7 @@ function makeDb(fx: Fixtures) {
     writes,
     claims: () => rpcCalls.filter((c) => c.name === 'claim_email_batch'),
     settlements: () => rpcCalls.filter((c) => c.name === 'record_send_result'),
+    strikes: () => rpcCalls.filter((c) => c.name === 'record_mailbox_failure'),
     names: () => rpcCalls.map((c) => c.name),
   };
 }
@@ -435,15 +444,16 @@ describe('worker/lib/engine — settling a send', () => {
     expect(result.sent).toBe(0);
   });
 
-  it('records a 535 as `permanent`', async () => {
+  it('records a genuine 5xx rejection of the message as `permanent`', async () => {
     const stub = oneMailbox([claimedRow(1)]);
     const mailer = makeMailer(async () => {
-      throw smtpError(535, 'authentication failed');
+      throw smtpError(501, 'syntax error in parameters');
     });
 
     const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
 
     expect(stub.settlements()[0].args.p_outcome).toBe('permanent');
+    expect(stub.strikes()).toHaveLength(0);
     expect(result.failed).toBe(1);
     expect(result.sent).toBe(0);
   });
@@ -740,7 +750,7 @@ describe('worker/lib/engine — rows that were never attempted', () => {
   it('returns the rest of the batch after a permanent failure, with the attempt restored', async () => {
     const stub = oneMailbox([claimedRow(1), claimedRow(2)]);
     const mailer = makeMailer(async () => {
-      throw smtpError(535, 'authentication failed');
+      throw smtpError(501, 'syntax error in parameters');
     });
 
     const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
@@ -749,8 +759,8 @@ describe('worker/lib/engine — rows that were never attempted', () => {
     // The first row really was refused, so it keeps the attempt it spent...
     expect(stub.settlements()[0].args.p_restore_attempt).toBe(false);
     // ...the second never reached SMTP, so the attempt the claim stamped on it
-    // comes back. Without that, three cycles against one rotated password
-    // retire every other recipient in the batch permanently.
+    // comes back. Without that, three cycles against one bad campaign retire
+    // every other recipient in the batch permanently.
     expect(stub.settlements()[1].args.p_restore_attempt).toBe(true);
     expect(mailer.sent).toHaveLength(1);
     expect(result.failed).toBe(1);
@@ -786,6 +796,81 @@ describe('worker/lib/engine — rows that were never attempted', () => {
     expect(stub.settlements().slice(1).every((c) => c.args.p_restore_attempt === true)).toBe(true);
     expect(result.sent).toBe(1);
     expect(result.skipped).toBe(2);
+  });
+});
+
+describe('worker/lib/engine — a failure that belongs to the mailbox, not the recipient', () => {
+  it('hands the recipient back untouched when the login is rejected, and strikes the mailbox', async () => {
+    const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)]);
+    const mailer = makeMailer(async () => {
+      throw smtpError(535, 'authentication failed');
+    });
+
+    const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+    // Nothing was ever offered for person 1 to be refused, so they are settled
+    // exactly like the two rows behind them — not 'failed' with somebody
+    // else's credential error as their reason.
+    expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual([
+      'transient',
+      'transient',
+      'transient',
+    ]);
+    expect(stub.settlements().every((c) => c.args.p_restore_attempt === true)).toBe(true);
+    expect(result.failed).toBe(0);
+    expect(result.skipped).toBe(3);
+
+    // The strike still lands, exactly once, or the mailbox is never paused.
+    expect(stub.strikes()).toHaveLength(1);
+    expect(stub.strikes()[0].args.p_account).toBe('mbx-1');
+    expect(String(stub.strikes()[0].args.p_error)).toMatch(/username or password/i);
+  });
+
+  it.each(['ECONNECTION', 'ETIMEDOUT', 'ESOCKET'])(
+    'stops the batch and strikes the mailbox on %s rather than burning every row',
+    async (code) => {
+      const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)]);
+      const mailer = makeMailer(async () => {
+        throw transportError(code);
+      });
+      const sleep = vi.fn(async () => undefined);
+
+      const result = await runCycle(makeDeps(stub.db, mailer.createTransport, { sleep }));
+
+      // One attempt, then stop. Carrying on means every remaining row waits the
+      // full connection timeout and spends an attempt for a wrong port.
+      expect(mailer.sent).toHaveLength(1);
+      expect(stub.settlements()).toHaveLength(3);
+      expect(stub.settlements().every((c) => c.args.p_outcome === 'transient')).toBe(true);
+      expect(stub.settlements().every((c) => c.args.p_restore_attempt === true)).toBe(true);
+      // classifySmtpError() reads this as 'transient', which leaves mailbox
+      // health alone — so without the explicit strike the mailbox is retried
+      // forever and never paused with a reason anyone can read.
+      expect(stub.strikes()).toHaveLength(1);
+      expect(String(stub.strikes()[0].args.p_error)).toMatch(/could not reach/i);
+      expect(result.skipped).toBe(3);
+      expect(result.failed).toBe(0);
+      // No pacing pause for a batch that is going nowhere.
+      expect(sleep).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still fails the recipient, and never strikes the mailbox, for a hard bounce', async () => {
+    const stub = oneMailbox([claimedRow(1), claimedRow(2)]);
+    const mailer = makeMailer(async () => {
+      throw smtpError(550, 'no such mailbox');
+    });
+
+    const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+    // A bad recipient is about that recipient: the batch carries on and the
+    // mailbox's health is not touched.
+    expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual([
+      'hard_bounce',
+      'hard_bounce',
+    ]);
+    expect(stub.strikes()).toHaveLength(0);
+    expect(result.failed).toBe(2);
   });
 });
 

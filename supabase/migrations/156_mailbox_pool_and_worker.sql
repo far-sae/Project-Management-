@@ -608,6 +608,62 @@ grant execute on function public.claim_email_batch(uuid, integer) to service_rol
 -- ordinary case where it never was.)
 drop function if exists public.record_send_result(uuid, uuid, text, text, text);
 
+-- One definition of "this mailbox failed again", callable without failing a
+-- recipient for it.
+--
+-- A rejected login (535/EAUTH) and a connection that never came up are the
+-- MAILBOX's problem: nothing was ever offered for the recipient in flight to
+-- refuse. Settling that row 'permanent' -- which is what classifySmtpError()
+-- returns for a 535 -- would fail the first recipient of every batch with
+-- somebody else's credential error as their reason, three recipients per
+-- mailbox over the three cycles it takes to pause it. The worker now settles
+-- that row like the rest of the batch and calls this instead.
+--
+-- record_send_result()'s 'permanent' branch calls it too, so the three-strike
+-- pause has exactly one implementation rather than one per caller.
+create or replace function public.record_mailbox_failure(
+  p_account uuid,
+  p_error text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+begin
+  -- At the third consecutive failure the mailbox comes out of rotation
+  -- carrying the reason, and status goes to 'error' so claim_email_batch()
+  -- stops selecting it and the Accounts screen shows that it needs
+  -- re-verifying. Three is MAX_CONSECUTIVE_FAILURES in
+  -- src/lib/email/mailboxPool.ts; the two must stay in step, or the worker
+  -- would keep offering a mailbox the database has already paused.
+  --
+  -- Table-qualified throughout, for the same reason the claim is: `status`,
+  -- `last_error` and `consecutive_failures` are all column names this body
+  -- reads and writes.
+  update public.email_accounts a
+     set consecutive_failures = a.consecutive_failures + 1,
+         last_error = p_error,
+         is_active = case
+                       when a.consecutive_failures + 1 >= 3 then false
+                       else a.is_active
+                     end,
+         paused_reason = case
+                           when a.consecutive_failures + 1 >= 3 then p_error
+                           else a.paused_reason
+                         end,
+         status = case
+                    when a.consecutive_failures + 1 >= 3 then 'error'
+                    else a.status
+                  end
+   where a.id = p_account;
+end;
+$$;
+
+revoke execute on function public.record_mailbox_failure(uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.record_mailbox_failure(uuid, text) to service_role;
+
 create or replace function public.record_send_result(
   p_message uuid,
   p_account uuid,
@@ -697,28 +753,11 @@ begin
            last_error = p_error
      where m.id = p_message;
 
-    -- ...and it counts against the mailbox. At the third consecutive failure
-    -- the mailbox comes out of rotation carrying the reason, and status goes
-    -- to 'error' so the claim above stops selecting it and the Accounts screen
-    -- shows that it needs re-verifying. Three is MAX_CONSECUTIVE_FAILURES in
-    -- src/lib/email/mailboxPool.ts; the two must stay in step, or the worker
-    -- would keep offering a mailbox the database has already paused.
-    update public.email_accounts a
-       set consecutive_failures = a.consecutive_failures + 1,
-           last_error = p_error,
-           is_active = case
-                         when a.consecutive_failures + 1 >= 3 then false
-                         else a.is_active
-                       end,
-           paused_reason = case
-                             when a.consecutive_failures + 1 >= 3 then p_error
-                             else a.paused_reason
-                           end,
-           status = case
-                      when a.consecutive_failures + 1 >= 3 then 'error'
-                      else a.status
-                    end
-     where a.id = p_account;
+    -- ...and it counts against the mailbox, through the single definition of a
+    -- strike above: at the third consecutive failure the mailbox leaves
+    -- rotation carrying the reason, and its status goes to 'error' so the
+    -- claim stops selecting it.
+    perform public.record_mailbox_failure(p_account, p_error);
 
   elsif p_outcome = 'hard_bounce' then
     update public.email_messages m

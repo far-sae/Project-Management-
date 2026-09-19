@@ -17,6 +17,11 @@
 //     roll back every settlement in it.
 //   * The only outcomes it knows are 'sent', 'transient', 'permanent' and
 //     'hard_bounce' — classifySmtpError()'s three returns, plus 'sent'.
+//   * A failure that is the MAILBOX's — a rejected login, a connection that
+//     never came up — is never charged to whichever recipient happened to be
+//     first in the batch. That row is handed back like the rest of the batch
+//     and the strike goes to record_mailbox_failure() instead, which is the
+//     one place the three-strike pause is implemented.
 //   * A mailbox's secret is decrypted BEFORE its budget is claimed, so a
 //     credential the worker cannot read leaves the queue untouched instead of
 //     stranding rows behind a mailbox that was never going to send them.
@@ -32,7 +37,7 @@ import { decryptSecret } from '@/lib/email/crypto';
 import { blockedReason, selectMailboxes } from '@/lib/email/mailboxPool';
 import { buildMessage, type BuiltMessage } from '@/lib/email/message';
 import { describeSendWindow, isWithinSendWindow } from '@/lib/email/sendWindow';
-import { classifySmtpError, friendlySmtpError } from '@/lib/email/smtpErrors';
+import { classifySmtpError, friendlySmtpError, isMailboxFault } from '@/lib/email/smtpErrors';
 import type {
   AccountStatus,
   CampaignKind,
@@ -582,6 +587,30 @@ async function sendBatch(
     return false;
   };
 
+  /**
+   * Counts a failure against the MAILBOX without failing a recipient for it.
+   * record_send_result()'s 'permanent' branch does both at once, which is
+   * right for a sender the server refuses and wrong for a rejected login or a
+   * connection that never opened: nothing was ever offered for the row in
+   * flight to be refused. Both paths reach the same SQL, so the three-strike
+   * pause keeps one definition.
+   *
+   * Never throws, for the same reason `settle` never does: the only caller is
+   * inside the send's own error handling, and a rejection here would be read
+   * as a second send failure.
+   */
+  const strikeMailbox = async (reason: string): Promise<void> => {
+    try {
+      const { error } = await deps.db.rpc('record_mailbox_failure', {
+        p_account: mailbox.id,
+        p_error: reason.slice(0, 500),
+      });
+      if (error) note(who, `this mailbox's failure could not be recorded: ${error.message}`);
+    } catch (err) {
+      note(who, `this mailbox's failure could not be recorded: ${short(err)}`);
+    }
+  };
+
   const claimRes = await deps.db.rpc('claim_email_batch', {
     p_account: mailbox.id,
     p_limit: take,
@@ -717,18 +746,39 @@ async function sendBatch(
       delivered = { providerMessageId: info?.messageId ?? null };
     } catch (err) {
       const message = friendlySmtpError(err, account.smtp_host);
-      // Exactly one of 'permanent' | 'hard_bounce' | 'transient'.
-      const outcome = classifySmtpError(err);
       note(who, message);
-      await settle(row.message_id, outcome, message.slice(0, 500));
-      result.failed += 1;
-      // 'permanent' is the mailbox being refused — a rejected login, a sender
-      // the server will not accept. Every remaining recipient in this batch
-      // would collect the identical rejection and be marked failed for a
-      // problem that is not theirs, so they go back on the queue instead and
-      // this mailbox stops here. A hard bounce is about one recipient and
-      // stops nothing.
-      if (outcome === 'permanent') abort = message;
+
+      if (isMailboxFault(err)) {
+        // The login was refused, or the connection never came up. Nothing
+        // about THIS recipient was rejected — nothing was offered for them at
+        // all — so the row is settled exactly like the rest of the batch:
+        // back on the queue with the attempt the claim stamped on it given
+        // back. Without that, three cycles against one rotated password
+        // permanently fail three innocent recipients, one per cycle, with
+        // somebody else's credential error recorded as their reason.
+        await settle(row.message_id, 'transient', message.slice(0, 500), null, true);
+        result.skipped += 1;
+        // The strike still has to land, or the mailbox is never paused. A
+        // connection failure in particular classifies as 'transient', which
+        // leaves mailbox health untouched: a wrong port or blocked egress
+        // would otherwise make every queued row wait the full connection
+        // timeout and spend an attempt, forever.
+        await strikeMailbox(message);
+        // And the rest of this mailbox's batch stops here, exactly as it does
+        // for a refused sender: every remaining row would fail identically.
+        abort = message;
+      } else {
+        // Exactly one of 'permanent' | 'hard_bounce' | 'transient'.
+        const outcome = classifySmtpError(err);
+        await settle(row.message_id, outcome, message.slice(0, 500));
+        result.failed += 1;
+        // 'permanent' here is a genuine rejection of this message — a sender
+        // address the server will not accept, a 5xx it will repeat. Every
+        // remaining recipient in this batch would collect the identical
+        // rejection, so they go back on the queue instead and this mailbox
+        // stops. A hard bounce is about one recipient and stops nothing.
+        if (outcome === 'permanent') abort = message;
+      }
     }
 
     if (delivered) {

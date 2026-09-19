@@ -4,7 +4,10 @@ import {
   remainingToday, isSendable, selectMailboxes, blockedReason,
   MAX_CONSECUTIVE_FAILURES, PER_MAILBOX_SLICE,
 } from "@/lib/email/mailboxPool";
-import { providerOf, classifySmtpError, friendlySmtpError } from "@/lib/email/smtpErrors";
+import {
+  providerOf, classifySmtpError, friendlySmtpError,
+  isAuthFailure, isConnectionFailure, isMailboxFault,
+} from "@/lib/email/smtpErrors";
 import { interpretDomainAuth } from "@/lib/email/domainAuth";
 import type { MailboxHealth, SendWindow } from "@/lib/email/types";
 
@@ -158,6 +161,36 @@ describe("classifySmtpError", () => {
   });
   it("treats an unknown error as transient", () => {
     expect(classifySmtpError(new Error("socket hang up"))).toBe("transient");
+  });
+});
+
+describe("isMailboxFault", () => {
+  // classifySmtpError answers "what should happen to the MESSAGE". This
+  // answers "whose fault was it", which is what decides whether the recipient
+  // in flight is failed or handed back untouched.
+  it("is true for a rejected login, which says nothing about the recipient", () => {
+    expect(isAuthFailure({ responseCode: 535 })).toBe(true);
+    expect(isAuthFailure({ code: "EAUTH" })).toBe(true);
+    expect(isMailboxFault({ responseCode: 535 })).toBe(true);
+  });
+  it("is true for a conversation that never happened", () => {
+    for (const code of ["ECONNECTION", "ETIMEDOUT", "ESOCKET", "ECONNREFUSED", "EDNS"]) {
+      expect(isConnectionFailure({ code })).toBe(true);
+      expect(isMailboxFault({ code })).toBe(true);
+    }
+  });
+  it("is false once a server has answered with a status code", () => {
+    // A throttle carries both a code and a response: the connection plainly
+    // worked, so it is not a connection failure however it is labelled.
+    expect(isConnectionFailure({ code: "ESOCKET", responseCode: 421 })).toBe(false);
+    expect(isMailboxFault({ responseCode: 550 })).toBe(false);
+    expect(isMailboxFault({ responseCode: 451 })).toBe(false);
+    expect(isMailboxFault({ responseCode: 501 })).toBe(false);
+  });
+  it("is false for anything unrecognised, so an odd error never pauses a mailbox", () => {
+    expect(isMailboxFault(new Error("something else"))).toBe(false);
+    expect(isMailboxFault(null)).toBe(false);
+    expect(isMailboxFault(undefined)).toBe(false);
   });
 });
 

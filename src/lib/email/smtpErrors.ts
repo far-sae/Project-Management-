@@ -51,6 +51,58 @@ export function classifySmtpError(err: unknown): SmtpOutcome {
   return 'transient';
 }
 
+/**
+ * True when the server rejected OUR login. 535 and nodemailer's `EAUTH` say
+ * nothing whatever about the recipient the send happened to be carrying, so
+ * this is the mailbox's problem and never theirs.
+ */
+export function isAuthFailure(err: unknown): boolean {
+  const e = err as { code?: string; responseCode?: number } | null;
+  return e?.code === 'EAUTH' || e?.responseCode === 535;
+}
+
+/**
+ * Codes for a conversation that never happened: a wrong port, TLS that would
+ * not negotiate, blocked outbound SMTP, a host that does not resolve. Every
+ * one of them is a configuration or network fault on our side.
+ */
+const CONNECTION_CODES = new Set([
+  'ECONNECTION',
+  'ETIMEDOUT',
+  'ETIMEOUT',
+  'ESOCKET',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EDNS',
+]);
+
+/**
+ * True when the mail server was never successfully reached, so nothing was
+ * ever offered for this recipient to be refused. Classified `transient` by
+ * `classifySmtpError` — correctly, for the message — but the mailbox's health
+ * has to hear about it, or a wrong port burns an attempt on every queued row
+ * for as long as it persists and the mailbox is never paused.
+ */
+export function isConnectionFailure(err: unknown): boolean {
+  const e = err as { code?: string; responseCode?: number } | null;
+  // A numeric SMTP status means the server answered, whatever it said, so the
+  // connection plainly worked.
+  if (typeof e?.responseCode === 'number' && e.responseCode > 0) return false;
+  return CONNECTION_CODES.has(String(e?.code ?? ''));
+}
+
+/**
+ * True when the failure belongs to the sending mailbox rather than to the
+ * recipient — which decides whether the row in flight is failed or handed
+ * back untouched.
+ */
+export function isMailboxFault(err: unknown): boolean {
+  return isAuthFailure(err) || isConnectionFailure(err);
+}
+
 const LABEL: Record<SmtpProvider, string> = {
   zoho: 'Zoho',
   ionos: 'IONOS',
@@ -86,16 +138,15 @@ const AUTH_HELP: Record<SmtpProvider, string> = {
  */
 export function friendlySmtpError(err: unknown, host?: string): string {
   const e = err as { code?: string; responseCode?: number; message?: string };
-  const code = e?.code ?? '';
   const responseCode = e?.responseCode ?? 0;
   const msg = e?.message ?? String(err);
   const provider = providerOf(host);
   const name = LABEL[provider];
 
-  if (code === 'EAUTH' || responseCode === 535) {
+  if (isAuthFailure(err)) {
     return `${name} rejected the username or password. ${AUTH_HELP[provider]}`;
   }
-  if (code === 'ECONNECTION' || code === 'ETIMEDOUT' || code === 'ESOCKET') {
+  if (isConnectionFailure(err)) {
     return (
       `Could not reach ${host || 'the SMTP server'}. Check the host and port — ` +
       '465 needs SSL/TLS, 587 needs STARTTLS. Some networks block outbound SMTP entirely.'
