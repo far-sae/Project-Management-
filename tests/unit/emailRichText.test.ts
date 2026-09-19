@@ -77,6 +77,55 @@ describe('sanitizePastedHtml', () => {
     expect(bad).toContain('x');
   });
 
+  it('escapes the href it emits, so a pasted link cannot inject an attribute', () => {
+    // Ordinary-looking markup on a web page: the href is single-quoted, so it
+    // may contain a double quote. Written into a double-quoted attribute raw,
+    // it closed the attribute and hung an event handler on the anchor — which
+    // then ran in the session of the next colleague to open that template.
+    const out = sanitizePastedHtml(
+      `<a href='https://x/?a=" onmouseover="alert(1)'>click</a>`,
+    );
+    // The text `onmouseover=` survives harmlessly INSIDE the escaped URL, so
+    // asserting on its absence would be asserting the wrong thing. What must
+    // be true is that no raw double quote escapes the attribute: exactly two
+    // remain in the output, the pair that delimits href itself.
+    expect(out.split('"')).toHaveLength(3);
+    expect(out).toContain('&quot;');
+    expect(out).toContain('click');
+  });
+
+  it('rejects a javascript: URL however it is dressed up', () => {
+    for (const url of ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', '  javascript:alert(1)']) {
+      const out = sanitizePastedHtml(`<a href="${url}">x</a>`);
+      expect(out.toLowerCase()).not.toContain('javascript');
+    }
+  });
+
+  it('rejoins a Word paste that split a merge field across runs', () => {
+    // Word emits a separate <span> run at every spell-check and language-tag
+    // boundary, so a placeholder routinely arrives in two pieces. An
+    // attribute-less span carries no formatting — its only effect is to split
+    // text — so unwrapping it repairs the placeholder rather than losing it.
+    const word = '<span style="mso-x">Hi {{first_</span><span lang="EN">name}},</span>';
+    const out = sanitizePastedHtml(word);
+    expect(out).toContain('{{first_name}}');
+    expect(placeholdersIntact(out)).toBe(true);
+  });
+
+  it('drops a style block that is unclosed or spelled with a space', () => {
+    // Both are what a partial selection from a web page produces, and both
+    // used to leave the CSS in the message as visible text.
+    expect(sanitizePastedHtml('<style>p{color:red}</style >Hi')).toBe('Hi');
+    expect(sanitizePastedHtml('<style>p{color:red}')).toBe('');
+  });
+
+  it('does not spill an attribute containing a bracket into the body', () => {
+    // Copying a table cell from a page with title="Sales > 100" used to put
+    // `100">Sales` into the email.
+    const out = sanitizePastedHtml('<p title="1 > 2">Hello</p>');
+    expect(out).toBe('<p>Hello</p>');
+  });
+
   it('leaves a placeholder alone', () => {
     // The whole point: a paste must not be the thing that breaks a merge
     // field.

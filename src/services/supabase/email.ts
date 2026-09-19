@@ -238,11 +238,6 @@ interface CrmContactRow {
   /** Migration 162d. Optional here: a database that has not run it yet. */
   pain_point?: string | null;
   group_id?: string | null;
-  /**
-   * The group's angle, embedded by PostgREST through the group_id foreign key.
-   * An object, or null when the contact is in no group.
-   */
-  email_groups?: { name: string | null; angle: string | null } | null;
 }
 
 /**
@@ -792,12 +787,36 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<EmailC
     .select()
     .single();
 
-  if (error) {
-    logger.error("Failed to create email campaign:", error);
-    throw error;
+  if (!error) return mapCampaignRow(data as EmailCampaignRow);
+
+  // PGRST204 is PostgREST saying the column is not in its schema cache, which
+  // on this row means one thing: the database has not run migration 162.
+  //
+  // Without this branch, phase 5 would have made 162 mandatory for SENDING —
+  // `template_id` is in the insert body unconditionally (`?? null` still names
+  // the key), so on a database at 161 every campaign AND every sequence step
+  // would fail to be created at all, with a raw PostgREST error in a toast.
+  // The deployment guide says in as many words that a database may stop early
+  // and still send, and every read in this file is written to be tolerant for
+  // that reason. The write has to be too.
+  //
+  // What is lost on the retry is provenance: the campaign is created and sent
+  // exactly as before, and its template simply is not recorded. That is the
+  // right thing to lose.
+  if (error.code === "PGRST204" && "template_id" in row) {
+    const { template_id: _omitted, ...withoutTemplate } = row;
+    const retry = await supabase
+      .from("email_campaigns")
+      .insert(withoutTemplate)
+      .select()
+      .single();
+    if (!retry.error) return mapCampaignRow(retry.data as EmailCampaignRow);
+    logger.error("Failed to create email campaign:", retry.error);
+    throw retry.error;
   }
 
-  return mapCampaignRow(data as EmailCampaignRow);
+  logger.error("Failed to create email campaign:", error);
+  throw error;
 };
 
 /**
@@ -993,12 +1012,18 @@ export const contactsForCampaign = async (
 ): Promise<Recipient[]> => {
   let query = supabase
     .from("crm_contacts")
-    .select(
-      "id, first_name, last_name, email, company_id, job_title, pain_point, group_id, " +
-        // The group is embedded rather than read separately: the angle is a
-        // per-recipient merge value, so it has to arrive with the recipient.
-        "email_groups(name, angle)",
-    )
+    // `select("*")` rather than a column list, and no embed, both deliberately.
+    //
+    // Naming `pain_point`/`group_id` or embedding `email_groups` makes this
+    // query fail outright on a database that has not run migration 162 — the
+    // whole read, not just those fields — and the user gets a raw PostgREST
+    // error and a permanently empty recipient picker. Every other read in this
+    // file is tolerant of an un-migrated database on purpose; this one has to
+    // be as well, because it is on the path to sending anything at all.
+    //
+    // The group's angle is fetched separately below, where its own failure
+    // costs only the angle.
+    .select("*")
     .eq("organization_id", orgId)
     .not("email", "is", null);
   if (workspaceId !== null) {
@@ -1012,10 +1037,29 @@ export const contactsForCampaign = async (
     throw error;
   }
 
-  // Through `unknown`, because the embedded `email_groups(...)` makes
-  // PostgREST's own inferred type disagree with this row shape — it cannot
-  // know the foreign key resolves to at most one group rather than an array.
-  return ((data ?? []) as unknown as CrmContactRow[]).map((row) => {
+  const rows = (data ?? []) as unknown as CrmContactRow[];
+
+  // The angle, per group, in one read — and reported rather than thrown if it
+  // fails. A recipient list without the angle still sends; a recipient list
+  // that would not load at all does not.
+  const groupIds = [...new Set(rows.map((r) => r.group_id).filter((id): id is string => !!id))];
+  const groups = new Map<string, { name: string; angle: string }>();
+  if (groupIds.length > 0) {
+    const { data: groupRows, error: groupError } = await supabase
+      .from("email_groups")
+      .select("id, name, angle")
+      .in("id", groupIds);
+
+    if (groupError) {
+      logger.error("Failed to read group angles for the recipient list:", groupError);
+    } else {
+      for (const g of (groupRows ?? []) as Array<{ id: string; name: string | null; angle: string | null }>) {
+        groups.set(g.id, { name: g.name ?? "", angle: g.angle ?? "" });
+      }
+    }
+  }
+
+  return rows.map((row) => {
     const fullName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
     return {
       email: row.email as string,
@@ -1034,10 +1078,11 @@ export const contactsForCampaign = async (
         job_title: row.job_title ?? "",
         pain_point: row.pain_point ?? "",
         // From the contact's group, so one template serves several segments.
-        // Empty when they are in none, which substitutePlaceholders renders as
-        // nothing rather than leaving the braces in the message.
-        angle: row.email_groups?.angle ?? "",
-        group_name: row.email_groups?.name ?? "",
+        // Empty when they are in none, or when the group read above failed,
+        // which substitutePlaceholders renders as nothing rather than leaving
+        // the braces in the message.
+        angle: (row.group_id ? groups.get(row.group_id)?.angle : "") ?? "",
+        group_name: (row.group_id ? groups.get(row.group_id)?.name : "") ?? "",
       },
     };
   });
@@ -1073,7 +1118,11 @@ export const parsePastedRecipients = (
       continue;
     }
 
-    parsed.push({ email, name, mergeData: {} });
+    // `{{email}}` is offered as a merge field for a pasted list, so it has to
+    // resolve — substitutePlaceholders renders a missing key as nothing, and a
+    // message reading "Sent to " with a gap is worse than one that never
+    // offered the field.
+    parsed.push({ email, name, mergeData: { email } });
   }
 
   return { recipients: dedupeRecipients(parsed), errors };

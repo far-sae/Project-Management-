@@ -5,7 +5,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  AlertTriangle, Bold, Braces, Code2, Italic, Link2, List, ListOrdered, Redo2,
+  AlertTriangle, Bold, Braces, Code2, Image as ImageIcon, Italic, Link2, List,
+  ListOrdered, Redo2,
   RemoveFormatting, Underline, Undo2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -78,6 +79,30 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
   const [showSource, setShowSource] = useState(false);
+  /**
+   * The last HTML this component handed to `onChange`.
+   *
+   * The sync below compares `value` against THIS rather than against the live
+   * `innerHTML`, and the difference is not academic. `useEffect` is passive:
+   * its closure holds `value` from the render it was scheduled in, while
+   * `innerHTML` keeps moving. React flushes a pending passive effect at the
+   * top of the next synchronous render — i.e. while handling the NEXT input
+   * event — so with two inputs inside one window the guard sees a stale
+   * `value` against a newer DOM, writes the old string back, and takes the
+   * newest character with it while collapsing the caret to the start.
+   *
+   * Two inputs in one window is not exotic: key autorepeat does it, and an IME
+   * does it on every keystroke, emitting several `insertCompositionText`
+   * events per character. Comparing against what we last emitted makes the
+   * guard true only when the value really did change underneath us.
+   */
+  const lastEmitted = useRef<string>('');
+  /**
+   * True while an input method is composing — Japanese, Chinese, Korean, and
+   * the accent menus on macOS. Nothing may rewrite `innerHTML` mid-composition
+   * or the half-formed word is destroyed and the IME loses its anchor.
+   */
+  const composing = useRef(false);
 
   // Only written when the incoming value is not already what the editor holds.
   // Writing `innerHTML` on every keystroke re-creates the nodes the caret sits
@@ -85,13 +110,18 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   // typing it backwards.
   useEffect(() => {
     const el = editorRef.current;
-    if (!el || showSource) return;
+    if (!el || showSource || composing.current) return;
+    // Against `lastEmitted`, not `el.innerHTML` — see the ref's own comment.
+    if (value === lastEmitted.current) return;
     if (value !== el.innerHTML) el.innerHTML = value;
+    lastEmitted.current = value;
   }, [value, showSource]);
 
   const emit = useCallback(() => {
     const el = editorRef.current;
-    if (el) onChange(el.innerHTML);
+    if (!el) return;
+    lastEmitted.current = el.innerHTML;
+    onChange(el.innerHTML);
   }, [onChange]);
 
   // The caret has to be remembered as it moves, because the merge-field menu
@@ -128,6 +158,27 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     // `insertText`, never a styled span or a wrapper element: the whole point
     // of a merge field is that it reaches substitution as literal text.
     document.execCommand('insertText', false, `{{${name}}}`);
+    rememberSelection();
+    emit();
+  }, [disabled, restoreSelection, rememberSelection, emit]);
+
+  const applyImage = useCallback(() => {
+    if (disabled) return;
+    // By URL, not by upload. A mail body cannot carry a local file, and an
+    // image embedded as a data: URI is both enormous and what several filters
+    // score hardest — it has to be hosted somewhere the recipient's client can
+    // reach.
+    const url = window.prompt('Image URL');
+    if (!url) return;
+    const trimmed = url.trim();
+    // The same allowlist the link path uses. A javascript: or data: source is
+    // not an image anybody meant to insert, and no mail client honours one.
+    if (!/^https?:/i.test(trimmed)) {
+      window.alert('An image needs a full https:// address.');
+      return;
+    }
+    restoreSelection();
+    document.execCommand('insertImage', false, trimmed);
     rememberSelection();
     emit();
   }, [disabled, restoreSelection, rememberSelection, emit]);
@@ -175,23 +226,25 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     <div className="space-y-2">
       <div className="rounded-lg border border-input bg-background">
         <div className="flex flex-wrap items-center gap-0.5 border-b border-border p-1">
-          <ToolButton label="Bold" disabled={disabled} icon={<Bold className="w-4 h-4" />}
+          <ToolButton label="Bold" disabled={disabled || showSource} icon={<Bold className="w-4 h-4" />}
             onClick={() => exec('bold')} />
-          <ToolButton label="Italic" disabled={disabled} icon={<Italic className="w-4 h-4" />}
+          <ToolButton label="Italic" disabled={disabled || showSource} icon={<Italic className="w-4 h-4" />}
             onClick={() => exec('italic')} />
-          <ToolButton label="Underline" disabled={disabled} icon={<Underline className="w-4 h-4" />}
+          <ToolButton label="Underline" disabled={disabled || showSource} icon={<Underline className="w-4 h-4" />}
             onClick={() => exec('underline')} />
-          <ToolButton label="Bulleted list" disabled={disabled} icon={<List className="w-4 h-4" />}
+          <ToolButton label="Bulleted list" disabled={disabled || showSource} icon={<List className="w-4 h-4" />}
             onClick={() => exec('insertUnorderedList')} />
-          <ToolButton label="Numbered list" disabled={disabled} icon={<ListOrdered className="w-4 h-4" />}
+          <ToolButton label="Numbered list" disabled={disabled || showSource} icon={<ListOrdered className="w-4 h-4" />}
             onClick={() => exec('insertOrderedList')} />
-          <ToolButton label="Link" disabled={disabled} icon={<Link2 className="w-4 h-4" />}
+          <ToolButton label="Link" disabled={disabled || showSource} icon={<Link2 className="w-4 h-4" />}
             onClick={applyLink} />
-          <ToolButton label="Clear formatting" disabled={disabled} icon={<RemoveFormatting className="w-4 h-4" />}
+          <ToolButton label="Image by URL" disabled={disabled || showSource} icon={<ImageIcon className="w-4 h-4" />}
+            onClick={applyImage} />
+          <ToolButton label="Clear formatting" disabled={disabled || showSource} icon={<RemoveFormatting className="w-4 h-4" />}
             onClick={() => { exec('removeFormat'); exec('unlink'); }} />
-          <ToolButton label="Undo" disabled={disabled} icon={<Undo2 className="w-4 h-4" />}
+          <ToolButton label="Undo" disabled={disabled || showSource} icon={<Undo2 className="w-4 h-4" />}
             onClick={() => exec('undo')} />
-          <ToolButton label="Redo" disabled={disabled} icon={<Redo2 className="w-4 h-4" />}
+          <ToolButton label="Redo" disabled={disabled || showSource} icon={<Redo2 className="w-4 h-4" />}
             onClick={() => exec('redo')} />
 
           <div className="ml-auto flex items-center gap-0.5">
@@ -254,6 +307,11 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 disabled && 'cursor-not-allowed opacity-50',
               )}
               onInput={emit}
+              // Nothing may rewrite innerHTML while an input method is
+              // composing: a half-formed Japanese or Chinese word would be
+              // destroyed and the IME would lose its anchor mid-character.
+              onCompositionStart={() => { composing.current = true; }}
+              onCompositionEnd={() => { composing.current = false; emit(); }}
               onPaste={handlePaste}
               onKeyUp={rememberSelection}
               onMouseUp={rememberSelection}

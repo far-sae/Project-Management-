@@ -248,7 +248,24 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
     const warning = p.suppressedReason
       ? `\n\n${p.email} stays on the suppression list. Re-importing them will not resume mailing them — lift it on the Suppression tab if that is what you want.`
       : '';
-    if (!window.confirm(`Delete ${name}? Their contact record is removed from the organization.${warning}`)) return;
+    // And the other half people get wrong, in the other direction: deleting a
+    // contact is not an unsubscribe and does not stop mail already in flight.
+    // A sequence enrollment carries its own to_email and merge data, so it
+    // keeps running; queued campaign messages still go out. The action most
+    // likely to MEAN "stop writing to this person" does not do it, so the
+    // dialog has to say where that lives.
+    const stillSending =
+      '\n\nThis does not stop mail already scheduled for them: a sequence they ' +
+      'are part way through will keep running, and anything already queued will ' +
+      'still send. To stop writing to them, add the address on the Suppression tab.';
+    if (
+      !window.confirm(
+        `Delete ${name}? Their contact record is removed from the organization.` +
+          `${stillSending}${warning}`,
+      )
+    ) {
+      return;
+    }
     setDeletingId(p.id);
     try {
       await deleteProspect(p.id);

@@ -48,6 +48,13 @@ create policy email_groups_write on public.email_groups
 
 create index if not exists email_groups_org on public.email_groups (organization_id);
 
+-- The target of crm_contacts.group_id's composite foreign key. id alone is
+-- already unique as the primary key; this pair exists so another table can
+-- reference (group_id, organization_id) together, which is what makes a
+-- cross-organization reference unrepresentable rather than merely forbidden.
+create unique index if not exists email_groups_id_org_key
+  on public.email_groups (id, organization_id);
+
 -- ── b. email_templates ──────────────────────────────────────────────
 --
 -- Reusable wording. A campaign COPIES from a template rather than pointing at
@@ -82,6 +89,10 @@ create policy email_templates_write on public.email_templates
 
 create index if not exists email_templates_org on public.email_templates (organization_id);
 
+-- Same, for email_campaigns.template_id.
+create unique index if not exists email_templates_id_org_key
+  on public.email_templates (id, organization_id);
+
 -- ── c. a campaign remembers where its wording came from ─────────────
 --
 -- Nullable, and ON DELETE SET NULL: a campaign outlives the template it was
@@ -92,8 +103,32 @@ create index if not exists email_templates_org on public.email_templates (organi
 -- are the sum over the campaigns that carry its id, so nothing is attributed
 -- retroactively and editing a template does not rewrite its own history.
 alter table public.email_campaigns
-  add column if not exists template_id uuid
-    references public.email_templates(id) on delete set null;
+  add column if not exists template_id uuid;
+
+-- Composite, on (template_id, organization_id), because migration 155 exists
+-- for exactly this class of bug and says so: a user who belongs to two
+-- organizations could otherwise create a campaign in org A naming org B's
+-- template. Nothing leaks -- every read is organization-filtered, so neither
+-- org's screen shows the row -- but it is a dangling cross-tenant reference
+-- that 155 declared unrepresentable, and this migration should not quietly
+-- reintroduce the shape.
+--
+-- Reachable without any developer tooling: pick a template in org B, switch
+-- organization with the switcher while the composer stays mounted, and send.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'email_campaigns_template_fk'
+       and conrelid = 'public.email_campaigns'::regclass
+  ) then
+    alter table public.email_campaigns
+      add constraint email_campaigns_template_fk
+      foreign key (template_id, organization_id)
+      references public.email_templates (id, organization_id)
+      on delete set null (template_id);
+  end if;
+end $$;
 
 -- The stats read: every campaign of one template.
 create index if not exists email_campaigns_template
@@ -126,8 +161,25 @@ alter table public.crm_contacts
 -- ON DELETE SET NULL so removing a group releases its contacts rather than
 -- deleting people.
 alter table public.crm_contacts
-  add column if not exists group_id uuid
-    references public.email_groups(id) on delete set null;
+  add column if not exists group_id uuid;
+
+-- Composite, for the reason given on email_campaigns.template_id above: a
+-- contact in org A must not be able to name org B's group, which would then
+-- supply org B's angle as a merge value in org A's mail.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'crm_contacts_group_fk'
+       and conrelid = 'public.crm_contacts'::regclass
+  ) then
+    alter table public.crm_contacts
+      add constraint crm_contacts_group_fk
+      foreign key (group_id, organization_id)
+      references public.email_groups (id, organization_id)
+      on delete set null (group_id);
+  end if;
+end $$;
 
 create index if not exists crm_contacts_group
   on public.crm_contacts (group_id)
