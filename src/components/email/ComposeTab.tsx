@@ -116,9 +116,23 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
   );
 
   const mergeFields = useMemo(() => {
-    const base = ['first_name', 'last_name', 'full_name', 'email'];
-    if (mode !== 'csv') return base;
-    return [...base, ...csvColumns.filter((c) => !base.includes(c))];
+    // What contactsForCampaign actually puts in each recipient's merge data.
+    // `pain_point` and the group's `angle` are why phase 5 exists: a cold
+    // email that names the problem and leads with the angle for that segment
+    // is the difference between outreach and a mailshot. They are offered only
+    // for contact-sourced recipients, because a pasted list or a CSV has
+    // neither — and offering a placeholder that resolves to nothing is how a
+    // message goes out with a gap where a sentence should be.
+    const contactFields = [
+      'first_name', 'last_name', 'full_name', 'email',
+      'job_title', 'pain_point', 'angle', 'group_name',
+    ];
+    if (mode === 'csv') {
+      const base = ['first_name', 'last_name', 'full_name', 'email'];
+      return [...base, ...csvColumns.filter((c) => !base.includes(c))];
+    }
+    if (mode === 'paste') return ['email'];
+    return contactFields;
   }, [mode, csvColumns]);
 
   const activeAccounts = accounts.filter((a) => a.status === 'active');

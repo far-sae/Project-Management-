@@ -224,6 +224,15 @@ interface CrmContactRow {
   last_name: string | null;
   email: string | null;
   company_id: string | null;
+  job_title?: string | null;
+  /** Migration 162d. Optional here: a database that has not run it yet. */
+  pain_point?: string | null;
+  group_id?: string | null;
+  /**
+   * The group's angle, embedded by PostgREST through the group_id foreign key.
+   * An object, or null when the contact is in no group.
+   */
+  email_groups?: { name: string | null; angle: string | null } | null;
 }
 
 /**
@@ -971,7 +980,12 @@ export const contactsForCampaign = async (
 ): Promise<Recipient[]> => {
   let query = supabase
     .from("crm_contacts")
-    .select("id, first_name, last_name, email, company_id")
+    .select(
+      "id, first_name, last_name, email, company_id, job_title, pain_point, group_id, " +
+        // The group is embedded rather than read separately: the angle is a
+        // per-recipient merge value, so it has to arrive with the recipient.
+        "email_groups(name, angle)",
+    )
     .eq("organization_id", orgId)
     .not("email", "is", null);
   if (workspaceId !== null) {
@@ -985,17 +999,32 @@ export const contactsForCampaign = async (
     throw error;
   }
 
-  return ((data ?? []) as CrmContactRow[]).map((row) => {
+  // Through `unknown`, because the embedded `email_groups(...)` makes
+  // PostgREST's own inferred type disagree with this row shape — it cannot
+  // know the foreign key resolves to at most one group rather than an array.
+  return ((data ?? []) as unknown as CrmContactRow[]).map((row) => {
     const fullName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
     return {
       email: row.email as string,
       name: fullName || undefined,
       contactId: row.id,
+      // Every one of these is a placeholder a person can type into a subject
+      // or a body as `{{name}}`. `pain_point` and `angle` are why phase 5
+      // exists: a cold email that names the problem and leads with the angle
+      // for that segment is the difference between outreach and spam, and
+      // both were columns nothing read until here.
       mergeData: {
         first_name: row.first_name,
         last_name: row.last_name ?? "",
         full_name: fullName,
         email: row.email,
+        job_title: row.job_title ?? "",
+        pain_point: row.pain_point ?? "",
+        // From the contact's group, so one template serves several segments.
+        // Empty when they are in none, which substitutePlaceholders renders as
+        // nothing rather than leaving the braces in the message.
+        angle: row.email_groups?.angle ?? "",
+        group_name: row.email_groups?.name ?? "",
       },
     };
   });
