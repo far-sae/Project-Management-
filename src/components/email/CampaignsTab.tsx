@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Loader2, RefreshCw, Mail, ChevronDown, ChevronRight, Send, Clock, CheckCircle2,
-  AlertCircle, PauseCircle, FileEdit,
+  AlertCircle, PauseCircle, FileEdit, Reply, MailWarning,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -48,6 +48,31 @@ const messageStatusBadge = (status: MessageStatus) => {
     default:
       return <Badge variant="outline">Queued</Badge>;
   }
+};
+
+/**
+ * Reply/bounce is a fact about a message ALONGSIDE its send status (a `sent`
+ * row can also have been replied to or bounced later), not a replacement for
+ * it — so this renders next to `messageStatusBadge`, never instead of it.
+ * Bounced wins over replied when somehow both are set, since it is the one
+ * with a consequence the recipient row still needs to explain.
+ */
+const inboxBadge = (message: EmailMessage) => {
+  if (message.bouncedAt) {
+    return (
+      <Badge className="bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30">
+        <MailWarning className="w-3 h-3 mr-1" />Bounced
+      </Badge>
+    );
+  }
+  if (message.repliedAt) {
+    return (
+      <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">
+        <Reply className="w-3 h-3 mr-1" />Replied
+      </Badge>
+    );
+  }
+  return null;
 };
 
 export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }) => {
@@ -123,7 +148,15 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
           <div className="space-y-3">
             {campaigns.map((campaign) => {
               const expanded = expandedId === campaign.id;
-              const messages = messagesByCampaign[campaign.id] ?? [];
+              const loadedMessages = messagesByCampaign[campaign.id];
+              const messages = loadedMessages ?? [];
+              // Computed from whatever has been loaded rather than a
+              // separate count query, so the header's R/B figures only
+              // appear once this campaign has been expanded at least once —
+              // exactly the data messageInboxBadge below already needs per
+              // recipient.
+              const repliedCount = messages.filter((m) => m.repliedAt).length;
+              const bouncedCount = messages.filter((m) => m.bouncedAt).length;
               return (
                 <div key={campaign.id} className="border border-border rounded-lg overflow-hidden">
                   <div
@@ -151,6 +184,16 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
                       <span className="text-emerald-600 dark:text-emerald-400" title="Sent">S {campaign.sentCount}</span>
                       <span className="text-red-600 dark:text-red-400" title="Failed">F {campaign.failedCount}</span>
                       <span className="text-muted-foreground" title="Suppressed">X {campaign.suppressedCount}</span>
+                      {/* Only once recipients have been loaded (expanded at
+                          least once this session) — there is no separate
+                          count query, so before then there is nothing to
+                          show rather than a count that reads as zero. */}
+                      {loadedMessages !== undefined && (
+                        <>
+                          <span className="text-blue-600 dark:text-blue-400" title="Replied">R {repliedCount}</span>
+                          <span className="text-amber-600 dark:text-amber-400" title="Bounced">B {bouncedCount}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   {expanded && (
@@ -170,8 +213,20 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
                                 {message.status === 'failed' && message.lastError && (
                                   <p className="text-xs text-red-600 dark:text-red-400 truncate">{message.lastError}</p>
                                 )}
+                                {/* The consequence an admin will ask about: a
+                                    bounce also suppresses the address
+                                    (migration 157d), which is why it won't
+                                    receive future campaigns either. */}
+                                {message.bouncedAt && (
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    Added to the suppression list — won&apos;t be mailed again.
+                                  </p>
+                                )}
                               </div>
-                              {messageStatusBadge(message.status)}
+                              <div className="flex items-center gap-2 shrink-0">
+                                {inboxBadge(message)}
+                                {messageStatusBadge(message.status)}
+                              </div>
                             </div>
                           ))}
                         </div>

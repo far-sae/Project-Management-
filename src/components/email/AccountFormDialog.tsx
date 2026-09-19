@@ -7,6 +7,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Loader2, Plus, Save, SendHorizonal } from 'lucide-react';
+import { MailboxImapFields, type ImapFieldsValues } from './MailboxImapFields';
+import { MailboxSendingFields, type SendingFieldsValues } from './MailboxSendingFields';
 
 export interface AccountFormState {
   label: string;
@@ -22,6 +24,10 @@ export interface AccountFormState {
   warmupEnabled: boolean;
   warmupStartVolume: string;
   warmupIncrement: string;
+  imapHost: string;
+  imapPort: string;
+  imapSecure: boolean;
+  sentFolderEnabled: boolean;
 }
 
 export const EMPTY_ACCOUNT_FORM: AccountFormState = {
@@ -38,80 +44,13 @@ export const EMPTY_ACCOUNT_FORM: AccountFormState = {
   warmupEnabled: true,
   warmupStartVolume: '5',
   warmupIncrement: '3',
+  // IMAP is optional — see MailboxImapFields — so a blank host here is a
+  // complete, valid submission, not a field left unfilled.
+  imapHost: '',
+  imapPort: '993',
+  imapSecure: true,
+  sentFolderEnabled: true,
 };
-
-/** The four sending-limit fields shared by the create form and the
- *  reconfigure-an-existing-mailbox dialog below. */
-export interface SendingFieldsValues {
-  dailyLimit: string;
-  warmupEnabled: boolean;
-  warmupStartVolume: string;
-  warmupIncrement: string;
-}
-
-const SendingFields: React.FC<{
-  idPrefix: string;
-  values: SendingFieldsValues;
-  onChange: (patch: Partial<SendingFieldsValues>) => void;
-}> = ({ idPrefix, values, onChange }) => (
-  <div className="space-y-4">
-    <div className="space-y-2">
-      <Label htmlFor={`${idPrefix}-daily-limit`}>Daily limit</Label>
-      <Input
-        id={`${idPrefix}-daily-limit`}
-        type="number"
-        min={1}
-        value={values.dailyLimit}
-        onChange={(e) => onChange({ dailyLimit: e.target.value })}
-      />
-    </div>
-
-    <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-      <div>
-        <Label htmlFor={`${idPrefix}-warmup`}>Warm up this mailbox</Label>
-        <p className="text-xs text-muted-foreground">
-          Ramps up from a small volume instead of sending the full limit from day one.
-        </p>
-      </div>
-      <Switch
-        id={`${idPrefix}-warmup`}
-        checked={values.warmupEnabled}
-        onCheckedChange={(v) => onChange({ warmupEnabled: v })}
-      />
-    </div>
-
-    {values.warmupEnabled && (
-      <>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-start-volume`}>Start volume</Label>
-            <Input
-              id={`${idPrefix}-start-volume`}
-              type="number"
-              min={0}
-              value={values.warmupStartVolume}
-              onChange={(e) => onChange({ warmupStartVolume: e.target.value })}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-increment`}>Daily increment</Label>
-            <Input
-              id={`${idPrefix}-increment`}
-              type="number"
-              min={0}
-              value={values.warmupIncrement}
-              onChange={(e) => onChange({ warmupIncrement: e.target.value })}
-            />
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          This mailbox starts at {values.warmupStartVolume || 0} a day and climbs by{' '}
-          {values.warmupIncrement || 0} until it reaches {values.dailyLimit || 0}.
-        </p>
-      </>
-    )}
-  </div>
-);
 
 interface AccountFormDialogProps {
   open: boolean;
@@ -224,7 +163,7 @@ export const AccountFormDialog: React.FC<AccountFormDialogProps> = ({
 
           <div className="border-t border-border pt-4 space-y-4">
             <p className="text-sm font-medium text-foreground">Sending</p>
-            <SendingFields
+            <MailboxSendingFields
               idPrefix="acct"
               values={{
                 dailyLimit: form.dailyLimit,
@@ -235,6 +174,18 @@ export const AccountFormDialog: React.FC<AccountFormDialogProps> = ({
               onChange={(patch) => onFormChange((f) => ({ ...f, ...patch }))}
             />
           </div>
+
+          <MailboxImapFields
+            idPrefix="acct"
+            smtpHost={form.smtpHost}
+            values={{
+              imapHost: form.imapHost,
+              imapPort: form.imapPort,
+              imapSecure: form.imapSecure,
+              sentFolderEnabled: form.sentFolderEnabled,
+            }}
+            onChange={(patch) => onFormChange((f) => ({ ...f, ...patch }))}
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
@@ -262,31 +213,42 @@ export const AccountFormDialog: React.FC<AccountFormDialogProps> = ({
  *  fields `updateAccountPool` accepts, as strings for the number inputs. */
 export type PoolFormState = SendingFieldsValues;
 
+/** Everything MailboxLimitsDialog edits: the Sending fields plus the Inbox
+ *  section's IMAP fields, since reconfiguring an existing mailbox is also
+ *  where its IMAP settings get filled in or changed after the fact. */
+export type MailboxSettingsFormState = PoolFormState & ImapFieldsValues;
+
 interface MailboxLimitsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   label: string;
-  form: PoolFormState;
-  onFormChange: (updater: (f: PoolFormState) => PoolFormState) => void;
+  /** Used only to derive the Inbox section's host suggestion. */
+  smtpHost: string;
+  form: MailboxSettingsFormState;
+  onFormChange: (updater: (f: MailboxSettingsFormState) => MailboxSettingsFormState) => void;
   saving: boolean;
   error: string | null;
   onSubmit: (e: React.FormEvent) => void;
 }
 
 /**
- * Reconfigures an existing mailbox's daily limit and warmup ramp — the
- * "reconfigure a mailbox" action from the admin-only gate, opened from
- * MailboxCard's "Limits" button. Never touches SMTP credentials, so it only
- * ever shows the Sending section.
+ * Reconfigures an existing mailbox — the "reconfigure a mailbox" action from
+ * the admin-only gate, opened from MailboxCard's "Limits" button. Never
+ * touches SMTP credentials (host, port, username, password): those are set
+ * once at creation and are not editable here. IMAP is a second identity for
+ * the same mailbox, though, and this is where it gets added or changed after
+ * the mailbox already exists — which is the ordinary case, since an admin
+ * usually creates a mailbox to send from first and only wires up inbox
+ * scanning once it is already in use.
  */
 export const MailboxLimitsDialog: React.FC<MailboxLimitsDialogProps> = ({
-  open, onOpenChange, label, form, onFormChange, saving, error, onSubmit,
+  open, onOpenChange, label, smtpHost, form, onFormChange, saving, error, onSubmit,
 }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="sm:max-w-[440px]">
       <DialogHeader>
-        <DialogTitle>Sending limits — {label}</DialogTitle>
-        <DialogDescription>Daily volume and warmup ramp for this mailbox.</DialogDescription>
+        <DialogTitle>Mailbox settings — {label}</DialogTitle>
+        <DialogDescription>Daily volume, warmup ramp and inbox scanning for this mailbox.</DialogDescription>
       </DialogHeader>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
@@ -294,8 +256,14 @@ export const MailboxLimitsDialog: React.FC<MailboxLimitsDialogProps> = ({
             <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
           </div>
         )}
-        <SendingFields
+        <MailboxSendingFields
           idPrefix="limits"
+          values={form}
+          onChange={(patch) => onFormChange((f) => ({ ...f, ...patch }))}
+        />
+        <MailboxImapFields
+          idPrefix="limits"
+          smtpHost={smtpHost}
           values={form}
           onChange={(patch) => onFormChange((f) => ({ ...f, ...patch }))}
         />

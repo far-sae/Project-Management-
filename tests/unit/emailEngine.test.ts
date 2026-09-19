@@ -1319,6 +1319,43 @@ describe('worker/lib/engine — filing a copy in the mailbox\'s Sent folder', ()
     expect(result.errors).toEqual([]);
   });
 
+  it('never appends when the mailbox turned its own Sent-folder switch off', async () => {
+    // A non-Google host: the automatic skip above would not catch this one,
+    // which is exactly why the mailbox's own switch exists — for a Google
+    // Workspace mailbox sent through a custom relay hostname the automatic
+    // detection cannot see.
+    const stub = oneMailbox([claimedRow(1)], {
+      accounts: [imapAccountRow({ sent_folder_enabled: false })],
+    });
+    const mailer = makeMailer(okSend);
+    const sent = makeSentFolder();
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { appendToSent: sent.appendToSent }),
+    );
+
+    expect(sent.calls).toHaveLength(0);
+    expect(result.sent).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('still appends when sent_folder_enabled is missing from the row, not explicitly false', async () => {
+    // The column defaults to true, and a row read through a narrower select
+    // (or a fixture written before this field existed) must behave the same
+    // way — only an explicit `false` turns the append off.
+    const stub = oneMailbox([claimedRow(1)], { accounts: [imapAccountRow()] });
+    const mailer = makeMailer(okSend);
+    const sent = makeSentFolder();
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { appendToSent: sent.appendToSent }),
+    );
+
+    expect(sent.calls).toHaveLength(1);
+    expect(result.sent).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
   it('walks away from an append that never finishes, and keeps the cycle moving', async () => {
     const stub = oneMailbox([claimedRow(1)], { accounts: [imapAccountRow()] });
     const mailer = makeMailer(okSend);

@@ -4,13 +4,23 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
-  CheckCircle2, AlertCircle, SendHorizonal, Trash2, Loader2, RotateCcw, Settings,
+  CheckCircle2, AlertCircle, SendHorizonal, Trash2, Loader2, RotateCcw, Settings, Inbox,
+  AlertTriangle,
 } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import { isSendable, remainingToday } from '@/lib/email/mailboxPool';
-import type { MailboxHealth } from '@/lib/email/types';
+import type { EmailAccount, MailboxHealth } from '@/lib/email/types';
 
 interface MailboxCardProps {
   mailbox: MailboxHealth;
+  /**
+   * The parallel `email_accounts` row for this mailbox — carries the IMAP
+   * columns migration 157 added, none of which are on `mailbox_status`
+   * (and so none of which are on `mailbox`). Undefined only for the moment
+   * before AccountsTab's own parallel `listAccounts()` read lands; the inbox
+   * section below simply doesn't render until then.
+   */
+  account: EmailAccount | undefined;
   isAdmin: boolean;
   testing: boolean;
   resuming: boolean;
@@ -19,6 +29,62 @@ interface MailboxCardProps {
   onResume: () => void;
   onReconfigure: () => void;
 }
+
+/**
+ * The inbox-scanning line: not configured, active with the last scan time,
+ * an error with its message, or "incomplete". Always visually subordinate to
+ * the sending state above it — small and muted, never a colored banner like
+ * the paused-mailbox block below — because reading a mailbox and sending
+ * from it are separate permissions (migration 157), and this section must
+ * never read as urgent the way a sending problem does.
+ */
+const InboxHealth: React.FC<{ account: EmailAccount }> = ({ account }) => {
+  switch (account.imapStatus) {
+    case 'unconfigured':
+      return (
+        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+          <Inbox className="w-3 h-3 shrink-0" />
+          Inbox scanning not set up — replies and bounces won&apos;t be detected for this
+          mailbox. Sending is unaffected.
+        </p>
+      );
+    case 'active':
+      return (
+        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+          <Inbox className="w-3 h-3 shrink-0" />
+          Inbox: last scanned{' '}
+          {account.inboxLastScanAt
+            ? formatDistanceToNow(account.inboxLastScanAt, { addSuffix: true })
+            : 'not yet'}.
+        </p>
+      );
+    case 'incomplete':
+      // Not a failure — see the ImapStatus doc comment in
+      // src/lib/email/types.ts. The mailbox was read fine; only recording
+      // what the scan found could not finish, and the next pass re-reads the
+      // same window on its own. A passing remark, not a red one.
+      return (
+        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+          <Inbox className="w-3 h-3 shrink-0" />
+          Inbox scan couldn&apos;t finish recording what it found — nothing wrong with this
+          mailbox; the next scan picks up the same window automatically.
+        </p>
+      );
+    case 'error':
+      return (
+        <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-start gap-1">
+          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+          <span>
+            Inbox: {account.imapLastError ?? 'could not be read.'} This does not stop this
+            mailbox from sending — reading a mailbox and sending from it are separate
+            permissions.
+          </span>
+        </p>
+      );
+    default:
+      return null;
+  }
+};
 
 /**
  * Whole calendar days between `from` and today, floored at zero — the "day N"
@@ -55,7 +121,7 @@ const warmupLabel = (mailbox: MailboxHealth): string => {
 
 /** One mailbox: status, today's usage, warmup state and admin controls. */
 export const MailboxCard: React.FC<MailboxCardProps> = ({
-  mailbox, isAdmin, testing, resuming, onSendTest, onDelete, onResume, onReconfigure,
+  mailbox, account, isAdmin, testing, resuming, onSendTest, onDelete, onResume, onReconfigure,
 }) => {
   const sendable = isSendable(mailbox);
   const pct = mailbox.effectiveLimit > 0
@@ -114,6 +180,8 @@ export const MailboxCard: React.FC<MailboxCardProps> = ({
         </div>
 
         <p className="text-xs text-muted-foreground mt-2">{warmupLabel(mailbox)}</p>
+
+        {account && <InboxHealth account={account} />}
 
         {mailbox.pausedReason && (
           <div className="mt-3 flex items-center justify-between gap-3 p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-md">

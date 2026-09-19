@@ -31,6 +31,29 @@ export interface EmailAccount {
   lastError: string | null;
   lastVerifiedAt: Date | null;
   createdAt: Date;
+  /**
+   * IMAP is optional (migration 157a) — `imapHost` is null on every mailbox
+   * that has never had one set, which is every row that predates that
+   * migration, and the mailbox sends exactly as before either way.
+   */
+  imapHost: string | null;
+  imapPort: number;
+  imapSecure: boolean;
+  imapStatus: ImapStatus;
+  /** The reason the last scan failed, in `classifyImapError()`'s words. Null on a mailbox that has never failed a scan, and cleared by `touch_inbox_scan()` the moment one succeeds. Separate from `lastError`, which is about sending, never inbox scanning. */
+  imapLastError: string | null;
+  inboxLastScanAt: Date | null;
+  /**
+   * Whether a delivered send is also filed as a copy in this mailbox's own
+   * Sent folder over IMAP. Defaults to on; independent of `imapHost` being
+   * set at all — with no host configured there is nothing to file into, so
+   * the switch is simply inert. Google hosts are skipped automatically
+   * regardless of this switch (worker/lib/engine.ts), because Gmail already
+   * files its own copy; this is the override for a Google Workspace mailbox
+   * sent through a non-Google-named relay host, which the automatic
+   * detection cannot see.
+   */
+  sentFolderEnabled: boolean;
 }
 
 export interface EmailCampaign {
@@ -65,6 +88,15 @@ export interface EmailMessage {
   attempts: number;
   lastError: string | null;
   sentAt: Date | null;
+  /**
+   * Set once, the first time `record_inbox_result()` (migration 157d) matches
+   * a reply or a bounce to this message — coalesced there, so this never
+   * moves after it is first written. A bounce also adds `toEmail` to
+   * `email_suppressions`; this column does not say so by itself, which is why
+   * every screen that shows `bouncedAt` says it in words next to it.
+   */
+  repliedAt: Date | null;
+  bouncedAt: Date | null;
 }
 
 export interface EmailSuppression {

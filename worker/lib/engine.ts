@@ -151,6 +151,13 @@ interface AccountRow {
   imap_host: string | null;
   imap_port: number | null;
   imap_secure: boolean | null;
+  // The mailbox's own override for fileSentCopies' append, independent of
+  // imap_host being set at all and of the automatic Google skip below it.
+  // `boolean | null | undefined` rather than a bare `boolean`: the column
+  // defaults to true (migration 157), but a row read through a narrower
+  // select — or a test fixture that predates this field — simply omits it,
+  // and that must read as "on", never as "off by accident".
+  sent_folder_enabled?: boolean | null;
 }
 
 interface CampaignRow {
@@ -173,7 +180,7 @@ interface ClaimedRow {
 /** The columns of email_accounts the send needs; the pool data comes from the view. */
 const ACCOUNT_COLUMNS =
   'id, from_name, from_email, reply_to, smtp_host, smtp_port, smtp_secure, smtp_username, ' +
-  'imap_host, imap_port, imap_secure';
+  'imap_host, imap_port, imap_secure, sent_folder_enabled';
 
 /** PostgREST returns 1000 rows by default, so both reads are paged explicitly. */
 const PAGE_SIZE = 1000;
@@ -952,7 +959,7 @@ async function sendBatch(
     if (i < rows.length - 1 && !stopped(deps)) await deps.sleep(jitterMs(settings));
   }
 
-  await fileSentCopies(deps, note, imap, account.smtp_host, copies, who);
+  await fileSentCopies(deps, note, imap, account.smtp_host, account.sent_folder_enabled, copies, who);
 }
 
 /**
@@ -985,12 +992,23 @@ async function fileSentCopies(
   note: Note,
   imap: ImapConfig | null,
   smtpHost: string,
+  sentFolderEnabled: boolean | null | undefined,
   copies: Buffer[],
   who: string,
 ): Promise<void> {
   // No IMAP configured is not a failure and is not reported: IMAP is optional
   // and a mailbox without it sends exactly as it always did.
   if (!imap || copies.length === 0) return;
+
+  // The mailbox's own switch (migration 157), checked before the automatic
+  // Google skip below rather than instead of it: this is the one an admin
+  // can actually change, and it is meant to cover the case that skip cannot
+  // — a Google Workspace mailbox sent through a custom relay hostname, which
+  // providerOf(smtpHost) has no way to recognise as Google. Only an explicit
+  // `false` turns it off: the column defaults to true, and undefined (a
+  // narrower select, or a row read before this field existed) must read the
+  // same as true, never as silently disabled.
+  if (sentFolderEnabled === false) return;
 
   // Google files an SMTP send into its own Sent folder server-side, so
   // appending there gives the customer TWO copies of every message they send

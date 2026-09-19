@@ -118,6 +118,29 @@ alter table public.email_accounts
 alter table public.email_accounts
   add column if not exists inbox_last_scan_at timestamptz;
 
+-- Whether a delivered send is also filed as a copy in this mailbox's own Sent
+-- folder over IMAP (worker/lib/engine.ts's fileSentCopies). Defaults to on,
+-- matching the only behaviour that existed before this column did.
+--
+-- Independent of imap_host: with no host configured there is nothing to file
+-- a copy into, so the switch is simply inert on a mailbox with IMAP off, the
+-- same way imap_port and imap_secure are.
+--
+-- It is also independent of -- and does not replace -- fileSentCopies' own
+-- automatic skip for a Google host (providerOf(smtp_host) === 'google'),
+-- which stays exactly as it is: Gmail and Google Workspace file their own
+-- copy of an SMTP send server-side, so appending one here would hand the
+-- customer two copies of every message with no way to undo it from their
+-- end. That detection keys off the SMTP HOSTNAME, though, so it cannot see a
+-- Google Workspace mailbox sent through a custom relay hostname -- which
+-- would still get two copies, with nothing in the product able to stop it,
+-- without a switch that does not depend on guessing the provider from the
+-- host. This column is that switch: an admin who hits the duplicate turns it
+-- off regardless of what the host is named, and the automatic Google skip
+-- keeps covering everyone who never has to know this setting exists.
+alter table public.email_accounts
+  add column if not exists sent_folder_enabled boolean not null default true;
+
 -- ── b. Reply and bounce on email_messages ───────────────────────────
 --
 -- Both describe the message we sent, not the one that came back: the

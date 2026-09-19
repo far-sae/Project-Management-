@@ -12,6 +12,8 @@ import type {
   EmailMessage,
   EmailSettings,
   EmailSuppression,
+  ImapStatus,
+  InboxEvent,
   MailboxHealth,
   MessageStatus,
   SuppressionReason,
@@ -94,6 +96,28 @@ interface EmailAccountRow {
   last_error: string | null;
   last_verified_at: string | null;
   created_at: string;
+  // IMAP settings and inbox-scan status (migration 157a) — every column is
+  // optional at the schema level (a null imap_host is the ordinary,
+  // unconfigured state), and sending needs none of them.
+  imap_host: string | null;
+  imap_port: number;
+  imap_secure: boolean;
+  imap_status: ImapStatus;
+  imap_last_error: string | null;
+  inbox_last_scan_at: string | null;
+  sent_folder_enabled: boolean;
+}
+
+/** Raw shape of an `email_inbox_events` row (migration 157c). */
+interface InboxEventRow {
+  id: string;
+  organization_id: string;
+  account_id: string | null;
+  kind: "reply" | "bounce";
+  address: string;
+  message_id: string | null;
+  detail: string | null;
+  created_at: string;
 }
 
 /** Raw shape of an `email_campaigns` row as returned by PostgREST. */
@@ -129,6 +153,9 @@ interface EmailMessageRow {
   attempts: number;
   last_error: string | null;
   sent_at: string | null;
+  // Set by record_inbox_result() (migration 157d), never by the send path.
+  replied_at: string | null;
+  bounced_at: string | null;
 }
 
 /** Raw shape of an `email_suppressions` row as returned by PostgREST. */
@@ -224,6 +251,27 @@ export const mapAccountRow = (row: EmailAccountRow): EmailAccount => ({
   lastError: row.last_error,
   lastVerifiedAt: row.last_verified_at ? new Date(row.last_verified_at) : null,
   createdAt: new Date(row.created_at),
+  imapHost: row.imap_host,
+  imapPort: row.imap_port,
+  imapSecure: row.imap_secure,
+  imapStatus: row.imap_status,
+  imapLastError: row.imap_last_error,
+  inboxLastScanAt: row.inbox_last_scan_at ? new Date(row.inbox_last_scan_at) : null,
+  sentFolderEnabled: row.sent_folder_enabled,
+});
+
+export const mapInboxEventRow = (row: InboxEventRow): InboxEvent => ({
+  id: row.id,
+  organizationId: row.organization_id,
+  // The column is nullable (ON DELETE SET NULL when a mailbox is deleted —
+  // migration 157c); an event outlives the mailbox it was seen in, and this
+  // is the rare case where that mailbox is already gone.
+  accountId: row.account_id ?? "",
+  kind: row.kind,
+  address: row.address,
+  messageId: row.message_id,
+  detail: row.detail,
+  createdAt: new Date(row.created_at),
 });
 
 export const mapCampaignRow = (row: EmailCampaignRow): EmailCampaign => ({
@@ -257,6 +305,8 @@ export const mapMessageRow = (row: EmailMessageRow): EmailMessage => ({
   attempts: row.attempts,
   lastError: row.last_error,
   sentAt: row.sent_at ? new Date(row.sent_at) : null,
+  repliedAt: row.replied_at ? new Date(row.replied_at) : null,
+  bouncedAt: row.bounced_at ? new Date(row.bounced_at) : null,
 });
 
 export const mapSuppressionRow = (row: EmailSuppressionRow): EmailSuppression => ({
@@ -405,6 +455,43 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
 
   if (error) {
     logger.error("Failed to delete email account:", error);
+    throw error;
+  }
+};
+
+/**
+ * IMAP is optional (migration 157a): `imapHost: null` is the ordinary,
+ * unconfigured state, not an error, and leaves the mailbox sending exactly
+ * as it did before — this only ever touches the four columns listed here,
+ * never `status`/`is_active`/`consecutive_failures`, which are the send
+ * path's alone.
+ *
+ * `sentFolderEnabled` rides along on the same call because it is set from
+ * the same form section and is just as inert with no host configured: with
+ * `imapHost` null there is no Sent folder to file into, whatever this says.
+ */
+export interface UpdateAccountImapInput {
+  imapHost: string | null;
+  imapPort: number;
+  imapSecure: boolean;
+  sentFolderEnabled: boolean;
+}
+
+export const updateAccountImap = async (
+  accountId: string,
+  input: UpdateAccountImapInput,
+): Promise<void> => {
+  const row = {
+    imap_host: input.imapHost,
+    imap_port: input.imapPort,
+    imap_secure: input.imapSecure,
+    sent_folder_enabled: input.sentFolderEnabled,
+  };
+
+  const { error } = await supabase.from("email_accounts").update(row).eq("id", accountId);
+
+  if (error) {
+    logger.error("Failed to update mailbox IMAP settings:", error);
     throw error;
   }
 };
@@ -769,6 +856,30 @@ export const removeSuppression = async (id: string): Promise<void> => {
     logger.error("Failed to remove email suppression:", error);
     throw error;
   }
+};
+
+// ── Inbox ─────────────────────────────────────────────────────────────
+
+/**
+ * What the inbox scans found, newest first — every reply and every bounce,
+ * matched or not (migration 157c). An unmatched bounce (`messageId: null`)
+ * is not a bug: it means a bounce notification arrived for an address this
+ * organization never actually mailed, and nothing was suppressed for it.
+ */
+export const listInboxEvents = async (orgId: string, limit = 50): Promise<InboxEvent[]> => {
+  const { data, error } = await supabase
+    .from("email_inbox_events")
+    .select("*")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    logger.error("Failed to list inbox events:", error);
+    throw error;
+  }
+
+  return ((data ?? []) as InboxEventRow[]).map(mapInboxEventRow);
 };
 
 // ── Recipients ────────────────────────────────────────────────────────

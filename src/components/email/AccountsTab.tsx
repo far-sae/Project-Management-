@@ -9,12 +9,13 @@ import { Mail, Plus, Loader2, Lock, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import {
-  listMailboxStatus, createAccount, deleteAccount, resumeAccount, updateAccountPool,
+  listMailboxStatus, listAccounts, createAccount, deleteAccount, resumeAccount,
+  updateAccountPool, updateAccountImap,
 } from '@/services/supabase/email';
-import type { MailboxHealth } from '@/lib/email/types';
+import type { EmailAccount, MailboxHealth } from '@/lib/email/types';
 import { verifyAccount } from './verifyAccount';
 import {
-  AccountFormDialog, EMPTY_ACCOUNT_FORM, MailboxLimitsDialog, type PoolFormState,
+  AccountFormDialog, EMPTY_ACCOUNT_FORM, MailboxLimitsDialog, type MailboxSettingsFormState,
 } from './AccountFormDialog';
 import { MailboxCard } from './MailboxCard';
 import { DomainAuthPanel } from './DomainAuthPanel';
@@ -25,16 +26,28 @@ interface AccountsTabProps {
   isAdmin: boolean;
 }
 
-const EMPTY_POOL_FORM: PoolFormState = {
+const EMPTY_POOL_FORM: MailboxSettingsFormState = {
   dailyLimit: '40',
   warmupEnabled: true,
   warmupStartVolume: '5',
   warmupIncrement: '3',
+  // IMAP is optional — a mailbox reconfigured with these defaults left alone
+  // simply stays unconfigured; see MailboxImapFields.
+  imapHost: '',
+  imapPort: '993',
+  imapSecure: true,
+  sentFolderEnabled: true,
 };
 
 export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, isAdmin }) => {
   const { user } = useAuth();
   const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
+  // Keyed by account id. mailbox_status (the view listMailboxStatus reads)
+  // carries none of the IMAP columns migration 157 added, so the IMAP state
+  // MailboxCard shows and the values MailboxLimitsDialog edits come from a
+  // parallel read of email_accounts itself, kept alongside it rather than
+  // folded into MailboxHealth.
+  const [accounts, setAccounts] = useState<Record<string, EmailAccount>>({});
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
@@ -46,14 +59,17 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   const [deleteTarget, setDeleteTarget] = useState<MailboxHealth | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [editTarget, setEditTarget] = useState<MailboxHealth | null>(null);
-  const [editForm, setEditForm] = useState<PoolFormState>(EMPTY_POOL_FORM);
+  const [editForm, setEditForm] = useState<MailboxSettingsFormState>(EMPTY_POOL_FORM);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
   const refresh = () => {
-    if (!orgId) { setMailboxes([]); setLoading(false); return Promise.resolve(); }
-    return listMailboxStatus(orgId)
-      .then(setMailboxes)
+    if (!orgId) { setMailboxes([]); setAccounts({}); setLoading(false); return Promise.resolve(); }
+    return Promise.all([listMailboxStatus(orgId), listAccounts(orgId)])
+      .then(([health, accountRows]) => {
+        setMailboxes(health);
+        setAccounts(Object.fromEntries(accountRows.map((a) => [a.id, a])));
+      })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailboxes'));
   };
 
@@ -125,6 +141,18 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     warmupIncrement: Number(form.warmupIncrement) || 0,
   });
 
+  // IMAP is optional, so an untouched (blank) host here writes exactly the
+  // same "unconfigured" state createAccount's own row defaults already left
+  // the mailbox in — this call is never a way to accidentally turn scanning
+  // on. Read from live `form` state for the same reason applyPoolSettings
+  // is: the dialog leaves these fields editable across a retry.
+  const applyImapSettings = (accountId: string) => updateAccountImap(accountId, {
+    imapHost: form.imapHost.trim() || null,
+    imapPort: Number(form.imapPort) || 993,
+    imapSecure: form.imapSecure,
+    sentFolderEnabled: form.sentFolderEnabled,
+  });
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin || !orgId) return;
@@ -147,14 +175,15 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         dailyLimit: Number(form.dailyLimit) || 40,
       });
       // Set the instant the account row exists, before anything else that
-      // could fail — applyPoolSettings, refresh, or verification. Otherwise a
-      // failure in one of those lands in the catch block with
-      // pendingAccountId still null, canRetry reads false, the dialog offers
-      // "Save and verify" instead of "Retry", and a second submit creates a
-      // second mailbox row for the same SMTP account (there is no
-      // uniqueness constraint to stop it).
+      // could fail — applyPoolSettings, applyImapSettings, refresh, or
+      // verification. Otherwise a failure in one of those lands in the catch
+      // block with pendingAccountId still null, canRetry reads false, the
+      // dialog offers "Save and verify" instead of "Retry", and a second
+      // submit creates a second mailbox row for the same SMTP account (there
+      // is no uniqueness constraint to stop it).
       setPendingAccountId(account.id);
       await applyPoolSettings(account.id);
+      await applyImapSettings(account.id);
       await refresh();
       setCreating(false);
 
@@ -185,13 +214,15 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     setCreating(true);
     setCreateError(null);
     try {
-      // Reapply the pool settings before verifying: canRetry goes true for
-      // *any* failure after createAccount, not only a verification failure,
-      // so a first attempt that failed on applyPoolSettings must not be
-      // "retried" by verification alone — that would report the mailbox as
-      // verified while its warmup and daily limit silently stayed at column
-      // defaults, with nothing in the UI saying so.
+      // Reapply the pool and IMAP settings before verifying: canRetry goes
+      // true for *any* failure after createAccount, not only a verification
+      // failure, so a first attempt that failed on applyPoolSettings or
+      // applyImapSettings must not be "retried" by verification alone — that
+      // would report the mailbox as verified while its warmup, daily limit
+      // or inbox settings silently stayed at column defaults, with nothing
+      // in the UI saying so.
       await applyPoolSettings(pendingAccountId);
+      await applyImapSettings(pendingAccountId);
       await refresh();
       const result = await runVerify(pendingAccountId);
       if (result.ok) {
@@ -255,12 +286,23 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
 
   const openEdit = (mailbox: MailboxHealth) => {
     if (!isAdmin) return;
+    const account = accounts[mailbox.id];
     setEditTarget(mailbox);
     setEditForm({
       dailyLimit: String(mailbox.dailyLimit ?? 40),
       warmupEnabled: mailbox.warmupEnabled ?? false,
       warmupStartVolume: String(mailbox.warmupStartVolume ?? 5),
       warmupIncrement: String(mailbox.warmupIncrement ?? 3),
+      // Falls back to EMPTY_POOL_FORM's own IMAP defaults when the parallel
+      // listAccounts() read hasn't landed yet — the form still opens, it
+      // just starts from "unconfigured" rather than this mailbox's actual
+      // saved values, which get overwritten by whatever is submitted first.
+      // In practice `accounts` and `mailboxes` load together off the same
+      // `refresh()`, so this is a same-tick race rather than a real gap.
+      imapHost: account?.imapHost ?? '',
+      imapPort: String(account?.imapPort ?? 993),
+      imapSecure: account?.imapSecure ?? true,
+      sentFolderEnabled: account?.sentFolderEnabled ?? true,
     });
     setEditError(null);
   };
@@ -280,11 +322,17 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         // limits on a mailbox mid-warmup doesn't reset its day count to zero.
         warmupStartedOn: editForm.warmupEnabled ? (editTarget.warmupStartedOn ?? new Date()) : null,
       });
-      toast.success('Sending limits updated');
+      await updateAccountImap(editTarget.id, {
+        imapHost: editForm.imapHost.trim() || null,
+        imapPort: Number(editForm.imapPort) || 993,
+        imapSecure: editForm.imapSecure,
+        sentFolderEnabled: editForm.sentFolderEnabled,
+      });
+      toast.success('Mailbox settings updated');
       setEditTarget(null);
       await refresh();
     } catch (err) {
-      setEditError(err instanceof Error ? err.message : 'Failed to update sending limits');
+      setEditError(err instanceof Error ? err.message : 'Failed to update mailbox settings');
     } finally {
       setSavingEdit(false);
     }
@@ -333,6 +381,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
                 <MailboxCard
                   key={mailbox.id}
                   mailbox={mailbox}
+                  account={accounts[mailbox.id]}
                   isAdmin={isAdmin}
                   testing={testingId === mailbox.id}
                   resuming={resumingId === mailbox.id}
@@ -366,6 +415,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         open={!!editTarget}
         onOpenChange={(open) => { if (!open) setEditTarget(null); }}
         label={editTarget?.label ?? ''}
+        smtpHost={(editTarget && accounts[editTarget.id]?.smtpHost) ?? ''}
         form={editForm}
         onFormChange={setEditForm}
         saving={savingEdit}

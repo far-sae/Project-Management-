@@ -1,13 +1,25 @@
 # Email Worker — Deployment
 
 This guide covers deploying `worker/` — the persistent Node process that now
-sends the email outbox — and confirming it is actually running. It supersedes
-the sending mechanism described in `email-marketing-setup.md`: read that guide
-first for the migrations, the Vercel routes and the encryption key, then use
-this one to stand up the worker itself.
+sends the email outbox and scans each mailbox's own inbox for replies and
+bounces — and confirming it is actually running. It supersedes the sending
+mechanism described in `email-marketing-setup.md`: read that guide first for
+the migrations, the Vercel routes and the encryption key, then use this one to
+stand up the worker itself.
+
+This guide also assumes migration `157_inbox_sync.sql` has been applied, in
+the same numeric order as the rest (`email-marketing-setup.md`, Step 1). It
+adds `imap_host`/`imap_port`/`imap_secure`/`imap_status`/`imap_last_error`/
+`inbox_last_scan_at`/`sent_folder_enabled` to `email_accounts`, `replied_at`/
+`bounced_at` to `email_messages`, and the `email_inbox_events` table the inbox
+loop below writes to. Nothing in it is required for sending: every column it
+adds defaults to the "not configured" state, and a database that has not run
+it yet still sends exactly as `email-marketing-setup.md` describes — the inbox
+loop below simply finds no mailbox with an `imap_host` to scan.
 
 Background: `docs/superpowers/specs/2026-09-18-email-deliverability-design.md`,
-and `worker/README.md` for the send cycle in detail.
+`docs/superpowers/specs/2026-09-19-email-inbox-sync-design.md`, and
+`worker/README.md` for the send cycle in detail.
 
 ---
 
@@ -40,6 +52,45 @@ every one of those rules for whatever it sends. This is exactly why migration
 this worker are live at once. Do not re-enable that cron, and do not restore
 `api/email/tick.ts`. Run exactly one instance of `worker/` in production —
 Railway's replica count for this service must stay at 1.
+
+---
+
+## What the inbox loop is, and why an IMAP problem never affects sending
+
+The same process also runs a second loop, on its own much slower interval: it
+reads each mailbox that has an `imap_host` set, over IMAP, and records the
+replies and bounces it finds through `record_inbox_result()` (migration 157).
+It shares nothing with the send loop but the shutdown flag — no queue, no
+connection, no failure path — because reading a mailbox and sending from it
+are separate permissions at every provider. Google and Zoho both issue app
+passwords with IMAP access left off by default, so it is entirely normal for a
+mailbox to send perfectly well while its inbox cannot be read at all.
+
+**IMAP is optional, and a mailbox with no `imap_host` is simply not scanned —
+not an error, not a mailbox left half-configured.** Everything from
+`email-marketing-setup.md` and the rest of this guide works identically
+whether or not any mailbox has IMAP set up. Fill it in from the mailbox form's
+"Inbox" section in the app (**Email → Accounts**, the "Limits" button on a
+mailbox, or while adding one) — there is nothing to set here on the worker
+side beyond the one optional environment variable below.
+
+**An IMAP failure never stops or slows sending, for any mailbox, ever.** The
+inbox loop writes only `imap_status`, `imap_last_error` and
+`inbox_last_scan_at` — never `status`, `is_active` or
+`consecutive_failures`, which are what the send loop's `claim_email_batch()`
+and `record_mailbox_failure()` consult. A mailbox can show a red inbox error
+on the Accounts screen and go on sending campaigns normally in the same
+minute; that is the intended state for any mailbox whose app password was
+only ever granted send scope, not a bug to chase. See the Troubleshooting row
+below for what to do about it anyway.
+
+One more status is worth knowing before it shows up: `imap_status` can also
+read `'incomplete'`. That is **not** a failure either — it means the mailbox
+was read successfully (connected, logged in, envelopes fetched) but something
+after that stopped the scan from finishing, so the next pass simply re-reads
+the same window. The Accounts screen renders it as a plain, non-red remark
+for exactly that reason; do not go looking for a credential problem on a
+mailbox that says `incomplete`.
 
 ---
 
@@ -104,13 +155,15 @@ exits rather than claiming a batch it cannot use.
 | `EMAIL_UNSUBSCRIBE_SECRET` | **Must be the exact value already set in Vercel** (`email-marketing-setup.md`, Step 2/4). The worker signs the one-click unsubscribe link on the way out; `api/email/unsubscribe.ts` on Vercel verifies it on the way back. A mismatch 401s every link. |
 | `PUBLIC_SITE_URL` | **Must be the exact value already set in Vercel** — your production origin, no trailing slash (e.g. `https://taskcalendar.app`). Used to build the unsubscribe links above. |
 
-Two more are read directly by `worker/index.ts` and are optional — a missing
-or invalid value falls back to the default rather than failing startup:
+Three more are read directly by `worker/index.ts` and are optional — a
+missing or invalid value falls back to the default rather than failing
+startup:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `WORKER_INTERVAL_MS` | `15000` | Pause between cycles, in milliseconds. |
+| `WORKER_INTERVAL_MS` | `15000` | Pause between send cycles, in milliseconds. |
 | `WORKER_BATCH` | `50` | **Per organization**, not global — the worker serves every tenant in one pass, and this is the ceiling on how many messages any single organization's mailboxes may claim in one cycle (`selectMailboxes(pool, deps.maxPerCycle)` in `worker/lib/engine.ts` is called once per organization, with this same number, inside the loop over organizations). Raising it lets one busy organization claim more per cycle; it does not raise a shared, cross-tenant budget, because there is no such thing — each organization gets this full amount, every cycle. |
+| `INBOX_INTERVAL_MS` | `300000` (5 minutes) | Pause between inbox scans — deliberately far coarser than `WORKER_INTERVAL_MS`: a reply noticed a few minutes late costs nothing, and logging into every configured mailbox's IMAP server every fifteen seconds is itself the kind of pattern providers throttle. Applies across every organization's mailboxes together, the same way `WORKER_INTERVAL_MS` paces the send loop. |
 
 ---
 
@@ -119,8 +172,11 @@ or invalid value falls back to the default rather than failing startup:
 On a clean start, the very first line is:
 
 ```
-[2026-09-18 12:00:00] email worker started — one cycle every 15s, up to 50 messages per organisation per cycle.
+[2026-09-18 12:00:00] email worker started — one cycle every 15s, up to 50 messages per organisation per cycle; inbox scan every 5m.
 ```
+
+(The "inbox scan every" figure reflects `INBOX_INTERVAL_MS`, so it reads
+differently if that variable is set to something other than its default.)
 
 If that line never appears, the process did not start — check the build logs
 for a missing dependency or module (see the Root Directory note above and the
@@ -142,15 +198,111 @@ After that, a healthy worker logs **only when there's something to say**:
 - Up to five distinct failure reasons per cycle, each prefixed with the
   mailbox address that produced it, e.g.
   `[...] marketing@acme.com: Google rejected the username or password. ...`
+- `[...] inbox: scanned 3, replies 1, bounces 0` — once per inbox pass that
+  actually scanned a mailbox. **Silent when there is nothing to scan**, so a
+  deployment where no mailbox has `imap_host` set writes no inbox line at
+  all — that is the expected, healthy state for IMAP being entirely optional,
+  not a sign the loop isn't running.
+- `[...] inbox <mailbox address>: <reason>` — up to five distinct inbox
+  failures per pass, in the same shape as the send failures above. These are
+  entirely separate from the `claimed`/`sent`/`failed` line: an inbox failure
+  never appears there, because it never affects sending (see "What the inbox
+  loop is" above).
 
-Passwords and recipient lists are never logged, by design — there is nothing
-in this process's log output that needs to be treated as a secret beyond the
-environment variables themselves.
+Passwords, recipient lists, subjects and message bodies are never logged, by
+design — there is nothing in this process's log output that needs to be
+treated as a secret beyond the environment variables themselves.
 
 A redeploy sends `SIGTERM`. Expect `... SIGTERM received — stopping after the
 message in flight.` followed by `... email worker stopped.` shortly after —
 see `worker/README.md`'s "Shutdown" section for exactly what that grace period
 does and does not guarantee.
+
+---
+
+## Configuring IMAP for inbox health
+
+**IMAP is optional.** Skip this section entirely and the worker sends exactly
+as `email-marketing-setup.md` describes — a mailbox with no `imap_host` is
+simply never scanned. Fill it in per mailbox from the app: **Email →
+Accounts**, either while adding a mailbox or from the existing "Limits"
+button, whose dialog gained an "Inbox" section alongside the sending limits.
+
+The same SMTP credential is reused for IMAP — there is no separate password to
+store — so only the host, port and TLS setting need filling in. Typical
+values:
+
+| Provider | IMAP host | Port | TLS |
+|---|---|---|---|
+| Gmail / Google Workspace | `imap.gmail.com` | 993 | on |
+| Zoho Mail | `imap.zoho.com` (or your region's Zoho IMAP host, e.g. `imap.zoho.eu`) | 993 | on |
+| Microsoft 365 / Outlook | `outlook.office365.com` | 993 | on |
+| IONOS | `imap.ionos.com` (or your region's IONOS IMAP host) | 993 | on |
+| Most other providers | usually `imap.<your domain>` | 993 | on |
+
+993 with TLS is the standard, encrypted IMAP port and the form's own default;
+143 (cleartext) exists but should not be used. The form suggests a host by
+swapping a leading `smtp` for `imap` in whatever SMTP host is already typed
+(e.g. `smtp.acme.com` → `imap.acme.com`) — a starting guess to edit or
+replace, never a value saved silently.
+
+**App passwords.** Exactly like SMTP, Gmail/Google Workspace and Zoho commonly
+issue an app password that is scoped to one protocol — an app password created
+for sending does not automatically grant IMAP access. If an inbox shows a red
+error mentioning authentication, the mailbox's app password (or its IMAP
+access toggle, for Zoho) usually needs a second look separately from whatever
+was set up for SMTP; see the Troubleshooting row below.
+
+**The "File a copy in Sent" switch**, also in the Inbox section, defaults to
+on and files a copy of every delivered message into the mailbox's own Sent
+folder over the same IMAP connection. It is skipped automatically for any
+host `worker/lib/engine.ts` recognises as Google, since Gmail already files
+its own copy of an SMTP send and a second one would double it — but that
+detection reads the *SMTP* hostname, so a Google Workspace mailbox sent
+through a custom relay hostname is not caught by it and would get two copies
+with no way to stop them from the Google side. Turn the switch off for that
+one mailbox if its owner reports duplicates; it has no effect at all on a
+mailbox with no `imap_host` set, since there is then no Sent folder to file a
+copy into.
+
+### Verifying migration 157 actually applied
+
+Migration `157_inbox_sync.sql` rewrites `email_accounts`' `imap_status` check
+constraint **by its conventional name**
+(`email_accounts_imap_status_check`) rather than relying on the column's own
+inline definition, specifically so a database that already ran an earlier
+revision of this migration ends up with the same four-value constraint either
+way. That rewrite is the one assumption in the whole migration nobody has
+been able to exercise against a real database before this feature saw
+traffic — run this once, right after applying it, against any mailbox row in
+the Supabase SQL editor:
+
+```sql
+-- Confirms the constraint accepts 'incomplete' specifically -- the one
+-- status value nothing else in the app writes until a real scan hits the
+-- code path that produces it. Replace <account-id> with any row from
+-- email_accounts; this writes and reads back, then restores what it found.
+select imap_status as before_value from public.email_accounts where id = '<account-id>';
+
+select public.touch_inbox_scan('<account-id>', 'incomplete', null);
+
+select imap_status, imap_last_error, inbox_last_scan_at
+  from public.email_accounts where id = '<account-id>';
+-- Expect: imap_status = 'incomplete', imap_last_error = null, and
+-- inbox_last_scan_at UNCHANGED from before this call -- 'incomplete' holds
+-- the scan cursor rather than advancing it (migration 157, part e), which is
+-- what lets the next real scan re-read the same window.
+
+-- Put the row back the way it was found (use the value the first select
+-- above printed, typically 'unconfigured' for a mailbox with no imap_host):
+select public.touch_inbox_scan('<account-id>', 'unconfigured', null);
+```
+
+If the middle `select` instead raises a constraint violation, the rewrite did
+not take — `email_accounts_imap_status_check` on that database still reflects
+whatever the column's very first `add column` created, and the migration
+needs re-running (its `drop constraint if exists` / `add constraint` pair is
+safe to run again on its own).
 
 ---
 
@@ -163,6 +315,7 @@ does and does not guarantee.
 | A mailbox stops sending and shows a red reason on the Accounts screen | Three consecutive SMTP failures paused it (`record_send_result()`'s `permanent` branch, matching `MAX_CONSECUTIVE_FAILURES` in `src/lib/email/mailboxPool.ts`). The reason is `friendlySmtpError()`'s message, which **names the provider** — Zoho, IONOS, Google or Microsoft — and what to do about it (an app password, re-enabling SMTP AUTH, etc.), because the fix differs by host. | Read the paused reason on the mailbox card, fix the credential or provider setting it names, then use **Resume** (admin only) to put it back in rotation. |
 | A campaign's messages are stuck in `sending` after the worker crashed or was killed mid-batch | Expected, and self-healing — not a bug to chase. `claim_email_batch()`'s stuck-row sweep (migration 156, carried over from 155) runs on every claim and settles any row that has been `sending` for more than ten minutes: `sent` if a `provider_message_id` proves it was actually delivered, `failed` once its three attempts are spent, otherwise back to `queued`. | Give it up to ten minutes and check again — no manual intervention needed. If rows are still stuck well past that, confirm the worker is actually running (see the previous section) rather than editing rows by hand. |
 | SMTP authentication fails for every mailbox on one provider | See the second row above — this is provider-specific, not worker-specific. Gmail/Google Workspace, Zoho and IONOS all reject a plain account password for SMTP and require an app-specific password; Microsoft 365 has SMTP AUTH disabled by default and an admin must turn it on per mailbox. | Read the mailbox's paused reason or the worker's log line for the exact provider name and instructions, rather than guessing which provider's rules apply. |
+| A mailbox's Accounts card shows a red inbox error, or the worker logs `inbox <address>: ...` naming an authentication failure | **This never stops or slows sending** — `status`/`is_active`/`consecutive_failures` (the send path) and `imap_status`/`imap_last_error` (the inbox path) are separate columns, updated by separate functions, and the inbox loop writes only the second pair. The failure itself is almost always the app-password scope: Zoho and Google Workspace both commonly issue an app password that covers SMTP but not IMAP, so sending works while the inbox read is rejected. `classifyImapError()`'s message names the provider — for Zoho specifically it reads *"Zoho needs an app password and IMAP access enabled for the mailbox."*; for everything else, *"Use the full email address as the username, and an app password if two-factor is on."* | Fix (or generate a second, IMAP-scoped) app password for that mailbox and re-check the host/port in the Inbox section — there is no "resend" for IMAP the way **Resume** exists for a paused sender; the next scheduled scan (`INBOX_INTERVAL_MS`) simply tries again once the credential is fixed. Confirm sending was never affected by checking the mailbox's ordinary status and the campaign it's part of, which should show no interruption. |
 
 ---
 
@@ -176,3 +329,10 @@ does and does not guarantee.
 - **One instance only, and nothing enforces that but this document.** Railway
   will happily run more replicas if the count is raised; there is no
   application-level lock that refuses a second sender.
+- **The inbox loop reads envelopes, and bodies only for bounce candidates.**
+  Every message's envelope (from, subject, date) is read to recognise a reply
+  or a bounce; a message's body is downloaded, in-memory, only once its
+  envelope already looks like a bounce, to read the failed address out of the
+  delivery-failure report. Nothing it reads is ever stored — the customer's
+  own mail stays in their mailbox — so there is no way to view the text of a
+  reply, or the DSN body of a bounce, from inside this app.
