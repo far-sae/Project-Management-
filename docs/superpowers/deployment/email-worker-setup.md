@@ -75,6 +75,15 @@ self-contained — the fix is to not scope the build to it.
    repository root, and needs nothing added. There is no compile step; `tsx`
    runs the TypeScript source directly.
 
+   `tsx` is declared in the root `package.json`'s **`dependencies`**, not
+   `devDependencies`, on purpose: it is a runtime requirement for this
+   service (the process that runs in production needs it every time it
+   starts), not a build-time-only tool. Several Node platform builders,
+   Railway included, set `NODE_ENV=production` during the build step, and
+   `npm install` skips `devDependencies` under that setting — a `tsx` left
+   in `devDependencies` would make the plain `npm install` build command
+   above produce an image that builds successfully and then fails to start.
+
 5. Set the five environment variables below (Production only — this project
    has no separate Railway "preview" environment for the worker).
 6. Deploy, then confirm it started (next section).
@@ -149,7 +158,7 @@ does and does not guarantee.
 
 | Symptom | What's actually happening | Check |
 |---|---|---|
-| The worker exits immediately, or the build fails with `tsx: command not found` / `Cannot find module '@supabase/supabase-js'` / `Cannot find module '@/lib/email/...'` | Root Directory was set to `worker` instead of the repository root. Scoped that way, the build never sees the root `package.json`'s dependencies or the `src/lib/email` source the worker imports — see the note at the top of "Deploying on Railway" above. | Set Root Directory back to empty/repository root, Build Command `npm install`, Start Command `npm run worker`, and redeploy. |
+| The worker exits immediately, or the build fails with `tsx: command not found` / `Cannot find module '@supabase/supabase-js'` / `Cannot find module '@/lib/email/...'` | Two distinct causes produce the same symptom. **(1) Root Directory was set to `worker`** instead of the repository root — scoped that way, the build never sees the root `package.json`'s dependencies or the `src/lib/email` source the worker imports; see the note at the top of "Deploying on Railway" above. **(2) The build installed only production dependencies** — some platforms pass `--omit=dev` or run with `NODE_ENV=production` during `npm install`, which skips `devDependencies` entirely. `tsx`, `@supabase/supabase-js` and `nodemailer` are all in the root `package.json`'s `dependencies` specifically so this can't happen to them — if one of them is still reported missing after confirming Root Directory is correct, something in the platform's build configuration is stripping `dependencies` too, which is a platform issue rather than a `package.json` one. | For (1): set Root Directory back to empty/repository root, Build Command `npm install`, Start Command `npm run worker`, and redeploy. For (2): if a genuinely new runtime import is ever added to `worker/`, its package must go in the root `package.json`'s `dependencies`, never `devDependencies` — that's the whole fix, not a platform setting to hunt down. |
 | Nothing sends, campaigns stay `queued`/`sending` | Not a crash — this is the normal shape of "nothing to do." Either the pool is empty (`blockedReason()`: no mailboxes configured, every mailbox paused, or every mailbox has used its daily allowance) or every organization is currently outside its configured send window (`describeSendWindow()`). | Read the worker's `idle — <reason>` log line — it says which of the two, in words. Cross-check against the **Accounts** tab (mailbox status, paused reason) and the **Settings** tab (send window) in `/email`. |
 | A mailbox stops sending and shows a red reason on the Accounts screen | Three consecutive SMTP failures paused it (`record_send_result()`'s `permanent` branch, matching `MAX_CONSECUTIVE_FAILURES` in `src/lib/email/mailboxPool.ts`). The reason is `friendlySmtpError()`'s message, which **names the provider** — Zoho, IONOS, Google or Microsoft — and what to do about it (an app password, re-enabling SMTP AUTH, etc.), because the fix differs by host. | Read the paused reason on the mailbox card, fix the credential or provider setting it names, then use **Resume** (admin only) to put it back in rotation. |
 | A campaign's messages are stuck in `sending` after the worker crashed or was killed mid-batch | Expected, and self-healing — not a bug to chase. `claim_email_batch()`'s stuck-row sweep (migration 156, carried over from 155) runs on every claim and settles any row that has been `sending` for more than ten minutes: `sent` if a `provider_message_id` proves it was actually delivered, `failed` once its three attempts are spent, otherwise back to `queued`. | Give it up to ten minutes and check again — no manual intervention needed. If rows are still stuck well past that, confirm the worker is actually running (see the previous section) rather than editing rows by hand. |

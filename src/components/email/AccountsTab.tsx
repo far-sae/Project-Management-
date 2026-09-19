@@ -82,6 +82,21 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     return result;
   };
 
+  // createAccount has no warmup arguments, so the ramp the admin picked in
+  // the Sending section is applied through a second call, right after —
+  // starting it today when warmup is on, since a null warmup_started_on
+  // would otherwise hold the mailbox at its start volume forever (migration
+  // 156). Shared by handleCreate and the retry path below: it's a plain
+  // column update, not an insert, so calling it again is idempotent and
+  // exactly what finishes the job if it was this step, not verification,
+  // that failed the first time.
+  const applyPoolSettings = (accountId: string) => updateAccountPool(accountId, {
+    warmupEnabled: form.warmupEnabled,
+    warmupStartedOn: form.warmupEnabled ? new Date() : null,
+    warmupStartVolume: Number(form.warmupStartVolume) || 0,
+    warmupIncrement: Number(form.warmupIncrement) || 0,
+  });
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin || !orgId) return;
@@ -104,23 +119,14 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         dailyLimit: Number(form.dailyLimit) || 40,
       });
       // Set the instant the account row exists, before anything else that
-      // could fail — updateAccountPool, refresh, or verification. Otherwise a
+      // could fail — applyPoolSettings, refresh, or verification. Otherwise a
       // failure in one of those lands in the catch block with
       // pendingAccountId still null, canRetry reads false, the dialog offers
-      // "Save and verify" instead of "Retry verification", and a second
-      // submit creates a second mailbox row for the same SMTP account (there
-      // is no uniqueness constraint to stop it).
+      // "Save and verify" instead of "Retry", and a second submit creates a
+      // second mailbox row for the same SMTP account (there is no
+      // uniqueness constraint to stop it).
       setPendingAccountId(account.id);
-      // createAccount has no warmup arguments, so the ramp the admin picked
-      // in the Sending section is applied right after — starting it today
-      // when warmup is on, since a null warmup_started_on would otherwise
-      // hold the mailbox at its start volume forever (migration 156).
-      await updateAccountPool(account.id, {
-        warmupEnabled: form.warmupEnabled,
-        warmupStartedOn: form.warmupEnabled ? new Date() : null,
-        warmupStartVolume: Number(form.warmupStartVolume) || 0,
-        warmupIncrement: Number(form.warmupIncrement) || 0,
-      });
+      await applyPoolSettings(account.id);
       await refresh();
       setCreating(false);
 
@@ -135,6 +141,10 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         setCreateError(result.error ?? 'Verification failed');
       }
     } catch (err) {
+      // pendingAccountId is already set by this point whenever createAccount
+      // itself succeeded (see above), so this failure — whether it's
+      // applyPoolSettings, refresh, or something else — still resumes via
+      // Retry rather than reinserting the account.
       setCreateError(err instanceof Error ? err.message : 'Failed to create mailbox');
       void refresh();
     } finally {
@@ -145,13 +155,30 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   const handleRetryVerify = async () => {
     if (!pendingAccountId) return;
     setCreating(true);
-    const result = await runVerify(pendingAccountId);
-    setCreating(false);
-    if (result.ok) {
-      toast.success('Sending mailbox verified');
-      closeAddDialog();
-    } else {
-      setCreateError(result.error ?? 'Verification failed');
+    setCreateError(null);
+    try {
+      // Reapply the pool settings before verifying: canRetry goes true for
+      // *any* failure after createAccount, not only a verification failure,
+      // so a first attempt that failed on applyPoolSettings must not be
+      // "retried" by verification alone — that would report the mailbox as
+      // verified while its warmup and daily limit silently stayed at column
+      // defaults, with nothing in the UI saying so.
+      await applyPoolSettings(pendingAccountId);
+      await refresh();
+      const result = await runVerify(pendingAccountId);
+      if (result.ok) {
+        toast.success('Sending mailbox verified');
+        closeAddDialog();
+      } else {
+        setCreateError(result.error ?? 'Verification failed');
+      }
+    } catch (err) {
+      // The pool update (or refresh) failed again — keep the dialog open
+      // with the message rather than closing on a success that didn't
+      // happen; canRetry stays true so the next click retries the same way.
+      setCreateError(err instanceof Error ? err.message : 'Failed to update sending limits');
+    } finally {
+      setCreating(false);
     }
   };
 

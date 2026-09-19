@@ -120,9 +120,11 @@ interface AccountFormDialogProps {
   onFormChange: (updater: (f: AccountFormState) => AccountFormState) => void;
   creating: boolean;
   createError: string | null;
-  /** True once a "create" already succeeded but verification failed — the
-   *  footer switches from "create" to "retry the same account" so a second
-   *  submit doesn't insert a duplicate row. */
+  /** True once the account row already exists (createAccount succeeded) but
+   *  something after it — applying the sending limits, or verification —
+   *  failed. The footer switches from "create" to "retry the same account"
+   *  so a second submit doesn't insert a duplicate row; `onRetry` reapplies
+   *  whichever of those steps didn't finish, not verification alone. */
   canRetry: boolean;
   canSubmit: boolean;
   onSubmit: (e: React.FormEvent) => void;
@@ -241,7 +243,7 @@ export const AccountFormDialog: React.FC<AccountFormDialogProps> = ({
             {canRetry ? (
               <Button type="button" onClick={onRetry} disabled={creating}>
                 {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <SendHorizonal className="w-4 h-4 mr-2" />}
-                Retry verification
+                Retry
               </Button>
             ) : (
               <Button type="submit" disabled={creating || !canSubmit}>
