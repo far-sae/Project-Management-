@@ -2,23 +2,14 @@
 // src/lib/email: no Node built-ins, no Supabase, no network, no React, so the
 // worker and the browser share one definition of each of these.
 
-/**
- * When the step after this one falls due.
- *
- * Measured from when the previous step was actually SENT, never from
- * enrollment: a queue held overnight by the send window would otherwise
- * release three steps within minutes of each other.
- *
- * It takes no send window, deliberately. claim_email_batch() holds a message
- * until the window opens, which is where phase 1 put that rule and where it
- * belongs -- the message waits, the schedule does not move. Applying the
- * window here as well would push this date to the next open hour and the claim
- * would then hold it again, so every step would drift later than the one
- * before and a three-day sequence would take a week.
- */
-export function nextDueAt(sentAt: Date, delayHours: number): Date {
-  return new Date(sentAt.getTime() + Math.max(delayHours, 0) * 60 * 60 * 1000);
-}
+// What is NOT here: nextDueAt().
+//
+// The schedule is computed in SQL, by record_send_result() (migration 159c),
+// because that is the one place a message becomes 'sent' and the delay runs
+// from the actual send rather than from enrollment. A TypeScript copy of that
+// arithmetic had no caller and two places to disagree about when a follow-up
+// is due, so it is gone rather than kept "for completeness".
+
 
 /**
  * `In-Reply-To` and `References` for a follow-up, from the ids of the messages

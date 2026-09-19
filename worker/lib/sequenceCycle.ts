@@ -5,8 +5,9 @@
 // the daily and hourly caps, the warmup ramp, the send window, the suppression
 // list and the retry budget all belong to claim_email_batch() and engine.ts,
 // and none of them are reimplemented or second-guessed here. What this file
-// does is exactly two things per pass — run the reconcile sweep, then turn
-// each row claim_sequence_enrollments() hands back into one queued message.
+// does is exactly two things per pass — run the reconcile sweep, then call
+// claim_sequence_enrollments(), which advances each due enrollment AND writes
+// its queued message in one statement. This file writes nothing itself.
 //
 // Everything with a side effect — the database and the clock — arrives through
 // `SequenceDeps`, so `runSequenceCycle` runs end to end in
@@ -24,25 +25,22 @@
 //     sequence that could send on its own would be a second sender against the
 //     same outbox, which is how a recipient gets the same message twice — the
 //     precise thing migration 156 removed the Vercel tick to prevent.
-//   * NO SUBJECT AND NO BODY. email_messages has neither column (migration
-//     152): the step's hidden email_campaigns row carries the wording and
-//     engine.ts already reads it from there for every message it sends.
-//     Writing one here would give a message two places to disagree about its
-//     own wording, and the claim returns neither for the same reason.
-//   * ONE ENROLLMENT CANNOT END THE CYCLE. Each runs in its own try/catch and
-//     a failure is recorded and stepped past — the next enrollment is somebody
-//     else's tenant, and the claim has already advanced all of them, so an
-//     early return would strand every enrollment ordered after the bad one.
-//   * A FAILED INSERT IS LOUD. The claim advanced current_step before this
-//     file ever saw the row, so a step that fails to insert is a step nobody
-//     will ever send: nothing re-offers it, because next_due_at was cleared in
-//     that same statement. It goes into `errors` naming the enrollment id —
-//     never the address, never a body, never a subject — and the reconcile
-//     sweep below is what eventually stops the enrollment rather than leaving
-//     it active for ever.
-//   * `shouldStop` IS CHECKED BETWEEN ENROLLMENTS, NEVER INSIDE ONE. One
-//     enrollment is the unit of work, for the same reason: a claimed
-//     enrollment whose message was not written is a step that is simply gone.
+//   * THE WRITE IS NOT THIS FILE'S. It used to be: the claim handed back rows
+//     and this file inserted one email_messages row per row, a second round
+//     trip. That split the advance from the write across two transactions,
+//     and the advance clears next_due_at — so any failure in between left an
+//     enrollment advanced past a step that does not exist, never claimed
+//     again, never completed, never sent to, and shown as "Active, nothing
+//     scheduled", which is what a healthy in-flight enrollment looks like. One
+//     timed-out response on the claim, AFTER PostgREST committed it, stranded
+//     the whole batch over a single log line. The insert now lives inside
+//     claim_sequence_enrollments(), in the same statement as the advance, and
+//     this file counts what comes back.
+//   * A FAILED CLAIM COSTS NOTHING. It is one transaction: either the
+//     enrollments advanced and their messages exist, or neither happened and
+//     the next pass takes the same set. There is no half state left to clean
+//     up, which is why there is no per-row error handling here any more.
+//   * `shouldStop` IS CHECKED BETWEEN CALLS, NEVER INSIDE ONE.
 //   * Nothing logged or recorded from here may carry a recipient address, a
 //     subject or a body. Errors are one line and name an enrollment id.
 
@@ -77,39 +75,26 @@ export interface SequenceResult {
 
 /**
  * One row of claim_sequence_enrollments() (migration 159), which is the
- * authority on this shape.
+ * authority on this shape: the enrollment it advanced, the message it wrote
+ * for it, and which step that was.
  *
- * There is no subject and no body here on purpose — see the rules at the top.
- *
- * `account_id` and `last_message_id` come back and are deliberately NOT
- * written to the message: email_messages has no column for either. The pinned
- * mailbox lives on the step's campaign, and the thread is rebuilt from the
- * enrollment's own message rows when the send path builds the headers. They
- * are typed here because the claim returns them and a reader of this file
- * should not have to open the SQL to find out why they are unused.
+ * It is a receipt, not an instruction. Everything needed to build the message
+ * — the recipient, the merge data, the campaign carrying the wording, the
+ * pinned mailbox — stayed inside the function, because the row it describes
+ * already exists by the time this arrives.
  */
-interface ClaimedEnrollment {
+interface QueuedStep {
   enrollment_id: string;
-  sequence_id: string;
-  organization_id: string;
-  contact_id: string | null;
-  step_id: string;
+  message_id: string;
   step_index: number;
-  campaign_id: string;
-  account_id: string | null;
-  to_email: string;
-  to_name: string | null;
-  merge_data: Record<string, unknown> | null;
-  last_message_id: string | null;
 }
 
 /**
  * How many enrollments one pass takes. Fifty a minute per worker is far more
  * than the send cycle can drain at any realistic warmup limit, and the point
- * of the cap is that a pass stays short: a cycle that claimed thousands would
- * hold its rows advanced-but-unwritten for as long as it took to insert them
- * all, and a crash in the middle of that is exactly the stall the sweep exists
- * to clean up after.
+ * of the cap is that one transaction stays short: it holds a row lock on every
+ * enrollment it is advancing, and a long one would block a second worker and a
+ * hand-run query alike.
  */
 const CLAIM_LIMIT = 50;
 
@@ -142,29 +127,20 @@ export async function runSequenceCycle(deps: SequenceDeps): Promise<SequenceResu
   // FIRST, and every pass. See `reconcile` for what it is under.
   result.reconciled = await reconcile(deps, note);
 
+  // Nothing is claimed while the process is shutting down. There is no harm in
+  // it — the claim is one transaction and would either complete or not — but a
+  // batch of mail queued in the last second before exit sits until the next
+  // process starts, and it costs nothing to not do it.
+  if (stopped(deps)) return result;
+
   const claimed = await claim(deps, note);
   // A failed claim is reported by `claim` and there is nothing else to do this
-  // pass. The enrollments keep their due dates — the claim either advanced
-  // them or it did not — so the next pass takes exactly the same set.
+  // pass. Nothing is half done: the advance and the message are one statement,
+  // so either both happened or neither did, and the next pass takes the same
+  // set with their due dates untouched.
   if (claimed === null) return result;
 
-  for (const row of claimed) {
-    // Checked before the enrollment, so a stop never lands between the claim's
-    // advance and the message that advance was for.
-    if (stopped(deps)) return result;
-
-    // One tenant's failed insert is one tenant's problem. Without this, the
-    // first throw ends the pass for every enrollment ordered after it — and
-    // all of them have already been advanced, so every one of those steps
-    // would be lost, not merely delayed.
-    try {
-      const wrote = await queueStep(deps, note, row);
-      if (wrote) result.queued += 1;
-    } catch (err) {
-      note(`enrollment ${row.enrollment_id}`, `this step could not be queued: ${short(err)}`);
-    }
-  }
-
+  result.queued = claimed.length;
   return result;
 }
 
@@ -218,7 +194,7 @@ async function reconcile(deps: SequenceDeps, note: Note): Promise<number> {
  * batch: nothing was taken, so there is nothing to write and nothing to
  * report beyond the one error line.
  */
-async function claim(deps: SequenceDeps, note: Note): Promise<ClaimedEnrollment[] | null> {
+async function claim(deps: SequenceDeps, note: Note): Promise<QueuedStep[] | null> {
   try {
     const { data, error } = await deps.db.rpc('claim_sequence_enrollments', {
       p_limit: CLAIM_LIMIT,
@@ -227,74 +203,10 @@ async function claim(deps: SequenceDeps, note: Note): Promise<ClaimedEnrollment[
       note('sequences', `due enrollments could not be claimed: ${error.message}`);
       return null;
     }
-    return (data ?? []) as unknown as ClaimedEnrollment[];
+    return (data ?? []) as unknown as QueuedStep[];
   } catch (err) {
     note('sequences', `due enrollments could not be claimed: ${short(err)}`);
     return null;
   }
 }
 
-/**
- * One claimed step, written as one ordinary queued message.
- *
- * Returns whether the row reached the database. A false is already in
- * `errors`, and it is the loudest thing this file can say: the claim advanced
- * this enrollment before handing it over, so this step will not be offered
- * again by anything.
- */
-async function queueStep(
-  deps: SequenceDeps,
-  note: Note,
-  row: ClaimedEnrollment,
-): Promise<boolean> {
-  const { error } = await deps.db.from('email_messages').insert({
-    // The step's hidden campaign. It is what carries the subject and the body,
-    // and the claim refuses to hand over a step that has not got one.
-    campaign_id: row.campaign_id,
-    organization_id: row.organization_id,
-    contact_id: row.contact_id,
-    // The two columns migration 158 added, and the only thing that makes this
-    // an ordinary message with a sequence behind it: record_send_result()
-    // reads them to schedule the next step without a three-table lookup inside
-    // the statement every send runs through.
-    enrollment_id: row.enrollment_id,
-    step_index: row.step_index,
-    to_email: row.to_email,
-    to_name: row.to_name,
-    merge_data: row.merge_data,
-    // The mailbox this step must go through, or null for "any pool member".
-    //
-    // Null on the first step of an enrollment, which is how it starts a thread
-    // from whichever mailbox the pool had free; record_send_result() stamps
-    // the enrollment's account_id from that send, and every later step is
-    // claimed here carrying it. Without this the follow-up leaves from a
-    // different address than the message it is replying to, which breaks the
-    // recipient's own threading and reads as a second stranger.
-    //
-    // It cannot live on the campaign: a step's hidden campaign is shared by
-    // every enrollment at that step, so pinning it there would route all of
-    // them through one mailbox and undo the pool for sequences. See migrations
-    // 158d and 160.
-    pinned_account_id: row.account_id,
-    // 'queued' and nothing else. Every gate that decides whether this may
-    // actually go out is applied later, by claim_email_batch().
-    status: 'queued',
-    // Due immediately. Not "when the window opens" and not "now plus a delay":
-    // the delay between steps was already spent waiting for next_due_at, and
-    // the send window is claim_email_batch()'s to hold the row for. Deciding
-    // it twice is how a three-day sequence drifts into a week.
-    send_after: deps.now().toISOString(),
-  });
-
-  if (!error) return true;
-
-  // `error.message` only, never `details` or `hint`: a constraint violation's
-  // detail carries the values of the row, which here is the recipient's
-  // address. The enrollment id is what an operator needs, and it is enough to
-  // find everything else.
-  note(
-    `enrollment ${row.enrollment_id}`,
-    `step ${row.step_index} could not be queued, so it will not be sent: ${error.message}`,
-  );
-  return false;
-}

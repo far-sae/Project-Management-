@@ -2,15 +2,24 @@
 //
 // Same harness shape as tests/unit/emailInboxCycle.test.ts: every side effect
 // reaches the cycle through its deps, so this runs with no network and no
-// database. The assertions are on what was RECORDED — which RPCs were called,
-// in what order, and what row was written to email_messages — rather than on
-// what the stubs returned, because the returns are this file's own fixtures.
+// database.
 //
-// What is being protected here is narrow and specific: this cycle turns a
-// claimed enrollment into ONE queued email_messages row and does nothing else.
-// It never sends, it never claims a send batch, and it never writes a subject
-// or a body — email_messages has neither column, and the step's hidden
-// campaign is where engine.ts reads the wording from.
+// What is being protected here is narrow, and it got narrower on purpose. This
+// cycle used to claim enrollments and then insert one email_messages row per
+// claimed row — a second round trip, in a second transaction. Because the
+// claim clears next_due_at in the same statement that advances the step, any
+// failure between the two left an enrollment advanced past a step that does
+// not exist: never claimed again, never completed, never sent to, and rendered
+// as "Active, nothing scheduled", which is what a healthy in-flight enrollment
+// looks like. One timed-out response on the claim, after PostgREST had already
+// committed it, stranded the whole batch.
+//
+// The insert now happens inside claim_sequence_enrollments() (migration 159),
+// in the same statement as the advance. So what these tests assert is mostly
+// what this file must NOT do: it must not write to the database at all, and it
+// must not have a half-done state to clean up. What the message row contains —
+// the campaign, the pin, the absence of a subject — is now SQL and is asserted
+// by reading migration 159, not from here.
 
 import { describe, it, expect, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -24,24 +33,18 @@ const NOW = new Date('2026-09-19T12:00:00Z');
 type Row = Record<string, unknown>;
 
 /**
- * One row exactly as claim_sequence_enrollments() returns it (migration 159):
- * no subject and no body, because neither exists on email_messages.
+ * One row exactly as claim_sequence_enrollments() returns it (migration 159).
+ *
+ * It is a RECEIPT: the enrollment it advanced, the message it already wrote,
+ * and which step that was. Everything needed to build that message stayed
+ * inside the function, because the row exists by the time this arrives.
  */
-function enrollment(over: { id?: string; stepIndex?: number } & Row = {}): Row {
+function queued(over: { id?: string; stepIndex?: number } & Row = {}): Row {
   const { id = 'enr-1', stepIndex = 0, ...rest } = over;
   return {
     enrollment_id: id,
-    sequence_id: 'seq-1',
-    organization_id: 'org-1',
-    contact_id: 'con-1',
-    step_id: `step-${stepIndex}`,
+    message_id: `msg-${id}-${stepIndex}`,
     step_index: stepIndex,
-    campaign_id: `camp-step-${stepIndex}`,
-    account_id: 'mbx-1',
-    to_email: 'ada@acme.com',
-    to_name: 'Ada',
-    merge_data: { first_name: 'Ada' },
-    last_message_id: null,
     ...rest,
   };
 }
@@ -51,10 +54,10 @@ function enrollment(over: { id?: string; stepIndex?: number } & Row = {}): Row {
 interface Fixtures {
   /** What claim_sequence_enrollments() answers with. */
   claimed?: Row[];
-  /** How many leading inserts into email_messages answer with an error. */
-  insertErrors?: number;
   /** True when the claim itself answers with an error. */
   claimError?: boolean;
+  /** True when the claim REJECTS rather than answering. */
+  claimRejects?: boolean;
   /** True when the reconcile sweep answers with an error. */
   reconcileError?: boolean;
   /** What reconcile_stalled_enrollments() reports it fixed. */
@@ -68,62 +71,42 @@ interface RpcCall {
 }
 
 /**
- * A Supabase-shaped stub supporting only the chain the cycle actually uses.
- * Every insert records the table and the row, so a test can assert both that
- * exactly one message was written AND that nothing was written anywhere else.
+ * A Supabase-shaped stub. `from()` exists only so that a test can prove the
+ * cycle never reaches for it: every table access is recorded, and the cycle
+ * is expected to make none.
  */
 function makeDeps(fx: Fixtures = {}) {
   const rpcCalls: RpcCall[] = [];
-  const inserts: Array<{ table: string; rows: Row[] }> = [];
-  const writes: Array<{ table: string; op: string }> = [];
-
-  let claimed: Row[] = fx.claimed ?? [];
-  let insertCalls = 0;
+  const tableAccess: string[] = [];
 
   const from = (table: string) => {
-    const write = (op: string, rows?: Row | Row[]) => {
-      writes.push({ table, op });
-      if (op === 'insert') {
-        insertCalls += 1;
-        const batch = Array.isArray(rows) ? rows : rows ? [rows] : [];
-        // Recorded even when the insert is about to fail: the assertion that
-        // matters for a failed insert is that the cycle carried on, and the
-        // row it tried to write is what proves which enrollment was lost.
-        if (insertCalls > (fx.insertErrors ?? 0)) inserts.push({ table, rows: batch });
-      }
-      return builder;
-    };
-
-    const failing = (): boolean => insertCalls <= (fx.insertErrors ?? 0);
-
+    tableAccess.push(table);
     const builder: Record<string, unknown> = {
       select: () => builder,
-      insert: (rows: Row | Row[]) => write('insert', rows),
-      update: () => write('update'),
-      upsert: () => write('upsert'),
-      delete: () => write('delete'),
-      then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) =>
-        Promise.resolve(
-          failing()
-            ? { data: null, error: { message: `could not write ${table}` } }
-            : { data: null, error: null },
-        ).then(ok, bad),
+      insert: () => builder,
+      update: () => builder,
+      upsert: () => builder,
+      delete: () => builder,
+      eq: () => builder,
+      then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(ok),
     };
     return builder;
   };
 
   const rpc = async (name: string, args: Record<string, unknown> = {}) => {
     rpcCalls.push({ name, args });
-    if (name === 'claim_sequence_enrollments') {
-      return fx.claimError
-        ? { data: null, error: { message: 'could not claim enrollments' } }
-        : { data: claimed, error: null };
-    }
+
     if (name === 'reconcile_stalled_enrollments') {
-      return fx.reconcileError
-        ? { data: null, error: { message: 'could not reconcile' } }
-        : { data: fx.reconciled ?? 0, error: null };
+      if (fx.reconcileError) return { data: null, error: { message: 'sweep failed' } };
+      return { data: fx.reconciled ?? 0, error: null };
     }
+
+    if (name === 'claim_sequence_enrollments') {
+      if (fx.claimRejects) throw new Error('the connection went away');
+      if (fx.claimError) return { data: null, error: { message: 'claim failed' } };
+      return { data: fx.claimed ?? [], error: null };
+    }
+
     return { data: null, error: null };
   };
 
@@ -136,224 +119,127 @@ function makeDeps(fx: Fixtures = {}) {
   return {
     deps,
     rpcCalls,
-    writes,
+    tableAccess,
     names: () => rpcCalls.map((c) => c.name),
-    /** The rows successfully written to a table this cycle. */
-    inserted: (table: string): Row[] =>
-      inserts.filter((i) => i.table === table).flatMap((i) => i.rows),
-    /** Change what the next claim answers with, to drive a second pass. */
-    claimReturns: (rows: Row[]) => {
-      claimed = rows;
-    },
   };
 }
 
 /* ------------------------------------------------------------------- tests */
 
 describe('runSequenceCycle', () => {
-  it('queues exactly one message per due enrollment', async () => {
-    const h = makeDeps({ claimed: [enrollment({ stepIndex: 0 })] });
+  it('counts the steps the claim queued, and writes nothing itself', async () => {
+    const h = makeDeps({ claimed: [queued({ id: 'enr-1' }), queued({ id: 'enr-2' })] });
 
     const result = await runSequenceCycle(h.deps);
 
-    expect(h.inserted('email_messages')).toHaveLength(1);
-    expect(h.inserted('email_messages')[0]).toMatchObject({
-      campaign_id: 'camp-step-0',
-      enrollment_id: 'enr-1',
-      step_index: 0,
-      to_email: 'ada@acme.com',
-      status: 'queued',
-    });
-    expect(result.queued).toBe(1);
+    expect(result.queued).toBe(2);
     expect(result.errors).toEqual([]);
+    // The whole point of this revision: the advance and the message are one
+    // statement inside the claim, so this file touches no table at all.
+    expect(h.tableAccess).toEqual([]);
   });
 
-  it('pins a follow-up to the mailbox the thread started from', async () => {
-    // record_send_result() stamps the enrollment's account_id the first time a
-    // step goes out, and every later step is claimed carrying it. Without the
-    // pin on the message the follow-up leaves from whichever pool member is
-    // free, so it arrives from a different address than the message it is
-    // replying to -- which breaks the recipient's own threading and reads as a
-    // second stranger.
-    //
-    // The pin cannot live on the campaign: a step's hidden campaign is shared
-    // by every enrollment at that step, so pinning it there would route all of
-    // them through one mailbox and undo the pool for sequences entirely.
-    const h = makeDeps({
-      claimed: [enrollment({ stepIndex: 1, account_id: 'mbx-7' })],
-    });
+  it('never sends, and never claims a send batch', async () => {
+    // A sequence that could send on its own would be a second sender against
+    // the same outbox, which is how a recipient gets the same message twice —
+    // the precise thing migration 156 removed the Vercel tick to prevent.
+    const h = makeDeps({ claimed: [queued()] });
 
     await runSequenceCycle(h.deps);
 
-    expect(h.inserted('email_messages')[0].pinned_account_id).toBe('mbx-7');
-  });
-
-  it('leaves a first step unpinned, so the pool decides who starts the thread', async () => {
-    const h = makeDeps({
-      claimed: [enrollment({ stepIndex: 0, account_id: null })],
-    });
-
-    await runSequenceCycle(h.deps);
-
-    expect(h.inserted('email_messages')[0].pinned_account_id).toBeNull();
-  });
-
-  it('writes no subject and no body, and never claims a send batch', async () => {
-    // email_messages has neither column (migration 152); the step's hidden
-    // campaign carries the wording and engine.ts reads it from there. Writing
-    // one here would give a message two places to disagree about itself.
-    //
-    // And this loop never sends: it writes a queued row and stops, so the
-    // pool, the caps, the warmup, the window and the suppression list are all
-    // applied afterwards by phase 1's send cycle on the row it produced.
-    const h = makeDeps({ claimed: [enrollment()] });
-
-    await runSequenceCycle(h.deps);
-
-    const row = h.inserted('email_messages')[0];
-    expect(row).not.toHaveProperty('subject');
-    expect(row).not.toHaveProperty('body_html');
-    expect(row.send_after).toBe(NOW.toISOString());
     expect(h.names()).not.toContain('claim_email_batch');
     expect(h.names()).not.toContain('record_send_result');
-    // The one table this cycle writes to.
-    expect(h.writes.map((w) => `${w.table}.${w.op}`)).toEqual(['email_messages.insert']);
   });
 
   it('reconciles stalled enrollments once, before the claim', async () => {
-    // The claim advances current_step and clears next_due_at in one statement,
-    // and it takes nothing with a null due date — so any path that ends a
-    // message without ending or rescheduling its enrollment strands that
-    // person for ever while every screen reports them active. The sweep is the
-    // net under that, and it runs first so a stall fixed this pass can be
-    // claimed on the next one rather than waiting a whole extra cycle.
-    const h = makeDeps({ claimed: [enrollment()], reconciled: 2 });
+    // Before, not after, so an enrollment the sweep resolves is in its final
+    // state by the time the same pass looks for work rather than a minute
+    // later.
+    const h = makeDeps({ claimed: [queued()], reconciled: 3 });
 
     const result = await runSequenceCycle(h.deps);
 
     expect(h.names()).toEqual(['reconcile_stalled_enrollments', 'claim_sequence_enrollments']);
-    expect(result.reconciled).toBe(2);
-    expect(result.queued).toBe(1);
+    expect(result.reconciled).toBe(3);
   });
 
   it('still materializes when the reconcile sweep fails', async () => {
     // The sweep is a net, not a gate. A database blip on it must not stop the
-    // whole product sending for a minute; the stall it would have fixed is
-    // still there next pass.
-    const h = makeDeps({ claimed: [enrollment()], reconcileError: true });
+    // product materializing mail for a minute, and the stall it would have
+    // fixed is still there, unchanged, on the next pass.
+    const h = makeDeps({ claimed: [queued()], reconcileError: true });
 
     const result = await runSequenceCycle(h.deps);
 
     expect(result.queued).toBe(1);
     expect(result.reconciled).toBe(0);
-    expect(result.errors).toHaveLength(1);
+    expect(result.errors.join(' ')).toMatch(/reconciled/i);
   });
 
-  it('does not queue twice for an enrollment the claim already advanced', async () => {
-    // The claim advances current_step in the same statement that returns the
-    // row, so a second cycle over the same data claims nothing. This asserts
-    // the cycle adds no second path of its own.
-    const h = makeDeps({ claimed: [enrollment({ stepIndex: 0 })] });
-
-    await runSequenceCycle(h.deps);
-    h.claimReturns([]);
-    await runSequenceCycle(h.deps);
-
-    expect(h.inserted('email_messages')).toHaveLength(1);
-  });
-
-  it('records a failed insert without losing the enrollment', async () => {
-    // The claim has already advanced the enrollment, so a failed insert means
-    // that step will never be sent. It must be loud, and it must not take the
-    // rest of the batch down with it.
-    const h = makeDeps({
-      claimed: [enrollment({ id: 'enr-1' }), enrollment({ id: 'enr-2' })],
-      insertErrors: 1,
-    });
-
-    const result = await runSequenceCycle(h.deps);
-
-    expect(result.queued).toBe(1);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatch(/enr-1/);
-    // Named by enrollment, never by address: the error line is logged, and an
-    // operator does not need the recipient to find the row.
-    expect(result.errors[0]).not.toMatch(/ada@acme\.com/);
-  });
-
-  it('records a rejected insert promise the same way', async () => {
-    // postgrest-js answers with `{ error }` rather than rejecting — until
-    // someone sets throwOnError() or the fetch itself fails. A rejection must
-    // not escape the per-enrollment catch and end the pass for other tenants.
-    const db = {
-      from: () => ({
-        insert: () => ({
-          then: (_ok: unknown, bad: (e: unknown) => unknown) =>
-            Promise.reject(new Error('socket hang up')).catch(bad),
-        }),
-      }),
-      rpc: vi.fn(async (name: string) =>
-        name === 'claim_sequence_enrollments'
-          ? { data: [enrollment({ id: 'enr-7' })], error: null }
-          : { data: 0, error: null },
-      ),
-    };
-
-    const result = await runSequenceCycle({
-      db: db as unknown as SupabaseClient,
-      now: () => NOW,
-    });
-
-    expect(result.queued).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatch(/enr-7/);
-  });
-
-  it('reports a failed claim without throwing', async () => {
+  it('reports a failed claim without throwing, and leaves nothing half done', async () => {
     const h = makeDeps({ claimError: true });
 
     const result = await runSequenceCycle(h.deps);
 
     expect(result.queued).toBe(0);
-    expect(h.inserted('email_messages')).toEqual([]);
-    expect(result.errors).toHaveLength(1);
+    expect(result.errors.join(' ')).toMatch(/could not be claimed/i);
   });
 
-  it('stops between enrollments when the process is shutting down', async () => {
-    const h = makeDeps({
-      claimed: [enrollment({ id: 'enr-1' }), enrollment({ id: 'enr-2' })],
-      shouldStop: () => true,
-    });
-
-    await runSequenceCycle(h.deps);
-
-    expect(h.inserted('email_messages').length).toBeLessThan(2);
-  });
-
-  it('finishes the enrollment it started before stopping', async () => {
-    // shouldStop is read BETWEEN enrollments, never inside one: a claimed
-    // enrollment whose message was not written is a step nothing will ever
-    // send again, so the unit of work is one whole enrollment.
-    let inserted = 0;
-    const h = makeDeps({
-      claimed: [enrollment({ id: 'enr-1' }), enrollment({ id: 'enr-2' })],
-      shouldStop: () => inserted >= 1,
-    });
-    const realFrom = h.deps.db.from.bind(h.deps.db);
-    h.deps.db.from = ((table: string) => {
-      const builder = realFrom(table) as unknown as Record<string, unknown>;
-      const insert = builder.insert as (rows: unknown) => unknown;
-      builder.insert = (rows: unknown) => {
-        inserted += 1;
-        return insert(rows);
-      };
-      return builder;
-    }) as SupabaseClient['from'];
+  it('reports a rejected claim the same way', async () => {
+    // The failure that used to strand a whole batch: the RPC commits and the
+    // response never arrives. It now costs nothing — either the enrollments
+    // advanced and their messages exist, or neither happened.
+    const h = makeDeps({ claimRejects: true });
 
     const result = await runSequenceCycle(h.deps);
 
-    expect(h.inserted('email_messages')).toHaveLength(1);
-    expect(result.queued).toBe(1);
-    expect(result.errors).toEqual([]);
+    expect(result.queued).toBe(0);
+    expect(result.errors.join(' ')).toMatch(/could not be claimed/i);
+  });
+
+  it('claims nothing while the process is shutting down', async () => {
+    const h = makeDeps({ claimed: [queued()], shouldStop: () => true });
+
+    const result = await runSequenceCycle(h.deps);
+
+    expect(h.names()).not.toContain('claim_sequence_enrollments');
+    expect(result.queued).toBe(0);
+  });
+
+  it('reports nothing to do as nothing to do', async () => {
+    const h = makeDeps({ claimed: [] });
+
+    const result = await runSequenceCycle(h.deps);
+
+    expect(result).toEqual({ queued: 0, reconciled: 0, errors: [] });
+  });
+
+  it('asks for a bounded batch rather than everything due', async () => {
+    // The claim holds a row lock on every enrollment it advances, so a long
+    // transaction blocks a second worker and a hand-run query alike.
+    const h = makeDeps({ claimed: [] });
+
+    await runSequenceCycle(h.deps);
+
+    const args = h.rpcCalls[1].args as { p_limit: number };
+    expect(args.p_limit).toBeGreaterThan(0);
+    expect(args.p_limit).toBeLessThanOrEqual(200);
+  });
+
+  it('does not treat a nonsense reconcile answer as work done', async () => {
+    const h = makeDeps({ claimed: [], reconciled: Number.NaN });
+
+    const result = await runSequenceCycle(h.deps);
+
+    expect(result.reconciled).toBe(0);
+  });
+
+  it('runs on the injected clock, never on a real timer', async () => {
+    const now = vi.fn(() => NOW);
+    const h = makeDeps({ claimed: [] });
+
+    await runSequenceCycle({ ...h.deps, now });
+
+    expect(h.names()).toContain('claim_sequence_enrollments');
   });
 });

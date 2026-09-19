@@ -76,6 +76,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   );
   if (error) return res.status(500).json({ error: error.message });
 
+  // ...and it ends any sequence this organization is running at that address.
+  //
+  // The suppression alone already stops the MAIL: claim_sequence_enrollments()
+  // refuses a suppressed address and claim_email_batch() sweeps anything
+  // already queued for one. What it does not do is end the enrollment, and the
+  // difference shows up in two places that matter. An admin who pauses or
+  // archives the sequence that afternoon leaves those people 'active' for
+  // ever, because the claim only looks at active sequences and so never
+  // reaches the check that would have stopped them. And the enrollment record
+  // -- which is what a deletion request or a complaint is answered with --
+  // never says they unsubscribed.
+  //
+  // Reported and not fatal: the suppression is written, so no further mail can
+  // go out either way, and failing the request here would tell somebody who
+  // has just unsubscribed that it did not work.
+  const { error: stopError } = await db.rpc('stop_enrollments_for_address', {
+    p_org: message.organization_id,
+    p_address: String(message.to_email).trim().toLowerCase(),
+    p_reason: 'unsubscribed',
+  });
+  if (stopError) {
+    console.error('unsubscribe: could not stop sequence enrollments', stopError.message);
+  }
+
   // Only this route's own confirmation form sends `confirm`, so a human who
   // clicked the button gets a page instead of raw JSON while the one-click
   // POST from Gmail or Yahoo still gets exactly the response it did before.

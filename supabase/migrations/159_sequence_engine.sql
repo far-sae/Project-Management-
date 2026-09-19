@@ -76,16 +76,57 @@ as $$
 declare
   v_stopped integer;
 begin
-  update public.email_sequence_enrollments e
-     set status = 'stopped',
-         stop_reason = p_reason,
-         stopped_at = now(),
-         next_due_at = null
-   where e.organization_id = p_org
-     and lower(e.to_email) = lower(trim(p_address))
-     and e.status = 'active';
+  -- Stopping the enrollment is only HALF of stopping the sequence, and the
+  -- other half is the whole point of the feature.
+  --
+  -- A step that has already been materialized is an ordinary queued
+  -- email_messages row, and claim_email_batch() knows nothing about
+  -- enrollments. So a reply that stopped the enrollment and left that row
+  -- alone would be delivered anyway, hours or days later -- and the window is
+  -- hours or days, not seconds, because the send window and the warmup
+  -- allowance are exactly what hold a sequence step in the queue:
+  --
+  --   step 2 falls due at 17:55 and is queued; the send window closes at
+  --   18:00; the recipient replies at 19:30 and the enrollment stops; at 08:00
+  --   the next morning the claim takes that row and sends the follow-up,
+  --   threaded onto the conversation they already answered.
+  --
+  -- That is the single failure this phase exists to prevent, so the cancel
+  -- lives HERE, in the one definition of what stopping means, rather than in
+  -- each of the four callers.
+  --
+  -- 'failed', because the message will never be delivered and 'failed' is what
+  -- that status means; the reason goes in last_error so a support question has
+  -- an answer. The campaign counters are untouched, which is correct -- they
+  -- are maintained by record_send_result(), and this message was never handed
+  -- to SMTP at all.
+  --
+  -- Only rows that have not gone out ('queued'), and only rows belonging to
+  -- the enrollments this call actually stopped. A 'sending' row is already
+  -- with the mailbox and cancelling it here would leave the worker settling a
+  -- row this statement had rewritten underneath it; a campaign message to the
+  -- same person is not this function's business.
+  with stopped as (
+    update public.email_sequence_enrollments e
+       set status = 'stopped',
+           stop_reason = p_reason,
+           stopped_at = now(),
+           next_due_at = null
+     where e.organization_id = p_org
+       and lower(e.to_email) = lower(trim(p_address))
+       and e.status = 'active'
+    returning e.id
+  ), cancelled as (
+    update public.email_messages m
+       set status = 'failed',
+           last_error = 'Cancelled: the sequence stopped (' || p_reason || ') before this step was sent.'
+      from stopped
+     where m.enrollment_id = stopped.id
+       and m.status = 'queued'
+    returning m.id
+  )
+  select count(*) into v_stopped from stopped;
 
-  get diagnostics v_stopped = row_count;
   return v_stopped;
 end;
 $$;
@@ -125,15 +166,33 @@ begin
   -- `status = 'active'` is the idempotency guard and the one-way guard at
   -- once, exactly as in stop_enrollments_for_address(): the recorded reason
   -- stays the FIRST thing that ended this enrollment.
-  update public.email_sequence_enrollments e
-     set status = 'stopped',
-         stop_reason = p_reason,
-         stopped_at = now(),
-         next_due_at = null
-   where e.id = p_enrollment
-     and e.status = 'active';
+  -- The queued step is cancelled here too, for the reason spelled out on
+  -- stop_enrollments_for_address(): stopping the enrollment alone leaves an
+  -- already-materialized row that claim_email_batch() will still send, and it
+  -- knows nothing about enrollments. This scope reaches here by a send that
+  -- failed, so there is usually nothing queued -- but a mailbox paused at its
+  -- third strike can have a later step already waiting behind the one that
+  -- just died, and that one must not go out on its own.
+  with stopped as (
+    update public.email_sequence_enrollments e
+       set status = 'stopped',
+           stop_reason = p_reason,
+           stopped_at = now(),
+           next_due_at = null
+     where e.id = p_enrollment
+       and e.status = 'active'
+    returning e.id
+  ), cancelled as (
+    update public.email_messages m
+       set status = 'failed',
+           last_error = 'Cancelled: the sequence stopped (' || p_reason || ') before this step was sent.'
+      from stopped
+     where m.enrollment_id = stopped.id
+       and m.status = 'queued'
+    returning m.id
+  )
+  select count(*) into v_stopped from stopped;
 
-  get diagnostics v_stopped = row_count;
   return v_stopped;
 end;
 $$;
@@ -168,17 +227,8 @@ drop function if exists public.claim_sequence_enrollments(integer);
 create or replace function public.claim_sequence_enrollments(p_limit integer default 50)
 returns table (
   enrollment_id uuid,
-  sequence_id uuid,
-  organization_id uuid,
-  contact_id uuid,
-  step_id uuid,
-  step_index integer,
-  campaign_id uuid,
-  account_id uuid,
-  to_email text,
-  to_name text,
-  merge_data jsonb,
-  last_message_id uuid
+  message_id uuid,
+  step_index integer
 )
 language plpgsql
 security definer
@@ -237,13 +287,32 @@ begin
          next_due_at = null
    where e.id = any(v_ids)
      and e.status = 'active'
-     and e.account_id is not null
-     and not exists (
-       select 1
-         from public.email_accounts a
-        where a.id = e.account_id
-          and a.is_active
-          and a.status <> 'error'
+     and (
+       -- The mailbox is still there but is paused or in error.
+       (
+         e.account_id is not null
+         and not exists (
+           select 1
+             from public.email_accounts a
+            where a.id = e.account_id
+              and a.is_active
+              and a.status <> 'error'
+         )
+       )
+       -- ...or it has been DELETED, which the check above cannot see.
+       -- email_sequence_enrollments.account_id is ON DELETE SET NULL, so
+       -- deleting the mailbox erases the very evidence that check reads, and a
+       -- deleted pin becomes indistinguishable from "never pinned". The
+       -- enrollment would then be materialized unpinned, sent from whichever
+       -- pool member was free, and record_send_result() would re-pin it there
+       -- -- so the recipient gets a correctly threaded reply from a different
+       -- address, which is precisely what pinning exists to prevent.
+       --
+       -- last_message_id tells the two apart: it is set the first time a step
+       -- is actually sent, in the same statement that sets account_id, and
+       -- nothing clears it. A null account_id beside a non-null
+       -- last_message_id can only mean the mailbox has gone.
+       or (e.account_id is null and e.last_message_id is not null)
      );
 
   -- A step that EXISTS but has no campaign is not sendable, and the enrollment
@@ -280,9 +349,26 @@ begin
     return;
   end if;
 
-  -- What is left is sendable. The advance and the read are one statement:
-  -- anything that reads first and writes after can hand the same step out
-  -- twice if the write fails.
+  -- What is left is sendable, and the claim WRITES THE MESSAGE ITSELF.
+  --
+  -- The advance and the insert are one statement in one transaction, and that
+  -- is not a tidiness preference. The advance sets next_due_at to null, and
+  -- this function takes nothing with a null due date, so from the instant it
+  -- commits the only thing that can move that enrollment again is its message
+  -- reaching a terminal state. If the insert were a second round trip -- the
+  -- worker calling back with the rows it had been handed -- any failure in
+  -- between would leave an enrollment advanced past a step that does not
+  -- exist: never claimed again, never completed, never sent to, and shown on
+  -- the enrollment screen as "Active, nothing scheduled", which is exactly
+  -- what a healthy in-flight enrollment looks like.
+  --
+  -- That failure needed nothing exotic. One timed-out HTTP response on this
+  -- very call, after PostgREST had already committed it, would have stranded
+  -- every enrollment in the batch permanently, over one log line saying the
+  -- claim failed.
+  --
+  -- So the worker no longer writes messages at all. It calls this and counts
+  -- what comes back.
   return query
   with claimed as (
     update public.email_sequence_enrollments e
@@ -296,28 +382,50 @@ begin
        and e.status = 'active'
     returning e.id, e.sequence_id, e.organization_id, e.contact_id,
               e.current_step - 1 as taking_step,
-              e.account_id, e.to_email, e.to_name, e.merge_data, e.last_message_id
-  )
+              e.account_id, e.to_email, e.to_name, e.merge_data
+  ),
   -- No subject and no body: email_messages carries neither (migration 152).
-  -- The step's own hidden campaign holds the wording, which is why the step
-  -- must have a campaign_id before it can be claimed at all.
-  select c.id,
-         c.sequence_id,
-         c.organization_id,
-         c.contact_id,
-         st.id,
-         st.step_index,
-         st.campaign_id,
-         c.account_id,
-         c.to_email,
-         c.to_name,
-         c.merge_data,
-         c.last_message_id
-    from claimed c
-    join public.email_sequence_steps st
-      on st.sequence_id = c.sequence_id
-     and st.step_index = c.taking_step
-   where st.campaign_id is not null;
+  -- The step's own hidden campaign holds the wording, which is why a step with
+  -- no campaign was removed from the set above rather than claimed.
+  --
+  -- Every column is aliased to a name no table here uses, so nothing in the
+  -- insert below can resolve to the wrong relation or to an OUT parameter.
+  ready as (
+    select c.id as enrollment,
+           c.organization_id as org,
+           c.contact_id as contact,
+           c.to_email as address,
+           c.to_name as display_name,
+           c.merge_data as merge,
+           c.account_id as pin,
+           st.campaign_id as campaign,
+           st.step_index as idx
+      from claimed c
+      join public.email_sequence_steps st
+        on st.sequence_id = c.sequence_id
+       and st.step_index = c.taking_step
+     where st.campaign_id is not null
+  ),
+  queued as (
+    insert into public.email_messages (
+      campaign_id, organization_id, contact_id, enrollment_id, step_index,
+      to_email, to_name, merge_data, pinned_account_id, status, send_after
+    )
+    select r.campaign, r.org, r.contact, r.enrollment, r.idx,
+           r.address, r.display_name, r.merge,
+           -- The mailbox this step must go through, or null for "any pool
+           -- member" on a first step. See migrations 158d and 160: the pin
+           -- cannot live on the campaign, which every enrollment at this step
+           -- shares.
+           r.pin,
+           'queued',
+           now()
+      from ready r
+    returning public.email_messages.id,
+              public.email_messages.enrollment_id,
+              public.email_messages.step_index
+  )
+  select q.enrollment_id, q.id, q.step_index from queued q;
 
   -- An enrollment whose current_step has no step row has reached the end.
   -- Marked here rather than by the worker, because this function is the only
@@ -941,6 +1049,7 @@ set search_path = public, pg_catalog
 as $$
 declare
   v_fixed integer;
+  v_second integer;
 begin
   with latest as (
     select distinct on (m.enrollment_id)
@@ -972,7 +1081,46 @@ begin
      and l.status in ('failed', 'suppressed');
 
   get diagnostics v_fixed = row_count;
-  return v_fixed;
+
+  -- ...and the same enrollment stranded with NO message at all for the step it
+  -- is sitting on.
+  --
+  -- The sweep above joins the enrollment's most recent message, so it is blind
+  -- to the case where that message does not exist: `distinct on` then resolves
+  -- to the PREVIOUS step's row, whose status is 'sent' and which the filter
+  -- excludes, or to no row at all, and the join matches nothing either way.
+  --
+  -- The claim writes the message in the same transaction as the advance, so
+  -- this should be unreachable. "Should be unreachable" is what the three
+  -- patched stalls before it were too, and the ones after this will be written
+  -- by somebody who has not read this file. One path is reachable today: a
+  -- step's hidden campaign being deleted takes its messages with it by
+  -- cascade.
+  --
+  -- Stopped rather than rescheduled, and 'failed' rather than a new reason: an
+  -- enrollment in this state has already been advanced past the step, so there
+  -- is nothing left that knows what it was supposed to send.
+  update public.email_sequence_enrollments e
+     set status = 'stopped',
+         stop_reason = 'failed',
+         stopped_at = now(),
+         next_due_at = null
+   where e.status = 'active'
+     and e.next_due_at is null
+     -- current_step has already been advanced, so the step it is waiting on is
+     -- the one before it.
+     and e.current_step > 0
+     and not exists (
+       select 1
+         from public.email_messages m
+        where m.enrollment_id = e.id
+          and m.step_index = e.current_step - 1
+     );
+
+  -- Both statements counted, so a non-zero result means one of the paths
+  -- above fired and is worth a look, whichever it was.
+  get diagnostics v_second = row_count;
+  return v_fixed + v_second;
 end;
 $$;
 

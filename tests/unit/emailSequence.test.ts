@@ -1,27 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { followUpSubject, nextDueAt, threadHeaders } from '@/lib/email/sequence';
+import { followUpSubject, threadHeaders } from '@/lib/email/sequence';
 import { isAutoReply } from '@/lib/email/inbox';
-
-describe('nextDueAt', () => {
-  it('adds the delay to when the previous step was actually sent', () => {
-    expect(nextDueAt(new Date('2026-09-19T09:00:00Z'), 72).toISOString()).toBe(
-      '2026-09-22T09:00:00.000Z',
-    );
-  });
-
-  it('is due immediately on a zero delay', () => {
-    const sent = new Date('2026-09-19T09:00:00Z');
-    expect(nextDueAt(sent, 0).getTime()).toBe(sent.getTime());
-  });
-
-  it('does not apply the send window, which the send claim owns', () => {
-    // The message waits in the queue; the SCHEDULE must not also move, or a
-    // 72-hour delay grows a little every step.
-    const friday = new Date('2026-09-18T17:00:00Z');
-    expect(nextDueAt(friday, 72).toISOString()).toBe('2026-09-21T17:00:00.000Z');
-  });
-});
 
 describe('threadHeaders', () => {
   it('returns nothing for the first step, which starts the thread', () => {

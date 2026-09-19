@@ -171,6 +171,61 @@ export const listSequences = async (
 };
 
 /**
+ * How many sequence steps are queued behind a mailbox that cannot send.
+ *
+ * A follow-up is pinned to the mailbox its thread started on, so unlike a
+ * campaign message it cannot be picked up by another pool member. If that
+ * mailbox is paused, or was taken out of rotation by three consecutive
+ * failures, its pinned steps sit `queued` indefinitely — not lost, not failed,
+ * and not stopped, because nothing is actually wrong with them. They go out
+ * the moment the mailbox is fixed.
+ *
+ * Which is exactly why this exists: the sequence looks stalled and no screen
+ * would otherwise say why. The Accounts tab shows the mailbox is in trouble;
+ * this connects that to the mail waiting on it.
+ *
+ * Returns zero rather than throwing. It annotates a screen that works without
+ * it, and failing the whole list over a count would be the wrong trade.
+ */
+export const countStepsWaitingOnPausedMailbox = async (orgId: string): Promise<number> => {
+  try {
+    const { data: stalled, error: accountError } = await supabase
+      .from("email_accounts")
+      .select("id, is_active, status")
+      .eq("organization_id", orgId);
+
+    if (accountError) {
+      logger.error("Failed to read mailbox health for the sequences banner:", accountError);
+      return 0;
+    }
+
+    const unusable = ((stalled ?? []) as Array<{ id: string; is_active: boolean; status: string }>)
+      .filter((a) => a.is_active === false || a.status === "error")
+      .map((a) => a.id);
+
+    if (unusable.length === 0) return 0;
+
+    const { count, error } = await supabase
+      .from("email_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("status", "queued")
+      .not("enrollment_id", "is", null)
+      .in("pinned_account_id", unusable);
+
+    if (error) {
+      logger.error("Failed to count steps waiting on a paused mailbox:", error);
+      return 0;
+    }
+
+    return count ?? 0;
+  } catch (err) {
+    logger.error("Failed to count steps waiting on a paused mailbox:", err);
+    return 0;
+  }
+};
+
+/**
  * The enrollment counts for a whole page of sequences in one read, keyed by
  * sequence id. One query for the list rather than one per row: the list is
  * the only caller and it needs all of them at once.
@@ -419,6 +474,30 @@ export const saveStep = async (input: SaveStepInput): Promise<EmailSequenceStep>
     input.stepIndex === 0
       ? input.subject.trim()
       : followUpSubject(input.subject, stepZeroSubject);
+
+  // The editor's activation guard checks this once, on draft -> active, and an
+  // active sequence stays editable afterwards. Without the same check here,
+  // clearing step 2's body on a running sequence writes an empty body_html to
+  // its hidden campaign and everybody who reaches step 2 receives a blank
+  // message; clearing step 0's subject makes every inherited subject "Re: ".
+  // Neither shows up anywhere until the mail has gone out.
+  //
+  // Enforced for an active or paused sequence only. A draft is a thing being
+  // written, and refusing to save half-written wording would make it unusable.
+  if (sequence.status === "active" || sequence.status === "paused") {
+    if (input.bodyHtml.trim() === "") {
+      throw new Error(
+        "This step has no message, and the sequence is live. Write the message before saving, " +
+          "or pause and archive the sequence if you meant to stop it.",
+      );
+    }
+    if (input.stepIndex === 0 && input.subject.trim() === "") {
+      throw new Error(
+        "The first step needs a subject, and the sequence is live. Every follow-up that " +
+          "inherits it would go out with an empty one.",
+      );
+    }
+  }
 
   const { data, error } = await supabase
     .from("email_sequence_steps")

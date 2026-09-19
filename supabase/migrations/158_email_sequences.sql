@@ -166,6 +166,13 @@ create policy email_enrollments_write on public.email_sequence_enrollments
   using (public.is_org_member(organization_id))
   with check (public.is_org_member(organization_id));
 
+-- The target of email_messages.enrollment_id's composite foreign key below.
+-- id alone is already unique as the primary key; this pair exists so another
+-- table can reference (enrollment_id, organization_id) together and make a
+-- cross-organization reference unrepresentable rather than merely forbidden.
+create unique index if not exists email_enrollments_id_org_key
+  on public.email_sequence_enrollments (id, organization_id);
+
 -- One ACTIVE enrollment per address per sequence. Enrolling the same person
 -- twice into one sequence is a mistake every time -- they would get every step
 -- twice, from a tool whose entire value is not looking like a machine. Partial
@@ -194,8 +201,34 @@ create index if not exists email_enrollments_org_address
 -- the one path where a lookup would be a join against three tables inside the
 -- statement that every single send runs through.
 alter table public.email_messages
-  add column if not exists enrollment_id uuid
-    references public.email_sequence_enrollments(id) on delete set null;
+  add column if not exists enrollment_id uuid;
+
+-- Composite, on (enrollment_id, organization_id), for the same reason
+-- sent_account_id's and pinned_account_id's are.
+--
+-- Members hold INSERT on email_messages checked only by
+-- is_org_member(organization_id), with no restriction on which columns they
+-- may set, and foreign key validation does not consult RLS. A single-column
+-- reference would therefore let a member of organization A insert a message in
+-- their own organization naming organization B's enrollment -- and when that
+-- message sent, record_send_result() would schedule B's next step, stamp B's
+-- last_message_id, and pin B's enrollment to A's mailbox, which
+-- claim_email_batch() can never match, stranding it. The pair makes that row
+-- un-insertable instead of merely wrong.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'email_messages_enrollment_fk'
+       and conrelid = 'public.email_messages'::regclass
+  ) then
+    alter table public.email_messages
+      add constraint email_messages_enrollment_fk
+      foreign key (enrollment_id, organization_id)
+      references public.email_sequence_enrollments (id, organization_id)
+      on delete set null (enrollment_id);
+  end if;
+end $$;
 
 alter table public.email_messages
   add column if not exists step_index integer;
@@ -232,7 +265,9 @@ alter table public.email_messages
 do $$
 begin
   if not exists (
-    select 1 from pg_constraint where conname = 'email_messages_pinned_account_fk'
+    select 1 from pg_constraint
+     where conname = 'email_messages_pinned_account_fk'
+       and conrelid = 'public.email_messages'::regclass
   ) then
     alter table public.email_messages
       add constraint email_messages_pinned_account_fk

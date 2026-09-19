@@ -8,13 +8,14 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  Loader2, RefreshCw, Mail, ChevronRight, Plus, Play, PauseCircle,
+  Loader2, RefreshCw, Mail, ChevronRight, Plus, Play, PauseCircle, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import {
   listSequences, listStepCounts, listEnrollmentCounts, createSequence,
+  countStepsWaitingOnPausedMailbox,
   type SequenceCounts,
 } from '@/services/supabase/emailSequences';
 import type { EmailSequence, SequenceStatus } from '@/lib/email/types';
@@ -43,6 +44,13 @@ const sequenceStatusBadge = (status: SequenceStatus) => {
 export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }) => {
   const { user } = useAuth();
   const [sequences, setSequences] = useState<EmailSequence[]>([]);
+  /**
+   * Steps queued behind a mailbox that cannot send. A follow-up is pinned to
+   * the mailbox its thread started on, so unlike a campaign message it cannot
+   * be picked up by another pool member — it waits, indefinitely and
+   * correctly, and no other screen connects the two facts.
+   */
+  const [waiting, setWaiting] = useState(0);
   const [stepCounts, setStepCounts] = useState<Record<string, number>>({});
   const [counts, setCounts] = useState<Record<string, SequenceCounts>>({});
   const [loading, setLoading] = useState(true);
@@ -60,12 +68,14 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
       const list = await listSequences(orgId, workspaceId);
       setSequences(list);
       const ids = list.map((s) => s.id);
-      const [steps, enrollments] = await Promise.all([
+      const [steps, enrollments, blocked] = await Promise.all([
         listStepCounts(ids),
         listEnrollmentCounts(ids),
+        countStepsWaitingOnPausedMailbox(orgId),
       ]);
       setStepCounts(steps);
       setCounts(enrollments);
+      setWaiting(blocked);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load sequences');
     } finally {
@@ -130,6 +140,25 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
           </div>
         </CardHeader>
         <CardContent>
+          {/*
+            Not an error, and not something to fix here: these steps are fine
+            and will go out the moment the mailbox does. The banner exists
+            because without it the sequence simply looks stalled — the Accounts
+            tab knows the mailbox is in trouble, and nothing connected that to
+            the mail waiting on it.
+          */}
+          {waiting > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm text-orange-800 dark:text-orange-200">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                {waiting === 1 ? '1 follow-up is' : `${waiting} follow-ups are`} waiting on a
+                mailbox that is paused or in error. A follow-up has to leave from the mailbox its
+                conversation started on, so it cannot move to another one. Fix the mailbox under
+                <strong className="font-medium"> Accounts</strong> and they send on their own —
+                nothing is lost.
+              </span>
+            </div>
+          )}
           {loading ? (
             <div className="text-center py-16 text-muted-foreground">
               <Loader2 className="w-10 h-10 mx-auto mb-4 animate-spin text-muted-foreground/60" />
