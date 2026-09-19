@@ -53,11 +53,12 @@ function secretRow(accountId = 'mbx-1'): Row {
   return { account_id: accountId, secret_encrypted: CIPHERTEXT };
 }
 
-/** A row of email_messages as the "who did this mailbox write to" read sees it. */
+/** A row of email_messages as the "who did this organisation write to" read sees it. */
 function sentRow(to: string, over: Row = {}): Row {
   return {
     id: `msg-${to}`,
     to_email: to,
+    organization_id: 'org-1',
     sent_account_id: 'mbx-1',
     sent_at: '2026-09-18T09:00:00Z',
     status: 'sent',
@@ -104,11 +105,14 @@ function makeDb(fx: Fixtures) {
   };
 
   const rpcCalls: RpcCall[] = [];
-  const reads: string[] = [];
+  // One entry per from(), carrying the offset its .range() asked for, so a
+  // test can tell a paged read's SECOND page from a second read.
+  const reads: Array<{ table: string; start: number | null }> = [];
   const writes: Array<{ table: string; op: string }> = [];
 
   const from = (table: string) => {
-    reads.push(table);
+    const read: { table: string; start: number | null } = { table, start: null };
+    reads.push(read);
     const filters: Array<(r: Row) => boolean> = [];
     let range: [number, number] | null = null;
     const rows = () => {
@@ -126,6 +130,7 @@ function makeDb(fx: Fixtures) {
       limit: () => builder,
       range: (start: number, end: number) => {
         range = [start, end];
+        read.start = start;
         return builder;
       },
       eq: (col: string, val: unknown) => {
@@ -258,6 +263,49 @@ describe('runInboxCycle', () => {
     });
     expect(result.replies).toBe(1);
     expect(result.errors).toEqual([]);
+  });
+
+  it('records a reply that lands in one mailbox for what a sibling sent', async () => {
+    // The pooled case, and the one that used to fail silently: the campaign
+    // went out through mailbox B, the reply arrived in mailbox A. The SQL
+    // matches organisation-wide, so the worker must not be narrower than it.
+    const h = makeDeps(
+      {
+        mailboxes: [
+          mailboxRow(),
+          mailboxRow({ id: 'mbx-2', from_email: 'grace@example.com' }),
+        ],
+        secrets: [secretRow(), secretRow('mbx-2')],
+        messages: [sentRow('ada@acme.com', { sent_account_id: 'mbx-2' })],
+      },
+      {
+        // Mailbox A holds the reply; mailbox B has traffic of its own, so both
+        // mailboxes need the match set and only one read may serve them.
+        envelopes: (() => {
+          let call = 0;
+          return async () => {
+            call += 1;
+            return call === 1 ? [envelope()] : [envelope({ from: 'someone@elsewhere.test' })];
+          };
+        })(),
+      },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    expect(h.results()).toHaveLength(1);
+    expect(h.results()[0].args).toMatchObject({
+      p_account: 'mbx-1',
+      p_kind: 'reply',
+      p_address: 'ada@acme.com',
+    });
+    expect(result.replies).toBe(1);
+
+    // And read once for the organisation, not once per mailbox: widening the
+    // scope has to cost fewer reads than the per-mailbox version, not more.
+    // Counted by first pages, since one read pages until it comes up empty.
+    const sentReads = h.reads.filter((r) => r.table === 'email_messages' && r.start === 0);
+    expect(sentReads).toHaveLength(1);
   });
 
   it('ignores a sender this mailbox never wrote to', async () => {

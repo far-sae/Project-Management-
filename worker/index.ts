@@ -38,6 +38,9 @@ const stamp = (): string => new Date().toISOString().replace('T', ' ').slice(0, 
  * that only noticed SIGTERM at the end of that wait would be SIGKILLed long
  * before it got there — Railway's redeploy grace period is far shorter.
  */
+/** How long the inbox loop holds off after start-up. See inboxLoop for why. */
+const INBOX_START_DELAY_MS = 10_000;
+
 async function waitFor(ms: number, running: () => boolean): Promise<void> {
   const deadline = Date.now() + ms;
   while (running()) {
@@ -162,6 +165,13 @@ async function main(): Promise<void> {
    * left disabled is the ordinary case — must cost the outbox nothing.
    */
   const inboxLoop = async (): Promise<void> => {
+    // A few seconds before the first pass, so a restart does not open an IMAP
+    // connection for every configured mailbox in the same second as the first
+    // send cycle. The point is to spread the logins, not to delay the work: on
+    // a five-minute loop this costs nothing, and a burst of simultaneous
+    // logins is exactly what providers rate-limit.
+    await waitFor(INBOX_START_DELAY_MS, () => running);
+
     while (running) {
       try {
         const result = await runInboxCycle({

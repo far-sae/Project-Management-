@@ -32,6 +32,11 @@
 //     nothing". It is not a failure and is never retried: the event row is
 //     written either way, and the unmatched bounce is precisely the row that
 //     records a suppression we deliberately did not make.
+//   * A reply is matched against everything the ORGANISATION sent recently,
+//     never against one mailbox's own sends. record_inbox_result() matches
+//     organisation-wide, and a narrower read here would drop real replies
+//     before the database ever saw them — a pooled campaign sends from
+//     whichever mailbox was free, so the reply routinely lands somewhere else.
 //   * A bounce suppresses only on a match, and that gate is IN THE SQL — the
 //     insert selects the matched message's own to_email, so with no match there
 //     is nothing to insert. This file's job is to pass the extracted address.
@@ -121,9 +126,9 @@ const MAX_PAGES = 50;
 const DEFAULT_IMAP_PORT = 993;
 
 /**
- * How far back the "who did this mailbox write to" read looks.
+ * How far back the "who did this organisation write to" read looks.
  *
- * Bounded on purpose. The alternative — every address this mailbox has ever
+ * Bounded on purpose. The alternative — every address the organisation has ever
  * sent to — is the one thing here that grows without limit: a customer's
  * message history only ever gets longer, so an unbounded read would get slower
  * every day and would eventually dominate a cycle that is supposed to be
@@ -166,6 +171,23 @@ export async function runInboxCycle(deps: InboxDeps): Promise<InboxResult> {
   // the rest keep their cursors and are picked up next pass.
   if (mailboxes.truncated) note('email_accounts', mailboxes.truncated);
 
+  /**
+   * The addresses an organisation has written to recently, read at most once
+   * per organisation per cycle however many of its mailboxes are scanned.
+   *
+   * Lazy rather than read up front: an organisation whose inboxes were all
+   * empty this pass never needs the list at all, and that is the common case
+   * on a five-minute loop.
+   */
+  const sentByOrg = new Map<string, string[]>();
+  const sentAddresses = async (organizationId: string, now: Date): Promise<string[]> => {
+    const cached = sentByOrg.get(organizationId);
+    if (cached) return cached;
+    const addresses = await readSentAddresses(deps, note, organizationId, now);
+    sentByOrg.set(organizationId, addresses);
+    return addresses;
+  };
+
   for (const row of mailboxes.rows) {
     // Checked before the mailbox, so a stop never lands mid-scan.
     if (stopped(deps)) return result;
@@ -180,7 +202,7 @@ export async function runInboxCycle(deps: InboxDeps): Promise<InboxResult> {
     // One tenant's unreadable mailbox is one tenant's problem. Without this,
     // the first throw ends the pass for every mailbox ordered after it.
     try {
-      await scanMailbox(deps, result, note, row);
+      await scanMailbox(deps, result, note, row, sentAddresses);
     } catch (err) {
       await recordFailure(deps, note, row, err);
     }
@@ -249,6 +271,7 @@ async function scanMailbox(
   result: InboxResult,
   note: Note,
   row: MailboxRow,
+  sentAddresses: (organizationId: string, now: Date) => Promise<string[]>,
 ): Promise<void> {
   // The mailbox is named by its address in every error: a label is free text
   // and two mailboxes can share one, but the address is what an admin has to
@@ -293,9 +316,12 @@ async function scanMailbox(
   const envelopes = await deps.connect.envelopes(cfg, since);
 
   // ── replies ──────────────────────────────────────────────────────
-  // Only worth a database read when something actually arrived.
+  // Only worth a database read when something actually arrived — and the read
+  // is the ORGANISATION's, not this mailbox's, so a reply that lands here for
+  // a message pooled out through a sibling mailbox is still a reply. See
+  // readSentAddresses for why anything narrower is wrong.
   if (envelopes.length > 0) {
-    const sentTo = await readSentAddresses(deps, note, row, now, who);
+    const sentTo = await sentAddresses(row.organization_id, now);
     for (const reply of matchReplies(envelopes, sentTo)) {
       const recorded = await record(deps, note, row, 'reply', reply.address, reply.at, who);
       if (recorded) result.replies += 1;
@@ -338,24 +364,46 @@ async function scanMailbox(
 }
 
 /**
- * The distinct addresses this mailbox sent to recently, which is what an
+ * The distinct addresses this ORGANISATION sent to recently, which is what an
  * incoming sender is matched against.
  *
+ * Scoped to the organisation, deliberately, and not to the mailbox being
+ * scanned. record_inbox_result() matches an address against everything the
+ * organisation sent (migration 157d, and it says why: a pooled campaign sends
+ * from whichever mailbox was free, and a reply goes wherever From or Reply-To
+ * pointed). A per-mailbox read here would make the worker strictly narrower
+ * than the gate behind it, and silently: a reply arriving in mailbox A to a
+ * message pooled out through mailbox B would be dropped before the database
+ * ever saw it. Pooled sending is the whole point of the mailbox pool, so that
+ * is not an edge case — and anyone we mailed writing to any of our connected
+ * mailboxes is a reply by any reasonable reading.
+ *
+ * Read once per organisation per cycle and shared by its mailboxes, so
+ * widening the scope makes FEWER reads than the per-mailbox version, not more.
+ *
  * Bounded by SENT_LOOKBACK_MS — see the constant for why an unbounded read is
- * not an option. Filtered by (sent_account_id, sent_at), which is exactly the
- * index migration 156 created for mailbox_status.sent_today and which
- * migration 157 notes serves this read too.
+ * not an option.
+ *
+ * On the index: the predicate leads with organization_id, which
+ * idx_email_messages_org_lower_to_email (migration 157b) leads with too, so it
+ * can serve this as a leading-column scan with sent_at applied as a filter.
+ * That is weaker than the per-mailbox read this replaced, which had both of
+ * its columns in (sent_account_id, sent_at) — here the date only narrows after
+ * the index has produced the organisation's rows. It is one read per
+ * organisation per five minutes rather than one per mailbox, so the trade is
+ * worth taking; if it ever shows up as a slow query, the answer is an index on
+ * (organization_id, sent_at) or a `select distinct` view — NOT a narrower
+ * scope, which would re-open the gap above.
  *
  * A failed read is reported and answered with what was collected rather than
  * aborting the scan: a missed reply is recoverable on the next pass, and the
- * bounce half of this mailbox's scan is unaffected by it.
+ * bounce half of the scan is unaffected by it.
  */
 async function readSentAddresses(
   deps: InboxDeps,
   note: Note,
-  row: MailboxRow,
+  organizationId: string,
   now: Date,
-  who: string,
 ): Promise<string[]> {
   const floor = new Date(now.getTime() - SENT_LOOKBACK_MS).toISOString();
   const addresses = new Set<string>();
@@ -365,12 +413,15 @@ async function readSentAddresses(
     const res = await deps.db
       .from('email_messages')
       .select('id, to_email')
-      .eq('sent_account_id', row.id)
+      .eq('organization_id', organizationId)
       .gte('sent_at', floor)
       .order('id', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (res.error) {
-      note(who, `the recently sent addresses could not be read: ${res.error.message}`);
+      note(
+        `organisation ${organizationId}`,
+        `the recently sent addresses could not be read: ${res.error.message}`,
+      );
       break;
     }
 
@@ -378,6 +429,17 @@ async function readSentAddresses(
     for (const sent of batch) if (sent.to_email) addresses.add(sent.to_email);
     if (batch.length === 0) break;
     offset += batch.length;
+
+    // Said out loud rather than truncating in silence: past this point the
+    // match set is incomplete, so a genuine reply can go unrecognised and
+    // nothing else in the system would ever say why.
+    if (page === MAX_PAGES - 1) {
+      note(
+        `organisation ${organizationId}`,
+        `stopped after ${MAX_PAGES} pages of recently sent addresses; replies to anything ` +
+          'past that were not matched this cycle',
+      );
+    }
   }
 
   return [...addresses];
