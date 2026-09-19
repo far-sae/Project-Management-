@@ -384,16 +384,13 @@ async function scanMailbox(
  * Bounded by SENT_LOOKBACK_MS — see the constant for why an unbounded read is
  * not an option.
  *
- * On the index: the predicate leads with organization_id, which
- * idx_email_messages_org_lower_to_email (migration 157b) leads with too, so it
- * can serve this as a leading-column scan with sent_at applied as a filter.
- * That is weaker than the per-mailbox read this replaced, which had both of
- * its columns in (sent_account_id, sent_at) — here the date only narrows after
- * the index has produced the organisation's rows. It is one read per
- * organisation per five minutes rather than one per mailbox, so the trade is
- * worth taking; if it ever shows up as a slow query, the answer is an index on
- * (organization_id, sent_at) or a `select distinct` view — NOT a narrower
- * scope, which would re-open the gap above.
+ * On the index: this predicate is exactly what
+ * idx_email_messages_org_sent_at — (organization_id, sent_at desc), migration
+ * 157b — exists for, and the comment there explains why the other two
+ * candidates cannot serve it. Both of the columns filtered on are in it, so
+ * the thirty-day bound narrows inside the index rather than afterwards. If
+ * this read ever needs to be cheaper still, the next step is a `select
+ * distinct` view, NOT a narrower scope — that would re-open the gap above.
  *
  * A failed read is reported and answered with what was collected rather than
  * aborting the scan: a missed reply is recoverable on the next pass, and the

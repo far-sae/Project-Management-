@@ -125,11 +125,11 @@ alter table public.email_messages
 -- Nothing already here covers it. The table's four existing indexes are 152's
 -- (status, send_after) for the claim and (campaign_id) for a campaign's rows,
 -- 155's (campaign_id, organization_id) for its composite foreign key, and
--- 156's (sent_account_id, sent_at) for mailbox_status.sent_today -- which is
--- also what serves the worker's other new read, the distinct addresses one
--- mailbox sent to recently, because that one is scoped by mailbox and date
--- rather than by address. None of the four leads with organization_id, and
--- none indexes to_email in any form.
+-- 156's (sent_account_id, sent_at) for mailbox_status.sent_today. None of the
+-- four leads with organization_id, and none indexes to_email in any form.
+-- (The worker's other new read, the addresses an organization sent to
+-- recently, is not served by any of them either -- it gets its own index
+-- below.)
 create index if not exists idx_email_messages_org_lower_to_email
   on public.email_messages (organization_id, lower(to_email));
 
@@ -137,12 +137,47 @@ create index if not exists idx_email_messages_org_lower_to_email
 -- (organization_id, to_email) index here, before the expression index above
 -- replaced it. Nothing reads a message by its raw recipient address:
 -- api/email/unsubscribe.ts finds the row by id and merely reads the column,
--- and the distinct-address read is served by (sent_account_id, sent_at). A
+-- and the address read below filters on sent_at, not on to_email. A
 -- second index over the same table earns its write cost on every insert into
 -- the outbox, which is the highest-volume table here, so one with no reader
 -- goes rather than lingering. `if exists` because on any database that never
 -- ran that revision it was never created.
 drop index if exists public.idx_email_messages_org_to_email;
+
+-- The inbox cycle's OTHER read, and the one the index above cannot serve.
+--
+-- readSentAddresses() in worker/lib/inboxCycle.ts builds the set of addresses
+-- an organization has written to recently, which every incoming sender is
+-- matched against. Its predicate carries no address at all:
+--   organization_id = $1 and sent_at >= now() - 30 days
+--
+-- idx_email_messages_org_lower_to_email leads with organization_id, so the
+-- planner can use it here -- but only as a leading-column scan. sent_at is not
+-- in it, so every message that tenant has ever sent comes back out of the
+-- index and the thirty-day bound is applied afterwards as a filter. That is
+-- the same unbounded growth this section already worries about, reached from
+-- the other side, and it would happen on every inbox cycle of every
+-- organization with a connected mailbox: a customer who has been sending for a
+-- few months pays for their whole history every five minutes, silently.
+--
+-- 156's (sent_account_id, sent_at) cannot serve it either, though an earlier
+-- revision of the worker was written so that it could. That version read the
+-- addresses one MAILBOX had sent to, which fitted that index exactly and was
+-- wrong: record_inbox_result() below matches organization-wide, deliberately
+-- (see its comment on the pooled campaign), so a reply arriving in one mailbox
+-- for a campaign pooled out through another was dropped before the function
+-- ever saw it. The read follows the function's scope now and has no
+-- sent_account_id left to offer.
+--
+-- Hence both of the columns it actually filters on, in that order. The
+-- direction is immaterial to a >= bound -- a btree reads either way -- and
+-- DESC matches the newest-first order anything else reading a tenant's recent
+-- sends would want. This is NOT a duplicate of the expression index above:
+-- they share a leading column and nothing else, and neither can do the other's
+-- job. Deleting either one makes a read that runs every few minutes scan a
+-- table that only ever grows.
+create index if not exists idx_email_messages_org_sent_at
+  on public.email_messages (organization_id, sent_at desc);
 
 -- ── c. email_inbox_events: what each scan found ─────────────────────
 --
