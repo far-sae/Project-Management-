@@ -451,6 +451,14 @@ begin
           and a.status <> 'error'
      );
 
+  -- A step that EXISTS but has no campaign is not sendable, and the enrollment
+  -- must NOT be advanced past it: the select below drops it, the completion
+  -- sweep does not catch it (the step row is right there), and it is left
+  -- active with a null next_due_at -- never claimed again, never completed,
+  -- reporting nothing wrong. Remove those ids from v_ids here instead, leaving
+  -- next_due_at where it is, so the enrollment stays due and sends as soon as
+  -- the step is saved with its campaign.
+
   -- What is left is sendable. The advance and the read are one statement:
   -- anything that reads first and writes after can hand the same step out
   -- twice if the write fails.
@@ -559,18 +567,13 @@ In the `'sent'` branch, after the two existing `update` statements:
        );
 ```
 
-In the `'permanent'` branch and the `'hard_bounce'` branch, after the existing statements:
+Every branch that leaves a message dead must also end its enrollment, and the SCOPE differs by branch — see the rulings recorded against this task:
 
-```sql
-    -- A step that cannot be delivered ends the sequence. Stepping forward
-    -- would queue two more messages to an address that has just proved it
-    -- cannot receive one, and a hard bounce has suppressed it in any case.
-    perform public.stop_enrollments_for_address(
-      (select m.organization_id from public.email_messages m where m.id = p_message),
-      (select m.to_email from public.email_messages m where m.id = p_message),
-      'failed'
-    );
-```
+- `'hard_bounce'`: `stop_enrollments_for_address(org, to_email, 'bounced')`. A bounce is a statement about the recipient, so it is organisation-wide, and the reason is `'bounced'` because the enrollment screen shows that word to a person.
+- `'permanent'`: `stop_enrollment(m.enrollment_id, 'failed')` — this enrollment only. Phase 1 routes bad credentials and a rejected sender through `'permanent'` and increments the mailbox's strike count on it, so an organisation-wide stop would end conversations a sibling mailbox was delivering perfectly well, over our own misconfiguration.
+- `'transient'` when it retires at three attempts: the same single-enrollment stop. A message that failed three times is no less final for having taken three goes about it.
+
+This needs a second helper, `stop_enrollment(p_enrollment uuid, p_reason text)`, built the same way as `stop_enrollments_for_address` with the same `status = 'active'` idempotency guard.
 
 - [ ] **Step 4: Stop on reply, and the `auto_reply` kind**
 
@@ -607,6 +610,14 @@ In the `'bounce'` branch, inside the existing `if v_message is not null` guard �
 ```
 
 And an `elsif p_kind = 'auto_reply' then` branch that records the event and returns without touching `email_messages` at all. The final `insert into public.email_inbox_events` is shared by every branch and needs no change.
+
+- [ ] **Step 4b: The net — `reconcile_stalled_enrollments()`**
+
+The claim advances `current_step` and clears `next_due_at` in one statement, and it takes nothing with a null due date. So from that instant the only thing that can move an enrollment is its message reaching a terminal state, and any path that ends a message without ending or rescheduling its enrollment leaves that person stopped for ever while every screen reports them active.
+
+Step 3 closes the paths it can see. One it cannot: `claim_email_batch()` marks a message `'suppressed'` when the address was suppressed between materializing and sending, and that happens nowhere near `record_send_result()`.
+
+So add a sweep the worker runs on every sequence cycle: any active enrollment with a null `next_due_at` whose most recent message is `'failed'` or `'suppressed'` is stopped, with reason `'unsubscribed'` for a suppressed message and `'failed'` otherwise. List the dead states explicitly rather than excluding `'sent'`, so a status added later is not swept up by accident.
 
 - [ ] **Step 5: The finalizer leaves sequence campaigns alone**
 

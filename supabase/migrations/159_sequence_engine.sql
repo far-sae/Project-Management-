@@ -9,16 +9,28 @@
 -- the retry budget all still belong to claim_email_batch() and are not
 -- reimplemented here. What is here is only the cycle that sits above them:
 --
---   a. stop_enrollments_for_address() -- one definition of what stopping is,
---      called by every one of the four things that can stop a sequence.
+--   a. stop_enrollments_for_address() -- stopping, organisation-wide by
+--      address: what the RECIPIENT did. A reply, an unsubscribe, a bounce.
+--   a2. stop_enrollment()             -- stopping, one enrollment wide: what
+--      OUR end did. A send that failed is not a statement about them.
 --   b. claim_sequence_enrollments()   -- due enrollments out, one step each,
 --      advanced so the same one is never taken twice.
 --   c. record_send_result()           -- re-declared: a 'sent' step schedules
---      the next one, a permanent failure ends the sequence.
+--      the next one; a step that died ends its enrollment.
 --   d. record_inbox_result()          -- re-declared: a reply or a bounce ends
 --      the sequence, and 'auto_reply' becomes a kind that does neither.
 --   e. finalize_email_campaigns()     -- re-declared: it must leave a step's
 --      hidden campaign alone.
+--   f. reconcile_stalled_enrollments() -- the net: no enrollment may be left
+--      active with nothing that can ever move it again.
+--
+-- The shape of the one bug this file has to keep designing against: the claim
+-- advances current_step and clears next_due_at in the same statement, and the
+-- claim takes nothing with a null due date. So from that instant the ONLY
+-- thing that can move an enrollment is its message reaching a terminal state.
+-- Any path that ends a message without ending or rescheduling its enrollment
+-- leaves a person stopped for ever while every screen reports them active.
+-- (c) closes the paths it can see and (f) is the net under the ones it cannot.
 --
 -- (c), (d) and (e) are copied verbatim from the migrations that define them --
 -- 156, 157 and 155 respectively -- with only the additions described above.
@@ -80,6 +92,54 @@ $$;
 
 revoke all on function public.stop_enrollments_for_address(uuid, text, text) from public;
 grant execute on function public.stop_enrollments_for_address(uuid, text, text) to service_role;
+
+-- ── a2. stop_enrollment(): the same thing, one enrollment wide ──────
+--
+-- The sibling of the function above, and the two are separate because the
+-- SCOPE of a stop is a decision, not an implementation detail.
+--
+-- Organisation-wide by address is right for something the RECIPIENT did: a
+-- reply, an unsubscribe, an address that bounced. They have answered, or opted
+-- out, or ceased to exist, and that is true of every sequence talking to them.
+--
+-- It is wrong for something OUR end did. A permanent SMTP failure is often the
+-- mailbox's fault rather than the recipient's -- bad credentials, a sender the
+-- provider rejected -- and phase 1 routes exactly those through 'permanent',
+-- incrementing consecutive_failures and pausing the mailbox at three strikes.
+-- Stopping every sequence at that address would then punish the recipient for
+-- our own misconfiguration, permanently and one-way, while an enrollment
+-- running through a different mailbox was delivering perfectly well. So a send
+-- failure stops the enrollment that failed, and nothing else.
+create or replace function public.stop_enrollment(
+  p_enrollment uuid,
+  p_reason text
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_stopped integer;
+begin
+  -- `status = 'active'` is the idempotency guard and the one-way guard at
+  -- once, exactly as in stop_enrollments_for_address(): the recorded reason
+  -- stays the FIRST thing that ended this enrollment.
+  update public.email_sequence_enrollments e
+     set status = 'stopped',
+         stop_reason = p_reason,
+         stopped_at = now(),
+         next_due_at = null
+   where e.id = p_enrollment
+     and e.status = 'active';
+
+  get diagnostics v_stopped = row_count;
+  return v_stopped;
+end;
+$$;
+
+revoke all on function public.stop_enrollment(uuid, text) from public;
+grant execute on function public.stop_enrollment(uuid, text) to service_role;
 
 -- ── b. claim_sequence_enrollments() ─────────────────────────────────
 --
@@ -185,6 +245,40 @@ begin
           and a.is_active
           and a.status <> 'error'
      );
+
+  -- A step that EXISTS but has no campaign is not sendable, and the enrollment
+  -- must not be advanced past it.
+  --
+  -- The select below drops such a step on `st.campaign_id is not null`, and
+  -- the completion sweep at the end does not catch it either -- the step row
+  -- is right there, so the enrollment is not finished. It would be left
+  -- active, one step further on, with next_due_at null: never claimed again,
+  -- never completed, never sent to, and reporting nothing wrong. That is the
+  -- same silent permanent stall that phase 2's scan cap turned out to be.
+  --
+  -- So these are removed from the claim set instead, with next_due_at left
+  -- exactly where it is. The enrollment stays due, this function tries it
+  -- again on the next cycle, and the moment the step is saved with its
+  -- campaign -- which is what saving a step does -- it sends. A wait that
+  -- fixes itself, rather than a stall that does not.
+  select array_agg(t.id)
+    into v_ids
+    from unnest(v_ids) as t(id)
+   where not exists (
+     select 1
+       from public.email_sequence_enrollments e
+       join public.email_sequence_steps st
+         on st.sequence_id = e.sequence_id
+        -- current_step has NOT been advanced yet at this point, so this is the
+        -- step about to be taken.
+        and st.step_index = e.current_step
+      where e.id = t.id
+        and st.campaign_id is null
+   );
+
+  if v_ids is null then
+    return;
+  end if;
 
   -- What is left is sendable. The advance and the read are one statement:
   -- anything that reads first and writes after can hand the same step out
@@ -403,6 +497,21 @@ begin
                       end
      where m.id = p_message;
 
+    -- Retiring at three attempts sets 'failed' in the statement above, and for
+    -- a sequence step that must also end its enrollment. The claim has already
+    -- advanced current_step and cleared next_due_at, so an enrollment whose
+    -- step quietly ran out of attempts would sit active for ever, never
+    -- claimed again and never completed -- a message that failed three times
+    -- is no less final for having taken three goes about it.
+    --
+    -- This enrollment only, for the same reason as the 'permanent' branch: a
+    -- mailbox that greylists everything is our problem, not the recipient's.
+    perform public.stop_enrollment(m.enrollment_id, 'failed')
+       from public.email_messages m
+      where m.id = p_message
+        and m.status = 'failed'
+        and m.enrollment_id is not null;
+
   elsif p_outcome = 'permanent' then
     -- Bad credentials or a rejected sender: retrying sends the identical
     -- request again, so the message is done.
@@ -417,12 +526,21 @@ begin
     -- claim stops selecting it.
     perform public.record_mailbox_failure(p_account, p_error);
 
-    -- A step that cannot be delivered ends the sequence. Stepping forward
-    -- would queue two more messages to an address that has just proved it
-    -- cannot receive one, and a hard bounce has suppressed it in any case.
-    perform public.stop_enrollments_for_address(
-      (select m.organization_id from public.email_messages m where m.id = p_message),
-      (select m.to_email from public.email_messages m where m.id = p_message),
+    -- A step that cannot be delivered ends ITS enrollment -- and only its own.
+    --
+    -- It has to end something: the claim has already advanced current_step and
+    -- cleared next_due_at, so an enrollment left active here is never claimed
+    -- again and never completed. Silent, permanent, and invisible on every
+    -- screen.
+    --
+    -- But only its own, because 'permanent' is not a statement about the
+    -- recipient. It is what phase 1 routes bad credentials and a rejected
+    -- sender through -- the branch above increments the mailbox's strike count
+    -- on exactly this outcome -- so stopping every sequence at that address
+    -- would end conversations that a sibling mailbox was delivering perfectly
+    -- well, over our own misconfiguration, one-way. See stop_enrollment().
+    perform public.stop_enrollment(
+      (select m.enrollment_id from public.email_messages m where m.id = p_message),
       'failed'
     );
 
@@ -448,13 +566,19 @@ begin
      where m.id = p_message
     on conflict do nothing;
 
-    -- A step that cannot be delivered ends the sequence. Stepping forward
-    -- would queue two more messages to an address that has just proved it
-    -- cannot receive one, and a hard bounce has suppressed it in any case.
+    -- A bounce IS a statement about the recipient, so this one is
+    -- organisation-wide: the address does not exist, which is equally true of
+    -- every sequence talking to it, and the suppression written just above
+    -- says so for campaigns already.
+    --
+    -- Reason 'bounced', not 'failed'. The enrollment screen shows this word to
+    -- a person, and "Bounced" and "Could not be delivered" send them to two
+    -- different places: one is a dead address to remove from their list, the
+    -- other is something to check at our end.
     perform public.stop_enrollments_for_address(
       (select m.organization_id from public.email_messages m where m.id = p_message),
       (select m.to_email from public.email_messages m where m.id = p_message),
-      'failed'
+      'bounced'
     );
 
   else
@@ -786,5 +910,73 @@ $$;
 
 revoke execute on function public.finalize_email_campaigns() from public, anon, authenticated;
 grant execute on function public.finalize_email_campaigns() to service_role;
+
+-- ── f. reconcile_stalled_enrollments(): the net under all of it ─────
+--
+-- An enrollment is claimed, its step is materialized, and current_step is
+-- advanced with next_due_at cleared in the same statement. From that moment
+-- the ONLY thing that can move it again is its message reaching a terminal
+-- state, because next_due_at is null and the claim takes nothing with a null
+-- due date. Every path that ends a message therefore has to end or reschedule
+-- its enrollment, and every path that forgets to leaves that person stopped
+-- for ever with the screen reporting them active.
+--
+-- Three such paths have already been found by reading rather than by running:
+-- a step whose campaign was missing, a message retired after three transient
+-- attempts, and a permanent failure. A fourth is reachable today and is not
+-- fixable where the others were -- claim_email_batch() marks a message
+-- 'suppressed' when the address was suppressed between materializing and
+-- sending, and that happens nowhere near record_send_result().
+--
+-- So this is the net, run by the worker on every sequence cycle: any active
+-- enrollment with no due date whose most recent message is terminal gets the
+-- outcome that message implies. It costs one indexed scan of a small table and
+-- it makes the invisible stall unreachable by construction, including from
+-- paths nobody has written yet.
+create or replace function public.reconcile_stalled_enrollments()
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  v_fixed integer;
+begin
+  with latest as (
+    select distinct on (m.enrollment_id)
+           m.enrollment_id,
+           m.status,
+           m.to_email,
+           m.organization_id
+      from public.email_messages m
+     where m.enrollment_id is not null
+     order by m.enrollment_id, m.step_index desc, m.created_at desc
+  )
+  update public.email_sequence_enrollments e
+     set status = 'stopped',
+         stop_reason = case
+                         when l.status = 'suppressed' then 'unsubscribed'
+                         else 'failed'
+                       end,
+         stopped_at = now(),
+         next_due_at = null
+    from latest l
+   where l.enrollment_id = e.id
+     and e.status = 'active'
+     and e.next_due_at is null
+     -- 'sent' is not terminal for an enrollment: record_send_result() either
+     -- scheduled the next step or completed it, and either way next_due_at is
+     -- no longer null, so a sent step cannot reach this statement. Listing the
+     -- two dead states explicitly rather than excluding 'sent' means a status
+     -- added later is not swept up by accident.
+     and l.status in ('failed', 'suppressed');
+
+  get diagnostics v_fixed = row_count;
+  return v_fixed;
+end;
+$$;
+
+revoke all on function public.reconcile_stalled_enrollments() from public;
+grant execute on function public.reconcile_stalled_enrollments() to service_role;
 
 notify pgrst, 'reload schema';
