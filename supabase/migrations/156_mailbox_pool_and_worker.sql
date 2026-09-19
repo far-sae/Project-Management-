@@ -10,7 +10,9 @@
 --      can be paused (by hand or by three consecutive failures), and it
 --      records when it last sent so the worker can rotate least-recently-used
 --      first. mailbox_status exposes today's effective limit and today's
---      usage in one place, so the cap has exactly one definition.
+--      usage in one place, so the cap has exactly one definition -- measured
+--      in the organization's own timezone, the same day the send window is
+--      evaluated against.
 --   2. email_campaigns.account_id becomes nullable. Null means "use the whole
 --      pool", which is the new default.
 --   3. claim_email_batch() takes the mailbox it is claiming for and a budget
@@ -22,10 +24,12 @@
 --      per-minute cron that poked /api/email/tick is removed here. Running
 --      both would double-send.
 --
--- Ordering matters: the pool columns (a) are read by the view (b), the view's
--- limit is what the worker passes as p_limit to the claim (e), and the claim
--- can only stop doing its own budget arithmetic once the worker has a budget
--- to pass. The cron goes last (g), after everything that replaces it exists.
+-- Ordering matters: the pool columns (a) and the organization's send timezone
+-- (b) are both read by the view (c) -- which is why the settings table is
+-- created before it, not after. The view's limit is what the worker passes as
+-- p_limit to the claim (e), and the claim can only stop doing its own budget
+-- arithmetic once the worker has a budget to pass. The cron goes last (g),
+-- after everything that replaces it exists.
 
 -- ── 0. Refuse to run on PostgreSQL 14 or older ──────────────────────
 --
@@ -182,87 +186,7 @@ end $$;
 create index if not exists idx_email_messages_sent_account
   on public.email_messages (sent_account_id, sent_at);
 
--- ── b. mailbox_status: one definition of today's allowance ──────────
---
--- The worker reads this to decide which mailboxes can send and how much each
--- may take, and the Accounts screen reads it to show mailbox health. Both see
--- the same numbers because there is only one expression.
-create or replace view public.mailbox_status as
-select
-  a.id,
-  a.organization_id,
-  a.label,
-  a.from_email,
-  -- 'unverified' / 'active' / 'error' from the credential check. Pool
-  -- selection requires 'active', so a mailbox that never passed a test send
-  -- cannot be used for a campaign.
-  a.status,
-  a.is_active,
-  a.paused_reason,
-  a.consecutive_failures,
-  a.last_sent_at,
-  a.daily_limit,
-  a.warmup_enabled,
-  a.warmup_started_on,
-  a.warmup_start_volume,
-  a.warmup_increment,
-  -- Today's ceiling: the full daily limit when warmup is off; the start
-  -- volume while the ramp has no start date; otherwise the start volume plus
-  -- one increment per elapsed day, never above the daily limit.
-  --
-  -- greatest(..., 0) because a warmup_started_on in the future makes
-  -- (current_date - a.warmup_started_on) negative. A negative ceiling would
-  -- read as "less than nothing left" everywhere downstream; zero is what a
-  -- ramp that has not begun actually means.
-  greatest(
-    case
-      when not a.warmup_enabled then a.daily_limit
-      when a.warmup_started_on is null then a.warmup_start_volume
-      else least(
-        a.daily_limit,
-        a.warmup_start_volume + a.warmup_increment * (current_date - a.warmup_started_on)
-      )
-    end,
-    0
-  ) as effective_limit,
-  -- What this mailbox has already put out today, counted from the mailbox
-  -- that actually delivered each message rather than from the campaign's
-  -- account_id -- which is null for every pooled campaign and so would make
-  -- this read zero exactly when the cap matters most.
-  --
-  -- 'sending' counts as well as 'sent', which is the rule migration 155's
-  -- claim used: a row handed to SMTP has consumed the allowance whether or not
-  -- its result has been written back yet. Without it a second worker, or the
-  -- same worker restarted with a batch still in flight, reads the full
-  -- allowance again and claims it -- and the claim's only other bound is
-  -- p_limit, which the worker computes from this very view.
-  --
-  -- The two statuses are dated by different columns because an in-flight row
-  -- has no sent_at yet: a 'sent' row is placed by sent_at, a 'sending' row by
-  -- the claimed_at the claim stamped on it. date_trunc('day', now()) is the
-  -- server's day boundary, which is what the daily limit has always meant here.
-  (
-    select count(*)::integer
-      from public.email_messages m
-     where m.sent_account_id = a.id
-       and (
-         (m.status = 'sent'    and m.sent_at    >= date_trunc('day', now()))
-         or
-         (m.status = 'sending' and m.claimed_at >= date_trunc('day', now()))
-       )
-  ) as sent_today
-from public.email_accounts a;
-
--- Without this the view would run as its owner and bypass row level security,
--- which would turn it into a way to read every organization's mailboxes. With
--- it, the caller's own policies on email_accounts and email_messages apply
--- exactly as they do to a direct select.
-alter view public.mailbox_status set (security_invoker = on);
-
-grant select on public.mailbox_status to authenticated;
-grant select on public.mailbox_status to service_role;
-
--- ── c. email_settings: the send window and pacing, per organization ─
+-- ── b. email_settings: the send window and pacing, per organization ─
 --
 -- One row per organization. Outside the window the worker sends nothing and
 -- the queue simply waits; inside it, it sleeps a random interval between
@@ -323,6 +247,144 @@ drop policy if exists "email_settings_delete" on public.email_settings;
 create policy "email_settings_delete" on public.email_settings
   for delete to authenticated
   using (public.is_org_admin_or_owner(organization_id));
+
+-- ── c. mailbox_status: one definition of today's allowance ──────────
+--
+-- The worker reads this to decide which mailboxes can send and how much each
+-- may take, and the Accounts screen reads it to show mailbox health. Both see
+-- the same numbers because there is only one expression.
+--
+-- "Today" is the ORGANISATION's day, not the server's. The send window in (b)
+-- is evaluated in send_timezone, so a US organisation working 08:00-18:00
+-- local crosses UTC midnight at 17:00 local. Counted in UTC, a mailbox that
+-- had just spent its whole allowance would be handed a fresh one for the last
+-- hour of the working day, and a warmup day-one mailbox would send ten rather
+-- than five. The window and the cap have to measure the same day, or the daily
+-- limit this feature exists to enforce simply does not hold.
+
+-- send_timezone is plain text with no constraint behind it, and `at time zone`
+-- raises on a name PostgreSQL does not know. Inside the view that error would
+-- not be one organisation's problem: it would make the whole view fail, for
+-- every tenant, including the worker's single read of it. This resolves a
+-- usable name or falls back to UTC, and cannot raise -- `when others` is
+-- deliberate, because the entire point is that no stored value may take the
+-- view down. Asking the server whether it can use the name is cheaper than
+-- scanning pg_timezone_names' ~1200 rows once per mailbox.
+create or replace function public.email_safe_timezone(p_name text)
+returns text
+language plpgsql
+stable
+set search_path = public, pg_catalog
+as $$
+begin
+  if p_name is null or p_name = '' then
+    return 'UTC';
+  end if;
+  perform now() at time zone p_name;
+  return p_name;
+exception when others then
+  return 'UTC';
+end;
+$$;
+
+grant execute on function public.email_safe_timezone(text) to authenticated;
+grant execute on function public.email_safe_timezone(text) to service_role;
+
+create or replace view public.mailbox_status as
+select
+  a.id,
+  a.organization_id,
+  a.label,
+  a.from_email,
+  -- 'unverified' / 'active' / 'error' from the credential check. Pool
+  -- selection requires 'active', so a mailbox that never passed a test send
+  -- cannot be used for a campaign.
+  a.status,
+  a.is_active,
+  a.paused_reason,
+  a.consecutive_failures,
+  a.last_sent_at,
+  a.daily_limit,
+  a.warmup_enabled,
+  a.warmup_started_on,
+  a.warmup_start_volume,
+  a.warmup_increment,
+  -- Today's ceiling: the full daily limit when warmup is off; the start
+  -- volume while the ramp has no start date; otherwise the start volume plus
+  -- one increment per elapsed day, never above the daily limit.
+  --
+  -- The elapsed day count is measured against the organisation's own date
+  -- (d.today), not current_date. Under current_date a mailbox whose admin
+  -- started the ramp "today" in Los Angeles is already on day 1 from 17:00
+  -- local, and sends the day-2 allowance on its first evening.
+  --
+  -- greatest(..., 0) because a warmup_started_on in the future makes
+  -- (d.today - a.warmup_started_on) negative. A negative ceiling would read as
+  -- "less than nothing left" everywhere downstream; zero is what a ramp that
+  -- has not begun actually means.
+  greatest(
+    case
+      when not a.warmup_enabled then a.daily_limit
+      when a.warmup_started_on is null then a.warmup_start_volume
+      else least(
+        a.daily_limit,
+        a.warmup_start_volume + a.warmup_increment * (d.today - a.warmup_started_on)
+      )
+    end,
+    0
+  ) as effective_limit,
+  -- What this mailbox has already put out today, counted from the mailbox
+  -- that actually delivered each message rather than from the campaign's
+  -- account_id -- which is null for every pooled campaign and so would make
+  -- this read zero exactly when the cap matters most.
+  --
+  -- 'sending' counts as well as 'sent', which is the rule migration 155's
+  -- claim used: a row handed to SMTP has consumed the allowance whether or not
+  -- its result has been written back yet. Without it a second worker, or the
+  -- same worker restarted with a batch still in flight, reads the full
+  -- allowance again and claims it -- and the claim's only other bound is
+  -- p_limit, which the worker computes from this very view.
+  --
+  -- The two statuses are dated by different columns because an in-flight row
+  -- has no sent_at yet: a 'sent' row is placed by sent_at, a 'sending' row by
+  -- the claimed_at the claim stamped on it. Both are compared against
+  -- d.day_start -- the instant local midnight happened in the organisation's
+  -- zone -- rather than against a local date computed per row, so the
+  -- comparison still uses idx_email_messages_sent_account.
+  (
+    select count(*)::integer
+      from public.email_messages m
+     where m.sent_account_id = a.id
+       and (
+         (m.status = 'sent'    and m.sent_at    >= d.day_start)
+         or
+         (m.status = 'sending' and m.claimed_at >= d.day_start)
+       )
+  ) as sent_today
+from public.email_accounts a
+-- LEFT, because an organisation that has never opened the settings screen has
+-- no row here and takes the column defaults -- of which send_timezone is
+-- 'UTC'. email_safe_timezone() turns the resulting null into exactly that, so
+-- a missing row and a saved 'UTC' behave identically.
+left join public.email_settings s
+  on s.organization_id = a.organization_id
+-- Resolved once per mailbox rather than once per comparison below.
+cross join lateral (
+  select public.email_safe_timezone(s.send_timezone) as name
+) tz
+cross join lateral (
+  select (now() at time zone tz.name)::date as today,
+         (date_trunc('day', now() at time zone tz.name) at time zone tz.name) as day_start
+) d;
+
+-- Without this the view would run as its owner and bypass row level security,
+-- which would turn it into a way to read every organization's mailboxes. With
+-- it, the caller's own policies on email_accounts, email_messages and
+-- email_settings apply exactly as they do to a direct select.
+alter view public.mailbox_status set (security_invoker = on);
+
+grant select on public.mailbox_status to authenticated;
+grant select on public.mailbox_status to service_role;
 
 -- ── d. Campaigns may use the whole pool ─────────────────────────────
 --
