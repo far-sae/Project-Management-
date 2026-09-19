@@ -75,6 +75,16 @@ export interface CreateCampaignInput {
   subject: string;
   bodyHtml: string;
   scheduledAt?: Date | null;
+  /**
+   * The template this campaign's wording was COPIED from, or null/absent when
+   * it was written from scratch.
+   *
+   * Provenance only. `subject` and `bodyHtml` above are still what goes out,
+   * so editing the template afterwards cannot rewrite a campaign that already
+   * exists, and deleting it (`on delete set null`, migration 162c) does not
+   * take the campaign's own wording with it.
+   */
+  templateId?: string | null;
 }
 
 /** Raw shape of an `email_accounts` row as returned by PostgREST. */
@@ -766,6 +776,9 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<EmailC
     subject: input.subject,
     body_html: input.bodyHtml,
     scheduled_at: input.scheduledAt ? input.scheduledAt.toISOString() : null,
+    // Written alongside the copied wording, never instead of it. See
+    // CreateCampaignInput.templateId.
+    template_id: input.templateId ?? null,
     // rate_per_hour is deliberately not written. Migration 156 removed the
     // claim's hourly arithmetic and the worker has no hourly logic, so any
     // value stored there would be a number the product collects and never

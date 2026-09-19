@@ -14,7 +14,7 @@ import {
   queueRecipients, setCampaignStatus, parsePastedRecipients, parseRecipientsCsv,
 } from '@/services/supabase/email';
 import type { Recipient } from '@/services/supabase/email';
-import type { EmailAccount, MailboxHealth } from '@/lib/email/types';
+import type { EmailAccount, EmailTemplate, MailboxHealth } from '@/lib/email/types';
 import { isUsable } from '@/lib/email/mailboxPool';
 import { filterSuppressed } from '@/lib/email/suppression';
 import { verifyAccount } from './verifyAccount';
@@ -26,6 +26,16 @@ interface ComposeTabProps {
   workspaceId: string | null;
   isAdmin: boolean;
   onSent: () => void;
+  /**
+   * A template whose wording should be loaded into the form, or null.
+   *
+   * Cleared by `onTemplateLoaded` the moment it is applied, so that picking
+   * the same template a second time is a change this component can see — and
+   * so that coming back to this tab later never silently overwrites what the
+   * person has since typed.
+   */
+  pendingTemplate: EmailTemplate | null;
+  onTemplateLoaded: () => void;
 }
 
 /**
@@ -42,9 +52,19 @@ interface ComposeTabProps {
  */
 const WHOLE_POOL = '__whole_pool__';
 
-const EMPTY_FORM = { name: '', accountId: WHOLE_POOL, subject: '', bodyHtml: '' };
+/**
+ * `templateId` is where the wording was copied FROM, and nothing more: the
+ * subject and body beside it are what actually gets sent, so a template edited
+ * after this campaign is created cannot rewrite it.
+ */
+const EMPTY_FORM = {
+  name: '', accountId: WHOLE_POOL, subject: '', bodyHtml: '',
+  templateId: null as string | null,
+};
 
-export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAdmin, onSent }) => {
+export const ComposeTab: React.FC<ComposeTabProps> = ({
+  orgId, workspaceId, isAdmin, onSent, pendingTemplate, onTemplateLoaded,
+}) => {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
   // Pool health, which is a different question from "did the credentials ever
@@ -79,6 +99,25 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
       .then((rows) => setSuppressionEmails(rows.map((r) => r.email)))
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
   }, [orgId]);
+
+  // Copies the template's wording in and records which template it came from.
+  // A copy, not a link: from here on the campaign carries this text, so the
+  // person is free to rewrite any of it and editing the template later changes
+  // nothing that has already been composed or sent. The campaign name is only
+  // filled in when it is still blank, because it is the one field somebody may
+  // already have typed before reaching for a template.
+  useEffect(() => {
+    if (!pendingTemplate) return;
+    setForm((f) => ({
+      ...f,
+      name: f.name.trim() ? f.name : pendingTemplate.name,
+      subject: pendingTemplate.subject,
+      bodyHtml: pendingTemplate.bodyHtml,
+      templateId: pendingTemplate.id,
+    }));
+    onTemplateLoaded();
+    toast.success(`Loaded "${pendingTemplate.name}" — edit it freely, the template is untouched`);
+  }, [pendingTemplate, onTemplateLoaded]);
 
   useEffect(() => {
     if (mode !== 'contacts' || contactsLoaded || !orgId) return;
@@ -230,6 +269,10 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({ orgId, workspaceId, isAd
         subject: form.subject.trim(),
         bodyHtml: form.bodyHtml,
         scheduledAt: scheduledDate,
+        // Provenance, so the Templates tab can total this campaign's sends
+        // against the wording it started from. The subject and body above are
+        // the campaign's own and stay that way.
+        templateId: form.templateId,
       });
 
       // Recipients are queued first, then the campaign is flipped out of

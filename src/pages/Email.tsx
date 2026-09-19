@@ -1,20 +1,22 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
-  ProspectsTab, GroupsTab, AccountsTab, ComposeTab, CampaignsTab, SequencesTab,
-  SuppressionTab, SettingsTab,
+  ProspectsTab, GroupsTab, TemplatesTab, AccountsTab, ComposeTab, CampaignsTab,
+  SequencesTab, SuppressionTab, SettingsTab,
 } from '@/components/email';
+import type { EmailTemplate } from '@/lib/email/types';
 
 /**
  * Prospects and Groups lead, in that order: they are the audience, and every
- * tab after them is something you do to it. Campaigns stays the landing tab —
- * it is what an admin opens the page to check.
+ * tab after them is something you do to it. Templates follows them — it is the
+ * last thing that exists before a message does. Campaigns stays the landing
+ * tab; it is what an admin opens the page to check.
  */
 type EmailTabValue =
-  | 'prospects' | 'groups' | 'campaigns' | 'sequences' | 'compose'
+  | 'prospects' | 'groups' | 'templates' | 'campaigns' | 'sequences' | 'compose'
   | 'accounts' | 'suppression' | 'settings';
 
 export const Email: React.FC = () => {
@@ -22,6 +24,19 @@ export const Email: React.FC = () => {
   const { organization, isAdmin } = useOrganization();
   const { selectedId, isAll } = useSelectedWorkspace();
   const [activeTab, setActiveTab] = useState<EmailTabValue>('campaigns');
+  /**
+   * A template on its way into the composer. Held here rather than in
+   * TemplatesTab because the hand-off crosses tabs, and cleared by ComposeTab
+   * the moment it lands so that picking the same template twice registers as
+   * a second request rather than as no change at all.
+   */
+  const [pendingTemplate, setPendingTemplate] = useState<EmailTemplate | null>(null);
+
+  const useTemplate = useCallback((template: EmailTemplate) => {
+    setPendingTemplate(template);
+    setActiveTab('compose');
+  }, []);
+  const clearPendingTemplate = useCallback(() => setPendingTemplate(null), []);
 
   const orgId = organization?.organizationId ?? user?.organizationId ?? '';
   const workspaceId = isAll ? null : selectedId;
@@ -39,6 +54,7 @@ export const Email: React.FC = () => {
         <TabsList>
           <TabsTrigger value="prospects">Prospects</TabsTrigger>
           <TabsTrigger value="groups">Groups</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
           <TabsTrigger value="compose">Compose</TabsTrigger>
@@ -55,6 +71,10 @@ export const Email: React.FC = () => {
           <GroupsTab orgId={orgId} workspaceId={workspaceId} />
         </TabsContent>
 
+        <TabsContent value="templates">
+          <TemplatesTab orgId={orgId} workspaceId={workspaceId} onUseTemplate={useTemplate} />
+        </TabsContent>
+
         <TabsContent value="campaigns">
           <CampaignsTab orgId={orgId} workspaceId={workspaceId} />
         </TabsContent>
@@ -69,6 +89,8 @@ export const Email: React.FC = () => {
             workspaceId={workspaceId}
             isAdmin={isAdmin}
             onSent={() => setActiveTab('campaigns')}
+            pendingTemplate={pendingTemplate}
+            onTemplateLoaded={clearPendingTemplate}
           />
         </TabsContent>
 

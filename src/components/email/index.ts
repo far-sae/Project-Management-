@@ -1,5 +1,6 @@
 export { ProspectsTab } from './ProspectsTab';
 export { GroupsTab } from './GroupsTab';
+export { TemplatesTab } from './TemplatesTab';
 export { AccountsTab } from './AccountsTab';
 export { ComposeTab } from './ComposeTab';
 export { CampaignsTab } from './CampaignsTab';

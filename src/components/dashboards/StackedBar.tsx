@@ -14,9 +14,19 @@ interface Props {
   /** Series in stacking order (bottom -> top). */
   series: Array<{ key: string; name: string; color?: string }>;
   yFormatter?: (v: number) => string;
+  /**
+   * Whether the series stack into one bar. Default true, which is every
+   * existing caller.
+   *
+   * False draws them side by side, and is the only honest shape when the
+   * series OVERLAP rather than partition a whole: stacking a campaign's
+   * "sent" and "opened" would give the bar a height that counts the same
+   * message twice, and bar height is exactly what a reader compares.
+   */
+  stacked?: boolean;
 }
 
-export const StackedBar: React.FC<Props> = ({ data, series, yFormatter }) => {
+export const StackedBar: React.FC<Props> = ({ data, series, yFormatter, stacked = true }) => {
   if (data.length === 0) {
     return (
       <div className="h-full w-full grid place-items-center text-sm text-muted-foreground">
@@ -57,10 +67,10 @@ export const StackedBar: React.FC<Props> = ({ data, series, yFormatter }) => {
           <Bar
             key={s.key}
             dataKey={s.key}
-            stackId="all"
+            stackId={stacked ? 'all' : undefined}
             fill={s.color ?? palette.shades[i % palette.shades.length]}
             name={s.name}
-            radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
+            radius={!stacked || i === series.length - 1 ? [4, 4, 0, 0] : 0}
           />
         ))}
       </BarChart>

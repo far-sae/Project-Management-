@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import {
   Loader2, Save, Info, ArrowLeft, Plus, Trash2, Lock, Play, PauseCircle, UserPlus,
@@ -21,6 +20,7 @@ import type {
   EmailEnrollment, EmailSequence, EmailSequenceStep, SequenceStatus,
 } from '@/lib/email/types';
 import { RecipientPicker, recipientKey, type RecipientMode } from './RecipientPicker';
+import { RichTextEditor } from './RichTextEditor';
 import { EnrollmentTable } from './EnrollmentTable';
 
 interface SequenceEditorProps {
@@ -184,9 +184,21 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
   }, [mode, contacts, selectedContactKeys, pastedParsed, csvParsed]);
 
   const mergeFields = useMemo(() => {
-    const base = ['first_name', 'last_name', 'full_name', 'email'];
-    if (mode !== 'csv') return base;
-    return [...base, ...csvColumns.filter((c) => !base.includes(c))];
+    // Exactly what the composer offers, because exactly the same three
+    // loaders produce the recipients here: `contactsForCampaign` carries the
+    // prospect's `pain_point` and their group's `angle`, and a pasted list
+    // carries nothing but an address. Offering a placeholder that resolves to
+    // nothing is how a message goes out with a gap where a sentence should be.
+    const contactFields = [
+      'first_name', 'last_name', 'full_name', 'email',
+      'job_title', 'pain_point', 'angle', 'group_name',
+    ];
+    if (mode === 'csv') {
+      const base = ['first_name', 'last_name', 'full_name', 'email'];
+      return [...base, ...csvColumns.filter((c) => !base.includes(c))];
+    }
+    if (mode === 'paste') return ['email'];
+    return contactFields;
   }, [mode, csvColumns]);
 
   /** A step already sent to somebody. Its wording is fixed — including the
@@ -530,13 +542,17 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor={`step-${form.stepIndex}-body`}>Body (HTML allowed)</Label>
-                    <Textarea
-                      id={`step-${form.stepIndex}-body`}
+                    <Label>Body</Label>
+                    {/* The same editor the composer uses, for the same reason
+                        it was built: a step body is an email somebody writes,
+                        not markup they type. Source is still one click away
+                        inside it for the steps that need hand-written HTML. */}
+                    <RichTextEditor
                       value={form.bodyHtml}
+                      mergeFields={mergeFields}
                       disabled={frozen}
-                      className="min-h-[180px] font-mono text-xs"
-                      onChange={(e) => setForm(form.stepIndex, (f) => ({ ...f, bodyHtml: e.target.value }))}
+                      placeholder="Write the message. Source shows the raw HTML."
+                      onChange={(html) => setForm(form.stepIndex, (f) => ({ ...f, bodyHtml: html }))}
                     />
                     <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                       <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
