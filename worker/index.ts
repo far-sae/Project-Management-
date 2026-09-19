@@ -25,9 +25,9 @@
 import { env, serviceClient } from './lib/db.js';
 import { domainAcceptsMail } from './lib/dns.js';
 import { runCycle } from './lib/engine.js';
-import { fetchBounceSources, fetchRecentEnvelopes } from './lib/imap.js';
+import { appendToSent, fetchBounceSources, fetchRecentEnvelopes } from './lib/imap.js';
 import { runInboxCycle } from './lib/inboxCycle.js';
-import { createTransport } from './lib/mailer.js';
+import { buildRaw, createTransport } from './lib/mailer.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = (): string => new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -121,6 +121,10 @@ async function main(): Promise<void> {
         const result = await runCycle({
           db,
           createTransport,
+          // The bytes a message is sent as, and the copy of those same bytes
+          // filed in the mailbox's own Sent folder.
+          buildRaw,
+          appendToSent,
           domainAcceptsMail,
           sleep,
           now: () => new Date(),

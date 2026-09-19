@@ -70,8 +70,18 @@ function accountRow(over: Row = {}): Row {
     smtp_port: 587,
     smtp_secure: false,
     smtp_username: 'ada@example.com',
+    // No IMAP unless a test asks for it: it is optional, and everything has
+    // to work for a mailbox that has none.
+    imap_host: null,
+    imap_port: null,
+    imap_secure: null,
     ...over,
   };
+}
+
+/** The same mailbox with IMAP configured, so its sends can be filed. */
+function imapAccountRow(over: Row = {}): Row {
+  return accountRow({ imap_host: 'imap.example.com', imap_port: 993, imap_secure: true, ...over });
 }
 
 function campaignRow(over: Row = {}): Row {
@@ -264,6 +274,44 @@ function makeMailer(send: (opts: Record<string, unknown>) => Promise<{ messageId
 
 const okSend = async () => ({ messageId: '<generated@smtp.example.com>' });
 
+/**
+ * A stand-in for worker/lib/mailer's buildRaw.
+ *
+ * Every call returns a DISTINCT Buffer, because the assertions that matter
+ * here are about identity rather than content: the bytes handed to SMTP have
+ * to be the very object the composer produced, and the Sent folder has to be
+ * handed those same objects — not a second build of the same inputs, which
+ * would carry a different Message-ID and different MIME boundaries. Its
+ * content names nothing from the message.
+ */
+function makeComposer() {
+  const built: Array<{ mail: Record<string, unknown>; raw: Buffer }> = [];
+
+  const buildRaw = async (mail: Record<string, unknown>): Promise<Buffer> => {
+    const raw = Buffer.from(`raw-${built.length + 1}`);
+    built.push({ mail, raw });
+    return raw;
+  };
+
+  return { buildRaw: buildRaw as unknown as CycleDeps['buildRaw'], built };
+}
+
+/**
+ * A stand-in for worker/lib/imap's appendToSent. `behaviour` decides how many
+ * of the batch were filed, or rejects to stand for a refused IMAP login —
+ * which providers hand out routinely while SMTP keeps working.
+ */
+function makeSentFolder(behaviour: (messages: Buffer[]) => Promise<number> = async (m) => m.length) {
+  const calls: Array<{ cfg: Record<string, unknown>; messages: Buffer[] }> = [];
+
+  const appendToSent = async (cfg: Record<string, unknown>, messages: Buffer[]): Promise<number> => {
+    calls.push({ cfg, messages });
+    return behaviour(messages);
+  };
+
+  return { appendToSent: appendToSent as unknown as CycleDeps['appendToSent'], calls };
+}
+
 function makeDeps(
   db: SupabaseClient,
   createTransport: (cfg: never) => Transporter,
@@ -272,6 +320,10 @@ function makeDeps(
   return {
     db,
     createTransport: createTransport as CycleDeps['createTransport'],
+    // Defaults, so every test that does not care about either still runs; the
+    // tests that do care pass their own through `over` and read the calls.
+    buildRaw: makeComposer().buildRaw,
+    appendToSent: makeSentFolder().appendToSent,
     domainAcceptsMail: async () => true,
     sleep: vi.fn(async () => undefined),
     now: () => INSIDE,
@@ -1068,5 +1120,176 @@ describe('worker/lib/engine — campaign rollup', () => {
     const busy = oneMailbox([claimedRow(1)]);
     await runCycle(makeDeps(busy.db, makeMailer(okSend).createTransport));
     expect(busy.names()).toContain('finalize_email_campaigns');
+  });
+});
+
+describe('worker/lib/engine — filing a copy in the mailbox\'s Sent folder', () => {
+  it('sends the bytes the composer built, and files those same bytes', async () => {
+    const stub = oneMailbox([claimedRow(1), claimedRow(2)], { accounts: [imapAccountRow()] });
+    const mailer = makeMailer(okSend);
+    const composer = makeComposer();
+    const sent = makeSentFolder();
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, {
+        buildRaw: composer.buildRaw,
+        appendToSent: sent.appendToSent,
+      }),
+    );
+
+    // Built once per message, and the buffer SMTP was handed is that very
+    // object — not a second build, which would carry a different Message-ID
+    // and different MIME boundaries and so be a different message.
+    expect(composer.built).toHaveLength(2);
+    expect(mailer.sent.map((m) => m.raw)).toEqual([composer.built[0].raw, composer.built[1].raw]);
+    expect(mailer.sent[0].raw).toBe(composer.built[0].raw);
+
+    // `raw` carries no addresses nodemailer can read, so the envelope is
+    // named explicitly or the message is a MAIL FROM with no RCPT TO — as
+    // objects, because nodemailer splits a bare envelope string on commas and
+    // an address holding one would become a second, unsuppressed recipient.
+    expect(mailer.sent[0].envelope).toEqual({
+      from: { address: 'ada@example.com' },
+      to: { address: 'person1@recipient.test' },
+    });
+
+    // One Message-ID, in the bytes that were sent, in what SMTP reports back
+    // and in the row — never a second one invented for the raw wrapper.
+    expect(composer.built[0].mail.messageId).toBe('<msg-1@example.com>');
+    expect(mailer.sent[0].messageId).toBe('<msg-1@example.com>');
+
+    // One connection for the batch, after it, carrying exactly the buffers
+    // that were delivered, in order.
+    expect(sent.calls).toHaveLength(1);
+    expect(sent.calls[0].messages).toEqual([composer.built[0].raw, composer.built[1].raw]);
+    expect(sent.calls[0].messages[0]).toBe(composer.built[0].raw);
+    // The same credential serves both protocols — there is no imap_username.
+    expect(sent.calls[0].cfg).toEqual({
+      host: 'imap.example.com',
+      port: 993,
+      secure: true,
+      user: 'ada@example.com',
+      password: 'app-specific-password',
+    });
+
+    expect(result.sent).toBe(2);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('files only what was actually delivered', async () => {
+    const stub = oneMailbox([claimedRow(1), claimedRow(2)], { accounts: [imapAccountRow()] });
+    const composer = makeComposer();
+    const sent = makeSentFolder();
+    let n = 0;
+    const mailer = makeMailer(async () => {
+      n += 1;
+      // The first recipient's mailbox is full; the second one is fine. A
+      // 'transient' failure stops nothing, so the batch runs on.
+      if (n === 1) throw smtpError(452, 'mailbox full');
+      return { messageId: '<b@smtp>' };
+    });
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, {
+        buildRaw: composer.buildRaw,
+        appendToSent: sent.appendToSent,
+      }),
+    );
+
+    // Both were composed; only the delivered one is in the mailbox's record.
+    expect(composer.built).toHaveLength(2);
+    expect(sent.calls[0].messages).toEqual([composer.built[1].raw]);
+    expect(result.sent).toBe(1);
+    expect(result.failed).toBe(1);
+  });
+
+  it('never lets a refused Sent folder change a message\'s outcome', async () => {
+    const stub = oneMailbox([claimedRow(1), claimedRow(2)], { accounts: [imapAccountRow()] });
+    const mailer = makeMailer(okSend);
+    const sent = makeSentFolder(async () => {
+      throw new Error('imap login rejected for ada@example.com');
+    });
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { appendToSent: sent.appendToSent }),
+    );
+
+    // The messages were delivered before the append was ever attempted, and
+    // an unreadable Sent folder may not turn a delivery into a failure.
+    expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual(['sent', 'sent']);
+    expect(result.sent).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.skipped).toBe(0);
+    // IMAP is a separate permission from SMTP at every provider, so a mailbox
+    // that cannot be written to must never be struck or paused for it.
+    expect(stub.strikes()).toHaveLength(0);
+
+    // Noted, so an admin can see it — as a count, never a subject, a body or
+    // a recipient. The buffers are whole message sources.
+    const errors = result.errors.join(' ');
+    expect(errors).toContain('Sent folder');
+    expect(errors).toContain('2');
+    expect(errors).not.toContain('person1@recipient.test');
+    expect(errors).not.toContain('Hello');
+  });
+
+  it('reports the copies a partial append left unfiled, and still counts them sent', async () => {
+    const stub = oneMailbox([claimedRow(1), claimedRow(2)], { accounts: [imapAccountRow()] });
+    const mailer = makeMailer(okSend);
+    // The folder took the first and refused the second.
+    const sent = makeSentFolder(async () => 1);
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { appendToSent: sent.appendToSent }),
+    );
+
+    expect(result.sent).toBe(2);
+    expect(result.errors.join(' ')).toContain('1 of 2');
+  });
+
+  it('never attempts an append for a mailbox with no IMAP host', async () => {
+    // The default account fixture has none, which is the ordinary mailbox.
+    const stub = oneMailbox([claimedRow(1)]);
+    const mailer = makeMailer(okSend);
+    const sent = makeSentFolder();
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { appendToSent: sent.appendToSent }),
+    );
+
+    // Not a connection, and not an error either: IMAP is optional and its
+    // absence is not a fault to report on every cycle.
+    expect(sent.calls).toHaveLength(0);
+    expect(result.sent).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('files what it already delivered when the worker is told to stop mid-batch', async () => {
+    const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)], {
+      accounts: [imapAccountRow()],
+    });
+    const composer = makeComposer();
+    const sent = makeSentFolder();
+    let stop = false;
+    const mailer = makeMailer(async () => {
+      stop = true;
+      return { messageId: '<a@smtp>' };
+    });
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, {
+        buildRaw: composer.buildRaw,
+        appendToSent: sent.appendToSent,
+        shouldStop: () => stop,
+      }),
+    );
+
+    // The batch ends early and the rest goes back on the queue — but the one
+    // message that did go out is still filed. A shutdown is not a reason for
+    // the mailbox to have no record of what it sent.
+    expect(result.sent).toBe(1);
+    expect(result.skipped).toBe(2);
+    expect(sent.calls).toHaveLength(1);
+    expect(sent.calls[0].messages).toEqual([composer.built[0].raw]);
   });
 });

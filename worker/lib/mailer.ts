@@ -7,6 +7,8 @@
 // keeps only the part that needs a socket.
 
 import nodemailer, { type Transporter } from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer';
+import type Mail from 'nodemailer/lib/mailer';
 
 import { PER_MAILBOX_SLICE } from '@/lib/email/mailboxPool';
 import { MAX_JITTER_MS } from '@/lib/email/sendWindow';
@@ -64,4 +66,22 @@ export function createTransport(cfg: SmtpConfig): Transporter {
     // the price; the two timeouts above still bound the common case.
     socketTimeout: MAX_JITTER_MS + 60_000,
   });
+}
+
+/**
+ * The exact bytes a message will be sent as.
+ *
+ * The engine hands the SAME buffer to SMTP and to the mailbox's Sent folder,
+ * which is the whole point of this function existing: sending these exact
+ * bytes and appending these exact bytes guarantees the copy in the mailbox is
+ * byte-identical to what the recipient received — same Message-ID, same
+ * headers, same MIME boundaries. Building it twice would not achieve that.
+ * MailComposer draws a fresh Message-ID and fresh boundaries on every compile,
+ * so a second build produces a DIFFERENT message that merely looks alike: the
+ * customer's Sent folder would hold a message no recipient ever saw, and
+ * anything that threads on the Message-ID the recipient is quoting would match
+ * nothing in it.
+ */
+export function buildRaw(mail: Mail.Options): Promise<Buffer> {
+  return new MailComposer(mail).compile().build();
 }

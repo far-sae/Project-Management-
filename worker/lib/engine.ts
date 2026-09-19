@@ -38,6 +38,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Transporter } from 'nodemailer';
+import type Mail from 'nodemailer/lib/mailer';
 
 import { decryptSecret } from '@/lib/email/crypto';
 import { blockedReason, selectMailboxes } from '@/lib/email/mailboxPool';
@@ -54,6 +55,7 @@ import type {
 import { signUnsubscribeToken, unsubscribeUrl } from '@/lib/email/unsubscribe';
 
 import { domainOfEmail } from './dns.js';
+import type { ImapConfig } from './imap.js';
 import type { SmtpConfig } from './mailer.js';
 
 /* ------------------------------------------------------------------- types */
@@ -61,6 +63,18 @@ import type { SmtpConfig } from './mailer.js';
 export interface CycleDeps {
   db: SupabaseClient;
   createTransport: (cfg: SmtpConfig) => Transporter;
+  /**
+   * The exact bytes a message is sent as. In production this is `buildRaw`
+   * from worker/lib/mailer.ts; it is injected for the same reason everything
+   * else here is, so the cycle can be driven with no nodemailer at all.
+   */
+  buildRaw: (mail: Mail.Options) => Promise<Buffer>;
+  /**
+   * Files copies of sent messages in the mailbox's own Sent folder. In
+   * production this is `appendToSent` from worker/lib/imap.ts — injected
+   * because it opens a socket, which the tests must never do.
+   */
+  appendToSent: (cfg: ImapConfig, messages: Buffer[]) => Promise<number>;
   domainAcceptsMail: (domain: string) => Promise<boolean>;
   sleep: (ms: number) => Promise<void>;
   now: () => Date;
@@ -125,6 +139,13 @@ interface AccountRow {
   smtp_port: number;
   smtp_secure: boolean;
   smtp_username: string;
+  // IMAP is optional, and everything here works without it: these three are
+  // read only so a delivered message can be filed in this mailbox's own Sent
+  // folder. There is no imap_username column on purpose — the same credential
+  // serves both protocols (migration 157a).
+  imap_host: string | null;
+  imap_port: number | null;
+  imap_secure: boolean | null;
 }
 
 interface CampaignRow {
@@ -146,12 +167,16 @@ interface ClaimedRow {
 
 /** The columns of email_accounts the send needs; the pool data comes from the view. */
 const ACCOUNT_COLUMNS =
-  'id, from_name, from_email, reply_to, smtp_host, smtp_port, smtp_secure, smtp_username';
+  'id, from_name, from_email, reply_to, smtp_host, smtp_port, smtp_secure, smtp_username, ' +
+  'imap_host, imap_port, imap_secure';
 
 /** PostgREST returns 1000 rows by default, so both reads are paged explicitly. */
 const PAGE_SIZE = 1000;
 /** A stop for a page that never shrinks; 50 pages is 50,000 mailboxes. */
 const MAX_PAGES = 50;
+
+/** The default migration 157 gives imap_port, for a row read before it applied. */
+const DEFAULT_IMAP_PORT = 993;
 
 /** Attempts at a 'sent' settlement, and the pause before the 2nd and 3rd. */
 const SETTLE_ATTEMPTS = 3;
@@ -503,8 +528,23 @@ async function runMailbox(
     password,
   });
 
+  // Null whenever this mailbox has no IMAP host, which is the ordinary case:
+  // IMAP is optional and a mailbox without it must send exactly as before,
+  // never attempting a connection. The same credential serves both protocols,
+  // so the password just decrypted is the one the append logs in with.
+  const imap: ImapConfig | null =
+    account.imap_host && account.imap_host.trim() !== ''
+      ? {
+          host: account.imap_host.trim(),
+          port: account.imap_port ?? DEFAULT_IMAP_PORT,
+          secure: account.imap_secure ?? true,
+          user: account.smtp_username,
+          password,
+        }
+      : null;
+
   try {
-    await sendBatch(deps, result, note, mailbox, take, settings, account, transport, who);
+    await sendBatch(deps, result, note, mailbox, take, settings, account, transport, imap, who);
   } finally {
     // Release the socket rather than holding a connection open until the next
     // cycle, which some providers count against the mailbox.
@@ -525,6 +565,7 @@ async function sendBatch(
   settings: EmailSettings,
   account: AccountRow,
   transport: Transporter,
+  imap: ImapConfig | null,
   who: string,
 ): Promise<void> {
   /**
@@ -640,6 +681,15 @@ async function sendBatch(
   let deliveredOnTransport = 0;
 
   /**
+   * The raw bytes of every message this batch actually delivered, filed in
+   * the mailbox's Sent folder once the batch is done. Bounded by the claim:
+   * a mailbox is handed at most PER_MAILBOX_SLICE rows in one pass, so this
+   * holds at most that many message sources at a time and is dropped with
+   * the batch.
+   */
+  const copies: Buffer[] = [];
+
+  /**
    * Hands rows this worker never attempted straight back to the queue. They
    * carry the attempt the claim stamped on them, and three of those makes a row
    * unclaimable forever — so `p_restore_attempt` gives it back. Without that, a
@@ -674,7 +724,9 @@ async function sendBatch(
       // Shutting down. Give the rest of the batch back now rather than leaving
       // it to the ten-minute sweep, so a redeploy costs the queue nothing.
       await returnUnattempted(i, 'The worker was asked to stop before this message was attempted.');
-      return;
+      // `break`, not `return`: whatever this batch already delivered still has
+      // to be filed in the Sent folder below.
+      break;
     }
 
     const row = rows[i];
@@ -709,7 +761,25 @@ async function sendBatch(
       continue;
     }
 
+    /**
+     * The RFC 5322 Message-ID this message will carry, named here rather than
+     * left to nodemailer. Sending pre-built bytes means nodemailer never sees
+     * the Message-ID inside them, so it would mint a second one for
+     * `info.messageId` and this row's provider_message_id would name a
+     * message that exists nowhere. Derived from the queue row, so the id in
+     * the recipient's copy, in the mailbox's Sent copy and in the database are
+     * one value.
+     */
+    const messageId = `<${row.message_id}@${domainOfEmail(account.from_email) || 'localhost'}>`;
+
     let built: BuiltMessage;
+    /**
+     * The exact bytes this message is sent as, built ONCE. The same buffer
+     * goes to SMTP and, after the batch, to the Sent folder, so the copy in
+     * the mailbox is the message the recipient received rather than a second
+     * one built from the same inputs — see buildRaw in worker/lib/mailer.ts.
+     */
+    let raw: Buffer;
     try {
       let unsubscribe: string | undefined;
       if (campaign.kind === 'bulk') {
@@ -725,11 +795,29 @@ async function sendBatch(
         mergeData: row.merge_data ?? {},
         unsubscribeUrl: unsubscribe,
       });
+      // Composed here and not inside the send's own try/catch: a message that
+      // will not compose is not an SMTP failure, and classifySmtpError would
+      // read it as a transient one while isMailboxFault charged it to the
+      // mailbox — a strike for a connection that was never opened.
+      raw = await deps.buildRaw({
+        // Objects, not `"name" <addr>` strings: a CSV-sourced name holding a
+        // quote would otherwise inject a second recipient that no suppression
+        // check ever saw.
+        from: { name: String(account.from_name ?? ''), address: String(account.from_email) },
+        replyTo: account.reply_to ?? undefined,
+        to: { name: String(row.to_name ?? ''), address: String(row.to_email) },
+        subject: built.subject,
+        html: built.html,
+        text: built.text,
+        headers: built.headers,
+        messageId,
+      });
     } catch (err) {
       // Nothing has been handed to SMTP, so the row goes back on the queue.
-      // The attempt is NOT restored here: a merge field that throws throws
-      // every time, and a row that never spends an attempt is a row that is
-      // retried forever. Three tries and it retires, like any other bad row.
+      // The attempt is NOT restored here: a merge field that throws, or a
+      // message that will not compose, does it every time, and a row that
+      // never spends an attempt is a row that is retried forever. Three tries
+      // and it retires, like any other bad row.
       const message = short(err);
       note(who, message);
       await settle(row.message_id, 'transient', message);
@@ -748,16 +836,28 @@ async function sendBatch(
     let delivered: { providerMessageId: string | null } | null = null;
     try {
       const info = await transport.sendMail({
-        // Objects, not `"name" <addr>` strings: a CSV-sourced name holding a
-        // quote would otherwise inject a second recipient that no suppression
-        // check ever saw.
-        from: { name: String(account.from_name ?? ''), address: String(account.from_email) },
-        replyTo: account.reply_to ?? undefined,
-        to: { name: String(row.to_name ?? ''), address: String(row.to_email) },
-        subject: built.subject,
-        html: built.html,
-        text: built.text,
-        headers: built.headers,
+        // The bytes composed above, sent verbatim. Nodemailer builds nothing
+        // from them, which is what makes the Sent copy below identical to
+        // what the recipient received.
+        raw,
+        // With `raw` there are no headers for nodemailer to read addresses
+        // out of, so the envelope has to be named here or the send is a MAIL
+        // FROM with no RCPT TO. The sender is the bounce address, exactly
+        // what the `from` option produced before.
+        //
+        // Objects again, and for the same reason: nodemailer runs a bare
+        // envelope string through its address parser, which SPLITS ON COMMAS,
+        // so a to_email carrying one would become two RCPT TO commands and
+        // mail somebody no suppression check ever saw. An `{ address }`
+        // object is taken whole.
+        envelope: {
+          from: { address: String(account.from_email) },
+          to: { address: String(row.to_email) },
+        },
+        // Not a header — the bytes already carry this one. It is repeated
+        // here only so `info.messageId` reports the id that is actually in
+        // the message rather than a fresh one nodemailer invented.
+        messageId,
       });
       delivered = { providerMessageId: info?.messageId ?? null };
       deliveredOnTransport += 1;
@@ -814,6 +914,11 @@ async function sendBatch(
       // about is worse than no summary.
       const recorded = await settle(row.message_id, 'sent', null, delivered.providerMessageId);
       if (recorded) result.sent += 1;
+      // Kept for the Sent folder, filed once for the whole batch below.
+      // Whether the settlement landed is beside the point here: the message
+      // reached the recipient, and the mailbox's own record is supposed to
+      // show what was sent from it.
+      copies.push(raw);
     }
 
     if (abort) {
@@ -828,5 +933,60 @@ async function sendBatch(
     // pause of up to 25 seconds, before anything noticed. That is most of a
     // container's shutdown grace on its own.
     if (i < rows.length - 1 && !stopped(deps)) await deps.sleep(jitterMs(settings));
+  }
+
+  await fileSentCopies(deps, note, imap, copies, who);
+}
+
+/**
+ * Files this batch's delivered messages in the mailbox's own Sent folder.
+ *
+ * SMTP hands a message to the server for delivery and puts a copy nowhere —
+ * a mail client files its own — so without this the customer's mailbox holds
+ * no record of anything the app sent from it, which looks broken and leaves
+ * support nothing to look at.
+ *
+ * Two rules shape this function, and neither is negotiable:
+ *
+ *   * A failure to file NEVER fails a send. Every buffer here belongs to a
+ *     message that has already been delivered and already been settled; the
+ *     copy is a convenience for whoever opens the mailbox. So this is noted
+ *     and nothing more: it is called after the batch, it throws nothing, and
+ *     it touches no result count and no mailbox health. A mailbox whose IMAP
+ *     credential is refused — which providers routinely do while SMTP works
+ *     perfectly — must keep sending.
+ *   * Nothing it reports may carry a body, a subject or a recipient. The
+ *     buffers are whole message sources, so the notes below are counts, and
+ *     `short` caps whatever the IMAP error itself says.
+ */
+async function fileSentCopies(
+  deps: CycleDeps,
+  note: Note,
+  imap: ImapConfig | null,
+  copies: Buffer[],
+  who: string,
+): Promise<void> {
+  // No IMAP configured is not a failure and is not reported: IMAP is optional
+  // and a mailbox without it sends exactly as it always did.
+  if (!imap || copies.length === 0) return;
+
+  try {
+    // One connection for the batch. A session per message would cost more
+    // than the sends did and would multiply the logins that get a mailbox
+    // rate-limited.
+    const saved = await deps.appendToSent(imap, copies);
+    if (saved < copies.length) {
+      note(
+        who,
+        `${copies.length - saved} of ${copies.length} delivered messages could not be filed in ` +
+          "this mailbox's Sent folder. They were sent; only the copies are missing.",
+      );
+    }
+  } catch (err) {
+    note(
+      who,
+      `this mailbox's Sent folder could not be written, so ${copies.length} delivered ` +
+        `messages were not filed in it (${short(err)}). They were sent.`,
+    );
   }
 }
