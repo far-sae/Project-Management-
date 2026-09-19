@@ -73,6 +73,17 @@ export interface EmailCampaign {
   sentCount: number;
   failedCount: number;
   suppressedCount: number;
+  /**
+   * Alongside the four counts above, but unlike them, never recomputed by
+   * `finalize_email_campaigns()` (migration 155) — that function only
+   * touches a campaign still `sending`/`scheduled`, and a reply or bounce
+   * typically arrives well after a campaign has already closed to `sent`.
+   * `record_inbox_result()` (migration 157d) increments these itself,
+   * directly, once per message, on the same null-to-set transition that
+   * writes `EmailMessage.repliedAt`/`bouncedAt`.
+   */
+  repliedCount: number;
+  bouncedCount: number;
   createdAt: Date;
 }
 
@@ -90,10 +101,13 @@ export interface EmailMessage {
   sentAt: Date | null;
   /**
    * Set once, the first time `record_inbox_result()` (migration 157d) matches
-   * a reply or a bounce to this message — coalesced there, so this never
-   * moves after it is first written. A bounce also adds `toEmail` to
-   * `email_suppressions`; this column does not say so by itself, which is why
-   * every screen that shows `bouncedAt` says it in words next to it.
+   * a reply or a bounce to this message — the write there is gated on the
+   * column still being null, so this never moves after it is first written,
+   * and that same transition is what increments the campaign's
+   * `repliedCount`/`bouncedCount` (never on a repeat). A bounce also adds
+   * `toEmail` to `email_suppressions`; this column does not say so by
+   * itself, which is why every screen that shows `bouncedAt` says it in
+   * words next to it.
    */
   repliedAt: Date | null;
   bouncedAt: Date | null;
@@ -159,7 +173,14 @@ export interface InboxEnvelope {
 export interface InboxEvent {
   id: string;
   organizationId: string;
-  accountId: string;
+  /**
+   * The mailbox whose scan produced this event, or null once that mailbox
+   * has been deleted — `email_inbox_events.account_id` is `on delete set
+   * null` (migration 157c) specifically so the event record outlives the
+   * mailbox rather than being erased along with it. Nullable here for the
+   * same reason: the type should say so rather than paper over it.
+   */
+  accountId: string | null;
   kind: 'reply' | 'bounce';
   address: string;
   messageId: string | null;

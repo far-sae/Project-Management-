@@ -210,7 +210,14 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   };
 
   const handleRetryVerify = async () => {
-    if (!pendingAccountId) return;
+    // Re-checked here even though the button that calls this is only ever
+    // rendered inside the admin-gated AccountFormDialog (canRetry can only
+    // go true after handleCreate, itself admin-gated, has already run): this
+    // handler writes mailbox settings (applyPoolSettings, applyImapSettings)
+    // the same way every other handler in this file does, and the pattern
+    // exists so a future change to the dialog can't quietly open a hole here
+    // without anyone noticing this was the one handler that skipped it.
+    if (!isAdmin || !pendingAccountId) return;
     setCreating(true);
     setCreateError(null);
     try {

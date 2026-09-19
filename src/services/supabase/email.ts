@@ -137,6 +137,11 @@ interface EmailCampaignRow {
   sent_count: number;
   failed_count: number;
   suppressed_count: number;
+  // Written directly by record_inbox_result() (migration 157d), on the
+  // reply/bounce transition — never recomputed by finalize_email_campaigns()
+  // the way the four counts above are.
+  replied_count: number;
+  bounced_count: number;
   created_at: string;
 }
 
@@ -263,10 +268,10 @@ export const mapAccountRow = (row: EmailAccountRow): EmailAccount => ({
 export const mapInboxEventRow = (row: InboxEventRow): InboxEvent => ({
   id: row.id,
   organizationId: row.organization_id,
-  // The column is nullable (ON DELETE SET NULL when a mailbox is deleted —
-  // migration 157c); an event outlives the mailbox it was seen in, and this
-  // is the rare case where that mailbox is already gone.
-  accountId: row.account_id ?? "",
+  // Passed through as-is, null and all — see the doc comment on
+  // InboxEvent.accountId in src/lib/email/types.ts for why this is not
+  // coalesced to an empty string.
+  accountId: row.account_id,
   kind: row.kind,
   address: row.address,
   messageId: row.message_id,
@@ -290,6 +295,8 @@ export const mapCampaignRow = (row: EmailCampaignRow): EmailCampaign => ({
   sentCount: row.sent_count,
   failedCount: row.failed_count,
   suppressedCount: row.suppressed_count,
+  repliedCount: row.replied_count,
+  bouncedCount: row.bounced_count,
   createdAt: new Date(row.created_at),
 });
 
@@ -865,6 +872,15 @@ export const removeSuppression = async (id: string): Promise<void> => {
  * matched or not (migration 157c). An unmatched bounce (`messageId: null`)
  * is not a bug: it means a bounce notification arrived for an address this
  * organization never actually mailed, and nothing was suppressed for it.
+ *
+ * Scaffolding: nothing in the app calls this yet. `MailboxCard` reads a
+ * mailbox's own `imapStatus`/`imapLastError`, and `CampaignsTab` reads
+ * `EmailMessage.repliedAt`/`bouncedAt` and `EmailCampaign.repliedCount`/
+ * `bouncedCount` directly, so neither screen needed the raw per-event list.
+ * This exists because the brief specified it as part of the service layer's
+ * interface, and it is the natural read for a future support/audit view —
+ * e.g. "why is this address suppressed?" or "we saw a bounce that matched
+ * nothing" — kept in place deliberately rather than unused-and-forgotten.
  */
 export const listInboxEvents = async (orgId: string, limit = 50): Promise<InboxEvent[]> => {
   const { data, error } = await supabase

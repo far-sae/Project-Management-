@@ -13,7 +13,9 @@
 --
 -- Five parts, in this order because each is used by the one after it:
 --   a. IMAP connection settings on email_accounts -- written by (e).
---   b. replied_at / bounced_at on email_messages -- written by (d).
+--   b. replied_at / bounced_at on email_messages, and the matching
+--      replied_count / bounced_count roll-up on email_campaigns -- all
+--      written by (d).
 --   c. email_inbox_events, the scan's record of what it saw -- written by (d).
 --   d. record_inbox_result(): one call settles a reply or a bounce.
 --   e. touch_inbox_scan(): the scan's own outcome, and nothing else.
@@ -152,6 +154,23 @@ alter table public.email_messages
   add column if not exists replied_at timestamptz;
 alter table public.email_messages
   add column if not exists bounced_at timestamptz;
+
+-- Per-campaign roll-ups, alongside queued_count/sent_count/failed_count/
+-- suppressed_count (152) so a campaign row stays the one place to read every
+-- count rather than three, and the Campaigns screen can show these two
+-- unconditionally, the same way it already shows the other four.
+--
+-- Unlike those four, finalize_email_campaigns() (155) never touches these: it
+-- only recomputes a campaign still 'sending' or 'scheduled', and a reply or a
+-- bounce typically arrives well after a campaign has already closed to
+-- 'sent'. record_inbox_result() below increments them itself instead, once
+-- per message, exactly on the transition a null replied_at/bounced_at makes
+-- to a set one -- see the comment there for how that transition is detected
+-- without double-counting a repeat.
+alter table public.email_campaigns
+  add column if not exists replied_count integer not null default 0;
+alter table public.email_campaigns
+  add column if not exists bounced_count integer not null default 0;
 
 -- record_inbox_result() below starts from an address and has to find what this
 -- organization sent to it, once per reply and once per bounce on every scan.
@@ -389,22 +408,59 @@ begin
    limit 1;
 
   if p_kind = 'reply' then
-    -- coalesce keeps the FIRST reply's time. What follows is more of the same
-    -- conversation, not a second reply, and overwriting would push every
-    -- "replied after" figure later each time they wrote again.
-    --
-    -- With no match v_message is null and this updates nothing: a reply from
-    -- someone we never mailed is not an error, it is simply not ours. The
-    -- event row below still records that we saw it.
+    -- The WHERE clause carries `and m.replied_at is null` rather than the
+    -- coalesce an earlier revision used, and it is doing the same job that
+    -- coalesce did -- the FIRST reply's time wins, and what follows is more
+    -- of the same conversation, not a second reply, so overwriting it would
+    -- push every "replied after" figure later each time they wrote again.
+    -- Gating the WHERE clause this way, instead of writing the same value
+    -- back unconditionally, is what makes plpgsql's FOUND below tell the
+    -- truth: it is only true when this call is the one that actually made
+    -- the null-to-set transition, never on a repeat, and never when
+    -- v_message is null (m.id = null matches no row either way, exactly as
+    -- it did before) -- a reply from someone we never mailed is not an
+    -- error, it is simply not ours. The event row below still records that
+    -- we saw it.
     update public.email_messages m
-       set replied_at = coalesce(m.replied_at, p_at)
-     where m.id = v_message;
+       set replied_at = p_at
+     where m.id = v_message
+       and m.replied_at is null;
+
+    -- Increments the matched message's own campaign, and only on the
+    -- transition FOUND just confirmed -- never on a repeat reply to a
+    -- message already marked replied, and never for an unmatched reply,
+    -- since FOUND is then false too. campaign_id is NOT NULL on
+    -- email_messages (152), so a matched message always has exactly one
+    -- campaign to credit.
+    if found then
+      update public.email_campaigns c
+         set replied_count = c.replied_count + 1
+        from public.email_messages m
+       where m.id = v_message
+         and c.id = m.campaign_id;
+    end if;
 
   elsif p_kind = 'bounce' then
-    -- Same coalesce, same reason: the first failure is when it bounced.
+    -- Same transition guard, same reason: the first failure is when it
+    -- bounced.
     update public.email_messages m
-       set bounced_at = coalesce(m.bounced_at, p_at)
-     where m.id = v_message;
+       set bounced_at = p_at
+     where m.id = v_message
+       and m.bounced_at is null;
+
+    -- Same increment, same transition-only rule, for the campaign's
+    -- bounced_count. Deliberately BEFORE the suppression insert below: that
+    -- insert runs unconditionally against whatever v_message resolved to,
+    -- repeat bounce or not (it is itself idempotent via `on conflict do
+    -- nothing`), so this count would otherwise have no fixed point to check
+    -- FOUND against once other statements below have run and reset it.
+    if found then
+      update public.email_campaigns c
+         set bounced_count = c.bounced_count + 1
+        from public.email_messages m
+       where m.id = v_message
+         and c.id = m.campaign_id;
+    end if;
 
     -- The rule this function exists to enforce. A bounce notification is
     -- unauthenticated mail: anyone who knows a customer's address can post

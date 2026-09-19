@@ -148,15 +148,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
           <div className="space-y-3">
             {campaigns.map((campaign) => {
               const expanded = expandedId === campaign.id;
-              const loadedMessages = messagesByCampaign[campaign.id];
-              const messages = loadedMessages ?? [];
-              // Computed from whatever has been loaded rather than a
-              // separate count query, so the header's R/B figures only
-              // appear once this campaign has been expanded at least once —
-              // exactly the data messageInboxBadge below already needs per
-              // recipient.
-              const repliedCount = messages.filter((m) => m.repliedAt).length;
-              const bouncedCount = messages.filter((m) => m.bouncedAt).length;
+              const messages = messagesByCampaign[campaign.id] ?? [];
               return (
                 <div key={campaign.id} className="border border-border rounded-lg overflow-hidden">
                   <div
@@ -184,16 +176,14 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
                       <span className="text-emerald-600 dark:text-emerald-400" title="Sent">S {campaign.sentCount}</span>
                       <span className="text-red-600 dark:text-red-400" title="Failed">F {campaign.failedCount}</span>
                       <span className="text-muted-foreground" title="Suppressed">X {campaign.suppressedCount}</span>
-                      {/* Only once recipients have been loaded (expanded at
-                          least once this session) — there is no separate
-                          count query, so before then there is nothing to
-                          show rather than a count that reads as zero. */}
-                      {loadedMessages !== undefined && (
-                        <>
-                          <span className="text-blue-600 dark:text-blue-400" title="Replied">R {repliedCount}</span>
-                          <span className="text-amber-600 dark:text-amber-400" title="Bounced">B {bouncedCount}</span>
-                        </>
-                      )}
+                      {/* Stored columns (migration 157d increments them
+                          directly), rendered unconditionally exactly like
+                          the four counts to their left — never derived from
+                          the expanded recipient list, which loads lazily and
+                          would otherwise make this row show nothing, not
+                          even a zero, until an admin happened to expand it. */}
+                      <span className="text-blue-600 dark:text-blue-400" title="Replied">R {campaign.repliedCount}</span>
+                      <span className="text-amber-600 dark:text-amber-400" title="Bounced">B {campaign.bouncedCount}</span>
                     </div>
                   </div>
                   {expanded && (
