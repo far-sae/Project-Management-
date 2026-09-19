@@ -10,8 +10,10 @@
  * that poked it, are gone (migration 156): two senders claiming from the same
  * outbox is how a recipient gets the same message twice.
  *
- * Run it with `npm run worker` from the repository root, or `npm start` from
- * this directory, and keep exactly one instance running in production.
+ * Run it with `npm run worker` from the repository root — the only supported
+ * invocation; this directory has no package.json of its own, since it shares
+ * the packages and the src/lib/email helpers declared at the repository
+ * root. Keep exactly one instance running in production.
  */
 
 import { env, serviceClient } from './lib/db.js';

@@ -47,13 +47,15 @@ never printing its value.
 ```bash
 # from the repository root
 npm run worker
-
-# or from this directory
-npm start
 ```
 
-Both run `tsx`, so there is no build step. On Railway, use `npm run worker` as
-the start command, set the variables above, and keep the replica count at one.
+This is the only supported way to run it — `worker/` has no `package.json`
+of its own (see `docs/superpowers/deployment/email-worker-setup.md` for why:
+it shares the pure email helpers in `src/lib/email` and the packages in the
+root `package.json`, so it cannot be built or started as an isolated
+folder). Runs `tsx`, so there is no build step. On Railway, use `npm run
+worker` as the start command with Root Directory left at the repository
+root, set the variables above, and keep the replica count at one.
 
 ### Shutdown
 

@@ -82,15 +82,36 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     return result;
   };
 
-  // createAccount has no warmup arguments, so the ramp the admin picked in
-  // the Sending section is applied through a second call, right after —
-  // starting it today when warmup is on, since a null warmup_started_on
-  // would otherwise hold the mailbox at its start volume forever (migration
-  // 156). Shared by handleCreate and the retry path below: it's a plain
-  // column update, not an insert, so calling it again is idempotent and
-  // exactly what finishes the job if it was this step, not verification,
-  // that failed the first time.
+  // createAccount takes dailyLimit but has no warmup arguments, so the whole
+  // Sending section is reapplied here, right after — including dailyLimit
+  // again, not just the warmup fields, because the dialog leaves it editable
+  // while a retry is pending and updateAccountPool only writes a column when
+  // it's given, so a value the admin changed after the first attempt would
+  // otherwise be silently dropped on retry (the exact failure class this
+  // function exists to close, narrowed to one field). Read from live `form`
+  // state throughout for the same reason. warmupStartedOn is set to null
+  // when warmup is off, starting it today when warmup is on, since a null
+  // warmup_started_on would otherwise hold the mailbox at its start volume
+  // forever (migration 156). Shared by handleCreate and the retry path
+  // below: updateAccountPool is a plain column update, not an insert, so
+  // calling it again is idempotent and exactly what finishes the job if it
+  // was this step, not verification, that failed the first time.
+  //
+  // warmupStartedOn is stamped with `new Date()` on every call, including a
+  // retry, so a retry that crosses midnight slides the ramp's start date
+  // forward rather than preserving the original attempt's timestamp. This
+  // is intentional, not a bug: until verification actually succeeds the
+  // mailbox's status never reaches 'active', so isSendable() keeps it out of
+  // the pool regardless of what warmup_started_on says — nothing is sent on
+  // the strength of a start date that only got as far as an unverified
+  // account. Re-stamping "now" on every retry can only ever push the ramp's
+  // day-0 later, never earlier, which is the conservative direction for a
+  // mechanism whose entire purpose is protecting a cold mailbox's
+  // reputation: at worst a slow retry costs the mailbox a day of ramp
+  // progress it hadn't actually earned yet (nothing had sent), never a day
+  // it's given credit for sending more than it should.
   const applyPoolSettings = (accountId: string) => updateAccountPool(accountId, {
+    dailyLimit: Number(form.dailyLimit) || 40,
     warmupEnabled: form.warmupEnabled,
     warmupStartedOn: form.warmupEnabled ? new Date() : null,
     warmupStartVolume: Number(form.warmupStartVolume) || 0,
