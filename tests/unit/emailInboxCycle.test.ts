@@ -381,6 +381,68 @@ describe('runInboxCycle', () => {
     expect(result.errors).toEqual([]);
   });
 
+  it('reads a subject-only bounce candidate and suppresses nothing on it', async () => {
+    // A person forwarded a bounce and asked whether the address was right; the
+    // contact answered. Her subject now reads "Re: Undeliverable:", her
+    // signature reads "ada@acme.com | Suite 500", and the database holds a
+    // message the organisation sent her. Before the evidence gate this scan
+    // suppressed her organisation-wide, permanently, in the same pass that
+    // recorded her reply.
+    const human = envelope({ from: 'ada@acme.com', subject: 'Re: Undeliverable: your invoice' });
+    const h = makeDeps(
+      {
+        mailboxes: [mailboxRow()],
+        secrets: [secretRow()],
+        messages: [sentRow('ada@acme.com')],
+      },
+      {
+        envelopes: [human],
+        // Downloaded — the subject earned that much — and then left alone.
+        bounces: [
+          {
+            envelope: human,
+            source: 'Yes, that address is right.\n--\nAda Lovelace | ada@acme.com | Suite 500\n',
+          },
+        ],
+      },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    // The reply is recorded. The bounce is not, so nothing reaches the SQL
+    // that would suppress her.
+    expect(h.results().map((c) => c.args.p_kind)).toEqual(['reply']);
+    expect(result.bounces).toBe(0);
+    expect(result.replies).toBe(1);
+    // And the scan still completed: refusing to act on it is the normal
+    // outcome, not a failure to finish.
+    expect(h.touches()[0].args).toMatchObject({ p_status: 'active' });
+  });
+
+  it('records which evidence let a bounce suppress', async () => {
+    // The question a disputed suppression always comes down to, answerable
+    // months later from the event row alone.
+    const dsn = envelope({ from: 'relay@acme.com', subject: 'hello' });
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()] },
+      {
+        envelopes: [envelope({ from: 'mailer-daemon@example.com', subject: 'Undeliverable' })],
+        bounces: [
+          {
+            envelope: dsn,
+            source:
+              'Content-Type: multipart/report; report-type=delivery-status\r\n' +
+              '\r\nFinal-Recipient: rfc822; bob@acme.com\r\n',
+          },
+        ],
+      },
+    );
+
+    await runInboxCycle(h.deps);
+
+    expect(h.results()[0].args.p_detail).toMatch(/evidence: delivery-status-report/);
+  });
+
   it('opens ONE session per mailbox, whatever the window held', async () => {
     // The spec's "connect once, scan, disconnect". The pair of reads this
     // replaced logged in twice for any mailbox that had a bounce in it, and an

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   FIRST_SCAN_LOOKBACK_MS, SCAN_OVERLAP_MS,
-  scanWindow, normalizeAddress, matchReplies, looksLikeBounce, extractBouncedAddress,
+  scanWindow, normalizeAddress, matchReplies, looksLikeBounce, bounceTrigger,
+  extractBouncedAddress,
 } from "@/lib/email/inbox";
 import { classifyImapError, friendlyImapError } from "@/lib/email/imapErrors";
 import type { InboxEnvelope } from "@/lib/email/types";
@@ -81,6 +82,67 @@ describe("looksLikeBounce", () => {
   });
 });
 
+/**
+ * The gate that decides whether a bounce may SUPPRESS, as opposed to whether
+ * it was worth downloading. These used to be one decision, and a subject line
+ * was enough for both.
+ */
+describe("bounceTrigger", () => {
+  const dsn =
+    "Content-Type: multipart/report; report-type=delivery-status\r\n" +
+    "\r\nFinal-Recipient: rfc822; bob@other.com\r\nAction: failed\r\n";
+
+  it("accepts a bounce notifier sender", () => {
+    expect(bounceTrigger(env({ from: "MAILER-DAEMON@acme.com" }), "")).toBe("notifier-sender");
+    expect(bounceTrigger(env({ from: "postmaster@acme.com" }), "")).toBe("notifier-sender");
+  });
+
+  it("accepts a body that declares itself a delivery status report", () => {
+    expect(bounceTrigger(env({ from: "relay@acme.com" }), dsn)).toBe("delivery-status-report");
+    expect(
+      bounceTrigger(env({ from: "relay@acme.com" }), "Content-Type: message/delivery-status\r\n"),
+    ).toBe("delivery-status-report");
+  });
+
+  it("accepts a real delivery status report whose subject says nothing", () => {
+    expect(bounceTrigger(env({ from: "relay@acme.com", subject: "hello" }), dsn)).not.toBeNull();
+  });
+
+  it("refuses a subject match with nothing behind it", () => {
+    // The case that suppressed a real contact: somebody forwards a bounce and
+    // asks whether the address is right, the contact answers, and her reply
+    // now carries "Re: Undeliverable:" in its subject. It is still worth
+    // downloading and looking at -- that is looksLikeBounce -- but looking at
+    // it is all that earns.
+    const reply = env({ from: "ada@acme.com", subject: "Re: Undeliverable: your invoice" });
+    expect(looksLikeBounce(reply)).toBe(true);
+    expect(bounceTrigger(reply, "Sure, that address is right. -- Ada")).toBeNull();
+  });
+
+  it("refuses a subject match whose signature carries a phone number", () => {
+    const reply = env({ from: "ada@acme.com", subject: "Re: Delivery Status" });
+    const body = "Yes that is me.\r\n--\r\nAda Lovelace | ada@acme.com | +1 555 0102\r\n";
+    expect(bounceTrigger(reply, body)).toBeNull();
+    // And there is nothing in it to extract either, which is the second half
+    // of the same fix: 555 is a phone number, not a delivery failure.
+    expect(extractBouncedAddress(body)).toBeNull();
+  });
+
+  it("refuses a subject match whose signature carries a suite number", () => {
+    const reply = env({ from: "ada@acme.com", subject: "Undeliverable?" });
+    const body = "Checking now.\r\n--\r\nAda Lovelace\r\nada@acme.com | Suite 500\r\n";
+    expect(bounceTrigger(reply, body)).toBeNull();
+    expect(extractBouncedAddress(body)).toBeNull();
+  });
+
+  it("refuses a header line that happens to name a port", () => {
+    const reply = env({ from: "ada@acme.com", subject: "Returned mail?" });
+    const body = "Received: from mail.acme.com (ada@acme.com) by relay:587\r\n";
+    expect(bounceTrigger(reply, body)).toBeNull();
+    expect(extractBouncedAddress(body)).toBeNull();
+  });
+});
+
 describe("extractBouncedAddress", () => {
   it("reads the standard Final-Recipient field", () => {
     const src = "Final-Recipient: rfc822; bob@other.com\r\nAction: failed\r\n";
@@ -92,6 +154,20 @@ describe("extractBouncedAddress", () => {
   });
   it("returns null when it finds nothing", () => {
     expect(extractBouncedAddress("nothing useful here")).toBeNull();
+  });
+  it("accepts an enhanced status code beside the address", () => {
+    expect(extractBouncedAddress("<bob@other.com>: 550 5.1.1 recipient rejected"))
+      .toBe("bob@other.com");
+  });
+  it("accepts the ordinary human wordings", () => {
+    expect(extractBouncedAddress("bob@other.com: no such user here")).toBe("bob@other.com");
+    expect(extractBouncedAddress("bob@other.com -- mailbox unavailable")).toBe("bob@other.com");
+  });
+  it("no longer takes a bare three-digit number as a failure", () => {
+    // The whole route by which an ordinary signature nominated its own author
+    // for permanent, organisation-wide suppression.
+    expect(extractBouncedAddress("ada@acme.com | Suite 500")).toBeNull();
+    expect(extractBouncedAddress("ada@acme.com | tel 555 0102")).toBeNull();
   });
   it("lowercases what it finds", () => {
     expect(extractBouncedAddress("Final-Recipient: rfc822; BOB@OTHER.COM")).toBe("bob@other.com");

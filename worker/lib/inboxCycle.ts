@@ -59,6 +59,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { decryptSecret } from '@/lib/email/crypto';
 import { classifyImapError, friendlyImapError } from '@/lib/email/imapErrors';
 import {
+  bounceTrigger,
   extractBouncedAddress,
   matchReplies,
   normalizeAddress,
@@ -409,6 +410,15 @@ async function scanMailbox(
   // pulled for ordinary mail: most of what lands in the window is the
   // customer's own correspondence.
   for (const candidate of scan.bounces) {
+    // Downloaded on a subject, suppressed only on evidence. The two decisions
+    // are separate on purpose: `looksLikeBounce` let this body be fetched, and
+    // that is all it is allowed to decide. A message whose only bounce-like
+    // quality is the words in its subject is read and then left alone — it is
+    // routinely a human reply to a forwarded bounce, and suppressing on it
+    // takes the replier off the organisation's list permanently.
+    const trigger = bounceTrigger(candidate.envelope, candidate.source);
+    if (!trigger) continue;
+
     const address = extractBouncedAddress(candidate.source);
     // Nothing recognisable in the notification. There is no address to
     // record an event against, so this one is simply not ours to act on.
@@ -424,6 +434,7 @@ async function scanMailbox(
       normalizeAddress(address) || address,
       candidate.envelope.at,
       who,
+      trigger,
     );
     if (recorded) result.bounces += 1;
     else incomplete = true;
@@ -568,6 +579,13 @@ async function record(
   address: string,
   at: Date,
   who: string,
+  /**
+   * For a bounce, WHICH evidence let it suppress — a notifier sender or a body
+   * that declared itself a delivery status report. Recorded so support can
+   * tell a real delivery report from something that merely looked like one,
+   * which is the question a disputed suppression always comes down to.
+   */
+  trigger?: string,
 ): Promise<boolean> {
   try {
     const { error } = await deps.db.rpc('record_inbox_result', {
@@ -575,9 +593,9 @@ async function record(
       p_kind: kind,
       p_address: address,
       p_at: at.toISOString(),
-      // Never a subject and never a body: the detail says which mailbox saw it
-      // and nothing about what it said.
-      p_detail: `seen in ${who}`,
+      // Never a subject and never a body: the detail says which mailbox saw
+      // it, and for a bounce what made it one, and nothing about what it said.
+      p_detail: trigger ? `seen in ${who} (evidence: ${trigger})` : `seen in ${who}`,
     });
     if (!error) return true;
     note(who, `a ${kind} could not be recorded: ${error.message}`);

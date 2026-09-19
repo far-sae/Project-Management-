@@ -362,6 +362,9 @@ as $$
 declare
   v_org uuid;
   v_message uuid;
+  -- When that matched message actually went out. Only the bounce path reads
+  -- it; see the recency gate in that branch for why.
+  v_sent_at timestamptz;
 begin
   -- The scan is always for one mailbox, and the event row's organization_id is
   -- NOT NULL, so a missing account is not something to record quietly: it
@@ -398,8 +401,8 @@ begin
   -- latest. NULLS LAST because DESC sorts nulls first in PostgreSQL, and a
   -- 'sent' row with no sent_at -- which record_send_result() never produces,
   -- but 152's schema permits -- would otherwise outrank every real send.
-  select m.id
-    into v_message
+  select m.id, m.sent_at
+    into v_message, v_sent_at
     from public.email_messages m
    where m.organization_id = v_org
      and m.status = 'sent'
@@ -441,6 +444,26 @@ begin
     end if;
 
   elsif p_kind = 'bounce' then
+    -- A bounce for mail sent a year ago is not a bounce for it.
+    --
+    -- The lookup above takes the most recent 'sent' row to that address with
+    -- no bound on how old it may be, which is right for a reply -- somebody
+    -- answering late is still answering -- and wrong for a bounce. A delivery
+    -- failure arrives minutes to hours after the send, occasionally a day or
+    -- two. A notification naming an address this organisation last mailed in
+    -- another quarter is not reporting on that message, and treating it as
+    -- though it were marks a long-settled message bounced, decrements nothing
+    -- back out of the campaign it already counted as delivered, and adds a
+    -- permanent tenant-wide suppression on the strength of it.
+    --
+    -- Thirty days matches SENT_LOOKBACK_MS in worker/lib/inboxCycle.ts, so the
+    -- two ends of this phase bound the same way. A null sent_at cannot be aged
+    -- at all, so it does not qualify either: nothing is suppressed on evidence
+    -- that cannot be dated.
+    if v_sent_at is null or v_sent_at < now() - interval '30 days' then
+      v_message := null;
+    end if;
+
     -- Same transition guard, same reason: the first failure is when it
     -- bounced.
     update public.email_messages m
