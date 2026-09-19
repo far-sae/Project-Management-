@@ -61,11 +61,14 @@ import { classifyImapError, friendlyImapError } from '@/lib/email/imapErrors';
 import {
   bounceTrigger,
   extractBouncedAddress,
+  isAutoReply,
   matchReplies,
   normalizeAddress,
   SCAN_OVERLAP_MS,
   scanWindow,
 } from '@/lib/email/inbox';
+
+import type { InboxEnvelope, InboxEventKind } from '@/lib/email/types';
 
 import { hasImapHost, imapConfigFor, type ImapConfig, type MailboxScan } from './imap.js';
 
@@ -472,7 +475,7 @@ async function scanMailbox(
     else incomplete = true;
   }
 
-  // ── replies ──────────────────────────────────────────────────────
+  // ── replies, and the machines that are not replies ───────────────
   // Only worth a database read when something actually arrived — and the read
   // is the ORGANISATION's, not this mailbox's, so a reply that lands here for
   // a message pooled out through a sibling mailbox is still a reply. See
@@ -484,7 +487,27 @@ async function scanMailbox(
     // scan cannot claim to have looked at everything, so the cursor is held
     // and the same window is read again next pass.
     if (!sentTo.ok) incomplete = true;
-    for (const reply of matchReplies(envelopes, sentTo.addresses)) {
+
+    // Partitioned BEFORE matching, not filtered after, so an out-of-office
+    // cannot reach replied_at by any route.
+    //
+    // Phase 2 counted an auto-reply as a reply and said so in its spec,
+    // flagging the decision as phase 3's to make. This is that decision: a
+    // reply now STOPS a sequence, so counting an out-of-office as one would
+    // silence every follow-up to somebody who never read the first message —
+    // which is precisely the person the follow-ups exist for.
+    //
+    // The test is the RFC 3834 headers and never the wording. "Out of office
+    // until Monday" is a sentence a person can type, and phase 2's own
+    // subject-matching mistake — suppressing a human who replied to a
+    // forwarded bounce — is the same mistake in a different place.
+    const machines: InboxEnvelope[] = [];
+    const humans: InboxEnvelope[] = [];
+    for (const envelope of envelopes) {
+      (isAutoReply(envelope.headers) ? machines : humans).push(envelope);
+    }
+
+    for (const reply of matchReplies(humans, sentTo.addresses)) {
       // Already answered, already recorded. The overlap between windows means
       // this scan sees the same reply the last one did, and every pass used to
       // write another email_inbox_events row for it — at least one duplicate
@@ -495,6 +518,19 @@ async function scanMailbox(
       const recorded = await record(deps, note, row, 'reply', reply.address, reply.at, who);
       if (recorded) result.replies += 1;
       else incomplete = true;
+    }
+
+    // Matched through the same gate a reply gets: an out-of-office from
+    // somebody this organisation never wrote to is not an event about us, and
+    // recording it would put a stranger's address in the customer's table.
+    //
+    // No alreadyReplied skip here, and there is nothing it could check: an
+    // auto_reply writes no replied_at. Duplicates across overlapping windows
+    // are bounded instead by the earliest-per-address collapse inside
+    // matchReplies, which gives one event per address per scan.
+    for (const auto of matchReplies(machines, sentTo.addresses)) {
+      const recorded = await record(deps, note, row, 'auto_reply', auto.address, auto.at, who);
+      if (!recorded) incomplete = true;
     }
   }
 
@@ -717,7 +753,7 @@ async function record(
   deps: InboxDeps,
   note: Note,
   row: MailboxRow,
-  kind: 'reply' | 'bounce',
+  kind: InboxEventKind,
   address: string,
   at: Date,
   who: string,

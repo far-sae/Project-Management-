@@ -68,7 +68,7 @@ function sentRow(to: string, over: Row = {}): Row {
 }
 
 function envelope(over: Partial<InboxEnvelope> = {}): InboxEnvelope {
-  return { from: 'ada@acme.com', subject: 'Re: hello', at: REPLY_AT, ...over };
+  return { from: 'ada@acme.com', subject: 'Re: hello', at: REPLY_AT, headers: {}, ...over };
 }
 
 /** A rejected IMAP login, as imapflow reports one. */
@@ -346,6 +346,76 @@ describe('runInboxCycle', () => {
 
     expect(h.results()).toHaveLength(1);
     expect(result.replies).toBe(1);
+  });
+
+  it('records an out-of-office as an auto-reply and never as a reply', async () => {
+    // Phase 2 counted this as a reply and left the decision to phase 3. From
+    // phase 3 a reply STOPS a sequence, so counting an out-of-office as one
+    // silences every follow-up to somebody who never read the first message.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentRow('ada@acme.com')] },
+      {
+        envelopes: [
+          envelope({ from: 'ada@acme.com', headers: { 'auto-submitted': 'auto-replied' } }),
+        ],
+      },
+    );
+
+    await runInboxCycle(h.deps);
+
+    const kinds = h.results().map((c) => (c.args as { p_kind: string }).p_kind);
+    expect(kinds).toEqual(['auto_reply']);
+  });
+
+  it('still records a real reply from a client that stamps Auto-Submitted: no', async () => {
+    // Some clients put `Auto-Submitted: no` on every message they send. A
+    // check for the header's presence rather than its value would classify
+    // those people's replies as machines.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentRow('ada@acme.com')] },
+      { envelopes: [envelope({ from: 'ada@acme.com', headers: { 'auto-submitted': 'no' } })] },
+    );
+
+    await runInboxCycle(h.deps);
+
+    expect(h.results().map((c) => (c.args as { p_kind: string }).p_kind)).toEqual(['reply']);
+  });
+
+  it('ignores an out-of-office from somebody this organisation never mailed', async () => {
+    // Matched through the same gate a reply gets. Without it, a stranger's
+    // address lands in the customer's events table.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [] },
+      {
+        envelopes: [
+          envelope({ from: 'stranger@example.com', headers: { 'x-autoreply': 'yes' } }),
+        ],
+      },
+    );
+
+    await runInboxCycle(h.deps);
+
+    expect(h.results()).toHaveLength(0);
+  });
+
+  it('does not let an auto-reply suppress the reply that follows it', async () => {
+    // The person is out of office on Monday and writes for real on Tuesday.
+    // Both land in one window. The auto-reply must not consume the match.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentRow('ada@acme.com')] },
+      {
+        envelopes: [
+          envelope({ from: 'ada@acme.com', headers: { 'auto-submitted': 'auto-replied' } }),
+          envelope({ from: 'ada@acme.com', headers: {} }),
+        ],
+      },
+    );
+
+    await runInboxCycle(h.deps);
+
+    const kinds = h.results().map((c) => (c.args as { p_kind: string }).p_kind);
+    expect(kinds).toContain('reply');
+    expect(kinds).toContain('auto_reply');
   });
 
   it('reports a database failure opening the credential as incomplete', async () => {

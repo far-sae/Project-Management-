@@ -33,6 +33,8 @@ interface FakeMessage {
   internalDate: Date;
   /** The `Date:` header — the sender's clock, and not to be trusted. */
   headerDate?: Date;
+  /** The raw header block the server returns when the fetch asks for headers. */
+  headerLines?: string;
   source: string;
 }
 
@@ -115,7 +117,7 @@ vi.mock('imapflow', () => {
 
     async *fetch(
       range: { since?: Date } | number[] | string,
-      query: { source?: boolean },
+      query: { source?: boolean; headers?: string[] },
       options?: { uid?: boolean },
     ): AsyncGenerator<Record<string, unknown>, void, undefined> {
       this.command('fetch');
@@ -159,6 +161,13 @@ vi.mock('imapflow', () => {
           yield {
             uid: message.uid,
             internalDate: message.internalDate,
+            // Only when the query asked, as the real client does. A fake that
+            // volunteered headers would hide a fetch that forgot to request
+            // them, and the parse downstream would look tested when it was
+            // being handed data production never sees.
+            ...(query.headers && message.headerLines !== undefined
+              ? { headers: Buffer.from(message.headerLines, 'utf8') }
+              : {}),
             envelope: {
               from: [{ address: message.from }],
               subject: message.subject,
@@ -402,6 +411,49 @@ describe('scanInbox', () => {
     expect(state.violations).toEqual([]);
     expect(state.sourcesFetched).toEqual([9]);
     expect(scan.bounces).toHaveLength(1);
+  });
+
+  it('reads the auto-reply headers without pulling a body', async () => {
+    state.messages = [
+      message({
+        from: 'ada@acme.com',
+        headerLines: 'Auto-Submitted: auto-replied\r\nX-Mailer: something\r\n',
+      }),
+    ];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(scan.envelopes[0].headers['auto-submitted']).toBe('auto-replied');
+    // And an ordinary message's body is still never fetched.
+    expect(state.sourcesFetched).toEqual([]);
+  });
+
+  it('unfolds a header split across lines', async () => {
+    // RFC 5322 folding. Dropping the continuation would leave the value
+    // 'auto-', which matches nothing, and the out-of-office would count as a
+    // reply again.
+    state.messages = [message({ headerLines: 'Auto-Submitted: auto-\r\n replied\r\n' })];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(scan.envelopes[0].headers['auto-submitted']).toBe('auto-replied');
+  });
+
+  it('treats a message with no headers as a message with no headers', async () => {
+    state.messages = [message({ headerLines: undefined })];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(scan.envelopes[0].headers).toEqual({});
+  });
+
+  it('does not fail a scan over a header it cannot parse', async () => {
+    state.messages = [message({ headerLines: 'not a header at all\r\n: empty name\r\n' })];
+
+    const scan = await scanInbox(CFG, SINCE);
+
+    expect(scan.envelopes).toHaveLength(1);
+    expect(scan.envelopes[0].headers).toEqual({});
   });
 
   it('logs in once and logs out once, whatever the window held', async () => {

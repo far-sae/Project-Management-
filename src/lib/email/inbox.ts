@@ -186,3 +186,39 @@ export function extractBouncedAddress(source: string): string | null {
 
   return null;
 }
+
+/**
+ * Headers that declare a message machine-generated, per RFC 3834 and the
+ * de-facto ones beside it.
+ *
+ * `Auto-Submitted` is the standard, and its VALUE matters: `no` is what an
+ * ordinary message says, and some clients say it on everything. Matching on
+ * the header's presence would classify real replies as auto-replies, and a
+ * real reply that fails to stop a sequence is exactly the failure phase 3
+ * exists to prevent.
+ *
+ * Wording is deliberately not consulted. "Out of office until Monday" is a
+ * sentence a person can type, and phase 2's own subject-matching mistake is
+ * the same mistake in a different place.
+ */
+export function isAutoReply(headers: Record<string, string> | undefined | null): boolean {
+  // Tolerant of nothing at all, and deliberately: the caller's value comes
+  // from a mail server through a third-party client, and the one thing this
+  // decides fails safe — no headers means the message is treated as ordinary
+  // mail, which is what it was before phase 3. Throwing here would take down
+  // the scan of a whole mailbox over a missing header.
+  if (!headers) return false;
+
+  const lower: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    lower[key.toLowerCase().trim()] = String(value ?? '').toLowerCase().trim();
+  }
+
+  const submitted = lower['auto-submitted'];
+  if (submitted !== undefined && submitted !== '' && submitted !== 'no') return true;
+  if (lower['x-autoreply'] !== undefined) return true;
+  if (lower['x-autorespond'] !== undefined) return true;
+  if (lower['precedence'] === 'auto_reply') return true;
+
+  return false;
+}

@@ -1,4 +1,10 @@
-export type CampaignKind = 'single' | 'bulk';
+/**
+ * 'sequence' is the hidden campaign behind one step of a sequence (migration
+ * 158e). It carries that step's wording, because `email_messages` has no
+ * subject or body column of its own, and it is filtered out of the Campaigns
+ * list -- one row per step per sequence would be the list's usefulness gone.
+ */
+export type CampaignKind = 'single' | 'bulk' | 'sequence';
 /**
  * 'error' is the mailbox we could not read — a refused login, a host that
  * never answered. 'incomplete' is the mailbox we read perfectly well and whose
@@ -12,6 +18,89 @@ export type CampaignStatus =
   | 'draft' | 'scheduled' | 'sending' | 'paused' | 'sent' | 'failed';
 export type AccountStatus = 'unverified' | 'active' | 'error';
 export type SuppressionReason = 'unsubscribed' | 'bounced' | 'complaint' | 'manual';
+
+/**
+ * 'auto_reply' is recorded and does nothing else: it sets no `repliedAt`, so
+ * it does not inflate the reply rate, and it does not stop a sequence, because
+ * the person has not read the message. An out-of-office that stopped a
+ * sequence would silence the follow-up for exactly the person who never saw
+ * the first one.
+ */
+export type InboxEventKind = 'reply' | 'bounce' | 'auto_reply';
+
+/** A sequence sends nothing until it is 'active'. See migration 158a. */
+export type SequenceStatus = 'draft' | 'active' | 'paused' | 'archived';
+
+/**
+ * 'completed' walked every step. 'stopped' ended early and says why in
+ * `stopReason`. Both are one-way: the recorded reason is the FIRST thing that
+ * ended the enrollment, which is the one a complaint is ever about.
+ */
+export type EnrollmentStatus = 'active' | 'stopped' | 'completed';
+
+/**
+ * Why an enrollment ended. The scope of each differs and that is deliberate
+ * (migration 159a/a2): 'replied', 'bounced' and 'unsubscribed' are things the
+ * RECIPIENT did and stop every sequence at that address; 'failed' is something
+ * our end did -- a send that would not go -- and stops only the enrollment it
+ * happened to.
+ */
+export type StopReason = 'replied' | 'bounced' | 'unsubscribed' | 'failed' | 'manual';
+
+export interface EmailSequence {
+  id: string;
+  organizationId: string;
+  workspaceId: string | null;
+  createdBy: string | null;
+  name: string;
+  status: SequenceStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface EmailSequenceStep {
+  id: string;
+  sequenceId: string;
+  /** 0 is the first message, sent on enrollment; its delay is ignored. */
+  stepIndex: number;
+  /** Hours after the previous step was actually SENT, never after enrollment. */
+  delayHours: number;
+  /** Empty inherits `Re: ` + step 0's subject. See `followUpSubject`. */
+  subject: string;
+  bodyHtml: string;
+  /**
+   * The hidden campaign carrying this step's wording. Null means the step is
+   * not sendable yet: `claim_sequence_enrollments()` leaves such an enrollment
+   * due rather than advancing past it, so it sends the moment this is filled.
+   */
+  campaignId: string | null;
+  createdAt: Date;
+}
+
+export interface EmailEnrollment {
+  id: string;
+  sequenceId: string;
+  organizationId: string;
+  contactId: string | null;
+  toEmail: string;
+  toName: string | null;
+  mergeData: Record<string, unknown>;
+  /**
+   * Pinned on the first send and never before. A conversation that continues
+   * from a different address is not a conversation: it breaks the recipient's
+   * own threading. Null until then, meaning the whole pool is available.
+   */
+  accountId: string | null;
+  /** The step this enrollment will send NEXT. */
+  currentStep: number;
+  /** Null means nothing is scheduled: the previous step is queued but unsent, or it is over. */
+  nextDueAt: Date | null;
+  lastMessageId: string | null;
+  status: EnrollmentStatus;
+  stopReason: StopReason | null;
+  stoppedAt: Date | null;
+  createdAt: Date;
+}
 
 export interface EmailAccount {
   id: string;
@@ -167,6 +256,12 @@ export interface InboxEnvelope {
   from: string;
   subject: string;
   at: Date;
+  /**
+   * The few headers the scan asks for alongside the envelope, lower-cased.
+   * Headers, never a body: an ordinary message's body is still never pulled
+   * into this process. Empty when the server sent none, which is not an error.
+   */
+  headers: Record<string, string>;
 }
 
 /** A reply or bounce discovered during an inbox scan, ready to persist. */
@@ -181,7 +276,7 @@ export interface InboxEvent {
    * same reason: the type should say so rather than paper over it.
    */
   accountId: string | null;
-  kind: 'reply' | 'bounce';
+  kind: InboxEventKind;
   address: string;
   messageId: string | null;
   detail: string | null;

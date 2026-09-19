@@ -150,11 +150,60 @@ function messageDate(msg: FetchMessageObject, since: Date, ceiling: Date): Date 
   return new Date(Math.min(Math.max(fromHeader.getTime(), since.getTime()), ceiling.getTime()));
 }
 
+/**
+ * The handful of headers the scan asks for, parsed out of the raw block the
+ * server returns.
+ *
+ * Headers, never a body. The promise this phase makes about the customer's
+ * mailbox is that ordinary mail is not pulled into this process, and it still
+ * holds: four named header lines per message is not the message.
+ *
+ * Nothing in here throws. A server that answered with no headers, or with
+ * something this cannot parse, gives an empty object -- a mailbox must not
+ * fail its scan over a header, and the one thing these are used for
+ * (recognising an auto-reply) fails safe: an unparsed header means the message
+ * is treated as ordinary mail, which is what it was treated as before phase 3.
+ */
+function parseHeaders(raw: unknown): Record<string, string> {
+  if (!raw) return {};
+  let text: string;
+  try {
+    text = typeof raw === 'string' ? raw : Buffer.isBuffer(raw) ? raw.toString('utf8') : '';
+  } catch {
+    return {};
+  }
+  if (text === '') return {};
+
+  const out: Record<string, string> = {};
+  let current: string | null = null;
+
+  for (const line of text.split(/\r?\n/)) {
+    if (line === '') continue;
+    // A line beginning with whitespace continues the one before it (RFC 5322
+    // folding). Dropping the continuation would turn `Auto-Submitted: auto-`
+    // + ` replied` into the value `auto-`, which matches nothing.
+    if (/^[ \t]/.test(line)) {
+      if (current !== null) out[current] += line.trim();
+      continue;
+    }
+    const colon = line.indexOf(':');
+    if (colon <= 0) {
+      current = null;
+      continue;
+    }
+    current = line.slice(0, colon).toLowerCase().trim();
+    out[current] = line.slice(colon + 1).trim();
+  }
+
+  return out;
+}
+
 function toEnvelope(msg: FetchMessageObject, since: Date, ceiling: Date): InboxEnvelope {
   return {
     from: msg.envelope?.from?.[0]?.address ?? '',
     subject: msg.envelope?.subject ?? '',
     at: messageDate(msg, since, ceiling),
+    headers: parseHeaders((msg as { headers?: unknown }).headers),
   };
 }
 
@@ -289,7 +338,17 @@ export async function scanInbox(
       // breach of the one promise this phase makes about their mailbox.
       for await (const msg of client.fetch(
         { since },
-        { uid: true, envelope: true, internalDate: true },
+        {
+          uid: true,
+          envelope: true,
+          internalDate: true,
+          // Named explicitly rather than fetched whole, so widening this stays
+          // a deliberate act. These four are what RFC 3834 and the de-facto
+          // conventions beside it use to declare a message machine-generated,
+          // and recognising one is what keeps an out-of-office from stopping a
+          // sequence for somebody who never read the first message.
+          headers: ['auto-submitted', 'x-autoreply', 'x-autorespond', 'precedence'],
+        },
       )) {
         const envelope = toEnvelope(msg, since, ceiling);
         // The SINCE widening, undone. A message the server volunteered from
