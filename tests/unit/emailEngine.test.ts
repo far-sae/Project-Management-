@@ -475,6 +475,51 @@ describe('worker/lib/engine — settling a send', () => {
     expect(result.errors[0]).toMatch(/throttling/i);
   });
 
+  it('still settles a row that has spent its whole attempt budget as `transient`', async () => {
+    // attempts = 3, so record_send_result() will retire this row rather than
+    // re-queueing it. That decision belongs in SQL, where the claim's
+    // `attempts < 3` budget, the stuck-row sweep and finalize_email_campaigns
+    // all live: a worker that second-guessed it here would have to keep its
+    // own copy of the retirement rule in step with three separate statements.
+    const stub = oneMailbox([claimedRow(1, { attempts: 3 })]);
+    const mailer = makeMailer(async () => {
+      throw smtpError(451, 'try again later');
+    });
+
+    const result = await runCycle(makeDeps(stub.db, mailer.createTransport));
+
+    expect(stub.settlements()).toHaveLength(1);
+    expect(stub.settlements()[0].args.p_outcome).toBe('transient');
+    // The row really was handed to SMTP and refused, so the attempt it spent
+    // stays spent — which is exactly what tips it over into 'failed' there.
+    expect(stub.settlements()[0].args.p_restore_attempt).toBe(false);
+    expect(result.failed).toBe(1);
+  });
+
+  it('sends the message when the resolver itself fails, and suppresses nobody', async () => {
+    // A timeout, ESERVFAIL or EREFUSED says nothing about the domain. Read as
+    // "this domain cannot receive mail" it would hard-bounce every recipient
+    // in the batch, write each one into email_suppressions, and have the claim
+    // enforce that against every future campaign in the organisation.
+    const stub = oneMailbox([claimedRow(1), claimedRow(2)]);
+    const mailer = makeMailer(okSend);
+    const domainAcceptsMail = async () => {
+      throw Object.assign(new Error('queryMx ETIMEOUT recipient.test'), { code: 'ETIMEOUT' });
+    };
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { domainAcceptsMail }),
+    );
+
+    expect(mailer.sent).toHaveLength(2);
+    // 'hard_bounce' is the only outcome that writes an email_suppressions row.
+    expect(stub.settlements().map((c) => c.args.p_outcome)).toEqual(['sent', 'sent']);
+    expect(result.sent).toBe(2);
+    expect(result.skipped).toBe(0);
+    // Reported, so a resolver outage is visible rather than silent.
+    expect(result.errors.join(' ')).toContain('so it was sent anyway');
+  });
+
   it('only ever passes an outcome record_send_result understands', async () => {
     const stub = oneMailbox([claimedRow(1), claimedRow(2), claimedRow(3)]);
     let n = 0;

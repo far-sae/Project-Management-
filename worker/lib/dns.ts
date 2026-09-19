@@ -13,8 +13,25 @@ import { DKIM_SELECTORS, type RawDnsRecords } from '@/lib/email/domainAuth';
  * Per-process cache: one lookup per domain, not per recipient. A campaign to
  * 500 addresses at the same company is one query, and the worker is long-lived
  * so the cache is worth having.
+ *
+ * Only answers are cached. A negative produced by a broken resolver would
+ * otherwise outlive the outage, because nothing clears this map short of a
+ * restart.
  */
 const acceptsCache = new Map<string, boolean>();
+
+/**
+ * The two resolver codes that are an ANSWER rather than a failure: the name
+ * does not exist (`ENOTFOUND`, NXDOMAIN), or it exists with no record of the
+ * type asked for (`ENODATA`). Everything else — `ETIMEOUT`, `ESERVFAIL`,
+ * `EREFUSED`, a socket error, a resolver that is simply down — says nothing
+ * at all about the domain, and must not be read as "it cannot receive mail".
+ */
+const NO_SUCH_RECORD = new Set(['ENOTFOUND', 'ENODATA']);
+
+function isNoSuchRecord(err: unknown): boolean {
+  return NO_SUCH_RECORD.has(String((err as { code?: string } | null)?.code ?? ''));
+}
 
 export function domainOfEmail(email: string): string {
   return email.split('@')[1]?.trim().toLowerCase() ?? '';
@@ -32,6 +49,15 @@ export function domainOfEmail(email: string): string {
  * costs far more than the one wasted message. A full mailbox check needs a
  * paid API; this is free, catches the largest single category (typo'd and
  * defunct domains), and never produces a false negative on a live domain.
+ *
+ * THROWS when the resolver itself failed. `false` means "this domain answered,
+ * and it publishes neither MX nor A" — which the engine turns into a hard
+ * bounce and a permanent `email_suppressions` row for the whole organisation.
+ * Swallowing a timeout into `false` would suppress every recipient domain in
+ * the batch on one DNS blip, enforce it against every future campaign, and
+ * need the suppression rows deleted by hand to undo. The engine already
+ * catches a throw from here and sends the message anyway; that is the safe
+ * direction, and it is only reachable if this function actually throws.
  */
 export async function domainAcceptsMail(domain: string): Promise<boolean> {
   const key = domain.toLowerCase();
@@ -40,17 +66,21 @@ export async function domainAcceptsMail(domain: string): Promise<boolean> {
   const cached = acceptsCache.get(key);
   if (cached !== undefined) return cached;
 
-  let ok = false;
+  let ok: boolean;
   try {
     ok = (await dns.resolveMx(key)).length > 0;
-  } catch {
+  } catch (mxError) {
+    if (!isNoSuchRecord(mxError)) throw mxError;
+    // No MX. A domain with an A record still accepts mail (RFC 5321 §5.1).
     try {
       ok = (await dns.resolve4(key)).length > 0;
-    } catch {
+    } catch (aError) {
+      if (!isNoSuchRecord(aError)) throw aError;
       ok = false;
     }
   }
 
+  // Reached only on an answer: every other path above has thrown.
   acceptsCache.set(key, ok);
   return ok;
 }

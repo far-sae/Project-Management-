@@ -596,10 +596,31 @@ begin
     -- actually tried; a row that really was handed to SMTP and refused must
     -- keep spending its budget, or it cycles through the queue forever.
     -- greatest(..., 0) because a row could in principle arrive here twice.
+    --
+    -- ...and once that budget IS spent the row has to be retired here, not
+    -- left 'queued'. The claim only takes attempts < 3, the stuck-row sweep
+    -- above only looks at 'sending', and finalize_email_campaigns counts
+    -- 'queued' as still open: a row claimed at attempts = 2 that fails
+    -- transiently would otherwise sit queued forever, never claimed again,
+    -- never failed, holding its campaign in 'sending' permanently. Three
+    -- tries and it retires, which is what the worker's comments have always
+    -- claimed the database does.
+    --
+    -- Only when the attempt is NOT being restored. A restored row was never
+    -- handed to SMTP -- it is the remainder of a batch this worker abandoned,
+    -- or a batch given back at shutdown -- so it has spent nothing and must
+    -- not be retired for someone else's failure.
     update public.email_messages m
-       set status = 'queued',
+       set status = case
+                      when not p_restore_attempt and m.attempts >= 3 then 'failed'
+                      else 'queued'
+                    end,
            claimed_at = null,
-           last_error = p_error,
+           last_error = case
+                          when not p_restore_attempt and m.attempts >= 3
+                            then coalesce(p_error, 'Abandoned after 3 delivery attempts')
+                          else p_error
+                        end,
            attempts = case
                         when p_restore_attempt then greatest(m.attempts - 1, 0)
                         else m.attempts
