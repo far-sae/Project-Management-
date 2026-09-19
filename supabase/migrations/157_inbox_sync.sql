@@ -75,9 +75,33 @@ alter table public.email_accounts
 -- 'unconfigured' rather than `status`'s 'unverified' for the same idea,
 -- because nothing has failed: there is simply no host to scan. Every row that
 -- predates this migration starts there.
+--
+-- 'incomplete' is the fourth, and it is deliberately NOT 'error'. It means the
+-- mailbox was read perfectly well -- connected, authenticated, envelopes
+-- fetched -- and the scan then could not finish recording what it found,
+-- because a record_inbox_result() call would not write or the set of addresses
+-- to match against could not be read. Nothing is wrong with the mailbox or its
+-- credentials, so the Accounts screen must not say there is: an admin told
+-- 'error' goes and re-enters a password that was never wrong. The window is
+-- simply re-read on the next pass, which (e) below makes true by holding the
+-- cursor for this status as well.
 alter table public.email_accounts
   add column if not exists imap_status text not null default 'unconfigured'
-    check (imap_status in ('unconfigured','active','error'));
+    check (imap_status in ('unconfigured','active','error','incomplete'));
+
+-- A database that ran an EARLIER revision of this file already has the column,
+-- with the three-value check, and `add column if not exists` above will not
+-- revisit it -- the same situation the `drop index` in (b) handles, for the
+-- same reason. So the constraint is dropped and recreated by name rather than
+-- left to the inline definition above: PostgreSQL names an inline column check
+-- <table>_<column>_check, which is the name used here. On a database seeing
+-- this file for the first time these two statements simply replace the
+-- constraint the ALTER above just created with an identical one.
+alter table public.email_accounts
+  drop constraint if exists email_accounts_imap_status_check;
+alter table public.email_accounts
+  add constraint email_accounts_imap_status_check
+    check (imap_status in ('unconfigured','active','error','incomplete'));
 
 -- Why the last scan failed, in the words classifyImapError() chose: "Zoho
 -- needs an app password and IMAP access enabled" is a sentence the Accounts
@@ -459,9 +483,19 @@ begin
   -- at twenty-four hours, so a mailbox broken for a week looks back one day
   -- when it recovers, not a week.
   --
-  -- 'error' is the only status that holds the cursor. 'active' advances it,
-  -- and so does 'unconfigured' -- there is nothing unread behind a mailbox
-  -- that is not being scanned.
+  -- 'error' and 'incomplete' are the two statuses that hold the cursor, for
+  -- the same reason and about two different failures: 'error' is the mailbox
+  -- we could not read, 'incomplete' is the mailbox we read but whose replies
+  -- and bounces we could not finish recording. Either way there is work behind
+  -- this window that has not been done, so the window must come round again.
+  -- 'active' advances the cursor, and so does 'unconfigured' -- there is
+  -- nothing unread behind a mailbox that is not being scanned.
+  --
+  -- The two are separate statuses rather than one because the ACCOUNTS SCREEN
+  -- reads them and an admin acts on what it says. 'error' means go and check
+  -- the host and the app password; 'incomplete' means nothing is wrong with
+  -- the mailbox and the next scan will pick the window up again. Collapsing
+  -- them sends people to re-enter a password that was never wrong.
   --
   -- imap_status and imap_last_error are written either way, because the admin
   -- has to see the failure to act on it: a scan that goes on failing silently
@@ -472,7 +506,8 @@ begin
   -- email_accounts, and the three columns set here are the only ones touched.
   update public.email_accounts a
      set inbox_last_scan_at = case
-                                when p_status = 'error' then a.inbox_last_scan_at
+                                when p_status in ('error','incomplete')
+                                  then a.inbox_last_scan_at
                                 else now()
                               end,
          imap_status = p_status,

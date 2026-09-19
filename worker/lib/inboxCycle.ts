@@ -25,9 +25,15 @@
 //     touch_inbox_scan() and nowhere else.
 //   * A mailbox with no imap_host is skipped WITHOUT recording a scan.
 //     'unconfigured' is never reported for a mailbox that has a host, because
-//     touch_inbox_scan() holds the cursor only on 'error' — every other status
-//     advances inbox_last_scan_at, so reporting 'unconfigured' for a configured
-//     mailbox would step the window straight over mail nobody could read.
+//     touch_inbox_scan() holds the cursor only on 'error' and 'incomplete' —
+//     every other status advances inbox_last_scan_at, so reporting
+//     'unconfigured' for a configured mailbox would step the window straight
+//     over mail nobody could read.
+//   * Those two cursor-holding statuses mean different things and must stay
+//     apart: 'error' is a mailbox that could not be READ (the login, the
+//     host), 'incomplete' is one that was read but whose findings could not
+//     all be RECORDED. An admin acts on the first and needs to do nothing
+//     about the second.
 //   * record_inbox_result() returning null means "recorded, but matched
 //     nothing". It is not a failure and is never retried: the event row is
 //     written either way, and the unmatched bounce is precisely the row that
@@ -411,13 +417,17 @@ async function scanMailbox(
   if (incomplete) {
     // The mailbox itself was readable — this is not an IMAP fault and the
     // reasons are already in `errors` — but the window has not been fully
-    // dealt with, so it is held for the next pass. 'error' is the only status
-    // that holds the cursor; the sentence says plainly that this is not a
-    // credential problem, because it is what an admin will read.
+    // dealt with, so it is held for the next pass.
+    //
+    // 'incomplete', never 'error': both hold the cursor (migration 157e), and
+    // they are separate statuses because an admin reads them. 'error' means go
+    // and check the host and the app password; saying it here would send
+    // someone to re-enter a password that was never wrong, over what is
+    // usually a database blip.
     const detail =
       'The mailbox was read, but what the scan found could not all be recorded. ' +
       'The same window will be read again; sending is unaffected.';
-    await touch(deps, note, row, 'error', detail, who);
+    await touch(deps, note, row, 'incomplete', detail, who);
     return;
   }
 
@@ -572,7 +582,13 @@ async function touch(
   deps: InboxDeps,
   note: Note,
   row: MailboxRow,
-  status: 'active' | 'error',
+  /**
+   * Never 'unconfigured': a mailbox with no host reaches no scan at all, and
+   * that status advances the cursor. 'error' is a mailbox that could not be
+   * read; 'incomplete' is one that was read but not fully recorded. Both hold
+   * the cursor, and they stay apart because the Accounts screen shows them.
+   */
+  status: 'active' | 'error' | 'incomplete',
   error: string | null,
   who: string,
 ): Promise<void> {

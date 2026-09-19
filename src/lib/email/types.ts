@@ -1,5 +1,12 @@
 export type CampaignKind = 'single' | 'bulk';
-export type ImapStatus = 'unconfigured' | 'active' | 'error';
+/**
+ * 'error' is the mailbox we could not read — a refused login, a host that
+ * never answered. 'incomplete' is the mailbox we read perfectly well and whose
+ * replies and bounces we then could not finish recording; nothing is wrong
+ * with the credentials and the next scan re-reads the same window. Both hold
+ * the scan cursor (migration 157e); only 'error' is the admin's problem.
+ */
+export type ImapStatus = 'unconfigured' | 'active' | 'error' | 'incomplete';
 export type MessageStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'suppressed';
 export type CampaignStatus =
   | 'draft' | 'scheduled' | 'sending' | 'paused' | 'sent' | 'failed';

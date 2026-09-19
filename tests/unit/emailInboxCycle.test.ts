@@ -398,6 +398,9 @@ describe('runInboxCycle', () => {
     expect(h.touches()).toHaveLength(1);
     const args = h.touches()[0].args as { p_status: string; p_error: string };
     expect(args.p_status).toBe('error');
+    // And never 'incomplete': that one says the mailbox read fine. A rejected
+    // login is the admin's to fix, so the two must not collapse into one.
+    expect(args.p_status).not.toBe('incomplete');
     expect(args.p_error).toMatch(/rejected the IMAP login/i);
     // The sentence that makes an auth failure readable as a settings problem
     // rather than an outage, and that promises sending is untouched. It is the
@@ -429,9 +432,10 @@ describe('runInboxCycle', () => {
     expect(h.results()).toHaveLength(1);
     // Not 'active': that advances inbox_last_scan_at, and with a three-minute
     // overlap against a five-minute loop this reply would be behind the next
-    // window immediately. 'error' is the status that holds the cursor.
+    // window immediately. 'incomplete' holds the cursor — and is NOT 'error',
+    // which would tell an admin to go and fix a credential that worked fine.
     const args = h.touches()[0].args as { p_status: string; p_error: string };
-    expect(args.p_status).toBe('error');
+    expect(args.p_status).toBe('incomplete');
     expect(args.p_error).toMatch(/could not all be recorded/i);
     expect(args.p_error).toMatch(/sending is unaffected/i);
     expect(result.replies).toBe(0);
@@ -467,7 +471,7 @@ describe('runInboxCycle', () => {
 
     // Mailbox A could not be served, so its window is held for the next pass;
     // mailbox B got the retried read and completed.
-    expect(h.touches().map((c) => c.args.p_status)).toEqual(['error', 'active']);
+    expect(h.touches().map((c) => c.args.p_status)).toEqual(['incomplete', 'active']);
     expect(h.results()).toHaveLength(1);
     expect(h.results()[0].args).toMatchObject({ p_account: 'mbx-2', p_kind: 'reply' });
     expect(result.replies).toBe(1);
