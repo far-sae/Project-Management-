@@ -119,29 +119,117 @@ async function closeImapClient(client: ImapFlow): Promise<void> {
   await client.logout().catch(() => client.close());
 }
 
-function toEnvelope(msg: FetchMessageObject): InboxEnvelope {
-  const date = msg.envelope?.date;
+/**
+ * When a message actually arrived, and the only clock this module trusts.
+ *
+ * `internalDate` is the SERVER's own record of when the message landed in the
+ * mailbox. `envelope.date` is the `Date:` header, which is the SENDER's clock
+ * and is whatever their mail client felt like writing — routinely wrong by
+ * hours on a misconfigured machine, and trivially forged by anyone.
+ *
+ * Every time decision here uses internalDate, because the header date fails in
+ * both directions and both are damaging: a message stamped last week would be
+ * filtered out of the window it genuinely belongs in and then lost for good
+ * once the cursor stepped past it, and a message stamped 1970 or 2031 would
+ * write that value into `replied_at` and stay there.
+ *
+ * The header is a fallback only for a server that answered with no
+ * internalDate at all, and even then it is CLAMPED into the window that was
+ * actually scanned — so the worst a bogus `Date:` can do is put the message at
+ * one end of a window it had already been fetched into.
+ */
+function messageDate(msg: FetchMessageObject, since: Date, ceiling: Date): Date {
+  const internal = msg.internalDate;
+  const fromServer =
+    internal instanceof Date ? internal : typeof internal === 'string' ? new Date(internal) : null;
+  if (fromServer && !Number.isNaN(fromServer.getTime())) return fromServer;
+
+  const header = msg.envelope?.date;
+  const fromHeader = header instanceof Date ? header : header ? new Date(header) : null;
+  if (!fromHeader || Number.isNaN(fromHeader.getTime())) return ceiling;
+  return new Date(Math.min(Math.max(fromHeader.getTime(), since.getTime()), ceiling.getTime()));
+}
+
+function toEnvelope(msg: FetchMessageObject, since: Date, ceiling: Date): InboxEnvelope {
   return {
     from: msg.envelope?.from?.[0]?.address ?? '',
     subject: msg.envelope?.subject ?? '',
-    at: date instanceof Date ? date : date ? new Date(date) : new Date(),
+    at: messageDate(msg, since, ceiling),
   };
 }
 
+/** Envelopes read in one scan before the walk gives up and says so. */
+const ENVELOPE_LIMIT = 500;
+/** Bounce candidates whose source is downloaded in one scan. */
+const BOUNCE_LIMIT = 200;
+
+/** Everything one session over one mailbox produced. */
+export interface MailboxScan {
+  /** Every envelope in the window, in the order the server gave them. */
+  envelopes: InboxEnvelope[];
+  /** Envelope and raw source for each candidate `looksLikeBounce` accepted. */
+  bounces: Array<{ envelope: InboxEnvelope; source: string }>;
+  /**
+   * False when a cap stopped the scan before the window had been read out.
+   * The caller must hold its cursor on this: part of the window was never
+   * looked at, and advancing past it loses whatever was in there.
+   */
+  complete: boolean;
+  /** One safe-to-log line naming the cap that was hit, or null. */
+  truncated: string | null;
+}
+
 /**
- * Envelope senders and subjects of INBOX messages received since `since`,
- * newest scan window first. Envelopes only — bodies are never downloaded,
- * which keeps the scan fast and keeps the customer's mail out of our
- * process. Everything downstream (matching a reply to a sent address) works
- * from these envelopes alone; see matchReplies in src/lib/email/inbox.ts.
+ * One session over one mailbox: connect, walk the window's envelopes, fetch
+ * the sources of the bounce-shaped ones, disconnect.
+ *
+ * ONE function and ONE login, which is two rules at once.
+ *
+ * The first is imapflow's, and it is not a style preference: you may not run
+ * an IMAP command inside `for await (... of client.fetch(...))`. Commands
+ * serialise through a single request queue, and the in-flight FETCH applies
+ * backpressure until the consumer advances — so a command issued from inside
+ * the loop waits for the loop, which is waiting for the command. Nothing moves
+ * until the socket times out, thirty seconds later, and the scan then fails as
+ * an unreachable server. That is why the source fetch below runs AFTER the
+ * envelope walk has finished, over the UIDs the walk collected, rather than
+ * one `fetchOne` per candidate inside it.
+ *
+ * The second is the spec's: connect once, scan, disconnect. Splitting this
+ * into an envelope pass and a bounce pass cost a second login for every
+ * mailbox that had a bounce in it, and the IMAP login rate is exactly what
+ * providers throttle.
+ *
+ * The window is filtered HERE as well as asked for. `{ since }` compiles to
+ * IMAP's `SINCE`, whose argument is a DATE — on any server without the
+ * `WITHIN` capability that means midnight of that day, so the server hands
+ * back everything from up to twenty-four hours before the window actually
+ * starts. Without the client-side `internalDate >= since` filter below, those
+ * extra hours fill the cap first (being older, they come first in sequence
+ * order) and the messages the scan exists to read — the last five minutes —
+ * are the ones dropped, silently, with the cursor advancing over them. See
+ * `messageDate` for why internalDate and never the envelope's own date.
  */
-export async function fetchRecentEnvelopes(
+export async function scanInbox(
   cfg: ImapConfig,
   since: Date,
-  limit = 500,
-): Promise<InboxEnvelope[]> {
+  limits: { envelopes?: number; bounces?: number } = {},
+): Promise<MailboxScan> {
+  const envelopeLimit = limits.envelopes ?? ENVELOPE_LIMIT;
+  const bounceLimit = limits.bounces ?? BOUNCE_LIMIT;
+
+  // Fixed once, before anything is read: the upper end of the window a
+  // fallback date may be clamped into. Taken from the clock once rather than
+  // per message, so two messages in one scan cannot be ordered by when they
+  // happened to be parsed.
+  const ceiling = new Date();
+
+  const envelopes: InboxEnvelope[] = [];
+  const candidates = new Map<number, InboxEnvelope>();
+  const bounces: Array<{ envelope: InboxEnvelope; source: string }> = [];
+  let truncated: string | null = null;
+
   const client = createImapClient(cfg);
-  const out: InboxEnvelope[] = [];
 
   // connect() sits inside this try, not before it. TCP connect and the
   // greeting can succeed and the session negotiation that follows —
@@ -159,53 +247,55 @@ export async function fetchRecentEnvelopes(
     await client.connect();
     const lock = await client.getMailboxLock('INBOX');
     try {
-      for await (const msg of client.fetch({ since }, { envelope: true })) {
-        if (out.length >= limit) break;
-        out.push(toEnvelope(msg));
-      }
-    } finally {
-      lock.release();
-    }
-  } finally {
-    await closeImapClient(client);
-  }
+      // ── pass one: envelopes, and NO other command ────────────────
+      // Bodies are not downloaded for ordinary mail: most of what lands in
+      // the window is the customer's own correspondence, and pulling it into
+      // this process to decide it was not a bounce would be both slow and a
+      // breach of the one promise this phase makes about their mailbox.
+      for await (const msg of client.fetch(
+        { since },
+        { uid: true, envelope: true, internalDate: true },
+      )) {
+        if (envelopes.length >= envelopeLimit) {
+          truncated = `stopped after ${envelopeLimit} messages; the rest of this window was not read`;
+          break;
+        }
 
-  return out;
-}
+        const envelope = toEnvelope(msg, since, ceiling);
+        // The SINCE widening, undone. A message the server volunteered from
+        // before the window is not this scan's to look at: the scan that
+        // owned it has already been and gone, and re-matching it here would
+        // re-record a reply the cursor moved past hours ago.
+        if (envelope.at.getTime() < since.getTime()) continue;
 
-/**
- * Envelope and raw source of INBOX messages received since `since` that
- * look like bounces, up to `limit` such messages.
- *
- * `looksLikeBounce` decides that from the envelope alone (sender, subject),
- * so a message's body is downloaded only once its envelope has already been
- * accepted. Downloading every body to make that call would pull the
- * customer's private mail into this process for no reason — most INBOX
- * traffic in the scan window is ordinary replies, not bounces — and would
- * slow the scan down for every one of them. Pulling the failed address back
- * out of `source` is `extractBouncedAddress`'s job, not this module's.
- */
-export async function fetchBounceSources(
-  cfg: ImapConfig,
-  since: Date,
-  limit = 200,
-): Promise<Array<{ envelope: InboxEnvelope; source: string }>> {
-  const client = createImapClient(cfg);
-  const out: Array<{ envelope: InboxEnvelope; source: string }> = [];
+        envelopes.push(envelope);
 
-  try {
-    await client.connect();
-    const lock = await client.getMailboxLock('INBOX');
-    try {
-      for await (const msg of client.fetch({ since }, { envelope: true })) {
-        if (out.length >= limit) break;
-
-        const envelope = toEnvelope(msg);
         if (!looksLikeBounce(envelope)) continue;
+        if (candidates.size >= bounceLimit) {
+          truncated =
+            `stopped after ${bounceLimit} bounce notifications; ` +
+            'the rest of this window was not read';
+          break;
+        }
+        // Collected, not fetched. The fetch is below, once this loop is done.
+        candidates.set(msg.uid, envelope);
+      }
 
-        const full = await client.fetchOne(msg.uid, { source: true }, { uid: true });
-        if (!full || !full.source) continue;
-        out.push({ envelope, source: full.source.toString('utf8') });
+      // ── pass two: the sources of those candidates, and only those ─
+      // Safe here and only here: the generator above has finished, so the
+      // request queue is free. One FETCH over the whole UID set rather than
+      // one per message — the deadlock is gone either way, but a round trip
+      // per bounce is still a round trip per bounce.
+      if (candidates.size > 0) {
+        for await (const msg of client.fetch(
+          [...candidates.keys()],
+          { uid: true, source: true },
+          { uid: true },
+        )) {
+          const envelope = candidates.get(msg.uid);
+          if (!envelope || !msg.source) continue;
+          bounces.push({ envelope, source: msg.source.toString('utf8') });
+        }
       }
     } finally {
       lock.release();
@@ -214,7 +304,7 @@ export async function fetchBounceSources(
     await closeImapClient(client);
   }
 
-  return out;
+  return { envelopes, bounces, complete: truncated === null, truncated };
 }
 
 /**

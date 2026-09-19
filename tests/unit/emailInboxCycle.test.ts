@@ -18,6 +18,7 @@ import { encryptSecret } from '@/lib/email/crypto';
 import { FIRST_SCAN_LOOKBACK_MS, SCAN_OVERLAP_MS } from '@/lib/email/inbox';
 import type { InboxEnvelope } from '@/lib/email/types';
 
+import type { MailboxScan } from '../../worker/lib/imap';
 import { runInboxCycle, type InboxDeps } from '../../worker/lib/inboxCycle';
 
 /* ------------------------------------------------------------------ fixtures */
@@ -203,27 +204,41 @@ function makeDb(fx: Fixtures) {
 interface Stubs {
   envelopes?: InboxEnvelope[] | (() => Promise<InboxEnvelope[]>);
   bounces?: Array<{ envelope: InboxEnvelope; source: string }>;
+  /** False when the stubbed session hit a cap and did not read the window out. */
+  complete?: boolean;
   shouldStop?: () => boolean;
 }
 
+/**
+ * One stubbed IMAP session per mailbox, matching `scanInbox`'s contract: the
+ * envelopes and the sources of the bounce-shaped ones come back TOGETHER, from
+ * one call. The cycle no longer decides whether to go back for bodies, so
+ * there is nothing here for it to call twice.
+ */
 function makeDeps(fx: Fixtures, stubs: Stubs = {}) {
   const harness = makeDb(fx);
 
-  const envelopes = vi.fn(async () => {
+  const scan = vi.fn(async (_cfg: unknown, _since: Date): Promise<MailboxScan> => {
     const value = stubs.envelopes ?? [];
-    return typeof value === 'function' ? await value() : value;
+    const envelopes = typeof value === 'function' ? await value() : value;
+    const complete = stubs.complete ?? true;
+    return {
+      envelopes,
+      bounces: stubs.bounces ?? [],
+      complete,
+      truncated: complete ? null : 'stopped after 500 messages; the rest of this window was not read',
+    };
   });
-  const bounces = vi.fn(async () => stubs.bounces ?? []);
 
   const deps: InboxDeps = {
     db: harness.db,
-    connect: { envelopes, bounces },
+    scan,
     now: () => NOW,
     env: { tokenKey: KEY },
     shouldStop: stubs.shouldStop,
   };
 
-  return { ...harness, deps, envelopes, bounces };
+  return { ...harness, deps, scan };
 }
 
 /* ------------------------------------------------------------------- tests */
@@ -246,8 +261,7 @@ describe('runInboxCycle', () => {
     // Nothing connected, and — the point of rule 3 — no scan recorded either:
     // touch_inbox_scan('unconfigured') here would advance the cursor of a
     // mailbox somebody may configure five minutes from now.
-    expect(h.envelopes).not.toHaveBeenCalled();
-    expect(h.bounces).not.toHaveBeenCalled();
+    expect(h.scan).not.toHaveBeenCalled();
     expect(h.rpcCalls).toHaveLength(0);
     expect(result.scanned).toBe(0);
     expect(result.errors).toEqual([]);
@@ -367,20 +381,45 @@ describe('runInboxCycle', () => {
     expect(result.errors).toEqual([]);
   });
 
-  it('never fetches a source when nothing in the window looks like a bounce', async () => {
+  it('opens ONE session per mailbox, whatever the window held', async () => {
+    // The spec's "connect once, scan, disconnect". The pair of reads this
+    // replaced logged in twice for any mailbox that had a bounce in it, and an
+    // IMAP login rate is itself a throttling trigger. Which envelopes get
+    // their bodies downloaded is settled inside that one session, and is
+    // pinned in tests/unit/emailImap.test.ts.
+    const dsn = envelope({ from: 'mailer-daemon@example.com', subject: 'Undeliverable' });
     const h = makeDeps(
       {
         mailboxes: [mailboxRow()],
         secrets: [secretRow()],
         messages: [sentRow('ada@acme.com')],
       },
-      { envelopes: [envelope()] },
+      {
+        envelopes: [envelope(), dsn],
+        bounces: [{ envelope: dsn, source: 'Final-Recipient: rfc822; bob@acme.com\r\n' }],
+      },
     );
 
     await runInboxCycle(h.deps);
 
-    expect(h.envelopes).toHaveBeenCalledTimes(1);
-    expect(h.bounces).not.toHaveBeenCalled();
+    expect(h.scan).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the cursor when the session hit a cap and left part of the window unread', async () => {
+    // Not 'active'. The cap is not deterministic the way the address-page cap
+    // is — the next pass over a quieter window finishes — so the window has to
+    // come round again rather than be stepped over.
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()] },
+      { envelopes: [], complete: false },
+    );
+
+    const result = await runInboxCycle(h.deps);
+
+    const args = h.touches()[0].args as { p_status: string };
+    expect(args.p_status).toBe('incomplete');
+    expect(result.scanned).toBe(0);
+    expect(result.errors.join(' ')).toMatch(/did not finish the window/i);
   });
 
   it('records an authentication failure without touching the sending columns', async () => {
@@ -498,7 +537,7 @@ describe('runInboxCycle', () => {
   it('uses the first-scan floor, then the overlap window', async () => {
     const first = makeDeps({ mailboxes: [mailboxRow()], secrets: [secretRow()] });
     await runInboxCycle(first.deps);
-    expect(first.envelopes.mock.calls[0][1]).toEqual(
+    expect(first.scan.mock.calls[0][1]).toEqual(
       new Date(NOW.getTime() - FIRST_SCAN_LOOKBACK_MS),
     );
 
@@ -508,7 +547,7 @@ describe('runInboxCycle', () => {
       secrets: [secretRow()],
     });
     await runInboxCycle(again.deps);
-    expect(again.envelopes.mock.calls[0][1]).toEqual(new Date(last.getTime() - SCAN_OVERLAP_MS));
+    expect(again.scan.mock.calls[0][1]).toEqual(new Date(last.getTime() - SCAN_OVERLAP_MS));
   });
 
   it('carries on to the next mailbox after one fails', async () => {
@@ -534,7 +573,7 @@ describe('runInboxCycle', () => {
 
     const result = await runInboxCycle(h.deps);
 
-    expect(h.envelopes).toHaveBeenCalledTimes(2);
+    expect(h.scan).toHaveBeenCalledTimes(2);
     expect(h.touches().map((c) => c.args.p_status)).toEqual(['error', 'active']);
     expect(result.scanned).toBe(1);
     expect(result.errors).toHaveLength(1);
@@ -561,7 +600,7 @@ describe('runInboxCycle', () => {
 
     const result = await runInboxCycle(h.deps);
 
-    expect(h.envelopes).toHaveBeenCalledTimes(1);
+    expect(h.scan).toHaveBeenCalledTimes(1);
     expect(h.touches()).toHaveLength(1);
     expect(result.scanned).toBe(1);
     expect(result.errors).toEqual([]);

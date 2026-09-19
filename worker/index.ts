@@ -25,7 +25,7 @@
 import { env, serviceClient } from './lib/db.js';
 import { domainAcceptsMail } from './lib/dns.js';
 import { runCycle } from './lib/engine.js';
-import { appendToSent, fetchBounceSources, fetchRecentEnvelopes } from './lib/imap.js';
+import { appendToSent, scanInbox } from './lib/imap.js';
 import { runInboxCycle } from './lib/inboxCycle.js';
 import { buildRaw, createTransport } from './lib/mailer.js';
 
@@ -180,7 +180,7 @@ async function main(): Promise<void> {
       try {
         const result = await runInboxCycle({
           db,
-          connect: { envelopes: fetchRecentEnvelopes, bounces: fetchBounceSources },
+          scan: scanInbox,
           now: () => new Date(),
           env: { tokenKey },
           shouldStop: () => !running,

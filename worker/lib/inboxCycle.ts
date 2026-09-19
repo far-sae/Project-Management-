@@ -60,28 +60,28 @@ import { decryptSecret } from '@/lib/email/crypto';
 import { classifyImapError, friendlyImapError } from '@/lib/email/imapErrors';
 import {
   extractBouncedAddress,
-  looksLikeBounce,
   matchReplies,
   normalizeAddress,
   scanWindow,
 } from '@/lib/email/inbox';
-import type { InboxEnvelope } from '@/lib/email/types';
 
-import { hasImapHost, imapConfigFor, type ImapConfig } from './imap.js';
+import { hasImapHost, imapConfigFor, type ImapConfig, type MailboxScan } from './imap.js';
 
 /* ------------------------------------------------------------------- types */
 
 export interface InboxDeps {
   db: SupabaseClient;
   /**
-   * The two IMAP reads, injected so the cycle can be driven without a server.
-   * In production these are `fetchRecentEnvelopes` and `fetchBounceSources`
-   * from worker/lib/imap.ts.
+   * The mailbox read, injected so the cycle can be driven without a server.
+   * In production this is `scanInbox` from worker/lib/imap.ts.
+   *
+   * ONE entry point, called ONCE per mailbox, because one scan is one IMAP
+   * session. The pair this replaced — envelopes, then bounce sources — logged
+   * in twice for any mailbox that had a bounce in it, and the login rate is
+   * the thing providers throttle. The deadlock that pairing hid is described
+   * on `scanInbox` itself.
    */
-  connect: {
-    envelopes: (cfg: ImapConfig, since: Date) => Promise<InboxEnvelope[]>;
-    bounces: (cfg: ImapConfig, since: Date) => Promise<Array<{ envelope: InboxEnvelope; source: string }>>;
-  };
+  scan: (cfg: ImapConfig, since: Date) => Promise<MailboxScan>;
   now: () => Date;
   env: { tokenKey: string };
   /**
@@ -339,10 +339,20 @@ async function scanMailbox(
     throw new Error('this mailbox has no IMAP host');
   }
 
+  // `now` is the scan's own START time, and it is what gets written back as
+  // the cursor at the end — not the clock at write time, and not the
+  // database's now(). A scan that takes longer than SCAN_OVERLAP_MS (three
+  // minutes: a slow mailbox, a stalled fetch, a long recording pass) would
+  // otherwise stamp a cursor that is already past mail which arrived WHILE it
+  // ran, and the next window would start after it. The overlap exists to
+  // absorb seconds, not minutes.
   const now = deps.now();
   const since = scanWindow(row.inbox_last_scan_at ? new Date(row.inbox_last_scan_at) : null, now);
 
-  const envelopes = await deps.connect.envelopes(cfg, since);
+  // One session for the whole mailbox: envelopes and the sources of whatever
+  // looked like a bounce, collected inside a single login. See `scanInbox`.
+  const scan = await deps.scan(cfg, since);
+  const envelopes = scan.envelopes;
 
   /**
    * True once this scan has failed at any part of its work: a result that
@@ -360,6 +370,19 @@ async function scanMailbox(
    * same single outcome.
    */
   let incomplete = false;
+
+  // A cap reached inside the session means part of this window was never
+  // looked at. Said out loud AND treated as incomplete, which is the opposite
+  // of how the address-page cap in readSentAddresses is handled, and the two
+  // differ for a reason: that cap is deterministic — the next pass reads the
+  // same rows and stops in the same place, so holding the cursor would stall
+  // the mailbox permanently. This one is not. A mailbox that took a flood in
+  // one window is usually quieter in the next, and the same window re-read
+  // then finishes. Advancing over it would lose every message past the cap.
+  if (!scan.complete) {
+    incomplete = true;
+    note(who, `the inbox scan did not finish the window: ${scan.truncated ?? 'a limit was reached'}`);
+  }
 
   // ── replies ──────────────────────────────────────────────────────
   // Only worth a database read when something actually arrived — and the read
@@ -381,32 +404,29 @@ async function scanMailbox(
   }
 
   // ── bounces ──────────────────────────────────────────────────────
-  // The bounce read opens its own connection and downloads message SOURCES, so
-  // it is only made when this window actually holds something bounce-shaped.
-  // `looksLikeBounce` decides that from the envelope alone, which is the whole
-  // reason bodies are not pulled for ordinary mail: most of what lands in the
-  // window is the customer's own correspondence.
-  if (envelopes.some(looksLikeBounce)) {
-    for (const candidate of await deps.connect.bounces(cfg, since)) {
-      const address = extractBouncedAddress(candidate.source);
-      // Nothing recognisable in the notification. There is no address to
-      // record an event against, so this one is simply not ours to act on.
-      if (!address) continue;
-      // The address goes to the SQL exactly as extracted (normalised only for
-      // shape). Whether it suppresses anything is decided THERE, by the match
-      // — see the rules at the top of this file.
-      const recorded = await record(
-        deps,
-        note,
-        row,
-        'bounce',
-        normalizeAddress(address) || address,
-        candidate.envelope.at,
-        who,
-      );
-      if (recorded) result.bounces += 1;
-      else incomplete = true;
-    }
+  // Already downloaded, in the same session, and only for the envelopes
+  // `looksLikeBounce` accepted — which is the whole reason bodies are not
+  // pulled for ordinary mail: most of what lands in the window is the
+  // customer's own correspondence.
+  for (const candidate of scan.bounces) {
+    const address = extractBouncedAddress(candidate.source);
+    // Nothing recognisable in the notification. There is no address to
+    // record an event against, so this one is simply not ours to act on.
+    if (!address) continue;
+    // The address goes to the SQL exactly as extracted (normalised only for
+    // shape). Whether it suppresses anything is decided THERE, by the match
+    // — see the rules at the top of this file.
+    const recorded = await record(
+      deps,
+      note,
+      row,
+      'bounce',
+      normalizeAddress(address) || address,
+      candidate.envelope.at,
+      who,
+    );
+    if (recorded) result.bounces += 1;
+    else incomplete = true;
   }
 
   // Last, and only once everything above has been read AND written: 'active'
@@ -425,11 +445,11 @@ async function scanMailbox(
     const detail =
       'The mailbox was read, but what the scan found could not all be recorded. ' +
       'The same window will be read again; sending is unaffected.';
-    await touch(deps, note, row, 'incomplete', detail, who);
+    await touch(deps, note, row, 'incomplete', detail, who, now);
     return;
   }
 
-  await touch(deps, note, row, 'active', null, who);
+  await touch(deps, note, row, 'active', null, who, now);
   result.scanned += 1;
 }
 
@@ -589,12 +609,23 @@ async function touch(
   status: 'active' | 'error' | 'incomplete',
   error: string | null,
   who: string,
+  /**
+   * The moment this scan STARTED, which is what the cursor becomes on a status
+   * that advances it. Null only where there is nothing to advance to — a
+   * failure recorded before a window was ever worked out — and the function
+   * then falls back to its own now(), which is what it used to do for
+   * everything. See migration 157e for why the start time and not the finish:
+   * mail that arrives while a slow scan is running is behind the cursor the
+   * moment that scan writes the clock instead of its window.
+   */
+  scannedAt: Date | null = null,
 ): Promise<void> {
   try {
     const { error: rpcError } = await deps.db.rpc('touch_inbox_scan', {
       p_account: row.id,
       p_status: status,
       p_error: error,
+      p_scanned_at: scannedAt ? scannedAt.toISOString() : null,
     });
     if (rpcError) note(who, `the scan result could not be recorded: ${rpcError.message}`);
   } catch (err) {

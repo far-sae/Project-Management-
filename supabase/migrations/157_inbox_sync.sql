@@ -529,10 +529,19 @@ grant execute on function public.record_inbox_result(uuid, text, text, timestamp
 -- those three columns here would turn one wrong setting into a silent outage
 -- of the customer's sending, which is the failure this column split exists to
 -- prevent.
+-- The three-argument shape this function had while phase 2 was being written,
+-- dropped rather than left beside the four-argument one below. Nothing has
+-- applied this migration anywhere, so on every real database this is a no-op;
+-- it is here so a workstation that ran an earlier revision of the file does
+-- not end up with two overloads, where PostgREST would have to guess which one
+-- a caller meant and the one that ignores p_scanned_at could win.
+drop function if exists public.touch_inbox_scan(uuid, text, text);
+
 create or replace function public.touch_inbox_scan(
   p_account uuid,
   p_status text,
-  p_error text default null
+  p_error text default null,
+  p_scanned_at timestamptz default null
 )
 returns void
 language plpgsql
@@ -570,6 +579,16 @@ begin
   -- 'active' advances the cursor, and so does 'unconfigured' -- there is
   -- nothing unread behind a mailbox that is not being scanned.
   --
+  -- What it advances TO is p_scanned_at, the moment the scan STARTED, falling
+  -- back to now() only for a caller that passes nothing. The difference is not
+  -- academic: the cursor is the start of the next window, and scanWindow()
+  -- gives it SCAN_OVERLAP_MS of slack, three minutes. A scan that takes longer
+  -- than that -- a mailbox with a slow server, a long recording pass -- and
+  -- then writes now() at the end has moved the cursor past everything that
+  -- arrived while it was running. Writing its own start time means the next
+  -- window begins where this one did, so a message that landed mid-scan is
+  -- read by the next one instead of being stepped over.
+  --
   -- The two are separate statuses rather than one because the ACCOUNTS SCREEN
   -- reads them and an admin acts on what it says. 'error' means go and check
   -- the host and the app password; 'incomplete' means nothing is wrong with
@@ -587,7 +606,7 @@ begin
      set inbox_last_scan_at = case
                                 when p_status in ('error','incomplete')
                                   then a.inbox_last_scan_at
-                                else now()
+                                else coalesce(p_scanned_at, now())
                               end,
          imap_status = p_status,
          imap_last_error = p_error
@@ -595,8 +614,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.touch_inbox_scan(uuid, text, text)
+revoke execute on function public.touch_inbox_scan(uuid, text, text, timestamptz)
   from public, anon, authenticated;
-grant execute on function public.touch_inbox_scan(uuid, text, text) to service_role;
+grant execute on function public.touch_inbox_scan(uuid, text, text, timestamptz) to service_role;
 
 notify pgrst, 'reload schema';
