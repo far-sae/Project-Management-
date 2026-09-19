@@ -59,7 +59,10 @@ alter table public.email_messages
 -- Set from the first open only, so a person who opens a message an hour after
 -- Apple pre-fetched it does not retroactively relabel it. That direction is
 -- deliberate: it undercounts real opens rather than overcounting them, and an
--- honest floor is worth more here than a flattering estimate.
+-- honest floor is worth more here than a flattering estimate. It only holds
+-- because the campaign counter below reads this flag -- an earlier revision
+-- ignored it there and so overcounted, inverting the reasoning in this very
+-- comment three statements further down the file.
 --
 -- The user agent itself is NOT stored. It is read to make this decision and
 -- discarded -- along with the IP address, which is never read at all. This
@@ -70,17 +73,24 @@ alter table public.email_messages
 
 -- ── c. what a campaign knows ────────────────────────────────────────
 --
--- A count of MESSAGES opened, not of fetches: incremented only on the
--- null-to-set transition below, exactly as replied_count and bounced_count are
--- (157d). A campaign whose one recipient opened it fifty times reads 1.
+-- TWO counters, and the split is the point of this whole phase.
+--
+-- opened_count is messages opened by something that looked like a person.
+-- opened_prefetch_count is messages whose first open looked automatic. Both
+-- count MESSAGES, not fetches -- incremented only on the null-to-set
+-- transition below, exactly as replied_count and bounced_count are (157d) --
+-- so a campaign whose one recipient opened it fifty times reads 1.
+--
+-- One counter would have been simpler and would have been the bug this
+-- migration's own header warns about. Apple Mail pre-fetches every image in
+-- every message; a single number including those fetches makes a campaign to
+-- sixty iPhone users read as sixty opens when nobody opened anything, which is
+-- worse than having no number at all, because the user acts on it.
 alter table public.email_campaigns
   add column if not exists opened_count integer not null default 0;
 
--- The campaigns screen orders and filters by this; the sequences screen reads
--- it per step through the step's hidden campaign.
-create index if not exists email_messages_opened
-  on public.email_messages (campaign_id)
-  where opened_at is not null;
+alter table public.email_campaigns
+  add column if not exists opened_prefetch_count integer not null default 0;
 
 -- ── d. record_email_open() ──────────────────────────────────────────
 --
@@ -164,9 +174,19 @@ begin
   -- (152), so a message always has exactly one campaign to credit -- including
   -- a sequence step, whose hidden campaign is how the Sequences screen reads
   -- opens per step.
+  --
+  -- WHICH counter it credits is decided here, once, by the same flag the
+  -- message row keeps. An automatic fetch is recorded, is visible, and is not
+  -- added to the number a person reads as "how many people opened this". That
+  -- separation is the entire reason this phase has a prefetch flag at all; a
+  -- single counter including Apple's pre-fetches would report a campaign to
+  -- sixty iPhone users as sixty opens with nobody having opened anything.
   if v_first then
     update public.email_campaigns c
-       set opened_count = c.opened_count + 1
+       set opened_count =
+             c.opened_count + (case when coalesce(p_prefetch, false) then 0 else 1 end),
+           opened_prefetch_count =
+             c.opened_prefetch_count + (case when coalesce(p_prefetch, false) then 1 else 0 end)
       from public.email_messages m
      where m.id = p_message
        and c.id = m.campaign_id;

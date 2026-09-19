@@ -17,14 +17,18 @@ import { describe, it, expect } from 'vitest';
 
 import {
   openPixelUrl as srcOpenPixelUrl,
+  openTokenSubject as srcOpenTokenSubject,
   isPrefetch as srcIsPrefetch,
   injectTrackingPixel as srcInjectTrackingPixel,
+  PREFETCH_WINDOW_MS as srcWindow,
   TRANSPARENT_GIF_BASE64 as srcGif,
 } from '@/lib/email/openTracking';
 import {
   openPixelUrl as apiOpenPixelUrl,
+  openTokenSubject as apiOpenTokenSubject,
   isPrefetch as apiIsPrefetch,
   injectTrackingPixel as apiInjectTrackingPixel,
+  PREFETCH_WINDOW_MS as apiWindow,
   TRANSPARENT_GIF_BASE64 as apiGif,
 } from '../../api/_lib/openTracking';
 
@@ -256,6 +260,29 @@ describe('openTracking, in both copies', () => {
     // </body> is invalid and some clients drop it, which would silently record
     // nothing.
     expect(once.indexOf('<img')).toBeLessThan(once.indexOf('</body>'));
+  });
+
+  it('agrees on the detection window, and on what the token signs', () => {
+    // Both are exported, and neither was compared. Widening the window in one
+    // copy and not the other is a plausible edit that every other assertion in
+    // this file would have passed: the isPrefetch cases below straddle no
+    // boundary that a 10s-versus-60s difference moves.
+    expect(apiWindow).toBe(srcWindow);
+    expect(apiOpenTokenSubject('msg-1')).toBe(srcOpenTokenSubject('msg-1'));
+    // And the subject is NOT the bare id, which is what the unsubscribe token
+    // signs. If these ever collapse into the same string, a pixel URL becomes
+    // a working unsubscribe token again.
+    expect(srcOpenTokenSubject('msg-1')).not.toBe('msg-1');
+  });
+
+  it('agrees on the fragment branch, which is the one the worker uses', () => {
+    // A campaign body is an HTML fragment with no <body> tag, so the
+    // `lastIndexOf` miss is the path production takes — and it was the one
+    // path never compared across the two copies.
+    const url = 'https://tasks.example.com/api/email/open?m=1&t=t';
+    const fragment = '<p>Hi {{first_name}}</p>';
+    expect(apiInjectTrackingPixel(fragment, url)).toBe(srcInjectTrackingPixel(fragment, url));
+    expect(srcInjectTrackingPixel(fragment, url)).toContain('<img');
   });
 
   it('agrees on the bytes of the pixel itself', () => {

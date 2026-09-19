@@ -44,7 +44,11 @@ import { decryptSecret } from '@/lib/email/crypto';
 import { blockedReason, selectMailboxes } from '@/lib/email/mailboxPool';
 import { buildMessage, type BuiltMessage } from '@/lib/email/message';
 import { threadHeaders } from '@/lib/email/sequence';
-import { injectTrackingPixel, openPixelUrl } from '@/lib/email/openTracking';
+import {
+  injectTrackingPixel,
+  openPixelUrl,
+  openTokenSubject,
+} from '@/lib/email/openTracking';
 import { describeSendWindow, isWithinSendWindow } from '@/lib/email/sendWindow';
 import {
   classifySmtpError,
@@ -811,6 +815,26 @@ async function sendBatch(
 
     let built: BuiltMessage;
     /**
+     * The message body WITHOUT the tracking pixel, set only when one was
+     * added.
+     *
+     * The Sent-folder copy is otherwise the identical bytes that went to SMTP,
+     * deliberately, so the customer's own record matches what the recipient
+     * received. With a pixel in it that stops being harmless: the copy sits in
+     * the SENDER's mailbox, and the first time the salesperson scrolls their
+     * Sent folder their client renders it and fetches the pixel. Hours after
+     * the send, from a real client — so it is not classified as automatic, and
+     * the campaign reports an open on a message the recipient never saw.
+     * Every message anybody reviews in their Sent folder would self-report as
+     * opened.
+     *
+     * So the copy diverges by exactly one <img> tag. The Message-ID is
+     * unchanged, because it is passed explicitly rather than minted by the
+     * composer, so threading and the Sent copy still agree with the delivered
+     * message on the only header anything matches on.
+     */
+    let sentCopyHtml: string | null = null;
+    /**
      * The exact bytes this message is sent as, built ONCE. The same buffer
      * goes to SMTP and, after the batch, to the Sent folder, so the copy in
      * the mailbox is the message the recipient received rather than a second
@@ -835,7 +859,15 @@ async function sendBatch(
         // password or a booking, and tracking whether they opened it is not
         // what they came for.
         if (settings.trackOpens) {
-          pixel = openPixelUrl(deps.env.siteUrl, row.message_id, token);
+          // A DIFFERENT token from the unsubscribe one above, under the same
+          // secret. A pixel URL is fetched automatically and so ends up in
+          // every gateway, proxy and access log on the way; the unsubscribe
+          // token must not be reconstructable from it. See openTokenSubject.
+          const openToken = await signUnsubscribeToken(
+            openTokenSubject(row.message_id),
+            deps.env.unsubscribeSecret,
+          );
+          pixel = openPixelUrl(deps.env.siteUrl, row.message_id, openToken);
         }
       }
       built = buildMessage({
@@ -852,6 +884,9 @@ async function sendBatch(
       // alternative cannot load an image, and a bare tracking URL sitting in
       // the text of somebody's email is both useless and alarming to read.
       if (pixel) {
+        // The wire copy gets the pixel. `sentCopyHtml` keeps the version
+        // without it, for the Sent folder — see where the copy is built below.
+        sentCopyHtml = built.html;
         built = { ...built, html: injectTrackingPixel(built.html, pixel) };
       }
 
@@ -1001,7 +1036,37 @@ async function sendBatch(
       // Whether the settlement landed is beside the point here: the message
       // reached the recipient, and the mailbox's own record is supposed to
       // show what was sent from it.
-      copies.push(raw);
+      //
+      // Re-composed without the pixel when there was one, so the sender
+      // opening their own Sent folder does not record an open against the
+      // recipient. A failure to re-compose falls back to the wire bytes: a
+      // slightly inflated open count is a smaller loss than a mailbox with no
+      // record of what it sent, and it cannot fail in practice — the same
+      // inputs composed a moment ago.
+      if (sentCopyHtml !== null) {
+        try {
+          copies.push(
+            await deps.buildRaw({
+              from: {
+                name: String(account.from_name ?? ''),
+                address: String(account.from_email),
+              },
+              replyTo: account.reply_to ?? undefined,
+              to: { name: String(row.to_name ?? ''), address: String(row.to_email) },
+              subject: built.subject,
+              html: sentCopyHtml,
+              text: built.text,
+              headers: built.headers,
+              messageId,
+            }),
+          );
+        } catch (err) {
+          note(who, `the Sent copy was filed with its tracking pixel: ${short(err)}`);
+          copies.push(raw);
+        }
+      } else {
+        copies.push(raw);
+      }
     }
 
     if (abort) {

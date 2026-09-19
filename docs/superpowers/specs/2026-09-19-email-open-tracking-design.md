@@ -64,10 +64,15 @@ does in plain words, and nothing anywhere infers an open from anything else.
 
 ### The pixel
 
-`GET /api/email/open?m=<messageId>&t=<token>` returns a 43-byte transparent
+`GET /api/email/open?m=<messageId>&t=<token>` returns a 42-byte transparent
 GIF with `Cache-Control: no-store`, always, in under a few milliseconds. The
-token is an HMAC of the message id under the same secret the unsubscribe link
-uses, so the URL cannot be forged to inflate another organization's numbers.
+token is an HMAC under the same secret the unsubscribe link uses, but over
+`open:<messageId>` rather than the bare id — so the URL cannot be forged to
+inflate another organization's numbers, and a harvested pixel URL is not a
+working unsubscribe token. That second part matters because a pixel URL is
+fetched automatically: it lands in the recipient's gateway inspection log,
+their egress proxy, Gmail's image proxy and our own access log, none of which
+the unsubscribe link ever reaches.
 
 **It always returns the image.** A bad token, an unknown message, a database
 that is down — the response is the same GIF with the same status. A tracking
@@ -86,9 +91,11 @@ write.
   `replied_at` uses, so "opened after" figures do not move every time the
   message is re-rendered),
 - always sets `last_opened_at` and increments `open_count`,
-- increments the campaign's `opened_count` **only on the first-open
-  transition**, so a campaign's opened count is a count of messages, not of
-  fetches,
+- increments the campaign's `opened_count` **only on the first-open transition
+  and only when the open did not look automatic**, so the headline is a count
+  of messages a person opened rather than of fetches; an automatic first open
+  increments `opened_prefetch_count` instead, so it is recorded and visible
+  without being counted as a read,
 - does nothing at all when the organization has tracking switched off, which
   closes the window where a pixel from before the switch was flipped is still
   in somebody's mailbox.
@@ -101,9 +108,16 @@ says both.
 Two signals, both from the request:
 
 1. `User-Agent` matching the known proxies (`GoogleImageProxy`,
-   `AppleMailProxy`, `YahooMailProxy`).
-2. An open arriving within **ten seconds** of `sent_at`. No human opens a
-   message that fast; a scanner does.
+   `YahooMailProxy`, and the corporate scanners). **Apple is not among them**:
+   Mail Privacy Protection sends an ordinary Safari string from Apple's relay
+   ranges and is identified industry-wide by IP, which this phase does not
+   read.
+2. An open arriving within **five minutes** of `sent_at`. Ten seconds catches a
+   scanner and misses Apple, which queues its pre-fetches — and Apple is most
+   of the problem. A person can open a message inside five minutes and is then
+   counted as automatic; that is the direction to be wrong in, because a
+   misfiled real open is one missing from a number already called a floor,
+   while a missed pre-fetch is a fabricated open in a number somebody acts on.
 
 Either one marks the row `prefetch`. A message whose only opens are prefetches
 counts in `open_count` but is shown separately, and the campaign's headline
@@ -118,7 +132,10 @@ every campaign look like a triumph.
 
 `email_messages` gains `opened_at`, `last_opened_at`, `open_count` (default 0)
 and `open_was_prefetch` (boolean, default false).
-`email_campaigns` gains `opened_count`.
+`email_campaigns` gains `opened_count` (messages opened by something that
+looked like a person) and `opened_prefetch_count` (messages whose first open
+looked automatic). Two counters, never one: merged, a campaign to sixty iPhone
+users reports sixty opens with nobody having opened anything.
 `email_settings` gains `track_opens` (boolean, default **false**).
 
 No new table. An `email_open_events` row per fetch was considered and dropped:
@@ -128,7 +145,9 @@ it answers are "when" and "how many", and both are on the message row.
 ### Interface
 
 - **Campaigns**: an "Opened" column beside Sent and Replied, showing the count
-  of messages opened by a person. A tooltip, not a footnote: "Counts messages
+  of messages opened by a person, with the automatic count alongside it as
+  `+N auto`. Each recipient row says whether its own open looked automatic and
+  how many times the message was loaded. A tooltip, not a footnote: "Counts messages
   whose images were loaded. Apple Mail and most scanners load images
   automatically, so this is an estimate — N of these look automatic and are
   not counted here."

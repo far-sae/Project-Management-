@@ -185,17 +185,36 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
                           the expanded recipient list, which loads lazily and
                           would otherwise make this row show nothing, not
                           even a zero, until an admin happened to expand it. */}
-                      {/* An estimate, and labelled as one. Apple Mail
-                          pre-fetches every image in every message and has
-                          since 2021, so a share of this is nobody reading
-                          anything — which is why the title says so and why it
-                          sits to the LEFT of replies rather than being the
-                          headline. A reply is a fact; an open is a signal. */}
+                      {/* Two numbers, never one. `openedCount` excludes the
+                          opens that looked automatic and `openedPrefetchCount`
+                          is how many those were, so the second is what says
+                          how much to trust the first. Merged into a single
+                          figure this would report a campaign to sixty iPhone
+                          users as sixty opens with nobody having opened
+                          anything; dropped entirely it would hide that the
+                          first number is a floor.
+
+                          It sits to the LEFT of replies rather than being the
+                          headline, deliberately. A reply is a fact; an open is
+                          a signal. */}
                       <span
                         className="text-violet-600 dark:text-violet-400"
-                        title="Opened (estimate — Apple Mail and scanners load images automatically)"
+                        title={
+                          campaign.openedPrefetchCount > 0
+                            ? `Opened by a person (estimate). A further ${campaign.openedPrefetchCount} ` +
+                              'were opened automatically — Apple Mail and most security scanners ' +
+                              'load images without anybody reading the message — and are not counted here.'
+                            : 'Opened (estimate — clients that block images record nothing, ' +
+                              'so this is a floor)'
+                        }
                       >
                         O {campaign.openedCount}
+                        {campaign.openedPrefetchCount > 0 && (
+                          <span className="text-muted-foreground">
+                            {' '}
+                            +{campaign.openedPrefetchCount} auto
+                          </span>
+                        )}
                       </span>
                       <span className="text-blue-600 dark:text-blue-400" title="Replied">R {campaign.repliedCount}</span>
                       <span className="text-amber-600 dark:text-amber-400" title="Bounced">B {campaign.bouncedCount}</span>
@@ -225,6 +244,23 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
                                 {message.bouncedAt && (
                                   <p className="text-xs text-muted-foreground truncate">
                                     Added to the suppression list — won&apos;t be mailed again.
+                                  </p>
+                                )}
+                                {/* Said in words rather than shown as a
+                                    timestamp and a count, because the count is
+                                    the part people misread: fifty fetches is
+                                    one person's client re-rendering the same
+                                    message, not fifty readers. And an open
+                                    that looked automatic says so here, on the
+                                    row, rather than only being netted out of
+                                    the total above. */}
+                                {message.openedAt && (
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {message.openWasPrefetch
+                                      ? 'Opened automatically by a mail client or scanner — not counted as a read.'
+                                      : `Opened ${format(message.openedAt, 'MMM d, HH:mm')}`}
+                                    {message.openCount > 1 &&
+                                      ` · loaded ${message.openCount} times`}
                                   </p>
                                 )}
                               </div>

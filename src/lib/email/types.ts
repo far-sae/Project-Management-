@@ -182,6 +182,16 @@ export interface EmailCampaign {
    * what separates the two.
    */
   openedCount: number;
+  /**
+   * Messages whose first open looked automatic — a known proxy, or a fetch
+   * inside the detection window after the send.
+   *
+   * Kept apart from `openedCount` rather than merged into it or discarded.
+   * Merging would report a campaign to sixty iPhone users as sixty opens with
+   * nobody having opened anything; discarding would hide that the number above
+   * is a floor. Every screen that shows one shows the other.
+   */
+  openedPrefetchCount: number;
   bouncedCount: number;
   createdAt: Date;
 }
@@ -210,6 +220,19 @@ export interface EmailMessage {
    */
   repliedAt: Date | null;
   bouncedAt: Date | null;
+  /** First open, which never moves once set. Null if never opened. */
+  openedAt: Date | null;
+  /** Most recent open, which does move. */
+  lastOpenedAt: Date | null;
+  /** Every fetch of the pixel, including the same person's client re-rendering. */
+  openCount: number;
+  /**
+   * True when the FIRST open looked automatic. Decided once and never
+   * revisited, so a person who opens a message after Apple pre-fetched it
+   * leaves this true — which undercounts rather than overcounts, and the
+   * screens say the number is a floor.
+   */
+  openWasPrefetch: boolean;
 }
 
 export interface EmailSuppression {

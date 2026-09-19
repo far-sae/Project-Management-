@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env, serviceClient } from '../_lib/context';
 import { verifyUnsubscribeToken } from '../_lib/unsubscribe';
-import { isPrefetch, TRANSPARENT_GIF_BASE64 } from '../_lib/openTracking';
+import { isPrefetch, openTokenSubject, TRANSPARENT_GIF_BASE64 } from '../_lib/openTracking';
 
 const GIF = Buffer.from(TRANSPARENT_GIF_BASE64, 'base64');
 
@@ -20,6 +20,14 @@ const GIF = Buffer.from(TRANSPARENT_GIF_BASE64, 'base64');
  * Gmail's proxy caches aggressively and this is the only lever we have.
  */
 function pixel(res: VercelResponse): void {
+  // Once, ever. Every exit in the handler goes through here, and on a socket
+  // the client aborted, the first send throws, the catch swallows it, and the
+  // fallthrough would call this again -- setHeader after a failed send raises
+  // ERR_HTTP_HEADERS_SENT with nothing left to catch it, so an aborted fetch
+  // is logged as a 500. Nobody sees it (the connection is already gone), but
+  // "every path returns the image" should be structurally true rather than
+  // true by inspection.
+  if (res.headersSent || res.writableEnded) return;
   res.setHeader('Content-Type', 'image/gif');
   res.setHeader('Content-Length', String(GIF.length));
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -56,7 +64,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const token = String(req.query.t ?? '');
     if (!messageId || !token) return pixel(res);
 
-    const ok = await verifyUnsubscribeToken(messageId, token, env('EMAIL_UNSUBSCRIBE_SECRET'));
+    // Over the SCOPED subject, not the bare message id. The two used to be the
+    // same string, which made a pixel URL -- fetched automatically, and so
+    // logged by every gateway and proxy it passes -- a working unsubscribe
+    // token for that recipient. Same secret, same HMAC, different domain.
+    const ok = await verifyUnsubscribeToken(
+      openTokenSubject(messageId),
+      token,
+      env('EMAIL_UNSUBSCRIBE_SECRET'),
+    );
     if (!ok) return pixel(res);
 
     // A HEAD request is a client asking about the image, not rendering it.

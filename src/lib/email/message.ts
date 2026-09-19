@@ -53,7 +53,7 @@ export function buildMessage(input: BuildMessageInput): BuiltMessage {
 
   // htmlToText() strips the anchor, leaving the bare word "Unsubscribe" with
   // nothing to act on, so the plain-text part carries the URL itself.
-  if (input.kind === 'bulk' && input.unsubscribeUrl && !text.includes(input.unsubscribeUrl)) {
+  if (input.kind !== 'single' && input.unsubscribeUrl && !text.includes(input.unsubscribeUrl)) {
     text = `${text}
 
 Unsubscribe: ${input.unsubscribeUrl}`;

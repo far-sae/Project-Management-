@@ -410,6 +410,56 @@ export const countStepMessages = async (
   return counts;
 };
 
+/**
+ * How each step's hidden campaign counted opens, keyed by campaign id.
+ *
+ * Per step is where this number is actually worth having: "which follow-up is
+ * being read" is a question about step 2 versus step 3, and the campaign-level
+ * figure a sequence produces is per step already, because every step owns its
+ * own hidden campaign.
+ *
+ * Both numbers come back. `opened` excludes the opens that looked automatic
+ * and `prefetch` says how many those were, so the second is what tells the
+ * reader how much to trust the first.
+ *
+ * Returns an empty map rather than throwing: this annotates an editor that
+ * works without it.
+ */
+export const listStepOpenCounts = async (
+  campaignIds: string[],
+): Promise<Record<string, { opened: number; prefetch: number }>> => {
+  const counts: Record<string, { opened: number; prefetch: number }> = {};
+  const ids = campaignIds.filter((id): id is string => !!id);
+  if (ids.length === 0) return counts;
+
+  try {
+    const { data, error } = await supabase
+      .from("email_campaigns")
+      .select("id, opened_count, opened_prefetch_count")
+      .in("id", ids);
+
+    if (error) {
+      logger.error("Failed to read open counts for sequence steps:", error);
+      return counts;
+    }
+
+    for (const row of (data ?? []) as Array<{
+      id: string;
+      opened_count?: number | null;
+      opened_prefetch_count?: number | null;
+    }>) {
+      counts[row.id] = {
+        opened: row.opened_count ?? 0,
+        prefetch: row.opened_prefetch_count ?? 0,
+      };
+    }
+  } catch (err) {
+    logger.error("Failed to read open counts for sequence steps:", err);
+  }
+
+  return counts;
+};
+
 /** Updates the wording on a step's hidden campaign. */
 const updateStepCampaign = async (
   campaignId: string,

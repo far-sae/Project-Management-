@@ -15,7 +15,7 @@ import {
 import type { Recipient } from '@/services/supabase/email';
 import {
   getSequence, saveStep, deleteStep, updateSequence, countStepMessages,
-  enroll, listEnrollments, stopEnrollment,
+  listStepOpenCounts, enroll, listEnrollments, stopEnrollment,
 } from '@/services/supabase/emailSequences';
 import type {
   EmailEnrollment, EmailSequence, EmailSequenceStep, SequenceStatus,
@@ -88,6 +88,13 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
   /** How many messages each step's hidden campaign has already produced.
    *  Keyed by campaign id; a step with any is frozen. */
   const [sentCounts, setSentCounts] = useState<Record<string, number>>({});
+  /**
+   * Opens per step, keyed by the step's hidden campaign id. Two numbers: the
+   * ones that looked like a person, and the ones that looked automatic.
+   */
+  const [openCounts, setOpenCounts] = useState<
+    Record<string, { opened: number; prefetch: number }>
+  >({});
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
@@ -115,10 +122,15 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
     setName(loaded.name);
     setSavedSteps(steps);
     setForms(steps.map(toForm));
-    const counts = await countStepMessages(
-      steps.map((s) => s.campaignId).filter((id): id is string => id !== null),
-    );
+    const campaignIds = steps
+      .map((s) => s.campaignId)
+      .filter((id): id is string => id !== null);
+    const [counts, opens] = await Promise.all([
+      countStepMessages(campaignIds),
+      listStepOpenCounts(campaignIds),
+    ]);
     setSentCounts(counts);
+    setOpenCounts(opens);
   }, [sequenceId]);
 
   const loadEnrollments = useCallback(async () => {
@@ -416,6 +428,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
           {forms.map((form) => {
             const frozen = isFrozen(form);
             const sent = form.campaignId ? (sentCounts[form.campaignId] ?? 0) : 0;
+            const opens = form.campaignId ? openCounts[form.campaignId] : undefined;
             return (
               <div key={form.stepIndex} className="border border-border rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between gap-4 p-4 bg-secondary/40">
@@ -427,6 +440,30 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
                     {frozen && (
                       <Badge variant="secondary">
                         <Lock className="w-3 h-3 mr-1" />Sent to {sent}
+                      </Badge>
+                    )}
+                    {/* Per step, which is the only place this number earns its
+                        keep: "which follow-up is being read" is a question
+                        about step 2 against step 3. Shown only once the step
+                        has actually gone to somebody, so a draft is not
+                        decorated with a zero.
+
+                        The automatic count rides alongside rather than being
+                        folded in. Apple Mail loads every image in every
+                        message, so a single merged figure would say a step was
+                        read by people who never saw it. */}
+                    {frozen && opens && (opens.opened > 0 || opens.prefetch > 0) && (
+                      <Badge
+                        variant="outline"
+                        title={
+                          opens.prefetch > 0
+                            ? `A further ${opens.prefetch} were opened automatically by a mail ` +
+                              'client or scanner and are not counted here.'
+                            : 'An estimate: clients that block images record nothing.'
+                        }
+                      >
+                        Opened {opens.opened}
+                        {opens.prefetch > 0 ? ` (+${opens.prefetch} auto)` : ''}
                       </Badge>
                     )}
                     {!form.id && <Badge variant="secondary">Not saved yet</Badge>}

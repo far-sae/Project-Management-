@@ -1683,9 +1683,14 @@ describe('worker/lib/engine — the open-tracking pixel', () => {
     expect(String(composer.built[0].mail.text)).not.toContain('/api/email/open');
   });
 
-  it('signs the pixel with the same token as the unsubscribe link', async () => {
-    // One secret, one HMAC of the message id. A second scheme would be a
-    // second thing to rotate and a second thing to get wrong.
+  it('does NOT sign the pixel with the unsubscribe token', async () => {
+    // They used to be the same string under the same secret, which made a
+    // pixel URL a working unsubscribe token — and a pixel URL is fetched
+    // automatically, so it lands in the recipient's gateway inspection log,
+    // their egress proxy log, Gmail's image proxy and our own access log.
+    // The unsubscribe link reaches none of those, because nobody clicks it.
+    // Anyone reading one of those logs could have POSTed that token and
+    // suppressed the address organisation-wide, permanently.
     const composer = makeComposer();
     const stub = oneMailbox([claimedRow(1)], { settings: [trackingOn()] });
     const mailer = makeMailer(okSend);
@@ -1696,6 +1701,56 @@ describe('worker/lib/engine — the open-tracking pixel', () => {
     const open = /api\/email\/open\?m=msg-1&t=([^"&]+)/.exec(html);
     const unsub = /api\/email\/unsubscribe\?m=msg-1&t=([^"&]+)/.exec(html);
     expect(open?.[1]).toBeTruthy();
-    expect(open?.[1]).toBe(unsub?.[1]);
+    expect(unsub?.[1]).toBeTruthy();
+    expect(open?.[1]).not.toBe(unsub?.[1]);
+  });
+
+  it('keeps the pixel out of the copy filed in the sender’s Sent folder', async () => {
+    // The Sent copy sits in the SENDER's mailbox. With the pixel in it, the
+    // first time the salesperson scrolls their Sent folder their client
+    // renders it and fetches the pixel — hours after the send, from a real
+    // client, so not classified as automatic — and the campaign reports an
+    // open on a message the recipient never saw.
+    const composer = makeComposer();
+    const folder = makeSentFolder();
+    const stub = oneMailbox([claimedRow(1)], {
+      settings: [trackingOn()],
+      accounts: [imapAccountRow()],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(
+      makeDeps(stub.db, mailer.createTransport, {
+        buildRaw: composer.buildRaw,
+        appendToSent: folder.appendToSent,
+      }),
+    );
+
+    // Two compositions: the wire copy with the pixel, the Sent copy without.
+    expect(composer.built).toHaveLength(2);
+    expect(String(composer.built[0].mail.html)).toContain('/api/email/open');
+    expect(String(composer.built[1].mail.html)).not.toContain('/api/email/open');
+    // Same Message-ID, so the Sent copy and the delivered message still agree
+    // on the one header anything matches on.
+    expect(composer.built[1].mail.messageId).toBe(composer.built[0].mail.messageId);
+    // And it is the pixel-free bytes that were filed.
+    expect(folder.calls[0].messages[0]).toBe(composer.built[1].raw);
+  });
+
+  it('composes once, and files the wire bytes, when tracking is off', async () => {
+    const composer = makeComposer();
+    const folder = makeSentFolder();
+    const stub = oneMailbox([claimedRow(1)], { accounts: [imapAccountRow()] });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(
+      makeDeps(stub.db, mailer.createTransport, {
+        buildRaw: composer.buildRaw,
+        appendToSent: folder.appendToSent,
+      }),
+    );
+
+    expect(composer.built).toHaveLength(1);
+    expect(folder.calls[0].messages[0]).toBe(composer.built[0].raw);
   });
 });

@@ -143,6 +143,7 @@ interface EmailCampaignRow {
   replied_count: number;
   /** Nullable here, not in the column: a database that has not run 161 yet. */
   opened_count?: number | null;
+  opened_prefetch_count?: number | null;
   bounced_count: number;
   created_at: string;
 }
@@ -163,6 +164,12 @@ interface EmailMessageRow {
   // Set by record_inbox_result() (migration 157d), never by the send path.
   replied_at: string | null;
   bounced_at: string | null;
+  // Set by record_email_open() (migration 161d). All nullable here, not in the
+  // columns: a database that has not run 161 yet.
+  opened_at?: string | null;
+  last_opened_at?: string | null;
+  open_count?: number | null;
+  open_was_prefetch?: boolean | null;
 }
 
 /** Raw shape of an `email_suppressions` row as returned by PostgREST. */
@@ -303,6 +310,7 @@ export const mapCampaignRow = (row: EmailCampaignRow): EmailCampaign => ({
   // Zero on a database that has not run migration 161 yet, which is the same
   // thing the column's own default says.
   openedCount: row.opened_count ?? 0,
+  openedPrefetchCount: row.opened_prefetch_count ?? 0,
   bouncedCount: row.bounced_count,
   createdAt: new Date(row.created_at),
 });
@@ -321,6 +329,10 @@ export const mapMessageRow = (row: EmailMessageRow): EmailMessage => ({
   sentAt: row.sent_at ? new Date(row.sent_at) : null,
   repliedAt: row.replied_at ? new Date(row.replied_at) : null,
   bouncedAt: row.bounced_at ? new Date(row.bounced_at) : null,
+  openedAt: row.opened_at ? new Date(row.opened_at) : null,
+  lastOpenedAt: row.last_opened_at ? new Date(row.last_opened_at) : null,
+  openCount: row.open_count ?? 0,
+  openWasPrefetch: row.open_was_prefetch === true,
 });
 
 export const mapSuppressionRow = (row: EmailSuppressionRow): EmailSuppression => ({
@@ -641,10 +653,32 @@ export const saveEmailSettings = async (orgId: string, settings: EmailSettings):
     .from("email_settings")
     .upsert(row, { onConflict: "organization_id" });
 
-  if (error) {
-    logger.error("Failed to save email settings:", error);
-    throw error;
+  if (!error) return;
+
+  // PGRST204 is PostgREST saying the column is not in its schema cache, which
+  // on this row means one thing: the database has not run migration 161.
+  //
+  // That state is supported and documented — the deployment guide says 157
+  // through 161 are applied "if you want" inbox sync, sequences and open
+  // tracking. Without this branch, an admin on a database that stopped at 160
+  // could no longer change their send window at all: the screen loads fine
+  // (the column reads as absent, so tracking shows off), and every Save fails
+  // with a raw PostgREST error naming a column they have never heard of.
+  //
+  // So the setting nobody can store is dropped and the rest is saved. Tracking
+  // stays off, which is both the truth and the default.
+  if (error.code === "PGRST204" && "track_opens" in row) {
+    const { track_opens: _omitted, ...withoutTracking } = row;
+    const retry = await supabase
+      .from("email_settings")
+      .upsert(withoutTracking, { onConflict: "organization_id" });
+    if (!retry.error) return;
+    logger.error("Failed to save email settings:", retry.error);
+    throw retry.error;
   }
+
+  logger.error("Failed to save email settings:", error);
+  throw error;
 };
 
 /**
