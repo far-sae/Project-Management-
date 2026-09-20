@@ -9,6 +9,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { inboxConnected } from '@/lib/email/readiness';
 import { isSendable, remainingToday } from '@/lib/email/mailboxPool';
 import type { EmailAccount, MailboxHealth } from '@/lib/email/types';
 
@@ -209,6 +210,41 @@ export const MailboxCard: React.FC<MailboxCardProps> = ({
 
         <p className="text-xs text-muted-foreground mt-2">{warmupLabel(mailbox)}</p>
 
+        {/*
+          Sending and inbox, side by side and never merged into one "connected"
+          light. They are separate permissions at every provider — Google and
+          Zoho both issue app passwords with IMAP left off — so a mailbox can
+          be perfectly able to send and unable to read a single reply. One
+          combined indicator would have to pick which of those to lie about.
+        */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="gap-1">
+            <SendHorizonal className="h-3 w-3" />
+            Sending
+            <span
+              className={
+                mailbox.status === 'active'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-amber-600 dark:text-amber-400'
+              }
+            >
+              {mailbox.status === 'active' ? 'connected' : 'not verified'}
+            </span>
+          </Badge>
+          <Badge variant="outline" className="gap-1">
+            <Inbox className="h-3 w-3" />
+            Inbox
+            <span
+              className={
+                account && inboxConnected(account)
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-muted-foreground'
+              }
+            >
+              {account && inboxConnected(account) ? 'connected' : 'not connected'}
+            </span>
+          </Badge>
+        </div>
         {account && <InboxHealth account={account} />}
 
         {mailbox.pausedReason && (

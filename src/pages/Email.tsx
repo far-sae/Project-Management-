@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -8,6 +8,9 @@ import {
   SequencesTab, SuppressionTab, SettingsTab,
 } from '@/components/email';
 import type { EmailTemplate } from '@/lib/email/types';
+import { readiness, type Readiness } from '@/lib/email/readiness';
+import { listAccounts, listMailboxStatus } from '@/services/supabase/email';
+import { SetupChecklist } from '@/components/email/SetupChecklist';
 
 /**
  * Prospects and Groups lead, in that order: they are the audience, and every
@@ -41,6 +44,35 @@ export const Email: React.FC = () => {
   const orgId = organization?.organizationId ?? user?.organizationId ?? '';
   const workspaceId = isAll ? null : selectedId;
 
+  /**
+   * Where setup has got to, read once here and shown above the tabs.
+   *
+   * Above them, not inside Accounts, because the tabs are in the order they
+   * were built rather than the order somebody works: Accounts sits near the
+   * end and Compose will take a campaign from an organization that has no
+   * mailbox at all. Somebody can write most of an email before anything tells
+   * them it cannot be sent.
+   *
+   * A failure to read it is swallowed: this annotates the page and must never
+   * be the reason the page does not load.
+   */
+  const [setup, setSetup] = useState<Readiness | null>(null);
+
+  const loadReadiness = useCallback(async () => {
+    if (!orgId) { setSetup(null); return; }
+    try {
+      const [accounts, health] = await Promise.all([
+        listAccounts(orgId),
+        listMailboxStatus(orgId),
+      ]);
+      setSetup(readiness(accounts, health));
+    } catch {
+      setSetup(null);
+    }
+  }, [orgId]);
+
+  useEffect(() => { void loadReadiness(); }, [loadReadiness]);
+
   return (
     <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
       <div className="mb-6 md:mb-8">
@@ -48,6 +80,12 @@ export const Email: React.FC = () => {
         <p className="text-muted-foreground">
           Send campaigns from your own SMTP accounts and track who received them.
         </p>
+      </div>
+
+      <div className="mb-6">
+        {setup && (
+          <SetupChecklist readiness={setup} onGoToAccounts={() => setActiveTab('accounts')} />
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as EmailTabValue)}>

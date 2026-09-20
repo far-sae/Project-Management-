@@ -9,8 +9,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  contactsForCampaign, parsePastedRecipients, parseRecipientsCsv,
+  contactsForCampaign, listAccounts, parsePastedRecipients, parseRecipientsCsv,
 } from '@/services/supabase/email';
+import { inboxConnected } from '@/lib/email/readiness';
 import type { Recipient } from '@/services/supabase/email';
 import {
   getSequence, saveStep, deleteStep, updateSequence, countStepMessages,
@@ -83,6 +84,15 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
   sequenceId, orgId, workspaceId, onBack,
 }) => {
   const [sequence, setSequence] = useState<EmailSequence | null>(null);
+  /**
+   * Whether ANY sending mailbox can read its inbox.
+   *
+   * Read here rather than passed in, because it is only consulted at the
+   * moment of activation and a stale value would be worse than a fresh read:
+   * somebody who connects IMAP and comes straight back should not be warned
+   * about a state they have just fixed.
+   */
+  const [canDetectReplies, setCanDetectReplies] = useState(true);
   const [savedSteps, setSavedSteps] = useState<EmailSequenceStep[]>([]);
   const [forms, setForms] = useState<StepForm[]>([]);
   /** How many messages each step's hidden campaign has already produced.
@@ -132,6 +142,16 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
     setSentCounts(counts);
     setOpenCounts(opens);
   }, [sequenceId]);
+
+  // Swallowed on failure, and defaulting to `true`: this decides whether to
+  // show a warning, and a warning shown because a health check failed is a
+  // warning nobody can act on.
+  useEffect(() => {
+    if (!orgId) return;
+    listAccounts(orgId)
+      .then((accounts) => setCanDetectReplies(accounts.some(inboxConnected)))
+      .catch(() => setCanDetectReplies(true));
+  }, [orgId]);
 
   const loadEnrollments = useCallback(async () => {
     setEnrollmentsLoading(true);
@@ -301,6 +321,24 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
     if (status === 'active') {
       const problem = activationProblem();
       if (problem) { toast.error(problem); return; }
+
+      // Stop-on-reply is the promise a sequence makes, and it is not a promise
+      // you can half-keep: without inbox access on the sending mailboxes,
+      // nothing ever sees the answer and the follow-ups keep going to somebody
+      // who already replied. That is the worst thing this product can do, so
+      // it is said before activation rather than discovered afterwards.
+      //
+      // Confirmed rather than blocked. Plenty of people run sequences without
+      // IMAP on purpose; what is not acceptable is doing it without knowing.
+      if (!canDetectReplies) {
+        const proceed = window.confirm(
+          'None of your sending mailboxes can read their inbox, so replies and bounces ' +
+            'will not be detected.\n\nThis sequence will keep sending follow-ups to people ' +
+            'who have already answered, and will not stop on a bounce.\n\nConnect the inbox ' +
+            'under Accounts, or continue anyway?',
+        );
+        if (!proceed) return;
+      }
     }
     setChangingStatus(true);
     try {
