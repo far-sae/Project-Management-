@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
   CheckCircle2, AlertCircle, SendHorizonal, Trash2, Loader2, RotateCcw, Settings, Inbox,
+  PenLine,
   AlertTriangle,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -22,6 +23,7 @@ interface MailboxCardProps {
    */
   account: EmailAccount | undefined;
   isAdmin: boolean;
+  onEditSignature: () => void;
   testing: boolean;
   resuming: boolean;
   onSendTest: () => void;
@@ -138,7 +140,8 @@ const warmupLabel = (mailbox: MailboxHealth): string => {
 
 /** One mailbox: status, today's usage, warmup state and admin controls. */
 export const MailboxCard: React.FC<MailboxCardProps> = ({
-  mailbox, account, isAdmin, testing, resuming, onSendTest, onDelete, onResume, onReconfigure,
+  mailbox, account, isAdmin, onEditSignature, testing, resuming, onSendTest, onDelete,
+  onResume, onReconfigure,
 }) => {
   const sendable = isSendable(mailbox);
   const pct = mailbox.effectiveLimit > 0
@@ -172,6 +175,14 @@ export const MailboxCard: React.FC<MailboxCardProps> = ({
 
           {isAdmin && (
             <div className="flex items-center gap-2 shrink-0">
+              {/* Named on the card rather than buried in the limits dialog,
+                  because with a pool every mailbox signs with its own and a
+                  mailbox with no signature sends unsigned mail silently. The
+                  label says which state it is in. */}
+              <Button variant="outline" size="sm" onClick={onEditSignature}>
+                <PenLine className="w-4 h-4 mr-1" />
+                {account?.signatureHtml?.trim() ? 'Signature' : 'Add signature'}
+              </Button>
               <Button variant="outline" size="sm" onClick={onReconfigure}>
                 <Settings className="w-4 h-4 mr-1" />Limits
               </Button>

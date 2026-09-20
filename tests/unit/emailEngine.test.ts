@@ -1754,3 +1754,79 @@ describe('worker/lib/engine — the open-tracking pixel', () => {
     expect(folder.calls[0].messages[0]).toBe(composer.built[0].raw);
   });
 });
+
+
+describe('worker/lib/engine — the sending mailbox signs the message', () => {
+  it('appends the signature of the mailbox that actually sent it', async () => {
+    // The reason this lives in the send path and not in the composer: which
+    // mailbox takes a given message is decided by claim_email_batch() at send
+    // time. A signature baked into the body while composing would be right for
+    // whichever mailbox the author had in mind and wrong for every other
+    // member of the pool.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      accounts: [accountRow({ signature_html: '<div>Ada, Acme</div>' })],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    expect(String(composer.built[0].mail.html)).toContain('Ada, Acme');
+  });
+
+  it('puts it where the body asks, so a postscript can follow it', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      accounts: [accountRow({ signature_html: '<div>Ada</div>' })],
+      campaigns: [campaignRow({ body_html: '<p>Hi</p>{{signature}}<p>P.S. one thing</p>' })],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    const html = String(composer.built[0].mail.html);
+    expect(html.indexOf('Ada')).toBeLessThan(html.indexOf('P.S.'));
+  });
+
+  it('leaves no braces showing when the mailbox has no signature', async () => {
+    // Reachable by configuring the pool later than the campaign was written.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      campaigns: [campaignRow({ body_html: '<p>Hi</p>{{signature}}' })],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    expect(String(composer.built[0].mail.html)).not.toContain('{{signature}}');
+  });
+
+  it('sends exactly as before on a database without the column', async () => {
+    // Migration 163 is optional like the rest: an absent column reads as "no
+    // signature", never as a failed send.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)]);
+    const mailer = makeMailer(okSend);
+
+    const result = await runCycle(
+      makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }),
+    );
+
+    expect(result.sent).toBe(1);
+  });
+
+  it('substitutes merge fields inside the signature too', async () => {
+    // Applied before substitution, so a signature may sign off by name.
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      accounts: [accountRow({ signature_html: '<div>— to {{first_name}}</div>' })],
+    });
+    const mailer = makeMailer(okSend);
+
+    await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+
+    const html = String(composer.built[0].mail.html);
+    expect(html).toContain('— to Person 1');
+    expect(html).not.toContain('{{first_name}}');
+  });
+});

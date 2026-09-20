@@ -18,6 +18,7 @@ import {
   AccountFormDialog, EMPTY_ACCOUNT_FORM, MailboxLimitsDialog, type MailboxSettingsFormState,
 } from './AccountFormDialog';
 import { MailboxCard } from './MailboxCard';
+import { SignatureDialog } from './SignatureDialog';
 import { DomainAuthPanel } from './DomainAuthPanel';
 
 interface AccountsTabProps {
@@ -48,6 +49,8 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   // parallel read of email_accounts itself, kept alongside it rather than
   // folded into MailboxHealth.
   const [accounts, setAccounts] = useState<Record<string, EmailAccount>>({});
+  /** The mailbox whose signature is open for editing, or null. */
+  const [signatureFor, setSignatureFor] = useState<EmailAccount | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
@@ -386,6 +389,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
             <div className="space-y-3">
               {mailboxes.map((mailbox) => (
                 <MailboxCard
+                  onEditSignature={() => setSignatureFor(accounts[mailbox.id] ?? null)}
                   key={mailbox.id}
                   mailbox={mailbox}
                   account={accounts[mailbox.id]}
@@ -416,6 +420,15 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         canSubmit={canSubmit}
         onSubmit={handleCreate}
         onRetry={handleRetryVerify}
+      />
+
+      <SignatureDialog
+        account={signatureFor}
+        open={!!signatureFor}
+        onOpenChange={(open) => { if (!open) setSignatureFor(null); }}
+        // Reload after a save so the card's label flips from "Add signature"
+        // to "Signature" without a manual refresh.
+        onSaved={refresh}
       />
 
       <MailboxLimitsDialog

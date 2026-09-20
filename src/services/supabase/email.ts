@@ -116,6 +116,8 @@ interface EmailAccountRow {
   imap_last_error: string | null;
   inbox_last_scan_at: string | null;
   sent_folder_enabled: boolean;
+  /** Nullable here, not in the column: a database before migration 163. */
+  signature_html?: string | null;
 }
 
 /** Raw shape of an `email_inbox_events` row (migration 157c). */
@@ -267,6 +269,9 @@ const fromDateOnly = (value: string): Date | null => {
 
 export const mapAccountRow = (row: EmailAccountRow): EmailAccount => ({
   id: row.id,
+  // '' on a database before migration 163, which reads as "no signature" —
+  // the same thing the column's own default says.
+  signatureHtml: row.signature_html ?? "",
   organizationId: row.organization_id,
   workspaceId: row.workspace_id,
   userId: row.user_id,
@@ -525,6 +530,37 @@ export interface UpdateAccountImapInput {
   imapSecure: boolean;
   sentFolderEnabled: boolean;
 }
+
+/**
+ * Saves a mailbox's signature.
+ *
+ * Its own call rather than part of the IMAP or pool updates, because it is
+ * edited on its own screen and because the write has to survive a database
+ * that has not run migration 163 — the same PGRST204 retry the rest of this
+ * file uses, so somebody on an older database can still change their sending
+ * limits without being told about a column they have never heard of.
+ */
+export const updateAccountSignature = async (
+  accountId: string,
+  signatureHtml: string,
+): Promise<void> => {
+  const { error } = await supabase
+    .from("email_accounts")
+    .update({ signature_html: signatureHtml })
+    .eq("id", accountId);
+
+  if (!error) return;
+
+  if (error.code === "PGRST204") {
+    throw new Error(
+      "Signatures need database migration 163, which has not been run on this database yet. " +
+        "Apply the migrations in supabase/migrations in numeric order, then try again.",
+    );
+  }
+
+  logger.error("Failed to update mailbox signature:", error);
+  throw error;
+};
 
 export const updateAccountImap = async (
   accountId: string,

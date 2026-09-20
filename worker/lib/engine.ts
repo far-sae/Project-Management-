@@ -44,6 +44,7 @@ import { decryptSecret } from '@/lib/email/crypto';
 import { blockedReason, selectMailboxes } from '@/lib/email/mailboxPool';
 import { buildMessage, type BuiltMessage } from '@/lib/email/message';
 import { threadHeaders } from '@/lib/email/sequence';
+import { applySignature } from '@/lib/email/signature';
 import {
   injectTrackingPixel,
   openPixelUrl,
@@ -165,6 +166,15 @@ interface AccountRow {
   // select — or a test fixture that predates this field — simply omits it,
   // and that must read as "on", never as "off by accident".
   sent_folder_enabled?: boolean | null;
+  /**
+   * This mailbox's signature, appended to every message it sends.
+   *
+   * Optional here and defaulted to '' at the point of use, for the same
+   * reason as the field above: a database that has not run migration 163
+   * simply does not return the column, and that must read as "no signature"
+   * rather than throwing on every send.
+   */
+  signature_html?: string | null;
 }
 
 interface CampaignRow {
@@ -191,7 +201,7 @@ interface ClaimedRow {
 /** The columns of email_accounts the send needs; the pool data comes from the view. */
 const ACCOUNT_COLUMNS =
   'id, from_name, from_email, reply_to, smtp_host, smtp_port, smtp_secure, smtp_username, ' +
-  'imap_host, imap_port, imap_secure, sent_folder_enabled';
+  'imap_host, imap_port, imap_secure, sent_folder_enabled, signature_html';
 
 /** PostgREST returns 1000 rows by default, so both reads are paged explicitly. */
 const PAGE_SIZE = 1000;
@@ -873,7 +883,20 @@ async function sendBatch(
       built = buildMessage({
         kind: campaign.kind,
         subject: campaign.subject,
-        bodyHtml: campaign.body_html,
+        // The signature of the mailbox that is ACTUALLY sending this, applied
+        // here and not while composing — because which mailbox takes a given
+        // message is decided by claim_email_batch() at send time, from
+        // least-recently-used order and whatever allowance each one has left.
+        //
+        // A signature baked into the body at compose time would be right for
+        // whichever mailbox the author had in mind and wrong for every other
+        // member of the pool: mail from sales@ signed with the name on
+        // hello@, to a stranger, as the first impression of the company.
+        //
+        // Before substitution, so a signature may itself use merge fields and
+        // so a body naming {{signature}} never arrives with the braces
+        // showing when the mailbox has none.
+        bodyHtml: applySignature(campaign.body_html, String(account.signature_html ?? '')),
         mergeData: row.merge_data ?? {},
         unsubscribeUrl: unsubscribe,
       });

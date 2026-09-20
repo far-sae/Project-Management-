@@ -104,6 +104,15 @@ export interface EmailEnrollment {
 
 export interface EmailAccount {
   id: string;
+  /**
+   * The signature appended to every message THIS mailbox sends.
+   *
+   * On the mailbox rather than on the campaign or the user, because a campaign
+   * sends from a pool and the sending mailbox is not chosen until send time.
+   * A signature stored anywhere else would sign mail from one address with
+   * another one's name. Empty means no signature. See migration 163.
+   */
+  signatureHtml: string;
   organizationId: string;
   workspaceId: string | null;
   userId: string | null;
