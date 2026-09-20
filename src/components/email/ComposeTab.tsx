@@ -10,15 +10,13 @@ import { Loader2, Send, SendHorizonal, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import {
-  listAccounts, listMailboxStatus, listSuppressions, contactsForCampaign, createCampaign,
-  queueRecipients, setCampaignStatus, parsePastedRecipients, parseRecipientsCsv,
+  listAccounts, listMailboxStatus, listSuppressions, createCampaign,
+  queueRecipients, setCampaignStatus,
 } from '@/services/supabase/email';
-import type { Recipient } from '@/services/supabase/email';
-import type { EmailAccount, EmailTemplate, MailboxHealth } from '@/lib/email/types';
+import type { EmailAccount, EmailSuppression, EmailTemplate, MailboxHealth } from '@/lib/email/types';
 import { isUsable } from '@/lib/email/mailboxPool';
-import { filterSuppressed } from '@/lib/email/suppression';
 import { verifyAccount } from './verifyAccount';
-import { RecipientPicker, recipientKey, type RecipientMode } from './RecipientPicker';
+import { AudiencePicker, type AudienceSelection } from './AudiencePicker';
 import { RichTextEditor } from './RichTextEditor';
 
 interface ComposeTabProps {
@@ -62,6 +60,11 @@ const EMPTY_FORM = {
   templateId: null as string | null,
 };
 
+/** No audience until somebody picks one — see AudiencePicker on why. */
+const EMPTY_AUDIENCE: AudienceSelection = {
+  mode: 'contacts', recipients: [], sendableCount: 0, csvColumns: [],
+};
+
 export const ComposeTab: React.FC<ComposeTabProps> = ({
   orgId, workspaceId, isAdmin, onSent, pendingTemplate, onTemplateLoaded,
 }) => {
@@ -70,17 +73,18 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
   // Pool health, which is a different question from "did the credentials ever
   // verify": a mailbox struck out of rotation still has status 'active'.
   const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
-  const [suppressionEmails, setSuppressionEmails] = useState<string[]>([]);
+  const [suppressions, setSuppressions] = useState<EmailSuppression[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
 
-  const [mode, setMode] = useState<RecipientMode>('contacts');
-  const [contacts, setContacts] = useState<Recipient[]>([]);
-  const [contactsLoaded, setContactsLoaded] = useState(false);
-  const [contactsLoading, setContactsLoading] = useState(false);
-  const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(new Set());
-  const [pasteText, setPasteText] = useState('');
-  const [csvFileName, setCsvFileName] = useState('');
-  const [csvText, setCsvText] = useState('');
+  const [audience, setAudience] = useState<AudienceSelection>(EMPTY_AUDIENCE);
+  /**
+   * Bumped after a successful send so the picker remounts and forgets what
+   * was chosen. Clearing the audience is the one part of `resetForm` this
+   * component cannot do by setting its own state, and leaving a sent
+   * campaign's recipients selected under a blank subject line is an invitation
+   * to send to them twice.
+   */
+  const [audienceKey, setAudienceKey] = useState(0);
 
   const [scheduleMode, setScheduleMode] = useState<'now' | 'schedule'>('now');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -95,8 +99,10 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     listMailboxStatus(orgId)
       .then(setMailboxes)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailbox health'));
+    // Whole rows, not just addresses: the picker has to say WHY each excluded
+    // person is excluded, and the reason only exists on the row.
     listSuppressions(orgId)
-      .then((rows) => setSuppressionEmails(rows.map((r) => r.email)))
+      .then(setSuppressions)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
   }, [orgId]);
 
@@ -119,51 +125,6 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     toast.success(`Loaded "${pendingTemplate.name}" — edit it freely, the template is untouched`);
   }, [pendingTemplate, onTemplateLoaded]);
 
-  useEffect(() => {
-    if (mode !== 'contacts' || contactsLoaded || !orgId) return;
-    setContactsLoading(true);
-    contactsForCampaign(orgId, workspaceId)
-      .then((list) => {
-        setContacts(list);
-        // NOTHING is selected on load, deliberately.
-        //
-        // This used to select every contact the organisation has. A person
-        // opening Compose to write one email was one click from sending it to
-        // their entire list, and the only thing standing between them and that
-        // was noticing a count they had not asked to be told. A send is not
-        // undoable: the mail is gone.
-        //
-        // Choosing an audience is a decision, and a decision with no default
-        // is the honest shape for it.
-        setSelectedContactKeys(new Set());
-        setContactsLoaded(true);
-      })
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load contacts'))
-      .finally(() => setContactsLoading(false));
-  }, [mode, contactsLoaded, orgId, workspaceId]);
-
-  const pastedParsed = useMemo(() => parsePastedRecipients(pasteText), [pasteText]);
-  const csvParsed = useMemo(
-    () => (csvText ? parseRecipientsCsv(csvText) : { recipients: [] as Recipient[], errors: [] as string[] }),
-    [csvText],
-  );
-  const csvColumns = useMemo(() => {
-    const cols = new Set<string>();
-    csvParsed.recipients.forEach((r) => Object.keys(r.mergeData).forEach((k) => cols.add(k)));
-    return Array.from(cols);
-  }, [csvParsed.recipients]);
-
-  const activeRecipients = useMemo<Recipient[]>(() => {
-    if (mode === 'contacts') return contacts.filter((c) => selectedContactKeys.has(recipientKey(c)));
-    if (mode === 'paste') return pastedParsed.recipients;
-    return csvParsed.recipients;
-  }, [mode, contacts, selectedContactKeys, pastedParsed, csvParsed]);
-
-  const { sendable, suppressed } = useMemo(
-    () => filterSuppressed(activeRecipients, suppressionEmails),
-    [activeRecipients, suppressionEmails],
-  );
-
   const mergeFields = useMemo(() => {
     // What contactsForCampaign actually puts in each recipient's merge data.
     // `pain_point` and the group's `angle` are why phase 5 exists: a cold
@@ -176,13 +137,13 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
       'first_name', 'last_name', 'full_name', 'email',
       'job_title', 'pain_point', 'angle', 'group_name',
     ];
-    if (mode === 'csv') {
+    if (audience.mode === 'csv') {
       const base = ['first_name', 'last_name', 'full_name', 'email'];
-      return [...base, ...csvColumns.filter((c) => !base.includes(c))];
+      return [...base, ...audience.csvColumns.filter((c) => !base.includes(c))];
     }
-    if (mode === 'paste') return ['email'];
+    if (audience.mode === 'paste') return ['email'];
     return contactFields;
-  }, [mode, csvColumns]);
+  }, [audience.mode, audience.csvColumns]);
 
   const activeAccounts = accounts.filter((a) => a.status === 'active');
   const usesPool = form.accountId === WHOLE_POOL;
@@ -227,26 +188,19 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
   const scheduledDate = scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
   const scheduleInPast = scheduleMode === 'schedule' && !!scheduledDate && scheduledDate.getTime() <= Date.now();
 
+  // `sendableCount`, not the recipient count: a campaign whose every chosen
+  // address is suppressed would queue nothing at all, and the button must not
+  // offer to send it.
   const canSubmit = canSendFrom
     && form.subject.trim().length > 0 && form.bodyHtml.trim().length > 0
-    && sendable.length > 0 && !sending
+    && audience.sendableCount > 0 && !sending
     && (scheduleMode === 'now' || (scheduledAt.length > 0 && !scheduleInPast));
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
-    setPasteText('');
-    setCsvFileName('');
-    setCsvText('');
+    setAudienceKey((k) => k + 1);
     setScheduleMode('now');
     setScheduledAt('');
-  };
-
-  const toggleContact = (key: string) => {
-    setSelectedContactKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
   };
 
   const handleTestSend = async () => {
@@ -274,7 +228,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
         // campaign's rows to whichever mailbox is next in rotation, instead of
         // pinning every message to one address.
         accountId: usesPool ? null : (selectedAccount?.id ?? null),
-        kind: activeRecipients.length === 1 ? 'single' : 'bulk',
+        kind: audience.sendableCount === 1 ? 'single' : 'bulk',
         name: form.name.trim() || form.subject.trim(),
         subject: form.subject.trim(),
         bodyHtml: form.bodyHtml,
@@ -290,8 +244,14 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
       // yet. `scheduledDate` becomes every row's `send_after`, so a
       // scheduled campaign's messages aren't claimable until that time
       // (claim_email_batch only gates on send_after <= now() and status).
+      //
+      // `audience.recipients` is de-duplicated but still carries the
+      // suppressed addresses: queueRecipients filters them itself and records
+      // the total as the campaign's `suppressed_count`. Holding them back here
+      // as well would leave that column at zero and destroy the only record
+      // that anybody was excluded from this send.
       const { queued, suppressed: suppressedCount } = await queueRecipients(
-        campaign.id, orgId, activeRecipients, scheduledDate,
+        campaign.id, orgId, audience.recipients, scheduledDate,
       );
 
       // createCampaign inserts with the table's default status ('draft').
@@ -362,27 +322,17 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>Recipients</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <RecipientPicker
-            mode={mode} onModeChange={setMode}
-            contacts={contacts} contactsLoading={contactsLoading}
-            selectedContactKeys={selectedContactKeys} onToggleContact={toggleContact}
-            onSelectAllContacts={() => setSelectedContactKeys(new Set(contacts.map(recipientKey)))}
-            onSelectNoneContacts={() => setSelectedContactKeys(new Set())}
-            pasteText={pasteText} onPasteTextChange={setPasteText}
-            pastedRecipients={pastedParsed.recipients} pastedErrors={pastedParsed.errors}
-            csvFileName={csvFileName}
-            onCsvFile={(file) => { file.text().then((t) => { setCsvFileName(file.name); setCsvText(t); }); }}
-            csvRecipients={csvParsed.recipients} csvErrors={csvParsed.errors} csvColumns={csvColumns}
-          />
-          <p className="text-sm font-medium text-foreground">
-            {sendable.length} recipient{sendable.length === 1 ? '' : 's'}
-            {suppressed.length > 0 && `, ${suppressed.length} suppressed and will be skipped`}
-          </p>
-        </CardContent>
-      </Card>
+      {/* One picker over the groups, the prospects and a list of your own,
+          rather than three sources that could not see each other. It owns the
+          audience — including the count and the exclusions, which belong next
+          to the choice that produced them rather than under it. */}
+      <AudiencePicker
+        key={audienceKey}
+        orgId={orgId}
+        workspaceId={workspaceId}
+        suppressions={suppressions}
+        onChange={setAudience}
+      />
 
       <Card>
         <CardHeader><CardTitle>Send</CardTitle></CardHeader>
