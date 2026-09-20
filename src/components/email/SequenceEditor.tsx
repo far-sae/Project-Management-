@@ -842,9 +842,39 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
             <CardTitle className="truncate">{sequence.name}</CardTitle>
             {sequenceStatusBadge(sequence.status)}
           </div>
-          <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-            {waitingCount} waiting · {savedSteps.length} step{savedSteps.length === 1 ? '' : 's'}
-          </p>
+          <div className="flex shrink-0 items-center gap-3">
+            <p className="hidden text-xs text-muted-foreground sm:block">
+              {waitingCount} waiting · {savedSteps.length} step{savedSteps.length === 1 ? '' : 's'}
+            </p>
+            {/*
+              In the header, not only under Settings. Giving the editor tabs
+              was right and it put the page's PRIMARY action two clicks away
+              on a tab named after configuration -- so a sequence somebody had
+              finished writing looked finished, and the step that makes it
+              actually send was somewhere they had no reason to open.
+
+              It is the same control as the one on Settings, opening the same
+              review; there is no second path and no second piece of state.
+            */}
+            {sequence.status === 'active' ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={changingStatus}
+                onClick={() => void applyStatus('paused')}
+              >
+                {changingStatus
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <PauseCircle className="w-4 h-4 mr-2" />}
+                Pause
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => setReviewing(true)}>
+                <Play className="w-4 h-4 mr-2" />
+                Review and activate
+              </Button>
+            )}
+          </div>
         </CardHeader>
       </Card>
 
