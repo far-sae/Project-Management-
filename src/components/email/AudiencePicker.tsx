@@ -161,24 +161,28 @@ export const AudiencePicker: React.FC<AudiencePickerProps> = ({
   /* ------------------------------------------------------------- grouping */
 
   /**
-   * Contacts bucketed by their group's NAME, which is what
-   * `contactsForCampaign` puts in `mergeData.group_name` — it does not carry
-   * the group's id, and widening that read to fetch one would make the whole
-   * recipient list fail on a database that has not run migration 162. Two
-   * groups sharing a name would therefore share a chip; the Groups screen
-   * treats a name as the thing that identifies a segment to a person, so
-   * that is the same compromise made one screen earlier.
+   * Contacts bucketed by their group's ID.
+   *
+   * By id and not by name, which is what an earlier version did: two groups
+   * can be called the same thing, and a group renamed while somebody is
+   * choosing an audience would silently stop matching the people it still
+   * contains — the chip would empty and the selection with it, with nothing
+   * on screen explaining why.
+   *
+   * `Recipient.groupId` is read from `select("*")`, so it is simply absent on
+   * a database that has not run migration 162 and everybody lands in "No
+   * group" rather than the whole list failing to load.
    */
   const buckets = useMemo(() => {
-    const byName = new Map<string, Recipient[]>();
+    const byId = new Map<string, Recipient[]>();
     const ungrouped: Recipient[] = [];
     for (const c of contacts) {
-      const name = String(c.mergeData.group_name ?? '').trim();
-      if (!name) { ungrouped.push(c); continue; }
-      const existing = byName.get(name);
-      if (existing) existing.push(c); else byName.set(name, [c]);
+      const id = c.groupId;
+      if (!id) { ungrouped.push(c); continue; }
+      const existing = byId.get(id);
+      if (existing) existing.push(c); else byId.set(id, [c]);
     }
-    return { byName, ungrouped };
+    return { byId, ungrouped };
   }, [contacts]);
 
   const chips = useMemo(() => {
@@ -186,7 +190,7 @@ export const AudiencePicker: React.FC<AudiencePickerProps> = ({
       { key: NO_GROUP, label: 'No group', members: buckets.ungrouped },
     ];
     for (const g of groups) {
-      rows.push({ key: g.id, label: g.name, members: buckets.byName.get(g.name) ?? [] });
+      rows.push({ key: g.id, label: g.name, members: buckets.byId.get(g.id) ?? [] });
     }
     return rows;
   }, [groups, buckets]);

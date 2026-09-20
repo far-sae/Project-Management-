@@ -25,6 +25,19 @@ export interface Recipient {
   email: string;
   name?: string;
   contactId?: string;
+  /**
+   * The group this contact belongs to, for the audience picker to filter on.
+   *
+   * By ID and not by name: two groups can be called the same thing, and a
+   * group renamed while somebody is choosing an audience would silently stop
+   * matching the people it still contains. Absent for a pasted list or a CSV,
+   * which have no groups.
+   *
+   * Deliberately NOT in `mergeData` — that is the set of `{{placeholders}}` a
+   * person can type into a message, and an opaque id is not one of them.
+   * `group_name` is there for that.
+   */
+  groupId?: string;
   mergeData: Record<string, unknown>;
 }
 
@@ -1101,6 +1114,7 @@ export const contactsForCampaign = async (
       email: row.email as string,
       name: fullName || undefined,
       contactId: row.id,
+      groupId: row.group_id ?? undefined,
       // Every one of these is a placeholder a person can type into a subject
       // or a body as `{{name}}`. `pain_point` and `angle` are why phase 5
       // exists: a cold email that names the problem and leads with the angle
