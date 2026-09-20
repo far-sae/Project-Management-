@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
@@ -9,6 +10,7 @@ import {
 } from '@/components/email';
 import type { EmailTemplate } from '@/lib/email/types';
 import { readiness, type Readiness } from '@/lib/email/readiness';
+import { queryableOrgId } from '@/lib/email/orgId';
 import { listAccounts, listMailboxStatus } from '@/services/supabase/email';
 import { SetupChecklist } from '@/components/email/SetupChecklist';
 
@@ -24,7 +26,7 @@ type EmailTabValue =
 
 export const Email: React.FC = () => {
   const { user } = useAuth();
-  const { organization, isAdmin } = useOrganization();
+  const { organization, isAdmin, loading: orgLoading } = useOrganization();
   const { selectedId, isAll } = useSelectedWorkspace();
   const [activeTab, setActiveTab] = useState<EmailTabValue>('campaigns');
   /**
@@ -41,7 +43,21 @@ export const Email: React.FC = () => {
   }, []);
   const clearPendingTemplate = useCallback(() => setPendingTemplate(null), []);
 
-  const orgId = organization?.organizationId ?? user?.organizationId ?? '';
+  /**
+   * The organization to query with, or '' while one is still resolving.
+   *
+   * AuthContext fills `user.organizationId` with `local-<user id>` the instant
+   * a session exists, so the interface has something to render against before
+   * OrganizationContext finishes. Passing that through to a query does not
+   * return nothing — it returns 400, because every organization_id in this
+   * feature is a uuid column and `local-…` is not a uuid. Campaigns, accounts
+   * and mailbox health all failed together and it read like a broken feature
+   * rather than a page that asked a few hundred milliseconds too early.
+   *
+   * Every screen here already guards on `if (!orgId)`, so '' takes the path
+   * those guards were written for.
+   */
+  const orgId = queryableOrgId(organization?.organizationId ?? user?.organizationId);
   const workspaceId = isAll ? null : selectedId;
 
   /**
@@ -82,6 +98,29 @@ export const Email: React.FC = () => {
         </p>
       </div>
 
+      {/*
+        Nothing is queried, and nothing claims to be empty, until there is a
+        real organization to query for. Rendering the tabs against a
+        not-yet-resolved organization means every list shows its "nothing yet"
+        state for a person who may well have hundreds of things — which is the
+        same lie as an error rendered as an empty list, arriving a different
+        way.
+      */}
+      {!orgId ? (
+        <div className="py-16 text-center text-muted-foreground">
+          {orgLoading ? (
+            <>
+              <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-muted-foreground/60" />
+              <p>Loading your workspace…</p>
+            </>
+          ) : (
+            <p>
+              No organization is selected, so there is nothing to send from yet.
+            </p>
+          )}
+        </div>
+      ) : (
+      <>
       <div className="mb-6">
         {setup && (
           <SetupChecklist readiness={setup} onGoToAccounts={() => setActiveTab('accounts')} />
@@ -144,6 +183,8 @@ export const Email: React.FC = () => {
           <SettingsTab orgId={orgId} isAdmin={isAdmin} orgTimezone={organization?.settings?.timezone ?? 'UTC'} />
         </TabsContent>
       </Tabs>
+      </>
+      )}
     </main>
   );
 };
