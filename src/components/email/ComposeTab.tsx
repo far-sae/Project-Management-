@@ -45,6 +45,8 @@ interface ComposeTabProps {
   workspaceId: string | null;
   isAdmin: boolean;
   onSent: () => void;
+  /** Back to the campaign list without sending. */
+  onCancel: () => void;
   /**
    * A template whose wording should be loaded into the form, or null.
    *
@@ -87,7 +89,7 @@ const EMPTY_AUDIENCE: AudienceSelection = {
 };
 
 export const ComposeTab: React.FC<ComposeTabProps> = ({
-  orgId, workspaceId, isAdmin, onSent, pendingTemplate, onTemplateLoaded,
+  orgId, workspaceId, isAdmin, onSent, onCancel, pendingTemplate, onTemplateLoaded,
 }) => {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
@@ -427,6 +429,9 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
                 )}
               </div>
             ) : <span />}
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
             {/* Opens the review; it is the review that sends. There was no
                 step between writing and sending, so the first time anybody saw
                 the message as a recipient would see it was in the recipient's

@@ -21,7 +21,7 @@ import { SetupChecklist } from '@/components/email/SetupChecklist';
  * tab; it is what an admin opens the page to check.
  */
 type EmailTabValue =
-  | 'prospects' | 'groups' | 'templates' | 'campaigns' | 'sequences' | 'compose'
+  | 'prospects' | 'groups' | 'templates' | 'campaigns' | 'sequences'
   | 'accounts' | 'suppression' | 'settings';
 
 export const Email: React.FC = () => {
@@ -36,10 +36,16 @@ export const Email: React.FC = () => {
    * a second request rather than as no change at all.
    */
   const [pendingTemplate, setPendingTemplate] = useState<EmailTemplate | null>(null);
+  /** True while the campaign composer is open in place of the campaign list. */
+  const [composing, setComposing] = useState(false);
 
   const useTemplate = useCallback((template: EmailTemplate) => {
     setPendingTemplate(template);
-    setActiveTab('compose');
+    // Campaigns, in its composing state — there is no Compose tab to go to
+    // any more, and a template is wording for a campaign or for a sequence
+    // step, both of which are reached from the thing they belong to.
+    setComposing(true);
+    setActiveTab('campaigns');
   }, []);
   const clearPendingTemplate = useCallback(() => setPendingTemplate(null), []);
 
@@ -134,7 +140,6 @@ export const Email: React.FC = () => {
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
-          <TabsTrigger value="compose">Compose</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="suppression">Suppression</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -153,22 +158,31 @@ export const Email: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="campaigns">
-          <CampaignsTab orgId={orgId} workspaceId={workspaceId} />
+          {/* One surface, two states: the list, or the composer that adds to
+              it. Compose was a tab of its own, which read as a third place to
+              write an email beside Campaigns and Sequences — and it is not
+              one, it is the form that creates a campaign. */}
+          {composing ? (
+            <ComposeTab
+              orgId={orgId}
+              workspaceId={workspaceId}
+              isAdmin={isAdmin}
+              onSent={() => { setComposing(false); }}
+              onCancel={() => setComposing(false)}
+              pendingTemplate={pendingTemplate}
+              onTemplateLoaded={clearPendingTemplate}
+            />
+          ) : (
+            <CampaignsTab
+              orgId={orgId}
+              workspaceId={workspaceId}
+              onNewCampaign={() => setComposing(true)}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="sequences">
           <SequencesTab orgId={orgId} workspaceId={workspaceId} />
-        </TabsContent>
-
-        <TabsContent value="compose">
-          <ComposeTab
-            orgId={orgId}
-            workspaceId={workspaceId}
-            isAdmin={isAdmin}
-            onSent={() => setActiveTab('campaigns')}
-            pendingTemplate={pendingTemplate}
-            onTemplateLoaded={clearPendingTemplate}
-          />
         </TabsContent>
 
         <TabsContent value="accounts">

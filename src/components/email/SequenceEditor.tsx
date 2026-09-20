@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
   Loader2, Save, Info, ArrowLeft, Plus, Trash2, Lock, Play, PauseCircle, UserPlus,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -23,6 +24,7 @@ import type {
 import { RecipientPicker, recipientKey, type RecipientMode } from './RecipientPicker';
 import { RichTextEditor } from './RichTextEditor';
 import { EnrollmentTable } from './EnrollmentTable';
+import { TemplatePickerDialog } from './TemplatePickerDialog';
 
 interface SequenceEditorProps {
   sequenceId: string;
@@ -84,6 +86,14 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
   sequenceId, orgId, workspaceId, onBack,
 }) => {
   const [sequence, setSequence] = useState<EmailSequence | null>(null);
+  /**
+   * The step index currently choosing a template, or null.
+   *
+   * Per step rather than one picker for the whole sequence: the wording worth
+   * reusing is usually a single follow-up, and a sequence-wide picker would
+   * have to ask which step afterwards anyway.
+   */
+  const [templateForStep, setTemplateForStep] = useState<number | null>(null);
   /**
    * Whether ANY sending mailbox can read its inbox.
    *
@@ -563,6 +573,24 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
                   {form.stepIndex === 0 && (
                     <p className="text-xs text-muted-foreground">{delayLabel(0)}</p>
                   )}
+                  {/* Inside the step, not on some other screen. Reusing
+                      wording is most valuable exactly here -- a follow-up is
+                      the thing people rewrite from scratch every time -- and
+                      until now the only route from a saved template to a
+                      sequence step was copy and paste. */}
+                  {!frozen && (
+                    <div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTemplateForStep(form.stepIndex)}
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Use a template
+                      </Button>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor={`step-${form.stepIndex}-subject`}>Subject</Label>
                     <Input
@@ -664,6 +692,30 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
           />
         </CardContent>
       </Card>
+
+      <TemplatePickerDialog
+        orgId={orgId}
+        workspaceId={workspaceId}
+        open={templateForStep !== null}
+        onOpenChange={(open) => { if (!open) setTemplateForStep(null); }}
+        onPick={(template) => {
+          if (templateForStep === null) return;
+          // COPIED, never linked -- the same rule a campaign follows. A
+          // template edited six weeks from now must not rewrite a step people
+          // are already receiving.
+          //
+          // The subject is only taken when the step has none: a follow-up
+          // deliberately left blank replies in the same thread, and filling it
+          // from a template would quietly start a new conversation instead.
+          setForm(templateForStep, (f) => ({
+            ...f,
+            subject: f.subject.trim() === '' && templateForStep === 0 ? template.subject : f.subject,
+            bodyHtml: template.bodyHtml,
+          }));
+          toast.success(`Copied "${template.name}" into step ${templateForStep + 1}`);
+          setTemplateForStep(null);
+        }}
+      />
     </div>
   );
 };

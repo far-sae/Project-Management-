@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Loader2, RefreshCw, Mail, ChevronDown, ChevronRight, Send, Clock, CheckCircle2,
-  AlertCircle, PauseCircle, FileEdit, Reply, MailWarning,
+  AlertCircle, PauseCircle, FileEdit, Reply, MailWarning, Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -16,6 +16,16 @@ import type { EmailCampaign, EmailMessage, CampaignStatus, MessageStatus } from 
 interface CampaignsTabProps {
   orgId: string;
   workspaceId: string | null;
+  /**
+   * Opens the campaign composer.
+   *
+   * "Compose" used to be a tab of its own, which read as a peer of Campaigns
+   * and Sequences — three places to write an email. It is not one: it is the
+   * form that CREATES a campaign, carrying a campaign name, an audience and
+   * sending controls. So it lives behind this button, where somebody looking
+   * at their campaigns goes to make another.
+   */
+  onNewCampaign: () => void;
 }
 
 const POLL_MS = 15_000;
@@ -99,7 +109,9 @@ const inboxBadge = (message: EmailMessage) => {
   return null;
 };
 
-export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }) => {
+export const CampaignsTab: React.FC<CampaignsTabProps> = ({
+  orgId, workspaceId, onNewCampaign,
+}) => {
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -194,10 +206,15 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({ orgId, workspaceId }
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Campaigns</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => load(true)} disabled={refreshing}>
-            {refreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => load(true)} disabled={refreshing}>
+              {refreshing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+              Refresh
+            </Button>
+            <Button size="sm" onClick={onNewCampaign}>
+              <Plus className="w-4 h-4 mr-2" />New campaign
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
