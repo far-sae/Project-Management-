@@ -52,6 +52,11 @@ interface MailboxImapFieldsProps {
 export const MailboxImapFields: React.FC<MailboxImapFieldsProps> = ({
   idPrefix, smtpHost, values, onChange,
 }) => {
+  // The same test the send path uses to decide whether to append at all: a
+  // Google-hosted mailbox files its own copy, so a second one is a duplicate
+  // in the customer's own Sent folder.
+  const googleHosted = /(gmail|google)/i.test(values.imapHost);
+
   const setPort = (value: string) => {
     onChange({
       imapPort: value,
@@ -110,16 +115,27 @@ export const MailboxImapFields: React.FC<MailboxImapFieldsProps> = ({
         <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
           <div>
             <Label htmlFor={`${idPrefix}-sent-folder`}>File a copy in Sent</Label>
+            {/*
+              The switch used to sit ON while the text beside it said Google
+              was handled automatically, which is two contradictory statements
+              about the same mailbox. The engine really does skip the append
+              for a Google host — Gmail files its own copy and a second one
+              shows up twice — so for those mailboxes the switch is not merely
+              ignored, it is misleading, and it now says so and disables
+              itself rather than pretending to be a choice.
+            */}
             <p className="text-xs text-muted-foreground">
-              Saves a copy of each delivered message to this mailbox&apos;s own Sent folder.
-              Already off automatically for Google mailboxes, which file their own copy — turn
-              this off too if a Google mailbox sends through a different host name and you're
-              seeing duplicates.
+              {googleHosted
+                ? 'Google files its own copy of everything sent through Gmail, so this is ' +
+                  'skipped for this mailbox whatever the switch says. Nothing to set here.'
+                : 'Saves a copy of each delivered message to this mailbox’s own Sent folder, ' +
+                  'so your own record matches what the recipient received.'}
             </p>
           </div>
           <Switch
             id={`${idPrefix}-sent-folder`}
-            checked={values.sentFolderEnabled}
+            checked={googleHosted ? false : values.sentFolderEnabled}
+            disabled={googleHosted}
             onCheckedChange={(v) => onChange({ sentFolderEnabled: v })}
           />
         </div>

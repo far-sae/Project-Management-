@@ -15,6 +15,8 @@ import {
   Loader2, RefreshCw, Plus, Save, Search, Users, Check, Pencil, Trash2, FolderInput,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { loadFailureMessage } from '@/lib/email/schemaErrors';
+import { LoadFailure } from './LoadFailure';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import {
@@ -96,6 +98,15 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
   const [prospects, setProspects] = useState<EmailProspect[]>([]);
   const [groups, setGroups] = useState<EmailGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  /**
+   * The load failure, kept in state rather than only shown as a toast.
+   *
+   * A toast disappears while the problem does not, and the list underneath it
+   * is empty either way — so a failed load rendered the same "No prospects yet"
+   * message as a genuinely empty one, and the cause was invisible. The empty
+   * state below is now only reachable when this is null.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const [search, setSearch] = useState('');
@@ -115,6 +126,9 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
   const load = useCallback(async (silent = false) => {
     if (!orgId) { setProspects([]); setGroups([]); setLoading(false); return; }
     if (silent) setRefreshing(true); else setLoading(true);
+    // Cleared on the way IN, so a retry that succeeds takes the error box away
+    // rather than leaving a stale failure above fresh data.
+    setLoadError(null);
     try {
       const [people, segments] = await Promise.all([
         listProspects(orgId, workspaceId),
@@ -123,7 +137,13 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
       setProspects(people);
       setGroups(segments);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load prospects');
+      // Both: the toast says it just happened, the state says it is still
+      // true. Where the cause is a migration that has not been run,
+      // loadFailureMessage names the migration instead of relaying
+      // PostgREST's "could not find the table in the schema cache".
+      const message = loadFailureMessage(err, 'Failed to load prospects');
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -360,6 +380,11 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
               <Loader2 className="w-10 h-10 mx-auto mb-4 animate-spin text-muted-foreground/60" />
               <p>Loading prospects...</p>
             </div>
+          ) : loadError ? (
+            /* Before every empty state, never after one: an empty state is a
+               statement that the request succeeded and found nothing, and it
+               must not be reachable when the request failed. */
+            <LoadFailure message={loadError} onRetry={() => load()} retrying={refreshing} />
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <Users className="w-14 h-14 mx-auto mb-4 text-muted-foreground/60" />

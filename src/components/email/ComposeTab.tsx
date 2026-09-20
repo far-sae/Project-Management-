@@ -125,7 +125,17 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     contactsForCampaign(orgId, workspaceId)
       .then((list) => {
         setContacts(list);
-        setSelectedContactKeys(new Set(list.map(recipientKey)));
+        // NOTHING is selected on load, deliberately.
+        //
+        // This used to select every contact the organisation has. A person
+        // opening Compose to write one email was one click from sending it to
+        // their entire list, and the only thing standing between them and that
+        // was noticing a count they had not asked to be told. A send is not
+        // undoable: the mail is gone.
+        //
+        // Choosing an audience is a decision, and a decision with no default
+        // is the honest shape for it.
+        setSelectedContactKeys(new Set());
         setContactsLoaded(true);
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load contacts'))

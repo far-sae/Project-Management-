@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, RefreshCw, Plus, Save, Pencil, Trash2, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
+import { loadFailureMessage } from '@/lib/email/schemaErrors';
+import { LoadFailure } from './LoadFailure';
 import { format } from 'date-fns';
 import { listGroups, saveGroup, deleteGroup, listProspects } from '@/services/supabase/emailAudience';
 import type { EmailGroup } from '@/lib/email/types';
@@ -36,6 +38,15 @@ export const GroupsTab: React.FC<GroupsTabProps> = ({ orgId, workspaceId }) => {
    */
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  /**
+   * The load failure, kept in state rather than only shown as a toast.
+   *
+   * A toast disappears while the problem does not, and the list underneath it
+   * is empty either way — so a failed load rendered the same "No groups yet"
+   * message as a genuinely empty one, and the cause was invisible. The empty
+   * state below is now only reachable when this is null.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const [showDialog, setShowDialog] = useState(false);
@@ -48,6 +59,9 @@ export const GroupsTab: React.FC<GroupsTabProps> = ({ orgId, workspaceId }) => {
   const load = useCallback(async (silent = false) => {
     if (!orgId) { setGroups([]); setMemberCounts({}); setLoading(false); return; }
     if (silent) setRefreshing(true); else setLoading(true);
+    // Cleared on the way IN, so a retry that succeeds takes the error box away
+    // rather than leaving a stale failure above fresh data.
+    setLoadError(null);
     try {
       const [segments, people] = await Promise.all([
         listGroups(orgId, workspaceId),
@@ -60,7 +74,13 @@ export const GroupsTab: React.FC<GroupsTabProps> = ({ orgId, workspaceId }) => {
       }
       setMemberCounts(counts);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load groups');
+      // Both: the toast says it just happened, the state says it is still
+      // true. Where the cause is a migration that has not been run,
+      // loadFailureMessage names the migration instead of relaying
+      // PostgREST's "could not find the table in the schema cache".
+      const message = loadFailureMessage(err, 'Failed to load groups');
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -170,6 +190,11 @@ export const GroupsTab: React.FC<GroupsTabProps> = ({ orgId, workspaceId }) => {
               <Loader2 className="w-10 h-10 mx-auto mb-4 animate-spin text-muted-foreground/60" />
               <p>Loading groups...</p>
             </div>
+          ) : loadError ? (
+            /* Before every empty state, never after one: an empty state is a
+               statement that the request succeeded and found nothing, and it
+               must not be reachable when the request failed. */
+            <LoadFailure message={loadError} onRetry={() => load()} retrying={refreshing} />
           ) : groups.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <FolderOpen className="w-14 h-14 mx-auto mb-4 text-muted-foreground/60" />

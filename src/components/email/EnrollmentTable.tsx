@@ -1,26 +1,43 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Send, CheckCircle2, CircleSlash, Users } from 'lucide-react';
+import { Loader2, Send, CheckCircle2, CircleSlash, PauseCircle, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import type { EmailEnrollment, EnrollmentStatus, StopReason } from '@/lib/email/types';
 
 interface EnrollmentTableProps {
   enrollments: EmailEnrollment[];
   loading: boolean;
+  /**
+   * Whether the sequence these enrollments belong to is actually sending.
+   *
+   * claim_sequence_enrollments() only claims from a sequence whose status is
+   * 'active', so an enrollment on a draft or paused sequence is not going
+   * anywhere however overdue its next step looks — and calling it "Active"
+   * with a due time in the past says the opposite of what is true. Somebody
+   * reading that screen concludes mail is going out, or that something is
+   * broken because it is not.
+   */
+  sequenceIsSending: boolean;
   /** The enrollment currently being stopped, if any. */
   stoppingId: string | null;
   onStop: (enrollment: EmailEnrollment) => void;
 }
 
-const enrollmentStatusBadge = (status: EnrollmentStatus) => {
+const enrollmentStatusBadge = (status: EnrollmentStatus, sequenceIsSending: boolean) => {
   switch (status) {
     case 'completed':
       return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"><CheckCircle2 className="w-3 h-3 mr-1" />Completed</Badge>;
     case 'stopped':
       return <Badge variant="secondary"><CircleSlash className="w-3 h-3 mr-1" />Stopped</Badge>;
     default:
-      return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30"><Send className="w-3 h-3 mr-1" />Active</Badge>;
+      // 'active' is a fact about the ENROLLMENT, not about whether anything is
+      // being sent. The claim takes work only from a sequence that is itself
+      // active, so on a draft these people are queued behind a switch nobody
+      // has thrown — and the honest label says which.
+      return sequenceIsSending
+        ? <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30"><Send className="w-3 h-3 mr-1" />Active</Badge>
+        : <Badge variant="outline"><PauseCircle className="w-3 h-3 mr-1" />Waiting for the sequence to start</Badge>;
   }
 };
 
@@ -45,7 +62,7 @@ export const stopReasonLabel = (reason: StopReason): string => {
 };
 
 export const EnrollmentTable: React.FC<EnrollmentTableProps> = ({
-  enrollments, loading, stoppingId, onStop,
+  enrollments, loading, sequenceIsSending, stoppingId, onStop,
 }) => {
   if (loading) {
     return (
@@ -92,7 +109,7 @@ export const EnrollmentTable: React.FC<EnrollmentTableProps> = ({
                 ? `Due ${format(enrollment.nextDueAt, 'MMM d, yyyy HH:mm')}`
                 : 'Nothing scheduled'}
             </span>
-            {enrollmentStatusBadge(enrollment.status)}
+            {enrollmentStatusBadge(enrollment.status, sequenceIsSending)}
             {enrollment.status === 'active' && (
               <Button
                 variant="ghost"

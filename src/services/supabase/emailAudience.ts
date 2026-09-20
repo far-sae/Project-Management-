@@ -230,9 +230,12 @@ export const listProspects = async (
 ): Promise<EmailProspect[]> => {
   let query = supabase
     .from("crm_contacts")
-    .select(
-      "id, organization_id, first_name, last_name, email, job_title, pain_point, group_id, last_contacted_at, created_at",
-    )
+    // `select("*")` rather than a column list, for the same reason
+    // contactsForCampaign does it: naming `pain_point` or `group_id` makes the
+    // WHOLE read fail on a database that has not run migration 162, so the
+    // screen shows nothing rather than showing the contacts it could have.
+    // An absent column simply does not come back, and the mapper defaults it.
+    .select("*")
     .eq("organization_id", orgId);
   if (workspaceId !== null) query = query.eq("workspace_id", workspaceId);
 

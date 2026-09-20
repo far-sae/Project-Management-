@@ -617,6 +617,10 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
           <EnrollmentTable
             enrollments={enrollments}
             loading={enrollmentsLoading}
+            // Only an ACTIVE sequence is claimed from, so on a draft or a
+            // paused one these people are queued behind a switch nobody has
+            // thrown — and the table must not call that "Active".
+            sequenceIsSending={sequence?.status === 'active'}
             stoppingId={stoppingId}
             onStop={handleStop}
           />
