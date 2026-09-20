@@ -9,6 +9,7 @@ import { Mail, Plus, Loader2, Lock, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import {
+  listBounceRates,
   listMailboxStatus, listAccounts, createAccount, deleteAccount, resumeAccount,
   updateAccountPool, updateAccountImap,
 } from '@/services/supabase/email';
@@ -51,6 +52,15 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   const [accounts, setAccounts] = useState<Record<string, EmailAccount>>({});
   /** The mailbox whose signature is open for editing, or null. */
   const [signatureFor, setSignatureFor] = useState<EmailAccount | null>(null);
+  /**
+   * Measured bounce rates, keyed by mailbox.
+   *
+   * An absent entry is NOT zero — it means nothing was measured, which the
+   * health panel says in words rather than showing a comforting 0%.
+   */
+  const [bounceRates, setBounceRates] = useState<
+    Record<string, { sent30d: number; bounced30d: number; percent: number | null }>
+  >({});
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
@@ -68,10 +78,14 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
 
   const refresh = () => {
     if (!orgId) { setMailboxes([]); setAccounts({}); setLoading(false); return Promise.resolve(); }
-    return Promise.all([listMailboxStatus(orgId), listAccounts(orgId)])
-      .then(([health, accountRows]) => {
+    return Promise.all([listMailboxStatus(orgId), listAccounts(orgId), listBounceRates(orgId)])
+      .then(([health, accountRows, rates]) => {
         setMailboxes(health);
         setAccounts(Object.fromEntries(accountRows.map((a) => [a.id, a])));
+        // listBounceRates never rejects — it returns {} where the view does
+        // not exist or the read failed, which the panel renders as "not
+        // measured" rather than as a clean record.
+        setBounceRates(rates);
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailboxes'));
   };
@@ -390,6 +404,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
               {mailboxes.map((mailbox) => (
                 <MailboxCard
                   onEditSignature={() => setSignatureFor(accounts[mailbox.id] ?? null)}
+                  bounce={bounceRates[mailbox.id] ?? null}
                   key={mailbox.id}
                   mailbox={mailbox}
                   account={accounts[mailbox.id]}

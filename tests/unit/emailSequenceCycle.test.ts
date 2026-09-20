@@ -62,6 +62,10 @@ interface Fixtures {
   reconcileError?: boolean;
   /** What reconcile_stalled_enrollments() reports it fixed. */
   reconciled?: number;
+  /** What pause_mailboxes_over_bounce_rate() reports it paused. */
+  pausedForBounces?: number;
+  /** True when that sweep answers with an error. */
+  protectError?: boolean;
   shouldStop?: () => boolean;
 }
 
@@ -99,6 +103,11 @@ function makeDeps(fx: Fixtures = {}) {
     if (name === 'reconcile_stalled_enrollments') {
       if (fx.reconcileError) return { data: null, error: { message: 'sweep failed' } };
       return { data: fx.reconciled ?? 0, error: null };
+    }
+
+    if (name === 'pause_mailboxes_over_bounce_rate') {
+      if (fx.protectError) return { data: null, error: { message: 'sweep failed' } };
+      return { data: fx.pausedForBounces ?? 0, error: null };
     }
 
     if (name === 'claim_sequence_enrollments') {
@@ -159,7 +168,14 @@ describe('runSequenceCycle', () => {
 
     const result = await runSequenceCycle(h.deps);
 
-    expect(h.names()).toEqual(['reconcile_stalled_enrollments', 'claim_sequence_enrollments']);
+    // Both sweeps run BEFORE the claim: an enrollment the first resolves is
+    // in its final state before the same pass looks for work, and a mailbox
+    // the second pauses is out of rotation before this pass hands it more.
+    expect(h.names()).toEqual([
+      'reconcile_stalled_enrollments',
+      'pause_mailboxes_over_bounce_rate',
+      'claim_sequence_enrollments',
+    ]);
     expect(result.reconciled).toBe(3);
   });
 
@@ -211,7 +227,29 @@ describe('runSequenceCycle', () => {
 
     const result = await runSequenceCycle(h.deps);
 
-    expect(result).toEqual({ queued: 0, reconciled: 0, errors: [] });
+    expect(result).toEqual({ queued: 0, reconciled: 0, pausedForBounces: 0, errors: [] });
+  });
+
+  it('takes a mailbox out of rotation when too much of its mail bounces', async () => {
+    // The gap migration 156 could not see: it pauses after three consecutive
+    // SMTP FAILURES, and every send that later bounces succeeded at the time.
+    const h = makeDeps({ claimed: [], pausedForBounces: 2 });
+
+    const result = await runSequenceCycle(h.deps);
+
+    expect(result.pausedForBounces).toBe(2);
+  });
+
+  it('still materializes when the protection sweep fails', async () => {
+    // A protection, not a gate: a database blip on it must not stop the
+    // product queueing mail for a minute.
+    const h = makeDeps({ claimed: [queued()], protectError: true });
+
+    const result = await runSequenceCycle(h.deps);
+
+    expect(result.queued).toBe(1);
+    expect(result.pausedForBounces).toBe(0);
+    expect(result.errors.join(' ')).toMatch(/bounce rates could not be checked/i);
   });
 
   it('asks for a bounded batch rather than everything due', async () => {
@@ -221,7 +259,8 @@ describe('runSequenceCycle', () => {
 
     await runSequenceCycle(h.deps);
 
-    const args = h.rpcCalls[1].args as { p_limit: number };
+    const claim = h.rpcCalls.find((c) => c.name === 'claim_sequence_enrollments');
+    const args = claim?.args as { p_limit: number };
     expect(args.p_limit).toBeGreaterThan(0);
     expect(args.p_limit).toBeLessThanOrEqual(200);
   });

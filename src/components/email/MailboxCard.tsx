@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { inboxConnected } from '@/lib/email/readiness';
+import type { BounceRate } from '@/lib/email/ramp';
+import { MailboxHealthPanel } from './MailboxHealthPanel';
 import { isSendable, remainingToday } from '@/lib/email/mailboxPool';
 import type { EmailAccount, MailboxHealth } from '@/lib/email/types';
 
@@ -24,6 +26,8 @@ interface MailboxCardProps {
    */
   account: EmailAccount | undefined;
   isAdmin: boolean;
+  /** This mailbox's measured bounce rate, or null where none was measured. */
+  bounce: BounceRate | null;
   onEditSignature: () => void;
   testing: boolean;
   resuming: boolean;
@@ -141,7 +145,7 @@ const warmupLabel = (mailbox: MailboxHealth): string => {
 
 /** One mailbox: status, today's usage, warmup state and admin controls. */
 export const MailboxCard: React.FC<MailboxCardProps> = ({
-  mailbox, account, isAdmin, onEditSignature, testing, resuming, onSendTest, onDelete,
+  mailbox, account, isAdmin, bounce, onEditSignature, testing, resuming, onSendTest, onDelete,
   onResume, onReconfigure,
 }) => {
   const sendable = isSendable(mailbox);
@@ -246,6 +250,14 @@ export const MailboxCard: React.FC<MailboxCardProps> = ({
           </Badge>
         </div>
         {account && <InboxHealth account={account} />}
+
+        <MailboxHealthPanel
+          mailbox={mailbox}
+          bounce={bounce}
+          // The mailbox's own ceiling (migration 164a), defaulted to the
+          // column's default where the database has not run it yet.
+          threshold={account?.bouncePausePercent ?? 5}
+        />
 
         {mailbox.pausedReason && (
           <div className="mt-3 flex items-center justify-between gap-3 p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-md">

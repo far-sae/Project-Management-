@@ -69,6 +69,13 @@ export interface SequenceResult {
    * `reconcile` below fired, so the worker logs it.
    */
   reconciled: number;
+  /**
+   * Mailboxes taken out of rotation this pass for bouncing too much.
+   *
+   * Non-zero is always worth reading: it means somebody's list is bad enough
+   * that continuing to send from that mailbox was damaging the domain.
+   */
+  pausedForBounces: number;
   /** Distinct failure reasons, each naming the enrollment that produced it. */
   errors: string[];
 }
@@ -110,7 +117,7 @@ type Note = (scope: string, message: string) => void;
 /* ------------------------------------------------------------------- cycle */
 
 export async function runSequenceCycle(deps: SequenceDeps): Promise<SequenceResult> {
-  const result: SequenceResult = { queued: 0, reconciled: 0, errors: [] };
+  const result: SequenceResult = { queued: 0, reconciled: 0, pausedForBounces: 0, errors: [] };
 
   // Deduplicated per scope, as in the inbox and send cycles: one database
   // problem is one problem however many rows it is hit on. The scope is the
@@ -127,6 +134,10 @@ export async function runSequenceCycle(deps: SequenceDeps): Promise<SequenceResu
   // FIRST, and every pass. See `reconcile` for what it is under.
   result.reconciled = await reconcile(deps, note);
 
+  // Before anything is queued, so a mailbox over its bounce limit is out of
+  // rotation before this pass hands it more work.
+  result.pausedForBounces = await protectMailboxes(deps, note);
+
   // Nothing is claimed while the process is shutting down. There is no harm in
   // it — the claim is one transaction and would either complete or not — but a
   // batch of mail queued in the last second before exit sits until the next
@@ -142,6 +153,43 @@ export async function runSequenceCycle(deps: SequenceDeps): Promise<SequenceResu
 
   result.queued = claimed.length;
   return result;
+}
+
+/**
+ * Takes a mailbox out of rotation when too much of what it sends bounces.
+ *
+ * The gap this closes: migration 156 pauses a mailbox after three consecutive
+ * SMTP failures, which catches a broken credential and is blind to a bad list,
+ * because every one of those sends SUCCEEDED. The bounce arrives later, as a
+ * separate message, and nothing was watching the rate.
+ *
+ * That matters more than it sounds. Receiving systems read a rising volume of
+ * undeliverable mail as the signature of a list nobody cleaned, and the volume
+ * ramp makes it rise on a schedule — so the worst case is a mailbox climbing
+ * steadily while it damages the domain it sends from.
+ *
+ * Runs here rather than on its own timer because this loop already runs every
+ * minute and already holds a database connection. The decision itself is in
+ * SQL (migration 164c), where the threshold lives beside the mailbox it
+ * belongs to.
+ *
+ * A failure is reported and stepped past: the sweep is a protection, not a
+ * gate, and a database blip on it must not stop the product materializing
+ * mail for a minute.
+ */
+async function protectMailboxes(deps: SequenceDeps, note: Note): Promise<number> {
+  try {
+    const { data, error } = await deps.db.rpc('pause_mailboxes_over_bounce_rate');
+    if (error) {
+      note('protection', `mailbox bounce rates could not be checked: ${error.message}`);
+      return 0;
+    }
+    const paused = Number(data ?? 0);
+    return Number.isFinite(paused) && paused > 0 ? paused : 0;
+  } catch (err) {
+    note('protection', `mailbox bounce rates could not be checked: ${short(err)}`);
+    return 0;
+  }
 }
 
 /**

@@ -277,6 +277,16 @@ async function main(): Promise<void> {
           );
         }
 
+        // A mailbox leaving rotation for bouncing is always worth a line: it
+        // means somebody's list was bad enough that continuing to send from
+        // it was damaging the domain, and the fix is theirs to make.
+        if (result.pausedForBounces > 0) {
+          console.warn(
+            `[${stamp()}] sequences: paused ${result.pausedForBounces} mailbox(es) over their ` +
+              'bounce limit — the list needs cleaning before they are resumed.',
+          );
+        }
+
         for (const error of result.errors.slice(0, 5)) {
           console.error(`[${stamp()}] sequences ${error}`);
         }

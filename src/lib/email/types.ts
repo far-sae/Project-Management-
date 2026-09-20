@@ -113,6 +113,15 @@ export interface EmailAccount {
    * another one's name. Empty means no signature. See migration 163.
    */
   signatureHtml: string;
+  /**
+   * The share of recent mail that may bounce before this mailbox pauses
+   * itself, as a percentage. Migration 164a; defaults to 5.
+   *
+   * Per mailbox because tolerance genuinely differs — a list somebody typed
+   * at a conference bounces more than one that opted in, and one threshold
+   * for both is either useless or punitive.
+   */
+  bouncePausePercent: number;
   organizationId: string;
   workspaceId: string | null;
   userId: string | null;

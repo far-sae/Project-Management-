@@ -131,6 +131,8 @@ interface EmailAccountRow {
   sent_folder_enabled: boolean;
   /** Nullable here, not in the column: a database before migration 163. */
   signature_html?: string | null;
+  /** Likewise, before 164. */
+  bounce_pause_percent?: number | null;
 }
 
 /** Raw shape of an `email_inbox_events` row (migration 157c). */
@@ -285,6 +287,8 @@ export const mapAccountRow = (row: EmailAccountRow): EmailAccount => ({
   // '' on a database before migration 163, which reads as "no signature" —
   // the same thing the column's own default says.
   signatureHtml: row.signature_html ?? "",
+  // The column's own default, for a database that has not run 164.
+  bouncePausePercent: row.bounce_pause_percent ?? 5,
   organizationId: row.organization_id,
   workspaceId: row.workspace_id,
   userId: row.user_id,
@@ -592,6 +596,55 @@ export const updateAccountImap = async (
     logger.error("Failed to update mailbox IMAP settings:", error);
     throw error;
   }
+};
+
+/**
+ * Bounce rates per mailbox, over the last thirty days.
+ *
+ * From the `mailbox_bounce_rate` view (migration 164b), which measures rather
+ * than stores: a counter would have to be incremented by every path that marks
+ * a bounce, and the one that forgets is silent. Thirty days matches the
+ * recency gate record_inbox_result() already applies, so the two agree about
+ * which bounces are current.
+ *
+ * Returns an empty map rather than throwing, and on a database before 164 the
+ * view does not exist — which reads as "not measured", which is the truth.
+ */
+export const listBounceRates = async (
+  orgId: string,
+): Promise<Record<string, { sent30d: number; bounced30d: number; percent: number | null }>> => {
+  const rates: Record<string, { sent30d: number; bounced30d: number; percent: number | null }> = {};
+  try {
+    const { data, error } = await supabase
+      .from("mailbox_bounce_rate")
+      .select("account_id, sent_30d, bounced_30d, bounce_percent")
+      .eq("organization_id", orgId);
+
+    if (error) {
+      logger.error("Failed to read mailbox bounce rates:", error);
+      return rates;
+    }
+
+    for (const row of (data ?? []) as Array<{
+      account_id: string;
+      sent_30d: number | null;
+      bounced_30d: number | null;
+      bounce_percent: number | string | null;
+    }>) {
+      rates[row.account_id] = {
+        sent30d: row.sent_30d ?? 0,
+        bounced30d: row.bounced_30d ?? 0,
+        // numeric comes back as a string from PostgREST. Null stays null: it
+        // means "nothing sent", which is not the same fact as 0%.
+        percent: row.bounce_percent === null || row.bounce_percent === undefined
+          ? null
+          : Number(row.bounce_percent),
+      };
+    }
+  } catch (err) {
+    logger.error("Failed to read mailbox bounce rates:", err);
+  }
+  return rates;
 };
 
 // ── Pool, warmup and health ──────────────────────────────────────────
