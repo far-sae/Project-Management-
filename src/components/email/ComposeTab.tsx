@@ -10,14 +10,35 @@ import { Loader2, Send, SendHorizonal, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import {
-  listAccounts, listMailboxStatus, listSuppressions, createCampaign,
+  listAccounts, listMailboxStatus, listSuppressions, createCampaign, getEmailSettings,
   queueRecipients, setCampaignStatus,
 } from '@/services/supabase/email';
-import type { EmailAccount, EmailSuppression, EmailTemplate, MailboxHealth } from '@/lib/email/types';
+import type {
+  EmailAccount, EmailSettings, EmailSuppression, EmailTemplate, MailboxHealth, SendWindow,
+} from '@/lib/email/types';
+
+/**
+ * The window used for the estimate before the organisation's own settings
+ * arrive, and when it has none.
+ *
+ * Mirrors migration 156's column defaults, which is what the worker falls back
+ * to for an organisation with no settings row — so the estimate agrees with
+ * the sender in that case too.
+ */
+const DEFAULT_WINDOW_FOR_ESTIMATE: SendWindow = {
+  enabled: true,
+  startHour: 8,
+  endHour: 18,
+  days: [1, 2, 3, 4, 5],
+  timezone: 'UTC',
+};
 import { isUsable } from '@/lib/email/mailboxPool';
 import { verifyAccount } from './verifyAccount';
 import { AudiencePicker, type AudienceSelection } from './AudiencePicker';
 import { RichTextEditor } from './RichTextEditor';
+import { LaunchReview } from './LaunchReview';
+import { launchEstimate } from '@/lib/email/launchEstimate';
+import { isWithinSendWindow } from '@/lib/email/sendWindow';
 
 interface ComposeTabProps {
   orgId: string;
@@ -86,6 +107,10 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
    */
   const [audienceKey, setAudienceKey] = useState(0);
 
+  const [reviewing, setReviewing] = useState(false);
+  /** The pool's health, for the "when will this finish" estimate. */
+  const [poolHealth, setPoolHealth] = useState<MailboxHealth[]>([]);
+  const [settings, setSettings] = useState<EmailSettings | null>(null);
   const [scheduleMode, setScheduleMode] = useState<'now' | 'schedule'>('now');
   const [scheduledAt, setScheduledAt] = useState('');
   const [sending, setSending] = useState(false);
@@ -104,6 +129,11 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     listSuppressions(orgId)
       .then(setSuppressions)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
+    // Both only annotate the review, so a failure is swallowed rather than
+    // shown: an estimate nobody can read is not worth an error somebody
+    // cannot act on.
+    listMailboxStatus(orgId).then(setPoolHealth).catch(() => setPoolHealth([]));
+    getEmailSettings(orgId).then(setSettings).catch(() => setSettings(null));
   }, [orgId]);
 
   // Copies the template's wording in and records which template it came from.
@@ -184,6 +214,26 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
       : usableIds.has(selectedAccount.id)
         ? `Sends from ${selectedAccount.label} (${selectedAccount.fromEmail}) only.`
         : `${selectedAccount.label} is paused or needs re-verifying, so nothing would go out from it.`);
+
+  /**
+   * What this campaign will actually cost in time.
+   *
+   * `windowOpenNow` comes from isWithinSendWindow, which is what the worker
+   * itself obeys — a second implementation here is how a screen ends up
+   * disagreeing with the sender about when mail goes out.
+   */
+  const estimate = useMemo(() => {
+    const window = settings?.window ?? DEFAULT_WINDOW_FOR_ESTIMATE;
+    return launchEstimate({
+      // The count after suppression and de-duplication — the number that
+      // will actually be mailed, which is the only one an estimate of "how
+      // long will this take" can honestly be built on.
+      recipients: audience.sendableCount,
+      mailboxes: poolHealth,
+      window,
+      windowOpenNow: isWithinSendWindow(window, new Date()),
+    });
+  }, [audience.sendableCount, poolHealth, settings]);
 
   const scheduledDate = scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
   const scheduleInPast = scheduleMode === 'schedule' && !!scheduledDate && scheduledDate.getTime() <= Date.now();
@@ -377,13 +427,32 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
                 )}
               </div>
             ) : <span />}
-            <Button type="button" disabled={!canSubmit} onClick={handleSubmit}>
-              {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-              {scheduleMode === 'schedule' ? 'Schedule campaign' : 'Send now'}
+            {/* Opens the review; it is the review that sends. There was no
+                step between writing and sending, so the first time anybody saw
+                the message as a recipient would see it was in the recipient's
+                inbox — and a send is not undoable. */}
+            <Button type="button" disabled={!canSubmit} onClick={() => setReviewing(true)}>
+              <Send className="w-4 h-4 mr-2" />
+              Review and {scheduleMode === 'schedule' ? 'schedule' : 'send'}
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      <LaunchReview
+        open={reviewing}
+        onOpenChange={setReviewing}
+        subject={form.subject}
+        bodyHtml={form.bodyHtml}
+        account={selectedAccount}
+        poolAccounts={activeAccounts}
+        recipients={audience.recipients}
+        excludedCount={Math.max(audience.recipients.length - audience.sendableCount, 0)}
+        estimate={estimate}
+        scheduledAt={scheduledDate}
+        sending={sending}
+        onConfirm={() => { setReviewing(false); void handleSubmit(); }}
+      />
     </div>
   );
 };
