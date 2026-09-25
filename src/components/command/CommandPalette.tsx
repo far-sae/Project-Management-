@@ -31,26 +31,20 @@ import {
   useSelectedWorkspace,
 } from "@/hooks/useSelectedWorkspace";
 import { useTheme } from "@/context/ThemeContext";
+// From the events module, never from AppHeader — see commandEvents.ts for
+// what importing each other did to the production build.
 import {
   COMMAND_OPEN_EVENT,
+  SHORTCUTS_OPEN_EVENT,
   openCommandPalette,
-} from "@/components/layout/AppHeader";
+  openShortcutsModal,
+} from "@/components/command/commandEvents";
 import useGlobalShortcuts from "@/hooks/useGlobalShortcuts";
 
 interface CommandPaletteProps {
   /** Optional callback called from command palette when "create task" is selected. */
   onCreateTask?: () => void;
 }
-
-const SHORTCUTS_OPEN_EVENT = "app:open-shortcuts";
-
-export const openShortcutsModal = () => {
-  try {
-    window.dispatchEvent(new Event(SHORTCUTS_OPEN_EVENT));
-  } catch {
-    /* ignore */
-  }
-};
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onCreateTask,
@@ -560,5 +554,7 @@ const ShortcutsModal: React.FC<ShortcutsModalProps> = ({
   );
 };
 
-// Public re-exports for components that want to programmatically open
-export { openCommandPalette };
+// Re-exported for anything that already reaches for them here. The
+// definitions live in commandEvents.ts, which imports no component, so this
+// cannot re-form the cycle.
+export { openCommandPalette, openShortcutsModal };

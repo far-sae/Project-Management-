@@ -6,7 +6,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { openShortcutsModal } from '@/components/command/CommandPalette';
+// From the events module, never from CommandPalette: importing the component
+// that imports this one is what produced a temporal dead zone error in the
+// production bundle. See commandEvents.ts.
+import { openCommandPalette, openShortcutsModal } from '@/components/command/commandEvents';
 
 interface AppHeaderProps {
   /** Slot for breadcrumbs / title */
@@ -19,18 +22,6 @@ interface AppHeaderProps {
   onSearchClick?: () => void;
   className?: string;
 }
-
-const COMMAND_OPEN_EVENT = 'app:open-command-palette';
-
-export const openCommandPalette = () => {
-  try {
-    window.dispatchEvent(new Event(COMMAND_OPEN_EVENT));
-  } catch {
-    /* ignore */
-  }
-};
-
-export { COMMAND_OPEN_EVENT };
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   left,
