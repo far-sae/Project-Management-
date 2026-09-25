@@ -115,7 +115,6 @@ export const ProjectsDashboard: React.FC = () => {
       }).length;
     }
     return buckets;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopedTasks, sparkDays]);
 
   const sparkActive = dayBuckets.map((b) => ({ value: b.active }));

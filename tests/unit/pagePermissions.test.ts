@@ -13,11 +13,11 @@ describe('resolvePagePermissions', () => {
     const p = resolvePagePermissions({
       isOwner: false,
       builtinRole: 'member',
-      customRole: { permissions: { crm: 'edit', insights: 'view' } },
+      customRole: { permissions: { crm: 'edit', inbox: 'view' } },
     });
     expect(p.crm).toBe('edit');
-    expect(p.insights).toBe('view');
-    expect(p.billing).toBe('none');
+    expect(p.inbox).toBe('view');
+    expect(p.dashboard).toBe('none');
     expect(p.hr).toBe('none');
   });
 
@@ -60,7 +60,7 @@ describe('resolvePagePermissions', () => {
     expect(viewer.calendar).toBe('view');
     expect(viewer.timeline).toBe('view');
     expect(viewer.project_management).toBe('view');
-    expect(viewer.billing).toBe('none');
+    expect(viewer.dashboard).toBe('none');
     expect(viewer.settings).toBe('view'); // alwaysAvailable floor
   });
 });
@@ -69,11 +69,10 @@ describe('pageKeyForPath', () => {
   it('maps routes to the most specific page key', () => {
     expect(pageKeyForPath('/dashboard')).toBe('dashboard');
     expect(pageKeyForPath('/dashboard/projects')).toBe('projects_analytics');
-    expect(pageKeyForPath('/dashboard/clients')).toBe('crm_analytics');
-    expect(pageKeyForPath('/dashboard/insights')).toBe('insights');
     expect(pageKeyForPath('/project/abc-123')).toBe('project_management');
-    expect(pageKeyForPath('/clients')).toBe('crm');
-    expect(pageKeyForPath('/clients/activity')).toBe('crm');
+    expect(pageKeyForPath('/crm')).toBe('crm');
+    expect(pageKeyForPath('/crm/activity')).toBe('crm');
+    expect(pageKeyForPath('/email')).toBe('email');
   });
 
   it("does not confuse /time with /timeline", () => {

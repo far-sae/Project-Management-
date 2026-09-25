@@ -43,7 +43,6 @@ export const SuppressionTab: React.FC<SuppressionTabProps> = ({ orgId, isAdmin }
     refresh()
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppressions'))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   const handleAdd = async (e: React.FormEvent) => {

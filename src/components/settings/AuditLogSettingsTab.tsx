@@ -82,7 +82,6 @@ export const AuditLogSettingsTab: React.FC = () => {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, actionFilter]);
 
   const grouped = useMemo(() => {

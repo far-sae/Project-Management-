@@ -444,7 +444,7 @@ export const uploadExpenseInvoice = async (
   }
 
   const sanitized = file.name
-    .replace(/[^a-zA-Z0-9_.\-]/g, "_")
+    .replace(/[^a-zA-Z0-9_.-]/g, "_")
     .replace(/_+/g, "_")
     .slice(-120);
   const path = `${organizationId}/expenses/${Date.now()}-${sanitized}`;

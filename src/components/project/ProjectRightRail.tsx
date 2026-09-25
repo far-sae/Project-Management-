@@ -444,6 +444,15 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     }
   });
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(lastSeenStorageKey);
+      setLastSeenAt(raw ? Number(raw) || 0 : 0);
+    } catch {
+      setLastSeenAt(0);
+    }
+  }, [lastSeenStorageKey]);
+
   const unreadCount = useMemo(() => {
     if (open) return 0;
     if (!user) return 0;
@@ -691,7 +700,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         user.userId,
         user.displayName || user.email || 'User',
       );
-      let attachments: ChatAttachment[] = [];
+      const attachments: ChatAttachment[] = [];
       const uploadedPaths: string[] = [];
       if (chatPendingFiles.length > 0) {
         const settled = await Promise.allSettled(

@@ -92,7 +92,6 @@ export const logActivity = async (
  *  fail because of a downstream activity insert. */
 export const tryLogActivity = (input: CreateActivityInput, userId: string | null): void => {
   void logActivity(input, userId).catch((err) => {
-    // eslint-disable-next-line no-console
     console.warn('[crm] failed to log activity', err);
   });
 };

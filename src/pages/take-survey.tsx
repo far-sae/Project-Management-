@@ -156,7 +156,7 @@ export function TakeSurvey() {
           </div>
         );
 
-      case 'checkbox':
+      case 'checkbox': {
         const selectedOptions = (currentAnswer as string[]) || [];
         return (
           <div className="space-y-3">
@@ -194,6 +194,7 @@ export function TakeSurvey() {
             })}
           </div>
         );
+      }
 
       case 'text':
       case 'email':
@@ -224,7 +225,7 @@ export function TakeSurvey() {
           />
         );
 
-      case 'rating':
+      case 'rating': {
         const rating = (currentAnswer as number) || 0;
         return (
           <div className="flex gap-2 justify-center">
@@ -246,8 +247,9 @@ export function TakeSurvey() {
             ))}
           </div>
         );
+      }
 
-      case 'scale':
+      case 'scale': {
         const scaleValue = currentAnswer as number;
         return (
           <div className="space-y-4">
@@ -273,6 +275,7 @@ export function TakeSurvey() {
             </div>
           </div>
         );
+      }
 
       case 'date':
         return (

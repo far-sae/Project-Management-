@@ -299,7 +299,6 @@ export const Team: React.FC = () => {
   // fresh via the realtime subscription effect above.
   useEffect(() => {
     loadTeamData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject, organization?.organizationId, user?.organizationId, user?.userId]);
 
   const currentProject = projects.find((p) => p.projectId === selectedProject);

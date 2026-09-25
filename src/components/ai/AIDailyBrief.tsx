@@ -170,7 +170,6 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
     } catch {
       /* ignore */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const handleGenerate = async () => {

@@ -141,6 +141,7 @@ function isNotificationsInsertForbidden(error: unknown): boolean {
 
 async function getUserEmailForNotification(
   userId: string,
+  projectId?: string | null,
 ): Promise<{ email: string; displayName: string } | null> {
   const now = Date.now();
   const cached = userEmailCache.get(userId);
@@ -160,10 +161,51 @@ async function getUserEmailForNotification(
   }
 
   const email = String(data?.email || "").trim();
-  if (!email || !email.includes("@")) return null;
-  const displayName = String(data?.display_name || "").trim();
-  userEmailCache.set(userId, { email, displayName, at: now });
-  return { email, displayName };
+  if (email && email.includes("@")) {
+    const displayName = String(data?.display_name || "").trim();
+    userEmailCache.set(userId, { email, displayName, at: now });
+    return { email, displayName };
+  }
+
+  if (projectId) {
+    const { data: projectRow, error: projectError } = await supabase
+      .from("projects")
+      .select("members")
+      .eq("project_id", projectId)
+      .maybeSingle();
+
+    if (!projectError) {
+      const members = Array.isArray(projectRow?.members)
+        ? (projectRow.members as Array<{
+            userId?: string;
+            user_id?: string;
+            email?: string;
+            displayName?: string;
+            display_name?: string;
+          }>)
+        : [];
+      const member = members.find((m) => (m.userId || m.user_id) === userId);
+      const memberEmail = String(member?.email || "").trim();
+      if (memberEmail && memberEmail.includes("@")) {
+        const displayName = String(
+          member?.displayName || member?.display_name || data?.display_name || "",
+        ).trim();
+        userEmailCache.set(userId, {
+          email: memberEmail,
+          displayName,
+          at: now,
+        });
+        return { email: memberEmail, displayName };
+      }
+    } else {
+      logger.warn(
+        "Could not resolve notification recipient email from project members:",
+        projectError.message,
+      );
+    }
+  }
+
+  return null;
 }
 
 // ============================================
@@ -1849,7 +1891,10 @@ export const createNotification = async (
   ) {
     void (async () => {
       try {
-        const recipient = await getUserEmailForNotification(input.userId);
+        const recipient = await getUserEmailForNotification(
+          input.userId,
+          input.projectId,
+        );
         if (!recipient) return;
         const actionUrl =
           typeof window !== "undefined" && input.projectId
@@ -2183,7 +2228,10 @@ async function sendOverdueNotificationEmailsForRpcRows(
     if (!isEmailDeliveryAllowed(prefs, "task_overdue")) continue;
     void (async () => {
       try {
-        const recipient = await getUserEmailForNotification(row.user_id);
+        const recipient = await getUserEmailForNotification(
+          row.user_id,
+          row.project_id,
+        );
         if (!recipient) return;
         const actionUrl =
           typeof window !== "undefined"

@@ -133,7 +133,6 @@ export const Reports: React.FC = () => {
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshOrganization is stable enough; we want one subscription
   }, []);
 
   // Fetch business data when tab changes

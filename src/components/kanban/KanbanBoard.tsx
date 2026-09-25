@@ -923,7 +923,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       user,
       projName,
       project,
-      canBypassTaskLock,
+      canMoveTask,
       getAssigneeEmail,
     ],
   );

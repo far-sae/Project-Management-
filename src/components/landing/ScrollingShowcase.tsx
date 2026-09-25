@@ -241,8 +241,8 @@ const HandoffMock: React.FC = () => (
 
 const CalendarMock: React.FC = () => (
   <div className="grid grid-cols-7 gap-1 h-full text-[10px]">
-    {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => (
-      <div key={d} className="text-center text-muted-foreground">{d}</div>
+    {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, index) => (
+      <div key={`${d}-${index}`} className="text-center text-muted-foreground">{d}</div>
     ))}
     {Array.from({ length: 35 }).map((_, i) => {
       const isPast = i < 14;

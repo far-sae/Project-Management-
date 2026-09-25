@@ -104,7 +104,7 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
     stickToBottomRef.current = true;
     try {
       // Upload any pending files first; surface upload failures clearly.
-      let attachments: ChatAttachment[] = [];
+      const attachments: ChatAttachment[] = [];
       const uploadedPaths: string[] = [];
       if (pendingFiles.length > 0) {
         const threadKey = directMessageThreadKey(user.userId, recipient.userId);

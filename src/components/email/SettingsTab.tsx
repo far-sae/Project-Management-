@@ -78,7 +78,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   const update = (updater: (s: EmailSettings) => EmailSettings) => {

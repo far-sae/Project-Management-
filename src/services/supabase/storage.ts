@@ -610,7 +610,7 @@ const sanitizeFileName = (name: string): string => {
   const base = decoded.substring(0, decoded.lastIndexOf(".")); // everything before ext
 
   const cleanBase = base
-    .replace(/[^a-zA-Z0-9_\-]/g, "_") // replace anything invalid with _
+    .replace(/[^a-zA-Z0-9_-]/g, "_") // replace anything invalid with _
     .replace(/_+/g, "_") // collapse multiple underscores
     .slice(0, 80); // cap length
 

@@ -523,7 +523,6 @@ export const CallOverlay: React.FC = () => {
   useEffect(() => {
     if (pip) pipDrag.setPos(initialPipPosition());
     // pipDrag.setPos is stable across renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pip]);
 
   const isOutgoingRinging = state.status === 'ringing' && state.direction === 'outgoing';

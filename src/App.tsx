@@ -8,14 +8,11 @@ import { WorkspaceProvider } from '@/context/WorkspaceContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
-// Eager — these are auth gates / public pages that load fast on their own.
-import { Login } from '@/pages/auth/Login';
-import { Signup } from '@/pages/auth/Signup';
-import LandingPage from '@/pages/landing/LandingPage';
-
-// Lazy — every authenticated/heavy page is fetched on demand. This shrinks the initial JS
-// bundle from "everything" to "shell + landing/auth", which is the single biggest perf win
-// for first paint and subsequent route warmth.
+// Public and authenticated pages are fetched on demand. This keeps the startup
+// bundle to the app shell and loads page code only when a route needs it.
+const Login = React.lazy(() => import('@/pages/auth/Login').then((m) => ({ default: m.Login })));
+const Signup = React.lazy(() => import('@/pages/auth/Signup').then((m) => ({ default: m.Signup })));
+const LandingPage = React.lazy(() => import('@/pages/landing/LandingPage'));
 const Dashboard = React.lazy(() => import('@/pages/kanban/Dashboard').then((m) => ({ default: m.Dashboard })));
 const ProjectView = React.lazy(() => import('@/pages/kanban/ProjectView').then((m) => ({ default: m.ProjectView })));
 const MyTasks = React.lazy(() => import('@/pages/MyTasks').then((m) => ({ default: m.MyTasks })));
@@ -62,10 +59,14 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
 import CookieBanner from '@/components/landing/CookieBanner';
-import { CommandPalette } from '@/components/command/CommandPalette';
 import { CallProvider } from '@/components/calling/CallProvider';
-import { CallOverlay } from '@/components/calling/CallOverlay';
 import { AppLayout } from '@/components/layout/AppLayout';
+const CommandPalette = React.lazy(() =>
+  import('@/components/command/CommandPalette').then((m) => ({ default: m.CommandPalette })),
+);
+const CallOverlay = React.lazy(() =>
+  import('@/components/calling/CallOverlay').then((m) => ({ default: m.CallOverlay })),
+);
 // Used for non-app routes (auth, landing, legal). Authenticated routes get
 // their own scoped fallback inside <AppLayout> so the sidebar stays visible
 // while the page area lazy-loads.
@@ -128,7 +129,11 @@ const RouterShell: React.FC = () => {
     <WorkspaceProvider>
       <Outlet />
       {/* Command palette is global but only useful while authenticated */}
-      {user && <CommandPalette />}
+      {user && (
+        <Suspense fallback={null}>
+          <CommandPalette />
+        </Suspense>
+      )}
     </WorkspaceProvider>
   );
 };
@@ -145,8 +150,8 @@ const router = createBrowserRouter(
         // Public lead-capture form pages — mounted OUTSIDE the authenticated
         // AppLayout so they render with no sidebar / no auth guard. Placed
         // first so they match before any catch-alls.
-        { path: '/login', element: <Login /> },
-        { path: '/signup', element: <Signup /> },
+        { path: '/login', element: lazyRoute(<Login />) },
+        { path: '/signup', element: lazyRoute(<Signup />) },
         { path: '/pricing', element: lazyRoute(<Pricing />) },
         { path: '/about', element: lazyRoute(<AboutPage />) },
         { path: '/contracts-info', element: lazyRoute(<ContractsInfoPage />) },
@@ -154,7 +159,7 @@ const router = createBrowserRouter(
         { path: '/cookies', element: lazyRoute(<CookiePolicyPage />) },
         { path: '/terms', element: lazyRoute(<TermsPage />) },
         { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
-        { path: '/', element: <LandingPage /> },
+        { path: '/', element: lazyRoute(<LandingPage />) },
         {
           // All authenticated app routes share a single layout — the sidebar
           // mounts once here and stays mounted across navigation. Without
@@ -373,7 +378,9 @@ export default function App() {
             <SubscriptionProvider>
               <CallProvider>
                 <RouterProvider router={router} future={{ v7_startTransition: true }} />
-                <CallOverlay />
+                <Suspense fallback={null}>
+                  <CallOverlay />
+                </Suspense>
                 <Toaster position='bottom-right' />
                 <CookieBanner />
               </CallProvider>

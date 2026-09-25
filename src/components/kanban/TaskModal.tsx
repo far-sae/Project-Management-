@@ -336,7 +336,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       clearTimeout(commentDraftTimerRef.current);
       commentDraftTimerRef.current = null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: `task` object identity updates after realtime/refetch must not reset fields
   }, [open, task?.taskId, initialStatus]);
 
   useEffect(() => {

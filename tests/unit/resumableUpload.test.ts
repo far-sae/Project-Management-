@@ -23,9 +23,7 @@ describe("resumableUpload", () => {
 
   it("configures the TUS upload with the Supabase resumable endpoint, bearer token, and 6MB chunks", async () => {
     const file = new File([new Uint8Array(10)], "x.pdf", { type: "application/pdf" });
-    let capturedOpts: Record<string, unknown>;
     UploadMock.mockImplementationOnce((_f, opts) => {
-      capturedOpts = opts;
       const start = vi.fn().mockImplementation(() => {
         startSpy();
         queueMicrotask(() => opts.onSuccess());

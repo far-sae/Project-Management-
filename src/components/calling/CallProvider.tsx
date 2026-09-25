@@ -10,10 +10,9 @@ import { supabase } from '@/services/supabase/config';
 import { useAuth } from '@/context/AuthContext';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import type { VideoEffect } from '@/services/webrtc/BackgroundProcessor';
-import {
-  ConnectionState,
+import type {
   LiveKitCallService,
-  type CallPeerSnapshot,
+  CallPeerSnapshot,
 } from '@/services/livekit/LiveKitCallService';
 import {
   dmRoomName,
@@ -69,6 +68,7 @@ const CallCtx = createContext<CallContextValue | null>(null);
 const RING_TIMEOUT_MS = 30_000;
 const OFFER_RESEND_INTERVAL_MS = 3_000;
 const ENDED_DISMISS_MS = 3_000;
+type ConnectionStateValue = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'signalReconnecting';
 
 const generateCallId = () =>
   `call-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -308,7 +308,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
    * The same instance handles both outgoing (caller) and accepted incoming
    * (callee) calls — the only difference is who connected first.
    */
-  const buildLiveKit = useCallback((): LiveKitCallService => {
+  const buildLiveKit = useCallback(async (): Promise<LiveKitCallService> => {
+    const { LiveKitCallService } = await import('@/services/livekit/LiveKitCallService');
     return new LiveKitCallService({
       onParticipantsChange: (peers) => {
         setState((prev) => {
@@ -390,13 +391,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         }
       },
-      onConnectionStateChange: (cs) => {
+      onConnectionStateChange: (cs: ConnectionStateValue) => {
         setState((prev) => {
           if (prev.status === 'idle' || prev.status === 'ended') return prev;
-          if (cs === ConnectionState.Reconnecting) {
+          if (cs === 'reconnecting' || cs === 'signalReconnecting') {
             return { ...prev, status: 'reconnecting' };
           }
-          if (cs === ConnectionState.Connected && prev.status === 'reconnecting') {
+          if (cs === 'connected' && prev.status === 'reconnecting') {
             return { ...prev, status: 'connected', error: null };
           }
           return prev;
@@ -481,7 +482,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       // requests mic/camera permissions and makes the local user a
       // publisher in the room. Once a callee accepts, they'll join the
       // same room and our snapshot listener picks them up.
-      const lk = buildLiveKit();
+      const lk = await buildLiveKit();
       liveKitRef.current = lk;
       try {
         await lk.connect({
@@ -619,7 +620,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     clearTimers();
     setState((prev) => ({ ...prev, status: 'connecting' }));
 
-    const lk = buildLiveKit();
+    const lk = await buildLiveKit();
     liveKitRef.current = lk;
     try {
       await lk.connect({

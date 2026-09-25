@@ -319,7 +319,6 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       canEditPage: (page: PageKey) => pageLevel(page) === 'edit',
       permissionsLoading: loading,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, role, user?.userId]);
 
   return (

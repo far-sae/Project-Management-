@@ -35,7 +35,6 @@ export const useLastSeen = (
       cancelled = true;
       unsub();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the derived stable signal
   }, [key]);
 
   return map;

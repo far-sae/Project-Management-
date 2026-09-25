@@ -93,7 +93,6 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   useEffect(() => {
     setLoading(true);
     void refresh().finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   const resetForm = () => {

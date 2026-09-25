@@ -1952,7 +1952,6 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
   );
 
   return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       ref={containerRef}
       className="relative h-full w-full bg-background rounded-lg border border-border overflow-hidden"

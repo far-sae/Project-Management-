@@ -258,39 +258,39 @@ export const Calendar: React.FC = () => {
     <>
       <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))] p-4 sm:p-6 lg:p-8">
         <div className="mb-6 rounded-lg border border-border/70 bg-card/80 p-5 shadow-sm shadow-black/5 backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 leading-none">
-            <TaskCalendarLogo sizeClass="h-9 w-9 sm:h-10 sm:w-10" />
-            <div className="min-w-0 pt-0.5">
-              <h1 className="text-3xl font-bold text-foreground">TaskCalendar</h1>
-              <p className="mt-1 text-muted-foreground">View tasks by due date</p>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 leading-none">
+              <TaskCalendarLogo sizeClass="h-9 w-9 sm:h-10 sm:w-10" />
+              <div className="min-w-0 pt-0.5">
+                <h1 className="text-3xl font-bold text-foreground">TaskCalendar</h1>
+                <p className="mt-1 text-muted-foreground">View tasks by due date</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentDate(new Date())}
+                className="rounded-lg bg-background/80"
+              >
+                <CalendarIcon className="w-4 h-4 mr-2" />
+                Today
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setCurrentDate(new Date())}
-              className="rounded-lg bg-background/80"
-            >
-              <CalendarIcon className="w-4 h-4 mr-2" />
-              Today
-            </Button>
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Due this month</p>
+              <p className="mt-1 text-2xl font-semibold">{monthTasks.length}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Completed</p>
+              <p className="mt-1 text-2xl font-semibold text-success">{completedMonthTasks}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Urgent</p>
+              <p className="mt-1 text-2xl font-semibold text-destructive">{urgentMonthTasks}</p>
+            </div>
           </div>
-        </div>
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Due this month</p>
-            <p className="mt-1 text-2xl font-semibold">{monthTasks.length}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Completed</p>
-            <p className="mt-1 text-2xl font-semibold text-success">{completedMonthTasks}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Urgent</p>
-            <p className="mt-1 text-2xl font-semibold text-destructive">{urgentMonthTasks}</p>
-          </div>
-        </div>
         </div>
 
         <Card className="overflow-hidden rounded-lg border-border/70 bg-card/85 shadow-sm shadow-black/5">

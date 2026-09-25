@@ -431,7 +431,7 @@ export const MyTasks: React.FC = () => {
     setCommentLoading(true);
     const toastId = toast.loading('Posting comment...');
     try {
-      let attachments: { fileId: string; fileName: string; fileUrl: string; fileType: string; }[] = [];
+      const attachments: { fileId: string; fileName: string; fileUrl: string; fileType: string; }[] = [];
 
       for (const file of commentAttachmentFiles) {
         try {

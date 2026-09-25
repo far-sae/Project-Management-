@@ -63,7 +63,6 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, scopeKey]);
 
   useEffect(() => { void refresh(); }, [refresh]);

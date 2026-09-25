@@ -138,7 +138,6 @@ export const Expenses: React.FC = () => {
       next.delete(k),
     );
     setSearchParams(next, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const tasksForProject = useMemo(() => {
@@ -225,7 +224,7 @@ export const Expenses: React.FC = () => {
     }
     setSubmitting(true);
     try {
-      let invoice = invoiceFile
+      const invoice = invoiceFile
         ? await uploadExpenseInvoice(organizationId, invoiceFile)
         : null;
 
