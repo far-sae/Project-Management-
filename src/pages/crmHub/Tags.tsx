@@ -3,6 +3,7 @@ import { Plus, Trash2, Loader2, Tag as TagIcon, Pencil, Save, X } from 'lucide-r
 import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmTags } from '@/hooks/useCrmHub';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { createTag, updateTag, deleteTag } from '@/services/supabase/crmHub/tags';
 import type { CrmTag } from '@/types/crmHub';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ const PRESETS = [
 
 export const CrmTagsPage: React.FC = () => {
   const { organization } = useOrganization();
+  const { selected } = useSelectedWorkspace();
   const { items: tags, loading, refresh } = useCrmTags();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -46,11 +48,11 @@ export const CrmTagsPage: React.FC = () => {
   const resetForm = () => { setName(''); setColor(PRESETS[0]); };
 
   const handleCreate = async () => {
-    if (!organization) return;
+    if (!organization || !selected) return;
     if (!name.trim()) { toast.error('Name required'); return; }
     setBusy(true);
     try {
-      await createTag(organization.organizationId, name.trim(), color);
+      await createTag(organization.organizationId, selected.workspaceId, name.trim(), color);
       toast.success('Tag created');
       resetForm();
       setShowCreate(false);

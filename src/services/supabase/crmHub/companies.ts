@@ -93,6 +93,7 @@ export const createCompany = async (input: CreateCompanyInput, ownerId: string |
   tryLogActivity(
     {
       organizationId: company.organizationId,
+      workspaceId: company.workspaceId,
       type: 'company_created',
       companyId: company.id,
       description: company.name,

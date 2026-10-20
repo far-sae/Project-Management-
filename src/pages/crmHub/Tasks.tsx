@@ -11,6 +11,9 @@ import {
 import { createTask, updateTask, deleteTask } from '@/services/supabase/crmHub/tasks';
 import { TASK_PRIORITIES, TASK_STATUSES } from '@/types/crmHub';
 import type { TaskPriority, TaskStatus, CrmTask } from '@/types/crmHub';
+import { useProjects } from '@/hooks/useProjects';
+import type { TaskAssignee } from '@/types/task';
+import { sharedTaskStatusFor } from '@/lib/crmWorkspace';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -95,6 +98,31 @@ export const CrmTasksPage: React.FC = () => {
   const { items: companies } = useCrmCompanies();
   const { items: deals } = useCrmDeals();
   const workspaceId = useWorkspaceForCreate();
+  const { projects: allProjects } = useProjects();
+  const projects = useMemo(
+    () => allProjects.filter((project) => project.workspaceId === workspaceId),
+    [allProjects, workspaceId],
+  );
+  const assignees = useMemo<TaskAssignee[]>(() => {
+    const members = organization?.members ?? [];
+    const options = members
+      .filter((member) => member.status === 'active')
+      .map((member) => ({
+        userId: member.userId,
+        displayName: member.displayName || member.email,
+        email: member.email,
+        photoURL: member.photoURL,
+      }));
+    if (user && !options.some((option) => option.userId === user.userId)) {
+      options.unshift({
+        userId: user.userId,
+        displayName: user.displayName || user.email,
+        email: user.email,
+        photoURL: user.photoURL,
+      });
+    }
+    return options;
+  }, [organization?.members, user]);
 
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'all'>('all');
@@ -113,11 +141,14 @@ export const CrmTasksPage: React.FC = () => {
   const [contactId, setContactId] = useState('');
   const [companyId, setCompanyId] = useState('');
   const [dealId, setDealId] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setDueDate('');
     setPriority('medium'); setStatus('pending');
     setContactId(''); setCompanyId(''); setDealId('');
+    setProjectId(projects[0]?.projectId ?? ''); setAssignedTo(user?.userId ?? '');
   };
 
   // When the edit dialog opens, prefill the shared form state from the task.
@@ -131,6 +162,8 @@ export const CrmTasksPage: React.FC = () => {
     setContactId(editing.contactId ?? '');
     setCompanyId(editing.companyId ?? '');
     setDealId(editing.dealId ?? '');
+    setProjectId(editing.projectId ?? '');
+    setAssignedTo(editing.assignedTo ?? '');
   }, [editing]);
 
   const filtered = useMemo(() => {
@@ -142,14 +175,19 @@ export const CrmTasksPage: React.FC = () => {
   }, [tasks, statusFilter, priorityFilter]);
 
   const handleCreate = async () => {
-    if (!organization) return;
+    if (!organization || !user || !workspaceId) return;
     if (!title.trim()) { toast.error('Title is required'); return; }
+    if (!projectId) { toast.error('Project is required'); return; }
+    const project = projects.find((item) => item.projectId === projectId);
+    if (!project) { toast.error('Choose a project in this workspace'); return; }
+    const assignee = assignees.find((item) => item.userId === assignedTo) ?? null;
     setBusy(true);
     try {
       await createTask(
         {
           organizationId: organization.organizationId,
           workspaceId,
+          projectId,
           title: title.trim(),
           description: description.trim() || null,
           dueDate: dueDate || null,
@@ -158,8 +196,15 @@ export const CrmTasksPage: React.FC = () => {
           contactId: contactId || null,
           companyId: companyId || null,
           dealId: dealId || null,
+          assignedTo: assignedTo || null,
         },
-        user?.userId ?? null,
+        user.userId,
+        {
+          actorId: user.userId,
+          assignee,
+          projectName: project.name,
+          sharedStatus: sharedTaskStatusFor(project.columns, status),
+        },
       );
       toast.success('Task created');
       resetForm();
@@ -177,6 +222,8 @@ export const CrmTasksPage: React.FC = () => {
     if (!title.trim()) { toast.error('Title is required'); return; }
     setBusy(true);
     try {
+      const project = projects.find((item) => item.projectId === editing.projectId);
+      const assignee = assignees.find((item) => item.userId === assignedTo) ?? null;
       await updateTask(editing.id, {
         title: title.trim(),
         description: description.trim() || null,
@@ -186,7 +233,8 @@ export const CrmTasksPage: React.FC = () => {
         contactId: contactId || null,
         companyId: companyId || null,
         dealId: dealId || null,
-      });
+        assignedTo: assignedTo || null,
+      }, { assignee, sharedStatus: sharedTaskStatusFor(project?.columns, status) });
       toast.success('Task updated');
       setEditing(null);
       resetForm();
@@ -201,7 +249,9 @@ export const CrmTasksPage: React.FC = () => {
   const handleAdvance = async (task: CrmTask) => {
     setStatusBusyId(task.id);
     try {
-      await updateTask(task.id, { status: nextStatus(task.status) });
+      const next = nextStatus(task.status);
+      const project = projects.find((item) => item.projectId === task.projectId);
+      await updateTask(task.id, { status: next }, { sharedStatus: sharedTaskStatusFor(project?.columns, next) });
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not update task');
@@ -229,13 +279,13 @@ export const CrmTasksPage: React.FC = () => {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Tasks</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">CRM follow-ups</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Stay on top of follow-ups and deadlines.
+              Follow-ups are shared with this workspace's Kanban and Calendar.
             </p>
           </div>
           <Button onClick={() => { resetForm(); setShowCreate(true); }} className="bg-primary hover:bg-primary/90">
-            <Plus className="w-4 h-4 mr-2" /> New task
+            <Plus className="w-4 h-4 mr-2" /> New follow-up
           </Button>
         </div>
 
@@ -360,7 +410,7 @@ export const CrmTasksPage: React.FC = () => {
       {/* Create dialog */}
       <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>New task</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>New CRM follow-up</DialogTitle></DialogHeader>
           <TaskFormFields
             title={title} setTitle={setTitle}
             description={description} setDescription={setDescription}
@@ -370,12 +420,16 @@ export const CrmTasksPage: React.FC = () => {
             contactId={contactId} setContactId={setContactId}
             companyId={companyId} setCompanyId={setCompanyId}
             dealId={dealId} setDealId={setDealId}
+            projectId={projectId} setProjectId={setProjectId}
+            assignedTo={assignedTo} setAssignedTo={setAssignedTo}
             contacts={contacts} companies={companies} deals={deals}
+            projects={projects} assignees={assignees}
+            projectDisabled={false}
             busy={busy}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={busy || !title.trim()}>
+            <Button onClick={handleCreate} disabled={busy || !title.trim() || !projectId}>
               {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Create
             </Button>
           </DialogFooter>
@@ -395,7 +449,11 @@ export const CrmTasksPage: React.FC = () => {
             contactId={contactId} setContactId={setContactId}
             companyId={companyId} setCompanyId={setCompanyId}
             dealId={dealId} setDealId={setDealId}
+            projectId={projectId} setProjectId={setProjectId}
+            assignedTo={assignedTo} setAssignedTo={setAssignedTo}
             contacts={contacts} companies={companies} deals={deals}
+            projects={projects} assignees={assignees}
+            projectDisabled
             busy={busy}
           />
           <DialogFooter>
@@ -440,9 +498,14 @@ interface FieldsProps {
   contactId: string; setContactId: (v: string) => void;
   companyId: string; setCompanyId: (v: string) => void;
   dealId: string; setDealId: (v: string) => void;
+  projectId: string; setProjectId: (v: string) => void;
+  assignedTo: string; setAssignedTo: (v: string) => void;
   contacts: { id: string; firstName: string; lastName: string | null }[];
   companies: { id: string; name: string }[];
   deals: { id: string; name: string }[];
+  projects: { projectId: string; name: string }[];
+  assignees: TaskAssignee[];
+  projectDisabled: boolean;
   busy: boolean;
 }
 
@@ -450,12 +513,39 @@ const TaskFormFields: React.FC<FieldsProps> = ({
   title, setTitle, description, setDescription, dueDate, setDueDate,
   priority, setPriority, status, setStatus,
   contactId, setContactId, companyId, setCompanyId, dealId, setDealId,
-  contacts, companies, deals, busy,
+  projectId, setProjectId, assignedTo, setAssignedTo,
+  contacts, companies, deals, projects, assignees, projectDisabled, busy,
 }) => (
   <div className="space-y-3">
     <div>
       <Label htmlFor="ttitle">Title *</Label>
       <Input id="ttitle" value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} />
+    </div>
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <Label>Project *</Label>
+        <Select value={projectId} onValueChange={setProjectId} disabled={busy || projectDisabled}>
+          <SelectTrigger><SelectValue placeholder="Choose a project" /></SelectTrigger>
+          <SelectContent>
+            {projects.map((project) => (
+              <SelectItem key={project.projectId} value={project.projectId}>{project.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {projects.length === 0 && <p className="text-xs text-destructive mt-1">Create a project in this workspace first.</p>}
+      </div>
+      <div>
+        <Label>Assignee</Label>
+        <Select value={assignedTo || '__none__'} onValueChange={(value) => setAssignedTo(value === '__none__' ? '' : value)} disabled={busy}>
+          <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Unassigned</SelectItem>
+            {assignees.map((assignee) => (
+              <SelectItem key={assignee.userId} value={assignee.userId}>{assignee.displayName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
     <div>
       <Label htmlFor="tdesc">Description</Label>
@@ -491,7 +581,7 @@ const TaskFormFields: React.FC<FieldsProps> = ({
     </div>
     <div className="grid grid-cols-3 gap-3">
       <div>
-        <Label>Lead</Label>
+        <Label>Contact</Label>
         <Select value={contactId || '__none__'} onValueChange={(v) => setContactId(v === '__none__' ? '' : v)} disabled={busy}>
           <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
           <SelectContent>
@@ -503,7 +593,7 @@ const TaskFormFields: React.FC<FieldsProps> = ({
         </Select>
       </div>
       <div>
-        <Label>Business</Label>
+        <Label>Company</Label>
         <Select value={companyId || '__none__'} onValueChange={(v) => setCompanyId(v === '__none__' ? '' : v)} disabled={busy}>
           <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
           <SelectContent>
@@ -515,7 +605,7 @@ const TaskFormFields: React.FC<FieldsProps> = ({
         </Select>
       </div>
       <div>
-        <Label>Contract</Label>
+        <Label>Deal</Label>
         <Select value={dealId || '__none__'} onValueChange={(v) => setDealId(v === '__none__' ? '' : v)} disabled={busy}>
           <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
           <SelectContent>

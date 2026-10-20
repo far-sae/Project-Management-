@@ -67,6 +67,8 @@ export interface Task {
   sourceDealId?: string | null;
   /** CRM client this task was handed off for (migration 132). */
   sourceClientId?: string | null;
+  sourceCrmDealId?: string | null;
+  sourceCrmContactId?: string | null;
 }
 
 export interface CommentAttachment {
@@ -135,6 +137,8 @@ export interface CreateTaskInput {
   sourceDealId?: string | null;
   /** CRM client this task is being handed off for (migration 132). */
   sourceClientId?: string | null;
+  sourceCrmDealId?: string | null;
+  sourceCrmContactId?: string | null;
 }
 
 export interface UpdateTaskInput {

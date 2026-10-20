@@ -5,6 +5,7 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import { CURRENCIES, type CurrencyCode } from '@/lib/crmCurrency';
 import { useCrmDealStages } from '@/hooks/useCrmHub';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
   createDealStage, updateDealStage, deleteDealStage,
 } from '@/services/supabase/crmHub/dealStages';
@@ -24,7 +25,7 @@ import {
 } from '@/components/ui/alert-dialog';
 
 export const CrmSettingsPage: React.FC = () => {
-  const { organization } = useOrganization();
+  const { selected } = useSelectedWorkspace();
 
   return (
     <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-background">
@@ -32,7 +33,7 @@ export const CrmSettingsPage: React.FC = () => {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">CRM Settings</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure your pipeline and CRM defaults for <strong>{organization?.name ?? 'this workspace'}</strong>.
+            Configure the pipeline and CRM defaults for <strong>{selected?.name ?? 'this workspace'}</strong>.
           </p>
         </div>
 
@@ -99,6 +100,7 @@ const GeneralSettings: React.FC = () => {
 
 const PipelineSettings: React.FC = () => {
   const { organization } = useOrganization();
+  const { selected } = useSelectedWorkspace();
   const { items: stages, loading, refresh } = useCrmDealStages();
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -113,11 +115,11 @@ const PipelineSettings: React.FC = () => {
   }, [stages]);
 
   const handleAdd = async () => {
-    if (!organization || !newName.trim()) return;
+    if (!organization || !selected || !newName.trim()) return;
     setBusy(true);
     try {
       const sortOrder = (stages.length ? Math.max(...stages.map((s) => s.sortOrder)) : 0) + 1;
-      await createDealStage(organization.organizationId, { name: newName.trim(), sortOrder });
+      await createDealStage(organization.organizationId, selected.workspaceId, { name: newName.trim(), sortOrder });
       toast.success('Stage added');
       setNewName('');
       await refresh();
@@ -295,6 +297,7 @@ const PipelineSettings: React.FC = () => {
 
 const WorkspaceSettings: React.FC = () => {
   const { organization, canManageSettings } = useOrganization();
+  const { selected } = useSelectedWorkspace();
   return (
     <Card>
       <CardHeader>
@@ -302,11 +305,12 @@ const WorkspaceSettings: React.FC = () => {
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         <div>
-          <Label>Organization name</Label>
-          <p className="text-sm mt-1">{organization?.name ?? '—'}</p>
+          <Label>Workspace name</Label>
+          <p className="text-sm mt-1">{selected?.name ?? 'Not selected'}</p>
         </div>
         <div className="text-xs text-muted-foreground">
-          Organization-level settings (name, members, plan) live in the main app under <a href="/settings" className="text-primary hover:underline">Settings</a>
+          This CRM, its pipeline, currency, contacts, companies, deals and follow-ups belong to <strong>{selected?.name}</strong>.
+          Organization settings for <strong>{organization?.name}</strong> live under <a href="/settings" className="text-primary hover:underline">Settings</a>
           {canManageSettings ? '' : ' — owner/admin only.'}
         </div>
       </CardContent>

@@ -47,6 +47,8 @@ import { useCrmCompanies } from '@/hooks/useCrmHub';
 import { createTask } from '@/services/supabase/crmHub/tasks';
 import { TASK_PRIORITIES } from '@/types/crmHub';
 import type { TaskPriority } from '@/types/crmHub';
+import { useProjects } from '@/hooks/useProjects';
+import type { TaskAssignee } from '@/types/task';
 
 const initials = (name: string) => {
   const parts = name.trim().split(/\s+/).slice(0, 2);
@@ -85,6 +87,7 @@ export const CrmContactDetailPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
+  const { projects: allProjects } = useProjects();
 
   const [contact, setContact] = useState<CrmContact | null>(null);
   const [company, setCompany] = useState<CrmCompany | null>(null);
@@ -106,9 +109,28 @@ export const CrmContactDetailPage: React.FC = () => {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDueDate, setTaskDueDate] = useState('');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('medium');
+  const [taskProjectId, setTaskProjectId] = useState('');
+  const [taskAssigneeId, setTaskAssigneeId] = useState('');
   const { format: fmtCurrency } = useCrmCurrency();
   const [logType, setLogType] = useState<ActivityType>('call');
   const [logBody, setLogBody] = useState('');
+  const workspaceProjects = allProjects.filter((project) => project.workspaceId === contact?.workspaceId);
+  const taskAssignees: TaskAssignee[] = (organization?.members ?? [])
+    .filter((member) => member.status === 'active')
+    .map((member) => ({
+      userId: member.userId,
+      displayName: member.displayName || member.email,
+      email: member.email,
+      photoURL: member.photoURL,
+    }));
+  if (user && !taskAssignees.some((assignee) => assignee.userId === user.userId)) {
+    taskAssignees.unshift({
+      userId: user.userId,
+      displayName: user.displayName || user.email,
+      email: user.email,
+      photoURL: user.photoURL,
+    });
+  }
 
   const refresh = React.useCallback(async () => {
     if (!id || !orgId) return;
@@ -236,7 +258,7 @@ export const CrmContactDetailPage: React.FC = () => {
     <main className="flex-1 min-w-0 overflow-y-auto bg-background">
       <div className="flex items-center justify-between border-b border-border bg-card/40 px-4 py-2 sm:px-6">
         <Button variant="ghost" size="sm" asChild className="gap-1">
-          <Link to="/crm/contacts"><ChevronLeft className="h-4 w-4" />Leads</Link>
+          <Link to="/crm/contacts"><ChevronLeft className="h-4 w-4" />Contacts</Link>
         </Button>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
@@ -532,15 +554,40 @@ export const CrmContactDetailPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewTask} onOpenChange={(o) => { setShowNewTask(o); if (!o) { setTaskTitle(''); setTaskDueDate(''); setTaskPriority('medium'); } }}>
+      <Dialog open={showNewTask} onOpenChange={(o) => { setShowNewTask(o); if (!o) { setTaskTitle(''); setTaskDueDate(''); setTaskPriority('medium'); setTaskProjectId(''); setTaskAssigneeId(''); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>New task for {contact.firstName}</DialogTitle>
+            <DialogTitle>New follow-up for {contact.firstName}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>Title *</Label>
               <Input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} disabled={busy} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Project *</Label>
+                <Select value={taskProjectId} onValueChange={setTaskProjectId} disabled={busy}>
+                  <SelectTrigger><SelectValue placeholder="Choose project" /></SelectTrigger>
+                  <SelectContent>
+                    {workspaceProjects.map((project) => (
+                      <SelectItem key={project.projectId} value={project.projectId}>{project.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Assignee</Label>
+                <Select value={taskAssigneeId || '__none__'} onValueChange={(value) => setTaskAssigneeId(value === '__none__' ? '' : value)} disabled={busy}>
+                  <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
+                    {taskAssignees.map((assignee) => (
+                      <SelectItem key={assignee.userId} value={assignee.userId}>{assignee.displayName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -564,19 +611,29 @@ export const CrmContactDetailPage: React.FC = () => {
             <Button variant="outline" onClick={() => setShowNewTask(false)} disabled={busy}>Cancel</Button>
             <Button
               onClick={async () => {
-                if (!orgId || !taskTitle.trim()) return;
+                if (!orgId || !user || !contact.workspaceId || !taskTitle.trim() || !taskProjectId) return;
+                const project = workspaceProjects.find((item) => item.projectId === taskProjectId);
+                if (!project) { toast.error('Choose a project in this workspace'); return; }
+                const assignee = taskAssignees.find((item) => item.userId === taskAssigneeId) ?? null;
                 setBusy(true);
                 try {
                   await createTask({
                     organizationId: orgId,
-                    workspaceId: contact.workspaceId ?? null,
+                    workspaceId: contact.workspaceId,
+                    projectId: project.projectId,
                     title: taskTitle.trim(),
                     dueDate: taskDueDate || null,
                     priority: taskPriority,
                     contactId: id,
                     companyId: contact.companyId,
-                  }, user?.userId ?? null);
-                  toast.success('Task created');
+                    assignedTo: taskAssigneeId || null,
+                  }, user.userId, {
+                    actorId: user.userId,
+                    assignee,
+                    projectName: project.name,
+                    sharedStatus: [...(project.columns ?? [])].sort((a, b) => a.order - b.order)[0]?.id,
+                  });
+                  toast.success('Follow-up created in CRM, Kanban and Calendar');
                   setShowNewTask(false);
                   setTaskTitle(''); setTaskDueDate(''); setTaskPriority('medium');
                   await refresh();
@@ -586,7 +643,7 @@ export const CrmContactDetailPage: React.FC = () => {
                   setBusy(false);
                 }
               }}
-              disabled={busy || !taskTitle.trim()}
+              disabled={busy || !taskTitle.trim() || !taskProjectId}
             >
               {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Create
             </Button>

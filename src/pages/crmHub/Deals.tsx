@@ -97,7 +97,7 @@ const StageColumn: React.FC<{
           />
         ))}
         {deals.length === 0 && (
-          <div className="text-xs text-muted-foreground text-center py-6">No contracts</div>
+          <div className="text-xs text-muted-foreground text-center py-6">No deals</div>
         )}
       </div>
     </div>
@@ -168,7 +168,7 @@ export const CrmDealsPage: React.FC = () => {
 
   const handleCreate = async () => {
     if (!organization) return;
-    if (!name.trim()) { toast.error('Contract name is required'); return; }
+    if (!name.trim()) { toast.error('Deal name is required'); return; }
     if (!stageId) { toast.error('Pick a stage'); return; }
     setBusy(true);
     try {
@@ -184,7 +184,7 @@ export const CrmDealsPage: React.FC = () => {
         },
         user?.userId ?? null,
       );
-      toast.success('Contract created');
+      toast.success('Deal created');
       resetForm();
       setShowCreate(false);
       await refreshDeals();
@@ -201,7 +201,7 @@ export const CrmDealsPage: React.FC = () => {
     <main className="flex-1 min-w-0 overflow-hidden flex flex-col bg-background">
       <div className="p-4 sm:p-6 flex items-center justify-between gap-4 flex-wrap border-b border-border">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Contract</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">Deals</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Pipeline {fmtCurrency(totalOpenValue)} · Forecast {fmtCurrency(forecast)}
           </p>
@@ -261,15 +261,15 @@ export const CrmDealsPage: React.FC = () => {
           <TabsContent value="list" className="flex-1 min-h-0 m-0 overflow-y-auto">
             <div className="p-4 sm:p-6">
               {filteredDeals.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-12">No contracts match the filter.</p>
+                <p className="text-sm text-muted-foreground text-center py-12">No deals match the filter.</p>
               ) : (
                 <div className="rounded-lg border border-border overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-xs uppercase tracking-wide text-muted-foreground border-b border-border bg-muted/40">
-                        <th className="text-left py-2 px-3 font-medium">Contract</th>
-                        <th className="text-left py-2 px-3 font-medium">Business</th>
-                        <th className="text-left py-2 px-3 font-medium">Lead</th>
+                        <th className="text-left py-2 px-3 font-medium">Deal</th>
+                        <th className="text-left py-2 px-3 font-medium">Company</th>
+                        <th className="text-left py-2 px-3 font-medium">Contact</th>
                         <th className="text-right py-2 px-3 font-medium">Value</th>
                         <th className="text-right py-2 px-3 font-medium">Prob.</th>
                         <th className="text-left py-2 px-3 font-medium">Stage</th>
@@ -323,7 +323,7 @@ export const CrmDealsPage: React.FC = () => {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label htmlFor="dname">Contract name *</Label>
+              <Label htmlFor="dname">Deal name *</Label>
               <Input id="dname" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
             </div>
             <div className="grid grid-cols-2 gap-3">

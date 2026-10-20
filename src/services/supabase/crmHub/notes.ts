@@ -75,6 +75,7 @@ export const createNote = async (input: CreateNoteInput, userId: string | null):
   tryLogActivity(
     {
       organizationId: note.organizationId,
+      workspaceId: note.workspaceId,
       type: 'note',
       description: note.body.length > 240 ? `${note.body.slice(0, 240)}…` : note.body,
       contactId: note.contactId,

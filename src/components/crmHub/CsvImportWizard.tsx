@@ -42,7 +42,7 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'category', label: 'Category' },
   ],
   companies: [
-    { key: 'name', label: 'Business name', required: true },
+    { key: 'name', label: 'Company name', required: true },
     { key: 'website', label: 'Website' },
     { key: 'industry', label: 'Industry' },
     { key: 'phone', label: 'Phone' },
@@ -50,7 +50,7 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'address', label: 'Address' },
     { key: 'city', label: 'City' },
     { key: 'country', label: 'Country' },
-    { key: 'company_size', label: 'Business size' },
+    { key: 'company_size', label: 'Company size' },
     { key: 'annual_revenue', label: 'Annual revenue' },
   ],
 };
@@ -61,8 +61,8 @@ const TABLE: Record<ImportResource, string> = {
 };
 
 const RESOURCE_LABEL: Record<ImportResource, { singular: string; plural: string; titleCase: string }> = {
-  contacts: { singular: 'lead', plural: 'leads', titleCase: 'Leads' },
-  companies: { singular: 'business', plural: 'businesses', titleCase: 'Businesses' },
+  contacts: { singular: 'contact', plural: 'contacts', titleCase: 'Contacts' },
+  companies: { singular: 'company', plural: 'companies', titleCase: 'Companies' },
 };
 
 // Only these values are valid for the two enum-constrained contact columns —

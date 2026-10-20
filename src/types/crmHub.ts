@@ -47,6 +47,7 @@ export type DealStatus = 'open' | 'won' | 'lost';
 export interface CrmDealStage {
   id: string;
   organizationId: string;
+  workspaceId: string;
   name: string;
   sortOrder: number;
   probability: number;
@@ -194,6 +195,8 @@ export interface CrmTask {
   contactId: string | null;
   companyId: string | null;
   dealId: string | null;
+  projectId: string | null;
+  sharedTaskId: string | null;
   title: string;
   description: string | null;
   dueDate: Date | null;
@@ -206,7 +209,8 @@ export interface CrmTask {
 
 export interface CreateTaskInput {
   organizationId: string;
-  workspaceId?: string | null;
+  workspaceId: string;
+  projectId: string;
   title: string;
   description?: string | null;
   dueDate?: string | null;
@@ -288,6 +292,7 @@ export interface CreateNoteInput {
 export interface CrmTag {
   id: string;
   organizationId: string;
+  workspaceId: string;
   name: string;
   color: string;
   createdAt: Date;

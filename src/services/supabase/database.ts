@@ -34,7 +34,7 @@ const PROJECTS_SAFE_SELECT =
 
 /** Task columns safe for the browser—never includes lock_pin_hash. Requires migration 027 (has_lock_pin). */
 export const TASKS_SAFE_SELECT =
-  "task_id, project_id, organization_id, title, description, status, priority, priority_color, due_date, assignees, tags, subtasks, parent_task_id, urgent, is_locked, has_lock_pin, position, attachments, comments_count, created_by, created_at, updated_at, completed_at, google_meet_link, google_event_id, source_deal_id, source_client_id";
+  "task_id, project_id, organization_id, title, description, status, priority, priority_color, due_date, assignees, tags, subtasks, parent_task_id, urgent, is_locked, has_lock_pin, position, attachments, comments_count, created_by, created_at, updated_at, completed_at, google_meet_link, google_event_id, source_deal_id, source_client_id, source_crm_deal_id, source_crm_contact_id";
 
 const userEmailCache = new Map<
   string,
@@ -1018,6 +1018,8 @@ export const createTask = async (
     completed_at: null,
     source_deal_id: input.sourceDealId ?? null,
     source_client_id: input.sourceClientId ?? null,
+    source_crm_deal_id: input.sourceCrmDealId ?? null,
+    source_crm_contact_id: input.sourceCrmContactId ?? null,
   };
 
   const { data, error } = await supabase
@@ -1116,6 +1118,8 @@ export const createTask = async (
     googleEventId: data.google_event_id ?? null,
     sourceDealId: data.source_deal_id ?? null,
     sourceClientId: data.source_client_id ?? null,
+    sourceCrmDealId: data.source_crm_deal_id ?? null,
+    sourceCrmContactId: data.source_crm_contact_id ?? null,
   } as Task;
 };
 
@@ -1160,6 +1164,8 @@ export const getTask = async (
     googleEventId: data.google_event_id ?? null,
     sourceDealId: data.source_deal_id ?? null,
     sourceClientId: data.source_client_id ?? null,
+    sourceCrmDealId: data.source_crm_deal_id ?? null,
+    sourceCrmContactId: data.source_crm_contact_id ?? null,
   } as Task;
 };
 
@@ -1213,6 +1219,8 @@ export const getProjectTasks = async (
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
+    sourceCrmDealId: task.source_crm_deal_id ?? null,
+    sourceCrmContactId: task.source_crm_contact_id ?? null,
   })) as Task[];
 
   if (userId && tasks.some((t) => t.isLocked)) {
@@ -1276,6 +1284,8 @@ export const getOrganizationTasks = async (
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
+    sourceCrmDealId: task.source_crm_deal_id ?? null,
+    sourceCrmContactId: task.source_crm_contact_id ?? null,
   })) as Task[];
 };
 
@@ -1504,6 +1514,8 @@ export const getTasksAssignedToUser = async (
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
+    sourceCrmDealId: task.source_crm_deal_id ?? null,
+    sourceCrmContactId: task.source_crm_contact_id ?? null,
   })) as Task[];
 };
 

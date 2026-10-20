@@ -2,6 +2,7 @@ import { supabase } from '../config';
 import type { CrmDeal, CreateDealInput, UpdateDealInput, DealStatus } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
 import { applyWorkspaceFilter } from './workspaceFilter';
+import { projectMatchesDealWorkspace } from '@/lib/crmWorkspace';
 
 interface DealRow {
   id: string;
@@ -97,6 +98,7 @@ export const createDeal = async (input: CreateDealInput, ownerId: string | null)
   tryLogActivity(
     {
       organizationId: deal.organizationId,
+      workspaceId: deal.workspaceId,
       type: 'deal_created',
       dealId: deal.id,
       contactId: deal.contactId,
@@ -153,6 +155,7 @@ export const moveDealToStage = async (
   tryLogActivity(
     {
       organizationId: deal.organizationId,
+      workspaceId: deal.workspaceId,
       type: activityType,
       dealId: deal.id,
       contactId: deal.contactId,
@@ -175,6 +178,22 @@ export const linkDealHandoff = async (
   id: string,
   patch: { workspaceId?: string | null; projectId?: string | null },
 ): Promise<CrmDeal> => {
+  if (!patch.workspaceId || !patch.projectId) {
+    throw new Error('A deal handoff requires a workspace and project.');
+  }
+  const [{ data: dealScope, error: dealError }, { data: projectScope, error: projectError }] = await Promise.all([
+    supabase.from('crm_deals').select('organization_id, workspace_id').eq('id', id).single(),
+    supabase.from('projects').select('organization_id, workspace_id').eq('project_id', patch.projectId).single(),
+  ]);
+  if (dealError) throw dealError;
+  if (projectError) throw projectError;
+  if (dealScope.organization_id !== projectScope.organization_id || !projectMatchesDealWorkspace(
+    dealScope.workspace_id as string | null,
+    projectScope.workspace_id as string | null,
+    patch.workspaceId,
+  )) {
+    throw new Error('The deal and project must belong to the same workspace.');
+  }
   const row: Record<string, unknown> = {};
   if (patch.workspaceId !== undefined) row.workspace_id = patch.workspaceId;
   if (patch.projectId !== undefined) row.project_id = patch.projectId;
@@ -189,6 +208,7 @@ export const linkDealHandoff = async (
   tryLogActivity(
     {
       organizationId: deal.organizationId,
+      workspaceId: deal.workspaceId,
       type: 'deal_updated',
       dealId: deal.id,
       contactId: deal.contactId,

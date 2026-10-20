@@ -71,7 +71,7 @@ export const CrmDealDetailPage: React.FC = () => {
       if (!d) { setNotFound(true); return; }
       setDeal(d);
       const [stageRows, actRows, noteRows, taskRows] = await Promise.all([
-        listDealStages(orgId),
+        d.workspaceId ? listDealStages(orgId, d.workspaceId) : Promise.resolve([]),
         listActivities(orgId, { dealId: id, limit: 100 }),
         listNotes(orgId, { dealId: id }),
         listTasks(orgId, { dealId: id }),

@@ -149,7 +149,7 @@ export const CrmContactsPage: React.FC = () => {
         },
         user?.userId ?? null,
       );
-      toast.success('Lead created');
+      toast.success('Contact created');
       resetForm();
       setShowCreate(false);
       await refresh();
@@ -164,7 +164,7 @@ export const CrmContactsPage: React.FC = () => {
     setBusy(true);
     try {
       await deleteContact(id);
-      toast.success('Lead deleted');
+      toast.success('Contact deleted');
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
@@ -179,7 +179,7 @@ export const CrmContactsPage: React.FC = () => {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Leads</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Contacts</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Every person in your pipeline — sorted by first name.
             </p>
@@ -491,7 +491,7 @@ export const CrmContactsPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
             <AlertDialogDescription>
-              This can't be undone. Any contracts or activities linked to this lead will lose the reference.
+              This can't be undone. Any deals or activities linked to this contact will lose the reference.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -4,6 +4,12 @@ import type {
 } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
 import { applyWorkspaceFilter } from './workspaceFilter';
+import {
+  createTask as createProjectTask,
+  updateTask as updateProjectTask,
+  deleteTask as deleteProjectTask,
+} from '../database';
+import type { TaskAssignee } from '@/types/task';
 
 interface TaskRow {
   id: string;
@@ -14,6 +20,8 @@ interface TaskRow {
   contact_id: string | null;
   company_id: string | null;
   deal_id: string | null;
+  project_id: string | null;
+  shared_task_id: string | null;
   title: string;
   description: string | null;
   due_date: string | null;
@@ -33,6 +41,8 @@ const mapTask = (r: TaskRow): CrmTask => ({
   contactId: r.contact_id,
   companyId: r.company_id,
   dealId: r.deal_id,
+  projectId: r.project_id,
+  sharedTaskId: r.shared_task_id,
   title: r.title,
   description: r.description,
   dueDate: r.due_date ? new Date(r.due_date) : null,
@@ -68,12 +78,42 @@ export const listTasks = async (
   return (data ?? []).map(mapTask);
 };
 
-export const createTask = async (input: CreateTaskInput, ownerId: string | null): Promise<CrmTask> => {
+export interface LinkedTaskOptions {
+  actorId: string;
+  assignee?: TaskAssignee | null;
+  projectName?: string;
+  sharedStatus?: string;
+}
+
+const projectPriority = (priority: TaskPriority | undefined): 'low' | 'medium' | 'high' =>
+  priority === 'urgent' ? 'high' : priority ?? 'medium';
+
+export const createTask = async (
+  input: CreateTaskInput,
+  ownerId: string | null,
+  options: LinkedTaskOptions,
+): Promise<CrmTask> => {
+  const sharedTask = await createProjectTask(options.actorId, {
+    projectId: input.projectId,
+    projectName: options.projectName,
+    title: input.title,
+    description: input.description ?? undefined,
+    dueDate: input.dueDate ? new Date(input.dueDate) : null,
+    priority: projectPriority(input.priority),
+    urgent: input.priority === 'urgent',
+    status: options.sharedStatus,
+    assignees: options.assignee ? [options.assignee] : [],
+    sourceCrmDealId: input.dealId ?? null,
+    sourceCrmContactId: input.contactId ?? null,
+  }, input.organizationId);
+
   const { data, error } = await supabase
     .from('crm_tasks')
     .insert({
       organization_id: input.organizationId,
-      workspace_id: input.workspaceId ?? null,
+      workspace_id: input.workspaceId,
+      project_id: input.projectId,
+      shared_task_id: sharedTask.taskId,
       owner_id: ownerId,
       assigned_to: input.assignedTo ?? ownerId,
       contact_id: input.contactId ?? null,
@@ -87,11 +127,18 @@ export const createTask = async (input: CreateTaskInput, ownerId: string | null)
     })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    await deleteProjectTask(sharedTask.taskId, input.organizationId).catch(() => undefined);
+    throw error;
+  }
   return mapTask(data);
 };
 
-export const updateTask = async (id: string, input: UpdateTaskInput): Promise<CrmTask> => {
+export const updateTask = async (
+  id: string,
+  input: UpdateTaskInput,
+  options?: Pick<LinkedTaskOptions, 'assignee' | 'sharedStatus'>,
+): Promise<CrmTask> => {
   const patch: Record<string, unknown> = {};
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
@@ -114,10 +161,22 @@ export const updateTask = async (id: string, input: UpdateTaskInput): Promise<Cr
     .single();
   if (error) throw error;
   const task = mapTask(data);
+  if (task.sharedTaskId) {
+    await updateProjectTask(task.sharedTaskId, {
+      title: input.title,
+      description: input.description ?? undefined,
+      dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
+      priority: input.priority === undefined ? undefined : projectPriority(input.priority),
+      urgent: input.priority === undefined ? undefined : input.priority === 'urgent',
+      status: options?.sharedStatus,
+      assignees: options?.assignee === undefined ? undefined : options.assignee ? [options.assignee] : [],
+    }, task.organizationId);
+  }
   if (input.status === 'completed') {
     tryLogActivity(
       {
         organizationId: task.organizationId,
+        workspaceId: task.workspaceId,
         type: 'task_completed',
         taskId: task.id,
         contactId: task.contactId,
@@ -132,6 +191,14 @@ export const updateTask = async (id: string, input: UpdateTaskInput): Promise<Cr
 };
 
 export const deleteTask = async (id: string): Promise<void> => {
+  const { data: row } = await supabase
+    .from('crm_tasks')
+    .select('shared_task_id, organization_id')
+    .eq('id', id)
+    .maybeSingle();
   const { error } = await supabase.from('crm_tasks').delete().eq('id', id);
   if (error) throw error;
+  if (row?.shared_task_id) {
+    await deleteProjectTask(row.shared_task_id as string, row.organization_id as string);
+  }
 };

@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   Contact, Building2, Handshake, ListChecks, Waypoints, Tag,
-  PieChart as PieIcon, CalendarRange, LayoutDashboard, Settings as SettingsIcon,
+  LayoutDashboard, Settings as SettingsIcon, Loader2,
   Layers,
 } from 'lucide-react';
 import { CrmCurrencyProvider } from '@/context/CrmCurrencyContext';
@@ -15,16 +15,14 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-  { to: '/crm/contacts', label: 'Leads', icon: Contact },
-  { to: '/crm/companies', label: 'Business', icon: Building2 },
-  { to: '/crm/deals', label: 'Contract', icon: Handshake },
-  { to: '/crm/tasks', label: 'Tasks', icon: ListChecks },
+  { to: '/crm/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/crm/contacts', label: 'Contacts', icon: Contact },
+  { to: '/crm/companies', label: 'Companies', icon: Building2 },
+  { to: '/crm/deals', label: 'Deals', icon: Handshake },
+  { to: '/crm/tasks', label: 'Follow-ups', icon: ListChecks },
   { to: '/crm/activity', label: 'Activity', icon: Waypoints },
-  { to: '/crm/calendar', label: 'Calendar', icon: CalendarRange },
-  { to: '/crm/reports', label: 'Reports', icon: PieIcon },
   { to: '/crm/tags', label: 'Tags', icon: Tag },
   { to: '/crm/settings', label: 'Settings', icon: SettingsIcon },
-  { to: '/crm/dashboard', label: 'Dashboard', icon: LayoutDashboard },
 ];
 
 export const CrmLayout: React.FC = () => (
@@ -34,7 +32,25 @@ export const CrmLayout: React.FC = () => (
 );
 
 const CrmLayoutInner: React.FC = () => {
-  const { selected, isAll, isUnassigned } = useSelectedWorkspace();
+  const { selected, isAll, isUnassigned, select, DEFAULT_WORKSPACE_ID, workspaces, loading } = useSelectedWorkspace();
+
+  useEffect(() => {
+    if (loading || (!isAll && !isUnassigned)) return;
+    const target = workspaces.find((workspace) => workspace.workspaceId === DEFAULT_WORKSPACE_ID)
+      ?? workspaces[0];
+    if (target) select(target.workspaceId);
+  }, [DEFAULT_WORKSPACE_ID, isAll, isUnassigned, loading, select, workspaces]);
+
+  if (loading || !selected) {
+    return (
+      <div className="flex-1 grid place-items-center bg-background">
+        <div className="text-center text-muted-foreground">
+          <Loader2 className="w-7 h-7 animate-spin mx-auto mb-2" />
+          {workspaces.length === 0 && !loading ? 'Create a workspace to open CRM.' : 'Opening workspace CRM...'}
+        </div>
+      </div>
+    );
+  }
   const scopeLabel = isAll
     ? 'All workspaces'
     : isUnassigned

@@ -105,14 +105,14 @@ export const CrmDashboardPage: React.FC = () => {
   }
 
   const kpis: (KpiProps & { hint?: string })[] = [
-    { label: 'Leads', value: contacts.length, icon: Users2, to: '/crm/contacts' },
-    { label: 'Business', value: companies.length, icon: Building2, to: '/crm/companies' },
-    { label: 'Open contracts', value: open.length, icon: Briefcase, to: '/crm/deals' },
-    { label: 'Won contracts', value: won.length, icon: Trophy, to: '/crm/deals' },
-    { label: 'Lost contracts', value: lost.length, icon: AlertOctagon, to: '/crm/deals' },
+    { label: 'Contacts', value: contacts.length, icon: Users2, to: '/crm/contacts' },
+    { label: 'Companies', value: companies.length, icon: Building2, to: '/crm/companies' },
+    { label: 'Open deals', value: open.length, icon: Briefcase, to: '/crm/deals' },
+    { label: 'Won deals', value: won.length, icon: Trophy, to: '/crm/deals' },
+    { label: 'Lost deals', value: lost.length, icon: AlertOctagon, to: '/crm/deals' },
     { label: 'Pipeline value', value: fmtCurrency(pipelineValue), icon: BarChart3, to: '/crm/deals' },
-    { label: 'Forecast', value: fmtCurrency(forecast), icon: BarChart3, to: '/crm/reports' },
-    { label: 'Overdue tasks', value: overdueTasks.length, icon: CalendarClock, to: '/crm/tasks' },
+    { label: 'Forecast', value: fmtCurrency(forecast), icon: BarChart3, to: '/reports' },
+    { label: 'Overdue follow-ups', value: overdueTasks.length, icon: CalendarClock, to: '/crm/tasks' },
   ];
 
   return (

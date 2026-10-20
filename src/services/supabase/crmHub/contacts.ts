@@ -102,6 +102,7 @@ export const createContact = async (input: CreateContactInput, ownerId: string |
   tryLogActivity(
     {
       organizationId: contact.organizationId,
+      workspaceId: contact.workspaceId,
       type: 'contact_created',
       contactId: contact.id,
       description: `${contact.firstName} ${contact.lastName ?? ''}`.trim(),

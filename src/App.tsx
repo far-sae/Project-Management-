@@ -37,8 +37,6 @@ const CrmDealsPage = React.lazy(() => import('@/pages/crmHub/Deals').then((m) =>
 const CrmTasksPage = React.lazy(() => import('@/pages/crmHub/Tasks').then((m) => ({ default: m.CrmTasksPage })));
 const CrmActivityPage = React.lazy(() => import('@/pages/crmHub/Activity').then((m) => ({ default: m.CrmActivityPage })));
 const CrmTagsPage = React.lazy(() => import('@/pages/crmHub/Tags').then((m) => ({ default: m.CrmTagsPage })));
-const CrmReportsPage = React.lazy(() => import('@/pages/crmHub/Reports').then((m) => ({ default: m.CrmReportsPage })));
-const CrmCalendarPage = React.lazy(() => import('@/pages/crmHub/Calendar').then((m) => ({ default: m.CrmCalendarPage })));
 const CrmLayout = React.lazy(() => import('@/pages/crmHub/CrmLayout').then((m) => ({ default: m.CrmLayout })));
 const CrmContactDetailPage = React.lazy(() => import('@/pages/crmHub/ContactDetail').then((m) => ({ default: m.CrmContactDetailPage })));
 const CrmCompanyDetailPage = React.lazy(() => import('@/pages/crmHub/CompanyDetail').then((m) => ({ default: m.CrmCompanyDetailPage })));
@@ -308,7 +306,7 @@ const router = createBrowserRouter(
               children: [
                 { index: true, element: <Navigate to="/crm/dashboard" replace /> },
                 { path: 'dashboard',    element: lazyAppRoute(<CrmDashboardPage />) },
-                { path: 'reports',      element: lazyAppRoute(<CrmReportsPage />) },
+                { path: 'reports',      element: <Navigate to="/reports" replace /> },
                 { path: 'contacts',     element: lazyAppRoute(<CrmContactsPage />) },
                 { path: 'contacts/:id', element: lazyAppRoute(<CrmContactDetailPage />) },
                 { path: 'companies',    element: lazyAppRoute(<CrmCompaniesPage />) },
@@ -318,7 +316,7 @@ const router = createBrowserRouter(
                 { path: 'tasks',        element: lazyAppRoute(<CrmTasksPage />) },
                 { path: 'activity',     element: lazyAppRoute(<CrmActivityPage />) },
                 { path: 'tags',         element: lazyAppRoute(<CrmTagsPage />) },
-                { path: 'calendar',     element: lazyAppRoute(<CrmCalendarPage />) },
+                { path: 'calendar',     element: <Navigate to="/calendar" replace /> },
                 { path: 'settings',     element: lazyAppRoute(<CrmSettingsPage />) },
               ],
             },

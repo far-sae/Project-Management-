@@ -4,6 +4,7 @@ import type { CrmTag } from '@/types/crmHub';
 interface TagRow {
   id: string;
   organization_id: string;
+  workspace_id: string;
   name: string;
   color: string;
   created_at: string;
@@ -12,16 +13,18 @@ interface TagRow {
 const mapTag = (r: TagRow): CrmTag => ({
   id: r.id,
   organizationId: r.organization_id,
+  workspaceId: r.workspace_id,
   name: r.name,
   color: r.color,
   createdAt: new Date(r.created_at),
 });
 
-export const listTags = async (organizationId: string): Promise<CrmTag[]> => {
+export const listTags = async (organizationId: string, workspaceId: string): Promise<CrmTag[]> => {
   const { data, error } = await supabase
     .from('crm_tags')
     .select('*')
     .eq('organization_id', organizationId)
+    .eq('workspace_id', workspaceId)
     .order('name', { ascending: true });
   if (error) throw error;
   return (data ?? []).map(mapTag);
@@ -29,12 +32,13 @@ export const listTags = async (organizationId: string): Promise<CrmTag[]> => {
 
 export const createTag = async (
   organizationId: string,
+  workspaceId: string,
   name: string,
   color = '#f97316',
 ): Promise<CrmTag> => {
   const { data, error } = await supabase
     .from('crm_tags')
-    .insert({ organization_id: organizationId, name, color })
+    .insert({ organization_id: organizationId, workspace_id: workspaceId, name, color })
     .select()
     .single();
   if (error) throw error;
@@ -69,11 +73,12 @@ export const listContactTagIds = async (contactId: string): Promise<string[]> =>
 
 /** Map every contact_id in the org to its list of tag_ids. Single round-trip
  *  so the list page can render tag pills without an N+1 lookup. */
-export const listContactTagsMap = async (organizationId: string): Promise<Map<string, string[]>> => {
+export const listContactTagsMap = async (organizationId: string, workspaceId: string): Promise<Map<string, string[]>> => {
   const { data, error } = await supabase
     .from('crm_contact_tags')
     .select('contact_id, tag_id, crm_contacts!inner(organization_id)')
-    .eq('crm_contacts.organization_id', organizationId);
+    .eq('crm_contacts.organization_id', organizationId)
+    .eq('crm_contacts.workspace_id', workspaceId);
   if (error) throw error;
   const map = new Map<string, string[]>();
   for (const row of data ?? []) {

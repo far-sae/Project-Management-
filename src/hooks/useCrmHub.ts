@@ -9,6 +9,7 @@ import { listTasks } from '@/services/supabase/crmHub/tasks';
 import { listActivities } from '@/services/supabase/crmHub/activities';
 import { listTags, listContactTagsMap } from '@/services/supabase/crmHub/tags';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
+import { concreteCrmWorkspaceId } from '@/lib/crmWorkspace';
 import type { CrmActivity, CrmCompany, CrmContact, CrmDeal, CrmDealStage, CrmTag, CrmTask } from '@/types/crmHub';
 
 interface UseListResult<T> {
@@ -36,11 +37,9 @@ const useOrgId = () => {
  * their dep array, and switching to "All" would otherwise keep the old
  * filter cached.
  */
-const useWorkspaceFilter = (): string | null | undefined => {
+export const useCrmWorkspaceId = (): string | null => {
   const { selectedId, isAll, isUnassigned } = useSelectedWorkspace();
-  if (isAll) return undefined;
-  if (isUnassigned) return null;
-  return selectedId;
+  return concreteCrmWorkspaceId(selectedId, isAll, isUnassigned);
 };
 
 /**
@@ -51,20 +50,18 @@ const useWorkspaceFilter = (): string | null | undefined => {
  * switch scopes.
  */
 export const useWorkspaceForCreate = (): string | null => {
-  const { selectedId, isAll, isUnassigned } = useSelectedWorkspace();
-  if (isAll || isUnassigned) return null;
-  return selectedId;
+  return useCrmWorkspaceId();
 };
 
 export const useCrmCompanies = (): UseListResult<CrmCompany> => {
   const orgId = useOrgId();
-  const workspaceId = useWorkspaceFilter();
+  const workspaceId = useCrmWorkspaceId();
   const [items, setItems] = useState<CrmCompany[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setItems([]); return; }
+    if (!orgId || !workspaceId) { setItems([]); return; }
     setLoading(true);
     setError(null);
     try {
@@ -93,13 +90,13 @@ export const useCrmCompanies = (): UseListResult<CrmCompany> => {
 
 export const useCrmContacts = (): UseListResult<CrmContact> => {
   const orgId = useOrgId();
-  const workspaceId = useWorkspaceFilter();
+  const workspaceId = useCrmWorkspaceId();
   const [items, setItems] = useState<CrmContact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setItems([]); return; }
+    if (!orgId || !workspaceId) { setItems([]); return; }
     setLoading(true);
     setError(null);
     try {
@@ -128,20 +125,21 @@ export const useCrmContacts = (): UseListResult<CrmContact> => {
 
 export const useCrmDealStages = (): UseListResult<CrmDealStage> => {
   const orgId = useOrgId();
+  const workspaceId = useCrmWorkspaceId();
   const [items, setItems] = useState<CrmDealStage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setItems([]); return; }
+    if (!orgId || !workspaceId) { setItems([]); return; }
     setLoading(true);
     setError(null);
     try {
-      let stages = await listDealStages(orgId);
+      let stages = await listDealStages(orgId, workspaceId);
       if (stages.length === 0) {
         // First-time visit for an org: seed the seven default HubSpot-style stages.
-        await seedDefaultDealStages(orgId);
-        stages = await listDealStages(orgId);
+        await seedDefaultDealStages(orgId, workspaceId);
+        stages = await listDealStages(orgId, workspaceId);
       }
       setItems(stages);
     } catch (e) {
@@ -149,7 +147,7 @@ export const useCrmDealStages = (): UseListResult<CrmDealStage> => {
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -159,13 +157,13 @@ export const useCrmDealStages = (): UseListResult<CrmDealStage> => {
 
 export const useCrmDeals = (): UseListResult<CrmDeal> => {
   const orgId = useOrgId();
-  const workspaceId = useWorkspaceFilter();
+  const workspaceId = useCrmWorkspaceId();
   const [items, setItems] = useState<CrmDeal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setItems([]); return; }
+    if (!orgId || !workspaceId) { setItems([]); return; }
     setLoading(true);
     setError(null);
     try {
@@ -194,22 +192,23 @@ export const useCrmDeals = (): UseListResult<CrmDeal> => {
 
 export const useCrmTags = (): UseListResult<CrmTag> => {
   const orgId = useOrgId();
+  const workspaceId = useCrmWorkspaceId();
   const [items, setItems] = useState<CrmTag[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setItems([]); return; }
+    if (!orgId || !workspaceId) { setItems([]); return; }
     setLoading(true);
     setError(null);
     try {
-      setItems(await listTags(orgId));
+      setItems(await listTags(orgId, workspaceId));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load tags');
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -233,16 +232,17 @@ interface UseContactTagsMapResult {
 
 export const useContactTagsMap = (): UseContactTagsMapResult => {
   const orgId = useOrgId();
+  const workspaceId = useCrmWorkspaceId();
   const [map, setMap] = useState<Map<string, string[]>>(new Map());
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setMap(new Map()); return; }
+    if (!orgId || !workspaceId) { setMap(new Map()); return; }
     try {
-      setMap(await listContactTagsMap(orgId));
+      setMap(await listContactTagsMap(orgId, workspaceId));
     } catch {
       /* silent — the tag pills just don't render */
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -260,13 +260,13 @@ export const useContactTagsMap = (): UseContactTagsMapResult => {
 
 export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
   const orgId = useOrgId();
-  const workspaceId = useWorkspaceFilter();
+  const workspaceId = useCrmWorkspaceId();
   const [items, setItems] = useState<CrmActivity[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setItems([]); return; }
+    if (!orgId || !workspaceId) { setItems([]); return; }
     setLoading(true);
     setError(null);
     try {
@@ -295,13 +295,13 @@ export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
 
 export const useCrmTasks = (): UseListResult<CrmTask> => {
   const orgId = useOrgId();
-  const workspaceId = useWorkspaceFilter();
+  const workspaceId = useCrmWorkspaceId();
   const [items, setItems] = useState<CrmTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!orgId) { setItems([]); return; }
+    if (!orgId || !workspaceId) { setItems([]); return; }
     setLoading(true);
     setError(null);
     try {

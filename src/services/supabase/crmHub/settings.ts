@@ -2,55 +2,51 @@ import { supabase } from '../config';
 import type { CurrencyCode } from '@/lib/crmCurrency';
 import { DEFAULT_CURRENCY } from '@/lib/crmCurrency';
 
-/**
- * CRM-scoped org settings — stored in `organizations.settings` jsonb under
- * the `crm` key. No new table needed; RLS on the organizations table already
- * gates read/write to org members / admins.
- */
-
-interface CrmSettings {
+export interface CrmSettings {
   currency: CurrencyCode;
 }
 
-const DEFAULT_SETTINGS: CrmSettings = {
-  currency: DEFAULT_CURRENCY,
-};
+const DEFAULT_SETTINGS: CrmSettings = { currency: DEFAULT_CURRENCY };
 
-export async function getCrmSettings(organizationId: string): Promise<CrmSettings> {
+export async function getCrmSettings(
+  organizationId: string,
+  workspaceId: string,
+): Promise<CrmSettings> {
   const { data, error } = await supabase
-    .from('organizations')
-    .select('settings')
+    .from('workspaces')
+    .select('crm_settings')
+    .eq('workspace_id', workspaceId)
     .eq('organization_id', organizationId)
     .maybeSingle();
   if (error) throw error;
-  const raw = (data?.settings as Record<string, unknown> | null | undefined) ?? {};
-  const crm = (raw.crm as Record<string, unknown> | undefined) ?? {};
-  const currency = typeof crm.currency === 'string' ? (crm.currency as CurrencyCode) : DEFAULT_SETTINGS.currency;
+  const crm = (data?.crm_settings as Record<string, unknown> | null | undefined) ?? {};
+  const currency = typeof crm.currency === 'string'
+    ? (crm.currency as CurrencyCode)
+    : DEFAULT_SETTINGS.currency;
   return { currency };
 }
 
-export async function updateCrmSettings(organizationId: string, patch: Partial<CrmSettings>): Promise<CrmSettings> {
-  // Fetch existing settings, merge, write back — avoids clobbering non-CRM
-  // keys other features may store on organizations.settings.
-  const { data: row, error: readErr } = await supabase
-    .from('organizations')
-    .select('settings')
+export async function updateCrmSettings(
+  organizationId: string,
+  workspaceId: string,
+  patch: Partial<CrmSettings>,
+): Promise<CrmSettings> {
+  const { data: row, error: readError } = await supabase
+    .from('workspaces')
+    .select('crm_settings')
+    .eq('workspace_id', workspaceId)
     .eq('organization_id', organizationId)
     .maybeSingle();
-  if (readErr) throw readErr;
+  if (readError) throw readError;
 
-  const raw = (row?.settings as Record<string, unknown> | null | undefined) ?? {};
-  const existingCrm = (raw.crm as Record<string, unknown> | undefined) ?? {};
-  const nextCrm = { ...existingCrm, ...patch };
-  const nextSettings = { ...raw, crm: nextCrm };
-
-  const { error: writeErr } = await supabase
-    .from('organizations')
-    .update({ settings: nextSettings })
+  const current = (row?.crm_settings as Record<string, unknown> | null | undefined) ?? {};
+  const next = { ...current, ...patch };
+  const { error: writeError } = await supabase
+    .from('workspaces')
+    .update({ crm_settings: next })
+    .eq('workspace_id', workspaceId)
     .eq('organization_id', organizationId);
-  if (writeErr) throw writeErr;
+  if (writeError) throw writeError;
 
-  return {
-    currency: (nextCrm.currency as CurrencyCode) ?? DEFAULT_SETTINGS.currency,
-  };
+  return { currency: (next.currency as CurrencyCode) ?? DEFAULT_SETTINGS.currency };
 }
