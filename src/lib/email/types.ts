@@ -281,6 +281,7 @@ export interface SendWindow {
 
 export interface MailboxHealth {
   id: string;
+  workspaceId?: string | null;
   label: string;
   fromEmail: string;
   isActive: boolean;

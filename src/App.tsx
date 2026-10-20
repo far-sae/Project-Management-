@@ -44,6 +44,7 @@ const CrmDealDetailPage = React.lazy(() => import('@/pages/crmHub/DealDetail').t
 const CrmDashboardPage = React.lazy(() => import('@/pages/crmHub/Dashboard').then((m) => ({ default: m.CrmDashboardPage })));
 const CrmSettingsPage = React.lazy(() => import('@/pages/crmHub/Settings').then((m) => ({ default: m.CrmSettingsPage })));
 const EmailPage = React.lazy(() => import('@/pages/Email').then((m) => ({ default: m.Email })));
+const SocialMediaPage = React.lazy(() => import('@/pages/SocialMedia').then((m) => ({ default: m.SocialMedia })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
 const AdminDashboard = React.lazy(() => import('@/pages/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const ProjectsDashboard = React.lazy(() => import('@/pages/dashboards/ProjectsDashboard').then((m) => ({ default: m.ProjectsDashboard })));
@@ -325,6 +326,14 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requireFeature="email_campaigns" requirePage="email">
                   {lazyAppRoute(<EmailPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: '/social',
+              element: (
+                <ProtectedRoute requireSubscription requirePage="social">
+                  {lazyAppRoute(<SocialMediaPage />)}
                 </ProtectedRoute>
               ),
             },

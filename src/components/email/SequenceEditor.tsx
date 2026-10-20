@@ -443,7 +443,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
   // nobody can act on.
   useEffect(() => {
     if (!orgId) return;
-    Promise.all([listAccounts(orgId), listMailboxStatus(orgId)])
+    Promise.all([listAccounts(orgId, workspaceId), listMailboxStatus(orgId, workspaceId)])
       .then(([list, health]) => { setAccounts(list); setSetup(readiness(list, health)); })
       .catch(() => { setAccounts([]); setSetup(null); });
     // Whole rows, not just addresses: the picker has to say WHY each excluded
@@ -451,7 +451,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
     listSuppressions(orgId)
       .then(setSuppressions)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   const loadEnrollments = useCallback(async () => {
     setEnrollmentsLoading(true);

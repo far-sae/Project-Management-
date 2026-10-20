@@ -89,6 +89,14 @@ export interface SequenceCounts {
   completed: number;
 }
 
+export interface SequenceDeliveryCounts {
+  scheduled: number;
+  sent: number;
+  delivered: number;
+  bounced: number;
+  replies: number;
+}
+
 /**
  * What `enroll` did. `skipped` is not a failure: the partial unique index
  * `email_enrollments_one_active` (migration 158c) exists precisely so the same
@@ -279,6 +287,37 @@ export const listStepCounts = async (
   }
 
   return counts;
+};
+
+export const listSequenceDeliveryCounts = async (
+  sequenceIds: string[],
+): Promise<Record<string, SequenceDeliveryCounts>> => {
+  const result: Record<string, SequenceDeliveryCounts> = {};
+  if (sequenceIds.length === 0) return result;
+  const { data: steps, error: stepError } = await supabase
+    .from('email_sequence_steps').select('sequence_id, campaign_id').in('sequence_id', sequenceIds);
+  if (stepError) throw stepError;
+  const campaignToSequence = new Map<string, string>();
+  for (const step of (steps ?? []) as { sequence_id: string; campaign_id: string | null }[]) {
+    if (step.campaign_id) campaignToSequence.set(step.campaign_id, step.sequence_id);
+  }
+  const campaignIds = [...campaignToSequence.keys()];
+  if (campaignIds.length === 0) return result;
+  const { data: messages, error: messageError } = await supabase.from('email_messages')
+    .select('campaign_id, status, replied_at, bounced_at').in('campaign_id', campaignIds);
+  if (messageError) throw messageError;
+  for (const row of (messages ?? []) as { campaign_id: string; status: string; replied_at: string | null; bounced_at: string | null }[]) {
+    const sequenceId = campaignToSequence.get(row.campaign_id);
+    if (!sequenceId) continue;
+    const counts = result[sequenceId] ?? { scheduled: 0, sent: 0, delivered: 0, bounced: 0, replies: 0 };
+    if (row.status === 'queued') counts.scheduled += 1;
+    if (row.status === 'sending' || row.status === 'sent') counts.sent += 1;
+    if (row.status === 'sent' && !row.bounced_at) counts.delivered += 1;
+    if (row.bounced_at) counts.bounced += 1;
+    if (row.replied_at) counts.replies += 1;
+    result[sequenceId] = counts;
+  }
+  return result;
 };
 
 export const getSequence = async (

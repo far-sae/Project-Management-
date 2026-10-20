@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
   CheckSquare,
   Users,
   Calendar,
@@ -26,6 +25,8 @@ import {
   TrendingUp,
   Handshake,
   Mail,
+  Share2,
+  FolderKanban,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -59,15 +60,16 @@ import {
 import { toast } from 'sonner';
 
 const QUICK_ITEMS_FULL = [
-  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard', page: 'dashboard' as PageKey },
+  { icon: FolderKanban, label: 'Project Management', href: '/dashboard', page: 'dashboard' as PageKey },
+  { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
+  { icon: Mail, label: 'Email Marketing', href: '/email', feature: 'email_campaigns' as const, page: 'email' as PageKey },
+  { icon: Share2, label: 'Social Media Marketing', href: '/social', page: 'social' as PageKey },
   { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects', page: 'projects_analytics' as PageKey },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
   { icon: Inbox, label: 'Inbox', href: '/inbox', page: 'inbox' as PageKey },
   { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
-  { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
-  { icon: Mail, label: 'Email', href: '/email', feature: 'email_campaigns' as const, page: 'email' as PageKey },
   { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
 ];
 
@@ -142,8 +144,12 @@ export const Sidebar: React.FC = () => {
       : isViewer
         ? QUICK_ITEMS_VIEWER
         : QUICK_ITEMS_MEMBER;
-    return resolveWorkspaceMenu(roleItems, menuPages);
-  }, [canSeePeopleOps, isViewer, hasFeature, menuPages]);
+    const workspaceReady = isAll ? projects.length > 0 : !isUnassigned && visibleProjects.length > 0;
+    const flowItems = workspaceReady
+      ? roleItems
+      : roleItems.filter((item) => !['crm', 'email', 'social'].includes(item.page));
+    return resolveWorkspaceMenu(flowItems, menuPages);
+  }, [canSeePeopleOps, isViewer, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
 
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);

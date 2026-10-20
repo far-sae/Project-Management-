@@ -102,6 +102,36 @@ export interface CrmContact {
   updatedAt: Date;
 }
 
+export type ClientBillingType = 'one_time' | 'monthly';
+
+export interface CrmClientAccount {
+  id: string;
+  organizationId: string;
+  workspaceId: string;
+  contactId: string;
+  projectId: string | null;
+  serviceName: string;
+  billingType: ClientBillingType;
+  agreedAmount: number;
+  openingPaid: number;
+  serviceStart: string | null;
+  serviceEnd: string | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CrmAccountPayment {
+  id: string;
+  accountId: string;
+  organizationId: string;
+  workspaceId: string;
+  paidOn: string;
+  amount: number;
+  notes: string | null;
+  createdAt: Date;
+}
+
 export interface CrmDeal {
   id: string;
   organizationId: string;

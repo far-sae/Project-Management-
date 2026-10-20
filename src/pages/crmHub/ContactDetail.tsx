@@ -49,6 +49,7 @@ import { TASK_PRIORITIES } from '@/types/crmHub';
 import type { TaskPriority } from '@/types/crmHub';
 import { useProjects } from '@/hooks/useProjects';
 import type { TaskAssignee } from '@/types/task';
+import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 
 const initials = (name: string) => {
   const parts = name.trim().split(/\s+/).slice(0, 2);
@@ -57,7 +58,9 @@ const initials = (name: string) => {
 
 const humanize = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-const ACTIVITY_TABS: { key: 'all' | 'note' | 'call' | 'email' | 'meeting'; label: string }[] = [
+type ContactTab = 'all' | 'note' | 'call' | 'email' | 'meeting' | 'accounts';
+const ACTIVITY_TABS: { key: ContactTab; label: string }[] = [
+  { key: 'accounts', label: 'Accounts' },
   { key: 'all', label: 'All activities' },
   { key: 'note', label: 'Notes' },
   { key: 'call', label: 'Calls' },
@@ -100,7 +103,7 @@ export const CrmContactDetailPage: React.FC = () => {
 
   const [noteBody, setNoteBody] = useState('');
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<'all' | 'note' | 'call' | 'email' | 'meeting'>('all');
+  const [tab, setTab] = useState<ContactTab>('all');
 
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -377,7 +380,7 @@ export const CrmContactDetailPage: React.FC = () => {
                 </button>
               ))}
             </div>
-            {tab !== 'all' && (
+            {tab !== 'all' && tab !== 'accounts' && (
               <Button
                 size="sm"
                 variant="outline"
@@ -390,7 +393,11 @@ export const CrmContactDetailPage: React.FC = () => {
             )}
           </div>
 
-          <div className="space-y-3">
+          {tab === 'accounts' ? (
+            contact.workspaceId && orgId
+              ? <ClientAccountsTab organizationId={orgId} workspaceId={contact.workspaceId} contactId={contact.id} projects={workspaceProjects} />
+              : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">Assign this legacy contact to a workspace before adding account records.</div>
+          ) : <div className="space-y-3">
             {filteredActivities.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border p-10 text-center space-y-3">
                 <p className="text-sm text-muted-foreground">
@@ -436,7 +443,7 @@ export const CrmContactDetailPage: React.FC = () => {
                 </Card>
               );
             })}
-          </div>
+          </div>}
         </section>
 
         {/* RIGHT — Associations */}

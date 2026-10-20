@@ -1,4 +1,7 @@
 {
+  "crons": [
+    { "path": "/api/social/publish", "schedule": "*/5 * * * *" }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/|google[a-z0-9]+\\.html$).*)",

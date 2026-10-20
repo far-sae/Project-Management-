@@ -27,6 +27,7 @@ export const QUICK_MENU_PAGE_KEYS: PageKey[] = [
   "reports",
   "crm",
   "email",
+  "social",
   "team",
 ];
 

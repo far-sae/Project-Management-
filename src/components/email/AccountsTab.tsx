@@ -78,7 +78,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
 
   const refresh = () => {
     if (!orgId) { setMailboxes([]); setAccounts({}); setLoading(false); return Promise.resolve(); }
-    return Promise.all([listMailboxStatus(orgId), listAccounts(orgId), listBounceRates(orgId)])
+    return Promise.all([listMailboxStatus(orgId, workspaceId), listAccounts(orgId, workspaceId), listBounceRates(orgId)])
       .then(([health, accountRows, rates]) => {
         setMailboxes(health);
         setAccounts(Object.fromEntries(accountRows.map((a) => [a.id, a])));
@@ -93,7 +93,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
   useEffect(() => {
     setLoading(true);
     void refresh().finally(() => setLoading(false));
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   const resetForm = () => {
     setForm(EMPTY_ACCOUNT_FORM);

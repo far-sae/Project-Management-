@@ -120,10 +120,10 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
 
   useEffect(() => {
     if (!orgId) return;
-    listAccounts(orgId)
+    listAccounts(orgId, workspaceId)
       .then(setAccounts)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load sending accounts'));
-    listMailboxStatus(orgId)
+    listMailboxStatus(orgId, workspaceId)
       .then(setMailboxes)
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailbox health'));
     // Whole rows, not just addresses: the picker has to say WHY each excluded
@@ -134,9 +134,9 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     // Both only annotate the review, so a failure is swallowed rather than
     // shown: an estimate nobody can read is not worth an error somebody
     // cannot act on.
-    listMailboxStatus(orgId).then(setPoolHealth).catch(() => setPoolHealth([]));
+    listMailboxStatus(orgId, workspaceId).then(setPoolHealth).catch(() => setPoolHealth([]));
     getEmailSettings(orgId).then(setSettings).catch(() => setSettings(null));
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   // Copies the template's wording in and records which template it came from.
   // A copy, not a link: from here on the campaign carries this text, so the

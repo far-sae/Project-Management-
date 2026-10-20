@@ -13,6 +13,7 @@ import { readiness, type Readiness } from '@/lib/email/readiness';
 import { queryableOrgId } from '@/lib/email/orgId';
 import { listAccounts, listMailboxStatus } from '@/services/supabase/email';
 import { SetupChecklist } from '@/components/email/SetupChecklist';
+import { useProjects } from '@/hooks/useProjects';
 
 /**
  * Prospects and Groups lead, in that order: they are the audience, and every
@@ -27,7 +28,8 @@ type EmailTabValue =
 export const Email: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin, loading: orgLoading } = useOrganization();
-  const { selectedId, isAll } = useSelectedWorkspace();
+  const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading } = useSelectedWorkspace();
+  const { projects, loading: projectsLoading } = useProjects();
   const [activeTab, setActiveTab] = useState<EmailTabValue>('campaigns');
   /**
    * A template on its way into the composer. Held here rather than in
@@ -64,7 +66,12 @@ export const Email: React.FC = () => {
    * those guards were written for.
    */
   const orgId = queryableOrgId(organization?.organizationId ?? user?.organizationId);
-  const workspaceId = isAll ? null : selectedId;
+  useEffect(() => {
+    if (workspaceLoading || (!isAll && !isUnassigned)) return;
+    if (workspaces[0]) select(workspaces[0].workspaceId);
+  }, [isAll, isUnassigned, select, workspaceLoading, workspaces]);
+  const workspaceId = selected?.workspaceId ?? null;
+  const hasWorkspaceProject = Boolean(workspaceId && projects.some((project) => project.workspaceId === workspaceId));
 
   /**
    * Where setup has got to, read once here and shown above the tabs.
@@ -84,23 +91,23 @@ export const Email: React.FC = () => {
     if (!orgId) { setSetup(null); return; }
     try {
       const [accounts, health] = await Promise.all([
-        listAccounts(orgId),
-        listMailboxStatus(orgId),
+        listAccounts(orgId, workspaceId),
+        listMailboxStatus(orgId, workspaceId),
       ]);
       setSetup(readiness(accounts, health));
     } catch {
       setSetup(null);
     }
-  }, [orgId]);
+  }, [orgId, workspaceId]);
 
   useEffect(() => { void loadReadiness(); }, [loadReadiness]);
 
   return (
     <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
       <div className="mb-6 md:mb-8">
-        <h1 className="text-3xl font-bold text-foreground">Email</h1>
+        <h1 className="text-3xl font-bold text-foreground">Email Marketing</h1>
         <p className="text-muted-foreground">
-          Send campaigns from your own SMTP accounts and track who received them.
+          Build lists, sequences and campaigns for {selected?.name ?? 'this workspace'}.
         </p>
       </div>
 
@@ -112,16 +119,16 @@ export const Email: React.FC = () => {
         same lie as an error rendered as an empty list, arriving a different
         way.
       */}
-      {!orgId ? (
+      {!orgId || !workspaceId || projectsLoading || !hasWorkspaceProject ? (
         <div className="py-16 text-center text-muted-foreground">
-          {orgLoading ? (
+          {orgLoading || workspaceLoading || projectsLoading ? (
             <>
               <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-muted-foreground/60" />
               <p>Loading your workspace…</p>
             </>
           ) : (
             <p>
-              No organization is selected, so there is nothing to send from yet.
+              {workspaceId ? 'Create a project in this workspace to unlock email marketing.' : 'Select or create a workspace to use email marketing.'}
             </p>
           )}
         </div>

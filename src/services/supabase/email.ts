@@ -214,6 +214,7 @@ interface EmailSuppressionRow {
 interface MailboxStatusRow {
   id: string;
   organization_id: string;
+  workspace_id?: string | null;
   label: string;
   from_email: string;
   status: AccountStatus;
@@ -384,6 +385,7 @@ export const mapSuppressionRow = (row: EmailSuppressionRow): EmailSuppression =>
 
 export const mapMailboxStatusRow = (row: MailboxStatusRow): MailboxHealth => ({
   id: row.id,
+  workspaceId: row.workspace_id ?? null,
   label: row.label,
   fromEmail: row.from_email,
   isActive: row.is_active,
@@ -444,12 +446,13 @@ const defaultEmailSettings = (orgId: string, timezone: string = "UTC"): EmailSet
 
 // ── Accounts ──────────────────────────────────────────────────────────
 
-export const listAccounts = async (orgId: string): Promise<EmailAccount[]> => {
-  const { data, error } = await supabase
+export const listAccounts = async (orgId: string, workspaceId?: string | null): Promise<EmailAccount[]> => {
+  let query = supabase
     .from("email_accounts")
     .select("*")
-    .eq("organization_id", orgId)
-    .order("created_at", { ascending: false });
+    .eq("organization_id", orgId);
+  if (workspaceId) query = query.eq("workspace_id", workspaceId);
+  const { data, error } = await query.order("created_at", { ascending: false });
 
   if (error) {
     logger.error("Failed to list email accounts:", error);
@@ -649,12 +652,13 @@ export const listBounceRates = async (
 
 // ── Pool, warmup and health ──────────────────────────────────────────
 
-export const listMailboxStatus = async (orgId: string): Promise<MailboxHealth[]> => {
-  const { data, error } = await supabase
+export const listMailboxStatus = async (orgId: string, workspaceId?: string | null): Promise<MailboxHealth[]> => {
+  let query = supabase
     .from("mailbox_status")
     .select("*")
-    .eq("organization_id", orgId)
-    .order("label", { ascending: true });
+    .eq("organization_id", orgId);
+  if (workspaceId) query = query.eq("workspace_id", workspaceId);
+  const { data, error } = await query.order("label", { ascending: true });
 
   if (error) {
     logger.error("Failed to list mailbox status:", error);

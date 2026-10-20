@@ -14,9 +14,9 @@ import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import {
-  listSequences, listStepCounts, listEnrollmentCounts, createSequence,
+  listSequences, listStepCounts, listEnrollmentCounts, listSequenceDeliveryCounts, createSequence,
   countStepsWaitingOnPausedMailbox,
-  type SequenceCounts,
+  type SequenceCounts, type SequenceDeliveryCounts,
 } from '@/services/supabase/emailSequences';
 import type { EmailSequence, SequenceStatus } from '@/lib/email/types';
 import { SequenceEditor } from './SequenceEditor';
@@ -27,6 +27,7 @@ interface SequencesTabProps {
 }
 
 const EMPTY_COUNTS: SequenceCounts = { active: 0, replied: 0, stopped: 0, completed: 0 };
+const EMPTY_DELIVERY: SequenceDeliveryCounts = { scheduled: 0, sent: 0, delivered: 0, bounced: 0, replies: 0 };
 
 const sequenceStatusBadge = (status: SequenceStatus) => {
   switch (status) {
@@ -53,6 +54,8 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
   const [waiting, setWaiting] = useState(0);
   const [stepCounts, setStepCounts] = useState<Record<string, number>>({});
   const [counts, setCounts] = useState<Record<string, SequenceCounts>>({});
+  const [delivery, setDelivery] = useState<Record<string, SequenceDeliveryCounts>>({});
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -68,13 +71,15 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
       const list = await listSequences(orgId, workspaceId);
       setSequences(list);
       const ids = list.map((s) => s.id);
-      const [steps, enrollments, blocked] = await Promise.all([
+      const [steps, enrollments, deliveries, blocked] = await Promise.all([
         listStepCounts(ids),
         listEnrollmentCounts(ids),
+        listSequenceDeliveryCounts(ids),
         countStepsWaitingOnPausedMailbox(orgId, workspaceId),
       ]);
       setStepCounts(steps);
       setCounts(enrollments);
+      setDelivery(deliveries);
       setWaiting(blocked);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load sequences');
@@ -159,6 +164,7 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
               </span>
             </div>
           )}
+          <div className="mb-4 max-w-sm"><Input aria-label="Search sequences" placeholder="Search sequences…" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
           {loading ? (
             <div className="text-center py-16 text-muted-foreground">
               <Loader2 className="w-10 h-10 mx-auto mb-4 animate-spin text-muted-foreground/60" />
@@ -172,8 +178,9 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
             </div>
           ) : (
             <div className="space-y-3">
-              {sequences.map((sequence) => {
+              {sequences.filter((sequence) => sequence.name.toLowerCase().includes(search.trim().toLowerCase())).map((sequence) => {
                 const c = counts[sequence.id] ?? EMPTY_COUNTS;
+                const d = delivery[sequence.id] ?? EMPTY_DELIVERY;
                 const steps = stepCounts[sequence.id] ?? 0;
                 return (
                   <div key={sequence.id} className="border border-border rounded-lg overflow-hidden">
@@ -197,11 +204,13 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 text-sm shrink-0">
-                        <span title="Active">A {c.active}</span>
-                        <span className="text-blue-600 dark:text-blue-400" title="Replied">R {c.replied}</span>
-                        <span className="text-muted-foreground" title="Stopped">X {c.stopped}</span>
-                        <span className="text-emerald-600 dark:text-emerald-400" title="Completed">C {c.completed}</span>
+                      <div className="hidden items-center gap-3 text-xs shrink-0 lg:flex">
+                        <span title="Scheduled">Scheduled <b>{d.scheduled}</b></span>
+                        <span title="Sent">Sent <b>{d.sent}</b></span>
+                        <span className="text-emerald-600" title="Delivered">Delivered <b>{d.delivered}</b></span>
+                        <span className="text-destructive" title="Bounced">Bounced <b>{d.bounced}</b></span>
+                        <span className="text-blue-600" title="Replies">Replies <b>{d.replies || c.replied}</b></span>
+                        <span title="Finished">Finished <b>{c.completed}</b></span>
                       </div>
                     </div>
                   </div>

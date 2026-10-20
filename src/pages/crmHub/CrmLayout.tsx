@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import {
   Contact, Building2, Handshake, ListChecks, Waypoints, Tag,
   LayoutDashboard, Settings as SettingsIcon, Loader2,
@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { CrmCurrencyProvider } from '@/context/CrmCurrencyContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
+import { useProjects } from '@/hooks/useProjects';
+import { Button } from '@/components/ui/button';
 
 interface Tab {
   to: string;
@@ -33,6 +35,7 @@ export const CrmLayout: React.FC = () => (
 
 const CrmLayoutInner: React.FC = () => {
   const { selected, isAll, isUnassigned, select, DEFAULT_WORKSPACE_ID, workspaces, loading } = useSelectedWorkspace();
+  const { projects, loading: projectsLoading } = useProjects();
 
   useEffect(() => {
     if (loading || (!isAll && !isUnassigned)) return;
@@ -50,6 +53,10 @@ const CrmLayoutInner: React.FC = () => {
         </div>
       </div>
     );
+  }
+  const hasProject = projects.some((project) => project.workspaceId === selected.workspaceId);
+  if (!projectsLoading && !hasProject) {
+    return <div className="flex-1 grid place-items-center p-6"><div className="max-w-md text-center"><Layers className="mx-auto mb-3 h-10 w-10 text-muted-foreground" /><h2 className="text-xl font-semibold">Create this workspace’s first project</h2><p className="mt-2 text-sm text-muted-foreground">CRM becomes available after the workspace has a delivery project, keeping contacts, deals and work in one flow.</p><Button asChild className="mt-4"><Link to="/dashboard">Open Project Management</Link></Button></div></div>;
   }
   const scopeLabel = isAll
     ? 'All workspaces'
