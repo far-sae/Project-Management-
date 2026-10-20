@@ -34,7 +34,23 @@ const PROJECTS_SAFE_SELECT =
 
 /** Task columns safe for the browser—never includes lock_pin_hash. Requires migration 027 (has_lock_pin). */
 export const TASKS_SAFE_SELECT =
-  "task_id, project_id, organization_id, title, description, status, priority, priority_color, due_date, assignees, tags, subtasks, parent_task_id, urgent, is_locked, has_lock_pin, position, attachments, comments_count, created_by, created_at, updated_at, completed_at, google_meet_link, google_event_id, source_deal_id, source_client_id, source_crm_deal_id, source_crm_contact_id";
+  "task_id, project_id, organization_id, title, description, status, priority, priority_color, due_date, assignees, tags, subtasks, parent_task_id, urgent, is_locked, has_lock_pin, position, attachments, comments_count, created_by, created_at, updated_at, completed_at, google_meet_link, google_event_id, source_deal_id, source_client_id";
+
+// CRM follow-ups are authoritatively linked by crm_tasks.shared_task_id. Keep
+// broad task reads compatible with databases where migration 165 has not yet
+// added these redundant source columns.
+let crmTaskSourceColumnsAvailable = true;
+let warnedCrmTaskSourceFallback = false;
+
+function isMissingCrmTaskSourceColumn(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const row = error as Record<string, unknown>;
+  const message = `${row.message ?? ""} ${row.details ?? ""} ${row.hint ?? ""}`.toLowerCase();
+  return (
+    (String(row.code ?? "") === "42703" || String(row.code ?? "") === "PGRST204") &&
+    (message.includes("source_crm_deal_id") || message.includes("source_crm_contact_id"))
+  );
+}
 
 const userEmailCache = new Map<
   string,
@@ -992,7 +1008,7 @@ export const createTask = async (
       ? (existingTasks[0].position || 0) + 1
       : 0;
 
-  const task = {
+  const task: Record<string, unknown> = {
     task_id: taskId,
     project_id: input.projectId,
     organization_id: organizationId,
@@ -1018,15 +1034,44 @@ export const createTask = async (
     completed_at: null,
     source_deal_id: input.sourceDealId ?? null,
     source_client_id: input.sourceClientId ?? null,
-    source_crm_deal_id: input.sourceCrmDealId ?? null,
-    source_crm_contact_id: input.sourceCrmContactId ?? null,
   };
 
-  const { data, error } = await supabase
+  // Do not make ordinary Kanban tasks depend on optional CRM columns. For a
+  // CRM follow-up, optimistically use the columns and remember a missing-column
+  // response for the rest of this browser session.
+  if (crmTaskSourceColumnsAvailable && input.sourceCrmDealId) {
+    task.source_crm_deal_id = input.sourceCrmDealId;
+  }
+  if (crmTaskSourceColumnsAvailable && input.sourceCrmContactId) {
+    task.source_crm_contact_id = input.sourceCrmContactId;
+  }
+
+  let result = await supabase
     .from("tasks")
     .insert(task)
     .select(TASKS_SAFE_SELECT)
     .single();
+
+  // crm_tasks.shared_task_id preserves the authoritative CRM relationship,
+  // so this retry avoids losing the follow-up while migration 165 is pending.
+  if (result.error && isMissingCrmTaskSourceColumn(result.error)) {
+    crmTaskSourceColumnsAvailable = false;
+    delete task.source_crm_deal_id;
+    delete task.source_crm_contact_id;
+    result = await supabase
+      .from("tasks")
+      .insert(task)
+      .select(TASKS_SAFE_SELECT)
+      .single();
+    if (!result.error && !warnedCrmTaskSourceFallback) {
+      warnedCrmTaskSourceFallback = true;
+      logger.warn(
+        "CRM task source columns are unavailable; apply Supabase migration 165. The shared CRM task link was preserved.",
+      );
+    }
+  }
+
+  const { data, error } = result;
 
   if (error) {
     logger.error("Failed to create task:", error);
@@ -1118,8 +1163,8 @@ export const createTask = async (
     googleEventId: data.google_event_id ?? null,
     sourceDealId: data.source_deal_id ?? null,
     sourceClientId: data.source_client_id ?? null,
-    sourceCrmDealId: data.source_crm_deal_id ?? null,
-    sourceCrmContactId: data.source_crm_contact_id ?? null,
+    sourceCrmDealId: (data as { source_crm_deal_id?: string | null }).source_crm_deal_id ?? null,
+    sourceCrmContactId: (data as { source_crm_contact_id?: string | null }).source_crm_contact_id ?? null,
   } as Task;
 };
 
@@ -1164,8 +1209,8 @@ export const getTask = async (
     googleEventId: data.google_event_id ?? null,
     sourceDealId: data.source_deal_id ?? null,
     sourceClientId: data.source_client_id ?? null,
-    sourceCrmDealId: data.source_crm_deal_id ?? null,
-    sourceCrmContactId: data.source_crm_contact_id ?? null,
+    sourceCrmDealId: (data as { source_crm_deal_id?: string | null }).source_crm_deal_id ?? null,
+    sourceCrmContactId: (data as { source_crm_contact_id?: string | null }).source_crm_contact_id ?? null,
   } as Task;
 };
 
@@ -1219,8 +1264,8 @@ export const getProjectTasks = async (
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
-    sourceCrmDealId: task.source_crm_deal_id ?? null,
-    sourceCrmContactId: task.source_crm_contact_id ?? null,
+    sourceCrmDealId: (task as { source_crm_deal_id?: string | null }).source_crm_deal_id ?? null,
+    sourceCrmContactId: (task as { source_crm_contact_id?: string | null }).source_crm_contact_id ?? null,
   })) as Task[];
 
   if (userId && tasks.some((t) => t.isLocked)) {
@@ -1284,8 +1329,8 @@ export const getOrganizationTasks = async (
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
-    sourceCrmDealId: task.source_crm_deal_id ?? null,
-    sourceCrmContactId: task.source_crm_contact_id ?? null,
+    sourceCrmDealId: (task as { source_crm_deal_id?: string | null }).source_crm_deal_id ?? null,
+    sourceCrmContactId: (task as { source_crm_contact_id?: string | null }).source_crm_contact_id ?? null,
   })) as Task[];
 };
 
@@ -1514,8 +1559,8 @@ export const getTasksAssignedToUser = async (
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
-    sourceCrmDealId: task.source_crm_deal_id ?? null,
-    sourceCrmContactId: task.source_crm_contact_id ?? null,
+    sourceCrmDealId: (task as { source_crm_deal_id?: string | null }).source_crm_deal_id ?? null,
+    sourceCrmContactId: (task as { source_crm_contact_id?: string | null }).source_crm_contact_id ?? null,
   })) as Task[];
 };
 
