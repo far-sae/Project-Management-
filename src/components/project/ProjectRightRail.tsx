@@ -54,6 +54,14 @@ import type { PresencePeer } from '@/hooks/usePresence';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
 import { PresenceStatusInline } from '@/components/presence/PresenceStatusInline';
 import { useLastSeen } from '@/hooks/useLastSeen';
+import {
+  isGenericMemberDisplayName,
+  resolveMemberDisplayName,
+} from '@/lib/memberIdentity';
+import {
+  getProjectMemberProfiles,
+  type ProjectMemberProfile,
+} from '@/services/supabase/projectMemberProfiles';
 
 interface ProjectRightRailProps {
   project: Project;
@@ -127,12 +135,6 @@ const messageDayLabel = (date: Date) => {
   if (isSameDay(date, yesterday)) return 'Yesterday';
   return format(date, 'MMM d, yyyy');
 };
-
-/** Invite / legacy project JSON sometimes stores role words or "Member" instead of a person's name. */
-const GENERIC_MEMBER_DISPLAY = new Set(['', 'owner', 'member', 'user', 'unknown']);
-function isGenericMemberDisplayName(name: string): boolean {
-  return GENERIC_MEMBER_DISPLAY.has(name.trim().toLowerCase());
-}
 
 /** Structured chat-message payload posted by the call recorder when a
  *  recording finishes. We sniff the body and render a play/download card
@@ -295,6 +297,33 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     () => dedupedMembers.map((m) => m.userId).filter((id): id is string => !!id),
     [dedupedMembers],
   );
+  const memberUserIdsKey = useMemo(
+    () => [...memberUserIds].sort().join(','),
+    [memberUserIds],
+  );
+  const [projectProfilesByUserId, setProjectProfilesByUserId] = useState<
+    Map<string, ProjectMemberProfile>
+  >(() => new Map());
+
+  useEffect(() => {
+    if (!project.projectId) {
+      setProjectProfilesByUserId(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    void getProjectMemberProfiles(project.projectId).then((profiles) => {
+      if (cancelled) return;
+      setProjectProfilesByUserId(
+        new Map(profiles.map((profile) => [profile.userId, profile])),
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project.projectId, memberUserIdsKey]);
+
   const lastSeenByUserId = useLastSeen(memberUserIds);
 
   /** @-mentions: project team only (not whole org — avoids stale or unrelated users). */
@@ -306,7 +335,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     );
     return dedupedMembers.map((m) => {
       const org = m.userId ? orgById.get(m.userId) : undefined;
-      const email = m.email || org?.email || '';
+      const profile = m.userId ? projectProfilesByUserId.get(m.userId) : undefined;
+      const email = profile?.email || m.email || org?.email || '';
       const emailLocal = email.split('@')[0] || '';
       const peer = m.userId ? presenceByUserId?.get(m.userId) : undefined;
       const selfForRow =
@@ -316,25 +346,33 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       const stored = (m.displayName || '').trim();
 
       const candidates = [
+        (profile?.displayName || '').trim(),
         !isGenericMemberDisplayName(stored) ? stored : '',
         (org?.displayName || '').trim(),
         (peer?.displayName || '').trim(),
         selfForRow,
         emailLocal,
       ];
-      const displayName =
-        candidates.find((c) => c && !isGenericMemberDisplayName(c)) || emailLocal || 'Member';
+      const displayName = resolveMemberDisplayName(
+        m.userId || '',
+        email,
+        ...candidates,
+      );
 
       return {
         userId: m.userId,
         displayName,
         email,
-        photoURL: m.photoURL ?? (org as { photoURL?: string } | undefined)?.photoURL,
+        photoURL:
+          profile?.photoURL ||
+          m.photoURL ||
+          (org as { photoURL?: string } | undefined)?.photoURL,
       };
     });
   }, [
     dedupedMembers,
     organization?.members,
+    projectProfilesByUserId,
     presenceByUserId,
     user?.userId,
     user?.displayName,
@@ -375,8 +413,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         if (self && !isGenericMemberDisplayName(self)) return self;
       }
       const fromEmail = teamEmailLocalByUserId.get(uid);
-      if (fromEmail) return fromEmail;
-      return 'Member';
+      return resolveMemberDisplayName(uid, fromEmail, s, pn);
     },
     [teamDisplayNameByUserId, teamEmailLocalByUserId, presenceByUserId, user],
   );
@@ -414,7 +451,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       if (!m.userId || m.userId === user.userId) return;
       setDmRecipient({
         userId: m.userId,
-        displayName: m.displayName || m.email || 'Member',
+        displayName: resolveMemberDisplayName(
+          m.userId,
+          m.email,
+          m.displayName,
+        ),
         email: m.email,
         photoURL: m.photoURL,
       });
@@ -852,16 +893,24 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         )}
         {dedupedMembers.map((m) => {
           const role = ROLE_BADGES[m.role] || ROLE_BADGES.member;
+          const profile = m.userId ? projectProfilesByUserId.get(m.userId) : undefined;
           const memberLabel = m.userId
             ? displayNameForChatUser(m.userId, m.displayName)
-            : (m.displayName || m.email || 'Member');
+            : resolveMemberDisplayName('', m.email, m.displayName);
+          const memberEmail = profile?.email || m.email;
+          const memberPhotoURL = profile?.photoURL || m.photoURL;
           const isSelf = !!user?.userId && m.userId === user.userId;
           const canDm = !!m.userId && !isSelf;
           return (
             <button
               type="button"
               key={m.userId || m.email}
-              onClick={canDm ? () => openDirectMessage({ ...m, displayName: memberLabel }) : undefined}
+              onClick={canDm ? () => openDirectMessage({
+                ...m,
+                displayName: memberLabel,
+                email: memberEmail,
+                photoURL: memberPhotoURL,
+              }) : undefined}
               disabled={!canDm}
               title={canDm ? `Message ${memberLabel}` : undefined}
               className={cn(
@@ -872,7 +921,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               )}
             >
               <Avatar className="w-9 h-9">
-                <AvatarImage src={m.photoURL} alt={memberLabel} />
+                <AvatarImage src={memberPhotoURL} alt={memberLabel} />
                 <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
                   {memberLabel.charAt(0).toUpperCase()}
                 </AvatarFallback>

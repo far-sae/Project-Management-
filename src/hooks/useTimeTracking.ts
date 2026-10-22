@@ -12,6 +12,7 @@ import {
   subscribeToTimeEntries,
   updateTimeEntry as updateEntrySvc,
 } from "@/services/supabase/timeEntries";
+import { resolveMemberDisplayName } from "@/lib/memberIdentity";
 
 const effectiveOrgId = (
   orgIdFromCtx: string | null,
@@ -78,7 +79,7 @@ export const useTimeTracking = () => {
       const entry = await clockInSvc(
         orgId,
         user.userId,
-        user.displayName,
+        resolveMemberDisplayName(user.userId, user.email, user.displayName),
         input,
       );
       setOpenEntry(entry);

@@ -38,38 +38,15 @@ import {
   Select as RoleSelect, SelectContent as RoleSelectContent, SelectItem as RoleSelectItem,
   SelectTrigger as RoleSelectTrigger, SelectValue as RoleSelectValue,
 } from '@/components/ui/select';
-
-const GENERIC_MEMBER_NAMES = new Set([
-  '',
-  'admin',
-  'member',
-  'owner',
-  'unknown',
-  'user',
-  'viewer',
-  'you',
-]);
+import { resolveMemberDisplayName } from '@/lib/memberIdentity';
+import {
+  getProjectMemberProfiles,
+  type ProjectMemberProfile,
+} from '@/services/supabase/projectMemberProfiles';
 
 const INVITATION_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
 });
-
-const resolveMemberDisplayName = (
-  userId: string,
-  email: string | null | undefined,
-  ...candidates: Array<string | null | undefined>
-): string => {
-  const name = candidates.find((candidate) => {
-    const normalized = candidate?.trim().toLowerCase() ?? '';
-    return !GENERIC_MEMBER_NAMES.has(normalized);
-  });
-  if (name) return name.trim();
-
-  const emailName = email?.split('@')[0]?.trim();
-  if (emailName) return emailName;
-
-  return `Teammate ${userId.slice(0, 6)}`;
-};
 
 /**
  * Inline role picker for a member row — assigns a built-in role.
@@ -256,33 +233,16 @@ export const Team: React.FC = () => {
       ) as Array<any>;
       setProjectOwnerId(ownerId);
 
-      if (projectOrgId) {
-        const projectInvitations = await getProjectInvitations(selectedProject, projectOrgId);
-        setInvitations(projectInvitations);
-      } else {
-        setInvitations([]);
-      }
-
-      const memberIds = Array.from(new Set(
-        membersFromProject
-          .map((m) => m?.userId || m?.user_id)
-          .filter((id): id is string => !!id),
-      ));
-
-      let profileMap = new Map<string, any>();
-      if (memberIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('user_profiles')
-          .select('id, email, display_name, photo_url')
-          .in('id', memberIds);
-
-        profileMap = new Map(
-          (profiles || []).map((p: any) => [
-            p.id,
-            p,
-          ]),
-        );
-      }
+      const [projectInvitations, profiles] = await Promise.all([
+        projectOrgId
+          ? getProjectInvitations(selectedProject, projectOrgId)
+          : Promise.resolve([] as ProjectInvitation[]),
+        getProjectMemberProfiles(selectedProject),
+      ]);
+      setInvitations(projectInvitations);
+      const profileMap = new Map<string, ProjectMemberProfile>(
+        profiles.map((profile) => [profile.userId, profile]),
+      );
 
       const ownerOrgMember = ownerId
         ? (organization?.members || []).find((m) => m.userId === ownerId)
@@ -290,7 +250,9 @@ export const Team: React.FC = () => {
 
       const assembledMembers: ProjectMember[] = [];
       if (ownerId) {
+        const ownerProfile = profileMap.get(ownerId);
         const ownerEmail =
+          ownerProfile?.email ||
           ownerOrgMember?.email ||
           (organization?.ownerId === ownerId ? organization.ownerEmail : '') ||
           (ownerId === user?.userId ? user.email : '');
@@ -300,11 +262,15 @@ export const Team: React.FC = () => {
           displayName: resolveMemberDisplayName(
             ownerId,
             ownerEmail,
+            ownerProfile?.displayName,
             ownerOrgMember?.displayName,
             organization?.ownerId === ownerId ? organization.ownerName : null,
             ownerId === user?.userId ? user.displayName : null,
           ),
-          photoURL: ownerOrgMember?.photoURL || (ownerId === user?.userId ? (user.photoURL || '') : ''),
+          photoURL:
+            ownerProfile?.photoURL ||
+            ownerOrgMember?.photoURL ||
+            (ownerId === user?.userId ? (user.photoURL || '') : ''),
           role: 'owner',
           addedAt: ownerOrgMember?.joinedAt || new Date(),
         });
@@ -322,12 +288,12 @@ export const Team: React.FC = () => {
           displayName: resolveMemberDisplayName(
             memberId,
             memberEmail,
-            profile?.display_name,
+            profile?.displayName,
             orgMember?.displayName,
             member.displayName,
             member.display_name,
           ),
-          photoURL: profile?.photo_url || orgMember?.photoURL || member.photoURL || member.photo_url || '',
+          photoURL: profile?.photoURL || orgMember?.photoURL || member.photoURL || member.photo_url || '',
           role: (member.role || 'member') as ProjectMember['role'],
           addedAt: member.addedAt || member.added_at ? new Date(member.addedAt || member.added_at) : new Date(),
         });

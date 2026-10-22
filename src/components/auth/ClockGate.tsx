@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Loader2, PlayCircle, LogOut, Clock } from 'lucide-react';
 import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import { toast } from 'sonner';
+import { resolveMemberDisplayName } from '@/lib/memberIdentity';
 
 /**
  * Workforce gate: every signed-in user (owner, admin, member) must clock in
@@ -30,6 +31,11 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
   const [busy, setBusy] = useState(false);
 
   if (!user) return <>{children}</>;
+  const userDisplayName = resolveMemberDisplayName(
+    user.userId,
+    user.email,
+    user.displayName,
+  );
   // Build/support team (Claude / on-call) — bypass.
   if (isAppOwner(user.userId)) return <>{children}</>;
 
@@ -75,7 +81,7 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
     setBusy(true);
     try {
       await clockIn({ notes: notes.trim() || null });
-      toast.success(`Welcome, ${user.displayName?.split(' ')[0] ?? 'team'} — you're on the clock`);
+      toast.success(`Welcome, ${userDisplayName.split(' ')[0]} — you're on the clock`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to clock in');
     } finally {
@@ -98,13 +104,13 @@ export const ClockGate: React.FC<{ children: React.ReactNode }> = ({
 
           <div className="flex items-center gap-3">
             <Avatar className="h-12 w-12">
-              <AvatarImage src={user.photoURL} alt={user.displayName} />
+              <AvatarImage src={user.photoURL} alt={userDisplayName} />
               <AvatarFallback>
-                {user.displayName?.charAt(0).toUpperCase() || 'U'}
+                {userDisplayName.charAt(0).toUpperCase() || 'U'}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <p className="font-semibold truncate">{user.displayName}</p>
+              <p className="font-semibold truncate">{userDisplayName}</p>
               <p className="text-xs text-muted-foreground truncate">
                 {user.email}
               </p>
