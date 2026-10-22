@@ -21,10 +21,7 @@ import {
   ChevronDown,
   Menu,
   X,
-  UserCircle,
   TrendingUp,
-  Handshake,
-  Mail,
   Share2,
   FolderKanban,
 } from 'lucide-react';
@@ -61,8 +58,6 @@ import { toast } from 'sonner';
 
 const QUICK_ITEMS_FULL = [
   { icon: FolderKanban, label: 'Project Management', href: '/dashboard', page: 'dashboard' as PageKey },
-  { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
-  { icon: Mail, label: 'Email Marketing', href: '/email', feature: 'email_campaigns' as const, page: 'email' as PageKey },
   { icon: Share2, label: 'Social Media Marketing', href: '/social', page: 'social' as PageKey },
   { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects', page: 'projects_analytics' as PageKey },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
@@ -137,9 +132,7 @@ export const Sidebar: React.FC = () => {
     const roleItems = canSeePeopleOps
       ? QUICK_ITEMS_FULL.filter(
           (i) =>
-            (i.href !== '/team' || hasFeature('team_collaboration')) &&
-            (i.href !== '/email' || hasFeature('email_campaigns')) &&
-            (i.href !== '/crm' || hasFeature('crm')),
+            (i.href !== '/team' || hasFeature('team_collaboration')),
         )
       : isViewer
         ? QUICK_ITEMS_VIEWER
@@ -176,7 +169,6 @@ export const Sidebar: React.FC = () => {
     ? ([
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
         { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null },
-        { icon: UserCircle, label: 'HR', href: '/hr', feature: null },
       ] as const)
     : isViewer
       ? ([
