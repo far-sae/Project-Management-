@@ -409,9 +409,9 @@ grant execute on function public.crm_seed_default_stages(uuid, uuid) to authenti
 -- Replace broad org policies with workspace-aware read/write policies.
 do $$ declare t text; begin
   foreach t in array array['crm_companies','crm_contacts','crm_deals','crm_tasks','crm_activities','crm_notes','crm_deal_stages','crm_tags'] loop
-    execute format('drop policy if exists %L on public.%I', t || '_rw', t);
-    execute format('drop policy if exists %L on public.%I', t || '_workspace_select', t);
-    execute format('drop policy if exists %L on public.%I', t || '_workspace_write', t);
+    execute format('drop policy if exists %I on public.%I', t || '_rw', t);
+    execute format('drop policy if exists %I on public.%I', t || '_workspace_select', t);
+    execute format('drop policy if exists %I on public.%I', t || '_workspace_write', t);
     execute format('create policy %I on public.%I for select to authenticated using (public.can_access_crm_scope(organization_id, workspace_id))', t || '_workspace_select', t);
     execute format('create policy %I on public.%I for all to authenticated using (public.can_access_crm_scope(organization_id, workspace_id) and not public.is_org_viewer(organization_id)) with check (public.can_access_crm_scope(organization_id, workspace_id) and not public.is_org_viewer(organization_id))', t || '_workspace_write', t);
   end loop;
