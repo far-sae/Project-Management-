@@ -413,8 +413,12 @@ alter table public.email_campaigns alter column account_id drop not null;
 --
 -- Changing the argument list creates an overload rather than replacing the
 -- function, and two candidate signatures would leave callers binding whichever
--- one resolution happened to pick. Drop the old one explicitly, first.
+-- one resolution happened to pick. Drop both the old single-argument function
+-- and any partially/manual-created two-argument version before recreating the
+-- canonical definition below. PostgreSQL cannot use CREATE OR REPLACE when an
+-- existing function has the same arguments but a different RETURNS TABLE row.
 drop function if exists public.claim_email_batch(integer);
+drop function if exists public.claim_email_batch(uuid, integer);
 
 -- Everything migration 155 established is kept: the returns table column list,
 -- security definer, the search_path, the stuck-row recovery (including the
