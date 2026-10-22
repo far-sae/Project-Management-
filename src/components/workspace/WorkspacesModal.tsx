@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Workspace } from '@/types/workspace';
 import { Project } from '@/types/project';
 import {
@@ -16,7 +16,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { FolderKanban, MoreHorizontal, Edit, Trash2, Plus } from 'lucide-react';
+import {
+  Edit,
+  FolderKanban,
+  Loader2,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 
 interface WorkspacesModalProps {
@@ -28,6 +36,8 @@ interface WorkspacesModalProps {
   onDeleteWorkspace: (workspaceId: string) => void;
   onCreateWorkspace: () => void;
   onSelectWorkspace: (workspaceId: string) => void;
+  loading?: boolean;
+  onRefresh?: () => void;
 }
 
 export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
@@ -39,9 +49,17 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
   onDeleteWorkspace,
   onCreateWorkspace,
   onSelectWorkspace,
+  loading = false,
+  onRefresh,
 }) => {
-  const getProjectCount = (workspaceId: string) =>
-    projects.filter((p) => p.workspaceId === workspaceId).length;
+  const projectCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const project of projects) {
+      if (!project.workspaceId) continue;
+      counts.set(project.workspaceId, (counts.get(project.workspaceId) ?? 0) + 1);
+    }
+    return counts;
+  }, [projects]);
 
   const handleSelectWorkspace = (workspaceId: string) => {
     onSelectWorkspace(workspaceId);
@@ -50,38 +68,60 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>All Workspaces</DialogTitle>
-          <DialogDescription>
-            Manage your workspaces and see project counts
-          </DialogDescription>
+      <DialogContent className="sm:max-w-4xl max-h-[85vh] overscroll-contain overflow-y-auto">
+        <DialogHeader className="pr-12">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <DialogTitle className="text-xl text-balance">All Workspaces</DialogTitle>
+              <DialogDescription className="mt-1 text-pretty">
+                Manage your workspaces and see project counts.
+              </DialogDescription>
+            </div>
+            {onRefresh ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
+                onClick={onRefresh}
+                disabled={loading}
+              >
+                {loading ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <RefreshCw aria-hidden="true" />
+                )}
+                Refresh
+              </Button>
+            ) : null}
+          </div>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+        <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {workspaces.map((workspace) => {
-            const projectCount = getProjectCount(workspace.workspaceId);
+            const projectCount = projectCounts.get(workspace.workspaceId) ?? 0;
             const isPrimary = workspace.isDefault;
 
             return (
               <Card
                 key={workspace.workspaceId}
-                className="cursor-pointer hover:shadow-lg transition-shadow group relative"
+                className="group relative flex min-h-44 flex-col transition-shadow hover:shadow-lg"
               >
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div
-                      className="flex-1"
+                <CardHeader className="p-5 pb-3">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       onClick={() => handleSelectWorkspace(workspace.workspaceId)}
                     >
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <FolderKanban className="w-5 h-5 text-orange-500" />
-                        {getWorkspaceDisplayName(workspace)}
+                      <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                        <FolderKanban className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+                        <span className="truncate">{getWorkspaceDisplayName(workspace)}</span>
                       </CardTitle>
                       <CardDescription className="mt-2">
                         {projectCount} {projectCount === 1 ? 'project' : 'projects'}
                       </CardDescription>
-                    </div>
+                    </button>
 
                     {!isPrimary && (
                       <DropdownMenu>
@@ -89,30 +129,31 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-label={`Workspace actions for ${getWorkspaceDisplayName(workspace)}`}
+                            className="shrink-0 opacity-70 transition-opacity hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <MoreHorizontal className="w-4 h-4" />
+                            <MoreHorizontal aria-hidden="true" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => {
+                            onSelect={() => {
                               onEditWorkspace(workspace.workspaceId);
                               onOpenChange(false);
                             }}
                           >
-                            <Edit className="w-4 h-4 mr-2" />
+                            <Edit className="mr-2" aria-hidden="true" />
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-red-600"
-                            onClick={() => {
+                            onSelect={() => {
                               onDeleteWorkspace(workspace.workspaceId);
                               onOpenChange(false);
                             }}
                           >
-                            <Trash2 className="w-4 h-4 mr-2" />
+                            <Trash2 className="mr-2" aria-hidden="true" />
                             Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -120,8 +161,14 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                     )}
                   </div>
                 </CardHeader>
-                <CardContent onClick={() => handleSelectWorkspace(workspace.workspaceId)}>
-                  <Button variant="outline" size="sm" className="w-full">
+                <CardContent className="mt-auto p-5 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => handleSelectWorkspace(workspace.workspaceId)}
+                  >
                     View Projects
                   </Button>
                 </CardContent>
@@ -130,18 +177,17 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
           })}
 
           {/* Create new workspace card */}
-          <Card
-            className="border-dashed cursor-pointer hover:border-orange-300 hover:bg-orange-50 transition-colors"
+          <button
+            type="button"
+            className="flex min-h-44 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-5 text-muted-foreground shadow-card transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => {
               onCreateWorkspace();
               onOpenChange(false);
             }}
           >
-            <CardContent className="flex flex-col items-center justify-center h-full min-h-[180px]">
-              <Plus className="w-8 h-8 text-gray-400 mb-2" />
-              <p className="text-gray-500 font-medium">Create Workspace</p>
-            </CardContent>
-          </Card>
+            <Plus className="mb-2 h-8 w-8" aria-hidden="true" />
+            <span className="font-medium">Create Workspace</span>
+          </button>
         </div>
       </DialogContent>
     </Dialog>

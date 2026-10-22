@@ -39,6 +39,38 @@ import {
   SelectTrigger as RoleSelectTrigger, SelectValue as RoleSelectValue,
 } from '@/components/ui/select';
 
+const GENERIC_MEMBER_NAMES = new Set([
+  '',
+  'admin',
+  'member',
+  'owner',
+  'unknown',
+  'user',
+  'viewer',
+  'you',
+]);
+
+const INVITATION_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+});
+
+const resolveMemberDisplayName = (
+  userId: string,
+  email: string | null | undefined,
+  ...candidates: Array<string | null | undefined>
+): string => {
+  const name = candidates.find((candidate) => {
+    const normalized = candidate?.trim().toLowerCase() ?? '';
+    return !GENERIC_MEMBER_NAMES.has(normalized);
+  });
+  if (name) return name.trim();
+
+  const emailName = email?.split('@')[0]?.trim();
+  if (emailName) return emailName;
+
+  return `Teammate ${userId.slice(0, 6)}`;
+};
+
 /**
  * Inline role picker for a member row — assigns a built-in role.
  */
@@ -258,10 +290,20 @@ export const Team: React.FC = () => {
 
       const assembledMembers: ProjectMember[] = [];
       if (ownerId) {
+        const ownerEmail =
+          ownerOrgMember?.email ||
+          (organization?.ownerId === ownerId ? organization.ownerEmail : '') ||
+          (ownerId === user?.userId ? user.email : '');
         assembledMembers.push({
           userId: ownerId,
-          email: ownerOrgMember?.email || (ownerId === user?.userId ? user.email : ''),
-          displayName: ownerOrgMember?.displayName || (ownerId === user?.userId ? user.displayName : 'Owner'),
+          email: ownerEmail,
+          displayName: resolveMemberDisplayName(
+            ownerId,
+            ownerEmail,
+            ownerOrgMember?.displayName,
+            organization?.ownerId === ownerId ? organization.ownerName : null,
+            ownerId === user?.userId ? user.displayName : null,
+          ),
           photoURL: ownerOrgMember?.photoURL || (ownerId === user?.userId ? (user.photoURL || '') : ''),
           role: 'owner',
           addedAt: ownerOrgMember?.joinedAt || new Date(),
@@ -272,11 +314,20 @@ export const Team: React.FC = () => {
         const memberId = member?.userId || member?.user_id;
         if (!memberId || (ownerId && memberId === ownerId)) continue;
         const profile = profileMap.get(memberId);
+        const orgMember = (organization?.members || []).find((m) => m.userId === memberId);
+        const memberEmail = profile?.email || orgMember?.email || member.email || '';
         assembledMembers.push({
           userId: memberId,
-          email: profile?.email || member.email || '',
-          displayName: profile?.display_name || member.displayName || member.display_name || member.email || 'Member',
-          photoURL: profile?.photo_url || member.photoURL || member.photo_url || '',
+          email: memberEmail,
+          displayName: resolveMemberDisplayName(
+            memberId,
+            memberEmail,
+            profile?.display_name,
+            orgMember?.displayName,
+            member.displayName,
+            member.display_name,
+          ),
+          photoURL: profile?.photo_url || orgMember?.photoURL || member.photoURL || member.photo_url || '',
           role: (member.role || 'member') as ProjectMember['role'],
           addedAt: member.addedAt || member.added_at ? new Date(member.addedAt || member.added_at) : new Date(),
         });
@@ -311,11 +362,22 @@ export const Team: React.FC = () => {
     const memberUserId = member.userId || member.user_id;
     if (!memberUserId) continue;
     const orgMember = organizationMemberMap.get(memberUserId);
+    const memberEmail =
+      member.email ||
+      orgMember?.email ||
+      (organization && organization.ownerId === memberUserId ? organization.ownerEmail : '');
     allMembersMap.set(memberUserId, {
       ...member,
       userId: memberUserId,
-      email: member.email || orgMember?.email || '',
-      displayName: member.displayName || member.display_name || orgMember?.displayName || orgMember?.email || 'Member',
+      email: memberEmail,
+      displayName: resolveMemberDisplayName(
+        memberUserId,
+        memberEmail,
+        member.displayName,
+        member.display_name,
+        orgMember?.displayName,
+        organization && organization.ownerId === memberUserId ? organization.ownerName : null,
+      ),
       photoURL: member.photoURL || member.photo_url || orgMember?.photoURL || '',
       role: memberUserId === currentProject?.ownerId ? 'owner' : (member.role || 'member'),
       addedAt: member.addedAt || member.added_at || orgMember?.joinedAt || new Date(),
@@ -325,12 +387,20 @@ export const Team: React.FC = () => {
   const effectiveOwnerId = projectOwnerId || currentProject?.ownerId || null;
   if (effectiveOwnerId && !allMembersMap.has(effectiveOwnerId)) {
     const ownerFromOrg = organizationMemberMap.get(effectiveOwnerId);
+    const ownerEmail =
+      ownerFromOrg?.email ||
+      (organization?.ownerId === effectiveOwnerId ? organization.ownerEmail : '') ||
+      (effectiveOwnerId === user?.userId ? user.email : '');
     allMembersMap.set(effectiveOwnerId, {
       userId: effectiveOwnerId,
-      email: ownerFromOrg?.email || (effectiveOwnerId === user?.userId ? user.email : ''),
-      displayName:
-        ownerFromOrg?.displayName ||
-        (effectiveOwnerId === user?.userId ? user.displayName : 'Owner'),
+      email: ownerEmail,
+      displayName: resolveMemberDisplayName(
+        effectiveOwnerId,
+        ownerEmail,
+        ownerFromOrg?.displayName,
+        organization?.ownerId === effectiveOwnerId ? organization.ownerName : null,
+        effectiveOwnerId === user?.userId ? user.displayName : null,
+      ),
       photoURL:
         ownerFromOrg?.photoURL ||
         (effectiveOwnerId === user?.userId ? (user.photoURL || '') : ''),
@@ -662,9 +732,10 @@ export const Team: React.FC = () => {
   // ✅ FEATURE GATE — shown if trial or basic plan
   if (!canUseTeam) {
     return (
-      <main className="flex-1 overflow-y-auto p-8">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
+        <div className="mx-auto w-full max-w-7xl">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground">Team</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Team</h1>
             <p className="text-muted-foreground">Manage your team members and their roles</p>
           </div>
           <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center">
@@ -685,24 +756,26 @@ export const Team: React.FC = () => {
               Upgrade to Basic or Advanced
             </Button>
           </div>
+        </div>
         </main>
     );
   }
 
   return (
     <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 md:mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Team</h1>
-            <p className="text-muted-foreground">
+      <div className="mx-auto w-full max-w-7xl">
+        <div className="mb-6 flex flex-col gap-4 md:mb-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Team</h1>
+            <p className="mt-1 max-w-2xl text-pretty text-muted-foreground">
               {isProjectOwner && selectedProject
                 ? "As project owner, you can invite team members by email and manage roles."
                 : "Manage your team members and their roles"}
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="grid w-full gap-2 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:justify-end">
             <Select value={selectedProject} onValueChange={setSelectedProject}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full lg:w-52" aria-label="Select project">
                 <SelectValue placeholder="Select project" />
               </SelectTrigger>
               <SelectContent>
@@ -718,9 +791,10 @@ export const Team: React.FC = () => {
               onClick={() => { setAddUserId(''); setAddRole('member'); setOpenAddMember(true); }}
               disabled={!selectedProject || !(isProjectOwner || isAdmin)}
               title="Add an existing teammate to this project"
+              className="w-full lg:w-auto"
             >
               <UserPlus className="w-4 h-4 mr-2" />
-              Add member
+              Add Member
             </Button>
             <Button
               onClick={() => setShowInviteModal(true)}
@@ -734,7 +808,7 @@ export const Team: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3 md:mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Members</CardTitle>
@@ -766,8 +840,10 @@ export const Team: React.FC = () => {
           </Card>
         </div>
 
-        <Card className="mb-6">
-          <CardHeader><CardTitle>Team Members</CardTitle></CardHeader>
+        <Card className="mb-6 overflow-hidden">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle className="text-lg">Team Members</CardTitle>
+          </CardHeader>
           <CardContent>
             {!selectedProject ? (
               <div className="text-center py-8 text-muted-foreground">
@@ -784,28 +860,30 @@ export const Team: React.FC = () => {
                 <p>No team members yet</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="divide-y divide-border/70">
                 {allMembers.map((member) => (
-                  <div key={member.userId} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
-                    <div className="flex items-center gap-4">
+                  <div key={member.userId} className="flex flex-col gap-4 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
                       <Avatar>
                         <AvatarImage src={member.photoURL} />
                         <AvatarFallback className="bg-primary/20 text-primary">
-                          {member.displayName.charAt(0).toUpperCase()}
+                          {member.displayName.charAt(0).toUpperCase() || 'T'}
                         </AvatarFallback>
                       </Avatar>
-                      <div>
-                        <p className="font-medium text-foreground">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">
                           {member.displayName}
                           {member.userId === user?.userId && (
                             <span className="ml-2 text-sm text-muted-foreground">(You)</span>
                           )}
                         </p>
-                        <p className="text-sm text-muted-foreground">{member.email}</p>
+                        {member.email ? (
+                          <p className="truncate text-sm text-muted-foreground">{member.email}</p>
+                        ) : null}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
                       {isAdmin && organization
                         && organization.ownerId !== member.userId
                         && member.userId !== user?.userId
@@ -825,7 +903,7 @@ export const Team: React.FC = () => {
                           value={member.role}
                           onValueChange={(v) => void handleChangeProjectRole(member.userId, v as ProjectRole)}
                         >
-                          <RoleSelectTrigger className="w-36 h-8">
+                          <RoleSelectTrigger className="h-8 w-full min-w-36 sm:w-40">
                             {roleBusyUserId === member.userId
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               : <RoleSelectValue />}
@@ -842,7 +920,8 @@ export const Team: React.FC = () => {
                       {isProjectOwner && member.role !== "owner" && (
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
+                          aria-label={`Remove ${member.displayName} from this project`}
                           className="text-red-500 hover:text-red-700"
                           onClick={() => setRemoveMemberId(member.userId)}
                         >
@@ -879,19 +958,27 @@ export const Team: React.FC = () => {
                           <p className="font-medium text-foreground truncate">{invitation.inviteeEmail}</p>
                           <p className="text-sm text-muted-foreground flex items-center gap-1">
                             <Clock className="w-3 h-3 shrink-0" />
-                            <span className="truncate">Expires {new Date(invitation.expiresAt).toLocaleDateString()}</span>
+                            <span className="truncate">
+                              Expires {INVITATION_DATE_FORMATTER.format(new Date(invitation.expiresAt))}
+                            </span>
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {getRoleBadge(invitation.role)}
-                        <Button variant="ghost" size="sm" onClick={() => copyInviteLink(invitation.token, invitation.invitationId)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Copy invitation link for ${invitation.inviteeEmail}`}
+                          onClick={() => copyInviteLink(invitation.token, invitation.invitationId)}
+                        >
                           {copiedLink === invitation.invitationId ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                         </Button>
                         {isProjectOwner && (
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon"
+                            aria-label={`Cancel invitation for ${invitation.inviteeEmail}`}
                             className="text-red-500 hover:text-red-700"
                             onClick={() => setCancelInviteId(invitation.invitationId)}
                           >
@@ -1185,6 +1272,7 @@ export const Team: React.FC = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      </div>
       </main>
   );
 };

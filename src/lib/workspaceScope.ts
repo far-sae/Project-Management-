@@ -25,7 +25,6 @@ export const QUICK_MENU_PAGE_KEYS: PageKey[] = [
   "calendar",
   "workload",
   "reports",
-  "social",
   "team",
 ];
 

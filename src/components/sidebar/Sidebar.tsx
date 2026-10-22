@@ -22,7 +22,6 @@ import {
   Menu,
   X,
   TrendingUp,
-  Share2,
   FolderKanban,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -58,7 +57,6 @@ import { toast } from 'sonner';
 
 const QUICK_ITEMS_FULL = [
   { icon: FolderKanban, label: 'Project Management', href: '/dashboard', page: 'dashboard' as PageKey },
-  { icon: Share2, label: 'Social Media Marketing', href: '/social', page: 'social' as PageKey },
   { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects', page: 'projects_analytics' as PageKey },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
   { icon: Inbox, label: 'Inbox', href: '/inbox', page: 'inbox' as PageKey },

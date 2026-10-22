@@ -146,9 +146,11 @@ export const Dashboard: React.FC = () => {
 
   const {
     workspaces,
+    loading: workspacesLoading,
     addWorkspace,
     editWorkspace,
     removeWorkspace,
+    refresh: refreshWorkspaces,
   } = useWorkspaces();
 
 
@@ -697,7 +699,10 @@ export const Dashboard: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setShowWorkspacesModal(true)}
+                  onClick={() => {
+                    setShowWorkspacesModal(true);
+                    void refreshWorkspaces({ silent: true });
+                  }}
                 >
                   <ListTree className="w-4 h-4 mr-2" />
                   View All
@@ -1875,6 +1880,8 @@ export const Dashboard: React.FC = () => {
           setShowCreateWorkspaceModal(true);
         }}
         onSelectWorkspace={handleWorkspaceChange}
+        loading={workspacesLoading}
+        onRefresh={() => void refreshWorkspaces()}
       />
 
       {/* ✅ Plan limit modal — shows when project/workspace limit is hit */}
