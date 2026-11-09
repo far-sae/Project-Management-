@@ -38,6 +38,8 @@ interface CallControlsProps {
    *  notes. Hidden in compact mode (PiP) to keep the end-call dominant. */
   isRecording?: boolean;
   onToggleRecording?: () => void;
+  /** Set false to hide the screen-share button (e.g. guests). Default true. */
+  allowScreenShare?: boolean;
 }
 
 // Most mobile browsers (iOS Safari, mobile Chrome on Android) do not implement
@@ -63,6 +65,7 @@ export const CallControls: React.FC<CallControlsProps> = ({
   compact = false,
   isRecording = false,
   onToggleRecording,
+  allowScreenShare = true,
 }) => {
   const btnSize = compact ? 'h-9 w-9' : 'h-11 w-11';
   const iconSize = compact ? 'h-4 w-4' : 'h-5 w-5';
@@ -152,7 +155,7 @@ export const CallControls: React.FC<CallControlsProps> = ({
       )}
 
       {/* Screen share — hidden in compact (PiP) mode for the same reason */}
-      {!compact && screenShareAvailable && (
+      {!compact && allowScreenShare && screenShareAvailable && (
         <Button
           variant="ghost"
           size="icon"

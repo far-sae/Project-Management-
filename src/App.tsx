@@ -30,6 +30,7 @@ const TimeTracking = React.lazy(() => import('@/pages/TimeTracking').then((m) =>
 const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ default: m.Expenses })));
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
+const GuestJoin = React.lazy(() => import('@/pages/GuestJoin').then((m) => ({ default: m.GuestJoin })));
 const AcceptInvite = React.lazy(() => import('@/pages/AcceptInvite').then((m) => ({ default: m.AcceptInvite })));
 const CrmContactsPage = React.lazy(() => import('@/pages/crmHub/Contacts').then((m) => ({ default: m.CrmContactsPage })));
 const CrmCompaniesPage = React.lazy(() => import('@/pages/crmHub/Companies').then((m) => ({ default: m.CrmCompaniesPage })));
@@ -158,6 +159,7 @@ const router = createBrowserRouter(
         { path: '/cookies', element: lazyRoute(<CookiePolicyPage />) },
         { path: '/terms', element: lazyRoute(<TermsPage />) },
         { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
+        { path: '/join/:token', element: lazyRoute(<GuestJoin />) },
         { path: '/', element: lazyRoute(<LandingPage />) },
         {
           // All authenticated app routes share a single layout — the sidebar
