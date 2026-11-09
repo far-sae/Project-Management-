@@ -16,7 +16,7 @@ import {
   type ChatAttachment,
   type DirectMessage,
 } from '@/services/supabase/database';
-import { deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
+import { ATTACHMENTS_BUCKET, deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
 import { ChatAttachmentList } from './ChatAttachmentList';
 import { format, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
@@ -157,7 +157,7 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
       } catch (insertErr) {
         await Promise.allSettled(
           uploadedPaths.map((p) =>
-            deleteFile('attachments', p).catch(() => undefined),
+            deleteFile(ATTACHMENTS_BUCKET, p).catch(() => undefined),
           ),
         );
         throw insertErr;

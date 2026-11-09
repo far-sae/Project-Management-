@@ -1,6 +1,17 @@
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
 
+/**
+ * Bucket for comment, chat, DM and expense-receipt attachments.
+ *
+ * These used to go to a separate private `attachments` bucket, but that
+ * bucket was deleted along with the CRM (see migration 143), which made
+ * every attachment upload fail with "Bucket not found". `project-files`
+ * exists, lets any signed-in user upload, and is publicly readable — which
+ * matches the `getPublicUrl()` links these uploads hand back.
+ */
+export const ATTACHMENTS_BUCKET = "project-files";
+
 export interface FileUploadResult {
   url: string;
   path: string;
@@ -76,7 +87,7 @@ export const uploadProjectFile = (file: File, projectId: string) =>
   uploadFile(file, "project-files", `projects/${projectId}`);
 
 export const uploadAttachment = (file: File, taskId: string) =>
-  uploadFile(file, "attachments", `tasks/${taskId}`);
+  uploadFile(file, ATTACHMENTS_BUCKET, `tasks/${taskId}`);
 
 export const uploadAvatar = (file: File, userId: string) =>
   uploadFile(file, "avatars", `users/${userId}`);
@@ -513,7 +524,7 @@ export const uploadCommentAttachment = async (
   const safeName = sanitizeFileName(file.name);
   const fileName = `${Date.now()}-${safeName}`;
   const path = `${organizationId}/tasks/${taskId}/${fileName}`;
-  const bucket = "attachments";
+  const bucket = ATTACHMENTS_BUCKET;
 
   const { error } = await supabase.storage
     .from(bucket)
@@ -535,7 +546,9 @@ export const uploadCommentAttachment = async (
       organization_id: organizationId,
       file_name: file.name,
       file_url: urlData.publicUrl,
-      storage_path: `attachments/${path}`,
+      // Plain path (no `attachments/` prefix) so deleteFileComplete removes
+      // it from the bucket it actually lives in.
+      storage_path: path,
       file_type: file.type,
       file_size: file.size,
       scope: "task",
@@ -575,7 +588,7 @@ export const uploadChatAttachment = async (
       ? `chat/projects/${scope.projectId}`
       : `chat/dm/${scope.threadKey}`;
   const path = `${dir}/${safe}`;
-  const bucket = "attachments";
+  const bucket = ATTACHMENTS_BUCKET;
 
   const { error } = await supabase.storage
     .from(bucket)

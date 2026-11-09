@@ -234,14 +234,16 @@ const ParticipantTile: React.FC<ParticipantTileProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => {
-    attachStream(videoRef.current, snap.videoStream ?? null);
-  }, [snap.videoStream]);
-
   const initials = (snap.displayName || '?').charAt(0).toUpperCase();
   // A screen-share track should always render even when the camera is off —
   // the `isCameraOff` flag describes the camera, not the screen.
   const showVideo = !!snap.videoStream && (snap.isScreenSharing || !snap.isCameraOff);
+
+  // Re-run when `showVideo` flips too: turning the camera back on mounts a
+  // fresh <video> element while the (cached) stream object is unchanged.
+  useEffect(() => {
+    attachStream(videoRef.current, showVideo ? snap.videoStream ?? null : null);
+  }, [snap.videoStream, showVideo]);
 
   return (
     <div

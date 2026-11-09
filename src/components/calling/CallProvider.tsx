@@ -18,6 +18,7 @@ import {
   dmRoomName,
   projectRoomName,
 } from '@/services/livekit/fetchLiveKitToken';
+import { shouldEndCallWhenAlone } from '@/services/livekit/callHelpers';
 import {
   INITIAL_CALL_STATE,
   type CallContext,
@@ -244,6 +245,29 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
         if (msg.type === 'ring-cancel') {
+          // 1:1 outgoing call that the callee declined — stop ringing now
+          // instead of waiting out the 30s timeout.
+          const cur = latestCallStateRef.current;
+          if (
+            cur.status === 'ringing' &&
+            cur.direction === 'outgoing' &&
+            cur.callId === msg.callId &&
+            remoteParticipantsRef.current.length <= 1
+          ) {
+            clearTimers();
+            void teardownLiveKit();
+            remoteParticipantsRef.current = [];
+            setState({
+              ...IDLE_STATE,
+              status: 'ended',
+              error: `${msg.from?.displayName || 'They'} declined the call`,
+            });
+            endStateTimeoutRef.current = setTimeout(() => {
+              endStateTimeoutRef.current = null;
+              setState((s) => (s.status === 'ended' ? IDLE_STATE : s));
+            }, ENDED_DISMISS_MS);
+            return;
+          }
           // Either the caller bailed or someone else in the ring-all
           // already picked up. Drop our incoming ring if it matches.
           setState((prev) => {
@@ -265,7 +289,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       void supabase.removeChannel(inboxChannel);
     };
-  }, [user?.userId, localParticipant?.userId]);
+  }, [user?.userId, localParticipant?.userId, clearTimers, teardownLiveKit]);
 
   // ── 30-second incoming ring timeout ────────────────────────
 
@@ -310,8 +334,20 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
    */
   const buildLiveKit = useCallback(async (): Promise<LiveKitCallService> => {
     const { LiveKitCallService } = await import('@/services/livekit/LiveKitCallService');
-    return new LiveKitCallService({
+    // Events from a room we've already torn down (e.g. its late Disconnected
+    // event) must not touch the state of a newer call.
+    const isCurrent = () => liveKitRef.current === service;
+    const service: LiveKitCallService = new LiveKitCallService({
       onParticipantsChange: (peers) => {
+        if (!isCurrent()) return;
+        // Everyone else left a live call → end it here too, instead of
+        // leaving this user alone in an empty "connected" call.
+        const remoteCount = peers.filter((p) => !p.isLocal).length;
+        if (shouldEndCallWhenAlone(latestCallStateRef.current.status, remoteCount)) {
+          resetCall();
+          toast.message('Call ended');
+          return;
+        }
         setState((prev) => {
           if (prev.status === 'idle' || prev.status === 'ended') return prev;
           const localSnap = findLocalSnapshot(peers);
@@ -392,6 +428,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       },
       onConnectionStateChange: (cs: ConnectionStateValue) => {
+        if (!isCurrent()) return;
         setState((prev) => {
           if (prev.status === 'idle' || prev.status === 'ended') return prev;
           if (cs === 'reconnecting' || cs === 'signalReconnecting') {
@@ -408,6 +445,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         // show "ended" here because in practice that's almost always a hang
         // up triggered by the local user — and they already see the UI go
         // away. If it was unexpected, the next call will surface an error.
+        if (!isCurrent()) return;
         resetCall();
       },
       onError: (msg) => {
@@ -415,6 +453,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         toast.error(msg);
       },
     });
+    return service;
   }, [localParticipant, sendInboxMessage, resetCall]);
 
   // ── Actions ────────────────────────────────────────────────

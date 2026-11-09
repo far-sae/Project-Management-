@@ -1,5 +1,6 @@
 import { supabase } from "./config";
 import { logger } from "@/lib/logger";
+import { ATTACHMENTS_BUCKET } from "./storage";
 
 export type ExpenseStatus = "pending" | "approved" | "rejected";
 
@@ -448,7 +449,7 @@ export const uploadExpenseInvoice = async (
     .replace(/_+/g, "_")
     .slice(-120);
   const path = `${organizationId}/expenses/${Date.now()}-${sanitized}`;
-  const bucket = "attachments";
+  const bucket = ATTACHMENTS_BUCKET;
 
   const { error } = await supabase.storage
     .from(bucket)

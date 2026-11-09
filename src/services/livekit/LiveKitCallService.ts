@@ -13,6 +13,7 @@ import {
   type ParticipantTrackPermission,
 } from 'livekit-client';
 import { fetchLiveKitToken, projectRoomName } from './fetchLiveKitToken';
+import { MediaStreamCache } from './callHelpers';
 import type { CallParticipant } from '@/services/webrtc/types';
 
 /**
@@ -106,6 +107,8 @@ export class LiveKitCallService {
   private destroyed = false;
   /** Most recent connection state we surfaced; used to suppress duplicates. */
   private lastConnectionState: ConnectionState = ConnectionState.Disconnected;
+  /** Stable MediaStreams per participant so <audio>/<video> don't restart. */
+  private readonly streams = new MediaStreamCache();
 
   constructor(events: LiveKitCallEvents) {
     this.events = events;
@@ -131,6 +134,12 @@ export class LiveKitCallService {
     for (const remote of room.remoteParticipants.values()) {
       snaps.push(this.snapshotForRemote(remote));
     }
+    const activeKeys = new Set<string>();
+    for (const s of snaps) {
+      activeKeys.add(`${s.userId}:audio`);
+      activeKeys.add(`${s.userId}:video`);
+    }
+    this.streams.prune(activeKeys);
     return snaps;
   }
 
@@ -254,6 +263,7 @@ export class LiveKitCallService {
     this.destroyed = true;
     const room = this.room;
     this.room = null;
+    this.streams.clear();
     if (!room) return;
     try {
       await room.disconnect(true);
@@ -311,8 +321,14 @@ export class LiveKitCallService {
     return {
       userId: local.identity,
       displayName: local.name || local.identity,
-      audioStream: audioTrack ? new MediaStream([audioTrack]) : null,
-      videoStream: videoTrack ? new MediaStream([videoTrack]) : null,
+      audioStream: this.streams.get(
+        `${local.identity}:audio`,
+        audioTrack ? [audioTrack] : [],
+      ),
+      videoStream: this.streams.get(
+        `${local.identity}:video`,
+        videoTrack ? [videoTrack] : [],
+      ),
       isMicMuted: !local.isMicrophoneEnabled,
       isCameraOff: !local.isCameraEnabled,
       isScreenSharing: local.isScreenShareEnabled,
@@ -373,8 +389,11 @@ export class LiveKitCallService {
     return {
       userId: remote.identity,
       displayName: remote.name || remote.identity,
-      audioStream: audioTracks.length > 0 ? new MediaStream(audioTracks) : null,
-      videoStream: videoTrack ? new MediaStream([videoTrack]) : null,
+      audioStream: this.streams.get(`${remote.identity}:audio`, audioTracks),
+      videoStream: this.streams.get(
+        `${remote.identity}:video`,
+        videoTrack ? [videoTrack] : [],
+      ),
       isMicMuted,
       isCameraOff,
       isScreenSharing: isScreen,
