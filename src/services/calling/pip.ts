@@ -13,7 +13,7 @@ export function getPipSupport(win: Window = window): PipSupport {
   if ('documentPictureInPicture' in win) return 'document';
   const doc = win.document as Document & { pictureInPictureEnabled?: boolean };
   if (
-    'requestPictureInPicture' in win.HTMLVideoElement.prototype &&
+    'requestPictureInPicture' in (win as Window & typeof globalThis).HTMLVideoElement.prototype &&
     doc.pictureInPictureEnabled !== false
   ) {
     return 'video';
