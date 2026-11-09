@@ -28,7 +28,14 @@ export function getPipSupport(win: Window = window): PipSupport {
 export function copyDocumentStyles(from: Document, to: Document): void {
   const nodes = from.head.querySelectorAll('style, link[rel="stylesheet"]');
   for (const node of Array.from(nodes)) {
-    to.head.appendChild(to.importNode(node, true));
+    const copy = to.importNode(node, true) as Element;
+    // The PiP document is about:blank — resolve hrefs against the app's URL
+    // so production CSS (/assets/index-*.css) still loads.
+    if (node.tagName === 'LINK') {
+      const abs = (node as HTMLLinkElement).href;
+      if (abs) copy.setAttribute('href', abs);
+    }
+    to.head.appendChild(copy);
   }
   to.documentElement.className = from.documentElement.className;
 }
@@ -91,26 +98,30 @@ export async function openDocumentPip(opts: {
 }
 
 /**
- * Fallback for browsers without Document PiP: float a single video (no
- * controls) using the classic <video> picture-in-picture.
+ * Fallback for browsers without Document PiP (Safari): float the user's
+ * already-playing tile video with the classic <video> picture-in-picture.
+ * Must be called synchronously from the click — Safari refuses PiP once the
+ * click's user activation has passed through an `await`.
+ * Returns null when that user has no video tile on screen.
  */
-export async function openVideoPip(stream: MediaStream): Promise<void> {
-  const video = document.createElement('video');
-  video.muted = true;
-  video.playsInline = true;
-  video.style.position = 'fixed';
-  video.style.width = '1px';
-  video.style.height = '1px';
-  video.style.opacity = '0';
-  video.style.pointerEvents = 'none';
-  video.srcObject = stream;
-  document.body.appendChild(video);
-  video.addEventListener('leavepictureinpicture', () => video.remove(), { once: true });
-  try {
-    await video.play();
-    await video.requestPictureInPicture();
-  } catch (err) {
-    video.remove();
-    throw err;
+export function requestVideoPipFor(
+  userId: string,
+  doc: Document = document,
+): Promise<unknown> | null {
+  const video = Array.from(doc.querySelectorAll<HTMLVideoElement>('video[data-call-user]')).find(
+    (v) => v.dataset.callUser === userId,
+  );
+  if (!video || typeof video.requestPictureInPicture !== 'function') return null;
+  return video.requestPictureInPicture();
+}
+
+/** Leave classic video picture-in-picture if it's showing (call ended). */
+export function exitVideoPip(doc: Document = document): void {
+  const d = doc as Document & {
+    pictureInPictureElement?: Element | null;
+    exitPictureInPicture?: () => Promise<void>;
+  };
+  if (d.pictureInPictureElement && d.exitPictureInPicture) {
+    void d.exitPictureInPicture().catch(() => undefined);
   }
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { registerAutoPip, shouldClosePip } from '@/services/calling/pip';
+import { registerAutoPip, requestVideoPipFor, shouldClosePip } from '@/services/calling/pip';
 import { usePipWindow } from '@/hooks/usePipWindow';
 
 describe('shouldClosePip', () => {
@@ -120,5 +120,43 @@ describe('usePipWindow', () => {
     rerender({ callActive: false });
     expect(fake.close).toHaveBeenCalled();
     expect(result.current.pipWindow).toBeNull();
+  });
+});
+
+describe('requestVideoPipFor', () => {
+  it('requests picture-in-picture synchronously on the user tile video', () => {
+    const video = document.createElement('video');
+    video.dataset.callUser = 'alice';
+    const request = vi.fn(() => Promise.resolve({} as PictureInPictureWindow));
+    (video as unknown as { requestPictureInPicture: typeof request }).requestPictureInPicture = request;
+    document.body.appendChild(video);
+    const result = requestVideoPipFor('alice');
+    // Called before any await so Safari still sees the click.
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(result).toBeInstanceOf(Promise);
+    video.remove();
+  });
+
+  it('returns null when that user has no video tile', () => {
+    expect(requestVideoPipFor('nobody')).toBeNull();
+  });
+});
+
+describe('usePipWindow video fallback', () => {
+  it('exits video picture-in-picture when the call ends', () => {
+    const exit = vi.fn(() => Promise.resolve());
+    const doc = document as unknown as Record<string, unknown>;
+    Object.defineProperty(document, 'pictureInPictureElement', { configurable: true, get: () => ({}) });
+    doc.exitPictureInPicture = exit;
+    const { rerender } = renderHook(
+      (props: { callActive: boolean }) =>
+        usePipWindow({ callActive: props.callActive, isLocalSharing: false }),
+      { initialProps: { callActive: true } },
+    );
+    expect(exit).not.toHaveBeenCalled();
+    rerender({ callActive: false });
+    expect(exit).toHaveBeenCalled();
+    delete (document as unknown as Record<string, unknown>).pictureInPictureElement;
+    delete doc.exitPictureInPicture;
   });
 });

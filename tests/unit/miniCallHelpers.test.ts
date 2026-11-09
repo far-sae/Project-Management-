@@ -89,4 +89,21 @@ describe('copyDocumentStyles', () => {
     );
     expect(to.documentElement.classList.contains('dark')).toBe(true);
   });
+
+  it('makes relative stylesheet hrefs absolute (the PiP window is about:blank)', () => {
+    const from = document.implementation.createHTMLDocument('from');
+    const base = from.createElement('base');
+    base.href = 'https://app.test/';
+    from.head.appendChild(base);
+    const link = from.createElement('link');
+    link.rel = 'stylesheet';
+    link.setAttribute('href', '/assets/index-abc.css');
+    from.head.appendChild(link);
+
+    const to = document.implementation.createHTMLDocument('to');
+    copyDocumentStyles(from, to);
+    expect(to.head.querySelector('link')?.getAttribute('href')).toBe(
+      'https://app.test/assets/index-abc.css',
+    );
+  });
 });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  exitVideoPip,
   getPipSupport,
   openDocumentPip,
   registerAutoPip,
@@ -85,7 +86,11 @@ export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolea
     const check = recheck;
     // Re-check right away too: e.g. sharing stopped while already on the tab.
     check();
-    if (!callActive) return;
+    if (!callActive) {
+      // Safari/video fallback window must not outlive the call either.
+      exitVideoPip();
+      return;
+    }
     document.addEventListener('visibilitychange', check);
     return () => document.removeEventListener('visibilitychange', check);
   }, [callActive, isLocalSharing, recheck]);

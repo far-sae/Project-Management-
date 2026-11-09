@@ -24,7 +24,7 @@ import { transcribeRecording } from '@/services/ai/transcribeRecording';
 import { ParticipantTile, RemoteAudioSink } from './CallTiles';
 import { MiniCallView } from './MiniCallView';
 import { usePipWindow } from '@/hooks/usePipWindow';
-import { openVideoPip } from '@/services/calling/pip';
+import { requestVideoPipFor } from '@/services/calling/pip';
 import { pickMiniMainTile } from '@/services/livekit/callHelpers';
 
 // ── Outgoing ringtone (Teams-style) ──────────────────────────
@@ -418,12 +418,14 @@ export const CallOverlay: React.FC = () => {
         await floating.openPip();
         return;
       }
-      const stream = pickMiniMainTile(state.participants)?.videoStream;
-      if (!stream) {
+      // Video fallback: no await before the request (Safari needs the click).
+      const main = pickMiniMainTile(state.participants);
+      const request = main ? requestVideoPipFor(main.userId) : null;
+      if (!request) {
         toast.message('Nothing to show yet');
         return;
       }
-      await openVideoPip(stream);
+      await request;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not open the floating window');
     }

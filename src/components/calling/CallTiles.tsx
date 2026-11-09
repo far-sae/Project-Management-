@@ -71,6 +71,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
       {showVideo ? (
         <video
           ref={videoRef}
+          data-call-user={snap.userId}
           autoPlay
           playsInline
           muted

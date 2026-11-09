@@ -159,11 +159,13 @@ export class LiveKitCallService {
     });
 
     const room = new Room({
-      // Adaptive stream + dynamic broadcast keeps multi-party video viable
-      // on weaker uplinks: LiveKit will downgrade or pause unsubscribed
-      // tiles automatically. Without these, every joiner pulls full HD
-      // from every publisher and cellular networks fall over.
-      adaptiveStream: true,
+      // adaptiveStream must stay OFF: it decides visibility from elements
+      // registered via `remoteVideoTrack.attach()`, but our tiles render raw
+      // MediaStreams. With it on, LiveKit saw no visible element and told
+      // the server to stop sending remote video (frozen/black cameras and
+      // screen shares, worst when the tab is hidden behind the floating
+      // window). Dynacast still pauses layers nobody subscribes to.
+      adaptiveStream: false,
       dynacast: true,
     });
     this.room = room;
