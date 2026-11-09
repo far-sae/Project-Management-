@@ -174,7 +174,7 @@ const PrivacyPolicyPage = () => {
           </li>
           <li>
             <strong className="text-foreground">Email delivery.</strong> Transactional and notification
-            email (e.g. EmailJS or comparable providers when configured for your deployment).
+            email is sent through Resend (resend.com).
           </li>
           <li>
             <strong className="text-foreground">Analytics.</strong> If you consent, tools such as

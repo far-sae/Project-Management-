@@ -393,7 +393,7 @@ export const ProjectView: React.FC = () => {
     });
   }, [tasks, dueDayParam]);
 
-  /** Same automation as My Tasks: due-soon + overdue hooks run while viewing the board so EmailJS/bell fire without visiting My Tasks only. */
+  /** Same automation as My Tasks: due-soon + overdue hooks run while viewing the board so email/bell notifications fire without visiting My Tasks only. */
   useEffect(() => {
     if (!tasks.length || !project || !user) return;
     const projectNames: Record<string, string> = { [project.projectId]: project.name };

@@ -780,8 +780,8 @@ export const Settings: React.FC = () => {
 
                 <p className="text-xs text-muted-foreground">
                   Saved to your account so in-app and email notifications follow these choices.
-                  Email still requires your project&apos;s mail service (e.g. EmailJS) to be
-                  connected.
+                  Emails are sent through Resend; they need RESEND_API_KEY set on the
+                  server.
                 </p>
               </CardContent>
             </Card>

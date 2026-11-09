@@ -2094,7 +2094,7 @@ export const createNotificationsForTaskUpdate = async (params: {
   newUrgent?: boolean;
   actorUserId: string;
   actorDisplayName: string;
-  /** When set (e.g. org members), sends optional EmailJS assignee email if env is configured. */
+  /** When set (e.g. org members), sends an optional assignee email (via Resend). */
   getAssigneeEmail?: (userId: string) => string | undefined;
   /**
    * Pass `true` on task creation so solo users (and people who assign themselves) still get the

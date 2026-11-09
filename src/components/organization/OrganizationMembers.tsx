@@ -84,12 +84,8 @@ export const OrganizationMembers: React.FC = () => {
           role: inviteRole,
         });
         const emailHint = getInvitationEmailFailureHint(emailResult);
-        const serverBit =
-          emailResult.status !== 412 && emailResult.text
-            ? ` ${emailResult.text}`
-            : '';
         toast('Email client opened', {
-          description: `We couldn’t send via EmailJS.${emailHint ? ` ${emailHint}` : ''}${serverBit} A draft was opened for ${inviteEmail}.`,
+          description: `We couldn’t send the invitation email.${emailHint ? ` ${emailHint}` : ''} A draft was opened for ${inviteEmail}.`,
         });
         void recordAuditEvent(
           organization.organizationId,

@@ -1,7 +1,7 @@
 import { supabase } from "./config";
 import { ProjectInvitation, CreateInvitationInput } from "@/types/invitation";
 import { logger } from "@/lib/logger";
-import { sendInvitationEmail as sendInvitationEmailViaEmailJs } from "@/services/email/emailService";
+import { sendInvitationEmail as sendInvitationEmailViaResend } from "@/services/email/emailService";
 
 export const createInvitation = async (
   projectId: string,
@@ -246,7 +246,7 @@ export const sendInvitationEmail = async (
 ): Promise<boolean> => {
   try {
     const inviteLink = `${window.location.origin}/accept-invite/${token}`;
-    const result = await sendInvitationEmailViaEmailJs({
+    const result = await sendInvitationEmailViaResend({
       toEmail,
       inviterName,
       projectName,
