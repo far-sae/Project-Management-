@@ -1,3 +1,5 @@
+import type { CallPeerSnapshot } from './LiveKitCallService';
+
 /**
  * Keeps one MediaStream per key (e.g. `<identity>:audio`) for as long as its
  * underlying tracks stay the same.
@@ -62,4 +64,25 @@ export function shouldEndCallWhenAlone(
   remoteCount: number,
 ): boolean {
   return remoteCount === 0 && status === 'connected';
+}
+
+/**
+ * Pick the big tile for the floating mini window. Order: a remote person
+ * sharing their screen > the remote who is speaking > the first remote >
+ * the local user. The local user's own screen share is never chosen (it
+ * would just mirror their screen); if they are the only one, their tile is
+ * returned without video so the initials show instead.
+ */
+export function pickMiniMainTile(peers: CallPeerSnapshot[]): CallPeerSnapshot | null {
+  const remotes = peers.filter((p) => !p.isLocal);
+  const pick =
+    remotes.find((p) => p.isScreenSharing) ??
+    remotes.find((p) => p.isSpeaking) ??
+    remotes[0];
+  if (pick) return pick;
+  const local = peers.find((p) => p.isLocal);
+  if (!local) return null;
+  return local.isScreenSharing
+    ? { ...local, videoStream: null, isScreenSharing: false }
+    : local;
 }
