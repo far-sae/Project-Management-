@@ -27,6 +27,8 @@ interface MeetingNotesReviewModalProps {
   userId?: string;
   /** Display name for the file download — defaults to "meeting". */
   meetingLabel?: string;
+  /** True while the recorded audio is being transcribed on the server. */
+  transcribing?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -41,6 +43,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
   recording,
   userId,
   meetingLabel = 'meeting',
+  transcribing = false,
 }) => {
   const [transcript, setTranscript] = useState('');
   const [notes, setNotes] = useState<MeetingNotes | null>(null);
@@ -220,16 +223,23 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
               Download .txt
             </Button>
           </div>
+          {transcribing && (
+            <p className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Transcribing the recording (everyone on the call)…
+            </p>
+          )}
           <Textarea
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
             rows={8}
+            disabled={transcribing}
             placeholder="The transcript from your meeting will appear here. You can edit it before generating notes."
             className="text-sm"
           />
-          {!transcript.trim() && (
+          {!transcript.trim() && !transcribing && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Live captioning needs Chrome or Edge. On other browsers, paste your own notes here
+              No transcript could be made from this recording. You can paste your own notes here
               and AI will tidy them up.
             </p>
           )}
@@ -241,6 +251,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
             onClick={() => void handleGenerate()}
             disabled={
               generating ||
+              transcribing ||
               !transcript.trim() ||
               !aiAvailable ||
               !userId?.trim()

@@ -755,13 +755,20 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     await lk.toggleScreenShare();
   }, []);
 
-  const setVideoEffect = useCallback(async (_effect: VideoEffect) => {
-    // Background blur is queued behind the LiveKit migration — re-enabling
-    // it requires wiring a TrackProcessor onto the local camera publication.
-    // For now toast so the action surface stays consistent and CallControls
-    // doesn't have to branch on capability.
-    setState((prev) => ({ ...prev, videoEffect: 'none', isApplyingEffect: false }));
-    toast.message('Background blur is rolling out — coming back soon.');
+  const setVideoEffect = useCallback(async (effect: VideoEffect) => {
+    const lk = liveKitRef.current;
+    if (!lk) return;
+    setState((prev) => ({ ...prev, isApplyingEffect: true }));
+    try {
+      // First enable downloads the segmentation model (~1–2s).
+      await lk.setBackgroundBlur(effect === 'blur');
+      setState((prev) => ({ ...prev, videoEffect: effect, isApplyingEffect: false }));
+    } catch (err) {
+      setState((prev) => ({ ...prev, isApplyingEffect: false }));
+      toast.error(
+        err instanceof Error ? err.message : 'Could not change background blur',
+      );
+    }
   }, []);
 
   const actions: CallActions = {

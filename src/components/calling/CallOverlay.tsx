@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { uploadFileWithProgress } from '@/services/supabase/storage';
 import { insertProjectChatMessage } from '@/services/supabase/database';
 import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
+import { transcribeRecording } from '@/services/ai/transcribeRecording';
 
 // ── Outgoing ringtone (Teams-style) ──────────────────────────
 
@@ -483,14 +484,48 @@ export const CallOverlay: React.FC = () => {
     [user, state.context],
   );
 
+  // Recording shown in the review modal. Starts with the live-caption
+  // transcript, then is replaced by the full Whisper transcript (all
+  // participants) once the audio has been transcribed.
+  const [reviewRecording, setReviewRecording] = useState<MeetingRecording | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
+
+  const finishRecording = useCallback(
+    async (rec: MeetingRecording | null) => {
+      if (!rec) return;
+      if (rec.audioBlob || rec.transcript) {
+        setReviewRecording(rec);
+        setReviewOpen(true);
+      }
+      let finalRec = rec;
+      if (rec.audioBlob && rec.audioBlob.size > 0) {
+        setTranscribing(true);
+        try {
+          const text = await transcribeRecording(rec.audioBlob);
+          if (text) {
+            finalRec = { ...rec, transcript: text };
+            setReviewRecording(finalRec);
+          } else if (!rec.transcript) {
+            toast.message('No speech was detected in the recording.');
+          }
+        } catch (err) {
+          toast.warning(
+            `${err instanceof Error ? err.message : 'Transcription failed'}${
+              rec.transcript ? ' — showing live captions instead.' : ''
+            }`,
+          );
+        } finally {
+          setTranscribing(false);
+        }
+      }
+      void persistRecordingToChat(finalRec);
+    },
+    [persistRecordingToChat],
+  );
+
   const handleToggleRecording = useCallback(() => {
     if (recorder.isRecording) {
-      void recorder.stop().then((rec) => {
-        if (rec && (rec.audioBlob || rec.transcript)) {
-          setReviewOpen(true);
-        }
-        if (rec) void persistRecordingToChat(rec);
-      });
+      void recorder.stop().then(finishRecording);
     } else {
       void recorder.start().then((res) => {
         if (res.outcome === 'failed') {
@@ -500,7 +535,7 @@ export const CallOverlay: React.FC = () => {
         }
       });
     }
-  }, [recorder, persistRecordingToChat]);
+  }, [recorder, finishRecording]);
 
   // If the call ends while we're still recording, finalise the file so the
   // user gets the audio + transcript instead of losing it on hangup.
@@ -510,14 +545,9 @@ export const CallOverlay: React.FC = () => {
   }, [recorder.isRecording]);
   useEffect(() => {
     if ((state.status === 'ended' || state.status === 'idle') && wasRecordingRef.current) {
-      void recorder.stop().then((rec) => {
-        if (rec && (rec.audioBlob || rec.transcript)) {
-          setReviewOpen(true);
-        }
-        if (rec) void persistRecordingToChat(rec);
-      });
+      void recorder.stop().then(finishRecording);
     }
-  }, [state.status, recorder, persistRecordingToChat]);
+  }, [state.status, recorder, finishRecording]);
 
   // Re-anchor the PiP to its default spot every time the user enters PiP
   // mode, so it doesn't reappear off-screen if the window has been resized.
@@ -538,9 +568,13 @@ export const CallOverlay: React.FC = () => {
       open={reviewOpen}
       onOpenChange={(next) => {
         setReviewOpen(next);
-        if (!next) recorder.reset();
+        if (!next) {
+          recorder.reset();
+          setReviewRecording(null);
+        }
       }}
-      recording={recorder.lastRecording}
+      recording={reviewRecording}
+      transcribing={transcribing}
       userId={user?.userId}
       meetingLabel={state.context?.label || 'meeting'}
     />

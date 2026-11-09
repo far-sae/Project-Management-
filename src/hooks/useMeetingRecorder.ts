@@ -32,6 +32,20 @@ function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 }
 
+/**
+ * Join the finalised live-caption text with whatever was still "interim"
+ * (unfinished) when recording stopped, so the last sentence isn't dropped.
+ */
+export function combineTranscript(finalText: string, interim: string): string {
+  return `${finalText.trim()} ${interim.trim()}`.trim();
+}
+
+/**
+ * ~32 kbps Opus keeps speech clear and makes ~100 minutes fit under the
+ * 25 MB transcription upload limit (the browser default is ~128 kbps).
+ */
+const RECORDING_AUDIO_BITS_PER_SECOND = 32_000;
+
 export interface MeetingRecording {
   /** WebM/Opus blob produced by MediaRecorder, downloadable as audio. */
   audioBlob: Blob | null;
@@ -136,6 +150,8 @@ export function useMeetingRecorder(
   const cleanupAudioRef = useRef<() => void>(() => {});
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const finalTranscriptRef = useRef('');
+  /** Latest not-yet-final caption text, flushed into the transcript on stop. */
+  const interimTranscriptRef = useRef('');
   const startedAtRef = useRef<string | null>(null);
   const startedAtMsRef = useRef<number>(0);
 
@@ -158,6 +174,7 @@ export function useMeetingRecorder(
     setError(null);
     setLiveTranscript('');
     finalTranscriptRef.current = '';
+    interimTranscriptRef.current = '';
 
     if (typeof MediaRecorder === 'undefined') {
       const msg = 'Recording is not supported in this browser.';
@@ -177,9 +194,12 @@ export function useMeetingRecorder(
     let recorder: MediaRecorder;
     try {
       // Prefer opus where supported — best compression and broadest playback.
-      const opts = MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')
-        ? { mimeType: 'audio/webm;codecs=opus' }
-        : undefined;
+      const opts: MediaRecorderOptions = {
+        audioBitsPerSecond: RECORDING_AUDIO_BITS_PER_SECOND,
+      };
+      if (MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')) {
+        opts.mimeType = 'audio/webm;codecs=opus';
+      }
       recorder = new MediaRecorder(mixed, opts);
     } catch (err) {
       cleanup();
@@ -222,8 +242,8 @@ export function useMeetingRecorder(
               interim += text;
             }
           }
-          const combined = `${finalTranscriptRef.current}${interim ? ` ${interim}` : ''}`.trim();
-          setLiveTranscript(combined);
+          interimTranscriptRef.current = interim;
+          setLiveTranscript(combineTranscript(finalTranscriptRef.current, interim));
         };
         rec.onerror = () => {
           // Common: 'not-allowed' (mic permission), 'no-speech', 'aborted'.
@@ -255,7 +275,10 @@ export function useMeetingRecorder(
     const result = await new Promise<MeetingRecording>((resolve) => {
       recorder.onstop = () => {
         const audioBlob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        const transcript = finalTranscriptRef.current.trim();
+        const transcript = combineTranscript(
+          finalTranscriptRef.current,
+          interimTranscriptRef.current,
+        );
         const durationSec = Math.max(0, Math.round((Date.now() - startedAtMsRef.current) / 1000));
         resolve({
           audioBlob,
@@ -284,6 +307,7 @@ export function useMeetingRecorder(
     setLiveTranscript('');
     setError(null);
     finalTranscriptRef.current = '';
+    interimTranscriptRef.current = '';
   }, []);
 
   // Auto-stop on unmount so we don't leak the AudioContext / MediaRecorder.

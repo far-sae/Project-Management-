@@ -2,6 +2,7 @@ import {
   ConnectionState,
   DisconnectReason,
   LocalParticipant,
+  type LocalVideoTrack,
   Participant,
   RemoteParticipant,
   Room,
@@ -109,6 +110,8 @@ export class LiveKitCallService {
   private lastConnectionState: ConnectionState = ConnectionState.Disconnected;
   /** Stable MediaStreams per participant so <audio>/<video> don't restart. */
   private readonly streams = new MediaStreamCache();
+  /** True while a background-blur processor is attached to the camera. */
+  private blurApplied = false;
 
   constructor(events: LiveKitCallEvents) {
     this.events = events;
@@ -232,6 +235,44 @@ export class LiveKitCallService {
         err instanceof Error ? err.message : 'Could not toggle camera',
       );
     }
+  }
+
+  /**
+   * Turn background blur on/off for the local camera. Uses LiveKit's official
+   * track processor (MediaPipe segmentation on the GPU, insertable streams
+   * where available so it keeps running when the tab is in the background).
+   * The processor survives camera off/on because LiveKit keeps the same
+   * LocalVideoTrack across mute/unmute.
+   *
+   * Throws with a user-facing message when blur can't be applied.
+   */
+  async setBackgroundBlur(enabled: boolean): Promise<void> {
+    const room = this.room;
+    if (!room) return;
+    const track = room.localParticipant.getTrackPublication(Track.Source.Camera)
+      ?.track as LocalVideoTrack | undefined;
+
+    if (!enabled) {
+      if (track && this.blurApplied) await track.stopProcessor();
+      this.blurApplied = false;
+      this.emitParticipants();
+      return;
+    }
+
+    const { BackgroundProcessor, supportsBackgroundProcessors } = await import(
+      '@livekit/track-processors'
+    );
+    if (!supportsBackgroundProcessors()) {
+      throw new Error('Background blur is not supported in this browser.');
+    }
+    if (!track) {
+      throw new Error('Turn your camera on to use background blur.');
+    }
+    await track.setProcessor(
+      BackgroundProcessor({ mode: 'background-blur', blurRadius: 12 }),
+    );
+    this.blurApplied = true;
+    this.emitParticipants();
   }
 
   /** Start or stop screen sharing depending on current state. */
