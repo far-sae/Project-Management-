@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { pickMiniMainTile } from '@/services/livekit/callHelpers';
 import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
 import { ParticipantTile } from './CallTiles';
+import { GuestAdmitBanners, type GuestDecision } from './GuestAdmitBanners';
 
 interface MiniCallViewProps {
   participants: CallPeerSnapshot[];
@@ -26,6 +27,11 @@ interface MiniCallViewProps {
   onBackToCall: () => void;
   /** Someone in the call is recording — shows the shared "Recording" badge. */
   isRecording?: boolean;
+  /** Guests waiting to be let in (empty when the user can't admit). */
+  waitingGuests?: CallPeerSnapshot[];
+  /** Identities whose admit/deny request is in flight. */
+  guestBusy?: Record<string, boolean>;
+  onGuestDecision?: (identity: string, decision: GuestDecision) => void;
 }
 
 const btn =
@@ -48,6 +54,9 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
   onHangUp,
   onBackToCall,
   isRecording = false,
+  waitingGuests = [],
+  guestBusy = {},
+  onGuestDecision,
 }) => {
   const main = pickMiniMainTile(participants);
   // Everyone else, small. The local user appears as their camera tile, never
@@ -77,6 +86,16 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
           </span>
         )}
       </div>
+
+      {onGuestDecision && (
+        <GuestAdmitBanners
+          guests={waitingGuests}
+          busy={guestBusy}
+          onDecide={onGuestDecision}
+          compact
+          className="shrink-0"
+        />
+      )}
 
       {others.length > 0 && (
         <div data-testid="mini-strip" className="flex h-14 shrink-0 gap-1.5 overflow-x-auto">

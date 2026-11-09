@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
     actions: Record<string, ReturnType<typeof vi.fn>>;
     canInviteGuests: boolean;
   },
+  pipWindow: null as Window | null,
   recorder: {
     isRecording: false,
     liveTranscript: '',
@@ -32,7 +33,7 @@ vi.mock('@/services/webrtc/BackgroundProcessor', () => ({
 vi.mock('@/hooks/useMeetingRecorder', () => ({ useMeetingRecorder: () => h.recorder }));
 vi.mock('@/hooks/usePipWindow', () => ({
   usePipWindow: () => ({
-    pipWindow: null,
+    pipWindow: h.pipWindow,
     support: 'none',
     openPip: vi.fn(),
     closePip: vi.fn(),
@@ -110,6 +111,7 @@ function setCall(state: Partial<CallState>, canInviteGuests = true) {
 
 beforeEach(() => {
   HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
+  h.pipWindow = null;
   h.recorder.isRecording = false;
   h.recorder.start = vi.fn(async () => ({ outcome: 'started' }));
   h.recorder.stop = vi.fn(async () => null);
@@ -221,6 +223,25 @@ describe('CallOverlay — guests', () => {
     render(<CallOverlay />);
     expect(screen.getByRole('button', { name: 'Invite guest' })).toBeTruthy();
     expect(screen.getByText('Gina (guest) wants to join')).toBeTruthy();
+  });
+
+  it('shows the admit prompt in the floating mini window too', async () => {
+    h.pipWindow = window; // portal renders into this document's body
+    setCall({ participants: [me, alice, waitingGina] });
+    render(<CallOverlay />);
+    expect(screen.getAllByText('Gina (guest) wants to join')).toHaveLength(2);
+    const admits = screen.getAllByRole('button', { name: 'Admit' });
+    await act(async () => {
+      fireEvent.click(admits[admits.length - 1]);
+    });
+    expect(h.call.actions.admitGuest).toHaveBeenCalledWith('guest:1');
+  });
+
+  it('keeps the mini window free of admit prompts for view-only users', () => {
+    h.pipWindow = window;
+    setCall({ participants: [me, alice, waitingGina] }, false);
+    render(<CallOverlay />);
+    expect(screen.queryByText('Gina (guest) wants to join')).toBeNull();
   });
 
   it('flags the recording to the room when the member starts recording', async () => {

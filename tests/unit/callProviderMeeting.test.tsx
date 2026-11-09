@@ -267,6 +267,57 @@ describe('CallProvider — meetings and guests', () => {
     expect(cancels.map((c) => c.channel)).toEqual(['call-inbox:b']);
   });
 
+  it('hanging up after admitting a guest mid-ring cancels the teammates still ringing', async () => {
+    renderProvider();
+    await act(async () => {
+      await ctx.actions.startCall(PROJECT, 'video', [
+        { userId: 'a', displayName: 'A' },
+        { userId: 'b', displayName: 'B' },
+      ]);
+    });
+    const guest = snap({ userId: 'guest:1', displayName: 'G', role: 'guest' });
+    act(() => h.svc.opts!.onParticipantsChange([local, guest]));
+    expect(ctx.state.status).toBe('connected');
+    h.sent = [];
+    act(() => ctx.actions.hangUp());
+    const cancels = h.sent.filter((s) => s.payload.type === 'ring-cancel');
+    expect(cancels.map((c) => c.channel).sort()).toEqual(['call-inbox:a', 'call-inbox:b']);
+  });
+
+  it('auto-ending after an admitted guest leaves mid-ring cancels the teammates still ringing', async () => {
+    renderProvider();
+    await act(async () => {
+      await ctx.actions.startCall(PROJECT, 'video', { userId: 'a', displayName: 'A' });
+    });
+    const guest = snap({ userId: 'guest:1', displayName: 'G', role: 'guest' });
+    act(() => h.svc.opts!.onParticipantsChange([local, guest]));
+    h.sent = [];
+    act(() => h.svc.opts!.onParticipantsChange([local]));
+    expect(ctx.state.status).toBe('idle');
+    const cancels = h.sent.filter((s) => s.payload.type === 'ring-cancel');
+    expect(cancels.map((c) => c.channel)).toEqual(['call-inbox:a']);
+  });
+
+  it('hanging up after a teammate answered sends no ring-cancel (unchanged)', async () => {
+    renderProvider();
+    await act(async () => {
+      await ctx.actions.startCall(PROJECT, 'video', { userId: 'a', displayName: 'A' });
+    });
+    act(() => h.svc.opts!.onParticipantsChange([local, snap({ userId: 'a', displayName: 'A' })]));
+    h.sent = [];
+    act(() => ctx.actions.hangUp());
+    expect(h.sent.filter((s) => s.payload.type === 'ring-cancel')).toHaveLength(0);
+  });
+
+  it('hanging up an open meeting sends no ring-cancel', async () => {
+    renderProvider();
+    await act(async () => {
+      await ctx.actions.startMeeting(PROJECT, 'video');
+    });
+    act(() => ctx.actions.hangUp());
+    expect(h.sent.filter((s) => s.payload.type === 'ring-cancel')).toHaveLength(0);
+  });
+
   it('a normal call still ends when only a waiting guest remains', async () => {
     renderProvider();
     await act(async () => {

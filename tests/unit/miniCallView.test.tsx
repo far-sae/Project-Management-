@@ -79,6 +79,29 @@ describe('MiniCallView', () => {
     expect(screen.queryByRole('button', { name: /camera/i })).toBeNull();
   });
 
+  it('shows the admit prompt for waiting guests and reports the decision', () => {
+    const gina = peer({ userId: 'guest:1', displayName: 'Gina', role: 'guest', isWaiting: true });
+    const onGuestDecision = vi.fn();
+    renderView({ waitingGuests: [gina], guestBusy: {}, onGuestDecision });
+    expect(screen.getByText('Gina (guest) wants to join')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Admit' }));
+    expect(onGuestDecision).toHaveBeenCalledWith('guest:1', 'admit');
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    expect(onGuestDecision).toHaveBeenCalledWith('guest:1', 'deny');
+  });
+
+  it('disables Admit and Deny while that guest is busy', () => {
+    const gina = peer({ userId: 'guest:1', displayName: 'Gina', role: 'guest', isWaiting: true });
+    renderView({ waitingGuests: [gina], guestBusy: { 'guest:1': true }, onGuestDecision: vi.fn() });
+    expect((screen.getByRole('button', { name: 'Admit' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Deny' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows no admit prompt without waiting guests', () => {
+    renderView();
+    expect(screen.queryByRole('button', { name: 'Admit' })).toBeNull();
+  });
+
   it('renders no audio elements', () => {
     const { container } = renderView();
     expect(container.querySelectorAll('audio').length).toBe(0);

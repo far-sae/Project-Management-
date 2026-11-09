@@ -169,6 +169,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
    */
   const remoteParticipantsRef = useRef<CallParticipant[]>([]);
 
+  /**
+   * Set once a teammate (not a guest) is seen in the room. Until then an
+   * outgoing call's rings are still out — even if an admitted guest already
+   * flipped us to 'connected' — so leaving must cancel them.
+   */
+  const memberAnsweredRef = useRef(false);
+
   // Timers
   const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const offerResendRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -221,6 +228,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     void teardownLiveKit();
     pendingRingRef.current = null;
     remoteParticipantsRef.current = [];
+    memberAnsweredRef.current = false;
     setState(IDLE_STATE);
   }, [clearTimers, teardownLiveKit]);
 
@@ -253,6 +261,25 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     },
     [],
   );
+
+  /**
+   * Leaving an outgoing call before any teammate answered: tell every
+   * dialed teammate to stop ringing. No-op once a member has joined, for
+   * incoming calls, and for open meetings (nobody was dialed).
+   */
+  const cancelUnansweredRings = useCallback(() => {
+    const cur = latestCallStateRef.current;
+    if (cur.direction !== 'outgoing' || !cur.callId || !localParticipant) return;
+    if (memberAnsweredRef.current) return;
+    for (const t of remoteParticipantsRef.current) {
+      sendInboxMessage(t.userId, {
+        type: 'ring-cancel',
+        callId: cur.callId,
+        from: localParticipant,
+        reason: 'cancelled',
+      });
+    }
+  }, [localParticipant, sendInboxMessage]);
 
   // ── Global incoming-call listener ──────────────────────────
 
@@ -385,6 +412,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         // headline, auto-end, ring-cancel). State still keeps every peer so
         // the overlay can show the admit prompt.
         const remotes = visiblePeers(peers).filter((p) => !p.isLocal);
+        const memberRemotes = remotes.filter((p) => p.role === 'member');
+        if (memberRemotes.length > 0) memberAnsweredRef.current = true;
         // Everyone else left a live call → end it here too, instead of
         // leaving this user alone in an empty "connected" call.
         if (
@@ -394,6 +423,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
             latestCallStateRef.current.isOpenMeeting,
           )
         ) {
+          // Only an admitted guest was here → teammates may still be ringing.
+          cancelUnansweredRings();
           resetCall();
           toast.message('Call ended');
           return;
@@ -439,7 +470,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         // broadcast cancel to every other dialed teammate so they stop
         // ringing. Only members count: admitting a guest while the ring is
         // still out must not cancel the teammates' rings.
-        const memberRemotes = remotes.filter((p) => p.role === 'member');
         const dialed = remoteParticipantsRef.current;
         if (
           memberRemotes.length === 1 &&
@@ -504,7 +534,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       },
     });
     return service;
-  }, [localParticipant, sendInboxMessage, resetCall]);
+  }, [localParticipant, sendInboxMessage, resetCall, cancelUnansweredRings]);
 
   // ── Actions ────────────────────────────────────────────────
 
@@ -542,6 +572,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const callId = generateCallId();
       remoteParticipantsRef.current = dedupedTargets;
+      memberAnsweredRef.current = false;
 
       // Pick the canonical room name. Project calls reuse one room per
       // project so a late joiner could in principle hop in (we don't
@@ -707,6 +738,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     if (state.status !== 'ringing' || state.direction !== 'incoming') return;
 
     clearTimers();
+    memberAnsweredRef.current = false;
     setState((prev) => ({ ...prev, status: 'connecting' }));
 
     const lk = await buildLiveKit();
@@ -765,27 +797,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [state.callId, localParticipant, resetCall, sendInboxMessage]);
 
   const hangUp = useCallback(() => {
-    // If we're still ringing, broadcast cancel to everyone we dialed so
-    // their phones stop ringing rather than ringing out for 30s.
-    const status = latestCallStateRef.current.status;
-    const callId = latestCallStateRef.current.callId;
-    if (
-      status === 'ringing' &&
-      latestCallStateRef.current.direction === 'outgoing' &&
-      callId &&
-      localParticipant
-    ) {
-      for (const t of remoteParticipantsRef.current) {
-        sendInboxMessage(t.userId, {
-          type: 'ring-cancel',
-          callId,
-          from: localParticipant,
-          reason: 'cancelled',
-        });
-      }
-    }
+    // If no teammate has picked up yet, broadcast cancel to everyone we
+    // dialed so their phones stop ringing rather than ringing out for 30s.
+    // That includes a call already 'connected' only because a guest was
+    // admitted while the ring was still out.
+    cancelUnansweredRings();
     resetCall();
-  }, [localParticipant, resetCall, sendInboxMessage]);
+  }, [cancelUnansweredRings, resetCall]);
 
   const toggleMute = useCallback(() => {
     const next = !state.isMuted;
@@ -830,6 +848,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 
       clearTimers();
       remoteParticipantsRef.current = [];
+      memberAnsweredRef.current = false;
       pendingRingRef.current = null;
 
       const callId = generateCallId();
