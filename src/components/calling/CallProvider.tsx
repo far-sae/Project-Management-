@@ -39,6 +39,7 @@ import {
   type RingOffer,
 } from '@/services/webrtc/types';
 import { toast } from 'sonner';
+import { useCallAlerts } from '@/hooks/useCallAlerts';
 
 // ── Context types ────────────────────────────────────────────
 
@@ -144,6 +145,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user } = useAuth();
+  // Unlock ring audio on first click + offer desktop call notifications.
+  useCallAlerts(Boolean(user?.userId));
   const { isViewer: isViewerOrg } = useOrganization();
   const canInviteGuests = !isViewerOrg;
   const [state, setState] = useState<CallState>(IDLE_STATE);

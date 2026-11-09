@@ -1,4 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
+import {
+  showIncomingCallNotification,
+  startIncomingRing,
+  startTitleFlash,
+} from '@/services/calling/incomingAlert';
 import { Phone, PhoneOff, Video } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -24,93 +29,31 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   onAccept,
   onReject,
 }) => {
-  const ctxRef = useRef<AudioContext | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
+  // Ring out loud (shared, gesture-unlocked audio scheduled for the whole
+  // ring), show a desktop notification when the app isn't in front, and
+  // flash the tab title — so a teammate in another tab or window notices.
+  const callerName = caller.displayName || 'Someone';
   useEffect(() => {
-    const getOrCreateCtx = (): AudioContext | null => {
-      try {
-        if (ctxRef.current && ctxRef.current.state !== 'closed') return ctxRef.current;
-        const Ctor =
-          window.AudioContext ||
-          (window as typeof window & { webkitAudioContext?: typeof AudioContext })
-            .webkitAudioContext;
-        if (!Ctor) return null;
-        ctxRef.current = new Ctor();
-        return ctxRef.current;
-      } catch {
-        return null;
-      }
+    const stopRing = startIncomingRing();
+    const stopFlash = startTitleFlash(`📞 ${callerName} is calling…`);
+    const notify = () =>
+      showIncomingCallNotification({ callerName, mediaType, contextLabel });
+    let closeNotification = notify();
+    // Switched away after the ring started → notify now.
+    const onAway = () => {
+      closeNotification();
+      closeNotification = notify();
     };
-
-    const playRing = () => {
-      const ctx = getOrCreateCtx();
-      if (!ctx) return;
-
-      try {
-        const master = ctx.createGain();
-        master.gain.setValueAtTime(0.5, ctx.currentTime);
-        master.connect(ctx.destination);
-
-        const playNote = (freq: number, start: number, dur: number, peak: number) => {
-          const osc = ctx.createOscillator();
-          const overtone = ctx.createOscillator();
-          const noteGain = ctx.createGain();
-          const overtoneGain = ctx.createGain();
-
-          osc.type = 'sine';
-          overtone.type = 'sine';
-          osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
-          overtone.frequency.setValueAtTime(freq * 2.01, ctx.currentTime + start);
-
-          const t = ctx.currentTime + start;
-          noteGain.gain.setValueAtTime(0.0001, t);
-          noteGain.gain.exponentialRampToValueAtTime(peak, t + 0.02);
-          noteGain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-
-          overtoneGain.gain.setValueAtTime(0.0001, t);
-          overtoneGain.gain.exponentialRampToValueAtTime(peak * 0.3, t + 0.03);
-          overtoneGain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-
-          osc.connect(noteGain);
-          overtone.connect(overtoneGain);
-          noteGain.connect(master);
-          overtoneGain.connect(master);
-
-          osc.start(t);
-          overtone.start(t);
-          osc.stop(t + dur + 0.02);
-          overtone.stop(t + dur + 0.02);
-        };
-
-        // Teams-style melody: three ascending bell notes, pause, repeat
-        // G5 → B5 → D6 (a major triad going up — bright, inviting)
-        playNote(784, 0, 0.25, 0.2);     // G5
-        playNote(988, 0.28, 0.25, 0.22);  // B5
-        playNote(1175, 0.56, 0.4, 0.25);  // D6 (longer, rings out)
-
-        // Second ring after pause
-        playNote(784, 1.2, 0.25, 0.18);
-        playNote(988, 1.48, 0.25, 0.2);
-        playNote(1175, 1.76, 0.4, 0.22);
-      } catch {
-        /* audio blocked */
-      }
-    };
-
-    playRing();
-    intervalRef.current = setInterval(playRing, 3000);
-
+    document.addEventListener('visibilitychange', onAway);
+    window.addEventListener('blur', onAway);
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      const ctx = ctxRef.current;
-      ctxRef.current = null;
-      void ctx?.close().catch(() => {});
+      document.removeEventListener('visibilitychange', onAway);
+      window.removeEventListener('blur', onAway);
+      stopRing();
+      stopFlash();
+      closeNotification();
     };
-  }, []);
+  }, [callerName, mediaType, contextLabel]);
 
   return (
     <div
