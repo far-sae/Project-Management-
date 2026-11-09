@@ -9,6 +9,7 @@ import {
   subscribeToProjects,
 } from "@/services/supabase/database";
 import { Project, CreateProjectInput, UpdateProjectInput } from "@/types";
+import { PROJECTS_CHANGED_EVENT } from "@/services/supabase/projectMove";
 // ── Limit error is identifiable by this prefix ───────────────────────
 export const LIMIT_ERROR_PREFIX = "LIMIT_REACHED:";
 
@@ -200,6 +201,16 @@ export const useProjects = () => {
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshProjects, user, effectiveOrgId]);
+
+  // A project was moved to another workspace somewhere in the app — refresh
+  // so this list (and the workspace filter built on it) updates right away.
+  useEffect(() => {
+    const onProjectsChanged = () => {
+      if (user && effectiveOrgId) void refreshProjects({ silent: true });
+    };
+    window.addEventListener(PROJECTS_CHANGED_EVENT, onProjectsChanged);
+    return () => window.removeEventListener(PROJECTS_CHANGED_EVENT, onProjectsChanged);
   }, [refreshProjects, user, effectiveOrgId]);
 
   return {

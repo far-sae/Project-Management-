@@ -19,6 +19,7 @@ import { Project } from '@/types';
 
 import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { WorkspacesModal } from '@/components/workspace/WorkspacesModal';
+import { MoveProjectDialog } from '@/components/workspace/MoveProjectDialog';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ import {
   Pencil,
   Files,
   Users,
+  ArrowRightLeft,
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -173,6 +175,10 @@ export const Dashboard: React.FC = () => {
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [editingWorkspaceName, setEditingWorkspaceName] = useState('');
   const [editingMenuPages, setEditingMenuPages] = useState<PageKey[]>(QUICK_MENU_PAGE_KEYS);
+
+  // Project being moved to another workspace (null = dialog closed).
+  const [moveProject, setMoveProject] = useState<Project | null>(null);
+  const moveOrgId = (orgId || '').replace('local-', '');
 
   const [deleteDialog, setDeleteDialog] = useState<{
     open: boolean;
@@ -1155,6 +1161,13 @@ export const Dashboard: React.FC = () => {
                                       Edit
                                     </DropdownMenuItem>
                                   )}
+                                  {(project.ownerId === user?.userId || canEditWorkspaceMenu) &&
+                                    workspaces.length > 0 && (
+                                    <DropdownMenuItem onClick={() => setMoveProject(project)}>
+                                      <ArrowRightLeft className="w-4 h-4 mr-2" />
+                                      Move to workspace
+                                    </DropdownMenuItem>
+                                  )}
                                   {project.ownerId === user?.userId && (
                                     <DropdownMenuItem
                                       className="text-red-600"
@@ -1865,6 +1878,16 @@ export const Dashboard: React.FC = () => {
       </Dialog>
 
       {/* Workspaces View All Modal */}
+      <MoveProjectDialog
+        open={moveProject !== null}
+        onOpenChange={(next) => {
+          if (!next) setMoveProject(null);
+        }}
+        project={moveProject}
+        workspaces={workspaces}
+        organizationId={moveOrgId}
+      />
+
       <WorkspacesModal
         open={showWorkspacesModal}
         onOpenChange={setShowWorkspacesModal}
