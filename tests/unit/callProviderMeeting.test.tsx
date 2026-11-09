@@ -140,6 +140,34 @@ describe('CallProvider — meetings and guests', () => {
     expect(h.sent.filter((s) => s.payload.type === 'ring')).toHaveLength(0);
   });
 
+  it('hanging up during the dynamic import never connects (startMeeting)', async () => {
+    renderProvider();
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = ctx.actions.startMeeting(PROJECT, 'video');
+    });
+    expect(ctx.state.status).toBe('connecting');
+    act(() => ctx.actions.hangUp());
+    await act(async () => {
+      await pending;
+    });
+    expect(h.svc.connect).not.toHaveBeenCalled();
+    expect(ctx.state.status).toBe('idle');
+  });
+
+  it('hanging up during the dynamic import never connects (startCall)', async () => {
+    renderProvider();
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = ctx.actions.startCall(PROJECT, 'video', [{ userId: 'a', displayName: 'A' }]);
+    });
+    act(() => ctx.actions.hangUp());
+    await act(async () => {
+      await pending;
+    });
+    expect(h.svc.connect).not.toHaveBeenCalled();
+  });
+
   it('startMeeting ignores DM contexts', async () => {
     renderProvider();
     await act(async () => {

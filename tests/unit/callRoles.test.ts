@@ -151,3 +151,84 @@ describe('LiveKitCallService.connect with credentials', () => {
     expect(setCameraEnabled).not.toHaveBeenCalled();
   });
 });
+
+describe('LiveKitCallService role derivation', () => {
+  const events = () => ({
+    onParticipantsChange: vi.fn(),
+    onConnectionStateChange: vi.fn(),
+    onDisconnected: vi.fn(),
+    onError: vi.fn(),
+  });
+  const remote = (identity: string, metadata: string) => ({
+    identity,
+    name: identity,
+    metadata,
+    trackPublications: new Map(),
+    getTrackPublication: () => undefined,
+    isSpeaking: false,
+    attributes: {},
+  });
+
+  async function connected() {
+    connectFn.mockReset().mockResolvedValue(undefined);
+    const ev = events();
+    const svc = new LiveKitCallService(ev);
+    await svc.connect({
+      roomName: 'r',
+      participantName: 'G',
+      mediaType: 'audio',
+      credentials: { token: 't', url: 'u' },
+      publishOnConnect: false,
+    });
+    const room = (svc as unknown as { room: { remoteParticipants: Map<string, unknown> } }).room;
+    return { svc, ev, room };
+  }
+  const lastPeers = (ev: ReturnType<typeof events>) =>
+    ev.onParticipantsChange.mock.calls.at(-1)![0] as CallPeerSnapshot[];
+
+  it('ignores self-edited guest/waiting metadata on a member identity', async () => {
+    const { svc, ev, room } = await connected();
+    room.remoteParticipants.set(
+      'a',
+      remote('7a1b-uuid', '{"role":"guest","status":"waiting"}'),
+    );
+    room.remoteParticipants.set(
+      'b',
+      remote('guest:x', '{"role":"guest","status":"waiting"}'),
+    );
+    await svc.publishLocalMedia({ mic: false, camera: false });
+    const peers = lastPeers(ev);
+    const member = peers.find((p) => p.userId === '7a1b-uuid')!;
+    const guest = peers.find((p) => p.userId === 'guest:x')!;
+    expect(member.role).toBe('member');
+    expect(member.isWaiting).toBe(false);
+    expect(guest.role).toBe('guest');
+    expect(guest.isWaiting).toBe(true);
+  });
+});
+
+describe('LiveKitCallService.publishLocalMedia isolation', () => {
+  it('still enables the camera when the microphone fails, reporting both errors', async () => {
+    connectFn.mockReset().mockResolvedValue(undefined);
+    setMicrophoneEnabled.mockReset().mockRejectedValue(new Error('mic denied'));
+    setCameraEnabled.mockReset().mockRejectedValue(new Error('cam denied'));
+    const onError = vi.fn();
+    const svc = new LiveKitCallService({
+      onParticipantsChange: vi.fn(),
+      onConnectionStateChange: vi.fn(),
+      onDisconnected: vi.fn(),
+      onError,
+    });
+    await svc.connect({
+      roomName: 'r',
+      participantName: 'G',
+      mediaType: 'video',
+      credentials: { token: 't', url: 'u' },
+      publishOnConnect: false,
+    });
+    await svc.publishLocalMedia({ mic: true, camera: true });
+    expect(setCameraEnabled).toHaveBeenCalledWith(true);
+    expect(onError).toHaveBeenCalledWith('mic denied');
+    expect(onError).toHaveBeenCalledWith('cam denied');
+  });
+});

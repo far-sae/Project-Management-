@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DisconnectReason } from 'livekit-client';
+import { toast } from 'sonner';
 import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +71,8 @@ export const GuestJoin: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [peers, setPeers] = useState<CallPeerSnapshot[]>([]);
+  const [videoEffect, setVideoEffect] = useState<'none' | 'blur'>('none');
+  const [isApplyingEffect, setIsApplyingEffect] = useState(false);
 
   const mountedRef = useRef(true);
   const phaseRef = useRef<Phase>('form');
@@ -161,6 +164,22 @@ export const GuestJoin: React.FC = () => {
     camOnRef.current = next;
     setCamOn(next);
     previewStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = next));
+  };
+
+  const toggleBlur = async () => {
+    const svc = svcRef.current;
+    if (!svc || isApplyingEffect) return;
+    const next = videoEffect === 'blur' ? 'none' : 'blur';
+    setIsApplyingEffect(true);
+    try {
+      // First enable downloads the segmentation model (~1–2s).
+      await svc.setBackgroundBlur(next === 'blur');
+      if (mountedRef.current) setVideoEffect(next);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not change background blur');
+    } finally {
+      if (mountedRef.current) setIsApplyingEffect(false);
+    }
   };
 
   const trimmed = name.trim();
@@ -274,7 +293,11 @@ export const GuestJoin: React.FC = () => {
   if (phase === 'waiting') {
     return shell(
       <div className="text-center space-y-4">
-        <p className="text-lg" role="status">Waiting for someone to let you in…</p>
+        <p className="text-lg" role="status">
+          {peers.some((p) => p.role === 'member' && !p.isLocal)
+            ? 'Waiting for someone to let you in…'
+            : 'Waiting for the host to join…'}
+        </p>
         <Button variant="outline" onClick={() => finish('form')}>Cancel</Button>
       </div>,
     );
@@ -287,7 +310,11 @@ export const GuestJoin: React.FC = () => {
     return (
       <div className="relative min-h-screen bg-black text-white flex flex-col">
         {recording && (
-          <div className="absolute top-3 left-3 z-10 rounded-md bg-red-600 px-2 py-1 text-xs font-medium">
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute top-3 left-3 z-10 rounded-md bg-red-600 px-2 py-1 text-xs font-medium"
+          >
             Recording
           </div>
         )}
@@ -307,14 +334,14 @@ export const GuestJoin: React.FC = () => {
           isMuted={local?.isMicMuted ?? !micOn}
           isCameraOff={local?.isCameraOff ?? !camOn}
           isScreenSharing={false}
-          videoEffect="none"
-          isApplyingEffect={false}
+          videoEffect={videoEffect}
+          isApplyingEffect={isApplyingEffect}
           mediaType="video"
           allowScreenShare={false}
           onToggleMute={() => void svcRef.current?.setMicMuted(!(local?.isMicMuted ?? false))}
           onToggleCamera={() => void svcRef.current?.setCameraOff(!(local?.isCameraOff ?? false))}
           onToggleScreenShare={() => {}}
-          onToggleBackgroundEffect={() => {}}
+          onToggleBackgroundEffect={() => void toggleBlur()}
           onHangUp={() => finish('ended')}
         />
       </div>

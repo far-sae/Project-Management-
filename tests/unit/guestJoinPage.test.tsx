@@ -15,7 +15,7 @@ vi.mock('@/services/livekit/guestApi', () => ({
   },
 }));
 vi.mock('@/services/webrtc/BackgroundProcessor', () => ({
-  isBackgroundEffectSupported: () => false,
+  isBackgroundEffectSupported: () => true,
 }));
 
 interface Opts {
@@ -29,7 +29,10 @@ const svc = {
   setMicMuted: vi.fn(async () => {}),
   setCameraOff: vi.fn(async () => {}),
   disconnect: vi.fn(async () => {}),
+  setBackgroundBlur: vi.fn(async () => {}),
 };
+const toastError = vi.fn();
+vi.mock('sonner', () => ({ toast: { error: (...a: unknown[]) => toastError(...a) } }));
 vi.mock('@/services/livekit/LiveKitCallService', () => ({
   LiveKitCallService: class {
     constructor(o: Opts) {
@@ -40,6 +43,7 @@ vi.mock('@/services/livekit/LiveKitCallService', () => ({
     setMicMuted = svc.setMicMuted;
     setCameraOff = svc.setCameraOff;
     disconnect = svc.disconnect;
+    setBackgroundBlur = svc.setBackgroundBlur;
   },
 }));
 
@@ -83,6 +87,8 @@ beforeEach(() => {
   svc.connect.mockClear();
   svc.publishLocalMedia.mockClear();
   svc.disconnect.mockClear();
+  svc.setBackgroundBlur.mockReset().mockResolvedValue(undefined);
+  toastError.mockClear();
   trackStop.mockClear();
   const stream = {
     getTracks: () => [{ stop: trackStop, enabled: true, kind: 'video' }],
@@ -126,7 +132,7 @@ describe('GuestJoin', () => {
     renderPage();
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     await askToJoin();
-    expect(await screen.findByText('Waiting for someone to let you in…')).toBeTruthy();
+    expect(await screen.findByText('Waiting for the host to join…')).toBeTruthy();
     expect(trackStop).toHaveBeenCalled();
     expect(svc.connect).toHaveBeenCalledWith(
       expect.objectContaining({ credentials: { token: 't', url: 'u' }, publishOnConnect: false }),
@@ -137,7 +143,7 @@ describe('GuestJoin', () => {
     joinAsGuest.mockResolvedValue({ token: 't', url: 'u', label: 'L', identity: 'guest:1' });
     renderPage();
     await askToJoin();
-    await screen.findByText('Waiting for someone to let you in…');
+    await screen.findByText(/^Waiting for/);
     act(() => {
       svc.opts!.onParticipantsChange([
         snap({ userId: 'guest:1', displayName: 'Pat', isLocal: true, role: 'guest', isWaiting: false }),
@@ -153,7 +159,7 @@ describe('GuestJoin', () => {
     joinAsGuest.mockResolvedValue({ token: 't', url: 'u', label: 'L', identity: 'guest:1' });
     renderPage();
     await askToJoin();
-    await screen.findByText('Waiting for someone to let you in…');
+    await screen.findByText(/^Waiting for/);
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     await waitFor(() => expect(svc.disconnect).toHaveBeenCalled());
   });
@@ -162,9 +168,60 @@ describe('GuestJoin', () => {
     joinAsGuest.mockResolvedValue({ token: 't', url: 'u', label: 'L', identity: 'guest:1' });
     renderPage();
     await askToJoin();
-    await screen.findByText('Waiting for someone to let you in…');
+    await screen.findByText(/^Waiting for/);
     const { DisconnectReason } = await import('livekit-client');
     act(() => svc.opts!.onDisconnected(DisconnectReason.PARTICIPANT_REMOVED));
     expect(await screen.findByText("You weren't let into the call.")).toBeTruthy();
+  });
+
+  const admit = async (extra: Record<string, unknown>[] = [snap({ userId: 'm1', displayName: 'Sam' })]) => {
+    joinAsGuest.mockResolvedValue({ token: 't', url: 'u', label: 'L', identity: 'guest:1' });
+    renderPage();
+    await askToJoin();
+    await screen.findByText(/Waiting for/);
+    act(() => {
+      svc.opts!.onParticipantsChange([
+        snap({ userId: 'guest:1', displayName: 'Pat', isLocal: true, role: 'guest', isWaiting: false }),
+        ...extra,
+      ]);
+    });
+  };
+
+  it('blur button toggles background blur on the service', async () => {
+    await admit();
+    fireEvent.click(await screen.findByRole('button', { name: 'Blur background' }));
+    await waitFor(() => expect(svc.setBackgroundBlur).toHaveBeenCalledWith(true));
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn off background blur' }));
+    await waitFor(() => expect(svc.setBackgroundBlur).toHaveBeenLastCalledWith(false));
+  });
+
+  it('blur failure shows an error toast and leaves blur off', async () => {
+    svc.setBackgroundBlur.mockRejectedValue(new Error('model failed'));
+    await admit();
+    fireEvent.click(await screen.findByRole('button', { name: 'Blur background' }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('model failed'));
+    expect(screen.getByRole('button', { name: 'Blur background' })).toBeTruthy();
+  });
+
+  it('says it is waiting for the host until a member is present', async () => {
+    joinAsGuest.mockResolvedValue({ token: 't', url: 'u', label: 'L', identity: 'guest:1' });
+    renderPage();
+    await askToJoin();
+    expect(await screen.findByText('Waiting for the host to join…')).toBeTruthy();
+    act(() => {
+      svc.opts!.onParticipantsChange([
+        snap({ userId: 'guest:1', isLocal: true, role: 'guest', isWaiting: true }),
+        snap({ userId: 'm1', displayName: 'Sam' }),
+      ]);
+    });
+    expect(await screen.findByText('Waiting for someone to let you in…')).toBeTruthy();
+    expect(screen.queryByText('Waiting for the host to join…')).toBeNull();
+  });
+
+  it('the Recording badge is a polite live status', async () => {
+    await admit([snap({ userId: 'm1', displayName: 'Sam', isRecording: true })]);
+    const badge = await screen.findByText('Recording');
+    expect(badge.getAttribute('role')).toBe('status');
+    expect(badge.getAttribute('aria-live')).toBe('polite');
   });
 });

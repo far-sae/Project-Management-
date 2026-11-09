@@ -149,6 +149,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   const [state, setState] = useState<CallState>(IDLE_STATE);
   const latestCallStateRef = useRef(state);
   latestCallStateRef.current = state;
+  // Synchronous marker of the call an async action started; cleared by
+  // resetCall so a hang-up during a dynamic import is detectable (state
+  // refs only update on render).
+  const activeCallIdRef = useRef<string | null>(null);
 
   /**
    * Active LiveKit room wrapper. Created when we initiate or accept a call,
@@ -229,6 +233,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     pendingRingRef.current = null;
     remoteParticipantsRef.current = [];
     memberAnsweredRef.current = false;
+    activeCallIdRef.current = null;
     setState(IDLE_STATE);
   }, [clearTimers, teardownLiveKit]);
 
@@ -571,6 +576,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       clearTimers();
 
       const callId = generateCallId();
+      activeCallIdRef.current = callId;
       remoteParticipantsRef.current = dedupedTargets;
       memberAnsweredRef.current = false;
 
@@ -603,6 +609,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       // publisher in the room. Once a callee accepts, they'll join the
       // same room and our snapshot listener picks them up.
       const lk = await buildLiveKit();
+      if (activeCallIdRef.current !== callId) return; // hung up during import
       liveKitRef.current = lk;
       try {
         await lk.connect({
@@ -741,7 +748,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     memberAnsweredRef.current = false;
     setState((prev) => ({ ...prev, status: 'connecting' }));
 
+    const acceptedCallId = state.callId;
+    activeCallIdRef.current = acceptedCallId;
     const lk = await buildLiveKit();
+    if (activeCallIdRef.current !== acceptedCallId) return; // rejected during import
     liveKitRef.current = lk;
     try {
       await lk.connect({
@@ -852,6 +862,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       pendingRingRef.current = null;
 
       const callId = generateCallId();
+      activeCallIdRef.current = callId;
       const roomName = projectRoomName(context.targetId);
       setState({
         ...IDLE_STATE,
@@ -867,6 +878,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       const lk = await buildLiveKit();
+      if (activeCallIdRef.current !== callId) return; // hung up during import
       liveKitRef.current = lk;
       try {
         await lk.connect({

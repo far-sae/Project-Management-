@@ -216,18 +216,26 @@ export class LiveKitCallService {
   async publishLocalMedia(opts: { mic: boolean; camera: boolean }): Promise<void> {
     const room = this.room;
     if (!room) return;
-    try {
-      if (opts.mic) await room.localParticipant.setMicrophoneEnabled(true);
-      if (opts.camera) await room.localParticipant.setCameraEnabled(true);
-    } catch (err) {
-      // Surface mic/cam permission failures so the UI can show a clear
-      // message — but stay connected to the room (other participants can
-      // still hear/see us once the user grants permission and toggles back).
+    // Separate tries: a mic failure must not stop the camera (or vice versa).
+    // Surface permission failures so the UI can show a clear message — but
+    // stay connected to the room.
+    const report = (err: unknown) =>
       this.events.onError(
-        err instanceof Error
-          ? err.message
-          : 'Could not access microphone/camera',
+        err instanceof Error ? err.message : 'Could not access microphone/camera',
       );
+    if (opts.mic) {
+      try {
+        await room.localParticipant.setMicrophoneEnabled(true);
+      } catch (err) {
+        report(err);
+      }
+    }
+    if (opts.camera) {
+      try {
+        await room.localParticipant.setCameraEnabled(true);
+      } catch (err) {
+        report(err);
+      }
     }
     this.emitParticipants();
   }
@@ -401,8 +409,9 @@ export class LiveKitCallService {
       cameraPub?.track?.mediaStreamTrack) ?? null;
     const audioTrack = micPub?.track?.mediaStreamTrack ?? null;
 
-    const meta = parseParticipantMeta(local.metadata);
-    const isGuest = meta.role === 'guest' || local.identity.startsWith('guest:');
+    // Role comes from the server-controlled identity, never from metadata
+    // (members may edit their own metadata).
+    const isGuest = local.identity.startsWith('guest:');
     return {
       userId: local.identity,
       displayName: local.name || local.identity,
@@ -474,7 +483,10 @@ export class LiveKitCallService {
     const micPub = remote.getTrackPublication(Track.Source.Microphone);
     if (micPub) isMicMuted = micPub.isMuted;
 
+    // Role comes from the server-controlled identity; metadata is
+    // self-editable by members so it can only carry the guest's status.
     const meta = parseParticipantMeta(remote.metadata);
+    const isGuestId = remote.identity.startsWith('guest:');
     return {
       userId: remote.identity,
       displayName: remote.name || remote.identity,
@@ -488,8 +500,8 @@ export class LiveKitCallService {
       isScreenSharing: isScreen,
       isSpeaking: remote.isSpeaking,
       isLocal: false,
-      role: meta.role,
-      isWaiting: meta.role === 'guest' && meta.status === 'waiting',
+      role: isGuestId ? 'guest' : 'member',
+      isWaiting: isGuestId && meta.status === 'waiting',
       isRecording: remote.attributes?.recording === '1',
     };
   }
