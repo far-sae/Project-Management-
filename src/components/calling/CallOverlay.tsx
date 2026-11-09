@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   GripVertical,
   Maximize2,
   Minimize2,
   PhoneOff,
+  PictureInPicture2,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -20,6 +22,10 @@ import { insertProjectChatMessage } from '@/services/supabase/database';
 import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
 import { transcribeRecording } from '@/services/ai/transcribeRecording';
 import { ParticipantTile, RemoteAudioSink } from './CallTiles';
+import { MiniCallView } from './MiniCallView';
+import { usePipWindow } from '@/hooks/usePipWindow';
+import { openVideoPip } from '@/services/calling/pip';
+import { pickMiniMainTile } from '@/services/livekit/callHelpers';
 
 // ── Outgoing ringtone (Teams-style) ──────────────────────────
 
@@ -375,13 +381,74 @@ export const CallOverlay: React.FC = () => {
     }
   }, [state.status, recorder, finishRecording]);
 
-  // Re-anchor the PiP to its default spot every time the user enters PiP
-  // mode, so it doesn't reappear off-screen if the window has been resized.
-  const [pip, setPip] = useState(false);
+  // Re-anchor the in-app minimized box to its default spot every time the
+  // user minimizes, so it doesn't reappear off-screen after a resize.
+  const [minimized, setMinimized] = useState(false);
   useEffect(() => {
-    if (pip) pipDrag.setPos(initialPipPosition());
+    if (minimized) pipDrag.setPos(initialPipPosition());
     // pipDrag.setPos is stable across renders.
-  }, [pip]);
+  }, [minimized]);
+
+  // ── Floating mini window (browser picture-in-picture) ───────
+  const callActive =
+    state.status === 'connecting' ||
+    state.status === 'connected' ||
+    state.status === 'reconnecting';
+  const floating = usePipWindow({
+    callActive,
+    isLocalSharing: state.isScreenSharing,
+  });
+
+  const handleToggleScreenShare = useCallback(() => {
+    const startingShare = !state.isScreenSharing;
+    // Open the floating window in the same click as the share (Chrome only
+    // allows it from a user gesture) so faces stay visible while presenting.
+    if (startingShare && floating.support === 'document' && !floating.pipWindow) {
+      void floating.openPip().catch(() => undefined);
+    }
+    void actions.toggleScreenShare().finally(() => {
+      // Share picker cancelled on a visible tab → don't leave the window up.
+      if (startingShare) setTimeout(floating.recheck, 500);
+    });
+  }, [state.isScreenSharing, floating, actions]);
+
+  const handlePopOut = useCallback(async () => {
+    try {
+      if (floating.support === 'document') {
+        await floating.openPip();
+        return;
+      }
+      const stream = pickMiniMainTile(state.participants)?.videoStream;
+      if (!stream) {
+        toast.message('Nothing to show yet');
+        return;
+      }
+      await openVideoPip(stream);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not open the floating window');
+    }
+  }, [floating, state.participants]);
+
+  const floatingPortal = floating.pipWindow
+    ? createPortal(
+        <MiniCallView
+          participants={state.participants}
+          isMuted={state.isMuted}
+          isCameraOff={state.isCameraOff}
+          isScreenSharing={state.isScreenSharing}
+          mediaType={state.mediaType}
+          onToggleMute={actions.toggleMute}
+          onToggleCamera={actions.toggleCamera}
+          onStopSharing={() => void actions.toggleScreenShare()}
+          onHangUp={actions.hangUp}
+          onBackToCall={() => {
+            floating.closePip();
+            window.focus();
+          }}
+        />,
+        floating.pipWindow.document.body,
+      )
+    : null;
 
   const isOutgoingRinging = state.status === 'ringing' && state.direction === 'outgoing';
   const isConnected = state.status === 'connected';
@@ -536,7 +603,7 @@ export const CallOverlay: React.FC = () => {
 
   // ── PiP mode ───────────────────────────────────────────────
 
-  if (pip) {
+  if (minimized) {
     // Pick a single tile to show in the PiP — prefer screen share, then
     // active speaker, then the first remote, then local.
     const pipSnap =
@@ -563,7 +630,7 @@ export const CallOverlay: React.FC = () => {
             variant="ghost"
             size="icon"
             className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
-            onClick={() => setPip(false)}
+            onClick={() => setMinimized(false)}
             aria-label="Expand call"
           >
             <Maximize2 className="h-3.5 w-3.5" />
@@ -602,7 +669,7 @@ export const CallOverlay: React.FC = () => {
             mediaType={state.mediaType}
             onToggleMute={actions.toggleMute}
             onToggleCamera={actions.toggleCamera}
-            onToggleScreenShare={() => void actions.toggleScreenShare()}
+            onToggleScreenShare={handleToggleScreenShare}
             onToggleBackgroundEffect={() =>
               void actions.setVideoEffect(
                 state.videoEffect === 'blur' ? 'none' : 'blur',
@@ -619,6 +686,7 @@ export const CallOverlay: React.FC = () => {
           </div>
         )}
         {reviewModal}
+        {floatingPortal}
       </div>
     );
   }
@@ -656,15 +724,29 @@ export const CallOverlay: React.FC = () => {
             </p>
           </div>
         </div>
+        <div className="flex items-center gap-1">
+        {floating.support !== 'none' && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full text-white/70 hover:text-white hover:bg-white/10"
+            onClick={() => void handlePopOut()}
+            aria-label="Pop out call"
+            title="Pop out — keep the call on top of other windows"
+          >
+            <PictureInPicture2 className="h-5 w-5" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
           className="h-9 w-9 rounded-full text-white/70 hover:text-white hover:bg-white/10"
-          onClick={() => setPip(true)}
+          onClick={() => setMinimized(true)}
           aria-label="Minimize call"
         >
           <Minimize2 className="h-5 w-5" />
         </Button>
+        </div>
       </div>
 
       {/* Stage */}
@@ -741,7 +823,7 @@ export const CallOverlay: React.FC = () => {
           mediaType={state.mediaType}
           onToggleMute={actions.toggleMute}
           onToggleCamera={actions.toggleCamera}
-          onToggleScreenShare={() => void actions.toggleScreenShare()}
+          onToggleScreenShare={handleToggleScreenShare}
           onToggleBackgroundEffect={() =>
             void actions.setVideoEffect(
               state.videoEffect === 'blur' ? 'none' : 'blur',
@@ -761,6 +843,7 @@ export const CallOverlay: React.FC = () => {
       )}
 
       {reviewModal}
+      {floatingPortal}
     </div>
   );
 };

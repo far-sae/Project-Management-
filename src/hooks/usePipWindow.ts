@@ -20,12 +20,16 @@ export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolea
   support: PipSupport;
   openPip: () => Promise<void>;
   closePip: () => void;
+  /** Re-apply the close rule now (e.g. after the share picker was cancelled). */
+  recheck: () => void;
 } {
   const { callActive, isLocalSharing } = args;
   const [pipWindow, setPipWindow] = useState<Window | null>(null);
   const pipRef = useRef<Window | null>(null);
   const openingRef = useRef(false);
   const [support] = useState<PipSupport>(() => getPipSupport());
+  const argsRef = useRef(args);
+  argsRef.current = args;
 
   const closePip = useCallback(() => {
     const win = pipRef.current;
@@ -63,26 +67,28 @@ export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolea
     }
   }, []);
 
+  const recheck = useCallback(() => {
+    if (!pipRef.current) return;
+    if (
+      shouldClosePip({
+        callActive: argsRef.current.callActive,
+        tabVisible: document.visibilityState === 'visible',
+        isLocalSharing: argsRef.current.isLocalSharing,
+      })
+    ) {
+      closePip();
+    }
+  }, [closePip]);
+
   // Close when the call ends, or the tab is visible again and not sharing.
   useEffect(() => {
-    const check = () => {
-      if (!pipRef.current) return;
-      if (
-        shouldClosePip({
-          callActive,
-          tabVisible: document.visibilityState === 'visible',
-          isLocalSharing,
-        })
-      ) {
-        closePip();
-      }
-    };
+    const check = recheck;
     // Re-check right away too: e.g. sharing stopped while already on the tab.
     check();
     if (!callActive) return;
     document.addEventListener('visibilitychange', check);
     return () => document.removeEventListener('visibilitychange', check);
-  }, [callActive, isLocalSharing, closePip]);
+  }, [callActive, isLocalSharing, recheck]);
 
   // Automatic open on tab switch while a call is active (Chrome/Edge).
   useEffect(() => {
@@ -95,5 +101,5 @@ export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolea
   // Never leave a window behind on unmount.
   useEffect(() => () => closePip(), [closePip]);
 
-  return { pipWindow, support, openPip, closePip };
+  return { pipWindow, support, openPip, closePip, recheck };
 }

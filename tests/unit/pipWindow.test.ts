@@ -93,6 +93,20 @@ describe('usePipWindow', () => {
     vis.mockRestore();
   });
 
+  it('recheck() closes the window when the share picker was cancelled on a visible tab', async () => {
+    const fake = installFakeDocumentPip();
+    const vis = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const { result } = renderHook(() =>
+      usePipWindow({ callActive: true, isLocalSharing: false }),
+    );
+    await act(async () => {
+      await result.current.openPip();
+    });
+    act(() => result.current.recheck());
+    expect(fake.close).toHaveBeenCalled();
+    vis.mockRestore();
+  });
+
   it('closes the window when callActive turns false', async () => {
     const fake = installFakeDocumentPip();
     const { result, rerender } = renderHook(
