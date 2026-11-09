@@ -36,6 +36,12 @@ verify_jwt = false
 [functions.livekit-token]
 verify_jwt = false
 
+# Guest call invites. create-invite/admit/deny validate the Supabase JWT inside
+# the function; guest-join is public (guarded by the signed invite). Gateway
+# verify is off so CORS preflight works and guests need no session.
+[functions.call-guest]
+verify_jwt = false
+
 # Browser-invoked automation/agent functions validate authorization inside the
 # function. Gateway JWT verification must be off so OPTIONS preflight can return
 # CORS headers instead of being rejected before the function runs.

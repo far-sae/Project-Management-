@@ -20,6 +20,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import {
+  guestsToEvict,
+  livekitHttpUrl,
+  type LiveKitRoomAdminGrant,
+  type LiveKitVideoGrant,
+  memberGrant,
+  roomAdminGrant,
+} from "../_shared/livekitRoles.ts";
 
 const allowedOriginsRaw = Deno.env.get("ALLOWED_ORIGINS") ?? "";
 // Normalize: trim, strip trailing slashes, lowercase scheme+host. Browsers send
@@ -48,15 +56,8 @@ function buildCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-// LiveKit's video grant — full schema lives in
-// https://github.com/livekit/protocol but we only need a subset.
-interface LiveKitVideoGrant {
-  roomJoin: boolean;
-  room: string;
-  canPublish: boolean;
-  canSubscribe: boolean;
-  canPublishData: boolean;
-}
+// LiveKit's video grant (subset) lives in ../_shared/livekitRoles.ts — full
+// schema in https://github.com/livekit/protocol.
 
 interface LiveKitAccessTokenClaims extends Record<string, unknown> {
   iss: string; // API key
@@ -68,6 +69,13 @@ interface LiveKitAccessTokenClaims extends Record<string, unknown> {
   video: LiveKitVideoGrant;
 }
 
+interface LiveKitServerClaims extends Record<string, unknown> {
+  iss: string;
+  nbf: number;
+  exp: number;
+  video: LiveKitRoomAdminGrant;
+}
+
 async function importHmacKey(secret: string): Promise<CryptoKey> {
   return await crypto.subtle.importKey(
     "raw",
@@ -76,6 +84,76 @@ async function importHmacKey(secret: string): Promise<CryptoKey> {
     false,
     ["sign", "verify"],
   );
+}
+
+/**
+ * Guests must never outlive the team in a room: project rooms are reused and
+ * guest tokens last 2h, so an admitted guest left behind would otherwise see
+ * the next call. When a member is about to join a room that holds only
+ * guests, remove the admitted ones (waiting guests can't see or hear anything
+ * and may simply be early). Best effort — every failure is logged and ignored
+ * (the room usually doesn't exist yet → 404).
+ */
+async function evictLeftoverGuests(
+  roomName: string,
+  apiKey: string,
+  apiSecret: string,
+  livekitUrl: string,
+): Promise<void> {
+  try {
+    const claims: LiveKitServerClaims = {
+      iss: apiKey,
+      nbf: getNumericDate(0),
+      exp: getNumericDate(60),
+      video: roomAdminGrant(roomName),
+    };
+    const adminToken = await create(
+      { alg: "HS256", typ: "JWT" },
+      claims,
+      await importHmacKey(apiSecret),
+    );
+    const base = `${livekitHttpUrl(livekitUrl)}/twirp/livekit.RoomService`;
+    const call = (method: string, body: Record<string, unknown>) =>
+      fetch(`${base}/${method}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify(body),
+        // Never let cleanup hold up the member's token for long.
+        signal: AbortSignal.timeout(3000),
+      });
+
+    const listRes = await call("ListParticipants", { room: roomName });
+    if (!listRes.ok) {
+      await listRes.body?.cancel();
+      if (listRes.status !== 404) {
+        console.warn("livekit-token ListParticipants failed:", listRes.status);
+      }
+      return;
+    }
+    const listed = (await listRes.json()) as {
+      participants?: Array<{ identity?: unknown; metadata?: unknown }>;
+    };
+    const participants = (listed.participants ?? []).map((p) => ({
+      identity: typeof p.identity === "string" ? p.identity : "",
+      metadata: typeof p.metadata === "string" ? p.metadata : undefined,
+    }));
+    for (const identity of guestsToEvict(participants)) {
+      try {
+        const res = await call("RemoveParticipant", { room: roomName, identity });
+        await res.body?.cancel();
+        if (!res.ok && res.status !== 404) {
+          console.warn("livekit-token RemoveParticipant failed:", res.status);
+        }
+      } catch (err) {
+        console.warn("livekit-token RemoveParticipant error:", err);
+      }
+    }
+  } catch (err) {
+    console.warn("livekit-token guest cleanup error:", err);
+  }
 }
 
 /**
@@ -180,13 +258,9 @@ serve(async (req) => {
   const identity = user.id;
   const ttlSeconds = 60 * 60; // 1h — covers a long meeting plus reconnects
 
-  const grant: LiveKitVideoGrant = {
-    roomJoin: true,
-    room: roomName,
-    canPublish: true,
-    canSubscribe: true,
-    canPublishData: true,
-  };
+  // canUpdateOwnMetadata lets members set the `recording` attribute that
+  // shows the "Recording" badge to everyone (guests included).
+  const grant: LiveKitVideoGrant = memberGrant(roomName);
   const claims: LiveKitAccessTokenClaims = {
     iss: apiKey,
     sub: identity,
@@ -203,6 +277,7 @@ serve(async (req) => {
       claims,
       key,
     );
+    await evictLeftoverGuests(roomName, apiKey, apiSecret, livekitUrl);
     return json({ token, url: livekitUrl, identity, roomName }, 200);
   } catch (err) {
     console.error("livekit-token sign error:", err);
