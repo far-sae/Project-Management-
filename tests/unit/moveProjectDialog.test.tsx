@@ -23,7 +23,6 @@ function renderDialog(project = { projectId: 'p1', name: 'Website', workspaceId:
       onOpenChange={onOpenChange}
       project={project}
       workspaces={workspaces}
-      organizationId="org-1"
     />,
   );
   return { onOpenChange };
@@ -66,7 +65,7 @@ describe('MoveProjectDialog', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Clients' }));
     fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(moveProjectToWorkspace).toHaveBeenCalledWith('p1', 'ws-b', 'org-1');
+    expect(moveProjectToWorkspace).toHaveBeenCalledWith('p1', 'ws-b');
     expect(toast.success).toHaveBeenCalledWith('Moved "Website" to Clients');
   });
 
@@ -75,7 +74,7 @@ describe('MoveProjectDialog', () => {
     renderDialog();
     fireEvent.click(screen.getByRole('radio', { name: 'No workspace' }));
     fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
-    await waitFor(() => expect(moveProjectToWorkspace).toHaveBeenCalledWith('p1', null, 'org-1'));
+    await waitFor(() => expect(moveProjectToWorkspace).toHaveBeenCalledWith('p1', null));
   });
 
   it('shows the error and stays open when the move fails', async () => {
@@ -96,8 +95,7 @@ describe('MoveProjectDialog', () => {
         onOpenChange={vi.fn()}
         project={{ projectId: 'p1', name: 'Website', workspaceId: null }}
         workspaces={[]}
-        organizationId="org-1"
-      />,
+        />,
     );
     expect(screen.getByText(/no other workspace/i)).toBeTruthy();
   });

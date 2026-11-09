@@ -9,52 +9,30 @@ import { supabase } from './config';
 export const PROJECTS_CHANGED_EVENT = 'taskcalendar:projects-changed';
 
 /**
- * Move a project — and with it everything that belongs to it (tasks,
- * comments, files, chat, calls), which all hang off `project_id` — into
- * another workspace of the same organization. `null` = "No workspace".
+ * Move a project — and everything that belongs to it (tasks, comments,
+ * files, chat, activity, time, expenses, invitations) — into another
+ * workspace. `null` = "No workspace".
  *
- * The database policy lets the project owner / org admins / project admins
- * update a project but does not check that the target workspace belongs to
- * the same organization, so that check lives here.
+ * The target may be in a different organization (e.g. an older org of the
+ * same owner): the `move_project_to_workspace` database function (migration
+ * 170) checks the caller is allowed on both sides and re-homes every row
+ * that carries the organization in one transaction.
  */
 export async function moveProjectToWorkspace(
   projectId: string,
   targetWorkspaceId: string | null,
-  organizationId: string,
 ): Promise<void> {
-  if (targetWorkspaceId) {
-    const { data: ws, error: wsError } = await supabase
-      .from('workspaces')
-      .select('workspace_id, organization_id')
-      .eq('workspace_id', targetWorkspaceId)
-      .maybeSingle();
-    if (wsError) throw wsError;
-    if (!ws) throw new Error('That workspace no longer exists.');
-    if (String(ws.organization_id) !== String(organizationId)) {
-      throw new Error('You can only move projects between workspaces in your organization.');
+  const { error } = await supabase.rpc('move_project_to_workspace', {
+    p_project: projectId,
+    p_workspace: targetWorkspaceId,
+  });
+  if (error) {
+    if (error.code === 'PGRST202' || /could not find the function/i.test(error.message ?? '')) {
+      throw new Error(
+        'Moving projects needs a database update (migration 170) that has not been applied yet.',
+      );
     }
-  }
-
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .select('organization_id, workspace_id')
-    .eq('project_id', projectId)
-    .maybeSingle();
-  if (projectError) throw projectError;
-  if (!project || String(project.organization_id) !== String(organizationId)) {
-    throw new Error('Project not found or you do not have access to it.');
-  }
-  if ((project.workspace_id ?? null) === targetWorkspaceId) return;
-
-  const { data: updated, error: updateError } = await supabase
-    .from('projects')
-    .update({ workspace_id: targetWorkspaceId, updated_at: new Date().toISOString() })
-    .eq('project_id', projectId)
-    .select('project_id');
-  if (updateError) throw updateError;
-  // Row-level security turns a forbidden update into "0 rows changed".
-  if (!updated || updated.length === 0) {
-    throw new Error("You don't have permission to move this project.");
+    throw new Error(error.message || 'Could not move the project');
   }
 
   try {

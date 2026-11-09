@@ -178,7 +178,6 @@ export const Dashboard: React.FC = () => {
 
   // Project being moved to another workspace (null = dialog closed).
   const [moveProject, setMoveProject] = useState<Project | null>(null);
-  const moveOrgId = (orgId || '').replace('local-', '');
 
   const [deleteDialog, setDeleteDialog] = useState<{
     open: boolean;
@@ -1885,7 +1884,6 @@ export const Dashboard: React.FC = () => {
         }}
         project={moveProject}
         workspaces={workspaces}
-        organizationId={moveOrgId}
       />
 
       <WorkspacesModal

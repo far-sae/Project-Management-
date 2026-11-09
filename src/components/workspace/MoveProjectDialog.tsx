@@ -23,7 +23,6 @@ interface MoveProjectDialogProps {
   onOpenChange: (open: boolean) => void;
   project: { projectId: string; name: string; workspaceId?: string | null } | null;
   workspaces: Workspace[];
-  organizationId: string;
 }
 
 /**
@@ -35,7 +34,6 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
   onOpenChange,
   project,
   workspaces,
-  organizationId,
 }) => {
   const [choice, setChoice] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
@@ -58,11 +56,7 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
     const target = options.find((o) => o.id === choice);
     setMoving(true);
     try {
-      await moveProjectToWorkspace(
-        project.projectId,
-        choice === NO_WORKSPACE ? null : choice,
-        organizationId,
-      );
+      await moveProjectToWorkspace(project.projectId, choice === NO_WORKSPACE ? null : choice);
       toast.success(`Moved "${project.name}" to ${target?.label ?? 'the new workspace'}`);
       onOpenChange(false);
     } catch (err) {
