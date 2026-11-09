@@ -17,7 +17,10 @@ function Calendar({ className, classNames, ...props }: CalendarProps) {
         month_caption:
           'flex justify-center pt-1 relative items-center text-sm font-medium text-foreground',
         caption_label: 'text-sm font-medium',
-        nav: 'flex items-center gap-1 absolute right-1 top-1',
+        // z-10: the month caption below is `relative` + full-width and comes
+        // later in the DOM, so without a z-index it paints over these arrows
+        // and swallows every click on < / >.
+        nav: 'flex items-center gap-1 absolute right-1 top-1 z-10',
         button_previous:
           'inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors',
         button_next:
