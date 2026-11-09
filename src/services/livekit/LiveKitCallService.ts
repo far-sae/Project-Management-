@@ -14,7 +14,7 @@ import {
   type ParticipantTrackPermission,
 } from 'livekit-client';
 import { fetchLiveKitToken, projectRoomName } from './fetchLiveKitToken';
-import { MediaStreamCache } from './callHelpers';
+import { MediaStreamCache, parseParticipantMeta } from './callHelpers';
 import type { CallParticipant } from '@/services/webrtc/types';
 
 /**
@@ -41,6 +41,12 @@ export interface CallPeerSnapshot {
   isSpeaking: boolean;
   /** True for the local participant — the user themself. */
   isLocal: boolean;
+  /** 'guest' for external link joiners, 'member' otherwise. */
+  role: 'member' | 'guest';
+  /** True for a guest not yet admitted by a member. */
+  isWaiting: boolean;
+  /** True when this participant has attribute `recording` = "1". */
+  isRecording: boolean;
 }
 
 /** State callbacks the consumer (CallProvider) receives. */
@@ -73,6 +79,10 @@ export interface LiveKitConnectOptions {
   participantName: string;
   /** Mic+camera (`video`) or mic-only (`audio`). */
   mediaType: 'audio' | 'video';
+  /** Pre-minted credentials (guests); skips the `livekit-token` call. */
+  credentials?: { token: string; url: string };
+  /** Publish mic/camera right after connecting. Default true. */
+  publishOnConnect?: boolean;
 }
 
 const SCREEN_SHARE_SOURCE_NAMES = new Set<string>([
@@ -153,10 +163,12 @@ export class LiveKitCallService {
     if (this.destroyed) {
       throw new Error('LiveKitCallService has been disposed');
     }
-    const { token, url } = await fetchLiveKitToken({
-      roomName: options.roomName,
-      participantName: options.participantName,
-    });
+    const { token, url } =
+      options.credentials ??
+      (await fetchLiveKitToken({
+        roomName: options.roomName,
+        participantName: options.participantName,
+      }));
 
     const room = new Room({
       // adaptiveStream must stay OFF: it decides visibility from elements
@@ -190,11 +202,23 @@ export class LiveKitCallService {
       return;
     }
 
+    if (options.publishOnConnect !== false) {
+      await this.publishLocalMedia({
+        mic: true,
+        camera: options.mediaType === 'video',
+      });
+    }
+
+    this.emitParticipants();
+  }
+
+  /** Publish mic and/or camera (e.g. after a waiting guest is admitted). */
+  async publishLocalMedia(opts: { mic: boolean; camera: boolean }): Promise<void> {
+    const room = this.room;
+    if (!room) return;
     try {
-      await room.localParticipant.setMicrophoneEnabled(true);
-      if (options.mediaType === 'video') {
-        await room.localParticipant.setCameraEnabled(true);
-      }
+      if (opts.mic) await room.localParticipant.setMicrophoneEnabled(true);
+      if (opts.camera) await room.localParticipant.setCameraEnabled(true);
     } catch (err) {
       // Surface mic/cam permission failures so the UI can show a clear
       // message — but stay connected to the room (other participants can
@@ -205,8 +229,21 @@ export class LiveKitCallService {
           : 'Could not access microphone/camera',
       );
     }
-
     this.emitParticipants();
+  }
+
+  /** Advertise (or clear) that the local user is recording this call. */
+  async setRecordingFlag(on: boolean): Promise<void> {
+    const room = this.room;
+    if (!room) return;
+    try {
+      await room.localParticipant.setAttributes({ recording: on ? '1' : '' });
+      this.emitParticipants();
+    } catch (err) {
+      this.events.onError(
+        err instanceof Error ? err.message : 'Could not update recording status',
+      );
+    }
   }
 
   /**
@@ -336,6 +373,9 @@ export class LiveKitCallService {
       .on(RoomEvent.TrackMuted, refresh)
       .on(RoomEvent.TrackUnmuted, refresh)
       .on(RoomEvent.ParticipantNameChanged, refresh)
+      .on(RoomEvent.ParticipantMetadataChanged, refresh)
+      .on(RoomEvent.ParticipantAttributesChanged, refresh)
+      .on(RoomEvent.ParticipantPermissionsChanged, refresh)
       .on(RoomEvent.ActiveSpeakersChanged, (_speakers: Participant[]) => refresh())
       .on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
         if (state === this.lastConnectionState) return;
@@ -361,6 +401,8 @@ export class LiveKitCallService {
       cameraPub?.track?.mediaStreamTrack) ?? null;
     const audioTrack = micPub?.track?.mediaStreamTrack ?? null;
 
+    const meta = parseParticipantMeta(local.metadata);
+    const isGuest = meta.role === 'guest' || local.identity.startsWith('guest:');
     return {
       userId: local.identity,
       displayName: local.name || local.identity,
@@ -377,6 +419,9 @@ export class LiveKitCallService {
       isScreenSharing: local.isScreenShareEnabled,
       isSpeaking: local.isSpeaking,
       isLocal: true,
+      role: isGuest ? 'guest' : 'member',
+      isWaiting: isGuest && !local.permissions?.canSubscribe,
+      isRecording: local.attributes?.recording === '1',
     };
   }
 
@@ -429,6 +474,7 @@ export class LiveKitCallService {
     const micPub = remote.getTrackPublication(Track.Source.Microphone);
     if (micPub) isMicMuted = micPub.isMuted;
 
+    const meta = parseParticipantMeta(remote.metadata);
     return {
       userId: remote.identity,
       displayName: remote.name || remote.identity,
@@ -442,6 +488,9 @@ export class LiveKitCallService {
       isScreenSharing: isScreen,
       isSpeaking: remote.isSpeaking,
       isLocal: false,
+      role: meta.role,
+      isWaiting: meta.role === 'guest' && meta.status === 'waiting',
+      isRecording: remote.attributes?.recording === '1',
     };
   }
 

@@ -19,6 +19,9 @@ function peer(p: Partial<CallPeerSnapshot> & { userId: string }): CallPeerSnapsh
     isScreenSharing: false,
     isSpeaking: false,
     isLocal: false,
+    role: 'member',
+    isWaiting: false,
+    isRecording: false,
     ...p,
   };
 }

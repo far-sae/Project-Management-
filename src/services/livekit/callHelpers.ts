@@ -86,3 +86,35 @@ export function pickMiniMainTile(peers: CallPeerSnapshot[]): CallPeerSnapshot | 
     ? { ...local, videoStream: null, isScreenSharing: false }
     : local;
 }
+
+/** Role/status the server stamps into participant metadata. */
+export function parseParticipantMeta(metadata?: string): {
+  role: 'member' | 'guest';
+  status: 'waiting' | 'admitted' | null;
+} {
+  if (!metadata) return { role: 'member', status: null };
+  try {
+    const m = JSON.parse(metadata) as { role?: unknown; status?: unknown };
+    if (m && m.role === 'guest') {
+      const status =
+        m.status === 'waiting' || m.status === 'admitted' ? m.status : null;
+      return { role: 'guest', status };
+    }
+  } catch {
+    /* fall through */
+  }
+  return { role: 'member', status: null };
+}
+
+/** Peers that should get a tile (waiting guests are hidden). */
+export function visiblePeers(peers: CallPeerSnapshot[]): CallPeerSnapshot[] {
+  return peers.filter((p) => !p.isWaiting);
+}
+
+export function waitingGuests(peers: CallPeerSnapshot[]): CallPeerSnapshot[] {
+  return peers.filter((p) => p.isWaiting);
+}
+
+export function anyoneRecording(peers: CallPeerSnapshot[]): boolean {
+  return peers.some((p) => p.isRecording);
+}
