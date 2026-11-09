@@ -295,7 +295,7 @@ export const GuestJoin: React.FC = () => {
           {shown.map((p) => (
             <ParticipantTile
               key={p.userId}
-              snap={p.role === 'guest' && !p.isLocal ? { ...p, displayName: `${p.displayName} (Guest)` } : p}
+              snap={p}
               className="min-h-[160px]"
             />
           ))}

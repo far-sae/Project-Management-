@@ -57,12 +57,16 @@ export class MediaStreamCache {
  * user too — otherwise they sit in an empty "connected" call after the
  * other side hangs up. While ringing/connecting the caller is legitimately
  * alone in the room, and during a network reconnect LiveKit can briefly
- * report no remotes, so those states never auto-end.
+ * report no remotes, so those states never auto-end. An open meeting
+ * ("Start meeting") is meant to be sat in alone while guests arrive, so it
+ * never auto-ends either.
  */
 export function shouldEndCallWhenAlone(
   status: string,
   remoteCount: number,
+  isOpenMeeting = false,
 ): boolean {
+  if (isOpenMeeting) return false;
   return remoteCount === 0 && status === 'connected';
 }
 

@@ -24,6 +24,8 @@ interface MiniCallViewProps {
   onStopSharing: () => void;
   onHangUp: () => void;
   onBackToCall: () => void;
+  /** Someone in the call is recording — shows the shared "Recording" badge. */
+  isRecording?: boolean;
 }
 
 const btn =
@@ -45,6 +47,7 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
   onStopSharing,
   onHangUp,
   onBackToCall,
+  isRecording = false,
 }) => {
   const main = pickMiniMainTile(participants);
   // Everyone else, small. The local user appears as their camera tile, never
@@ -66,6 +69,12 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
           <div className="flex h-full items-center justify-center text-xs text-white/60">
             Waiting…
           </div>
+        )}
+        {isRecording && (
+          <span className="pointer-events-none absolute left-1.5 top-1.5 z-[3] inline-flex items-center gap-1 rounded-full bg-red-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-white" aria-hidden="true" />
+            Recording
+          </span>
         )}
       </div>
 

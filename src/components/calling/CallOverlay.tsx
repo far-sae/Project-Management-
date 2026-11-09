@@ -6,6 +6,7 @@ import {
   Minimize2,
   PhoneOff,
   PictureInPicture2,
+  UserPlus,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,12 @@ import { ParticipantTile, RemoteAudioSink } from './CallTiles';
 import { MiniCallView } from './MiniCallView';
 import { usePipWindow } from '@/hooks/usePipWindow';
 import { requestVideoPipFor } from '@/services/calling/pip';
-import { pickMiniMainTile } from '@/services/livekit/callHelpers';
+import {
+  anyoneRecording,
+  pickMiniMainTile,
+  visiblePeers,
+  waitingGuests,
+} from '@/services/livekit/callHelpers';
 
 // ── Outgoing ringtone (Teams-style) ──────────────────────────
 
@@ -227,19 +233,99 @@ const initialPipPosition = (): DragPosition => {
   };
 };
 
+// ── Guest admission prompt ──────────────────────────────────
+
+type GuestDecision = 'admit' | 'deny';
+
+interface GuestAdmitBannersProps {
+  guests: CallPeerSnapshot[];
+  /** Identities whose admit/deny request is in flight. */
+  busy: Record<string, boolean>;
+  onDecide: (identity: string, decision: GuestDecision) => void;
+  compact?: boolean;
+  className?: string;
+}
+
+/** One "<Name> (guest) wants to join" row per waiting guest. */
+const GuestAdmitBanners: React.FC<GuestAdmitBannersProps> = ({
+  guests,
+  busy,
+  onDecide,
+  compact = false,
+  className,
+}) => {
+  if (guests.length === 0) return null;
+  return (
+    <div className={cn('flex flex-col gap-2', className)}>
+      {guests.map((g) => {
+        const pending = !!busy[g.userId];
+        return (
+          <div
+            key={g.userId}
+            role="status"
+            className={cn(
+              'flex items-center gap-2 rounded-xl border border-white/10 bg-neutral-900/95 text-white shadow-lg',
+              compact ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm',
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {`${g.displayName || 'Someone'} (guest) wants to join`}
+            </span>
+            <Button
+              size="sm"
+              className={cn('shrink-0', compact && 'h-7 px-2 text-xs')}
+              disabled={pending}
+              onClick={() => onDecide(g.userId, 'admit')}
+            >
+              Admit
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className={cn(
+                'shrink-0 text-white/80 hover:bg-white/10 hover:text-white',
+                compact && 'h-7 px-2 text-xs',
+              )}
+              disabled={pending}
+              onClick={() => onDecide(g.userId, 'deny')}
+            >
+              Deny
+            </Button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // ── Component ────────────────────────────────────────────────
 
 export const CallOverlay: React.FC = () => {
-  const { state, actions } = useCall();
+  const { state, actions, canInviteGuests } = useCall();
   const { user } = useAuth();
   const pipDrag = useDraggable(initialPipPosition);
+  // The provider rebuilds `actions` every render; read it through a ref so
+  // the callbacks below stay stable and never call a stale action.
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+
+  // Waiting guests are in the room but not in the call: they never get a
+  // tile, an audio sink or a head count — only the admit prompt.
+  const shownPeers = useMemo(
+    () => visiblePeers(state.participants),
+    [state.participants],
+  );
+  const waiting = useMemo(
+    () => waitingGuests(state.participants),
+    [state.participants],
+  );
 
   // Recording streams: local user's media + an aggregate of every remote
   // audio track so the meeting recorder still captures the whole call.
   const { localStream, remoteAudioStream } = useMemo(() => {
     let local: MediaStream | null = null;
     const remoteTracks: MediaStreamTrack[] = [];
-    for (const p of state.participants) {
+    for (const p of shownPeers) {
       if (p.isLocal) {
         const tracks: MediaStreamTrack[] = [];
         if (p.audioStream) tracks.push(...p.audioStream.getAudioTracks());
@@ -254,7 +340,7 @@ export const CallOverlay: React.FC = () => {
       remoteAudioStream:
         remoteTracks.length > 0 ? new MediaStream(remoteTracks) : null,
     };
-  }, [state.participants]);
+  }, [shownPeers]);
 
   const recorder = useMeetingRecorder(localStream, remoteAudioStream);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -355,19 +441,81 @@ export const CallOverlay: React.FC = () => {
     [persistRecordingToChat],
   );
 
+  // Mirror the local recorder into the room's `recording` attribute so every
+  // participant (guests included) sees the "Recording" badge. Idempotent so
+  // the manual toggle and the stop-for-any-reason effect don't double-send.
+  const recordingFlagRef = useRef(false);
+  const syncRecordingFlag = useCallback((on: boolean) => {
+    if (recordingFlagRef.current === on) return;
+    recordingFlagRef.current = on;
+    void actionsRef.current.setRecordingFlag(on);
+  }, []);
+
   const handleToggleRecording = useCallback(() => {
     if (recorder.isRecording) {
+      syncRecordingFlag(false);
       void recorder.stop().then(finishRecording);
     } else {
       void recorder.start().then((res) => {
         if (res.outcome === 'failed') {
           toast.error(res.error);
         } else if (res.outcome === 'started') {
+          syncRecordingFlag(true);
           toast.success('Recording started');
         }
       });
     }
-  }, [recorder, finishRecording]);
+  }, [recorder, finishRecording, syncRecordingFlag]);
+
+  // However the recorder stopped (button, call end, track loss), clear the
+  // shared flag.
+  useEffect(() => {
+    if (!recorder.isRecording) syncRecordingFlag(false);
+  }, [recorder.isRecording, syncRecordingFlag]);
+
+  const someoneRecording =
+    recorder.isRecording || anyoneRecording(state.participants);
+
+  // ── Guests: invite + admit/deny ─────────────────────────────
+  const [inviting, setInviting] = useState(false);
+  const handleInviteGuest = useCallback(async () => {
+    setInviting(true);
+    try {
+      await actionsRef.current.inviteGuest();
+    } finally {
+      setInviting(false);
+    }
+  }, []);
+
+  const [guestBusy, setGuestBusy] = useState<Record<string, boolean>>({});
+  const handleGuestDecision = useCallback(
+    async (identity: string, decision: GuestDecision) => {
+      setGuestBusy((b) => ({ ...b, [identity]: true }));
+      try {
+        // The provider toasts failures itself.
+        if (decision === 'admit') await actionsRef.current.admitGuest(identity);
+        else await actionsRef.current.denyGuest(identity);
+      } finally {
+        setGuestBusy((b) => {
+          const next = { ...b };
+          delete next[identity];
+          return next;
+        });
+      }
+    },
+    [],
+  );
+  const admitBanners = (compact: boolean, className?: string) =>
+    canInviteGuests ? (
+      <GuestAdmitBanners
+        guests={waiting}
+        busy={guestBusy}
+        onDecide={(id, d) => void handleGuestDecision(id, d)}
+        compact={compact}
+        className={className}
+      />
+    ) : null;
+  const showInviteGuest = canInviteGuests && !!state.roomName;
 
   // If the call ends while we're still recording, finalise the file so the
   // user gets the audio + transcript instead of losing it on hangup.
@@ -419,7 +567,7 @@ export const CallOverlay: React.FC = () => {
         return;
       }
       // Video fallback: no await before the request (Safari needs the click).
-      const main = pickMiniMainTile(state.participants);
+      const main = pickMiniMainTile(shownPeers);
       const request = main ? requestVideoPipFor(main.userId) : null;
       if (!request) {
         toast.message('Nothing to show yet');
@@ -429,12 +577,13 @@ export const CallOverlay: React.FC = () => {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not open the floating window');
     }
-  }, [floating, state.participants]);
+  }, [floating, shownPeers]);
 
   const floatingPortal = floating.pipWindow
     ? createPortal(
         <MiniCallView
-          participants={state.participants}
+          participants={shownPeers}
+          isRecording={someoneRecording}
           isMuted={state.isMuted}
           isCameraOff={state.isCameraOff}
           isScreenSharing={state.isScreenSharing}
@@ -527,6 +676,7 @@ export const CallOverlay: React.FC = () => {
         role="dialog"
         aria-label="Outgoing call"
       >
+        {admitBanners(false, 'absolute top-4 inset-x-4 mx-auto max-w-md z-10')}
         <div className="flex flex-col items-center gap-5 animate-in fade-in duration-200">
           <div className="relative">
             <div className="absolute inset-0 rounded-full bg-white/10 animate-ping" />
@@ -576,6 +726,19 @@ export const CallOverlay: React.FC = () => {
           >
             <PhoneOff className="h-6 w-6" />
           </Button>
+          {showInviteGuest && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full text-white/70 hover:text-white hover:bg-white/10"
+              onClick={() => void handleInviteGuest()}
+              disabled={inviting}
+              title="Copy a guest link that works for 24 hours"
+            >
+              <UserPlus className="h-4 w-4 mr-1.5" />
+              Invite guest
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -583,13 +746,12 @@ export const CallOverlay: React.FC = () => {
 
   // ── Active call (connecting, connected, reconnecting) ──────
 
-  const remoteSnaps = state.participants.filter((p) => !p.isLocal);
-  const localSnap = state.participants.find((p) => p.isLocal) ?? null;
+  const remoteSnaps = shownPeers.filter((p) => !p.isLocal);
+  const localSnap = shownPeers.find((p) => p.isLocal) ?? null;
 
   // Anyone screen-sharing? If so, give them the main stage and put the
   // others in a side strip — Meet/Teams convention.
-  const screenSharer =
-    state.participants.find((p) => p.isScreenSharing) ?? null;
+  const screenSharer = shownPeers.find((p) => p.isScreenSharing) ?? null;
 
   const headlineLabel =
     state.context?.label ??
@@ -661,6 +823,7 @@ export const CallOverlay: React.FC = () => {
           </span>
           <span>{statusLabel}</span>
         </div>
+        {admitBanners(true, 'px-1.5 pb-1.5')}
         <div className="w-full px-1 pb-1">
           <CallControls
             isMuted={state.isMuted}
@@ -681,10 +844,10 @@ export const CallOverlay: React.FC = () => {
             compact
           />
         </div>
-        {recorder.isRecording && (
-          <div className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-medium text-white shadow">
+        {someoneRecording && (
+          <div className="pointer-events-none absolute top-1.5 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-medium text-white shadow">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-pulse" aria-hidden="true" />
-            REC
+            Recording
           </div>
         )}
         {reviewModal}
@@ -698,9 +861,9 @@ export const CallOverlay: React.FC = () => {
   // Build the tile list. For the grid we want every participant including
   // the local user. For the screen-share layout we pull the sharer out and
   // strip the rest along the right edge.
-  const allTiles: CallPeerSnapshot[] = state.participants;
+  const allTiles: CallPeerSnapshot[] = shownPeers;
   const otherTiles = screenSharer
-    ? state.participants.filter((p) => p.userId !== screenSharer.userId)
+    ? shownPeers.filter((p) => p.userId !== screenSharer.userId)
     : [];
 
   return (
@@ -720,13 +883,26 @@ export const CallOverlay: React.FC = () => {
             <p className="text-sm font-semibold truncate">{headlineLabel}</p>
             <p className="text-xs text-white/60 truncate">
               {statusLabel}
-              {state.participants.length > 0 &&
-                ` · ${state.participants.length} ${state.participants.length === 1 ? 'person' : 'people'}`}
+              {shownPeers.length > 0 &&
+                ` · ${shownPeers.length} ${shownPeers.length === 1 ? 'person' : 'people'}`}
               {state.isScreenSharing ? ' · Screen sharing' : ''}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
+        {showInviteGuest && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full text-white/70 hover:text-white hover:bg-white/10"
+            onClick={() => void handleInviteGuest()}
+            disabled={inviting}
+            aria-label="Invite guest"
+            title="Invite guest — copy a link that works for 24 hours"
+          >
+            <UserPlus className="h-5 w-5" />
+          </Button>
+        )}
         {floating.support !== 'none' && (
           <Button
             variant="ghost"
@@ -812,6 +988,11 @@ export const CallOverlay: React.FC = () => {
             {state.error}
           </div>
         )}
+
+        {admitBanners(
+          false,
+          'absolute bottom-4 left-1/2 -translate-x-1/2 z-20 w-[min(28rem,calc(100%-1.5rem))]',
+        )}
       </div>
 
       {/* Controls */}
@@ -837,7 +1018,7 @@ export const CallOverlay: React.FC = () => {
         />
       </div>
 
-      {recorder.isRecording && (
+      {someoneRecording && (
         <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-red-600/90 px-3 py-1 text-xs font-medium text-white shadow-lg">
           <span className="inline-block h-2 w-2 rounded-full bg-white animate-pulse" aria-hidden="true" />
           Recording

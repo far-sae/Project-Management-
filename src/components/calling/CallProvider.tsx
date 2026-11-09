@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import type { VideoEffect } from '@/services/webrtc/BackgroundProcessor';
 import type {
@@ -18,7 +19,16 @@ import {
   dmRoomName,
   projectRoomName,
 } from '@/services/livekit/fetchLiveKitToken';
-import { shouldEndCallWhenAlone } from '@/services/livekit/callHelpers';
+import {
+  shouldEndCallWhenAlone,
+  visiblePeers,
+} from '@/services/livekit/callHelpers';
+import {
+  admitGuest as admitGuestRequest,
+  createGuestInvite,
+  denyGuest as denyGuestRequest,
+  GuestApiError,
+} from '@/services/livekit/guestApi';
 import {
   INITIAL_CALL_STATE,
   type CallContext,
@@ -55,11 +65,31 @@ interface CallActions {
    * doesn't have to branch.
    */
   setVideoEffect: (effect: VideoEffect) => Promise<void>;
+  /**
+   * Open a project room without ringing anyone ("Start meeting"). The
+   * member waits in the room and can invite guests by link. Project rooms
+   * only — DM contexts are ignored.
+   */
+  startMeeting: (context: CallContext, mediaType: CallMediaType) => Promise<void>;
+  /** Create a 24-hour guest link for the current room and copy it. */
+  inviteGuest: () => Promise<void>;
+  /** Let a waiting guest into the current room. Errors are toasted. */
+  admitGuest: (identity: string) => Promise<void>;
+  /** Turn a waiting guest away. Errors are toasted. */
+  denyGuest: (identity: string) => Promise<void>;
+  /** Tell everyone in the room whether the local user is recording. */
+  setRecordingFlag: (on: boolean) => Promise<void>;
 }
 
 interface CallContextValue {
   state: CallState;
   actions: CallActions;
+  /**
+   * Whether the local user may invite / admit guests. View-only org members
+   * can't (same rule the project rail uses for calls); the server enforces
+   * the full project-role check anyway.
+   */
+  canInviteGuests: boolean;
 }
 
 const CallCtx = createContext<CallContextValue | null>(null);
@@ -94,10 +124,18 @@ function findLocalSnapshot(snaps: CallPeerSnapshot[]): CallPeerSnapshot | null {
  * minimised PiP without forcing the full grid into that surface.
  */
 function findHeadlineRemote(snaps: CallPeerSnapshot[]): CallPeerSnapshot | null {
-  const remotes = snaps.filter((s) => !s.isLocal);
+  const remotes = visiblePeers(snaps).filter((s) => !s.isLocal);
   if (remotes.length === 0) return null;
   const speaking = remotes.find((s) => s.isSpeaking);
   return speaking ?? remotes[0];
+}
+
+/** Human copy for a failed guest-API request. */
+function guestErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof GuestApiError && err.code === 'FORBIDDEN') {
+    return "You don't have permission to manage guests for this call.";
+  }
+  return err instanceof Error && err.message ? err.message : fallback;
 }
 
 // ── Provider ─────────────────────────────────────────────────
@@ -106,6 +144,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user } = useAuth();
+  const { isViewer: isViewerOrg } = useOrganization();
+  const canInviteGuests = !isViewerOrg;
   const [state, setState] = useState<CallState>(IDLE_STATE);
   const latestCallStateRef = useRef(state);
   latestCallStateRef.current = state;
@@ -340,10 +380,20 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     const service: LiveKitCallService = new LiveKitCallService({
       onParticipantsChange: (peers) => {
         if (!isCurrent()) return;
+        // Waiting guests are in the LiveKit room but not in the call yet:
+        // they never count as "someone is here" (connect transition,
+        // headline, auto-end, ring-cancel). State still keeps every peer so
+        // the overlay can show the admit prompt.
+        const remotes = visiblePeers(peers).filter((p) => !p.isLocal);
         // Everyone else left a live call → end it here too, instead of
         // leaving this user alone in an empty "connected" call.
-        const remoteCount = peers.filter((p) => !p.isLocal).length;
-        if (shouldEndCallWhenAlone(latestCallStateRef.current.status, remoteCount)) {
+        if (
+          shouldEndCallWhenAlone(
+            latestCallStateRef.current.status,
+            remotes.length,
+            latestCallStateRef.current.isOpenMeeting,
+          )
+        ) {
           resetCall();
           toast.message('Call ended');
           return;
@@ -351,7 +401,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         setState((prev) => {
           if (prev.status === 'idle' || prev.status === 'ended') return prev;
           const localSnap = findLocalSnapshot(peers);
-          const remotes = peers.filter((p) => !p.isLocal);
           // First remote arrival flips us from 'connecting' to 'connected'.
           // After that we just refresh the participants list.
           let status = prev.status;
@@ -386,18 +435,19 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           };
         });
 
-        // First time we see someone else in the room on an outgoing
-        // multi-party call, broadcast cancel to every other dialed
-        // teammate so they stop ringing.
-        const remotes = peers.filter((p) => !p.isLocal);
+        // First time a teammate shows up on an outgoing multi-party call,
+        // broadcast cancel to every other dialed teammate so they stop
+        // ringing. Only members count: admitting a guest while the ring is
+        // still out must not cancel the teammates' rings.
+        const memberRemotes = remotes.filter((p) => p.role === 'member');
         const dialed = remoteParticipantsRef.current;
         if (
-          remotes.length === 1 &&
+          memberRemotes.length === 1 &&
           dialed.length > 1 &&
           localParticipant &&
           latestCallStateRef.current.direction === 'outgoing'
         ) {
-          const answererId = remotes[0].userId;
+          const answererId = memberRemotes[0].userId;
           const callId = latestCallStateRef.current.callId;
           if (!callId) return;
           for (const p of dialed) {
@@ -771,6 +821,119 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const startMeeting = useCallback(
+    async (context: CallContext, mediaType: CallMediaType) => {
+      if (!localParticipant || !isMediaSupported()) return;
+      // Guest links and the "sit and wait" flow are project-room only.
+      if (context.type !== 'project') return;
+      if (latestCallStateRef.current.status !== 'idle') return;
+
+      clearTimers();
+      remoteParticipantsRef.current = [];
+      pendingRingRef.current = null;
+
+      const callId = generateCallId();
+      const roomName = projectRoomName(context.targetId);
+      setState({
+        ...IDLE_STATE,
+        status: 'connecting',
+        callId,
+        direction: 'outgoing',
+        mediaType,
+        roomName,
+        localParticipant,
+        remoteParticipant: { userId: context.targetId, displayName: context.label },
+        context,
+        isOpenMeeting: true,
+      });
+
+      const lk = await buildLiveKit();
+      liveKitRef.current = lk;
+      try {
+        await lk.connect({
+          roomName,
+          mediaType,
+          participantName: localParticipant.displayName,
+        });
+      } catch (err) {
+        if (liveKitRef.current !== lk) return; // hung up meanwhile
+        await teardownLiveKit();
+        setState((prev) => ({
+          ...prev,
+          status: 'ended',
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Could not connect to the call server',
+        }));
+        endStateTimeoutRef.current = setTimeout(() => {
+          endStateTimeoutRef.current = null;
+          setState((s) => (s.status === 'ended' ? IDLE_STATE : s));
+        }, ENDED_DISMISS_MS);
+        return;
+      }
+      // No one to wait for — the meeting is live as soon as we're in.
+      if (liveKitRef.current !== lk) return;
+      setState((prev) =>
+        prev.callId === callId && prev.status === 'connecting'
+          ? { ...prev, status: 'connected' }
+          : prev,
+      );
+    },
+    [localParticipant, buildLiveKit, clearTimers, teardownLiveKit],
+  );
+
+  const inviteGuest = useCallback(async () => {
+    const roomName = latestCallStateRef.current.roomName;
+    if (!roomName) return;
+    let url: string;
+    try {
+      ({ url } = await createGuestInvite(roomName));
+    } catch (err) {
+      toast.error(guestErrorMessage(err, 'Could not create a guest link'));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Guest link copied — it works for 24 hours');
+    } catch {
+      // Clipboard blocked (permissions, insecure context, no focus): hand
+      // the link over in a prompt so it can still be copied by hand.
+      try {
+        window.prompt('Copy this guest link — it works for 24 hours', url);
+      } catch {
+        toast.message('Guest link — it works for 24 hours', {
+          description: url,
+          duration: 60_000,
+        });
+      }
+    }
+  }, []);
+
+  const admitGuest = useCallback(async (identity: string) => {
+    const roomName = latestCallStateRef.current.roomName;
+    if (!roomName) return;
+    try {
+      await admitGuestRequest(roomName, identity);
+    } catch (err) {
+      toast.error(guestErrorMessage(err, 'Could not let the guest in'));
+    }
+  }, []);
+
+  const denyGuest = useCallback(async (identity: string) => {
+    const roomName = latestCallStateRef.current.roomName;
+    if (!roomName) return;
+    try {
+      await denyGuestRequest(roomName, identity);
+    } catch (err) {
+      toast.error(guestErrorMessage(err, 'Could not turn the guest away'));
+    }
+  }, []);
+
+  const setRecordingFlag = useCallback(async (on: boolean) => {
+    await liveKitRef.current?.setRecordingFlag(on);
+  }, []);
+
   const actions: CallActions = {
     startCall,
     acceptCall,
@@ -780,10 +943,17 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     toggleCamera,
     toggleScreenShare,
     setVideoEffect,
+    startMeeting,
+    inviteGuest,
+    admitGuest,
+    denyGuest,
+    setRecordingFlag,
   };
 
   return (
-    <CallCtx.Provider value={{ state, actions }}>{children}</CallCtx.Provider>
+    <CallCtx.Provider value={{ state, actions, canInviteGuests }}>
+      {children}
+    </CallCtx.Provider>
   );
 };
 

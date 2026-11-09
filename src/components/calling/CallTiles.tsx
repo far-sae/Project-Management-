@@ -119,6 +119,11 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             )}
           </span>
         </span>
+        {snap.role === 'guest' && (
+          <span className="inline-flex shrink-0 items-center rounded-md bg-amber-500/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            Guest
+          </span>
+        )}
         {snap.isMicMuted && (
           <span
             className="inline-flex items-center justify-center rounded-md bg-black/55 p-1 text-rose-300 backdrop-blur-sm"

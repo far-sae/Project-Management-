@@ -13,6 +13,7 @@ import {
   Smile,
   Phone,
   Video,
+  CalendarPlus,
   Mic,
   Download,
   FileText,
@@ -1159,6 +1160,30 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   }}
                 >
                   <Video className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
+                  aria-label="Start meeting"
+                  disabled={isViewerOrg}
+                  aria-disabled={isViewerOrg}
+                  title={
+                    isViewerOrg
+                      ? 'View-only — calls are disabled for your role.'
+                      : 'Start meeting — join the room now and invite guests with a link'
+                  }
+                  onClick={() => {
+                    if (isViewerOrg) return;
+                    // Open the project room without ringing anyone — works
+                    // even when there are no other members to call.
+                    void callActions.startMeeting(
+                      { type: 'project', targetId: project.projectId, label: project.name },
+                      'video',
+                    );
+                  }}
+                >
+                  <CalendarPlus className="h-4 w-4" />
                 </Button>
               </>
             )}

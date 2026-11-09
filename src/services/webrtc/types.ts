@@ -69,6 +69,11 @@ export interface CallState {
   isScreenSharing: boolean;
   videoEffect: CallVideoEffect;
   isApplyingEffect: boolean;
+  /**
+   * Started with "Start meeting": nobody is rung and the call stays open
+   * even while the member is alone, so guests can join from a link.
+   */
+  isOpenMeeting: boolean;
   error: string | null;
 }
 
@@ -132,5 +137,6 @@ export const INITIAL_CALL_STATE: CallState = {
   isScreenSharing: false,
   videoEffect: 'none',
   isApplyingEffect: false,
+  isOpenMeeting: false,
   error: null,
 };

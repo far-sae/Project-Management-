@@ -65,4 +65,12 @@ describe('shouldEndCallWhenAlone', () => {
     expect(shouldEndCallWhenAlone('ringing', 0)).toBe(false);
     expect(shouldEndCallWhenAlone('connecting', 0)).toBe(false);
   });
+
+  it('never ends an open meeting just because the member is alone', () => {
+    expect(shouldEndCallWhenAlone('connected', 0, true)).toBe(false);
+  });
+
+  it('still ends a normal call when isOpenMeeting is false', () => {
+    expect(shouldEndCallWhenAlone('connected', 0, false)).toBe(true);
+  });
 });
