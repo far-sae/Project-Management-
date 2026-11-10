@@ -1423,7 +1423,7 @@ export const Reports: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove team member</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove <strong>{memberToRemove?.displayName}</strong> from the organization? They will lose access to all projects.
+              Are you sure you want to remove <strong>{memberToRemove?.displayName}</strong> from the organization? They lose access to every project straight away, are unassigned from their tasks and their invitations are cancelled. Projects they own move to the organization owner. Their past work (tasks, comments, files) stays.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

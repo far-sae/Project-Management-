@@ -22,10 +22,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 import {
   guestsToEvict,
+  isDmMember,
   livekitHttpUrl,
   type LiveKitRoomAdminGrant,
   type LiveKitVideoGrant,
   memberGrant,
+  projectIdFromRoom,
   roomAdminGrant,
 } from "../_shared/livekitRoles.ts";
 
@@ -249,6 +251,30 @@ serve(async (req) => {
       : "";
   if (!roomName || !isValidRoomName(roomName)) {
     return json({ error: "Invalid roomName" }, 400);
+  }
+
+  // Only people who can still open the project (or are one of the two
+  // people in a DM) get into its call — someone removed from the team must
+  // not be able to keep joining project calls.
+  if (roomName.startsWith("project:")) {
+    const projectId = projectIdFromRoom(roomName);
+    if (!projectId) return json({ error: "Invalid roomName" }, 400);
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: canAccess, error: accessError } = await userClient.rpc(
+      "can_access_project",
+      { p_project: projectId },
+    );
+    if (accessError) {
+      console.error("livekit-token: access check failed", accessError);
+      return json({ error: "Could not check project access" }, 500);
+    }
+    if (canAccess !== true) {
+      return json({ error: "You don't have access to this project's calls" }, 403);
+    }
+  } else if (!isDmMember(roomName, user.id)) {
+    return json({ error: "You're not part of this call" }, 403);
   }
 
   // Use the Supabase user id as the LiveKit identity so we can correlate

@@ -206,20 +206,45 @@ export const addOrganizationMember = async (
 // ============================================
 // REMOVE ORGANIZATION MEMBER
 // ============================================
+export interface RemoveOrganizationMemberSummary {
+  projects: number;
+  ownedProjectsTransferred: number;
+  tasksUnassigned: number;
+  invitationsCancelled: number;
+}
+
+/**
+ * Remove a person from the organization completely: the roster, every
+ * project's member list, their task assignments, invitations, saved views,
+ * drafts, notifications and connected mailboxes. Projects they owned move to
+ * the organization owner. Runs the `remove_org_member` database function
+ * (migration 172) so it's all-or-nothing and permission-checked server-side.
+ */
 export const removeOrganizationMember = async (
   organizationId: string,
   userId: string,
-): Promise<void> => {
-  // Get current organization
-  const org = await getOrganization(organizationId);
-  if (!org) throw new Error("Organization not found");
-
-  // Remove member
-  const updatedMembers = org.members.filter((m) => m.userId !== userId);
-
-  await updateOrganization(organizationId, {
-    members: updatedMembers,
+  options: { unassignTasks?: boolean } = {},
+): Promise<RemoveOrganizationMemberSummary> => {
+  const { data, error } = await supabase.rpc("remove_org_member", {
+    p_org: organizationId,
+    p_user: userId,
+    p_unassign_tasks: options.unassignTasks ?? true,
   });
+  if (error) {
+    if (error.code === "PGRST202" || /could not find the function/i.test(error.message ?? "")) {
+      throw new Error(
+        "Removing people needs a database update (migration 172) that has not been applied yet.",
+      );
+    }
+    throw new Error(error.message || "Failed to remove member");
+  }
+  const d = (data ?? {}) as Partial<RemoveOrganizationMemberSummary>;
+  return {
+    projects: d.projects ?? 0,
+    ownedProjectsTransferred: d.ownedProjectsTransferred ?? 0,
+    tasksUnassigned: d.tasksUnassigned ?? 0,
+    invitationsCancelled: d.invitationsCancelled ?? 0,
+  };
 };
 
 // ============================================

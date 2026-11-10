@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { updateOrganization } from '@/services/supabase/organizations';
+import { removeOrganizationMember, updateOrganization } from '@/services/supabase/organizations';
 import { upsertProjectMember, type ProjectRole } from '@/services/supabase/projectMembers';
 import type { Organization, OrganizationMember } from '@/types/organization';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
@@ -482,6 +482,34 @@ export const Team: React.FC = () => {
   };
 
 
+  /** Remove from the whole organization: every project, task, invitation. */
+  const handleRemoveFromOrganization = async (member: ProjectMember) => {
+    if (!organization) return;
+    try {
+      const summary = await removeOrganizationMember(organization.organizationId, member.userId);
+      setProjectMembers((prev) => prev.filter((m) => m.userId !== member.userId));
+      void recordAuditEvent(
+        organization.organizationId,
+        { userId: user?.userId ?? null, displayName: user?.displayName ?? null },
+        {
+          action: 'member_removed',
+          targetType: 'user',
+          targetId: member.userId,
+          targetLabel: member.displayName ?? member.email ?? null,
+          metadata: { scope: 'organization', ...summary },
+        },
+      );
+      toast.success(
+        `${member.displayName} was removed from the organization and ${summary.projects} project${summary.projects === 1 ? '' : 's'}`,
+      );
+      await refreshProjects();
+      await refreshOrganization();
+      await loadTeamData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove member');
+    }
+  };
+
   const getRoleBadge = (role: string) => {
     switch (role) {
       case 'owner':
@@ -898,7 +926,8 @@ export const Team: React.FC = () => {
                       )}
 
                       {/* Remove button - hide for owner */}
-                      {isProjectOwner && member.role !== "owner" && (
+                      {(isProjectOwner || isAdmin) && member.role !== "owner"
+                        && member.userId !== user?.userId && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1237,15 +1266,34 @@ export const Team: React.FC = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Team Member?</AlertDialogTitle>
               <AlertDialogDescription>
-                This removes project access immediately. Choose whether existing tasks should keep this member as historical assignee context or be unassigned now.
+                {isProjectOwner
+                  ? 'Remove them from this project only (choose whether their tasks stay assigned), or from the whole organization.'
+                  : 'Remove them from the whole organization.'}
+                {isAdmin && ' Removing from the organization takes away access to every project, unassigns their tasks and cancels their invitations. Projects they own move to the organization owner.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <AlertDialogFooter>
+            <AlertDialogFooter className="flex-wrap gap-2">
               <AlertDialogCancel onClick={() => setRemoveMemberId(null)}>
                 Cancel
               </AlertDialogCancel>
 
+              {isAdmin && (
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    if (removeMemberId) {
+                      const member = allMembers.find((m) => m.userId === removeMemberId);
+                      if (member) await handleRemoveFromOrganization(member);
+                      setRemoveMemberId(null);
+                    }
+                  }}
+                >
+                  Remove from organization
+                </Button>
+              )}
+
+              {isProjectOwner && (
               <Button
                 variant="outline"
                 onClick={async () => {
@@ -1256,9 +1304,11 @@ export const Team: React.FC = () => {
                   }
                 }}
               >
-                Keep Task History
+                Remove from project (keep tasks)
               </Button>
+              )}
 
+              {isProjectOwner && (
               <AlertDialogAction
                 className="bg-red-500 hover:bg-red-600"
                 onClick={async () => {
@@ -1269,8 +1319,9 @@ export const Team: React.FC = () => {
                   }
                 }}
               >
-                Remove and Unassign
+                Remove from project & unassign
               </AlertDialogAction>
+              )}
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
