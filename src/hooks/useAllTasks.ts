@@ -6,6 +6,7 @@ import {
   getTasksAssignedToUser,
 } from "@/services/supabase/database";
 import { Task } from "@/types";
+import { TASKS_CHANGED_EVENT } from "@/services/supabase/taskMove";
 
 export const useAllTasks = () => {
   const { user } = useAuth();
@@ -51,6 +52,13 @@ export const useAllTasks = () => {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  // A task moved to another project — reload so it shows under the new one.
+  useEffect(() => {
+    const onTasksChanged = () => void refresh();
+    window.addEventListener(TASKS_CHANGED_EVENT, onTasksChanged);
+    return () => window.removeEventListener(TASKS_CHANGED_EVENT, onTasksChanged);
   }, [refresh]);
 
   const tasksAssignedToMe = tasks.filter((t) =>

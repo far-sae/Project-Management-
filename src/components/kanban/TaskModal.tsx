@@ -37,7 +37,7 @@ import {
   Trash2, Loader2, Sparkles, Wand2, MessageSquare,
   ListTree, Paperclip, X, Check, Circle, Activity, Clock,
   CheckCircle2, Lock, MoreHorizontal, Bell, Mail, Link2,
-  AlertTriangle, Save, KeyRound, Users, Video,
+  AlertTriangle, Save, KeyRound, Users, Video, FolderInput,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -72,6 +72,7 @@ import { useTaskActivity } from '@/hooks/useActivity';
 import { ActivityEvent } from '@/types/activity';
 import { uploadCommentAttachment } from '@/services/supabase/storage';
 import { SubtaskDecompositionModal } from './SubtaskDecompositionModal';
+import { MoveTaskDialogWithProjects } from './MoveTaskDialog';
 import { NotifyModal } from './NotifyModal';
 import { DayPickerPopover } from './DayPickerPopover';
 import { AssigneePicker } from './AssigneePicker';
@@ -267,6 +268,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [showDecomposition, setShowDecomposition] = useState(false);
   const [showNotifyModal, setShowNotifyModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showMoveTask, setShowMoveTask] = useState(false);
   const [projectAssignableMembers, setProjectAssignableMembers] = useState<Array<{
     userId: string;
     displayName: string;
@@ -1435,6 +1437,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       <Mail className="w-4 h-4 mr-2" />
                       Reply by email
                     </DropdownMenuItem>
+                    {isEditing && (
+                      <DropdownMenuItem
+                        onClick={() => setShowMoveTask(true)}
+                        disabled={readOnlyTask}
+                      >
+                        <FolderInput className="w-4 h-4 mr-2" />
+                        Move to project…
+                      </DropdownMenuItem>
+                    )}
                     {onDelete && (
                       <>
                         <DropdownMenuSeparator />
@@ -2648,6 +2659,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             members={projectAssignableMembers}
             actorUserId={user.userId}
             actorDisplayName={user.displayName || user.email || 'User'}
+          />
+        )}
+
+        {showMoveTask && task && (
+          <MoveTaskDialogWithProjects
+            open={showMoveTask}
+            onOpenChange={setShowMoveTask}
+            task={{ taskId: task.taskId, title: title || task.title, status: task.status }}
+            currentProjectId={projectId}
+            onMoved={() => onClose()}
           />
         )}
 

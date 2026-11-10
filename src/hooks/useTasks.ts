@@ -8,6 +8,7 @@ import {
   subscribeToTasks,
 } from "@/services/supabase/database";
 import { logger } from "@/lib/logger";
+import { TASKS_CHANGED_EVENT } from "@/services/supabase/taskMove";
 import { Task, CreateTaskInput, UpdateTaskInput, TaskStatus } from "@/types";
 
 export const useTasks = (
@@ -48,7 +49,19 @@ export const useTasks = (
       user?.userId,
     );
 
-    return () => unsubscribe();
+    // A task moved to another project: realtime filtered on this project
+    // never reports a row leaving it, so refetch on the app-wide event.
+    const onTasksChanged = () => {
+      getProjectTasks(projectId, effectiveOrgId, user?.userId)
+        .then(setTasks)
+        .catch((err) => logger.warn("useTasks: refresh after task move failed:", err));
+    };
+    window.addEventListener(TASKS_CHANGED_EVENT, onTasksChanged);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener(TASKS_CHANGED_EVENT, onTasksChanged);
+    };
   }, [projectId, effectiveOrgId, user?.userId]);
 
   const addTask = useCallback(
