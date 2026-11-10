@@ -41,7 +41,17 @@ class FakeCtx {
   }
 }
 
+class SilentAudio {
+  muted = false;
+  loop = false;
+  preload = '';
+  currentTime = 0;
+  play = vi.fn(async () => {});
+  pause = vi.fn();
+}
+
 beforeEach(() => {
+  (globalThis as unknown as { Audio: unknown }).Audio = SilentAudio;
   created.length = 0;
   __resetCallAudioForTests();
   __resetChimeThrottleForTests();
@@ -64,11 +74,11 @@ describe('chat and notification chimes', () => {
     expect(created[0].resume).toHaveBeenCalled();
   });
 
-  it('play once for a burst of messages', () => {
+  it('play once for a burst of messages', async () => {
     playChatChime();
     playNotificationChime();
     playChatChime();
     // Two notes, each with an overtone → 4 oscillators for a single chime.
-    expect(created[0].oscillators).toHaveLength(4);
+    await vi.waitFor(() => expect(created[0].oscillators).toHaveLength(4));
   });
 });

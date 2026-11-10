@@ -56,10 +56,20 @@ class FakeCtx {
   }
 }
 
+class SilentAudio {
+  muted = false;
+  loop = false;
+  preload = '';
+  currentTime = 0;
+  play = vi.fn(async () => {});
+  pause = vi.fn();
+}
+
 beforeEach(() => {
   created.length = 0;
   __resetCallAudioForTests();
   (window as unknown as { AudioContext: unknown }).AudioContext = FakeCtx;
+  (globalThis as unknown as { Audio: unknown }).Audio = SilentAudio;
 });
 
 describe('unlockCallAudio', () => {
@@ -74,18 +84,20 @@ describe('unlockCallAudio', () => {
 });
 
 describe('startIncomingRing', () => {
-  it('resumes audio and schedules the whole ring up front (not on timers)', () => {
+  it('resumes audio and schedules the whole ring up front (not on timers)', async () => {
     const stop = startIncomingRing();
     const ctx = created[0];
     expect(ctx.resume).toHaveBeenCalled();
+    await vi.waitFor(() => expect(ctx.oscillators.length).toBeGreaterThan(0));
     const startTimes = ctx.oscillators.flatMap((o) => o.starts);
     // Rings are spread across the full ringing period on the audio clock.
     expect(Math.max(...startTimes)).toBeGreaterThan(RING_TOTAL_SECONDS - 4);
     stop();
   });
 
-  it('stop() silences everything immediately', () => {
+  it('stop() silences everything immediately', async () => {
     const stop = startIncomingRing();
+    await vi.waitFor(() => expect(created[0].gains.length).toBeGreaterThan(0));
     const master = created[0].gains[0];
     expect(master.connected).toBe(true);
     stop();

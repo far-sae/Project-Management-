@@ -5,8 +5,8 @@
  * "suspended" (silent). Teammates often open TaskCalendar and leave it in a
  * background tab, so the old ringtone — a fresh AudioContext per call —
  * frequently made no sound. This module:
- *   1. unlocks ONE shared AudioContext on the user's first click/keypress,
- *      so later rings can play out loud;
+ *   1. plays through the shared alert audio (alertAudio.ts), unlocked on
+ *      user gestures — with an <audio> fallback for Safari;
  *   2. schedules the whole ring on the audio clock up front (background-tab
  *      timer throttling can't stretch it out);
  *   3. shows a desktop notification (with the OS notification sound) when
@@ -14,127 +14,90 @@
  *   4. flashes the tab title while ringing.
  */
 
+import {
+  RING_CYCLE_SECONDS,
+  RING_NOTES,
+  __resetAlertAudioForTests,
+  audibleContext,
+  getAlertAudioContext,
+  getSharedContext,
+  playFallback,
+  scheduleNotes,
+  unlockAlertAudio,
+  type Note,
+} from './alertAudio';
+
 /** Matches the 30 s ring timeout in CallProvider. */
 export const RING_TOTAL_SECONDS = 30;
-const RING_EVERY_SECONDS = 3;
 export const CALL_ALERTS_DISMISSED_KEY = 'taskcalendar:call-alerts-dismissed';
 const NOTIFICATION_TAG = 'taskcalendar-incoming-call';
 
-type AudioCtor = typeof AudioContext;
 
-let sharedCtx: AudioContext | null = null;
+export { getAlertAudioContext };
 
-function getAudioCtor(win: Window): AudioCtor | null {
-  const w = win as Window & { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
-  return w.AudioContext || w.webkitAudioContext || null;
-}
-
-function getSharedContext(win: Window = window): AudioContext | null {
-  if (sharedCtx && sharedCtx.state !== 'closed') return sharedCtx;
-  const Ctor = getAudioCtor(win);
-  if (!Ctor) return null;
-  try {
-    sharedCtx = new Ctor();
-    return sharedCtx;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The shared, gesture-unlocked audio context — also used for chat chimes so
- * they aren't silent the way a freshly created AudioContext often is.
- */
-export function getAlertAudioContext(): AudioContext | null {
-  const ctx = getSharedContext();
-  if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
-  return ctx;
-}
-
-/** Test hook — forget the shared context. */
+/** Test hook — forget the shared audio. */
 export function __resetCallAudioForTests(): void {
-  sharedCtx = null;
+  __resetAlertAudioForTests();
 }
 
 /**
- * Unlock call audio on the first user gesture. Call once at app start;
- * returns a cleanup function.
+ * Unlock alert audio on user gestures (keeps trying until it's really
+ * running — needed for Safari). Call once at app start; returns cleanup.
  */
 export function unlockCallAudio(win: Window = window): () => void {
-  const events = ['pointerdown', 'keydown', 'touchstart'] as const;
-  const unlock = () => {
-    const ctx = getSharedContext(win);
-    if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
-    remove();
-  };
-  const remove = () => {
-    for (const e of events) win.removeEventListener(e, unlock, true);
-  };
-  for (const e of events) win.addEventListener(e, unlock, true);
-  return remove;
+  return unlockAlertAudio(win);
+}
+
+function ringNotes(): Note[] {
+  const notes: Note[] = [];
+  for (let s = 0; s < RING_TOTAL_SECONDS; s += RING_CYCLE_SECONDS) {
+    for (const [o, f, d, p] of RING_NOTES) notes.push([o + s, f, d, p]);
+  }
+  return notes;
 }
 
 /**
  * Play the incoming-call ring (three rising bell notes, twice, every 3 s)
- * for the full ringing period. Returns stop().
+ * for the full ringing period — scheduled up front on the audio clock so
+ * background-tab timer throttling can't stretch it. If Web Audio can't run
+ * (Safari before an accepted click), a looping <audio> fallback plays.
+ * Returns stop().
  */
 export function startIncomingRing(): () => void {
-  const ctx = getSharedContext();
-  if (!ctx) return () => {};
-  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+  let stopped = false;
+  let stopSound: () => void = () => {};
 
-  let master: GainNode;
-  try {
-    master = ctx.createGain();
-    master.gain.setValueAtTime(0.5, ctx.currentTime);
-    master.connect(ctx.destination);
-
-    const note = (freq: number, at: number, dur: number, peak: number) => {
-      const osc = ctx.createOscillator();
-      const overtone = ctx.createOscillator();
-      const g = ctx.createGain();
-      const og = ctx.createGain();
-      osc.type = 'sine';
-      overtone.type = 'sine';
-      osc.frequency.setValueAtTime(freq, at);
-      overtone.frequency.setValueAtTime(freq * 2.01, at);
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(peak, at + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-      og.gain.setValueAtTime(0.0001, at);
-      og.gain.exponentialRampToValueAtTime(peak * 0.3, at + 0.03);
-      og.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-      osc.connect(g);
-      overtone.connect(og);
-      g.connect(master);
-      og.connect(master);
-      osc.start(at);
-      overtone.start(at);
-      osc.stop(at + dur + 0.02);
-      overtone.stop(at + dur + 0.02);
-    };
-
-    const t0 = ctx.currentTime + 0.05;
-    for (let s = 0; s < RING_TOTAL_SECONDS; s += RING_EVERY_SECONDS) {
-      const t = t0 + s;
-      // G5 → B5 → D6, then again after a short pause.
-      note(784, t, 0.25, 0.2);
-      note(988, t + 0.28, 0.25, 0.22);
-      note(1175, t + 0.56, 0.4, 0.25);
-      note(784, t + 1.2, 0.25, 0.18);
-      note(988, t + 1.48, 0.25, 0.2);
-      note(1175, t + 1.76, 0.4, 0.22);
+  const startOn = (ctx: AudioContext) => {
+    try {
+      const master = scheduleNotes(ctx, ringNotes(), 0.5, ctx.currentTime + 0.05);
+      stopSound = () => {
+        try {
+          master.disconnect();
+        } catch {
+          /* already stopped */
+        }
+      };
+    } catch {
+      stopSound = playFallback('ring');
     }
-  } catch {
-    return () => {};
+  };
+
+  const ctx = getSharedContext();
+  if (!ctx) {
+    stopSound = playFallback('ring');
+  } else if (ctx.state === 'running') {
+    startOn(ctx);
+  } else {
+    void audibleContext().then((running) => {
+      if (stopped) return;
+      if (running) startOn(running);
+      else stopSound = playFallback('ring');
+    });
   }
 
   return () => {
-    try {
-      master.disconnect();
-    } catch {
-      /* already stopped */
-    }
+    stopped = true;
+    stopSound();
   };
 }
 
