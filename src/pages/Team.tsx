@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -7,6 +7,7 @@ import { upsertProjectMember, type ProjectRole } from '@/services/supabase/proje
 import type { Organization, OrganizationMember } from '@/types/organization';
 import { recordAuditEvent } from '@/services/supabase/auditLog';
 import { useProjects } from '@/hooks/useProjects';
+import { managedProjects } from '@/lib/projectManagers';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -196,11 +197,19 @@ export const Team: React.FC = () => {
   }, [selectedProject]);
 
 
+  // Organization admins see every project; project owners / project admins
+  // only the projects whose people they manage.
+  const selectableProjects = useMemo(
+    () => (isAdmin ? projects : managedProjects(projects, user?.userId)),
+    [isAdmin, projects, user?.userId],
+  );
+
   useEffect(() => {
-    if (projects.length > 0 && !selectedProject) {
-      setSelectedProject(projects[0].projectId);
+    if (selectableProjects.length === 0) return;
+    if (!selectedProject || !selectableProjects.some((p) => p.projectId === selectedProject)) {
+      setSelectedProject(selectableProjects[0].projectId);
     }
-  }, [projects, selectedProject]);
+  }, [selectableProjects, selectedProject]);
 
   const loadTeamData = async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent ?? false;
@@ -786,7 +795,7 @@ export const Team: React.FC = () => {
                 <SelectValue placeholder="Select project" />
               </SelectTrigger>
               <SelectContent>
-                {projects.map((project) => (
+                {selectableProjects.map((project) => (
                   <SelectItem key={project.projectId} value={project.projectId}>
                     {project.name}
                   </SelectItem>

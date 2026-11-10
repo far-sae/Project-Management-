@@ -7,6 +7,7 @@ import { SubscriptionProvider } from '@/context/SubscriptionContext';
 import { WorkspaceProvider } from '@/context/WorkspaceContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { TeamAccessGate } from '@/components/auth/TeamAccessGate';
 
 // Public and authenticated pages are fetched on demand. This keeps the startup
 // bundle to the app shell and loads page code only when a route needs it.
@@ -219,8 +220,8 @@ const router = createBrowserRouter(
             {
               path: '/team',
               element: (
-                <ProtectedRoute requireSubscription requirePage="team">
-                  {lazyAppRoute(<Team />)}
+                <ProtectedRoute requireSubscription>
+                  <TeamAccessGate>{lazyAppRoute(<Team />)}</TeamAccessGate>
                 </ProtectedRoute>
               ),
             },

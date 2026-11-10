@@ -37,6 +37,7 @@ import {
 } from '@/hooks/useSelectedWorkspace';
 import { usePinnedProjects } from '@/hooks/usePinnedProjects';
 import { resolveWorkspaceMenu } from '@/lib/workspaceScope';
+import { managedProjects } from '@/lib/projectManagers';
 import { QuickMenu } from './QuickMenu';
 import { StatusFilters } from './StatusFilters';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -96,6 +97,11 @@ export const Sidebar: React.FC = () => {
   const canSeePeopleOps = isOrgAdminOrOwner || isAppOwner(user?.userId);
 
   const { projects } = useProjects();
+  // Project owners / project admins get the Team page for their projects.
+  const managesProjects = useMemo(
+    () => managedProjects(projects, user?.userId).length > 0,
+    [projects, user?.userId],
+  );
   const { selectedId: selectedWorkspaceId, isAll, isUnassigned, menuPages } =
     useSelectedWorkspace();
   const { pinnedIds, isPinned, toggle: togglePin } = usePinnedProjects();
@@ -127,6 +133,7 @@ export const Sidebar: React.FC = () => {
   // Quick Menu = role/plan surface (may only shrink) ∩ the workspace's enabled
   // items. Under "All workspaces" menuPages is null and the role list shows whole.
   const quickItems = useMemo(() => {
+    const teamItem = QUICK_ITEMS_FULL.find((i) => i.href === '/team');
     const roleItems = canSeePeopleOps
       ? QUICK_ITEMS_FULL.filter(
           (i) =>
@@ -134,13 +141,16 @@ export const Sidebar: React.FC = () => {
         )
       : isViewer
         ? QUICK_ITEMS_VIEWER
-        : QUICK_ITEMS_MEMBER;
+        : managesProjects && teamItem && hasFeature('team_collaboration')
+          // Project owners / project admins manage their projects' people.
+          ? [...QUICK_ITEMS_MEMBER, teamItem]
+          : QUICK_ITEMS_MEMBER;
     const workspaceReady = isAll ? projects.length > 0 : !isUnassigned && visibleProjects.length > 0;
     const flowItems = workspaceReady
       ? roleItems
       : roleItems.filter((item) => !['crm', 'email', 'social'].includes(item.page));
     return resolveWorkspaceMenu(flowItems, menuPages);
-  }, [canSeePeopleOps, isViewer, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
+  }, [canSeePeopleOps, isViewer, managesProjects, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
 
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);
