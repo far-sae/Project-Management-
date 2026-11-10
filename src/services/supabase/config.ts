@@ -38,10 +38,29 @@ const authOptions: GoTrueClientOptions = {
   ...(typeof window !== "undefined" ? { lock: browserNoopAuthLock } : {}),
 };
 
+/** Can this browser start a Worker from a blob: URL (what realtime-js uses)? */
+function canStartBlobWorker(): boolean {
+  if (typeof window === "undefined" || typeof Worker === "undefined" || typeof Blob === "undefined") {
+    return false;
+  }
+  try {
+    const src = URL.createObjectURL(new Blob(["self.onmessage=function(){}"], { type: "application/javascript" }));
+    const w = new Worker(src);
+    w.terminate();
+    URL.revokeObjectURL(src);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const supabase: SupabaseClient = createClient(url, key, {
   auth: authOptions,
   // Run the realtime keep-alive in a Web Worker: browsers throttle timers in
   // background tabs, the heartbeat stalls and the socket drops — and with it
   // incoming-call rings for anyone who left TaskCalendar in another tab.
-  realtime: typeof window !== "undefined" && typeof Worker !== "undefined" ? { worker: true } : {},
+  // Only when this browser can actually start one: if the worker fails,
+  // realtime-js stops sending heartbeats altogether (no timer fallback), the
+  // socket keeps dropping and incoming calls are lost.
+  realtime: canStartBlobWorker() ? { worker: true } : {},
 });

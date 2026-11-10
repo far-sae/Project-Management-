@@ -103,6 +103,8 @@ const CallCtx = createContext<CallContextValue | null>(null);
 const RING_TIMEOUT_MS = 30_000;
 const OFFER_RESEND_INTERVAL_MS = 3_000;
 const ENDED_DISMISS_MS = 3_000;
+/** Give up on a join that hasn't connected after this long. */
+const CONNECT_TIMEOUT_MS = 45_000;
 type ConnectionStateValue = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'signalReconnecting';
 
 const generateCallId = () =>
@@ -396,6 +398,36 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       };
     }
   }, [state.status, state.direction, state.callId, resetCall]);
+
+  // ── "Connecting" watchdog ──────────────────────────────────
+  // A join that never completes (call server unreachable, the other person
+  // already gone, a camera/mic prompt left unanswered) used to sit on
+  // "Connecting" forever — and while it did, every new incoming call was
+  // ignored because the provider wasn't idle. Give up after 45 s.
+  useEffect(() => {
+    if (state.status !== 'connecting') return;
+    const callId = state.callId;
+    const timer = setTimeout(() => {
+      const cur = latestCallStateRef.current;
+      if (cur.status !== 'connecting' || cur.callId !== callId) return;
+      clearTimers();
+      void teardownLiveKit();
+      pendingRingRef.current = null;
+      remoteParticipantsRef.current = [];
+      activeCallIdRef.current = null;
+      setState({
+        ...IDLE_STATE,
+        status: 'ended',
+        error:
+          "Couldn't connect to the call. Check your internet connection and that camera and microphone access is allowed, then try again.",
+      });
+      endStateTimeoutRef.current = setTimeout(() => {
+        endStateTimeoutRef.current = null;
+        setState((st) => (st.status === 'ended' ? IDLE_STATE : st));
+      }, ENDED_DISMISS_MS * 2);
+    }, CONNECT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [state.status, state.callId, clearTimers, teardownLiveKit]);
 
   // ── Cleanup on unmount ─────────────────────────────────────
 

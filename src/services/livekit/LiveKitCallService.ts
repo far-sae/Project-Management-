@@ -202,14 +202,18 @@ export class LiveKitCallService {
       return;
     }
 
+    // Show who's already here straight away — the call counts as connected
+    // as soon as we're in the room with someone, not only after the
+    // camera/mic permission prompt has been answered (which can sit
+    // unanswered, especially on Safari, and left calls on "Connecting").
+    this.emitParticipants();
+
     if (options.publishOnConnect !== false) {
       await this.publishLocalMedia({
         mic: true,
         camera: options.mediaType === 'video',
       });
     }
-
-    this.emitParticipants();
   }
 
   /** Publish mic and/or camera (e.g. after a waiting guest is admitted). */
@@ -223,6 +227,19 @@ export class LiveKitCallService {
       this.events.onError(
         err instanceof Error ? err.message : 'Could not access microphone/camera',
       );
+    if (opts.mic && opts.camera) {
+      // ONE permission request for both (Safari otherwise asks for the mic
+      // and then the camera — two pop-ups every call).
+      try {
+        await room.localParticipant.enableCameraAndMicrophone();
+        this.emitParticipants();
+        return;
+      } catch {
+        // One of them was refused / missing / busy. Fall through and try each
+        // on its own so the person still joins with whatever works.
+      }
+    }
+
     if (opts.mic) {
       try {
         await room.localParticipant.setMicrophoneEnabled(true);

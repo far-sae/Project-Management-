@@ -8,6 +8,7 @@ vi.mock('@/services/livekit/fetchLiveKitToken', () => ({
 
 const setMicrophoneEnabled = vi.fn();
 const setCameraEnabled = vi.fn();
+const enableCameraAndMicrophone = vi.fn();
 const connectFn = vi.fn();
 vi.mock('livekit-client', async () => {
   const actual = await vi.importActual<typeof import('livekit-client')>('livekit-client');
@@ -18,6 +19,7 @@ vi.mock('livekit-client', async () => {
       name: 'G',
       setMicrophoneEnabled,
       setCameraEnabled,
+      enableCameraAndMicrophone,
       getTrackPublication: () => undefined,
       attributes: {},
       permissions: { canSubscribe: true },
@@ -133,8 +135,8 @@ describe('LiveKitCallService.connect with credentials', () => {
     const svc = new LiveKitCallService(events());
     await svc.connect({ roomName: 'project:1', participantName: 'G', mediaType: 'video' });
     expect(fetchLiveKitToken).toHaveBeenCalled();
-    expect(setMicrophoneEnabled).toHaveBeenCalledWith(true);
-    expect(setCameraEnabled).toHaveBeenCalledWith(true);
+    // One combined camera + mic request (one permission prompt).
+    expect(enableCameraAndMicrophone).toHaveBeenCalledTimes(1);
   });
 
   it('publishLocalMedia publishes requested tracks', async () => {
@@ -210,6 +212,7 @@ describe('LiveKitCallService role derivation', () => {
 describe('LiveKitCallService.publishLocalMedia isolation', () => {
   it('still enables the camera when the microphone fails, reporting both errors', async () => {
     connectFn.mockReset().mockResolvedValue(undefined);
+    enableCameraAndMicrophone.mockReset().mockRejectedValue(new Error('mic denied'));
     setMicrophoneEnabled.mockReset().mockRejectedValue(new Error('mic denied'));
     setCameraEnabled.mockReset().mockRejectedValue(new Error('cam denied'));
     const onError = vi.fn();

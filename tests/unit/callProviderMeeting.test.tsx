@@ -357,4 +357,28 @@ describe('CallProvider — meetings and guests', () => {
     act(() => h.svc.opts!.onParticipantsChange([local, waiting]));
     expect(ctx.state.status).toBe('idle');
   });
+
+  it('a call stuck on "Connecting" gives up after 45 s so new calls can ring again', async () => {
+    vi.useFakeTimers();
+    try {
+      h.svc.connect = vi.fn(() => new Promise<void>(() => {})); // never connects
+      renderProvider();
+      act(() => {
+        void ctx.actions.startMeeting(PROJECT, 'video');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(ctx.state.status).toBe('connecting');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(45_000);
+      });
+      expect(ctx.state.status).toBe('ended');
+      expect(ctx.state.error).toMatch(/couldn't connect/i);
+      expect(h.svc.disconnect).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
+
