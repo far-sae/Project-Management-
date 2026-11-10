@@ -22,13 +22,14 @@ import {
 } from '@/components/ui/select';
 import {
   Users, UserPlus, Mail, Crown, Shield, User, Loader2,
-  Clock, XCircle, Check, Copy, Lock,
+  Clock, XCircle, Check, Copy, Lock, ArrowRightLeft,
 } from 'lucide-react';
 import {
   createInvitation, getProjectInvitations, cancelInvitation,
 } from '@/services/supabase/invitations';
 import { ProjectInvitation } from '@/types/invitation';
 import { ProjectMember } from '@/types/project';
+import { MoveMemberDialog } from '@/components/team/MoveMemberDialog';
 import { getInvitationEmailFailureHint, sendInvitationEmail } from '@/services/email/emailService';
 import { checkTeamMemberLimit, supabase } from '@/services/supabase';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -120,6 +121,7 @@ export const Team: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   const [removeMemberId, setRemoveMemberId] = useState<string | null>(null);
+  const [moveMember, setMoveMember] = useState<ProjectMember | null>(null);
 
   const [infoDialog, setInfoDialog] = useState<{
     open: boolean;
@@ -882,6 +884,19 @@ export const Team: React.FC = () => {
                         </RoleSelect>
                       )}
 
+                      {/* Move to the right project - for people added to the wrong one */}
+                      {isProjectOwner && member.role !== "owner" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Move ${member.displayName} to another project`}
+                          title="Move to another project"
+                          onClick={() => setMoveMember(member)}
+                        >
+                          <ArrowRightLeft className="w-4 h-4" />
+                        </Button>
+                      )}
+
                       {/* Remove button - hide for owner */}
                       {isProjectOwner && member.role !== "owner" && (
                         <Button
@@ -1192,6 +1207,27 @@ export const Team: React.FC = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {moveMember && organization && selectedProject && moveMember.role !== 'owner' && (
+          <MoveMemberDialog
+            open={!!moveMember}
+            onOpenChange={(o) => !o && setMoveMember(null)}
+            member={{
+              userId: moveMember.userId,
+              email: moveMember.email,
+              displayName: moveMember.displayName,
+              role: moveMember.role,
+            }}
+            currentProjectId={selectedProject}
+            organizationId={organization.organizationId}
+            projects={projects}
+            onMoved={() => {
+              void refreshProjects();
+              void refreshOrganization();
+              void loadTeamData();
+            }}
+          />
+        )}
 
         <AlertDialog
           open={!!removeMemberId}
