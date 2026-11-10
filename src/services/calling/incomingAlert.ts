@@ -41,6 +41,16 @@ function getSharedContext(win: Window = window): AudioContext | null {
   }
 }
 
+/**
+ * The shared, gesture-unlocked audio context — also used for chat chimes so
+ * they aren't silent the way a freshly created AudioContext often is.
+ */
+export function getAlertAudioContext(): AudioContext | null {
+  const ctx = getSharedContext();
+  if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
+  return ctx;
+}
+
 /** Test hook — forget the shared context. */
 export function __resetCallAudioForTests(): void {
   sharedCtx = null;
@@ -128,7 +138,7 @@ export function startIncomingRing(): () => void {
   };
 }
 
-function appIsInFront(): boolean {
+export function appIsInFront(): boolean {
   return document.visibilityState === 'visible' && document.hasFocus();
 }
 

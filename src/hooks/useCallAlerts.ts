@@ -21,15 +21,15 @@ export function useCallAlerts(signedIn: boolean): void {
 
     const timer = setTimeout(() => {
       if (!shouldOfferCallAlerts()) return;
-      toast('Get alerted about incoming calls?', {
+      toast('Get alerted about calls and messages?', {
         description:
-          'Allow notifications so your browser rings and shows a pop-up when a teammate calls — even when TaskCalendar is in another tab.',
+          'Allow notifications so your browser rings for calls and pops up new chat messages — even when TaskCalendar is in another tab.',
         duration: 20000,
         action: {
           label: 'Enable',
           onClick: () => {
             void requestCallAlerts().then((result) => {
-              if (result === 'granted') toast.success('Call alerts are on');
+              if (result === 'granted') toast.success('Call and message alerts are on');
               else if (result === 'denied') {
                 toast.message('Notifications are blocked — you can allow them from the padlock in the address bar.');
               }

@@ -1,42 +1,46 @@
 /**
- * Soft alert chime for incoming bell notifications. Synthesised on the fly with the Web Audio
- * API so we don't ship an audio file. Two-note (C6 → G5) bell-like timbre — distinct from the
- * project chat chime (which is A5 → D5) so users can tell the two channels apart by ear.
+ * Short chimes for new notifications and chat messages, synthesised with the
+ * Web Audio API (no audio file).
  *
- * Browsers block audio until the user has interacted with the page at least once. We swallow
- * that error silently — the next notification will play once the user clicks anywhere.
+ *   • playNotificationChime — bell notifications (C6 → G5)
+ *   • playChatChime         — chat / direct messages (A5 → D5)
+ *
+ * Both play through the ONE shared audio context that is unlocked on the
+ * user's first click (see unlockCallAudio). A fresh AudioContext per chime —
+ * what this used to do — is often created "suspended" by the browser's
+ * autoplay rules, so messages arrived in silence.
  */
+import { getAlertAudioContext } from '@/services/calling/incomingAlert';
 
 let lastPlayAt = 0;
 const MIN_GAP_MS = 600;
 
-export function playNotificationChime(): void {
+/** Test hook. */
+export function __resetChimeThrottleForTests(): void {
+  lastPlayAt = 0;
+}
+
+function playChime(notes: Array<[offset: number, freq: number, duration: number, peak: number]>, volume: number): void {
   if (typeof window === 'undefined') return;
 
-  // Throttle bursts (e.g. 5 assignments inserted in the same 100ms refetch) to a single ping.
+  // Throttle bursts (several rows in one refetch, bell + chat at once) to a single ping.
   const now = Date.now();
-  if (now - lastPlayAt < MIN_GAP_MS) return;
+  if (lastPlayAt && now - lastPlayAt < MIN_GAP_MS) return;
   lastPlayAt = now;
 
   try {
-    const AudioCtor =
-      window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtor) return;
+    const ctx = getAlertAudioContext();
+    if (!ctx) return;
 
-    const ctx = new AudioCtor();
     const master = ctx.createGain();
-    master.gain.setValueAtTime(0.5, ctx.currentTime);
+    master.gain.setValueAtTime(volume, ctx.currentTime);
     master.connect(ctx.destination);
 
-    const playNote = (
-      startOffset: number,
-      freq: number,
-      duration: number,
-      peak: number,
-    ) => {
-      const start = ctx.currentTime + startOffset;
+    let end = 0;
+    for (const [offset, freq, duration, peak] of notes) {
+      const start = ctx.currentTime + 0.02 + offset;
       const stop = start + duration;
+      end = Math.max(end, offset + duration);
 
       const osc = ctx.createOscillator();
       const overtone = ctx.createOscillator();
@@ -65,14 +69,40 @@ export function playNotificationChime(): void {
       overtone.start(start);
       osc.stop(stop + 0.02);
       overtone.stop(stop + 0.02);
-    };
+    }
 
-    // C6 (~1046Hz) bright opener, then G5 (~784Hz) softer landing — quick, clean alert.
-    playNote(0, 1046.5, 0.16, 0.18);
-    playNote(0.09, 783.99, 0.32, 0.2);
-
-    window.setTimeout(() => void ctx.close().catch(() => {}), 700);
+    // The shared context stays open for the next chime / call ring; just
+    // detach this chime's output once it has finished.
+    window.setTimeout(() => {
+      try {
+        master.disconnect();
+      } catch {
+        /* already gone */
+      }
+    }, (end + 0.3) * 1000);
   } catch {
-    /* Audio blocked until first user interaction — that's fine. */
+    /* Audio unavailable — nothing to do. */
   }
+}
+
+export function playNotificationChime(): void {
+  // C6 (~1046Hz) bright opener, then G5 (~784Hz) softer landing.
+  playChime(
+    [
+      [0, 1046.5, 0.16, 0.18],
+      [0.09, 783.99, 0.32, 0.2],
+    ],
+    0.5,
+  );
+}
+
+export function playChatChime(): void {
+  // Two-note chat chime: short A5 (880Hz) → fuller D5 (~587Hz).
+  playChime(
+    [
+      [0, 880, 0.18, 0.18],
+      [0.11, 587.33, 0.42, 0.22],
+    ],
+    0.6,
+  );
 }

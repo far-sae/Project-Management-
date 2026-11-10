@@ -53,6 +53,8 @@ import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
+import { buildProjectCallTargets } from '@/services/calling/callTargets';
+import { playChatChime } from '@/lib/notificationSound';
 import { PresenceStatusInline } from '@/components/presence/PresenceStatusInline';
 import { useLastSeen } from '@/hooks/useLastSeen';
 import {
@@ -288,8 +290,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     () =>
       dedupedMembers.some(
         (m) => Boolean(m.userId) && m.userId !== user?.userId,
-      ),
-    [dedupedMembers, user?.userId],
+      ) || (Boolean(project.ownerId) && project.ownerId !== user?.userId),
+    [dedupedMembers, user?.userId, project.ownerId],
   );
 
   // Persisted last_seen for every project member — used to render
@@ -535,69 +537,9 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     stickToBottomRef.current = gap < 80;
   }, []);
 
-  const playChatSound = useCallback(() => {
-    try {
-      const AudioContextCtor =
-        window.AudioContext ||
-        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
-      if (!AudioContextCtor) return;
-      const ctx = new AudioContextCtor();
-      const master = ctx.createGain();
-      master.gain.setValueAtTime(0.6, ctx.currentTime);
-      master.connect(ctx.destination);
-
-      // Microsoft Teams-style two-note chime: short higher note → fuller lower note,
-      // with a subtle overtone for bell-like timbre.
-      const playNote = (
-        startOffset: number,
-        freq: number,
-        duration: number,
-        peak: number,
-      ) => {
-        const start = ctx.currentTime + startOffset;
-        const stop = start + duration;
-
-        const osc = ctx.createOscillator();
-        const overtone = ctx.createOscillator();
-        const noteGain = ctx.createGain();
-
-        osc.type = 'sine';
-        overtone.type = 'sine';
-        osc.frequency.setValueAtTime(freq, start);
-        // Octave + fifth-ish overtone, quieter, gives the chime its "ting".
-        overtone.frequency.setValueAtTime(freq * 2.01, start);
-
-        noteGain.gain.setValueAtTime(0.0001, start);
-        noteGain.gain.exponentialRampToValueAtTime(peak, start + 0.02);
-        noteGain.gain.exponentialRampToValueAtTime(0.0001, stop);
-
-        const overtoneGain = ctx.createGain();
-        overtoneGain.gain.setValueAtTime(0.0001, start);
-        overtoneGain.gain.exponentialRampToValueAtTime(peak * 0.35, start + 0.03);
-        overtoneGain.gain.exponentialRampToValueAtTime(0.0001, stop);
-
-        osc.connect(noteGain);
-        overtone.connect(overtoneGain);
-        noteGain.connect(master);
-        overtoneGain.connect(master);
-
-        osc.start(start);
-        overtone.start(start);
-        osc.stop(stop + 0.02);
-        overtone.stop(stop + 0.02);
-      };
-
-      // Note 1: bright, short (~A5, 880Hz)
-      playNote(0, 880, 0.18, 0.18);
-      // Note 2: warmer, longer, slightly overlapping (~D5, 587Hz)
-      playNote(0.11, 587.33, 0.42, 0.22);
-
-      window.setTimeout(() => void ctx.close().catch(() => {}), 800);
-    } catch {
-      /* Browsers can block audio until the user has interacted with the page. */
-    }
-  }, []);
+  // Shared, gesture-unlocked audio (see notificationSound) — a fresh
+  // AudioContext per message was often muted by the browser.
+  const playChatSound = useCallback(() => playChatChime(), []);
 
   useEffect(() => {
     setChatLoading(true);
@@ -1105,15 +1047,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     // member so any of them can pick up. Without this, we'd
                     // only ring the first user in the list (alphabetical
                     // accident, not intent).
-                    const targets = dedupedMembers
-                      .filter((m): m is typeof m & { userId: string } =>
-                        Boolean(m.userId) && m.userId !== user?.userId,
-                      )
-                      .map((m) => ({
-                        userId: m.userId,
-                        displayName: displayNameForChatUser(m.userId, m.displayName),
-                        photoURL: m.photoURL,
-                      }));
+                    const targets = buildProjectCallTargets(
+                      dedupedMembers,
+                      project.ownerId,
+                      user?.userId,
+                      displayNameForChatUser,
+                    );
                     if (targets.length === 0) return;
                     void callActions.startCall(
                       { type: 'project', targetId: project.projectId, label: project.name },
@@ -1142,15 +1081,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     if (isViewerOrg || !hasOtherMemberToCall) return;
                     // Ring every other project member — see audio-call note
                     // above for why we don't pick a single "first" member.
-                    const targets = dedupedMembers
-                      .filter((m): m is typeof m & { userId: string } =>
-                        Boolean(m.userId) && m.userId !== user?.userId,
-                      )
-                      .map((m) => ({
-                        userId: m.userId,
-                        displayName: displayNameForChatUser(m.userId, m.displayName),
-                        photoURL: m.photoURL,
-                      }));
+                    const targets = buildProjectCallTargets(
+                      dedupedMembers,
+                      project.ownerId,
+                      user?.userId,
+                      displayNameForChatUser,
+                    );
                     if (targets.length === 0) return;
                     void callActions.startCall(
                       { type: 'project', targetId: project.projectId, label: project.name },

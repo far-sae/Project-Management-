@@ -7,7 +7,8 @@ import {
 } from "@/services/supabase/database";
 import { supabase } from "@/services/supabase/config";
 import { onNotificationsRefresh } from "@/lib/notificationEvents";
-import { playNotificationChime } from "@/lib/notificationSound";
+import { playChatChime, playNotificationChime } from "@/lib/notificationSound";
+import { showMessageNotification } from "@/hooks/useIncomingMessageAlerts";
 
 /** localStorage key for the per-user "locally read" set. Defensive layer so the bell never
  *  re-surfaces a notification the user already opened, even if the Supabase UPDATE failed
@@ -50,6 +51,29 @@ const applyLocalRead = (
     return n;
   });
   return mutated ? next : list;
+};
+
+/**
+ * Sound for freshly arrived unread rows: the chat chime (plus a desktop
+ * pop-up when TaskCalendar isn't in front) for chat messages, the bell chime
+ * for everything else.
+ */
+const alertForNew = (fresh: AppNotification[]) => {
+  const unread = fresh.filter((n) => !n.read);
+  if (unread.length === 0) return;
+  const chats = unread.filter((n) => n.type === "project_chat_message");
+  if (chats.length > 0) {
+    playChatChime();
+    for (const n of chats) {
+      showMessageNotification({
+        title: n.title,
+        body: n.body,
+        tag: `taskcalendar-chat-${n.projectId ?? n.notificationId}`,
+      });
+    }
+  } else {
+    playNotificationChime();
+  }
 };
 
 export const useNotifications = (userId: string | null, limit = 30) => {
@@ -130,18 +154,16 @@ export const useNotifications = (userId: string | null, limit = 30) => {
             for (const n of merged) seen.add(n.notificationId);
             initializedRef.current = true;
           } else {
-            let hasNew = false;
+            const fresh: AppNotification[] = [];
             for (const n of merged) {
               if (!seen.has(n.notificationId)) {
-                hasNew = true;
+                fresh.push(n);
                 seen.add(n.notificationId);
               }
             }
-            // Only chime when there's at least one truly new row AND it's unread (otherwise
-            // we'd ding on bookkeeping refetches like marking-as-read elsewhere).
-            if (hasNew && merged.some((n) => !n.read)) {
-              playNotificationChime();
-            }
+            // Only chime for truly new unread rows (not bookkeeping refetches
+            // like marking-as-read elsewhere).
+            alertForNew(fresh);
           }
           setNotifications(merged);
           setLoading(false);
@@ -186,16 +208,14 @@ export const useNotifications = (userId: string | null, limit = 30) => {
         for (const n of merged) seen.add(n.notificationId);
         initializedRef.current = true;
       } else {
-        let hasNew = false;
+        const fresh: AppNotification[] = [];
         for (const n of merged) {
           if (!seen.has(n.notificationId)) {
-            hasNew = true;
+            fresh.push(n);
             seen.add(n.notificationId);
           }
         }
-        if (hasNew && merged.some((n) => !n.read)) {
-          playNotificationChime();
-        }
+        alertForNew(fresh);
       }
       setNotifications(merged);
     } catch (error) {

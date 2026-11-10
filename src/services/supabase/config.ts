@@ -40,4 +40,8 @@ const authOptions: GoTrueClientOptions = {
 
 export const supabase: SupabaseClient = createClient(url, key, {
   auth: authOptions,
+  // Run the realtime keep-alive in a Web Worker: browsers throttle timers in
+  // background tabs, the heartbeat stalls and the socket drops — and with it
+  // incoming-call rings for anyone who left TaskCalendar in another tab.
+  realtime: typeof window !== "undefined" && typeof Worker !== "undefined" ? { worker: true } : {},
 });

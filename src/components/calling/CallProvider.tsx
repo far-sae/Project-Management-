@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { supabase } from '@/services/supabase/config';
+import { subscribeCallInbox } from '@/services/calling/callInbox';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
@@ -40,6 +41,7 @@ import {
 } from '@/services/webrtc/types';
 import { toast } from 'sonner';
 import { useCallAlerts } from '@/hooks/useCallAlerts';
+import { useIncomingMessageAlerts } from '@/hooks/useIncomingMessageAlerts';
 
 // ── Context types ────────────────────────────────────────────
 
@@ -147,6 +149,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   const { user } = useAuth();
   // Unlock ring audio on first click + offer desktop call notifications.
   useCallAlerts(Boolean(user?.userId));
+  // Chime + desktop pop-up for direct messages, wherever you are in the app.
+  useIncomingMessageAlerts(user?.userId);
   const { isViewer: isViewerOrg } = useOrganization();
   const canInviteGuests = !isViewerOrg;
   const [state, setState] = useState<CallState>(IDLE_STATE);
@@ -169,6 +173,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
    * acceptCall so we can join the same room the caller put us in.
    */
   const pendingRingRef = useRef<RingOffer | null>(null);
+  /**
+   * Calls this user declined or let ring out. A team call keeps re-sending
+   * its ring every few seconds, so without this a declined call rang again.
+   */
+  const declinedCallIdsRef = useRef<Set<string>>(new Set());
 
   /**
    * The teammates we're ringing on an outgoing call. Used to fan out the
@@ -294,16 +303,15 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (!user?.userId) return;
 
-    const inboxChannel = supabase.channel(`call-inbox:${user.userId}`, {
-      config: { broadcast: { self: false } },
-    });
-
-    inboxChannel
-      .on('broadcast', { event: 'signal' }, ({ payload }) => {
+    // Stays subscribed across dropped connections (sleep, throttled tabs).
+    const stopInbox = subscribeCallInbox(supabase, user.userId, (payload) => {
         const msg = payload as RingMessage;
         if (msg.type === 'ring') {
+          if (declinedCallIdsRef.current.has(msg.callId)) return;
           setState((prev) => {
-            if (prev.status !== 'idle') return prev;
+            // 'ended' is just the 3 s "call ended" banner — a new call wins.
+            // (its dismiss timer only resets a state that is still 'ended').
+            if (prev.status !== 'idle' && prev.status !== 'ended') return prev;
             pendingRingRef.current = msg;
             return {
               ...IDLE_STATE,
@@ -358,12 +366,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           });
           return;
         }
-      })
-      .subscribe();
+    });
 
-    return () => {
-      void supabase.removeChannel(inboxChannel);
-    };
+    return stopInbox;
   }, [user?.userId, localParticipant?.userId, clearTimers, teardownLiveKit]);
 
   // ── 30-second incoming ring timeout ────────────────────────
@@ -378,6 +383,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           latestCallStateRef.current.status === 'ringing' &&
           latestCallStateRef.current.direction === 'incoming';
         if (!stillIncoming) return;
+        if (callId) declinedCallIdsRef.current.add(callId);
         resetCall();
       }, RING_TIMEOUT_MS);
 
@@ -789,6 +795,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const rejectCall = useCallback(() => {
     const ring = pendingRingRef.current;
+    if (state.callId) declinedCallIdsRef.current.add(state.callId);
     // Multi-party: don't broadcast a cancel — the caller is dialing other
     // teammates simultaneously and our reject must not yank their ring.
     // Just transition ourselves to idle and let the call continue.
