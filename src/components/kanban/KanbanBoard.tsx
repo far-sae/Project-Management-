@@ -822,6 +822,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             newDueDate: 'dueDate' in updatePayload ? (updatePayload.dueDate ?? null) : (selectedTask.dueDate ?? null),
             previousPriority: selectedTask.priority ?? null,
             newPriority: updatePayload.priority ?? selectedTask.priority ?? null,
+            previousMeetingAt: selectedTask.meetingStartsAt ?? null,
+            newMeetingAt: 'meetingStartsAt' in updatePayload
+              ? (updatePayload.meetingStartsAt ?? null)
+              : (selectedTask.meetingStartsAt ?? null),
             statusLabel: columnTitleIn(columnsRef.current),
             actorUserId: user.userId,
             actorDisplayName: user.displayName || 'User',
@@ -848,6 +852,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           subtasks:
             payloadSubtasks && payloadSubtasks.length > 0 ? payloadSubtasks : undefined,
           urgent: base.urgent,
+          meetingStartsAt: base.meetingStartsAt ?? null,
+          meetingDurationMinutes: base.meetingStartsAt ? (base.meetingDurationMinutes ?? 30) : null,
           isLocked: base.isLocked,
           lockPinHash: base.lockPinHash,
           projectName: base.projectName,
@@ -863,24 +869,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           const assignees = parentPayload.assignees ?? [];
           void (async () => {
             try {
-              if (assignees.length > 0) {
-                await createNotificationsForTaskUpdate({
-                  taskId: newTask.taskId,
-                  projectId,
-                  projectName: projName,
-                  taskTitle: newTask.title,
-                  previousAssignees: [],
-                  newAssignees: assignees,
-                  previousStatus: undefined,
-                  newStatus: parentPayload.status,
-                  previousUrgent: false,
-                  newUrgent: !!parentPayload.urgent,
-                  actorUserId: user.userId,
-                  actorDisplayName: user.displayName || 'User',
-                  getAssigneeEmail,
-                  includeActor: true,
-                });
-              } else {
+              // createTask() already notifies (and, via the server, emails) the
+              // assignees — notifying here too sent everyone two "assigned to you".
+              if (assignees.length === 0) {
                 // New tasks start with empty assignees; without this, nothing is inserted and the bell stays empty.
                 await createNotification({
                   userId: user.userId,

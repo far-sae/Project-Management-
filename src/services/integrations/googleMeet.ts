@@ -55,9 +55,20 @@ export async function createMeetForTask(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
-    throw new Error(body.message ?? body.error ?? `Meet creation failed: ${res.status}`);
+    throw new Error(meetErrorMessage(res.status, body));
   }
   return res.json();
+}
+
+/**
+ * 412 = Google is linked but its access has expired or been revoked, so
+ * Google won't create the event. Say what to do instead of the raw error.
+ */
+export function meetErrorMessage(status: number, body: { error?: string; message?: string }): string {
+  if (status === 412 || body.error === 'google_not_connected') {
+    return 'Your Google connection has expired. Reconnect Google in Settings → Integrations, then add the Meet link again. The task was saved.';
+  }
+  return body.message ?? body.error ?? `Meet creation failed: ${status}`;
 }
 
 export type CrmMeetEntity = 'client_notes' | 'client_tasks' | 'deals';

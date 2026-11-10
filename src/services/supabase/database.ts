@@ -33,7 +33,7 @@ const PROJECTS_SAFE_SELECT =
 
 /** Task columns safe for the browser—never includes lock_pin_hash. Requires migration 027 (has_lock_pin). */
 export const TASKS_SAFE_SELECT =
-  "task_id, project_id, organization_id, title, description, status, priority, priority_color, due_date, assignees, tags, subtasks, parent_task_id, urgent, is_locked, has_lock_pin, position, attachments, comments_count, created_by, created_at, updated_at, completed_at, google_meet_link, google_event_id, source_deal_id, source_client_id";
+  "task_id, project_id, organization_id, title, description, status, priority, priority_color, due_date, assignees, tags, subtasks, parent_task_id, urgent, is_locked, has_lock_pin, position, attachments, comments_count, created_by, created_at, updated_at, completed_at, google_meet_link, google_event_id, meeting_starts_at, meeting_duration_minutes, source_deal_id, source_client_id";
 
 // CRM follow-ups are authoritatively linked by crm_tasks.shared_task_id. Keep
 // broad task reads compatible with databases where migration 165 has not yet
@@ -948,6 +948,8 @@ export const createTask = async (
     subtasks: input.subtasks || [],
     parent_task_id: input.parentTaskId || null,
     urgent: input.urgent || false,
+    meeting_starts_at: input.meetingStartsAt ?? null,
+    meeting_duration_minutes: input.meetingStartsAt ? (input.meetingDurationMinutes ?? 30) : null,
     is_locked: isLockedRow,
     lock_pin_hash: input.lockPinHash ?? null,
     position,
@@ -1016,25 +1018,18 @@ export const createTask = async (
   if (assigneesForNotify.length > 0) {
     (async () => {
       try {
+        // user_profiles is keyed by `id` (the old `user_id` filter returned 400).
+        // Emails are sent server-side (migration 174), so no address lookup here.
+        const knownName = (input.createdByDisplayName ?? "").trim();
         const [projectLookup, actorLookup] = await Promise.all([
           supabase.from("projects").select("name").eq("project_id", input.projectId).maybeSingle(),
-          supabase.from("user_profiles").select("display_name, email").eq("user_id", userId).maybeSingle(),
+          knownName
+            ? Promise.resolve({ data: null })
+            : supabase.from("user_profiles").select("display_name").eq("id", userId).maybeSingle(),
         ]);
         const projectName = (projectLookup.data?.name as string) ?? "your project";
-        const actorName = (actorLookup.data?.display_name as string) ?? "Someone";
-        // Build an assignee→email lookup so the email path knows where
-        // to send. Pulls from user_profiles in one round-trip.
-        const assigneeIds = assigneesForNotify.map((a) => a.userId).filter(Boolean);
-        const emailMap = new Map<string, string>();
-        if (assigneeIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from("user_profiles")
-            .select("user_id, email")
-            .in("user_id", assigneeIds);
-          for (const p of profiles ?? []) {
-            if (p.email) emailMap.set(p.user_id as string, p.email as string);
-          }
-        }
+        const actorName =
+          knownName || ((actorLookup.data as { display_name?: string } | null)?.display_name ?? "").trim() || "Someone";
         await createNotificationsForTaskUpdate({
           taskId,
           projectId: input.projectId,
@@ -1051,7 +1046,6 @@ export const createTask = async (
           newUrgent: Boolean(input.urgent),
           actorUserId: userId,
           actorDisplayName: actorName,
-          getAssigneeEmail: (uid) => emailMap.get(uid),
           includeActor: true,
         });
       } catch (notifyErr) {
@@ -1085,6 +1079,8 @@ export const createTask = async (
     updatedAt: new Date(data.updated_at),
     completedAt: data.completed_at ? new Date(data.completed_at) : null,
     googleMeetLink: data.google_meet_link ?? null,
+    meetingStartsAt: data.meeting_starts_at ? new Date(data.meeting_starts_at as string) : null,
+    meetingDurationMinutes: (data.meeting_duration_minutes as number | null | undefined) ?? null,
     googleEventId: data.google_event_id ?? null,
     sourceDealId: data.source_deal_id ?? null,
     sourceClientId: data.source_client_id ?? null,
@@ -1131,6 +1127,8 @@ export const getTask = async (
     updatedAt: new Date(data.updated_at),
     completedAt: data.completed_at ? new Date(data.completed_at) : null,
     googleMeetLink: data.google_meet_link ?? null,
+    meetingStartsAt: data.meeting_starts_at ? new Date(data.meeting_starts_at as string) : null,
+    meetingDurationMinutes: (data.meeting_duration_minutes as number | null | undefined) ?? null,
     googleEventId: data.google_event_id ?? null,
     sourceDealId: data.source_deal_id ?? null,
     sourceClientId: data.source_client_id ?? null,
@@ -1186,6 +1184,8 @@ export const getProjectTasks = async (
     updatedAt: new Date(task.updated_at),
     completedAt: task.completed_at ? new Date(task.completed_at) : null,
     googleMeetLink: task.google_meet_link ?? null,
+    meetingStartsAt: task.meeting_starts_at ? new Date(task.meeting_starts_at as string) : null,
+    meetingDurationMinutes: (task.meeting_duration_minutes as number | null | undefined) ?? null,
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
@@ -1251,6 +1251,8 @@ export const getOrganizationTasks = async (
     updatedAt: new Date(task.updated_at),
     completedAt: task.completed_at ? new Date(task.completed_at) : null,
     googleMeetLink: task.google_meet_link ?? null,
+    meetingStartsAt: task.meeting_starts_at ? new Date(task.meeting_starts_at as string) : null,
+    meetingDurationMinutes: (task.meeting_duration_minutes as number | null | undefined) ?? null,
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
@@ -1285,6 +1287,8 @@ export const updateTask = async (
   if (input.tags !== undefined) updateData.tags = input.tags;
   if (input.subtasks !== undefined) updateData.subtasks = input.subtasks;
   if (input.urgent !== undefined) updateData.urgent = input.urgent;
+  if (input.meetingStartsAt !== undefined) updateData.meeting_starts_at = input.meetingStartsAt;
+  if (input.meetingDurationMinutes !== undefined) updateData.meeting_duration_minutes = input.meetingDurationMinutes;
   if (input.isLocked !== undefined) updateData.is_locked = input.isLocked;
   if (input.lockPinHash !== undefined) updateData.lock_pin_hash = input.lockPinHash;
   if (input.position !== undefined) updateData.position = input.position;
@@ -1481,6 +1485,8 @@ export const getTasksAssignedToUser = async (
     updatedAt: new Date(task.updated_at),
     completedAt: task.completed_at ? new Date(task.completed_at) : null,
     googleMeetLink: task.google_meet_link ?? null,
+    meetingStartsAt: task.meeting_starts_at ? new Date(task.meeting_starts_at as string) : null,
+    meetingDurationMinutes: (task.meeting_duration_minutes as number | null | undefined) ?? null,
     googleEventId: task.google_event_id ?? null,
     sourceDealId: task.source_deal_id ?? null,
     sourceClientId: task.source_client_id ?? null,
@@ -1996,6 +2002,8 @@ export const createNotificationsForTaskUpdate = async (params: {
   newDueDate?: string | Date | null;
   previousPriority?: string | null;
   newPriority?: string | null;
+  previousMeetingAt?: string | Date | null;
+  newMeetingAt?: string | Date | null;
   /** Column id → column name (e.g. "inprogress" → "On-Progress"). */
   statusLabel?: (statusId: string) => string;
   actorUserId: string;
@@ -2023,6 +2031,8 @@ export const createNotificationsForTaskUpdate = async (params: {
     newDueDate,
     previousPriority,
     newPriority,
+    previousMeetingAt,
+    newMeetingAt,
     statusLabel,
     actorUserId,
     actorDisplayName,
@@ -2113,6 +2123,8 @@ export const createNotificationsForTaskUpdate = async (params: {
       newDueDate,
       previousPriority,
       newPriority,
+      previousMeetingAt,
+      newMeetingAt,
       assigneesChanged:
         [...newIds].some((id) => !previousIds.has(id)) ||
         [...previousIds].some((id) => !newIds.has(id)),
