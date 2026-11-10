@@ -76,6 +76,7 @@ import { DayPickerPopover } from './DayPickerPopover';
 import { AssigneePicker } from './AssigneePicker';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
+import { LinkifiedText } from '@/components/ui/LinkifiedText';
 import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
 import AttachmentPreview from '../ui/AttachmentPreview';
 import { TaskExpensesPanel } from '@/components/expenses/TaskExpensesPanel';
@@ -176,6 +177,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [commentSummaryOpen, setCommentSummaryOpen] = useState(false);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  /** Existing tasks show the description as text with clickable links until you click to edit. */
+  const [editingDescription, setEditingDescription] = useState(false);
   const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentTypingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -286,6 +289,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       // `description` to null and crash render-time `description.trim()` calls.
       setTitle(task.title ?? '');
       setDescription(task.description ?? '');
+      setEditingDescription(false);
       setStatus(task.status);
       setPriority(task.priority);
       setDueDate(task.dueDate ? new Date(task.dueDate) : null);
@@ -1626,16 +1630,47 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </Button>
                 )}
               </div>
-              <Textarea
-                id={ids.description}
-                ref={descriptionTextareaRef}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={readOnlyTask ? 'No description' : 'Add a description, link, or note…'}
-                rows={3}
-                disabled={readOnlyTask}
-                className="min-h-24 resize-none rounded-lg border-border bg-background px-3 py-2 text-base leading-relaxed transition-colors md:text-sm disabled:cursor-default disabled:opacity-100"
-              />
+              {(readOnlyTask || (isEditing && description.trim() && !editingDescription)) ? (
+                // Read view: links are clickable; click anywhere else to edit.
+                <div
+                  id={ids.description}
+                  role={readOnlyTask ? undefined : 'button'}
+                  tabIndex={readOnlyTask ? undefined : 0}
+                  aria-label={readOnlyTask ? undefined : 'Description. Press Enter to edit.'}
+                  onClick={readOnlyTask ? undefined : () => setEditingDescription(true)}
+                  onKeyDown={
+                    readOnlyTask
+                      ? undefined
+                      : (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setEditingDescription(true);
+                          }
+                        }
+                  }
+                  className={cn(
+                    'min-h-24 whitespace-pre-wrap break-words rounded-lg border border-border bg-background px-3 py-2 text-base leading-relaxed md:text-sm',
+                    readOnlyTask
+                      ? 'cursor-default'
+                      : 'cursor-text transition-colors hover:border-ring/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    !description.trim() && 'text-muted-foreground',
+                  )}
+                >
+                  {description.trim() ? <LinkifiedText text={description} /> : 'No description'}
+                </div>
+              ) : (
+                <Textarea
+                  id={ids.description}
+                  ref={descriptionTextareaRef}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={() => setEditingDescription(false)}
+                  autoFocus={editingDescription}
+                  placeholder="Add a description, link, or note…"
+                  rows={3}
+                  className="min-h-24 resize-none rounded-lg border-border bg-background px-3 py-2 text-base leading-relaxed transition-colors md:text-sm"
+                />
+              )}
               {aiError && (
                 <p role="alert" className="text-xs text-destructive">{aiError}</p>
               )}
@@ -1717,7 +1752,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         )}
                         title={subtask.title}
                       >
-                        {subtask.title}
+                        <LinkifiedText text={subtask.title} />
                       </span>
                       {!readOnlyTask && (
                         <button
@@ -2100,7 +2135,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                               )}
                               {comment.text?.trim() && (
                                 <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
-                                  {comment.text}
+                                  <LinkifiedText text={comment.text} />
                                 </p>
                               )}
                               {comment.attachments && comment.attachments.length > 0 && (

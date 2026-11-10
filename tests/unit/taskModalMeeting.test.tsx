@@ -181,3 +181,28 @@ describe('TaskModal meetings', () => {
     expect(payload.meetingDurationMinutes).toBe(30);
   });
 });
+
+describe('TaskModal links', () => {
+  it('shows links in the description as clickable, and clicking the text edits it', async () => {
+    const withLink = { ...task, description: 'Design: https://figma.com/file/abc please review' } as Task;
+    render(<TaskModal open onClose={vi.fn()} task={withLink} projectId="p1" projectName="Website" onSave={vi.fn()} />);
+    const link = await screen.findByRole('link', { name: 'https://figma.com/file/abc' });
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(screen.queryByPlaceholderText(/add a description/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /description\. press enter to edit/i }));
+    const box = (await screen.findByPlaceholderText(/add a description/i)) as HTMLTextAreaElement;
+    expect(box.value).toContain('https://figma.com/file/abc');
+  });
+
+  it('makes links in subtasks clickable', async () => {
+    const withSub = {
+      ...task,
+      subtasks: [{ id: 's1', title: 'Check www.example.com/spec', completed: false }],
+    } as unknown as Task;
+    render(<TaskModal open onClose={vi.fn()} task={withSub} projectId="p1" projectName="Website" onSave={vi.fn()} />);
+    const link = await screen.findByRole('link', { name: 'www.example.com/spec' });
+    expect(link.getAttribute('href')).toBe('https://www.example.com/spec');
+  });
+});
+
