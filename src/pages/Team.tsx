@@ -82,11 +82,17 @@ const MemberRoleSelect: React.FC<{
     <div className="flex items-center gap-1.5">
       {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
       <RoleSelect value={value} onValueChange={(v) => void assign(v)}>
-        <RoleSelectTrigger className="w-40 h-8"><RoleSelectValue /></RoleSelectTrigger>
+        <RoleSelectTrigger
+          className="w-44 h-8"
+          aria-label="Organization role"
+          title="Organization role — an organization admin can see and manage every project"
+        >
+          <RoleSelectValue />
+        </RoleSelectTrigger>
         <RoleSelectContent>
-          <RoleSelectItem value="builtin:admin">Admin (full)</RoleSelectItem>
-          <RoleSelectItem value="builtin:member">Member</RoleSelectItem>
-          <RoleSelectItem value="builtin:viewer">Viewer</RoleSelectItem>
+          <RoleSelectItem value="builtin:admin">Org admin · all projects</RoleSelectItem>
+          <RoleSelectItem value="builtin:member">Org member</RoleSelectItem>
+          <RoleSelectItem value="builtin:viewer">Org viewer</RoleSelectItem>
         </RoleSelectContent>
       </RoleSelect>
     </div>
@@ -904,7 +910,11 @@ export const Team: React.FC = () => {
                           value={member.role}
                           onValueChange={(v) => void handleChangeProjectRole(member.userId, v as ProjectRole)}
                         >
-                          <RoleSelectTrigger className="h-8 w-full min-w-36 sm:w-40">
+                          <RoleSelectTrigger
+                            className="h-8 w-full min-w-36 sm:w-40"
+                            aria-label="Role in this project"
+                            title="Role in this project only — a project admin manages this project's people"
+                          >
                             {roleBusyUserId === member.userId
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               : <RoleSelectValue />}
