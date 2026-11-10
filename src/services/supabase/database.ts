@@ -18,14 +18,13 @@ import {
   CreateNotificationResult,
 } from "@/types/notification";
 import { logger } from "@/lib/logger";
-import { sendNotificationEmail } from "@/services/email/emailService";
 import {
   getUserNotificationPreferences,
-  isEmailDeliveryAllowed,
   isInAppNotificationAllowed,
 } from "@/lib/notificationPreferences";
 import { isAppOwner } from "@/lib/app-owner";
 import { dispatchNotificationsRefresh } from "@/lib/notificationEvents";
+import { describeTaskChanges } from "@/lib/taskChangeSummary";
 import { INDIA_PRICING } from "@/types/subscription";
 
 /** Project columns safe for the browser—never includes lock_pin_hash. Requires migration 019 (has_lock_pin). */
@@ -52,11 +51,6 @@ function isMissingCrmTaskSourceColumn(error: unknown): boolean {
   );
 }
 
-const userEmailCache = new Map<
-  string,
-  { email: string; displayName: string; at: number }
->();
-const USER_EMAIL_CACHE_MS = 60_000;
 
 /** Prefer migration 027 `has_lock_pin`; fall back to hash when column not yet deployed. */
 export function taskHasLockPin(row: {
@@ -153,75 +147,6 @@ function isNotificationsInsertForbidden(error: unknown): boolean {
       msg,
     )
   );
-}
-
-async function getUserEmailForNotification(
-  userId: string,
-  projectId?: string | null,
-): Promise<{ email: string; displayName: string } | null> {
-  const now = Date.now();
-  const cached = userEmailCache.get(userId);
-  if (cached && now - cached.at < USER_EMAIL_CACHE_MS) {
-    return { email: cached.email, displayName: cached.displayName };
-  }
-
-  const { data, error } = await supabase
-    .from("user_profiles")
-    .select("email, display_name")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) {
-    logger.warn("Could not resolve notification recipient email:", error.message);
-    return null;
-  }
-
-  const email = String(data?.email || "").trim();
-  if (email && email.includes("@")) {
-    const displayName = String(data?.display_name || "").trim();
-    userEmailCache.set(userId, { email, displayName, at: now });
-    return { email, displayName };
-  }
-
-  if (projectId) {
-    const { data: projectRow, error: projectError } = await supabase
-      .from("projects")
-      .select("members")
-      .eq("project_id", projectId)
-      .maybeSingle();
-
-    if (!projectError) {
-      const members = Array.isArray(projectRow?.members)
-        ? (projectRow.members as Array<{
-            userId?: string;
-            user_id?: string;
-            email?: string;
-            displayName?: string;
-            display_name?: string;
-          }>)
-        : [];
-      const member = members.find((m) => (m.userId || m.user_id) === userId);
-      const memberEmail = String(member?.email || "").trim();
-      if (memberEmail && memberEmail.includes("@")) {
-        const displayName = String(
-          member?.displayName || member?.display_name || data?.display_name || "",
-        ).trim();
-        userEmailCache.set(userId, {
-          email: memberEmail,
-          displayName,
-          at: now,
-        });
-        return { email: memberEmail, displayName };
-      }
-    } else {
-      logger.warn(
-        "Could not resolve notification recipient email from project members:",
-        projectError.message,
-      );
-    }
-  }
-
-  return null;
 }
 
 // ============================================
@@ -1942,36 +1867,10 @@ export const createNotification = async (
 
   dispatchNotificationsRefresh();
 
-  if (
-    isEmailDeliveryAllowed(prefs, input.type) &&
-    input.actorUserId !== input.userId
-  ) {
-    void (async () => {
-      try {
-        const recipient = await getUserEmailForNotification(
-          input.userId,
-          input.projectId,
-        );
-        if (!recipient) return;
-        const actionUrl =
-          typeof window !== "undefined" && input.projectId
-            ? `${window.location.origin}/project/${input.projectId}${
-                input.taskId ? `?taskId=${input.taskId}` : ""
-              }`
-            : "";
-        await sendNotificationEmail({
-          toEmail: recipient.email,
-          toName: recipient.displayName,
-          title: input.title,
-          body: input.body,
-          actorDisplayName: input.actorDisplayName,
-          actionUrl,
-        });
-      } catch (e) {
-        logger.warn("Notification email failed:", e);
-      }
-    })();
-  }
+  // Emails are sent by the server (notification_email_outbox → notification-emails
+  // Edge Function, migration 174), which can read the recipient's address and
+  // their email settings. Sending from this browser mostly failed because
+  // people can only read their own profile.
 
   const row = data as Record<string, unknown>;
   const appNotification: AppNotification = {
@@ -2092,6 +1991,13 @@ export const createNotificationsForTaskUpdate = async (params: {
   previousUrgent?: boolean;
   /** Is the task urgent after this edit? (Optional — default false.) */
   newUrgent?: boolean;
+  /** Due date / priority before and after — so assignees hear about those changes too. */
+  previousDueDate?: string | Date | null;
+  newDueDate?: string | Date | null;
+  previousPriority?: string | null;
+  newPriority?: string | null;
+  /** Column id → column name (e.g. "inprogress" → "On-Progress"). */
+  statusLabel?: (statusId: string) => string;
   actorUserId: string;
   actorDisplayName: string;
   /** When set (e.g. org members), sends an optional assignee email (via Resend). */
@@ -2113,6 +2019,11 @@ export const createNotificationsForTaskUpdate = async (params: {
     newStatus,
     previousUrgent = false,
     newUrgent = false,
+    previousDueDate,
+    newDueDate,
+    previousPriority,
+    newPriority,
+    statusLabel,
     actorUserId,
     actorDisplayName,
     includeActor = false,
@@ -2190,22 +2101,30 @@ export const createNotificationsForTaskUpdate = async (params: {
       }
     }
 
-    // Any other update: task_updated (notify assignees who didn't trigger it)
-    const hadChange =
-      newStatus !== previousStatus ||
-      urgentFlipped ||
-      [...newIds].some((id) => !previousIds.has(id)) ||
-      [...previousIds].some((id) => !newIds.has(id));
-    // Skip the generic "Task updated" when an urgent flip already fired — otherwise the same
-    // assignee gets two notifications back-to-back ("urgent" + "updated") for one click.
-    if (hadChange && newStatus !== "done" && !urgentFlipped) {
+    // Any other update: task_updated, saying what changed (column, due date,
+    // priority, assignees) — notify assignees who didn't make the change.
+    // Skipped when an urgent flip already fired (one alert per click) or the
+    // task was just completed (task_completed covers that).
+    const changes = describeTaskChanges({
+      previousStatus,
+      newStatus,
+      statusLabel,
+      previousDueDate,
+      newDueDate,
+      previousPriority,
+      newPriority,
+      assigneesChanged:
+        [...newIds].some((id) => !previousIds.has(id)) ||
+        [...previousIds].some((id) => !newIds.has(id)),
+    });
+    if (changes.length > 0 && newStatus !== "done" && !urgentFlipped) {
       for (const a of newAssignees) {
         if (a.userId !== actorUserId && previousIds.has(a.userId)) {
           await createNotification({
             userId: a.userId,
             type: "task_updated",
             title: "Task updated",
-            body: `${actorDisplayName} updated "${taskTitle}" in ${projectName}`,
+            body: `${actorDisplayName} ${changes.join(", ")} on "${taskTitle}" in ${projectName}`,
             taskId,
             projectId,
             actorUserId,
@@ -2216,130 +2135,6 @@ export const createNotificationsForTaskUpdate = async (params: {
     }
   } catch (e) {
     logger.warn("createNotificationsForTaskUpdate error:", e);
-  }
-};
-
-/** Create due-date reminder notifications for assignees (automation). Call when loading tasks/dashboard. Skips if we already sent a reminder for that task to that user in the last 24h. */
-export const createDueReminderNotifications = async (params: {
-  tasks: { taskId: string; projectId: string; title: string; dueDate: string | null; assignees: { userId: string }[]; status: string }[];
-  projectNames: Record<string, string>;
-  hoursAhead?: number;
-}): Promise<void> => {
-  const { tasks, projectNames, hoursAhead = 24 } = params;
-  const now = new Date();
-  const cutoff = new Date(now.getTime() + hoursAhead * 60 * 60 * 1000);
-  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-
-  for (const task of tasks) {
-    if (task.status === "done" || !task.dueDate) continue;
-    const due = new Date(task.dueDate);
-    if (due <= now || due > cutoff) continue;
-    const projectName = projectNames[task.projectId] || "Project";
-    for (const a of task.assignees || []) {
-      const { data: existing } = await supabase
-        .from("notifications")
-        .select("notification_id")
-        .eq("user_id", a.userId)
-        .eq("task_id", task.taskId)
-        .eq("type", "task_reminder")
-        .gte("created_at", since)
-        .limit(1)
-        .maybeSingle();
-      if (existing) continue;
-      await createNotification({
-        userId: a.userId,
-        type: "task_reminder",
-        title: "Due soon",
-        body: `"${task.title}" is due in ${projectName} within ${hoursAhead}h`,
-        taskId: task.taskId,
-        projectId: task.projectId,
-      }).catch((e) => logger.warn("createNotification task_reminder:", e));
-    }
-  }
-};
-
-type NotifyTaskOverdueRpcRow = {
-  user_id: string;
-  notification_id: string;
-  title: string;
-  message: string;
-  project_id: string;
-  task_id: string;
-};
-
-function parseNotifyTaskOverdueResult(data: unknown): NotifyTaskOverdueRpcRow[] {
-  if (!Array.isArray(data)) return [];
-  return data.filter(
-    (r): r is NotifyTaskOverdueRpcRow =>
-      typeof r === "object" &&
-      r !== null &&
-      typeof (r as NotifyTaskOverdueRpcRow).user_id === "string",
-  );
-}
-
-async function sendOverdueNotificationEmailsForRpcRows(
-  rows: NotifyTaskOverdueRpcRow[],
-): Promise<void> {
-  for (const row of rows) {
-    const prefs = await getUserNotificationPreferences(row.user_id);
-    if (!isEmailDeliveryAllowed(prefs, "task_overdue")) continue;
-    void (async () => {
-      try {
-        const recipient = await getUserEmailForNotification(
-          row.user_id,
-          row.project_id,
-        );
-        if (!recipient) return;
-        const actionUrl =
-          typeof window !== "undefined"
-            ? `${window.location.origin}/project/${row.project_id}?taskId=${row.task_id}`
-            : "";
-        await sendNotificationEmail({
-          toEmail: recipient.email,
-          toName: recipient.displayName,
-          title: row.title,
-          body: row.message,
-          actionUrl,
-        });
-      } catch (e) {
-        logger.warn("Overdue notification email failed:", e);
-      }
-    })();
-  }
-}
-
-/**
- * Notify assignees of tasks past their due date and not yet done. Idempotent per UTC calendar day
- * via notify_task_overdue RPC (unique index + ON CONFLICT DO NOTHING). Optional email follows prefs.
- */
-export const createOverdueNotifications = async (params: {
-  tasks: { taskId: string; projectId: string; title: string; dueDate: string | null; assignees: { userId: string }[]; status: string }[];
-  projectNames: Record<string, string>;
-}): Promise<void> => {
-  const { tasks } = params;
-  const now = new Date();
-  let anyInserted = false;
-
-  for (const task of tasks) {
-    if (task.status === "done" || !task.dueDate) continue;
-    const due = new Date(task.dueDate);
-    if (Number.isNaN(due.getTime()) || due >= now) continue;
-
-    const { data, error } = await supabase.rpc("notify_task_overdue", {
-      p_task_id: task.taskId,
-    });
-    if (error) {
-      logger.warn("notify_task_overdue:", error.message);
-      continue;
-    }
-    const inserted = parseNotifyTaskOverdueResult(data);
-    if (inserted.length === 0) continue;
-    anyInserted = true;
-    void sendOverdueNotificationEmailsForRpcRows(inserted);
-  }
-
-  if (anyInserted) {
-    dispatchNotificationsRefresh();
   }
 };
 

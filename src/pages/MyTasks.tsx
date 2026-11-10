@@ -57,8 +57,6 @@ import {
   updateTask,
   addCommentWithGlobalSync,
   subscribeToComments,
-  createDueReminderNotifications,
-  createOverdueNotifications,
   verifyTaskLockPin,
   notifyTaskCommentMentions,
 } from '@/services/supabase/database';
@@ -303,31 +301,6 @@ export const MyTasks: React.FC = () => {
     const unsub = subscribeToComments(selectedTask.taskId, orgId, setTaskComments);
     return () => unsub();
   }, [selectedTask?.taskId, orgId, commentsBlockedByTaskPin]);
-
-  // Automate: due-soon reminders (within 24h) and overdue alerts for assigned tasks.
-  // Both are idempotent on the server side (one bell+email per task per user per day).
-  useEffect(() => {
-    if (!tasksAssignedToMe.length || !projects.length) return;
-    const projectNames: Record<string, string> = {};
-    projects.forEach((p) => { projectNames[p.projectId] = p.name; });
-    const taskPayload = tasksAssignedToMe.map((t) => ({
-      taskId: t.taskId,
-      projectId: t.projectId,
-      title: t.title,
-      dueDate: t.dueDate != null ? (typeof t.dueDate === 'string' ? t.dueDate : new Date(t.dueDate).toISOString()) : null,
-      assignees: (t.assignees ?? []).map((a) => ({ userId: a.userId })),
-      status: t.status,
-    }));
-    createDueReminderNotifications({
-      tasks: taskPayload,
-      projectNames,
-      hoursAhead: 24,
-    }).catch(() => {});
-    createOverdueNotifications({
-      tasks: taskPayload,
-      projectNames,
-    }).catch(() => {});
-  }, [tasksAssignedToMe, projects]);
 
   // Toggle task status
   const handleToggleStatus = useCallback(async (task: Task, e: React.MouseEvent) => {

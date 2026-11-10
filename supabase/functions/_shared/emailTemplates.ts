@@ -87,14 +87,39 @@ export function renderNotificationEmail(p: {
   title: string;
   body: string;
   actionUrl?: string;
+  /** Defaults to the title. */
+  subject?: string;
+  /** Label/value rows shown under the message (e.g. a task's project, due date). */
+  details?: Array<[string, string]>;
+  actionLabel?: string;
+  footer?: string;
 }): RenderedEmail {
+  const details = (p.details ?? []).filter(([, v]) => v);
+  const detailsHtml = details.length
+    ? `<table role="presentation" style="border-collapse:collapse;margin:8px 0 4px;font-size:14px">${details
+        .map(
+          ([k, v]) =>
+            `<tr><td style="padding:4px 16px 4px 0;color:#6b7280;vertical-align:top">${escapeHtml(k)}</td><td style="padding:4px 0;font-weight:600">${escapeHtml(v)}</td></tr>`,
+        )
+        .join('')}</table>`
+    : '';
   const html = layout({
     heading: p.title,
-    paragraphsHtml: para(escapeHtml(p.body).replace(/\r?\n/g, '<br>')),
-    button: p.actionUrl ? { label: 'Open in TaskCalendar', url: p.actionUrl } : undefined,
+    paragraphsHtml: (p.body ? para(escapeHtml(p.body).replace(/\r?\n/g, '<br>')) : '') + detailsHtml,
+    button: p.actionUrl ? { label: p.actionLabel || 'Open in TaskCalendar', url: p.actionUrl } : undefined,
+    footer: p.footer,
   });
-  const text = [p.body, '', p.actionUrl ? `Open: ${p.actionUrl}` : '', `— ${BRAND}`]
+  const text = [
+    p.body,
+    '',
+    ...details.map(([k, v]) => `${k}: ${v}`),
+    details.length ? '' : null,
+    p.actionUrl ? `Open: ${p.actionUrl}` : '',
+    p.footer ?? '',
+    `— ${BRAND}`,
+  ]
+    .filter((line): line is string => line !== null)
     .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
     .join('\n');
-  return { subject: p.title, html, text };
+  return { subject: p.subject || p.title, html, text };
 }

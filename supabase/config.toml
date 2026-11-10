@@ -88,3 +88,6 @@ verify_jwt = false
 
 [functions.integrations-webhook]
 verify_jwt = false
+
+[functions.notification-emails]
+verify_jwt = false

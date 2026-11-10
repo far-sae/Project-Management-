@@ -107,6 +107,10 @@ const COLUMN_COLORS = [
   '#E91E63', '#00BCD4', '#FF5722', '#795548', '#607D8B',
 ];
 
+/** Column id → its name on this board (for notification text). */
+const columnTitleIn = (cols: KanbanColumn[]) => (id: string) =>
+  cols.find((c) => c.id === id)?.title ?? id;
+
 const PRIORITY_RANK: Record<TaskPriority, number> = {
   high: 0,
   medium: 1,
@@ -197,6 +201,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [columns, setColumns] = useState<KanbanColumn[]>(
     initialColumns || DEFAULT_COLUMNS,
   );
+  // Latest columns for async handlers (notification wording) without re-creating them.
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
 
   // ── Filtering + sorting ────────────────────────────────────
   const filteredTasks = useMemo(() => {
@@ -583,6 +590,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               newAssignees: movedTask.assignees || [],
               previousStatus: movedTask.status,
               newStatus: targetStatus,
+              statusLabel: columnTitleIn(columnsRef.current),
               actorUserId: user.userId,
               actorDisplayName: user.displayName || 'User',
               getAssigneeEmail,
@@ -810,6 +818,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             newUrgent: typeof updatePayload.urgent === 'boolean'
               ? updatePayload.urgent
               : !!selectedTask.urgent,
+            previousDueDate: selectedTask.dueDate ?? null,
+            newDueDate: 'dueDate' in updatePayload ? (updatePayload.dueDate ?? null) : (selectedTask.dueDate ?? null),
+            previousPriority: selectedTask.priority ?? null,
+            newPriority: updatePayload.priority ?? selectedTask.priority ?? null,
+            statusLabel: columnTitleIn(columnsRef.current),
             actorUserId: user.userId,
             actorDisplayName: user.displayName || 'User',
             getAssigneeEmail,
