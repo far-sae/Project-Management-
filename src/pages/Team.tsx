@@ -392,6 +392,11 @@ export const Team: React.FC = () => {
   );
   // Use effectiveOwnerId (from DB + project list) so project owner can always invite
   const isProjectOwner = !!user?.userId && effectiveOwnerId === user.userId;
+  /** Project admins manage THIS project's people only (invite, add, remove, roles). */
+  const isProjectAdmin = !!user?.userId && allMembers.some(
+    (m) => m.userId === user.userId && m.role === 'admin',
+  );
+  const canManageMembers = isProjectOwner || isAdmin || isProjectAdmin;
 
   const handleAddMember = async () => {
     if (!selectedProject || !organization || !addUserId) {
@@ -428,8 +433,8 @@ export const Team: React.FC = () => {
 
   const handleRemoveMember = async (member: ProjectMember, unassignTasks: boolean) => {
     if (!selectedProject) return;
-    if (!isProjectOwner) {
-      toast.error('Only the project owner can remove members.');
+    if (!canManageMembers) {
+      toast.error('Only the project owner or a project admin can remove members.');
       return;
     }
 
@@ -554,8 +559,8 @@ export const Team: React.FC = () => {
 
   const handleInvite = async () => {
     if (!user || !selectedProject || !currentProject || !inviteEmail.trim()) return;
-    if (!isProjectOwner) {
-      toast.error('Only the project owner can invite members.');
+    if (!canManageMembers) {
+      toast.error('Only the project owner or a project admin can invite members.');
       return;
     }
 
@@ -694,8 +699,8 @@ export const Team: React.FC = () => {
   };
 
   const handleCancelInvitation = async (invitationId: string) => {
-    if (!isProjectOwner) {
-      toast.error('Only the project owner can manage invitations.');
+    if (!canManageMembers) {
+      toast.error('Only the project owner or a project admin can manage invitations.');
       return;
     }
 
@@ -764,8 +769,8 @@ export const Team: React.FC = () => {
           <div className="min-w-0">
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Team</h1>
             <p className="mt-1 max-w-2xl text-pretty text-muted-foreground">
-              {isProjectOwner && selectedProject
-                ? "As project owner, you can invite team members by email and manage roles."
+              {canManageMembers && selectedProject
+                ? "You can invite people to this project by email and manage their roles."
                 : "Manage your team members and their roles"}
             </p>
           </div>
@@ -785,7 +790,7 @@ export const Team: React.FC = () => {
             <Button
               variant="outline"
               onClick={() => { setAddUserId(''); setAddRole('member'); setOpenAddMember(true); }}
-              disabled={!selectedProject || !(isProjectOwner || isAdmin)}
+              disabled={!selectedProject || !canManageMembers}
               title="Add an existing teammate to this project"
               className="w-full lg:w-auto"
             >
@@ -795,8 +800,8 @@ export const Team: React.FC = () => {
             <Button
               onClick={() => setShowInviteModal(true)}
               className="bg-gradient-to-r from-orange-500 to-red-500"
-              disabled={!selectedProject || !isProjectOwner}
-              title={!isProjectOwner ? "Select a project you own to invite members" : "Invite team members by email"}
+              disabled={!selectedProject || !canManageMembers}
+              title={!canManageMembers ? "Only the project owner or a project admin can invite" : "Invite people to this project by email"}
             >
               <UserPlus className="w-4 h-4 mr-2" />
               Invite Member
@@ -894,7 +899,7 @@ export const Team: React.FC = () => {
                       )}
 
                       {/* Per-project role (separate from the org-wide role). */}
-                      {(isProjectOwner || isAdmin) && member.role !== 'owner' && (
+                      {canManageMembers && member.role !== 'owner' && member.userId !== user?.userId && (
                         <RoleSelect
                           value={member.role}
                           onValueChange={(v) => void handleChangeProjectRole(member.userId, v as ProjectRole)}
@@ -926,7 +931,7 @@ export const Team: React.FC = () => {
                       )}
 
                       {/* Remove button - hide for owner */}
-                      {(isProjectOwner || isAdmin) && member.role !== "owner"
+                      {canManageMembers && member.role !== "owner"
                         && member.userId !== user?.userId && (
                         <Button
                           variant="ghost"
@@ -984,7 +989,7 @@ export const Team: React.FC = () => {
                         >
                           {copiedLink === invitation.invitationId ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                         </Button>
-                        {isProjectOwner && (
+                        {canManageMembers && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1266,7 +1271,7 @@ export const Team: React.FC = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Team Member?</AlertDialogTitle>
               <AlertDialogDescription>
-                {isProjectOwner
+                {canManageMembers
                   ? 'Remove them from this project only (choose whether their tasks stay assigned), or from the whole organization.'
                   : 'Remove them from the whole organization.'}
                 {isAdmin && ' Removing from the organization takes away access to every project, unassigns their tasks and cancels their invitations. Projects they own move to the organization owner.'}
@@ -1293,7 +1298,7 @@ export const Team: React.FC = () => {
                 </Button>
               )}
 
-              {isProjectOwner && (
+              {canManageMembers && (
               <Button
                 variant="outline"
                 onClick={async () => {
@@ -1308,7 +1313,7 @@ export const Team: React.FC = () => {
               </Button>
               )}
 
-              {isProjectOwner && (
+              {canManageMembers && (
               <AlertDialogAction
                 className="bg-red-500 hover:bg-red-600"
                 onClick={async () => {
