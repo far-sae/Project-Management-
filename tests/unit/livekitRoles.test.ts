@@ -138,6 +138,12 @@ describe('room helpers', () => {
     expect(projectIdFromRoom('project:not-a-uuid')).toBeNull();
     expect(projectIdFromRoom(`dm:${uuid}__${uuid}`)).toBeNull();
   });
+  it('projectIdFromRoom also reads a task meeting room inside a project', () => {
+    const task = '22222222-2222-4222-8222-222222222222';
+    expect(projectIdFromRoom(`project:${uuid}:task:${task}`)).toBe(uuid);
+    expect(projectIdFromRoom(`project:${uuid}:task:nope`)).toBeNull();
+    expect(projectIdFromRoom(`project:${uuid}:other:${task}`)).toBeNull();
+  });
   it('dmMembers splits a dm room into two ids', () => {
     expect(dmMembers('dm:a__b')).toEqual(['a', 'b']);
     expect(dmMembers('dm:a__b__c')).toBeNull();

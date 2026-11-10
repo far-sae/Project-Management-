@@ -59,7 +59,11 @@ export interface Task {
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;
-  /** Hangouts Meet URL (joinable). Populated by the task-create-meet edge function or the createGoogleMeet automation action. */
+  /** When this task's TaskCalendar meeting starts (migration 175). Null = no meeting. */
+  meetingStartsAt?: Date | null;
+  /** Meeting length in minutes (default 30). */
+  meetingDurationMinutes?: number | null;
+  /** Legacy Google Meet URL from before TaskCalendar meetings. Shown read-only. */
   googleMeetLink?: string | null;
   /** Calendar event id created alongside the Meet link. */
   googleEventId?: string | null;
@@ -129,6 +133,8 @@ export interface CreateTaskInput {
   urgent?: boolean;
   isLocked?: boolean;
   lockPinHash?: string | null;
+  meetingStartsAt?: Date | null;
+  meetingDurationMinutes?: number | null;
   /** For activity log (task_created) */
   projectName?: string;
   createdByDisplayName?: string;
@@ -156,6 +162,8 @@ export interface UpdateTaskInput {
   isLocked?: boolean;
   lockPinHash?: string | null;
   position?: number;
+  meetingStartsAt?: Date | null;
+  meetingDurationMinutes?: number | null;
   /** For activity log (subtask_created / subtask_done) */
   activityBy?: { userId: string; displayName: string; photoURL?: string };
   /** For notifications when assignees change */

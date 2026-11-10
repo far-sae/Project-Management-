@@ -8,6 +8,17 @@ function toTime(d: DateLike): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
+function defaultFormatDateTime(d: DateLike): string {
+  const date = new Date(d as string | Date);
+  return date.toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function defaultFormatDate(d: DateLike): string {
   const date = new Date(d as string | Date);
   return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
@@ -27,6 +38,9 @@ export function describeTaskChanges(p: {
   formatDate?: (d: DateLike) => string;
   previousPriority?: string | null;
   newPriority?: string | null;
+  previousMeetingAt?: DateLike;
+  newMeetingAt?: DateLike;
+  formatDateTime?: (d: DateLike) => string;
   assigneesChanged?: boolean;
 }): string[] {
   const out: string[] = [];
@@ -46,6 +60,17 @@ export function describeTaskChanges(p: {
 
   if (p.newPriority && p.previousPriority !== undefined && p.newPriority !== p.previousPriority) {
     out.push(`changed the priority to ${PRIORITY_LABEL[p.newPriority] ?? p.newPriority}`);
+  }
+
+  if (p.previousMeetingAt !== undefined || p.newMeetingAt !== undefined) {
+    const before = toTime(p.previousMeetingAt);
+    const after = toTime(p.newMeetingAt);
+    if (before !== after) {
+      const when = after === null ? '' : (p.formatDateTime ?? defaultFormatDateTime)(p.newMeetingAt);
+      if (after === null) out.push('cancelled the meeting');
+      else if (before === null) out.push(`scheduled a meeting for ${when}`);
+      else out.push(`moved the meeting to ${when}`);
+    }
   }
 
   if (p.assigneesChanged) out.push("updated who's assigned");

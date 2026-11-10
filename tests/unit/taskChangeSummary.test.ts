@@ -41,4 +41,17 @@ describe('describeTaskChanges', () => {
     ).toEqual(['moved it to needreview', 'changed the priority to Medium', "updated who's assigned"]);
     expect(describeTaskChanges({ previousStatus: 'todo', newStatus: 'todo', previousPriority: 'low', newPriority: 'low' })).toEqual([]);
   });
+
+  it('reports a meeting being scheduled, moved or cancelled', () => {
+    const fmt = () => 'Fri 13 Nov, 15:00';
+    expect(describeTaskChanges({ previousMeetingAt: null, newMeetingAt: '2026-11-13T15:00:00Z', formatDateTime: fmt })).toEqual([
+      'scheduled a meeting for Fri 13 Nov, 15:00',
+    ]);
+    expect(
+      describeTaskChanges({ previousMeetingAt: '2026-11-12T15:00:00Z', newMeetingAt: '2026-11-13T15:00:00Z', formatDateTime: fmt }),
+    ).toEqual(['moved the meeting to Fri 13 Nov, 15:00']);
+    expect(describeTaskChanges({ previousMeetingAt: '2026-11-12T15:00:00Z', newMeetingAt: null })).toEqual([
+      'cancelled the meeting',
+    ]);
+  });
 });

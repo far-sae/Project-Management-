@@ -2,7 +2,7 @@
 // so Vitest can load them): which notifications get an email, and what the
 // email says — including the task's details from the task form.
 
-import { renderNotificationEmail, type RenderedEmail } from './emailTemplates.ts';
+import { type EmailTone, renderNotificationEmail, type RenderedEmail } from './emailTemplates.ts';
 
 /** One row returned by the claim_notification_emails() database function. */
 export interface ClaimedNotificationEmail {
@@ -22,6 +22,8 @@ export interface ClaimedNotificationEmail {
   task_urgent: boolean | null;
   task_status_label: string | null;
   project_name: string | null;
+  task_meeting_at: string | null;
+  task_meeting_minutes: number | null;
 }
 
 /**
@@ -46,10 +48,9 @@ export function shouldEmailNotification(type: string, prefs: Record<string, unkn
   return p.email !== false && p[category] !== false;
 }
 
-function formatDue(iso: string, timeZone: string | null): string | null {
+function fmt(iso: string, timeZone: string | null, opts: Intl.DateTimeFormatOptions): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
   try {
     return new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: timeZone || 'UTC' }).format(d);
   } catch {
@@ -57,17 +58,45 @@ function formatDue(iso: string, timeZone: string | null): string | null {
   }
 }
 
+const DATE: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+const DATE_TIME: Intl.DateTimeFormatOptions = { ...DATE, hour: '2-digit', minute: '2-digit', hour12: false };
+
 const PRIORITY_LABEL: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' };
+
+/** The small coloured label above the heading. */
+export function emailLabel(row: Pick<ClaimedNotificationEmail, 'type' | 'title'>): { eyebrow: string; tone: EmailTone } {
+  const title = (row.title || '').toLowerCase();
+  if (title.includes('meeting')) return { eyebrow: 'Meeting', tone: 'meeting' };
+  if (title.includes('urgent')) return { eyebrow: 'Urgent', tone: 'danger' };
+  switch (row.type) {
+    case 'task_assigned':
+      return { eyebrow: 'Assigned', tone: 'brand' };
+    case 'task_overdue':
+      return { eyebrow: 'Overdue', tone: 'danger' };
+    case 'task_reminder':
+      return { eyebrow: 'Due soon', tone: 'warning' };
+    case 'task_completed':
+      return { eyebrow: 'Completed', tone: 'success' };
+    case 'comment_mention':
+      return { eyebrow: 'Mention', tone: 'info' };
+    case 'comment_added':
+      return { eyebrow: 'Comment', tone: 'info' };
+    default:
+      return { eyebrow: 'Update', tone: 'neutral' };
+  }
+}
 
 export function renderTaskNotificationEmail(row: ClaimedNotificationEmail, appUrl: string): RenderedEmail {
   const details: Array<[string, string]> = [];
   if (row.task_title) details.push(['Task', row.task_title]);
   if (row.project_name) details.push(['Project', row.project_name]);
   if (row.task_status_label) details.push(['Status', row.task_status_label]);
-  const due = row.task_due_date ? formatDue(row.task_due_date, row.timezone) : null;
+  const due = row.task_due_date ? fmt(row.task_due_date, row.timezone, DATE) : null;
   if (due) details.push(['Due', due]);
   if (row.task_priority) details.push(['Priority', PRIORITY_LABEL[row.task_priority] ?? row.task_priority]);
   if (row.task_urgent) details.push(['Urgent', 'Yes 🚨']);
+  const meeting = row.task_meeting_at ? fmt(row.task_meeting_at, row.timezone, DATE_TIME) : null;
+  if (meeting) details.push(['Meeting', `${meeting} · ${row.task_meeting_minutes || 30} min`]);
 
   const base = appUrl.replace(/\/+$/, '');
   const actionUrl = row.project_id
@@ -77,14 +106,22 @@ export function renderTaskNotificationEmail(row: ClaimedNotificationEmail, appUr
   const title = row.title || 'TaskCalendar update';
   const subject =
     row.task_title && !title.includes(row.task_title) ? `${title}: ${row.task_title}` : title;
+  const { eyebrow, tone } = emailLabel(row);
+  const preheader = [row.task_title, row.project_name, due ? `due ${due}` : null]
+    .filter(Boolean)
+    .join(' · ');
 
   return renderNotificationEmail({
     title,
     subject,
     body: row.message || '',
     details,
+    eyebrow,
+    tone,
+    preheader: preheader || row.message || title,
     actionUrl,
-    actionLabel: row.task_id ? 'Open task' : undefined,
-    footer: "You're getting this because you're on this task. You can turn these emails off in Settings → Notifications.",
+    actionLabel: meeting && eyebrow === 'Meeting' ? 'Open task to join' : row.task_id ? 'Open task' : undefined,
+    footer: "You're getting this because you're on this task.",
+    settingsUrl: `${base}/settings`,
   });
 }

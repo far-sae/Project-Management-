@@ -84,3 +84,54 @@ describe('renderNotificationEmail', () => {
     expect(email.html).not.toContain('href=');
   });
 });
+
+describe('email design', () => {
+  it('has an inbox preview line, the logo and a working layout in every client', () => {
+    const email = renderNotificationEmail({
+      title: 'Task assigned to you',
+      body: 'Sam assigned you to "Fix login"',
+      preheader: 'Fix login · Website · due Fri 13 Nov',
+      eyebrow: 'Assigned',
+      tone: 'brand',
+      actionUrl: 'https://taskcalendar.co.uk/project/p1',
+    });
+    expect(email.html).toContain('Fix login · Website · due Fri 13 Nov');
+    expect(email.html).toContain('display:none');
+    expect(email.html).toContain('alt="TaskCalendar"');
+    expect(email.html).toContain('role="presentation"');
+    expect(email.html).toContain('Assigned');
+    // copy-paste fallback for the button
+    expect(email.html).toContain('>https://taskcalendar.co.uk/project/p1<');
+  });
+
+  it('colours the label by tone (red for overdue/urgent)', () => {
+    const red = renderNotificationEmail({ title: 'Overdue', body: 'x', eyebrow: 'Overdue', tone: 'danger' });
+    const green = renderNotificationEmail({ title: 'Done', body: 'x', eyebrow: 'Completed', tone: 'success' });
+    expect(red.html).toContain('#b91c1c');
+    expect(green.html).toContain('#15803d');
+  });
+
+  it('links to email settings when given, and says why you got it', () => {
+    const email = renderNotificationEmail({
+      title: 'Hi',
+      body: 'x',
+      footer: "You're on this task.",
+      settingsUrl: 'https://taskcalendar.co.uk/settings',
+    });
+    expect(email.html).toContain('href="https://taskcalendar.co.uk/settings"');
+    expect(email.text).toContain('Email settings: https://taskcalendar.co.uk/settings');
+    expect(email.text).toContain("You're on this task.");
+  });
+
+  it('invitation names the role and shows who invited you', () => {
+    const email = renderInvitationEmail({
+      toEmail: 'jane@client.com',
+      inviterName: 'Sam',
+      projectName: 'Website',
+      inviteLink: 'https://taskcalendar.co.uk/accept-invite/t',
+      role: 'admin',
+    });
+    expect(email.html).toContain('Invitation');
+    expect(email.text).toContain('Sam has invited you to join "Website" as an admin.');
+  });
+});

@@ -77,6 +77,14 @@ export function projectRoomName(projectId: string): string {
 }
 
 /**
+ * A task's own meeting room, inside its project (same access rules as the
+ * project room — see projectIdFromRoom in the Edge Functions).
+ */
+export function taskMeetingRoomName(projectId: string, taskId: string): string {
+  return `project:${projectId}:task:${taskId}`;
+}
+
+/**
  * Build the canonical LiveKit room name for a 1:1 DM call. The user ids
  * are sorted so both sides converge on the same name regardless of who
  * dialed first — mirrors the `dm:<a>__<b>` shape in the allowlist.

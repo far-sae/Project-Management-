@@ -120,11 +120,18 @@ export function classifyRoomServiceError(status: number): "gone" | "error" {
   return status === 404 ? "gone" : "error";
 }
 
-/** `project:<uuid>` → uuid; anything else → null. */
+/**
+ * `project:<uuid>` → uuid. A task's meeting room lives inside its project —
+ * `project:<uuid>:task:<taskUuid>` — and is governed by the same project
+ * access, so it also returns the project uuid. Anything else → null.
+ */
 export function projectIdFromRoom(room: string): string | null {
   if (typeof room !== "string" || !room.startsWith("project:")) return null;
-  const id = room.slice("project:".length);
-  return UUID_RE.test(id) ? id : null;
+  const rest = room.slice("project:".length);
+  const [id, kind, taskId, ...extra] = rest.split(":");
+  if (!UUID_RE.test(id ?? "")) return null;
+  if (kind === undefined) return id;
+  return kind === "task" && UUID_RE.test(taskId ?? "") && extra.length === 0 ? id : null;
 }
 
 /** `dm:<a>__<b>` → [a, b]; anything else → null. */

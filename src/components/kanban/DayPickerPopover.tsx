@@ -11,6 +11,10 @@ interface DayPickerPopoverProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  /** Forwarded to the trigger so a `<label htmlFor>` can point at it. */
+  id?: string;
+  /** Accessible name for the trigger when no visible label is attached. */
+  ariaLabel?: string;
 }
 
 const formatRelative = (d: Date): string => {
@@ -41,6 +45,8 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
   placeholder = 'No due date',
   className,
   disabled = false,
+  id,
+  ariaLabel,
 }) => {
   const [open, setOpen] = useState(false);
   // Controlled month state so the next/previous chevrons actually
@@ -77,6 +83,9 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
       <PopoverTrigger asChild>
         <Button
           type="button"
+          id={id}
+          aria-label={ariaLabel}
+          disabled={disabled}
           variant="outline"
           size="sm"
           className={cn(

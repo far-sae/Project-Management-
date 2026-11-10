@@ -24,6 +24,8 @@ export interface CallContext {
   targetId: string;
   /** Human-readable label for the call UI header. */
   label: string;
+  /** Project calls only: join this task's own meeting room instead of the project room. */
+  taskId?: string;
 }
 
 /**

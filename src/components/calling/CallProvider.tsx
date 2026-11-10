@@ -19,6 +19,7 @@ import type {
 import {
   dmRoomName,
   projectRoomName,
+  taskMeetingRoomName,
 } from '@/services/livekit/fetchLiveKitToken';
 import {
   shouldEndCallWhenAlone,
@@ -873,7 +874,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const callId = generateCallId();
       activeCallIdRef.current = callId;
-      const roomName = projectRoomName(context.targetId);
+      const roomName = context.taskId
+        ? taskMeetingRoomName(context.targetId, context.taskId)
+        : projectRoomName(context.targetId);
       setState({
         ...IDLE_STATE,
         status: 'connecting',

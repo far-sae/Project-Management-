@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react';
 import {
   Task, TaskPriority, KanbanColumn, DEFAULT_COLUMNS, PRIORITY_COLORS,
   CreateTaskInput, TaskAssignee, Project, TaskComment,
 } from '@/types';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogClose, DialogContent, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -34,10 +33,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  Trash2, Loader2, Sparkles, Wand2, MessageSquare,
-  ListTree, Paperclip, X, Check, Circle, Activity, Clock,
-  CheckCircle2, Lock, MoreHorizontal, Bell, Mail, Link2,
-  AlertTriangle, Save, KeyRound, Users, Video, FolderInput,
+  Trash2, Loader2, Sparkles, Wand2, MessageSquare, ListTree, Paperclip, X, Check,
+  Activity, Clock, Lock, MoreHorizontal, Bell, Mail, Link2, AlertTriangle, KeyRound,
+  Video, FolderInput, ChevronRight, Plus, Receipt, ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -66,10 +64,10 @@ import {
   verifyTaskLockPin,
 } from '@/services/supabase/database';
 import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
-import { isGoogleConnected, createMeetForTask, cancelMeetForTask } from '@/services/integrations/googleMeet';
+import { useCall } from '@/hooks/useCall';
+import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import { markOnboardingAi } from '@/components/onboarding/OnboardingChecklist';
 import { useTaskActivity } from '@/hooks/useActivity';
-import { ActivityEvent } from '@/types/activity';
 import { uploadCommentAttachment } from '@/services/supabase/storage';
 import { SubtaskDecompositionModal } from './SubtaskDecompositionModal';
 import { MoveTaskDialogWithProjects } from './MoveTaskDialog';
@@ -81,8 +79,15 @@ import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
 import AttachmentPreview from '../ui/AttachmentPreview';
 import { TaskExpensesPanel } from '@/components/expenses/TaskExpensesPanel';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
+import { MeetingProperty } from './task-modal/MeetingProperty';
+import {
+  ActivityList, CommentSummaryCard, ListSkeleton, PresenceAvatars, PropertyRow, TypingIndicator, useNow,
+} from './task-modal/parts';
+import { DEFAULT_MEETING_DURATION, getJoinDisabledReason, toMeetingDate } from './task-modal/meeting';
+import { FOCUS_RING, GHOST_FIELD, PRESS, SECTION_LABEL } from './task-modal/styles';
 
 interface Subtask {
   id: string;
@@ -120,6 +125,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 }) => {
   const { user } = useAuth();
   const { organization, isAdmin, isViewer } = useOrganization();
+  const { actions: callActions, state: callState } = useCall();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -145,23 +151,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
-  // Google Meet — checkbox + independent meeting date/time picker.
-  // The Meet schedule used to require the task's dueDate, which made
-  // reps think they had to set a deadline just to spin up a meeting.
-  // meetingDate is now a separate state that defaults to dueDate when
-  // dueDate is set, otherwise to "tomorrow" so the rep can schedule a
-  // meeting on any day independent of when the task is due.
-  const [addGoogleMeet, setAddGoogleMeet] = useState(false);
-  const [googleConnected, setGoogleConnected] = useState(false);
-  const [meetingTime, setMeetingTime] = useState<string>('10:00');
-  const [meetingDate, setMeetingDate] = useState<Date | null>(null);
+  // TaskCalendar meeting — independent of the due date. Null = no meeting.
+  const [meetingStartsAt, setMeetingStartsAt] = useState<Date | null>(null);
+  const [meetingDurationMinutes, setMeetingDurationMinutes] = useState<number | null>(null);
 
   const [aiLoading, setAiLoading] = useState<{ description?: boolean; suggestions?: boolean }>({});
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiSuggestion, setAiSuggestion] = useState<SmartSuggestionResponse | null>(null);
   const [showAISuggestion, setShowAISuggestion] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'comments' | 'activity'>('comments');
+  const [activeTab, setActiveTab] = useState<'comments' | 'activity' | 'expenses'>('comments');
   const [newComment, setNewComment] = useState('');
   const [commentAttachmentFiles, setCommentAttachmentFiles] = useState<File[]>([]);
   const [commentTimeSpentMinutes, setCommentTimeSpentMinutes] = useState<number | ''>('');
@@ -169,12 +168,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [commentLoading, setCommentLoading] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [taskComments, setTaskComments] = useState<TaskComment[]>([]);
+  /** False until the first realtime snapshot arrives — drives the skeleton. */
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [commentSummary, setCommentSummary] = useState<CommentSummary | null>(null);
   const [commentSummaryLoading, setCommentSummaryLoading] = useState(false);
   const [commentSummaryError, setCommentSummaryError] = useState<string | null>(null);
   const [commentSummaryOpen, setCommentSummaryOpen] = useState(false);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentTypingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -292,20 +294,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setIsLocked(!!task.isLocked);
       setTags(task.tags || []);
       setSubtasks(task.subtasks?.length ? task.subtasks : []);
-      // Seed meetingTime from the task's saved due_date time (if non-midnight),
-      // otherwise leave the default '10:00' so the picker still feels useful.
-      // Seed meetingDate from the due_date too so the rep doesn't have to
-      // re-pick a day if the task already has one — but they can still
-      // change it independently after.
-      if (task.dueDate) {
-        const d = new Date(task.dueDate);
-        if (d.getHours() !== 0 || d.getMinutes() !== 0) {
-          setMeetingTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-        }
-        setMeetingDate(d);
-      } else {
-        setMeetingDate(null);
-      }
+      const seededMeeting = toMeetingDate(task.meetingStartsAt);
+      setMeetingStartsAt(seededMeeting);
+      setMeetingDurationMinutes(
+        seededMeeting ? task.meetingDurationMinutes ?? DEFAULT_MEETING_DURATION : null,
+      );
     } else {
       setTitle('');
       setDescription('');
@@ -318,9 +311,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setInitialComment('');
       setTags([]);
       setSubtasks([]);
-      setAddGoogleMeet(false);
-      setMeetingTime('10:00');
-      setMeetingDate(null);
+      setMeetingStartsAt(null);
+      setMeetingDurationMinutes(null);
     }
     setAiError(null);
     setSaveError(null);
@@ -348,94 +340,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setPinUnlockedSession(isTaskLockUnlockedInSession(task.taskId));
   }, [task?.taskId, open]);
 
-  // Check Google integration on open in both create and edit modes so the
-  // Meet UI can decide what to show (checkbox, add-link button, existing link).
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    isGoogleConnected()
-      .then((connected) => { if (!cancelled) setGoogleConnected(connected); })
-      .catch(() => { if (!cancelled) setGoogleConnected(false); });
-    return () => { cancelled = true; };
-  }, [open]);
-
-  // Combine the picked meeting day + time into a single Date. The
-  // meeting day is independent of the task's dueDate (reps wanted to
-  // schedule a meet without first setting a deadline). Resolution
-  // order: meetingDate → dueDate → tomorrow.
-  const effectiveMeetingDate = React.useMemo<Date>(() => {
-    if (meetingDate) return meetingDate;
-    if (dueDate) return dueDate;
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    return tomorrow;
-  }, [meetingDate, dueDate]);
-
-  const combinedMeetingStart = React.useMemo<Date | null>(() => {
-    const match = /^(\d{1,2}):(\d{2})$/.exec(meetingTime.trim());
-    if (!match) return null;
-    const h = Number(match[1]);
-    const m = Number(match[2]);
-    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-    const combined = new Date(effectiveMeetingDate);
-    combined.setHours(h, m, 0, 0);
-    return combined;
-  }, [effectiveMeetingDate, meetingTime]);
-
-  const [meetAddInFlight, setMeetAddInFlight] = useState(false);
-  const handleAddMeetToExisting = async () => {
-    if (!task?.taskId) return;
-    if (!combinedMeetingStart) {
-      toast.error('Set a meeting date and time before adding a Meet link');
-      return;
-    }
-    setMeetAddInFlight(true);
-    const toastId = toast.loading('Creating Google Meet link...');
-    try {
-      const { meetLink } = await createMeetForTask(task.taskId, {
-        startTime: combinedMeetingStart,
-      });
-      toast.success('Meet link added', { id: toastId });
-      try { await navigator.clipboard.writeText(meetLink); } catch { /* clipboard optional */ }
-      // The link is on the row now; the parent will pick it up on the next
-      // refetch. Reflect it locally so the user sees it without a refresh.
-      (task as Task).googleMeetLink = meetLink;
-      // The edge function also wrote due_date back, so sync our local copy.
-      (task as Task).dueDate = combinedMeetingStart;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Meet creation failed', { id: toastId });
-    } finally {
-      setMeetAddInFlight(false);
-    }
-  };
-
-  // Tear down a previously-scheduled Meet from an existing task row.
-  // Calls the cancel-meet edge function, which deletes the Calendar
-  // event and nulls google_meet_link / google_event_id. We mirror the
-  // local task object so the UI flips from "Join" back to "Add Meet"
-  // without waiting for the parent refetch.
-  const handleCancelMeetForExisting = async () => {
-    if (!task?.taskId || !task.googleMeetLink) return;
-    if (!window.confirm('Cancel this Google Meet? The Calendar event will be deleted and attendees will lose access.')) return;
-    setMeetAddInFlight(true);
-    const toastId = toast.loading('Cancelling Google Meet...');
-    try {
-      const result = await cancelMeetForTask(task.taskId);
-      (task as Task).googleMeetLink = null;
-      toast.success(
-        result.calendarDeleted === true
-          ? 'Meet cancelled — Calendar event deleted.'
-          : 'Meet link removed from this task.',
-        { id: toastId },
-      );
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Meet cancel failed', { id: toastId });
-    } finally {
-      setMeetAddInFlight(false);
-    }
-  };
-
   useEffect(() => {
     setLockPinNew('');
     setLockPinConfirm('');
@@ -462,9 +366,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   useEffect(() => {
     if (!open || !task?.taskId || !orgId || mustUnlockToView) {
       setTaskComments([]);
+      setCommentsLoaded(false);
       return;
     }
-    const unsub = subscribeToComments(task.taskId, orgId, setTaskComments);
+    setCommentsLoaded(false);
+    const unsub = subscribeToComments(task.taskId, orgId, (next) => {
+      setTaskComments(next);
+      setCommentsLoaded(true);
+    });
     return () => unsub();
   }, [open, task?.taskId, orgId, mustUnlockToView]);
 
@@ -524,6 +433,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       tags: [...tags].sort(),
       urgent,
       subtasks: subtasks.map((s) => ({ id: s.id, title: s.title, completed: s.completed })),
+      meetingStartsAt: meetingStartsAt ? meetingStartsAt.toISOString() : null,
+      meetingDurationMinutes: meetingStartsAt ? meetingDurationMinutes : null,
     });
 
     // First snapshot after (re)open: establish baseline, don't save.
@@ -551,6 +462,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           tags,
           urgent,
           subtasks,
+          meetingStartsAt: meetingStartsAt ?? null,
+          meetingDurationMinutes: meetingStartsAt
+            ? meetingDurationMinutes ?? DEFAULT_MEETING_DURATION
+            : null,
         } as Partial<Task>);
         autoSaveSnapshotRef.current = snapshot;
         setLastSavedAt(new Date());
@@ -573,6 +488,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   }, [
     open, isEditing, task?.taskId, user, readOnlyTask, mustUnlockToView, loading,
     title, description, priority, dueDate, assignees, tags, urgent, subtasks,
+    meetingStartsAt, meetingDurationMinutes,
     onSave,
   ]);
 
@@ -1118,6 +1034,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         tags: isEditing ? tags : tags.length > 0 ? tags : undefined,
         subtasks: isEditing ? subtasks : subtasks.length > 0 ? subtasks : undefined,
         urgent,
+        // Meeting is independent of dueDate; null clears it.
+        meetingStartsAt: meetingStartsAt ?? null,
+        meetingDurationMinutes: meetingStartsAt
+          ? meetingDurationMinutes ?? DEFAULT_MEETING_DURATION
+          : null,
         isLocked: isLockedForSave,
         ...(lockPinHashPayload !== undefined
           ? { lockPinHash: lockPinHashPayload }
@@ -1146,12 +1067,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setLastSavedAt(new Date());
         toast.success('Task updated');
       } else {
-        // If the Meet checkbox is on, pre-generate the task id so we can call
-        // task-create-meet right after the save without waiting on the parent
-        // to surface the new taskId.
-        if (addGoogleMeet && !createdTaskId) {
-          createdTaskId = crypto.randomUUID();
-        }
         await onSave({
           ...(createdTaskId ? { taskId: createdTaskId } : {}),
           projectId,
@@ -1162,22 +1077,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           _initialComment: initialComment.trim() || undefined,
         } as CreateTaskInput & { _initialComment?: string });
         toast.success('Task created');
-
-        // After the task lands, kick off Meet creation (best-effort; surface
-        // the error in a toast but don't fail the whole flow).
-        if (addGoogleMeet && createdTaskId) {
-          const meetToast = toast.loading('Creating Google Meet link...');
-          try {
-            const { meetLink } = await createMeetForTask(createdTaskId, {
-              startTime: combinedMeetingStart ?? undefined,
-            });
-            toast.success('Meet link added', { id: meetToast });
-            try { await navigator.clipboard.writeText(meetLink); } catch { /* clipboard optional */ }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Meet creation failed';
-            toast.error(msg, { id: meetToast });
-          }
-        }
       }
       onClose();
     } catch (error) {
@@ -1237,11 +1136,165 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
+  // ── Meeting / call ─────────────────────────────────────────
+  // Ticks the meeting status chip and the "Saved x ago" hint while open.
+  const now = useNow(30_000, open);
+
+  const joinDisabledReason = getJoinDisabledReason({
+    isSaved: Boolean(isEditing && task?.taskId),
+    inCall: callState.status !== 'idle',
+    isViewer,
+    mediaSupported: isMediaSupported(),
+  });
+
+  const handleJoinMeeting = () => {
+    if (!task?.taskId || joinDisabledReason) return;
+    void callActions.startMeeting(
+      {
+        type: 'project',
+        targetId: projectId,
+        label: title.trim() || task.title,
+        taskId: task.taskId,
+      },
+      'video',
+    );
+    onClose();
+  };
+
+  const handleMeetingChange = (startsAt: Date | null, duration: number | null) => {
+    setMeetingStartsAt(startsAt);
+    setMeetingDurationMinutes(startsAt ? duration ?? DEFAULT_MEETING_DURATION : null);
+  };
+
+  // ── Derived view data ──────────────────────────────────────
+  const currentColumn = columns.find((c) => c.id === status);
+  const columnTitle = currentColumn?.title ?? 'No column';
+  const modKey =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent)
+      ? '⌘'
+      : 'Ctrl';
+
+  /** Files from the task itself plus everything attached in comments. */
+  const allAttachments = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Array<{ fileId: string; fileName: string; fileUrl: string; fileType?: string }> = [];
+    const push = (a: { fileId: string; fileName: string; fileUrl: string; fileType?: string }) => {
+      const key = a.fileId || a.fileUrl;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      list.push(a);
+    };
+    for (const a of task?.attachments ?? []) push(a);
+    for (const c of taskComments) for (const a of c.attachments ?? []) push(a);
+    return list;
+  }, [task?.attachments, taskComments]);
+
+  const commentCount = taskComments.length;
+
+  // ── Keyboard ───────────────────────────────────────────────
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  /** Cmd/Ctrl+Enter: post the comment when typing in the composer, otherwise save. */
+  const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.nativeEvent.isComposing) return;
+    const target = e.target as Node;
+    // Nested dialogs are portaled: React bubbles their events here, the DOM doesn't.
+    if (!contentRef.current?.contains(target) || mustUnlockToView) return;
+    e.preventDefault();
+    if (commentComposerRef.current?.contains(target)) {
+      if (!readOnlyTask && !commentLoading) void handleAddComment();
+      return;
+    }
+    if (title.trim() && !readOnlyTask && !loading) void handleSubmit();
+  };
+
+  /** Esc closes an open @mention list first (it is not a Radix layer). */
+  const handleEscapeKeyDown = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.tagName === 'TEXTAREA' && t.parentElement?.querySelector('[role="listbox"]')) {
+      e.preventDefault();
+    }
+  };
+
+  // ── Footer hint ────────────────────────────────────────────
+  const footerHint = (() => {
+    if (readOnlyTask) {
+      return <span>View only — you can read this task but not change it.</span>;
+    }
+    if (!title.trim()) {
+      return <span>Add a title to {isEditing ? 'save' : 'create the task'}.</span>;
+    }
+    if (isEditing) {
+      if (autoSaveStatus === 'saving') {
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            Saving…
+          </span>
+        );
+      }
+      if (autoSaveStatus === 'error') {
+        return <span className="text-destructive">Auto-save failed — use Save changes.</span>;
+      }
+      if (lastSavedAt) {
+        const ago = now.getTime() - lastSavedAt.getTime();
+        return (
+          <span className="inline-flex items-center gap-1.5 tabular-nums" title={lastSavedAt.toLocaleString()}>
+            <Check className="h-3 w-3 text-success" aria-hidden />
+            {ago < 45_000 ? 'Saved just now' : `Saved ${formatDistanceSafe(lastSavedAt)}`}
+          </span>
+        );
+      }
+      return <span>Changes save automatically.</span>;
+    }
+    return (
+      <span>
+        <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-sans text-[10px] font-medium">{modKey}</kbd>
+        <span className="mx-0.5">+</span>
+        <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-sans text-[10px] font-medium">Enter</kbd>{' '}
+        to create
+      </span>
+    );
+  })();
+
+  const headerIconButton = cn(
+    'h-10 w-10 min-h-0 min-w-0 md:h-8 md:w-8 md:min-h-0 md:min-w-0 text-muted-foreground hover:text-foreground',
+    PRESS,
+  );
+  const uid = useId();
+  const ids = {
+    title: `${uid}-title`,
+    description: `${uid}-description`,
+    subtaskInput: `${uid}-subtaskInput`,
+    firstComment: `${uid}-firstComment`,
+    status: `${uid}-status`,
+    priority: `${uid}-priority`,
+    due: `${uid}-due`,
+    assignees: `${uid}-assignees`,
+    tags: `${uid}-tags`,
+    urgent: `${uid}-urgent`,
+    lock: `${uid}-lock`,
+    pinNew: `${uid}-pinNew`,
+    pinConfirm: `${uid}-pinConfirm`,
+    unlockPin: `${uid}-unlockPin`,
+    unlockPin2: `${uid}-unlockPin2`,
+    subtasksHeading: `${uid}-subtasks-heading`,
+    attachmentsHeading: `${uid}-attachments-heading`,
+    timeSpent: `${uid}-time-spent`,
+    lockHint: `${uid}-lock-hint`,
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogContent
-        className="sm:max-w-[1024px] max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 [&>button]:top-3.5"
+        ref={contentRef}
         aria-describedby={undefined}
+        onEscapeKeyDown={handleEscapeKeyDown}
+        onKeyDown={handleDialogKeyDown}
+        className={cn(
+          'flex flex-col gap-0 overflow-hidden p-0 pt-0 pb-0 sm:p-0 sm:pt-0 sm:pb-0 sm:max-w-5xl [&>button]:hidden',
+          isEditing && !mustUnlockToView ? 'h-[calc(100dvh-3rem)] sm:h-[90vh]' : 'sm:max-h-[90vh]',
+        )}
       >
         <DialogTitle className="sr-only">
           {mustUnlockToView
@@ -1252,1281 +1305,1093 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 : 'Edit task'
               : 'Create new task'}
         </DialogTitle>
+
         {mustUnlockToView ? (
-          <div className="flex flex-col items-center justify-center px-6 py-12 sm:py-16 gap-5 text-center min-h-[min(420px,70vh)]">
-            <KeyRound className="w-14 h-14 text-muted-foreground" aria-hidden />
-            <div className="space-y-1 max-w-sm">
+          <div className="flex min-h-[min(420px,70vh)] flex-col items-center justify-center gap-6 px-6 py-12 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted" aria-hidden>
+              <KeyRound className="h-6 w-6 text-muted-foreground" />
+            </span>
+            <div className="max-w-sm space-y-2">
               <h2 className="text-lg font-semibold text-foreground">This task is locked</h2>
               <p className="text-sm text-muted-foreground">
                 Enter the PIN to view details, comments, and activity. When you close this task or
                 save changes, you will need the PIN again to view or edit it.
               </p>
             </div>
-            <Input
-              type="password"
-              name="task-unlock-pin"
-              autoComplete="new-password"
-              autoFocus
-              data-1p-ignore
-              data-lpignore="true"
-              data-form-type="other"
-              placeholder="Enter PIN"
-              value={unlockAttempt}
-              onChange={(e) => setUnlockAttempt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void verifyUnlockPin();
+            <form
+              className="flex w-full max-w-xs flex-col gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void verifyUnlockPin();
               }}
-              className="max-w-xs bg-background border-border"
-            />
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={() => { onClose(); setUnlockAttempt(''); }}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void verifyUnlockPin()}
-                disabled={!unlockAttempt.trim()}
-                className="gap-1.5"
-              >
-                <KeyRound className="w-4 h-4" />
-                Unlock
-              </Button>
-            </div>
+            >
+              <label htmlFor={ids.unlockPin} className="sr-only">
+                Task PIN
+              </label>
+              <Input
+                id={ids.unlockPin}
+                type="password"
+                name="task-unlock-pin"
+                autoComplete="new-password"
+                autoFocus
+                data-1p-ignore
+                data-lpignore="true"
+                data-form-type="other"
+                placeholder="Enter PIN"
+                value={unlockAttempt}
+                onChange={(e) => setUnlockAttempt(e.target.value)}
+                className="text-center tracking-widest transition-colors"
+              />
+              <div className="flex items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className={PRESS}
+                  onClick={() => { onClose(); setUnlockAttempt(''); }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!unlockAttempt.trim()} className={cn('gap-2', PRESS)}>
+                  <KeyRound aria-hidden />
+                  Unlock
+                </Button>
+              </div>
+            </form>
           </div>
         ) : (
         <>
-        {/* ── Header ──────────────────────────────────────── */}
-        <DialogHeader className="px-5 py-3 pr-14 border-b border-border space-y-0">
-          <div className="flex items-center gap-3">
+        {/* ── Header: breadcrumb + actions, then the title ─────────── */}
+        <header className="shrink-0 border-b border-border">
+          <div className="flex h-12 items-center gap-1 pl-4 pr-2 sm:pl-6">
+            <nav
+              aria-label="Task location"
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <span className="min-w-0 max-w-[50%] truncate" title={projectName || 'Project'}>
+                {projectName || 'Project'}
+              </span>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40"
+                  style={currentColumn?.color ? { backgroundColor: currentColumn.color } : undefined}
+                />
+                <span className="truncate" title={columnTitle}>{columnTitle}</span>
+              </span>
+              {!isEditing && (
+                <span className="hidden shrink-0 sm:inline">
+                  <span aria-hidden className="mx-1 opacity-60">·</span>New task
+                </span>
+              )}
+            </nav>
+
+            <PresenceAvatars peers={peersOnTask} />
+
+            {isEditing && task && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={headerIconButton}
+                onClick={copyTaskUrl}
+                aria-label="Copy link to task"
+                title="Copy link to task"
+              >
+                <Link2 aria-hidden />
+              </Button>
+            )}
+
+            {isEditing && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className={headerIconButton}
+                    aria-label="More task actions"
+                    title="More actions"
+                  >
+                    <MoreHorizontal aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                    Task actions
+                  </DropdownMenuLabel>
+                  {task && user && (
+                    <DropdownMenuItem onClick={() => setShowNotifyModal(true)}>
+                      <Bell className="mr-2 h-4 w-4" aria-hidden />
+                      Notify teammates…
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem onClick={() => toast.info('Reply by email — coming soon')}>
+                    <Mail className="mr-2 h-4 w-4" aria-hidden />
+                    Reply by email
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowMoveTask(true)} disabled={readOnlyTask}>
+                    <FolderInput className="mr-2 h-4 w-4" aria-hidden />
+                    Move to project…
+                  </DropdownMenuItem>
+                  {aiEnabled && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                        AI
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem onClick={handleGetSmartSuggestions} disabled={readOnlyTask}>
+                        <Sparkles className="mr-2 h-4 w-4 text-primary" aria-hidden />
+                        Suggest priority &amp; due date
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleGenerateTitleFromDescription}
+                        disabled={readOnlyTask || description.trim().length < 10 || aiLoading.description}
+                      >
+                        <Sparkles className="mr-2 h-4 w-4 text-primary" aria-hidden />
+                        Title from description
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleExpandDescription}
+                        disabled={readOnlyTask || !title.trim()}
+                      >
+                        <Wand2 className="mr-2 h-4 w-4 text-primary" aria-hidden />
+                        Write description
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setShowDecomposition(true)}
+                        disabled={readOnlyTask || !title.trim()}
+                      >
+                        <ListTree className="mr-2 h-4 w-4 text-primary" aria-hidden />
+                        Break into subtasks
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {onDelete && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => setShowDeleteConfirm(true)}
+                        disabled={readOnlyTask}
+                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" aria-hidden />
+                        Delete task
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={headerIconButton}
+                aria-label="Close"
+                title="Close (Esc)"
+              >
+                <X aria-hidden />
+              </Button>
+            </DialogClose>
+          </div>
+
+          <div className="flex items-start gap-2 px-4 pb-4 sm:px-6">
             <button
               type="button"
               onClick={() => setStatus(status === 'done' ? 'todo' : 'done')}
               disabled={readOnlyTask}
-              className={cn(
-                'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors',
-                status === 'done'
-                  ? 'bg-success border-success text-success-foreground'
-                  : 'border-border hover:border-foreground/40',
-              )}
+              aria-pressed={status === 'done'}
+              aria-label={status === 'done' ? 'Mark as not done' : 'Mark as done'}
               title={status === 'done' ? 'Mark as not done' : 'Mark as done'}
+              className={cn(
+                'group -ml-1.5 mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed md:h-9 md:w-9',
+                FOCUS_RING,
+                PRESS,
+              )}
             >
-              {status === 'done' && <Check className="w-3 h-3" strokeWidth={3} />}
+              <span
+                className={cn(
+                  'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors',
+                  status === 'done'
+                    ? 'border-success bg-success text-success-foreground'
+                    : 'border-muted-foreground/40 group-hover:border-foreground/60',
+                )}
+              >
+                {status === 'done' && <Check className="h-3 w-3" strokeWidth={3} aria-hidden />}
+              </span>
             </button>
+            <label htmlFor={ids.title} className="sr-only">
+              Task title
+            </label>
+            <input
+              id={ids.title}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                // Plain Enter moves on to the description; Cmd/Ctrl+Enter saves (dialog-level).
+                if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  descriptionTextareaRef.current?.focus();
+                }
+              }}
+              placeholder="Task title"
+              autoFocus={!isEditing}
+              readOnly={readOnlyTask}
+              aria-readonly={readOnlyTask || undefined}
+              aria-invalid={!title.trim() ? true : undefined}
+              autoComplete="off"
+              className="h-10 min-w-0 flex-1 rounded-md bg-transparent px-1 text-xl font-semibold tracking-tight text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring/40 md:h-9 md:text-2xl"
+            />
+          </div>
 
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground truncate">
-                {organization?.name || 'Workspace'} <span className="opacity-60">›</span>{' '}
-                {projectName || 'Project'}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-0.5 shrink-0 h-9">
-              {peersOnTask.length > 0 && (
+          {(saveError || lockReadOnly || permissionReadOnly) && (
+            <div className="space-y-2 px-4 pb-4 sm:px-6">
+              {saveError && (
                 <div
-                  className="hidden sm:flex items-center gap-1 mr-2"
-                  title={`${peersOnTask
-                    .map((p) => p.displayName)
-                    .join(', ')} viewing this task`}
+                  role="alert"
+                  className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive-soft-foreground"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                  <div className="flex -space-x-1.5">
-                    {peersOnTask.slice(0, 3).map((peer) => (
-                      <span key={peer.userId} className="block">
-                        {peer.photoURL ? (
-                          <img
-                            src={peer.photoURL}
-                            alt={peer.displayName}
-                            className="w-5 h-5 rounded-full ring-2 ring-card object-cover"
-                          />
-                        ) : (
-                          <span className="w-5 h-5 rounded-full bg-primary-soft text-primary-soft-foreground text-[10px] font-semibold flex items-center justify-center ring-2 ring-card">
-                            {(peer.displayName || '?').charAt(0).toUpperCase()}
-                          </span>
-                        )}
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <span className="min-w-0 break-words">{saveError}</span>
+                </div>
+              )}
+              {lockReadOnly && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground">
+                  <Lock className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+                  {hasLockPin ? (
+                    <>
+                      <span className="min-w-[200px] flex-1">
+                        Locked with a PIN. Enter it to edit (this device only until you clear browser data).
                       </span>
-                    ))}
-                  </div>
-                  {peersOnTask.length > 3 && (
-                    <span className="text-[11px] text-muted-foreground font-medium">
-                      +{peersOnTask.length - 3}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={cn('shrink-0 gap-1.5', PRESS)}
+                        onClick={() => setShowUnlockGate(true)}
+                      >
+                        <KeyRound aria-hidden />
+                        Enter PIN
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="flex-1">
+                      This task is locked. Only the project owner or a workspace admin can make changes.
                     </span>
                   )}
                 </div>
               )}
-              {lastSavedAt && (
-                <span
-                  className="text-[11px] text-muted-foreground hidden sm:inline-flex items-center gap-1"
-                  title={lastSavedAt.toLocaleTimeString()}
-                >
-                  <Save className="w-3 h-3" /> Saved
-                </span>
-              )}
-              {isEditing && task && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowNotifyModal(true)}
-                  title="Notify team members"
-                >
-                  <Bell className="w-4 h-4" />
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
-                onClick={copyTaskUrl}
-                disabled={!task}
-                title="Copy task URL"
-              >
-                <Link2 className="w-4 h-4" />
-              </Button>
-              {isEditing && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {aiEnabled && (
-                      <>
-                        <DropdownMenuItem
-                          onClick={handleGetSmartSuggestions}
-                          disabled={readOnlyTask}
-                        >
-                          <Sparkles className="w-4 h-4 mr-2 text-primary" />
-                          AI: priority &amp; due date
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={handleGenerateTitleFromDescription}
-                          disabled={
-                            readOnlyTask ||
-                            description.trim().length < 10 ||
-                            aiLoading.description
-                          }
-                        >
-                          <Sparkles className="w-4 h-4 mr-2 text-primary" />
-                          AI: title from description
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={handleExpandDescription}
-                          disabled={readOnlyTask || !title.trim()}
-                        >
-                          <Wand2 className="w-4 h-4 mr-2 text-primary" />
-                          AI: write description
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setShowDecomposition(true)}
-                          disabled={readOnlyTask || !title.trim()}
-                        >
-                          <ListTree className="w-4 h-4 mr-2 text-primary" />
-                          AI: break into subtasks
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                      </>
-                    )}
-                    <DropdownMenuItem onClick={() => toast.info('Reply by email — coming soon')}>
-                      <Mail className="w-4 h-4 mr-2" />
-                      Reply by email
-                    </DropdownMenuItem>
-                    {isEditing && (
-                      <DropdownMenuItem
-                        onClick={() => setShowMoveTask(true)}
-                        disabled={readOnlyTask}
-                      >
-                        <FolderInput className="w-4 h-4 mr-2" />
-                        Move to project…
-                      </DropdownMenuItem>
-                    )}
-                    {onDelete && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => setShowDeleteConfirm(true)}
-                          disabled={readOnlyTask}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete task
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+              {permissionReadOnly && !lockReadOnly && (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground">
+                  <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span>
+                    {isViewer
+                      ? 'You have view-only access to this workspace — you cannot edit tasks.'
+                      : 'You can view this task, but only the creator, assignees, project owner, or a workspace admin can change it.'}
+                  </span>
+                </div>
               )}
             </div>
-          </div>
-        </DialogHeader>
+          )}
+        </header>
 
-        {saveError && (
-          <div className="mx-5 mt-3 p-2 bg-destructive-soft text-destructive-soft-foreground rounded-md text-sm flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            {saveError}
-          </div>
-        )}
-
-        {lockReadOnly && (
-          <div className="mx-5 mt-3 p-2.5 rounded-md text-sm flex flex-wrap items-center gap-2 bg-secondary border border-border text-foreground">
-            <Lock className="w-4 h-4 shrink-0 text-warning" />
-            {hasLockPin ? (
-              <>
-                <span className="flex-1 min-w-[200px]">
-                  This task is locked with a PIN. Enter it to edit (this device only until you clear browser data).
-                </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="shrink-0 gap-1"
-                  onClick={() => setShowUnlockGate(true)}
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  Enter PIN
-                </Button>
-              </>
-            ) : (
-              <span>
-                This task is locked. Only the project owner or a workspace admin can make changes.
-              </span>
-            )}
-          </div>
-        )}
-        {permissionReadOnly && !lockReadOnly && (
-          <div className="mx-5 mt-3 p-2.5 rounded-md text-sm flex flex-wrap items-center gap-2 bg-muted border border-border text-foreground">
-            <Lock className="w-4 h-4 shrink-0 text-muted-foreground" />
-            <span>
-              {isViewer
-                ? 'You have view-only access to this workspace — you cannot edit tasks.'
-                : 'You can view this task, but only the creator, assignees, project owner, or a workspace admin can change it.'}
-            </span>
-          </div>
-        )}
-
-        {/* ── Body: two-pane ────────────────────────────────── */}
-        <form
-          onSubmit={handleSubmit}
-          className="flex-1 grid grid-cols-1 md:grid-cols-[1fr_300px] overflow-hidden"
-        >
-          {/* Left pane */}
-          <div className="overflow-y-auto px-5 py-4 space-y-4 border-r border-border">
-            {/* Title */}
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && title.trim()) {
-                  e.preventDefault();
-                  void handleSubmit();
-                }
-              }}
-              placeholder="Task title…"
-              autoFocus={!isEditing}
-              disabled={readOnlyTask}
-              className="text-2xl font-semibold tracking-tight border-0 px-0 h-auto py-1 placeholder:text-muted-foreground/70 focus-visible:ring-0 bg-transparent"
-            />
-
+        {/* ── Body: one scroll region on mobile, two on md+ ─────── */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain md:grid md:grid-cols-[minmax(0,1fr)_280px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
+          {/* Main column */}
+          <div className="order-2 min-w-0 space-y-6 px-4 py-6 sm:px-6 md:order-1 md:min-h-0 md:overflow-y-auto md:overscroll-contain">
             {/* Description */}
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-h-8">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground shrink-0 mb-0">
+            <section className="space-y-2">
+              <div className="flex min-h-8 items-center justify-between gap-3">
+                <label htmlFor={ids.description} className={SECTION_LABEL}>
                   Description
-                </Label>
-                {aiEnabled && title.trim().length >= 3 && (
+                </label>
+                {aiEnabled && title.trim().length >= 3 && !readOnlyTask && (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={description ? handleRefineDescription : handleExpandDescription}
-                    disabled={readOnlyTask || aiLoading.description}
-                    className="text-xs h-7 shrink-0 gap-1 text-primary hover:text-primary"
+                    disabled={aiLoading.description}
+                    className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs text-primary hover:text-primary', PRESS)}
                   >
                     {aiLoading.description ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <Loader2 className="animate-spin" aria-hidden />
                     ) : (
-                      <Wand2 className="w-3 h-3" />
+                      <Wand2 aria-hidden />
                     )}
                     {description ? 'Improve with AI' : 'Suggest with AI'}
                   </Button>
                 )}
               </div>
               <Textarea
+                id={ids.description}
                 ref={descriptionTextareaRef}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add a description, link, or note…"
+                placeholder={readOnlyTask ? 'No description' : 'Add a description, link, or note…'}
                 rows={3}
                 disabled={readOnlyTask}
-                className="resize-none min-h-[6rem] text-sm leading-relaxed"
+                className="min-h-24 resize-none rounded-lg border-border bg-background px-3 py-2 text-base leading-relaxed transition-colors md:text-sm disabled:cursor-default disabled:opacity-100"
               />
               {aiError && (
-                <p className="text-xs text-destructive">{aiError}</p>
+                <p role="alert" className="text-xs text-destructive">{aiError}</p>
               )}
-            </div>
+            </section>
 
             {/* Subtasks */}
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-h-8">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground shrink-0 mb-0">
+            <section className="space-y-2" aria-labelledby={ids.subtasksHeading}>
+              <div className="flex min-h-8 items-center justify-between gap-3">
+                <h3 id={ids.subtasksHeading} className={cn(SECTION_LABEL, 'flex items-center gap-2')}>
                   Subtasks
                   {subtaskProgress && (
-                    <span className="ml-2 normal-case text-foreground/80 font-normal">
-                      {subtaskProgress.done}/{subtaskProgress.total} ·{' '}
-                      {subtaskProgress.pct}%
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-foreground/80 tabular-nums">
+                      {subtaskProgress.done}/{subtaskProgress.total}
                     </span>
                   )}
-                </Label>
-                {aiEnabled && title.trim().length >= 3 && (
+                </h3>
+                {aiEnabled && title.trim().length >= 3 && !readOnlyTask && (
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowDecomposition(true)}
-                    disabled={readOnlyTask}
-                    className="text-xs h-7 shrink-0 gap-1 text-primary hover:text-primary"
+                    className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs text-primary hover:text-primary', PRESS)}
                   >
-                    <ListTree className="w-3 h-3" />
-                    Break with AI
+                    <ListTree aria-hidden />
+                    Break down with AI
                   </Button>
                 )}
               </div>
               {subtaskProgress && (
-                <div className="h-1 rounded-full bg-secondary overflow-hidden">
+                <div
+                  role="progressbar"
+                  aria-label="Subtasks completed"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={subtaskProgress.pct}
+                  className="h-1 overflow-hidden rounded-full bg-muted"
+                >
                   <div
-                    className="h-full bg-primary transition-all"
-                    style={{ width: `${subtaskProgress.pct}%` }}
+                    className="h-full w-full origin-left bg-primary motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]"
+                    style={{ transform: `scaleX(${subtaskProgress.pct / 100})` }}
                   />
                 </div>
               )}
-              <div className="space-y-0.5">
-                {subtasks.map((subtask) => (
-                  <div
-                    key={subtask.id}
-                    className="flex items-center gap-2 py-1 px-1 rounded hover:bg-secondary group"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggleSubtask(subtask.id)}
-                      disabled={readOnlyTask}
-                      className={cn(
-                        'w-4 h-4 rounded-full border flex items-center justify-center shrink-0',
-                        subtask.completed
-                          ? 'bg-success border-success'
-                          : 'border-border',
-                      )}
+              {subtasks.length > 0 ? (
+                <ul className="space-y-0.5">
+                  {subtasks.map((subtask) => (
+                    <li
+                      key={subtask.id}
+                      className="group flex min-h-10 items-center gap-1 rounded-md pr-1 hover:bg-muted/60 md:min-h-9"
                     >
-                      {subtask.completed && (
-                        <Check className="w-3 h-3 text-success-foreground" strokeWidth={3} />
+                      <button
+                        type="button"
+                        onClick={() => toggleSubtask(subtask.id)}
+                        disabled={readOnlyTask}
+                        aria-pressed={subtask.completed}
+                        aria-label={`Mark "${subtask.title}" as ${subtask.completed ? 'not done' : 'done'}`}
+                        className={cn(
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-md disabled:cursor-not-allowed md:h-9 md:w-9',
+                          FOCUS_RING,
+                          PRESS,
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'flex h-4 w-4 items-center justify-center rounded-full border transition-colors',
+                            subtask.completed ? 'border-success bg-success' : 'border-muted-foreground/50',
+                          )}
+                        >
+                          {subtask.completed && (
+                            <Check className="h-3 w-3 text-success-foreground" strokeWidth={3} aria-hidden />
+                          )}
+                        </span>
+                      </button>
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate text-sm',
+                          subtask.completed ? 'text-muted-foreground line-through' : 'text-foreground',
+                        )}
+                        title={subtask.title}
+                      >
+                        {subtask.title}
+                      </span>
+                      {!readOnlyTask && (
+                        <button
+                          type="button"
+                          onClick={() => removeSubtask(subtask.id)}
+                          aria-label={`Remove subtask "${subtask.title}"`}
+                          className={cn(
+                            'flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 md:h-8 md:w-8',
+                            FOCUS_RING,
+                          )}
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden />
+                        </button>
                       )}
-                    </button>
-                    <span
-                      className={cn(
-                        'text-sm flex-1',
-                        subtask.completed && 'line-through text-muted-foreground',
-                      )}
-                    >
-                      {subtask.title}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeSubtask(subtask.id)}
-                      disabled={readOnlyTask}
-                      className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 disabled:opacity-0"
-                      aria-label="Remove subtask"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 py-1 px-1">
-                  <Circle className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No subtasks yet{readOnlyTask ? '.' : ' — add steps below to break the work down.'}
+                </p>
+              )}
+              {!readOnlyTask && (
+                <div className="flex items-center gap-1 rounded-md pr-1 focus-within:bg-muted/60">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center md:h-9 md:w-9" aria-hidden>
+                    <Plus className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                  <label htmlFor={ids.subtaskInput} className="sr-only">
+                    Add a subtask
+                  </label>
                   <input
+                    id={ids.subtaskInput}
                     type="text"
                     value={newSubtaskTitle}
                     onChange={(e) => setNewSubtaskTitle(e.target.value)}
                     placeholder="Add a subtask…"
-                    disabled={readOnlyTask}
-                    className="flex-1 text-sm outline-none bg-transparent placeholder:text-muted-foreground"
+                    autoComplete="off"
+                    enterKeyHint="done"
+                    className="h-10 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:h-9 md:text-sm"
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
                         e.preventDefault();
                         addSubtask();
                       }
                     }}
                   />
+                  {newSubtaskTitle.trim() && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={addSubtask}
+                      className={cn('h-8 min-h-0 px-2 text-xs', PRESS)}
+                    >
+                      Add
+                    </Button>
+                  )}
                 </div>
-              </div>
-            </div>
+              )}
+            </section>
 
-            {/* Initial comment (create only) */}
+            {/* Attachments (everything uploaded on this task's comments) */}
+            {isEditing && task && (
+              <section className="space-y-2" aria-labelledby={ids.attachmentsHeading}>
+                <div className="flex min-h-8 items-center justify-between gap-3">
+                  <h3 id={ids.attachmentsHeading} className={cn(SECTION_LABEL, 'flex items-center gap-2')}>
+                    Attachments
+                    {allAttachments.length > 0 && (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-foreground/80 tabular-nums">
+                        {allAttachments.length}
+                      </span>
+                    )}
+                  </h3>
+                  {!readOnlyTask && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setActiveTab('comments');
+                        commentFileInputRef.current?.click();
+                      }}
+                      className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs', PRESS)}
+                    >
+                      <Paperclip aria-hidden />
+                      Attach
+                    </Button>
+                  )}
+                </div>
+                {!commentsLoaded ? (
+                  <div className="h-10 rounded-lg bg-muted motion-safe:animate-pulse" role="status" aria-label="Loading attachments" />
+                ) : allAttachments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No files yet{readOnlyTask ? '.' : ' — attach them to a comment.'}
+                  </p>
+                ) : (
+                  <AttachmentPreview attachments={allAttachments} />
+                )}
+              </section>
+            )}
+
+            {/* First comment (create only) */}
             {!isEditing && (
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                  <MessageSquare className="w-3 h-3" />
-                  First comment (optional)
-                </Label>
+              <section className="space-y-2">
+                <label htmlFor={ids.firstComment} className={cn(SECTION_LABEL, 'flex min-h-8 items-center gap-1.5')}>
+                  First comment
+                  <span className="font-normal normal-case tracking-normal">(optional)</span>
+                </label>
                 <MentionTextarea
+                  id={ids.firstComment}
                   value={initialComment}
                   onChange={setInitialComment}
                   members={projectAssignableMembers}
                   excludeUserId={user?.userId}
-                  placeholder="Optional: add a comment along with this task (@ to mention)"
+                  placeholder="Add context for your team (@ to mention)"
                   rows={2}
-                  className="resize-none"
+                  className="min-h-[72px] resize-none rounded-lg border-border bg-background px-3 py-2 text-base transition-colors md:text-sm"
                 />
-              </div>
+              </section>
             )}
 
-            {/* Expenses tied to this task — visible to creator/assignee + owner/admin via RLS */}
+            {/* Comments / Activity / Expenses (edit only) */}
             {isEditing && task && (
-              <TaskExpensesPanel
-                taskId={task.taskId}
-                taskTitle={task.title}
-                projectId={task.projectId}
-                projectName={project?.name ?? null}
-                readOnly={readOnlyTask}
-              />
-            )}
-
-            {/* Comments / Activity (edit mode only) */}
-            {isEditing && task && (
-              <div className="pt-2">
+              <section aria-label="Discussion and history">
+                {/* Lives outside the tabs so "Attach" works from any tab. */}
+                <input
+                  ref={commentFileInputRef}
+                  type="file"
+                  multiple
+                  accept="*/*"
+                  className="hidden"
+                  tabIndex={-1}
+                  aria-hidden
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (!files?.length) return;
+                    const validFiles: File[] = [];
+                    for (const file of Array.from(files)) {
+                      if (file.size > MAX_FILE_SIZE) {
+                        toast.error(`${file.name} exceeds 500MB limit`);
+                        continue;
+                      }
+                      validFiles.push(file);
+                    }
+                    if (validFiles.length > 0) {
+                      setCommentAttachmentFiles((prev) => [...prev, ...validFiles]);
+                    }
+                    e.target.value = '';
+                  }}
+                />
                 <Tabs
                   value={activeTab}
-                  onValueChange={(v) => setActiveTab(v as 'comments' | 'activity')}
+                  onValueChange={(v) => setActiveTab(v as 'comments' | 'activity' | 'expenses')}
                 >
-                  <TabsList className="grid w-full grid-cols-2 h-10 p-1">
-                    <TabsTrigger
-                      value="comments"
-                      className="h-8 px-3 py-0 text-sm gap-1.5"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                      Comments
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="activity"
-                      className="h-8 px-3 py-0 text-sm gap-1.5"
-                    >
-                      <Activity className="w-4 h-4" />
-                      Activity
-                    </TabsTrigger>
+                  <TabsList className="h-auto w-full justify-start gap-1 rounded-none border-b border-border bg-transparent p-0">
+                    {([
+                      { value: 'comments', label: 'Comments', Icon: MessageSquare, count: commentsLoaded ? commentCount : null },
+                      { value: 'activity', label: 'Activity', Icon: Activity, count: null },
+                      { value: 'expenses', label: 'Expenses', Icon: Receipt, count: null },
+                    ] as const).map(({ value, label, Icon, count }) => (
+                      <TabsTrigger
+                        key={value}
+                        value={value}
+                        className="-mb-px h-10 gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 text-sm text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:ring-offset-0 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                      >
+                        <Icon className="h-4 w-4" aria-hidden />
+                        {label}
+                        {count !== null && count > 0 && (
+                          <span className="rounded-full bg-muted px-1.5 text-[11px] font-medium tabular-nums">
+                            {count}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    ))}
                   </TabsList>
 
-                  <TabsContent value="comments" className="mt-3 space-y-3">
-                    <div className="border border-border rounded-lg bg-card">
-                      <MentionTextarea
-                        value={newComment}
-                        onChange={(v) => {
-                          setNewComment(v);
-                          if (task?.taskId) {
-                            scheduleCommentTypingBroadcast(task.taskId);
-                          }
-                        }}
-                        members={projectAssignableMembers}
-                        excludeUserId={user?.userId}
-                        placeholder="Write a comment… (@ to mention)"
-                        rows={2}
-                        disabled={readOnlyTask}
-                        className="border-0 resize-none focus-visible:ring-0 bg-transparent"
-                      />
-                      {task?.taskId && typingPeers && (() => {
-                        const typing = typingPeers(task.taskId);
-                        if (typing.length === 0) return null;
-                        const names = typing.map((p) => p.displayName);
-                        const label =
-                          names.length === 1
-                            ? `${names[0]} is typing…`
-                            : names.length === 2
-                            ? `${names[0]} and ${names[1]} are typing…`
-                            : `${names[0]}, ${names[1]} and ${names.length - 2} more are typing…`;
-                        return (
-                          <div className="px-3 pb-2 -mt-1 text-[11px] text-muted-foreground flex items-center gap-1.5">
-                            <span className="inline-flex gap-0.5">
-                              <span className="w-1 h-1 rounded-full bg-muted-foreground animate-pulse" />
-                              <span
-                                className="w-1 h-1 rounded-full bg-muted-foreground animate-pulse"
-                                style={{ animationDelay: '120ms' }}
-                              />
-                              <span
-                                className="w-1 h-1 rounded-full bg-muted-foreground animate-pulse"
-                                style={{ animationDelay: '240ms' }}
-                              />
-                            </span>
-                            {label}
-                          </div>
-                        );
-                      })()}
-                      <div className="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/50">
-                        <div className="flex items-center gap-1">
-                          <EmojiPickerButton
-                            value={newComment}
-                            onChange={setNewComment}
-                            disabled={readOnlyTask}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => commentFileInputRef.current?.click()}
-                            disabled={readOnlyTask}
-                            className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs disabled:opacity-50"
-                          >
-                            <Paperclip className="w-3.5 h-3.5" />
-                            Attach
-                          </button>
-                          <input
-                            ref={commentFileInputRef}
-                            type="file"
-                            multiple
-                            accept="*/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const files = e.target.files;
-                              if (!files?.length) return;
-                              const validFiles: File[] = [];
-                              for (const file of Array.from(files)) {
-                                if (file.size > MAX_FILE_SIZE) {
-                                  toast.error(`${file.name} exceeds 500MB limit`);
-                                  continue;
-                                }
-                                validFiles.push(file);
-                              }
-                              if (validFiles.length > 0) {
-                                setCommentAttachmentFiles((prev) => [...prev, ...validFiles]);
-                              }
-                              e.target.value = '';
-                            }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowTimeSpent(!showTimeSpent)}
-                            disabled={readOnlyTask}
-                            className={cn(
-                              'p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs',
-                              showTimeSpent && 'bg-secondary text-foreground',
-                            )}
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                            Time
-                          </button>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={handleAddComment}
-                          disabled={
-                            readOnlyTask ||
-                            (!newComment.trim() && commentAttachmentFiles.length === 0) ||
-                            commentLoading
-                          }
-                        >
-                          {commentLoading ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            'Comment'
-                          )}
-                        </Button>
-                      </div>
-
-                      {showTimeSpent && (
-                        <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-secondary/30">
-                          <Input
-                            type="number"
-                            min={0}
-                            placeholder="0"
-                            value={
-                              commentTimeSpentMinutes === '' ? '' : commentTimeSpentMinutes
+                  <TabsContent value="comments" className="mt-4 space-y-4 focus-visible:ring-offset-0">
+                    {!readOnlyTask && (
+                      <div
+                        ref={commentComposerRef}
+                        className="overflow-hidden rounded-lg border border-border bg-background transition-colors focus-within:border-ring"
+                      >
+                        <MentionTextarea
+                          value={newComment}
+                          onChange={(v) => {
+                            setNewComment(v);
+                            if (task?.taskId) {
+                              scheduleCommentTypingBroadcast(task.taskId);
                             }
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              setCommentTimeSpentMinutes(
-                                v === '' ? '' : Math.max(0, parseInt(v, 10) || 0),
-                              );
-                            }}
-                            className="w-20 h-8 text-center"
-                          />
-                          <span className="text-xs text-muted-foreground">minutes</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowTimeSpent(false);
-                              setCommentTimeSpentMinutes('');
-                            }}
-                            className="ml-auto text-muted-foreground hover:text-foreground"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
+                          }}
+                          members={projectAssignableMembers}
+                          excludeUserId={user?.userId}
+                          placeholder="Write a comment… (@ to mention)"
+                          aria-label="Write a comment"
+                          rows={2}
+                          className="min-h-[72px] resize-none border-0 bg-transparent px-3 py-2 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
+                        />
+                        {task?.taskId && typingPeers && <TypingIndicator peers={typingPeers(task.taskId)} />}
 
-                      {commentAttachmentFiles.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 px-3 py-2 border-t border-border">
-                          {commentAttachmentFiles.map((f, i) => (
-                            <span
-                              key={i}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-secondary rounded text-xs"
-                              title={f.name}
-                            >
-                              <span className="truncate max-w-[150px]">
-                                {truncateFileName(f.name, 20)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setCommentAttachmentFiles((p) =>
-                                    p.filter((_, idx) => idx !== i),
-                                  )
-                                }
-                                className="text-muted-foreground hover:text-destructive"
+                        {commentAttachmentFiles.length > 0 && (
+                          <ul className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2" aria-label="Files to attach">
+                            {commentAttachmentFiles.map((f, i) => (
+                              <li
+                                key={`${f.name}-${i}`}
+                                className="inline-flex h-7 items-center gap-1 rounded-md bg-muted pl-2 text-xs"
+                                title={f.name}
                               >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                                <Paperclip className="h-3 w-3 text-muted-foreground" aria-hidden />
+                                <span className="max-w-[150px] truncate">{truncateFileName(f.name, 20)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setCommentAttachmentFiles((p) => p.filter((_, idx) => idx !== i))}
+                                  aria-label={`Remove ${f.name}`}
+                                  className={cn('flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-destructive', FOCUS_RING)}
+                                >
+                                  <X className="h-3 w-3" aria-hidden />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
 
-                    {taskComments.length >= 4 && aiEnabled && (
-                      <div className="rounded-lg border border-violet-500/30 bg-gradient-to-br from-violet-500/[0.06] via-card to-blue-500/[0.04]">
-                        <div className="flex items-center justify-between gap-2 px-3 py-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-7 h-7 rounded-md bg-violet-500/10 ring-1 ring-violet-500/30 text-violet-500 flex items-center justify-center shrink-0">
-                              <Sparkles className="w-3.5 h-3.5" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold text-foreground leading-tight">
-                                AI thread summary
-                              </p>
-                              <p className="text-[11px] text-muted-foreground leading-tight">
-                                {taskComments.length} comments · TL;DR with decisions and action items
-                              </p>
-                            </div>
+                        {showTimeSpent && (
+                          <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+                            <label htmlFor={ids.timeSpent} className="text-xs text-muted-foreground">
+                              Time spent
+                            </label>
+                            <Input
+                              id={ids.timeSpent}
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              placeholder="0"
+                              value={commentTimeSpentMinutes === '' ? '' : commentTimeSpentMinutes}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setCommentTimeSpentMinutes(v === '' ? '' : Math.max(0, parseInt(v, 10) || 0));
+                              }}
+                              className="h-10 w-20 rounded-md px-2 text-center text-base tabular-nums transition-colors md:h-8 md:text-sm"
+                            />
+                            <span className="text-xs text-muted-foreground">minutes</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowTimeSpent(false);
+                                setCommentTimeSpentMinutes('');
+                              }}
+                              aria-label="Remove time spent"
+                              className={cn('ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground', FOCUS_RING)}
+                            >
+                              <X className="h-4 w-4" aria-hidden />
+                            </button>
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {commentSummary && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => setCommentSummaryOpen((v) => !v)}
-                              >
-                                {commentSummaryOpen ? 'Hide' : 'Show'}
-                              </Button>
-                            )}
+                        )}
+
+                        <div className="flex items-center justify-between gap-2 border-t border-border bg-muted/40 px-2 py-1.5">
+                          <div className="flex items-center gap-0.5">
+                            <EmojiPickerButton value={newComment} onChange={setNewComment} />
                             <Button
+                              type="button"
+                              variant="ghost"
                               size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-xs border-violet-500/40 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10"
-                              disabled={commentSummaryLoading}
-                              onClick={() => void handleSummarizeComments()}
+                              onClick={() => commentFileInputRef.current?.click()}
+                              className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground', PRESS)}
                             >
-                              {commentSummaryLoading ? (
+                              <Paperclip aria-hidden />
+                              Attach
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              aria-pressed={showTimeSpent}
+                              onClick={() => setShowTimeSpent(!showTimeSpent)}
+                              className={cn(
+                                'h-8 min-h-0 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground',
+                                showTimeSpent && 'bg-muted text-foreground',
+                                PRESS,
+                              )}
+                            >
+                              <Clock aria-hidden />
+                              Time
+                            </Button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="hidden text-[11px] text-muted-foreground lg:inline">
+                              {modKey}+Enter
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => void handleAddComment()}
+                              disabled={(!newComment.trim() && commentAttachmentFiles.length === 0) || commentLoading}
+                              aria-keyshortcuts="Meta+Enter Control+Enter"
+                              className={cn('h-8 min-h-0 min-w-[5.5rem] gap-1.5 px-3', PRESS)}
+                            >
+                              {commentLoading ? (
                                 <>
-                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                                  Reading
+                                  <Loader2 className="animate-spin" aria-hidden />
+                                  Posting
                                 </>
-                              ) : commentSummary ? (
-                                'Refresh'
                               ) : (
-                                <>
-                                  <Sparkles className="w-3 h-3 mr-1" />
-                                  Summarize
-                                </>
+                                'Comment'
                               )}
                             </Button>
                           </div>
                         </div>
-                        {commentSummaryOpen && (
-                          <div className="border-t border-violet-500/20 px-3 py-2.5 space-y-2.5">
-                            {commentSummaryError && (
-                              <p className="text-xs text-destructive">{commentSummaryError}</p>
-                            )}
-                            {commentSummaryLoading && !commentSummary && (
-                              <div className="space-y-2">
-                                <div className="h-3 rounded bg-muted/70 animate-pulse w-2/3" />
-                                <div className="h-3 rounded bg-muted/70 animate-pulse w-1/2" />
-                              </div>
-                            )}
-                            {commentSummary && (
-                              <>
-                                {commentSummary.tldr && (
-                                  <p className="text-xs leading-relaxed">
-                                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground mr-1.5">
-                                      TL;DR
-                                    </span>
-                                    {commentSummary.tldr}
-                                  </p>
-                                )}
-                                {commentSummary.decisions.length > 0 && (
-                                  <div>
-                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                                      Decisions
-                                    </p>
-                                    <ul className="space-y-0.5 text-xs leading-relaxed">
-                                      {commentSummary.decisions.map((d, i) => (
-                                        <li key={i} className="flex gap-1.5">
-                                          <Check className="w-3 h-3 text-emerald-500 mt-0.5 shrink-0" />
-                                          <span>{d}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                                {commentSummary.openQuestions.length > 0 && (
-                                  <div>
-                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                                      Open questions
-                                    </p>
-                                    <ul className="space-y-0.5 text-xs leading-relaxed">
-                                      {commentSummary.openQuestions.map((q, i) => (
-                                        <li key={i} className="flex gap-1.5 text-amber-700 dark:text-amber-300">
-                                          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-                                          <span>{q}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                                {commentSummary.actionItems.length > 0 && (
-                                  <div>
-                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                                      Action items
-                                    </p>
-                                    <ul className="space-y-0.5 text-xs leading-relaxed">
-                                      {commentSummary.actionItems.map((a, i) => (
-                                        <li key={i} className="flex gap-1.5">
-                                          <span className="text-violet-500 shrink-0">→</span>
-                                          <span>
-                                            <span className="font-medium">{a.owner}:</span>{' '}
-                                            {a.what}
-                                          </span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        )}
                       </div>
                     )}
 
-                    <div className="space-y-3 max-h-72 overflow-y-auto">
-                      {taskComments.map((comment) => (
-                        <div key={comment.commentId} className="flex gap-3">
-                          <Avatar className="w-8 h-8 shrink-0">
-                            <AvatarImage src={comment.photoURL} />
-                            <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
-                              {comment.displayName?.charAt(0).toUpperCase() || '?'}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap justify-between">
-                              <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                <span className="font-medium text-sm text-foreground">
-                                  {comment.displayName}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {formatDistanceSafe(comment.createdAt)}
-                                </span>
+                    {commentCount >= 4 && aiEnabled && (
+                      <CommentSummaryCard
+                        count={commentCount}
+                        summary={commentSummary}
+                        loading={commentSummaryLoading}
+                        error={commentSummaryError}
+                        open={commentSummaryOpen}
+                        onToggle={() => setCommentSummaryOpen((v) => !v)}
+                        onSummarize={() => void handleSummarizeComments()}
+                      />
+                    )}
+
+                    {!commentsLoaded ? (
+                      <ListSkeleton label="Loading comments" rows={2} />
+                    ) : commentCount === 0 ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">
+                        No comments yet{readOnlyTask ? '.' : ' — start the conversation above.'}
+                      </p>
+                    ) : (
+                      <ul className="space-y-4">
+                        {taskComments.map((comment) => (
+                          <li key={comment.commentId} className="group flex gap-3">
+                            <Avatar className="h-8 w-8 shrink-0">
+                              <AvatarImage src={comment.photoURL} alt="" />
+                              <AvatarFallback className="bg-primary-soft text-xs text-primary-soft-foreground">
+                                {comment.displayName?.charAt(0).toUpperCase() || '?'}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-h-8 items-center justify-between gap-2">
+                                <div className="flex min-w-0 items-baseline gap-2">
+                                  <span className="truncate text-sm font-medium text-foreground" title={comment.displayName}>
+                                    {comment.displayName}
+                                  </span>
+                                  <time
+                                    className="shrink-0 text-xs text-muted-foreground tabular-nums"
+                                    dateTime={comment.createdAt ? new Date(comment.createdAt).toISOString() : undefined}
+                                    title={comment.createdAt ? new Date(comment.createdAt).toLocaleString() : undefined}
+                                  >
+                                    {formatDistanceSafe(comment.createdAt)}
+                                  </time>
+                                </div>
+                                {(comment.userId === user?.userId || isAdmin) && !readOnlyTask && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn(
+                                      'h-8 w-8 min-h-0 min-w-0 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 md:min-h-0 md:min-w-0',
+                                      deletingCommentId === comment.commentId && 'opacity-100',
+                                    )}
+                                    disabled={deletingCommentId === comment.commentId}
+                                    aria-label="Delete comment"
+                                    title="Delete comment"
+                                    onClick={() => void handleDeleteComment(comment.commentId)}
+                                  >
+                                    {deletingCommentId === comment.commentId ? (
+                                      <Loader2 className="animate-spin" aria-hidden />
+                                    ) : (
+                                      <Trash2 aria-hidden />
+                                    )}
+                                  </Button>
+                                )}
                               </div>
-                              {(comment.userId === user?.userId || isAdmin) && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                                  disabled={readOnlyTask || deletingCommentId === comment.commentId}
-                                  aria-label="Delete comment"
-                                  onClick={() => void handleDeleteComment(comment.commentId)}
-                                >
-                                  {deletingCommentId === comment.commentId ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </Button>
+                              {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
+                                <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-soft-foreground tabular-nums">
+                                  <Clock className="h-3 w-3" aria-hidden />
+                                  {formatTimeLogged(comment.timeSpentMinutes)} logged
+                                </span>
+                              )}
+                              {comment.text?.trim() && (
+                                <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+                                  {comment.text}
+                                </p>
+                              )}
+                              {comment.attachments && comment.attachments.length > 0 && (
+                                <AttachmentPreview attachments={comment.attachments} />
                               )}
                             </div>
-                            {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
-                              <span className="inline-block mt-1 px-2 py-0.5 bg-success-soft text-success-soft-foreground text-xs rounded-full">
-                                {formatTimeLogged(comment.timeSpentMinutes)} logged
-                              </span>
-                            )}
-                            {comment.text?.trim() && (
-                              <p className="text-sm text-foreground mt-1 whitespace-pre-wrap break-words">
-                                {comment.text}
-                              </p>
-                            )}
-                            {comment.attachments && comment.attachments.length > 0 && (
-                              <AttachmentPreview attachments={comment.attachments} />
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {taskComments.length === 0 && (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No comments yet
-                        </p>
-                      )}
-                    </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </TabsContent>
 
-                  <TabsContent value="activity" className="mt-3 space-y-3">
-                    <div className="space-y-3 max-h-72 overflow-y-auto">
-                      {taskActivityLoading ? (
-                        <div className="flex justify-center py-4">
-                          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : taskActivityEvents.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No activity yet for this task
-                        </p>
-                      ) : (
-                        taskActivityEvents.map((ev: ActivityEvent) => (
-                          <div key={ev.activityId} className="flex items-start gap-3 text-sm">
-                            <div
-                              className={cn(
-                                'w-6 h-6 rounded-full flex items-center justify-center shrink-0',
-                                ev.type === 'task_created' && 'bg-success-soft',
-                                (ev.type === 'subtask_created' || ev.type === 'subtask_done') && 'bg-info-soft',
-                                ev.type === 'comment_added' && 'bg-secondary',
-                              )}
-                            >
-                              {ev.type === 'task_created' && (
-                                <CheckCircle2 className="w-3 h-3 text-success-soft-foreground" />
-                              )}
-                              {(ev.type === 'subtask_created' || ev.type === 'subtask_done') && (
-                                <ListTree className="w-3 h-3 text-info-soft-foreground" />
-                              )}
-                              {ev.type === 'comment_added' && (
-                                <MessageSquare className="w-3 h-3 text-muted-foreground" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <span className="font-medium text-foreground">{ev.displayName}</span>
-                              <span className="text-muted-foreground">
-                                {ev.type === 'task_created' && ' created this task'}
-                                {ev.type === 'subtask_created' && ' added subtask '}
-                                {ev.type === 'subtask_done' && ' completed subtask '}
-                                {ev.type === 'comment_added' && ' commented'}
-                              </span>
-                              {(ev.type === 'subtask_created' || ev.type === 'subtask_done') && ev.payload?.subtaskTitle && (
-                                <span className="text-foreground">
-                                  {' '}&quot;{ev.payload.subtaskTitle}&quot;
-                                </span>
-                              )}
-                              <span className="text-muted-foreground">
-                                {' '}· {formatDistanceSafe(ev.createdAt)}
-                              </span>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                  <TabsContent value="activity" className="mt-4 focus-visible:ring-offset-0">
+                    <ActivityList events={taskActivityEvents} loading={taskActivityLoading} />
+                  </TabsContent>
+
+                  <TabsContent value="expenses" className="mt-4 focus-visible:ring-offset-0">
+                    {/* Visible to creator/assignee + owner/admin via RLS */}
+                    <TaskExpensesPanel
+                      taskId={task.taskId}
+                      taskTitle={task.title}
+                      projectId={task.projectId}
+                      projectName={project?.name ?? null}
+                      readOnly={readOnlyTask}
+                    />
                   </TabsContent>
                 </Tabs>
-              </div>
+              </section>
             )}
           </div>
 
-          {/* Right pane */}
-          <div className="overflow-y-auto px-4 py-4 space-y-4 bg-surface-2">
-            {/* Status */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Status
-              </Label>
-              <Select value={status} onValueChange={setStatus} disabled={readOnlyTask}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {columns.map((col) => (
-                    <SelectItem key={col.id} value={col.id}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: col.color }}
-                        />
-                        {col.title}
-                      </div>
-                    </SelectItem>
+          {/* Properties panel (first on mobile) */}
+          <aside
+            aria-label="Task properties"
+            className="order-1 space-y-4 border-b border-border bg-surface-2 px-4 py-4 sm:px-6 md:order-2 md:min-h-0 md:overflow-y-auto md:overscroll-contain md:border-b-0 md:border-l md:px-4"
+          >
+            <div className="space-y-1">
+              <PropertyRow label="Status" htmlFor={ids.status}>
+                <Select value={status} onValueChange={setStatus} disabled={readOnlyTask}>
+                  <SelectTrigger id={ids.status} className={GHOST_FIELD}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {columns.map((col) => (
+                      <SelectItem key={col.id} value={col.id}>
+                        <span className="flex items-center gap-2">
+                          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: col.color }} />
+                          <span className="truncate">{col.title}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </PropertyRow>
+
+              <PropertyRow label="Priority" htmlFor={ids.priority}>
+                <Select
+                  value={priority}
+                  onValueChange={(v) => setPriority(v as TaskPriority)}
+                  disabled={readOnlyTask}
+                >
+                  <SelectTrigger id={ids.priority} className={GHOST_FIELD}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(PRIORITY_COLORS).map(([key, color]) => (
+                      <SelectItem key={key} value={key}>
+                        <span className="flex items-center gap-2">
+                          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                          {key.charAt(0).toUpperCase() + key.slice(1)}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </PropertyRow>
+
+              <PropertyRow label="Due date" htmlFor={ids.due}>
+                <DayPickerPopover
+                  id={ids.due}
+                  value={dueDate}
+                  onChange={setDueDate}
+                  disabled={readOnlyTask}
+                  className={cn(GHOST_FIELD, 'tabular-nums')}
+                />
+              </PropertyRow>
+
+              <PropertyRow label="Assignees" labelId={ids.assignees}>
+                <div role="group" aria-labelledby={ids.assignees} className="min-h-8 px-2 py-1">
+                  <AssigneePicker
+                    value={assignees}
+                    members={projectAssignableMembers}
+                    onChange={setAssignees}
+                    disabled={readOnlyTask}
+                  />
+                </div>
+              </PropertyRow>
+
+              <PropertyRow label="Tags" htmlFor={ids.tags}>
+                <div className="flex flex-wrap items-center gap-1.5 px-2 py-1">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex h-6 max-w-full items-center gap-0.5 rounded-full bg-info-soft pl-2 text-xs text-info-soft-foreground"
+                      title={tag}
+                    >
+                      <span className="truncate">{tag}</span>
+                      {!readOnlyTask && (
+                        <button
+                          type="button"
+                          onClick={() => setTags(tags.filter((t) => t !== tag))}
+                          className={cn('flex h-6 w-6 items-center justify-center rounded-full hover:text-destructive', FOCUS_RING)}
+                          aria-label={`Remove tag ${tag}`}
+                        >
+                          <X className="h-3 w-3" aria-hidden />
+                        </button>
+                      )}
+                    </span>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Priority */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Priority
-              </Label>
-              <Select
-                value={priority}
-                onValueChange={(v) => setPriority(v as TaskPriority)}
-                disabled={readOnlyTask}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(PRIORITY_COLORS).map(([key, color]) => (
-                    <SelectItem key={key} value={key}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: color }}
-                        />
-                        {key.charAt(0).toUpperCase() + key.slice(1)}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Due date */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Due date
-              </Label>
-              <DayPickerPopover value={dueDate} onChange={setDueDate} disabled={readOnlyTask} />
-
-              {/* Google Meet — three states based on create/edit + link presence + connection. */}
-              {!isEditing && googleConnected && (
-                <>
-                  <label
-                    className={`mt-2 flex items-center gap-2 text-sm cursor-pointer select-none ${
-                      ''
-                    }`}
-                    title="Schedule a Google Meet — pick any day, not tied to the due date"
-                  >
+                  {readOnlyTask ? (
+                    tags.length === 0 && <span className="text-sm text-muted-foreground">None</span>
+                  ) : (
                     <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-input"
-                      checked={addGoogleMeet}
-                      disabled={readOnlyTask}
-                      onChange={(e) => {
-                        setAddGoogleMeet(e.target.checked);
-                        // When the rep first checks "Add Meet" and they
-                        // haven't picked a meeting day yet, default it to
-                        // the due date (if any) so the existing flow keeps
-                        // working without a click. Else default to tomorrow
-                        // so they can adjust.
-                        if (e.target.checked && !meetingDate) {
-                          if (dueDate) {
-                            setMeetingDate(dueDate);
-                          } else {
-                            const tomorrow = new Date();
-                            tomorrow.setDate(tomorrow.getDate() + 1);
-                            tomorrow.setHours(0, 0, 0, 0);
-                            setMeetingDate(tomorrow);
-                          }
+                      id={ids.tags}
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      placeholder={tags.length ? 'Add…' : 'Add tag…'}
+                      autoComplete="off"
+                      className="h-8 min-w-[72px] flex-1 rounded-md bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring md:h-7 md:text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ',') {
+                          if (e.metaKey || e.ctrlKey) return;
+                          e.preventDefault();
+                          const v = tagInput.replace(/,/g, '').trim();
+                          if (v && !tags.includes(v)) setTags([...tags, v]);
+                          setTagInput('');
                         }
                       }}
                     />
-                    <Video className="h-4 w-4 text-emerald-600" />
-                    <span>Add Google Meet link</span>
-                  </label>
-                  {addGoogleMeet && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span>Meeting on:</span>
-                      <DayPickerPopover
-                        value={meetingDate ?? effectiveMeetingDate}
-                        onChange={(d) => setMeetingDate(d)}
-                        disabled={readOnlyTask}
-                      />
-                      <span>at</span>
-                      <Input
-                        type="time"
-                        value={meetingTime}
-                        onChange={(e) => setMeetingTime(e.target.value)}
-                        className="h-8 w-28"
-                        disabled={readOnlyTask}
-                      />
-                      {dueDate && meetingDate && meetingDate.toDateString() !== dueDate.toDateString() && (
-                        <span className="text-[11px] text-amber-600">
-                          (different from the {dueDate.toLocaleDateString()} due date)
-                        </span>
-                      )}
-                    </div>
                   )}
-                </>
-              )}
+                </div>
+              </PropertyRow>
 
-              {isEditing && task?.googleMeetLink && (
-                <div className="mt-2 flex items-center gap-2 text-sm">
-                  <Video className="h-4 w-4 text-emerald-600" />
+              <PropertyRow label="Urgent" htmlFor={ids.urgent}>
+                <div className="flex h-10 items-center gap-2 px-2 md:h-8">
+                  <Switch
+                    id={ids.urgent}
+                    checked={urgent}
+                    onCheckedChange={setUrgent}
+                    disabled={readOnlyTask}
+                    className="data-[state=checked]:bg-destructive"
+                  />
+                  {urgent && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
+                      <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                      Urgent
+                    </span>
+                  )}
+                </div>
+              </PropertyRow>
+
+              <div className="pt-1">
+                <MeetingProperty
+                  startsAt={meetingStartsAt}
+                  durationMinutes={meetingDurationMinutes}
+                  onChange={handleMeetingChange}
+                  readOnly={readOnlyTask}
+                  isSaved={Boolean(isEditing && task?.taskId)}
+                  joinDisabledReason={joinDisabledReason}
+                  onJoin={handleJoinMeeting}
+                  now={now}
+                />
+                {task?.googleMeetLink && (
                   <a
                     href={task.googleMeetLink}
                     target="_blank"
-                    rel="noreferrer"
-                    className="underline truncate max-w-[160px]"
+                    rel="noopener noreferrer"
                     title={task.googleMeetLink}
-                  >
-                    Join Google Meet
-                  </a>
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(task.googleMeetLink!);
-                        toast.success('Meet link copied');
-                      } catch {
-                        toast.error('Could not copy');
-                      }
-                    }}
-                  >
-                    Copy
-                  </button>
-                  {!readOnlyTask && (
-                    <button
-                      type="button"
-                      className="text-xs text-destructive hover:text-destructive/80 disabled:opacity-50"
-                      onClick={handleCancelMeetForExisting}
-                      disabled={meetAddInFlight}
-                      title="Cancel this Meet and delete the Calendar event"
-                    >
-                      {meetAddInFlight ? 'Cancelling…' : 'Cancel Meet'}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {isEditing && !task?.googleMeetLink && googleConnected && !readOnlyTask && (
-                <div className="mt-2 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>Meeting on:</span>
-                    <DayPickerPopover
-                      value={meetingDate ?? effectiveMeetingDate}
-                      onChange={(d) => setMeetingDate(d)}
-                    />
-                    <span>at</span>
-                    <Input
-                      type="time"
-                      value={meetingTime}
-                      onChange={(e) => setMeetingTime(e.target.value)}
-                      className="h-8 w-28"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-2"
-                    onClick={handleAddMeetToExisting}
-                    disabled={!combinedMeetingStart || meetAddInFlight}
-                    title={combinedMeetingStart ? 'Schedule a Google Meet for this task' : 'Pick a meeting time first'}
-                  >
-                    {meetAddInFlight ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Video className="h-3.5 w-3.5 text-emerald-600" />
+                    className={cn(
+                      'mt-1 inline-flex h-8 max-w-full items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline',
+                      FOCUS_RING,
                     )}
-                    Add Google Meet link
-                  </Button>
-                </div>
-              )}
-
-              {!googleConnected && !isEditing && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Connect Google in Settings → Integrations to add a Meet link.
-                </p>
-              )}
-            </div>
-
-            {/* Team & assignees */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 opacity-80" />
-                Team
-              </Label>
-              <AssigneePicker
-                value={assignees}
-                members={projectAssignableMembers}
-                onChange={setAssignees}
-                disabled={readOnlyTask}
-              />
-            </div>
-
-            {/* Tags */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Tags
-              </Label>
-              <div className="flex flex-wrap gap-1.5 items-center">
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-info-soft text-info-soft-foreground rounded-full text-xs"
                   >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={() => setTags(tags.filter((t) => t !== tag))}
-                      className="hover:text-destructive"
-                      aria-label={`Remove tag ${tag}`}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-                <Input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  placeholder="Add tag…"
-                  disabled={readOnlyTask}
-                  className="w-24 h-7 text-xs flex-1 min-w-[80px]"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                      e.preventDefault();
-                      const v = tagInput.replace(/,/g, '').trim();
-                      if (v && !tags.includes(v)) setTags([...tags, v]);
-                      setTagInput('');
-                    }
-                  }}
-                />
+                    <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span className="truncate">Google Meet (old)</span>
+                    <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+                  </a>
+                )}
               </div>
-            </div>
 
-            {/* Toggles */}
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                Flags
-              </Label>
-              <div className="space-y-1">
-                <label
-                  className={cn(
-                    'flex items-center gap-2 select-none px-2 py-1.5 rounded text-sm',
-                    readOnlyTask ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-secondary',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={urgent}
-                    onChange={(e) => setUrgent(e.target.checked)}
-                    disabled={readOnlyTask}
-                    className="rounded border-border accent-destructive"
-                  />
-                  <AlertTriangle className="w-4 h-4 text-destructive" />
-                  <span className="text-foreground">Urgent</span>
-                </label>
-                <label
-                  className={cn(
-                    'flex items-center gap-2 select-none px-2 py-1.5 rounded text-sm',
-                    readOnlyTask || !canManageLockAndPin
-                      ? 'opacity-60 cursor-not-allowed'
-                      : 'cursor-pointer hover:bg-secondary',
-                  )}
+              <PropertyRow label="Lock" htmlFor={ids.lock} className="pt-1">
+                <div
+                  className="flex h-10 items-center gap-2 px-2 md:h-8"
                   title={
                     !canManageLockAndPin
                       ? 'Only the organization owner or an admin can lock or unlock a task'
                       : 'Only creator, assignees, and project owner can see this task'
                   }
                 >
-                  <input
-                    type="checkbox"
+                  <Switch
+                    id={ids.lock}
                     checked={isLocked}
-                    onChange={(e) => setIsLocked(e.target.checked)}
+                    onCheckedChange={setIsLocked}
                     disabled={readOnlyTask || !canManageLockAndPin}
-                    className="rounded border-border accent-warning"
+                    aria-describedby={ids.lockHint}
+                    className="data-[state=checked]:bg-warning"
                   />
-                  <Lock className="w-4 h-4 text-warning" />
-                  <span className="text-foreground">Lock (sensitive)</span>
-                </label>
-                {isLocked && canManageLockAndPin && (
-                  <div className="mt-2 space-y-2 pl-2 border-l-2 border-border">
-                    <p className="text-[11px] text-muted-foreground">
-                      Optional PIN so assignees can unlock and edit on this task.
-                      {isEditing && ' Leave blank to keep the current PIN.'}
-                    </p>
-                    <Input
-                      type="password"
-                      name="task-new-pin"
-                      autoComplete="new-password"
-                      data-1p-ignore
-                      data-lpignore="true"
-                      data-form-type="other"
-                      placeholder="New PIN"
-                      value={lockPinNew}
-                      onChange={(e) => setLockPinNew(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                    <Input
-                      type="password"
-                      name="task-confirm-pin"
-                      autoComplete="new-password"
-                      data-1p-ignore
-                      data-lpignore="true"
-                      data-form-type="other"
-                      placeholder="Confirm PIN"
-                      value={lockPinConfirm}
-                      onChange={(e) => setLockPinConfirm(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                    {isEditing && task?.hasLockPin && (
-                      <p className="text-[11px] text-muted-foreground">
-                        A PIN is already set. Save with blank fields to keep it, or enter a new one to replace it.
-                      </p>
-                    )}
-                  </div>
-                )}
-                {isLocked &&
-                  isEditing &&
-                  !canManageLockAndPin &&
-                  task?.hasLockPin && (
-                    <p className="mt-2 pl-2 border-l border-border text-[11px] text-muted-foreground">
-                      Only the organization owner or an admin can change the lock or PIN on this task.
+                  <span className="truncate text-xs text-muted-foreground">
+                    {isLocked ? 'Sensitive' : 'Off'}
+                  </span>
+                </div>
+              </PropertyRow>
+              <p id={ids.lockHint} className="sr-only">
+                Locked tasks are only visible to the creator, assignees, and project owner.
+              </p>
+
+              {isLocked && canManageLockAndPin && (
+                <div className="ml-2 space-y-2 border-l-2 border-border py-1 pl-3">
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    {isEditing
+                      ? 'Optional PIN so assignees can unlock and edit. Leave blank to keep the current PIN.'
+                      : 'Add a PIN to require collaborators to unlock before editing, or leave blank for owner/assignee-only visibility.'}
+                  </p>
+                  <label htmlFor={ids.pinNew} className="sr-only">New PIN</label>
+                  <Input
+                    id={ids.pinNew}
+                    type="password"
+                    name="task-new-pin"
+                    autoComplete="new-password"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-form-type="other"
+                    placeholder="New PIN"
+                    value={lockPinNew}
+                    onChange={(e) => setLockPinNew(e.target.value)}
+                    className="h-10 rounded-md px-3 text-base transition-colors md:h-8 md:text-sm"
+                  />
+                  <label htmlFor={ids.pinConfirm} className="sr-only">Confirm PIN</label>
+                  <Input
+                    id={ids.pinConfirm}
+                    type="password"
+                    name="task-confirm-pin"
+                    autoComplete="new-password"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-form-type="other"
+                    placeholder="Confirm PIN"
+                    value={lockPinConfirm}
+                    onChange={(e) => setLockPinConfirm(e.target.value)}
+                    className="h-10 rounded-md px-3 text-base transition-colors md:h-8 md:text-sm"
+                  />
+                  {isEditing && task?.hasLockPin && (
+                    <p className="text-[11px] leading-snug text-muted-foreground">
+                      A PIN is already set. Save with blank fields to keep it, or enter a new one to replace it.
                     </p>
                   )}
-                {!isEditing && isLocked && (
-                  <p className="text-[11px] text-muted-foreground mt-1 pl-2">
-                    Add a PIN now to require collaborators to unlock before editing, or leave blank for owner/assignee-only visibility.
-                  </p>
-                )}
-              </div>
+                </div>
+              )}
+              {isLocked && isEditing && !canManageLockAndPin && task?.hasLockPin && (
+                <p className="ml-2 border-l-2 border-border pl-3 text-[11px] leading-snug text-muted-foreground">
+                  Only the organization owner or an admin can change the lock or PIN on this task.
+                </p>
+              )}
             </div>
 
-            {/* AI suggestions panel */}
-            {aiEnabled && (
-              <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  AI tools
-                </Label>
+            {aiEnabled && !readOnlyTask && (
+              <div className="space-y-2 border-t border-border pt-4">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="w-full justify-start"
+                  className={cn(GHOST_FIELD, 'text-muted-foreground hover:text-foreground', PRESS)}
                   onClick={handleGetSmartSuggestions}
-                  disabled={readOnlyTask || !title.trim() || aiLoading.suggestions}
+                  disabled={!title.trim() || aiLoading.suggestions}
                 >
                   {aiLoading.suggestions ? (
-                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                    <Loader2 className="animate-spin" aria-hidden />
                   ) : (
-                    <Sparkles className="w-3.5 h-3.5 mr-2 text-primary" />
+                    <Sparkles className="text-primary" aria-hidden />
                   )}
-                  Suggest priority &amp; due
+                  Suggest priority &amp; due date
                 </Button>
                 {aiSuggestion && showAISuggestion && (
-                  <div className="p-2 bg-primary-soft text-primary-soft-foreground rounded text-xs space-y-1.5">
-                    <p className="opacity-90">{aiSuggestion.reasoning}</p>
+                  <div className="space-y-2 rounded-lg bg-primary-soft p-3 text-xs text-primary-soft-foreground" aria-live="polite">
+                    <p className="leading-snug">{aiSuggestion.reasoning}</p>
                     <div className="flex gap-1">
                       <Button
                         type="button"
                         size="sm"
-                        className="h-6 text-[11px]"
+                        className={cn('h-8 min-h-0 px-3 text-xs', PRESS)}
                         onClick={handleApplySuggestions}
-                        disabled={readOnlyTask}
                       >
                         Apply
                       </Button>
@@ -2534,7 +2399,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="h-6 text-[11px]"
+                        className={cn('h-8 min-h-0 px-3 text-xs', PRESS)}
                         onClick={() => setShowAISuggestion(false)}
                       >
                         Dismiss
@@ -2545,87 +2410,61 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             )}
 
-            {/* Created/updated meta */}
-            {isEditing && task && (
-              <div className="text-[11px] text-muted-foreground border-t border-border pt-3 space-y-0.5">
+            {isEditing && task && (task.createdAt != null || task.updatedAt != null) && (
+              <dl className="space-y-1 border-t border-border pt-4 text-[11px] text-muted-foreground tabular-nums">
                 {task.createdAt != null && (
-                  <p>
-                    Created {formatDistanceSafe(task.createdAt)}
-                  </p>
+                  <div className="flex gap-1">
+                    <dt>Created</dt>
+                    <dd>{formatDistanceSafe(task.createdAt)}</dd>
+                  </div>
                 )}
                 {task.updatedAt != null && (
-                  <p>
-                    Updated {formatDistanceSafe(task.updatedAt)}
-                  </p>
+                  <div className="flex gap-1">
+                    <dt>Updated</dt>
+                    <dd>{formatDistanceSafe(task.updatedAt)}</dd>
+                  </div>
                 )}
-              </div>
+              </dl>
             )}
-          </div>
-        </form>
+          </aside>
+        </div>
 
         {/* ── Footer ──────────────────────────────────────── */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-border bg-card/60 backdrop-blur-sm">
-          <div className="min-h-[1.25rem]">
-            {!title.trim() ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Enter a task title first
-              </span>
-            ) : isEditing ? (
-              <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1.5">
-                {autoSaveStatus === 'saving' ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Saving…
-                  </>
-                ) : autoSaveStatus === 'error' ? (
-                  <span className="text-destructive">Auto-save failed — click Save changes</span>
-                ) : autoSaveStatus === 'saved' || lastSavedAt ? (
-                  <>
-                    <Check className="w-3 h-3 text-emerald-500" />
-                    Changes saved automatically
-                  </>
-                ) : (
-                  <>Changes save automatically as you type.</>
-                )}
-              </span>
-            ) : (
-              <span className="text-[11px] text-muted-foreground">
-                Press <kbd className="rounded border border-border bg-card px-1 py-0.5 text-[10px] font-medium">⌘</kbd>
-                <span className="mx-0.5">+</span>
-                <kbd className="rounded border border-border bg-card px-1 py-0.5 text-[10px] font-medium">Enter</kbd> to create.
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:px-6 sm:pb-3">
+          <p className="min-w-0 truncate text-xs text-muted-foreground" aria-live="polite">
+            {footerHint}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClose}
+              disabled={loading}
+              className={PRESS}
+            >
               Cancel
             </Button>
             <Button
               type="button"
-              onClick={() => handleSubmit()}
+              onClick={() => void handleSubmit()}
               disabled={loading || !title.trim() || readOnlyTask}
-              className="gap-1.5 shadow-sm"
+              aria-keyshortcuts="Meta+Enter Control+Enter"
+              title={`${isEditing ? 'Save changes' : 'Create task'} (${modKey}+Enter)`}
+              className={cn('min-w-[8.5rem] gap-2', PRESS)}
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="animate-spin" aria-hidden />
                   Saving…
                 </>
               ) : isEditing ? (
-                <>
-                  <Save className="w-4 h-4" />
-                  Save changes
-                </>
+                'Save changes'
               ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Create task
-                </>
+                'Create task'
               )}
             </Button>
           </div>
-        </div>
+        </footer>
 
         {showDecomposition && user && (
           <SubtaskDecompositionModal
@@ -2675,9 +2514,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete task?</AlertDialogTitle>
+              <AlertDialogTitle>Delete this task?</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete this task? This action cannot be undone.
+                {title.trim() ? `"${title.trim()}" and its subtasks, comments and activity` : 'This task'} will be
+                permanently deleted. This can’t be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -2685,13 +2525,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
-                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={async () => {
                   setShowDeleteConfirm(false);
                   await handleDelete();
                 }}
               >
-                Delete
+                Delete task
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -2701,14 +2541,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
-                <KeyRound className="w-5 h-5" />
+                <KeyRound className="h-5 w-5" aria-hidden />
                 Unlock task
               </AlertDialogTitle>
               <AlertDialogDescription>
                 Enter the PIN set by a project owner or admin for this locked task.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <label htmlFor={ids.unlockPin2} className="sr-only">Task PIN</label>
             <Input
+              id={ids.unlockPin2}
               type="password"
               name="task-unlock-pin-2"
               autoComplete="new-password"
@@ -2721,7 +2563,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void verifyUnlockPin();
               }}
-              className="mt-2"
+              className="mt-2 transition-colors"
             />
             <AlertDialogFooter className="mt-4">
               <AlertDialogCancel onClick={() => { setShowUnlockGate(false); setUnlockAttempt(''); }}>
@@ -2744,5 +2586,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     </Dialog>
   );
 };
+
 
 export default TaskModal;

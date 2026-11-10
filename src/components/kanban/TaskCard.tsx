@@ -12,8 +12,10 @@ import {
   CheckSquare,
   Check,
   KeyRound,
+  Video,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getMeetingStatus, toMeetingDate } from './task-modal/meeting';
 import type { PresencePeer } from '@/hooks/usePresence';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -155,6 +157,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     task.dueDate &&
     new Date(task.dueDate) < new Date() &&
     task.status !== 'done';
+
+  // Meeting badge — status is computed at render (the board refetches often
+  // enough that "In 2 h" / "Live now" stays current without a timer per card).
+  const meetingStart = toMeetingDate(task.meetingStartsAt);
+  const meeting = meetingStart
+    ? { start: meetingStart, status: getMeetingStatus(meetingStart, task.meetingDurationMinutes, new Date()) }
+    : null;
 
   const priorityTone =
     task.priority && PRIORITY_TONES[task.priority]
@@ -363,6 +372,25 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             >
               <Calendar className="w-3 h-3" />
               {relativeDay(new Date(task.dueDate))}
+            </span>
+          )}
+
+          {meeting && meeting.status.kind !== 'ended' && (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums',
+                meeting.status.kind === 'live'
+                  ? 'bg-destructive-soft text-destructive-soft-foreground'
+                  : meeting.status.kind === 'soon'
+                    ? 'bg-warning-soft text-warning-soft-foreground'
+                    : 'bg-secondary text-secondary-foreground',
+              )}
+              title={`Meeting: ${meeting.start.toLocaleString()}`}
+            >
+              <Video className="w-3 h-3" aria-hidden />
+              {meeting.status.kind === 'upcoming'
+                ? meeting.start.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+                : meeting.status.label}
             </span>
           )}
 
