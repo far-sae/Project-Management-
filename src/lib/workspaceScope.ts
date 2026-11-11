@@ -26,6 +26,7 @@ export const QUICK_MENU_PAGE_KEYS: PageKey[] = [
   "workload",
   "reports",
   "team",
+  "hr",
 ];
 
 export function projectsInWorkspace<P extends { workspaceId?: string | null }>(

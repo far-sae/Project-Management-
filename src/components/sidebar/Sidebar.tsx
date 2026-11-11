@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   CheckSquare,
   Users,
+  UserCheck,
   Calendar,
   MessageSquare,
   BarChart3,
@@ -39,7 +40,6 @@ import { usePinnedProjects } from '@/hooks/usePinnedProjects';
 import { resolveWorkspaceMenu } from '@/lib/workspaceScope';
 import { managedProjects } from '@/lib/projectManagers';
 import { QuickMenu } from './QuickMenu';
-import { StatusFilters } from './StatusFilters';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { ThemeQuickToggle } from './ThemeQuickToggle';
 import { ClockButton } from '@/components/time/ClockButton';
@@ -48,7 +48,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { resolveTaskDisplayColumnId } from '@/lib/kanbanTaskColumn';
 import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
 import {
   isProjectLockUnlockedInSession,
@@ -65,6 +64,7 @@ const QUICK_ITEMS_FULL = [
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
   { icon: Users, label: 'Team', href: '/team', feature: 'team_collaboration' as const, page: 'team' as PageKey },
+  { icon: UserCheck, label: 'HR', href: '/hr', page: 'hr' as PageKey },
 ];
 
 // Members get a deliberately small surface: just the personal-productivity
@@ -83,8 +83,7 @@ const QUICK_ITEMS_VIEWER = [
 ];
 
 export const Sidebar: React.FC = () => {
-  const { project, tasks, selectedStatus, onStatusChange, columns } =
-    useProjectChrome();
+  const { project } = useProjectChrome();
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
   const {
@@ -194,24 +193,6 @@ export const Sidebar: React.FC = () => {
           { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: null },
         ] as const);
 
-  const taskCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: tasks.length };
-    if (columns && columns.length > 0) {
-      columns.forEach((c) => { counts[c.id] = 0; });
-      tasks.forEach((t) => {
-        const col = resolveTaskDisplayColumnId(t.status, columns);
-        if (counts[col] !== undefined) counts[col]++;
-      });
-    } else {
-      const defaults = { undefined: 0, todo: 0, inprogress: 0, done: 0, needreview: 0 };
-      Object.assign(counts, defaults);
-      tasks.forEach((t) => {
-        if (counts[t.status] !== undefined) counts[t.status]++;
-      });
-    }
-    return counts;
-  }, [tasks, columns]);
-
   const handleSignOut = async () => {
     await signOut();
     navigate('/login');
@@ -258,16 +239,6 @@ export const Sidebar: React.FC = () => {
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
         {/* Quick navigation — full / member / viewer surfaces, narrowed per workspace. */}
         <QuickMenu items={quickItems} />
-
-        {/* Project context: status filters + members live here when in a project */}
-        {project && onStatusChange && (
-          <StatusFilters
-            selectedStatus={selectedStatus}
-            onStatusChange={onStatusChange}
-            taskCounts={taskCounts}
-            columns={columns}
-          />
-        )}
 
         {/* Projects list — also on project board for quick switching */}
         <div>
