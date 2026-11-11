@@ -87,8 +87,10 @@ export const Sidebar: React.FC = () => {
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
   const {
-    isAdmin: isOrgAdminOrOwner, isViewer,
+    isAdmin: isOrgAdminOrOwner, isViewer, isOwner: isOrgOwner,
   } = useOrganization();
+  // HR is owner-only for now.
+  const canSeeHr = isOrgOwner || isAppOwner(user?.userId);
   const navigate = useNavigate();
   const location = useLocation();
   // Owner + admin see HR / Payroll / Time / Expenses; members must use the
@@ -136,7 +138,8 @@ export const Sidebar: React.FC = () => {
     const roleItems = canSeePeopleOps
       ? QUICK_ITEMS_FULL.filter(
           (i) =>
-            (i.href !== '/team' || hasFeature('team_collaboration')),
+            (i.href !== '/team' || hasFeature('team_collaboration')) &&
+            (i.href !== '/hr' || canSeeHr),
         )
       : isViewer
         ? QUICK_ITEMS_VIEWER
@@ -149,7 +152,7 @@ export const Sidebar: React.FC = () => {
       ? roleItems
       : roleItems.filter((item) => !['crm', 'email', 'social'].includes(item.page));
     return resolveWorkspaceMenu(flowItems, menuPages);
-  }, [canSeePeopleOps, isViewer, managesProjects, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
+  }, [canSeePeopleOps, canSeeHr, isViewer, managesProjects, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
 
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);

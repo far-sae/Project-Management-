@@ -8,6 +8,7 @@ import { WorkspaceProvider } from '@/context/WorkspaceContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { TeamAccessGate } from '@/components/auth/TeamAccessGate';
+import { OwnerOnlyGate } from '@/components/auth/OwnerOnlyGate';
 
 // Public and authenticated pages are fetched on demand. This keeps the startup
 // bundle to the app shell and loads page code only when a route needs it.
@@ -280,7 +281,8 @@ const router = createBrowserRouter(
               path: '/hr',
               element: (
                 <ProtectedRoute requireSubscription requirePage="hr">
-                  {lazyAppRoute(<HRPage />)}
+                  {/* Owner-only for now. */}
+                  <OwnerOnlyGate>{lazyAppRoute(<HRPage />)}</OwnerOnlyGate>
                 </ProtectedRoute>
               ),
             },
