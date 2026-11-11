@@ -2224,7 +2224,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </PropertyRow>
 
               <PropertyRow label="Assignees" labelId={ids.assignees}>
-                <div role="group" aria-labelledby={ids.assignees} className="min-h-8 px-2 py-1">
+                <div role="group" aria-labelledby={ids.assignees} className="min-w-0 px-2 py-1">
                   <AssigneePicker
                     value={assignees}
                     members={projectAssignableMembers}
