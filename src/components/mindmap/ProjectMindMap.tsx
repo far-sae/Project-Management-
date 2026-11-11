@@ -1,70 +1,41 @@
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
   Background,
-  Controls,
+  BackgroundVariant,
   MiniMap,
-  Handle,
-  Position,
-  MarkerType,
-  addEdge,
   applyNodeChanges,
   applyEdgeChanges,
   useReactFlow,
+  useStore,
   type Node,
   type Edge,
-  type NodeTypes,
   type EdgeTypes,
   type Connection,
   type NodeChange,
   type EdgeChange,
   type OnConnect,
+  type ReactFlowState,
 } from '@xyflow/react';
-import { DeletableEdge, type DeletableEdgeData } from './DeletableEdge';
 import '@xyflow/react/dist/style.css';
-import { format } from 'date-fns';
 import {
-  Plus,
-  Trash2,
-  RotateCcw,
-  Maximize2,
-  Lightbulb,
-  Sparkles,
-  Download,
-  FileJson,
-  Image,
-  ZoomIn,
-  ZoomOut,
-  Keyboard,
-  Paperclip,
-  Loader2,
-  Link2,
   CheckSquare,
   Columns,
-  ChevronDown,
-  Maximize,
-  Minimize,
-  Eraser,
+  FileJson,
+  Image,
+  LayoutGrid,
+  Link2,
+  Pencil,
+  Plus,
+  Scan,
+  Sparkles,
+  Trash2,
+  ExternalLink,
 } from 'lucide-react';
 import type { Project, Task, KanbanColumn } from '@/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
@@ -73,913 +44,130 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import {
   saveMindMapState as saveToCloud,
   migrateLocalStorageToCloud,
 } from '@/services/supabase/mindmapState';
-import {
-  uploadFileWithProgress,
-  getProjectFiles,
-} from '@/services/supabase/storage';
+import { uploadFileWithProgress, getProjectFiles } from '@/services/supabase/storage';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { AIMindMap, type AIMapImportPayload } from './AIMindMap';
 import { MindMapTaskPanel } from './MindMapTaskPanel';
 import { MindMapPlaceholderPanel } from './MindMapPlaceholderPanel';
+import { DeletableEdge, type DeletableEdgeData } from './DeletableEdge';
+import { NODE_TYPES, type IdeaNodeData } from './mindMapNodes';
+import {
+  buildBaseGraph,
+  subtaskNodeId,
+  USER_EDGE_MARKER,
+  USER_EDGE_STYLE,
+} from './mindMapGraph';
+import {
+  AUTO_EDGE_PREFIX,
+  COLUMN_NODE_PREFIX,
+  EMPTY_EXTRAS,
+  IDEA_NODE_PREFIX,
+  IDEA_PALETTE,
+  PROJECT_NODE_ID,
+  TASK_NODE_PREFIX,
+  USER_EDGE_PREFIX,
+  newIdeaId,
+  newUserEdgeId,
+  paletteFor,
+  type ExtraEdge,
+  type ExtraIdea,
+  type MindMapExtras,
+  type PlaceholderKind,
+} from './mindMapTypes';
+import { loadExtras, mergeCloudExtras, saveExtras } from './mindMapExtras';
+import {
+  canRedo as historyCanRedo,
+  canUndo as historyCanUndo,
+  createHistory,
+  peekUndoId,
+  pushHistory,
+  redoHistory,
+  undoHistory,
+} from './mindMapHistory';
+import {
+  NODE_SIZE,
+  placeChild,
+  placeSibling,
+  tidyLayout,
+  type BoardNodeKind,
+  type Box,
+} from './mindMapLayout';
+import type { SearchItem } from './mindMapSearch';
+import { MindMapModeSwitch, MindMapToolbar, type MindMapMode, type MindMapToolbarProps } from './MindMapToolbar';
+import {
+  FirstTimeTip,
+  HelpButton,
+  MindMapEmptyState,
+  ShortcutsPanel,
+  readTipDismissed,
+  writeTipDismissed,
+} from './MindMapOverlays';
 
-// ─────────────────────────────────────────────────────────────
-// Layout constants
-// ─────────────────────────────────────────────────────────────
-const ROOT_X = 0;
-const ROOT_Y = 0;
-const COL_GAP_X = 460;
-const TASK_GAP_Y = 130;
-const SUBTASK_OFFSET_X = 360;
-const SUBTASK_GAP_Y = 64;
-
-// Edge IDs starting with USER_EDGE_PREFIX are drawn by the user (reconnection
-// overrides). AUTO_EDGE_PREFIX edges are derived from the project structure;
-// the user can hide them from the canvas (we track the hidden ids in extras)
-// but they always come back if the user chooses "Restore connections".
-const USER_EDGE_PREFIX = 'extra-edge-';
-const AUTO_EDGE_PREFIX = 'auto-edge-';
-const IDEA_NODE_PREFIX = 'idea-';
-
-// ─────────────────────────────────────────────────────────────
-// Visual classes
-// ─────────────────────────────────────────────────────────────
-const PRIORITY_CLASSES: Record<string, string> = {
-  high: 'bg-red-500/15 text-red-600 dark:text-red-300 border-red-500/30',
-  medium: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
-  low: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/30',
-};
-
-const STATUS_DOT: Record<string, string> = {
-  todo: 'bg-slate-400',
-  doing: 'bg-blue-500',
-  'in-progress': 'bg-blue-500',
-  review: 'bg-amber-500',
-  done: 'bg-emerald-500',
-};
-
-const IDEA_PALETTE: Array<{ name: string; ring: string; bg: string; dot: string }> = [
-  { name: 'violet', ring: 'border-violet-500/40', bg: 'bg-violet-500/[0.08]', dot: 'bg-violet-500' },
-  { name: 'sky', ring: 'border-sky-500/40', bg: 'bg-sky-500/[0.08]', dot: 'bg-sky-500' },
-  { name: 'emerald', ring: 'border-emerald-500/40', bg: 'bg-emerald-500/[0.08]', dot: 'bg-emerald-500' },
-  { name: 'amber', ring: 'border-amber-500/40', bg: 'bg-amber-500/[0.08]', dot: 'bg-amber-500' },
-  { name: 'rose', ring: 'border-rose-500/40', bg: 'bg-rose-500/[0.08]', dot: 'bg-rose-500' },
-];
-
-// ─────────────────────────────────────────────────────────────
-// Persistence (localStorage — per project)
-// ─────────────────────────────────────────────────────────────
-/** File metadata for a placeholder's attachments. The binary lives in
- *  Supabase storage (uploaded via uploadFileWithProgress with scope='project'
- *  and NO taskId, so it's a project file rather than tied to a kanban task);
- *  this struct is what we keep inside the placeholder so we can render a
- *  preview and a delete button without re-querying the files table. */
-export interface PlaceholderAttachment {
-  fileId: string;
-  fileName: string;
-  fileUrl: string;
-  fileType: string;
-  fileSize: number;
-  storagePath: string;
-  uploadedAt?: string;
-}
-
-/** Subtasks for a placeholder. Same shape the real Task uses so we can
- *  reuse the existing MentionTextarea-style UI primitives later. */
-export interface PlaceholderSubtask {
-  id: string;
-  title: string;
-  completed: boolean;
-}
-
-interface ExtraIdea {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  color?: string;
-  /** Optional visual style for this placeholder. Undefined = pill-shaped
-   *  brainstorm idea (legacy). 'task' / 'column' / 'project' make the node
-   *  render in the matching kanban-derived shape so a placeholder visually
-   *  echoes a real task/column/project header — purely cosmetic, the data
-   *  lives in extras either way and never reaches the kanban. */
-  kind?: 'task' | 'column' | 'project';
-  /** Free-form notes shown when the placeholder panel is open. Task-shape
-   *  placeholders use this as their description; other kinds can use it too. */
-  description?: string;
-  /** Subtasks attached to this placeholder. Mind-map-only — never written
-   *  to the kanban tasks.subtasks column. */
-  subtasks?: PlaceholderSubtask[];
-  /** Files the user uploaded for this placeholder. Stored in Supabase
-   *  storage as project files so they're also reachable from the Files page. */
-  attachments?: PlaceholderAttachment[];
-}
-
-interface ExtraEdge {
-  id: string;
-  source: string;
-  target: string;
-  /** Optional handle ids if the user connected through specific sides. */
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
-}
-
-interface MindMapExtras {
-  ideas: ExtraIdea[];
-  edges: ExtraEdge[];
-  /** node id → manual position override (covers task-derived nodes too). */
-  positions: Record<string, { x: number; y: number }>;
-  /** Auto-edge ids the user has explicitly hidden from the canvas. The
-   *  auto-derived structural edges (project→column→task→subtask) cannot be
-   *  truly "deleted" — they reflect data — but the user can hide them and
-   *  draw their own connections instead, just like Miro/Whimsical let you
-   *  override the default linkage of an imported diagram. */
-  removedAutoEdges: string[];
-}
-
-const EMPTY_EXTRAS: MindMapExtras = {
-  ideas: [],
-  edges: [],
-  positions: {},
-  removedAutoEdges: [],
-};
-
-const storageKey = (projectId: string) => `mindmap_extras_v1:${projectId}`;
-
-const loadExtras = (projectId: string): MindMapExtras => {
-  if (typeof window === 'undefined') return EMPTY_EXTRAS;
-  try {
-    const raw = window.localStorage.getItem(storageKey(projectId));
-    if (!raw) return EMPTY_EXTRAS;
-    const parsed = JSON.parse(raw) as Partial<MindMapExtras>;
-    return {
-      ideas: Array.isArray(parsed.ideas) ? parsed.ideas : [],
-      edges: Array.isArray(parsed.edges) ? parsed.edges : [],
-      positions:
-        parsed.positions && typeof parsed.positions === 'object' ? parsed.positions : {},
-      removedAutoEdges: Array.isArray(parsed.removedAutoEdges)
-        ? parsed.removedAutoEdges.filter((v): v is string => typeof v === 'string')
-        : [],
-    };
-  } catch {
-    return EMPTY_EXTRAS;
-  }
-};
-
-const saveExtras = (projectId: string, extras: MindMapExtras) => {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(storageKey(projectId), JSON.stringify(extras));
-  } catch {
-    /* storage full / disabled — soft-fail */
-  }
-};
-
-// ─────────────────────────────────────────────────────────────
-// Reusable node bits
-// ─────────────────────────────────────────────────────────────
-
-/** All four sides expose both source and target handles so users can drag a
- *  connection out from any side and into any side of another node.
- *
- *  The handles are now subtly visible at rest (30%) so users can SEE where
- *  to grab without having to hover-discover them. They brighten + grow on
- *  hover. Target handles use a muted colour so the user reads "drag from
- *  the bright dot, drop on the muted one" without thinking about it. */
-const ConnectionHandles: React.FC = memo(() => {
-  const baseClass =
-    '!w-3 !h-3 !bg-primary !border-2 !border-card opacity-30 group-hover:opacity-100 group-hover:!w-3.5 group-hover:!h-3.5 nodrag transition-all duration-150';
-  const targetClass = cn(baseClass, '!bg-muted-foreground/70');
-  return (
-    <>
-      <Handle id="t-src" type="source" position={Position.Top} className={baseClass} />
-      <Handle id="t-tgt" type="target" position={Position.Top} className={targetClass} />
-      <Handle id="r-src" type="source" position={Position.Right} className={baseClass} />
-      <Handle id="r-tgt" type="target" position={Position.Right} className={targetClass} />
-      <Handle id="b-src" type="source" position={Position.Bottom} className={baseClass} />
-      <Handle id="b-tgt" type="target" position={Position.Bottom} className={targetClass} />
-      <Handle id="l-src" type="source" position={Position.Left} className={baseClass} />
-      <Handle id="l-tgt" type="target" position={Position.Left} className={targetClass} />
-    </>
-  );
-});
-ConnectionHandles.displayName = 'ConnectionHandles';
-
-// ─────────────────────────────────────────────────────────────
-// Node renderers
-// ─────────────────────────────────────────────────────────────
-
-interface ProjectNodeData extends Record<string, unknown> {
-  label: string;
-  description?: string;
-  taskCount: number;
-}
-
-const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }> = ({ data, selected }) => (
-  <div
-    className={cn(
-      'group relative rounded-2xl border bg-gradient-to-br from-primary/15 to-primary/[0.04] px-5 py-4 shadow-lg min-w-[300px] max-w-[360px] backdrop-blur-sm',
-      selected ? 'border-primary ring-2 ring-primary/30' : 'border-primary/40',
-    )}
-  >
-    <ConnectionHandles />
-    <div className="flex items-center gap-1.5">
-      <Sparkles className="w-3.5 h-3.5 text-primary" />
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">Project</p>
-    </div>
-    <p className="mt-1 text-base font-semibold text-foreground leading-snug">{data.label}</p>
-    {data.description ? (
-      <p className="mt-1.5 text-[12.5px] text-muted-foreground leading-snug line-clamp-3">
-        {data.description}
-      </p>
-    ) : null}
-    <p className="mt-2.5 text-[12px] text-muted-foreground">
-      {data.taskCount} task{data.taskCount === 1 ? '' : 's'}
-    </p>
-  </div>
-);
-
-interface ColumnNodeData extends Record<string, unknown> {
-  label: string;
-  color?: string;
-  count: number;
-}
-
-const ColumnNode: React.FC<{ data: ColumnNodeData; selected?: boolean }> = ({ data, selected }) => (
-  <div
-    className={cn(
-      'group relative rounded-xl border bg-card px-4 py-3 shadow-sm min-w-[260px] backdrop-blur-sm',
-      selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
-    )}
-  >
-    <ConnectionHandles />
-    <div className="flex items-center gap-2">
-      <span
-        className="inline-block w-3 h-3 rounded-full shrink-0 ring-2 ring-card"
-        style={{ backgroundColor: data.color || '#94a3b8' }}
-      />
-      <p className="text-base font-semibold text-foreground truncate">{data.label}</p>
-    </div>
-    <p className="text-[12px] text-muted-foreground mt-1 ml-5">
-      {data.count} task{data.count === 1 ? '' : 's'}
-    </p>
-  </div>
-);
-
-interface TaskNodeData extends Record<string, unknown> {
-  label: string;
-  status: string;
-  priority: string;
-  dueDate?: string;
-  assignees: string[];
-  subtaskTotal: number;
-  subtaskDone: number;
-  attachmentCount: number;
-  onOpen?: () => void;
-  onAttachFiles?: (files: FileList) => void;
-  isUploading?: boolean;
-}
-
-const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({ data, selected }) => {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  return (
-    <div
-      className={cn(
-        'group relative w-[320px] rounded-xl border bg-card px-4 py-3 shadow-sm transition-all',
-        selected
-          ? 'border-primary ring-2 ring-primary/30 shadow-md'
-          : 'border-border hover:border-primary/40 hover:shadow-md',
-      )}
-    >
-      <ConnectionHandles />
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          data.onOpen?.();
-        }}
-        className="w-full text-left"
-      >
-        <div className="flex items-start gap-2">
-          <span
-            className={cn(
-              'mt-1.5 inline-block w-2.5 h-2.5 rounded-full shrink-0',
-              STATUS_DOT[data.status] || 'bg-slate-400',
-            )}
-            aria-hidden
-          />
-          <p className="text-[15px] font-medium text-foreground leading-snug truncate flex-1">
-            {data.label}
-          </p>
-        </div>
-        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-          {data.priority && (
-            <span
-              className={cn(
-                'text-[11px] font-medium uppercase tracking-wide rounded-full px-2 py-0.5 border',
-                PRIORITY_CLASSES[data.priority] ||
-                  'bg-secondary text-secondary-foreground border-border',
-              )}
-            >
-              {data.priority}
-            </span>
-          )}
-          {data.dueDate && (
-            <span className="text-[11px] text-muted-foreground">due {data.dueDate}</span>
-          )}
-          {data.subtaskTotal > 0 && (
-            <span className="text-[11px] text-muted-foreground tabular-nums">
-              {data.subtaskDone}/{data.subtaskTotal} subtasks
-            </span>
-          )}
-          {data.attachmentCount > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums">
-              <Paperclip className="w-3 h-3" />
-              {data.attachmentCount}
-            </span>
-          )}
-        </div>
-        {data.assignees.length > 0 && (
-          <p className="mt-1.5 text-[11px] text-muted-foreground truncate">
-            {data.assignees.join(', ')}
-          </p>
-        )}
-      </button>
-
-      {/* Hidden picker — attaches the files to this task. Upload progress is
-          surfaced via toast in the parent so the small node UI doesn't need
-          its own progress bar. */}
-      {data.onAttachFiles && (
-        <>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const files = e.target.files;
-              if (files && files.length > 0) data.onAttachFiles?.(files);
-              e.target.value = '';
-            }}
-          />
-          <div
-            className={cn(
-              'nodrag absolute -top-2.5 right-2 flex items-center gap-0.5 rounded-md border border-border bg-card px-0.5 py-0.5 shadow-md transition-opacity',
-              selected
-                ? 'opacity-100'
-                : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
-            )}
-          >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                fileInputRef.current?.click();
-              }}
-              disabled={data.isUploading}
-              title={data.isUploading ? 'Uploading…' : 'Attach files to this task'}
-              aria-label="Attach files to this task"
-              className="px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1 disabled:opacity-50"
-            >
-              {data.isUploading ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Paperclip className="w-3 h-3" />
-              )}
-              Attach
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-interface SubtaskNodeData extends Record<string, unknown> {
-  label: string;
-  completed: boolean;
-}
-
-const SubtaskNode: React.FC<{ data: SubtaskNodeData; selected?: boolean }> = ({ data, selected }) => (
-  <div
-    className={cn(
-      'group relative rounded-md border bg-card/85 px-3 py-2 min-w-[260px] max-w-[320px]',
-      selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
-    )}
-  >
-    <ConnectionHandles />
-    <div className="flex items-center gap-2">
-      <span
-        className={cn(
-          'inline-flex items-center justify-center w-4 h-4 rounded border text-[9px]',
-          data.completed
-            ? 'bg-emerald-500 border-emerald-500 text-white'
-            : 'border-border text-transparent',
-        )}
-        aria-hidden
-      >
-        ✓
-      </span>
-      <p
-        className={cn(
-          'text-[13px] leading-snug truncate',
-          data.completed ? 'line-through text-muted-foreground' : 'text-foreground',
-        )}
-      >
-        {data.label}
-      </p>
-    </div>
-  </div>
-);
-
-interface IdeaNodeData extends Record<string, unknown> {
-  label: string;
-  color?: string;
-  /** Visual style — undefined falls back to the legacy idea pill. */
-  kind?: 'task' | 'column' | 'project';
-  /** Project name displayed under the header on kind='project' shells. */
-  projectDescription?: string;
-  /** Number of attachments — shown as a 📎 N badge on task placeholders. */
-  attachmentCount?: number;
-  /** Subtask progress shown as N/M on task placeholders. */
-  subtaskProgress?: { completed: number; total: number };
-  /** When set, an "Open" button appears on task-shape placeholders so the
-   *  user can edit notes / subtasks / attach files in a side panel. */
-  onOpen?: () => void;
-  onChange: (label: string) => void;
-  onDelete: () => void;
-  onColorChange: (color: string) => void;
-}
-
-const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({ data, selected }) => {
-  const palette = IDEA_PALETTE.find((p) => p.name === data.color) || IDEA_PALETTE[0];
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(data.label);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const kind = data.kind;
-
-  // Keep draft in sync if the underlying label changes externally (e.g. undo, palette swap).
-  useEffect(() => {
-    if (!editing) setDraft(data.label);
-  }, [data.label, editing]);
-
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
-  const commit = () => {
-    setEditing(false);
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== data.label) data.onChange(trimmed);
-    else if (!trimmed) setDraft(data.label);
-  };
-
-  // The label area swaps between a static <p> and an editable <textarea>.
-  // Shared across every kind so the inline rename UX is uniform.
-  const labelBlock = editing ? (
-    <textarea
-      ref={inputRef}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          commit();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          setDraft(data.label);
-          setEditing(false);
-        }
-      }}
-      rows={kind === 'project' ? 1 : 2}
-      className={cn(
-        'nodrag flex-1 leading-snug bg-background/60 border border-border/60 rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-primary/30 resize-none min-w-0',
-        kind === 'project' ? 'text-sm font-semibold' : 'text-sm font-medium',
-      )}
-    />
-  ) : (
-    <p
-      className={cn(
-        'flex-1 leading-snug whitespace-pre-wrap break-words',
-        kind === 'project'
-          ? 'text-sm font-semibold text-foreground'
-          : 'text-sm font-medium text-foreground',
-      )}
-    >
-      {data.label || (kind === 'project' ? 'Untitled project' : kind === 'column' ? 'Untitled column' : kind === 'task' ? 'Untitled task' : 'Untitled idea')}
-    </p>
-  );
-
-  // ── Kind-specific shells ──────────────────────────────────────
-  // Project header: gradient card with a "PROJECT" tag, mirrors the real
-  // ProjectNode shape so a placeholder visually reads as the project root.
-  if (kind === 'project') {
-    return (
-      <div
-        className={cn(
-          'group relative rounded-2xl border bg-gradient-to-br from-primary/15 to-primary/[0.04] px-4 py-3 shadow-lg min-w-[240px] max-w-[300px] backdrop-blur-sm transition-all',
-          selected ? 'border-primary ring-2 ring-primary/30' : 'border-primary/40',
-        )}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-      >
-        <ConnectionHandles />
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="w-3 h-3 text-primary" />
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
-            Project
-          </p>
-        </div>
-        <div className="mt-0.5 flex items-start gap-2">
-          {labelBlock}
-        </div>
-        {data.projectDescription && !editing && (
-          <p className="mt-1 text-[11px] text-muted-foreground leading-snug line-clamp-2">
-            {data.projectDescription}
-          </p>
-        )}
-        {renderHoverToolbar()}
-      </div>
-    );
-  }
-
-  // Column pill: dot + bold title, matches the real ColumnNode shape.
-  if (kind === 'column') {
-    return (
-      <div
-        className={cn(
-          'group relative rounded-xl border bg-card px-3.5 py-2.5 shadow-sm min-w-[200px] max-w-[260px] backdrop-blur-sm transition-all',
-          selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
-        )}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-      >
-        <ConnectionHandles />
-        <div className="flex items-center gap-2">
-          <span
-            className={cn('inline-block w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-card', palette.dot)}
-            aria-hidden
-          />
-          <div className="flex-1 min-w-0">{labelBlock}</div>
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-0.5 ml-4.5">Placeholder column</p>
-        {renderHoverToolbar()}
-      </div>
-    );
-  }
-
-  // Task card: status-dot + label + a "PLACEHOLDER" tag where the priority
-  // chip would live on a real task. Same width as TaskNode for visual parity.
-  // Click the title row to open the side panel — same affordance real
-  // TaskNode uses, so muscle memory transfers. Double-click still renames.
-  if (kind === 'task') {
-    const subtaskProgress = data.subtaskProgress;
-    const attachmentCount = data.attachmentCount ?? 0;
-    return (
-      <div
-        className={cn(
-          'group relative w-[260px] rounded-xl border bg-card px-3 py-2.5 shadow-sm transition-all',
-          selected ? 'border-primary ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/40 hover:shadow-md',
-        )}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-      >
-        <ConnectionHandles />
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!editing && data.onOpen) data.onOpen();
-          }}
-          className="w-full text-left disabled:cursor-default"
-          disabled={editing}
-        >
-          <div className="flex items-start gap-2">
-            <span
-              className={cn('mt-1 inline-block w-2 h-2 rounded-full shrink-0', palette.dot)}
-              aria-hidden
-            />
-            <div className="flex-1 min-w-0">{labelBlock}</div>
-          </div>
-          <div className="mt-1.5 flex items-center gap-1 flex-wrap">
-            <span
-              className={cn(
-                'text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border',
-                palette.bg,
-                palette.ring,
-              )}
-            >
-              placeholder
-            </span>
-            {subtaskProgress && subtaskProgress.total > 0 && (
-              <span className="text-[10px] text-muted-foreground tabular-nums">
-                {subtaskProgress.completed}/{subtaskProgress.total} subtasks
-              </span>
-            )}
-            {attachmentCount > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground tabular-nums">
-                <Paperclip className="w-3 h-3" />
-                {attachmentCount}
-              </span>
-            )}
-          </div>
-        </button>
-        {renderHoverToolbar()}
-      </div>
-    );
-  }
-
-  // Default: legacy idea pill — unchanged.
-  return (
-    <div
-      className={cn(
-        'group relative rounded-xl border-2 px-3 py-2 shadow-sm min-w-[200px] max-w-[260px] transition-all',
-        palette.ring,
-        palette.bg,
-        selected && 'ring-2 ring-primary/40 shadow-md',
-      )}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        setEditing(true);
-      }}
-    >
-      <ConnectionHandles />
-      <div className="flex items-start gap-2">
-        <span className={cn('mt-1.5 inline-block w-2 h-2 rounded-full shrink-0', palette.dot)} aria-hidden />
-        {labelBlock}
-      </div>
-
-      {renderHoverToolbar()}
-    </div>
-  );
-
-  // ── Shared hover toolbar ────────────────────────────────────
-  // Hoisted as a closure so the 4 shape branches stay flat. Captures
-  // `data`, `palette`, `selected`, `setEditing` from the outer scope.
-  function renderHoverToolbar() {
-    return (
-      <div
-        className={cn(
-          'nodrag absolute -top-3 right-2 flex items-center gap-0.5 rounded-md border border-border bg-card shadow-md px-0.5 py-0.5 transition-opacity',
-          selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
-        )}
-      >
-        {IDEA_PALETTE.map((p) => (
-          <button
-            key={p.name}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              data.onColorChange(p.name);
-            }}
-            title={`Color: ${p.name}`}
-            aria-label={`Color: ${p.name}`}
-            className={cn(
-              'w-4 h-4 rounded-full transition-transform hover:scale-110',
-              p.dot,
-              data.color === p.name ? 'ring-2 ring-foreground/60 ring-offset-1 ring-offset-card' : 'opacity-80',
-            )}
-          />
-        ))}
-        <span className="w-px h-4 bg-border mx-0.5" aria-hidden />
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setEditing(true);
-          }}
-          title="Edit"
-          aria-label="Edit"
-          className="px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            data.onDelete();
-          }}
-          title="Delete"
-          aria-label="Delete"
-          className="px-1 py-0.5 text-destructive hover:bg-destructive/10 rounded"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
-      </div>
-    );
-  }
-};
-
-const NODE_TYPES: NodeTypes = {
-  project: ProjectNode as unknown as NodeTypes[string],
-  column: ColumnNode as unknown as NodeTypes[string],
-  task: TaskNode as unknown as NodeTypes[string],
-  subtask: SubtaskNode as unknown as NodeTypes[string],
-  idea: IdeaNode as unknown as NodeTypes[string],
-};
+// Re-exported for MindMapPlaceholderPanel (and any other importer) — the
+// types moved to mindMapTypes.ts when this file was split up.
+export type { PlaceholderAttachment, PlaceholderSubtask } from './mindMapTypes';
 
 const EDGE_TYPES: EdgeTypes = {
   deletable: DeletableEdge as unknown as EdgeTypes[string],
 };
 
-// ─────────────────────────────────────────────────────────────
-// Layout (auto-graph from tasks)
-// ─────────────────────────────────────────────────────────────
+const MINIMAP_PREF_KEY = 'mindmap_minimap_v1';
 
-const formatDueShort = (d: Date | string | null | undefined): string | undefined => {
-  if (!d) return undefined;
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return format(date, 'MMM d');
+const readMiniMapPref = (): boolean => {
+  try {
+    const v = window.localStorage.getItem(MINIMAP_PREF_KEY);
+    if (v === '1') return true;
+    if (v === '0') return false;
+  } catch {
+    /* ignore */
+  }
+  return typeof window !== 'undefined' ? window.innerWidth >= 768 : true;
 };
 
-interface BuildGraphHooks {
-  onOpenTask?: (taskId: string) => void;
-  /** Called when the user picks files to attach to this task node. */
-  onAttachFilesToTask?: (taskId: string, files: FileList) => void;
-  /** Map of taskId → number of attached files (mirrors task.commentAttachments etc.). */
-  attachmentCounts?: Map<string, number>;
-  /** Set of task ids currently uploading attachments (for spinner state). */
-  uploadingTaskIds?: Set<string>;
-}
-
-const buildBaseGraph = (
-  project: Project,
-  tasks: Task[],
-  columns: KanbanColumn[],
-  hooks: BuildGraphHooks = {},
-): { nodes: Node[]; edges: Edge[] } => {
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
-
-  const columnsSorted = [...columns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const tasksByColumn = new Map<string, Task[]>();
-  for (const c of columnsSorted) tasksByColumn.set(c.id, []);
-  const unsorted: Task[] = [];
-  for (const t of tasks) {
-    if (tasksByColumn.has(t.status)) {
-      tasksByColumn.get(t.status)!.push(t);
-    } else {
-      unsorted.push(t);
-    }
-  }
-  const lanes: Array<{ id: string; title: string; color: string; tasks: Task[] }> = [
-    ...columnsSorted.map((c) => ({
-      id: c.id,
-      title: c.title,
-      color: c.color,
-      tasks: tasksByColumn.get(c.id) || [],
-    })),
-  ];
-  if (unsorted.length > 0) {
-    lanes.push({ id: '__unsorted', title: 'Unsorted', color: '#94a3b8', tasks: unsorted });
-  }
-
-  // Project root.
-  nodes.push({
-    id: 'project',
-    type: 'project',
-    position: { x: ROOT_X, y: ROOT_Y },
-    data: {
-      label: project.name,
-      description: project.description,
-      taskCount: tasks.length,
-    } satisfies ProjectNodeData,
-  });
-
-  let cursorY = ROOT_Y;
-  for (const lane of lanes) {
-    const laneHeight = Math.max(1, lane.tasks.length) * TASK_GAP_Y;
-    const laneCenterY = cursorY + laneHeight / 2 - TASK_GAP_Y / 2;
-    const columnId = `col-${lane.id}`;
-
-    nodes.push({
-      id: columnId,
-      type: 'column',
-      position: { x: ROOT_X + COL_GAP_X, y: laneCenterY },
-      data: { label: lane.title, color: lane.color, count: lane.tasks.length } satisfies ColumnNodeData,
-    });
-    edges.push({
-      id: `auto-edge-project-${columnId}`,
-      source: 'project',
-      sourceHandle: 'r-src',
-      target: columnId,
-      targetHandle: 'l-tgt',
-      type: 'smoothstep',
-      // Same bold coloured arrow language as the AI map — visually unifies
-      // both views so the user instantly recognises what's connected to
-      // what without reading colours.
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: lane.color || '#94a3b8',
-        width: 14,
-        height: 14,
-      },
-      style: { stroke: lane.color || 'var(--border)', strokeWidth: 2.25 },
-    });
-
-    let taskY = cursorY;
-    for (const t of lane.tasks) {
-      const taskNodeId = `task-${t.taskId}`;
-      const subtasks = t.subtasks ?? [];
-      const subtaskDone = subtasks.filter((s) => s.completed).length;
-
-      const attachmentCount = hooks.attachmentCounts?.get(t.taskId) ?? 0;
-      const isUploading = hooks.uploadingTaskIds?.has(t.taskId) ?? false;
-      nodes.push({
-        id: taskNodeId,
-        type: 'task',
-        position: { x: ROOT_X + COL_GAP_X * 2, y: taskY },
-        data: {
-          label: t.title,
-          status: t.status,
-          priority: t.priority,
-          dueDate: formatDueShort(t.dueDate),
-          assignees: (t.assignees || [])
-            .map((a) => a.displayName || a.email || 'Member')
-            .slice(0, 3),
-          subtaskTotal: subtasks.length,
-          subtaskDone,
-          attachmentCount,
-          isUploading,
-          onOpen: () => hooks.onOpenTask?.(t.taskId),
-          onAttachFiles: hooks.onAttachFilesToTask
-            ? (files: FileList) => hooks.onAttachFilesToTask?.(t.taskId, files)
-            : undefined,
-        } satisfies TaskNodeData,
-      });
-      // Tint column→task edges with the lane color so each column visibly "owns"
-      // its tasks even after the user drags nodes around. Width + opacity match
-      // the AI map so both surfaces feel like the same diagram language.
-      const laneStroke = lane.color || '#94a3b8';
-      edges.push({
-        id: `auto-edge-${columnId}-${taskNodeId}`,
-        source: columnId,
-        sourceHandle: 'r-src',
-        target: taskNodeId,
-        targetHandle: 'l-tgt',
-        type: 'smoothstep',
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: laneStroke,
-          width: 14,
-          height: 14,
-        },
-        style: { stroke: laneStroke, strokeWidth: 1.75, strokeOpacity: 0.85 },
-      });
-
-      const subtaskBaseY = taskY - ((subtasks.length - 1) * SUBTASK_GAP_Y) / 2;
-      subtasks.forEach((s, idx) => {
-        const subNodeId = `sub-${t.taskId}-${s.id || idx}`;
-        nodes.push({
-          id: subNodeId,
-          type: 'subtask',
-          position: {
-            x: ROOT_X + COL_GAP_X * 2 + SUBTASK_OFFSET_X,
-            y: subtaskBaseY + idx * SUBTASK_GAP_Y,
-          },
-          data: { label: s.title, completed: s.completed } satisfies SubtaskNodeData,
-        });
-        edges.push({
-          id: `auto-edge-${taskNodeId}-${subNodeId}`,
-          source: taskNodeId,
-          sourceHandle: 'r-src',
-          target: subNodeId,
-          targetHandle: 'l-tgt',
-          type: 'smoothstep',
-          style: {
-            stroke: s.completed ? 'rgb(16,185,129)' : 'rgb(148,163,184)',
-            strokeWidth: 1.25,
-            strokeOpacity: s.completed ? 1 : 0.5,
-            strokeDasharray: s.completed ? '0' : '4 4',
-          },
-        });
-      });
-
-      taskY += Math.max(1, subtasks.length) * Math.max(TASK_GAP_Y, SUBTASK_GAP_Y);
-    }
-
-    cursorY = Math.max(cursorY + laneHeight, taskY) + TASK_GAP_Y;
-  }
-
-  return { nodes, edges };
+const PLACEHOLDER_COLOR: Record<PlaceholderKind, string> = {
+  task: 'emerald',
+  column: 'sky',
+  project: 'violet',
 };
+
+/** Scoped CSS for React Flow internals we can't reach with Tailwind classes. */
+const CANVAS_CSS = `
+.mm-canvas .react-flow__node:focus { outline: none; }
+.mm-canvas .react-flow__node:focus-visible > div { box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring)); }
+.mm-canvas .react-flow__edge.selected .react-flow__edge-path,
+.mm-canvas .react-flow__edge:focus-visible .react-flow__edge-path { stroke: hsl(var(--primary)) !important; stroke-width: 2.5px !important; }
+.mm-canvas .react-flow__edge:focus { outline: none; }
+.mm-canvas .react-flow__selection,
+.mm-canvas .react-flow__nodesselection-rect { background: hsl(var(--primary) / 0.06); border: 1px solid hsl(var(--primary) / 0.45); border-radius: 8px; }
+.mm-canvas .react-flow__connectionline path { stroke: hsl(var(--primary)); stroke-width: 2; }
+.mm-canvas .react-flow__minimap svg { border-radius: 12px; }
+`;
+
+const zoomSelector = (s: ReactFlowState) => s.transform[2];
+
+/** Toolbar wrapper that subscribes to zoom only, so panning / zooming doesn't
+ *  re-render the whole canvas component. */
+const ConnectedToolbar: React.FC<Omit<MindMapToolbarProps, 'zoom'>> = memo((props) => {
+  const zoom = useStore(zoomSelector);
+  return <MindMapToolbar {...props} zoom={zoom} />;
+});
+ConnectedToolbar.displayName = 'ConnectedToolbar';
 
 // ─────────────────────────────────────────────────────────────
 // Inner mind map (uses useReactFlow — must live under a Provider)
@@ -992,83 +180,157 @@ interface ProjectMindMapProps {
   onOpenTask?: (taskId: string) => void;
 }
 
+interface StructuralMapProps extends ProjectMindMapProps {
+  /** Set by the wrapper when the user clicks "Send to Project map" in AI mode.
+   *  Consumed once on mount via a useEffect, then cleared via onPendingImportApplied. */
+  pendingImport?: AIMapImportPayload | null;
+  onPendingImportApplied?: () => void;
+  /** Project map / AI mind map segmented control, rendered inside the toolbar. */
+  modeSwitch?: React.ReactNode;
+  /** Switch to the AI mind map (empty-state action). */
+  onOpenAIMode?: () => void;
+}
+
+type ConfirmKind = 'clear' | 'reset' | null;
+
 const MindMapInner: React.FC<StructuralMapProps> = ({
   project,
   tasks,
   columns,
   pendingImport,
   onPendingImportApplied,
-  // `onOpenTask` is intentionally ignored — clicking a task in the mind map
-  // now opens an inline editing panel rather than navigating the user back
-  // to the kanban view. The prop stays in the component's type so existing
-  // call sites keep compiling without changes.
+  modeSwitch,
+  onOpenAIMode,
+  // `onOpenTask` is intentionally ignored — clicking a task opens the inline
+  // MindMapTaskPanel. The prop stays in the type so call sites compile.
 }) => {
   const flow = useReactFlow();
   const { user } = useAuth();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // ── Extras (user layer) + undo history ─────────────────────
   const [extras, setExtrasState] = useState<MindMapExtras>(() => loadExtras(project.projectId));
+  const extrasRef = useRef(extras);
+  const historyRef = useRef(createHistory<MindMapExtras>());
+  const [, setHistoryVersion] = useState(0);
+  const changeIdRef = useRef(0);
+  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const persist = useCallback(
+    (next: MindMapExtras) => {
+      saveExtras(project.projectId, next);
+      if (user?.userId) {
+        const userId = user.userId;
+        if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+        cloudSaveTimer.current = setTimeout(() => {
+          void saveToCloud(project.projectId, userId, next);
+        }, 2000);
+      }
+    },
+    [project.projectId, user?.userId],
+  );
+
+  const commitExtras = useCallback(
+    (next: MindMapExtras) => {
+      extrasRef.current = next;
+      setExtrasState(next);
+      persist(next);
+    },
+    [persist],
+  );
+
+  /** Every user-layer mutation goes through here: it records undo history,
+   *  updates state and persists (localStorage now, cloud debounced). Returns
+   *  the change id (for toast "Undo" actions) or null if nothing changed. */
+  const updateExtras = useCallback(
+    (mutator: (prev: MindMapExtras) => MindMapExtras): number | null => {
+      const prev = extrasRef.current;
+      const next = mutator(prev);
+      if (next === prev) return null;
+      const id = ++changeIdRef.current;
+      historyRef.current = pushHistory(historyRef.current, prev, id);
+      setHistoryVersion((v) => v + 1);
+      commitExtras(next);
+      return id;
+    },
+    [commitExtras],
+  );
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const undo = useCallback(() => {
+    const r = undoHistory(historyRef.current, extrasRef.current);
+    if (!r) return false;
+    historyRef.current = r.history;
+    setHistoryVersion((v) => v + 1);
+    setEditingId(null);
+    commitExtras(r.state);
+    return true;
+  }, [commitExtras]);
+
+  const redo = useCallback(() => {
+    const r = redoHistory(historyRef.current, extrasRef.current);
+    if (!r) return false;
+    historyRef.current = r.history;
+    setHistoryVersion((v) => v + 1);
+    setEditingId(null);
+    commitExtras(r.state);
+    return true;
+  }, [commitExtras]);
+
+  /** Undo a specific change from a toast — only if nothing newer happened. */
+  const undoChange = useCallback(
+    (id: number | null) => {
+      if (id === null) return;
+      if (peekUndoId(historyRef.current) !== id) {
+        toast.message('Use Undo in the toolbar — newer changes came after this one.');
+        return;
+      }
+      undo();
+    },
+    [undo],
+  );
+
+  const toastWithUndo = useCallback(
+    (message: string, id: number | null) => {
+      if (id === null) return;
+      toast(message, { action: { label: 'Undo', onClick: () => undoChange(id) } });
+    },
+    [undoChange],
+  );
 
   // Cloud-load gate: until this is true we don't apply a pendingImport, so
-  // the import doesn't get clobbered by the cloud snapshot that arrives a
-  // moment later. After it flips, the import effect drains the payload.
+  // the import doesn't get clobbered by the cloud snapshot.
   const [cloudLoaded, setCloudLoaded] = useState(false);
 
-  // On mount / project switch, try to migrate localStorage → cloud and load cloud state.
   useEffect(() => {
     const userId = user?.userId;
     setCloudLoaded(false);
+    const reset = (next: MindMapExtras) => {
+      extrasRef.current = next;
+      setExtrasState(next);
+      historyRef.current = createHistory<MindMapExtras>();
+      setHistoryVersion((v) => v + 1);
+    };
     if (!userId) {
-      setExtrasState(loadExtras(project.projectId));
+      reset(loadExtras(project.projectId));
       setCloudLoaded(true);
       return;
     }
     let cancelled = false;
     void migrateLocalStorageToCloud(project.projectId, userId).then((cloud) => {
-      if (!cancelled) {
-        // If cloud has data, prefer it; otherwise keep localStorage version
-        const hasCloud =
-          cloud.ideas.length > 0 ||
-          cloud.edges.length > 0 ||
-          Object.keys(cloud.positions).length > 0;
-        if (hasCloud) setExtrasState(cloud);
-        else setExtrasState(loadExtras(project.projectId));
-        setCloudLoaded(true);
-      }
+      if (cancelled) return;
+      // Cloud wins when it has data (unchanged); UI-only optional fields the
+      // cloud reader drops (collapsed columns) are kept from the local copy.
+      reset(mergeCloudExtras(cloud, loadExtras(project.projectId)));
+      setCloudLoaded(true);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [project.projectId, user?.userId]);
 
-  // Debounced cloud save ref
-  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // All extras mutations go through this writer so persistence stays in lock-step
-  // with the in-memory state — no chance of "saved but not displayed" or vice versa.
-  const updateExtras = useCallback(
-    (mutator: (prev: MindMapExtras) => MindMapExtras) => {
-      setExtrasState((prev) => {
-        const next = mutator(prev);
-        // Save to localStorage immediately (fast, offline-capable)
-        saveExtras(project.projectId, next);
-        // Debounce save to cloud (avoid hammering Supabase)
-        if (user?.userId) {
-          if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
-          cloudSaveTimer.current = setTimeout(() => {
-            void saveToCloud(project.projectId, user.userId, next);
-          }, 2000);
-        }
-        return next;
-      });
-    },
-    [project.projectId, user?.userId],
-  );
-
   // ── Import payload from the AI mind map ─────────────────────
-  // Drains a single AIMapImportPayload (sent via the wrapper) into our
-  // ideas + user-edges layer. The whole subgraph lands offset to the
-  // right of the existing structural content so it doesn't overlap.
-  // Each node converts to an ExtraIdea so it inherits all the existing
-  // editing affordances (rename, recolour, drag, delete). Each edge
-  // becomes a user edge so it's deletable + reconnectable just like a
-  // freshly drawn one.
   const importedAppliedRef = useRef(false);
   useEffect(() => {
     if (!pendingImport) {
@@ -1080,30 +342,20 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
 
     const stamp = Date.now().toString(36);
     const remap = new Map<string, string>();
-    for (const n of pendingImport.nodes) {
-      remap.set(n.id, `${IDEA_NODE_PREFIX}${stamp}-${n.id}`);
-    }
+    for (const n of pendingImport.nodes) remap.set(n.id, `${IDEA_NODE_PREFIX}${stamp}-${n.id}`);
 
-    // Offset so the imported subtree appears to the right of the typical
-    // project content (project node ~0, columns ~380, tasks ~760, subtasks
-    // ~1050). 1500 lands clear of all of those at default zoom.
-    const X_OFFSET = 1500;
-    const Y_OFFSET = 0;
-
-    // Project map's IDEA_PALETTE only has 5 entries; AI uses 8. Round-robin.
-    const colorFor = (branchIndex: number): string => {
-      if (branchIndex < 0) return IDEA_PALETTE[0].name;
-      return IDEA_PALETTE[branchIndex % IDEA_PALETTE.length].name;
-    };
+    // Offset so the imported subtree lands right of the board content.
+    const X_OFFSET = 1700;
+    const colorFor = (branchIndex: number): string =>
+      branchIndex < 0 ? IDEA_PALETTE[0].name : IDEA_PALETTE[branchIndex % IDEA_PALETTE.length].name;
 
     const newIdeas: ExtraIdea[] = pendingImport.nodes.map((n) => ({
       id: remap.get(n.id) || `${IDEA_NODE_PREFIX}${stamp}-${n.id}`,
       label: n.label,
       x: n.x + X_OFFSET,
-      y: n.y + Y_OFFSET,
+      y: n.y,
       color: colorFor(n.branchIndex),
     }));
-
     const newEdges: ExtraEdge[] = [];
     pendingImport.edges.forEach((e, i) => {
       const src = remap.get(e.source);
@@ -1118,40 +370,30 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       });
     });
 
-    updateExtras((prev) => ({
+    const changeId = updateExtras((prev) => ({
       ...prev,
       ideas: [...prev.ideas, ...newIdeas],
       edges: [...prev.edges, ...newEdges],
     }));
 
-    // Pan/zoom to the new content so the user sees what was just imported.
     requestAnimationFrame(() => {
       try {
-        flow.fitView({ padding: 0.2, duration: 400 });
+        flow.fitView({ padding: 0.2, duration: 200 });
       } catch {
         /* fit ok to fail before the canvas mounts */
       }
     });
 
     onPendingImportApplied?.();
-    toast.success(
-      newIdeas.length === 1
-        ? '1 node added from AI map'
-        : `${newIdeas.length} nodes added from AI map`,
+    toastWithUndo(
+      newIdeas.length === 1 ? '1 idea added from the AI mind map' : `${newIdeas.length} ideas added from the AI mind map`,
+      changeId,
     );
-  }, [pendingImport, cloudLoaded, updateExtras, flow, onPendingImportApplied]);
+  }, [pendingImport, cloudLoaded, updateExtras, flow, onPendingImportApplied, toastWithUndo]);
 
   // ── Per-task attachment state ───────────────────────────────
-  // Counts how many files are attached to each task so we can show a 📎
-  // badge on the node, plus tracks which tasks are mid-upload for the
-  // spinner UI. We seed counts from the existing `files` table on mount,
-  // and bump them locally on a successful upload (instead of refetching).
-  const [attachmentCounts, setAttachmentCounts] = useState<Map<string, number>>(
-    new Map(),
-  );
-  const [uploadingTaskIds, setUploadingTaskIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [attachmentCounts, setAttachmentCounts] = useState<Map<string, number>>(new Map());
+  const [uploadingTaskIds, setUploadingTaskIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const orgId = project.organizationId;
@@ -1187,33 +429,24 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       const list = Array.from(files);
       if (list.length === 0) return;
 
-      setUploadingTaskIds((prev) => {
-        const next = new Set(prev);
-        next.add(taskId);
-        return next;
-      });
-
+      setUploadingTaskIds((prev) => new Set(prev).add(taskId));
       const toastId = toast.loading(
-        list.length === 1
-          ? `Uploading ${list[0].name}…`
-          : `Uploading ${list.length} files…`,
+        list.length === 1 ? `Uploading ${list[0].name}…` : `Uploading ${list.length} files…`,
       );
 
       let success = 0;
       let failed = 0;
       for (const file of list) {
         try {
-          await uploadFileWithProgress(
-            user.userId,
-            user.displayName || user.email || 'User',
-            orgId,
-            { projectId: project.projectId, taskId, file, scope: 'task' },
-          );
+          await uploadFileWithProgress(user.userId, user.displayName || user.email || 'User', orgId, {
+            projectId: project.projectId,
+            taskId,
+            file,
+            scope: 'task',
+          });
           success += 1;
-        } catch (err) {
+        } catch {
           failed += 1;
-          // Continue uploading the rest — better partial than silently aborting
-          // the entire batch on the first network blip.
         }
       }
 
@@ -1231,14 +464,9 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       });
 
       if (failed === 0) {
-        toast.success(
-          success === 1 ? 'File attached' : `${success} files attached`,
-          { id: toastId },
-        );
+        toast.success(success === 1 ? 'File attached' : `${success} files attached`, { id: toastId });
       } else if (success === 0) {
-        toast.error('Upload failed. Check your connection and try again.', {
-          id: toastId,
-        });
+        toast.error('Upload failed. Check your connection and try again.', { id: toastId });
       } else {
         toast.warning(`Attached ${success}, ${failed} failed`, { id: toastId });
       }
@@ -1246,23 +474,47 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     [project.projectId, project.organizationId, user?.userId, user?.displayName, user?.email],
   );
 
-  // ── Inline task panel state ─────────────────────────────────
-  // Clicking a task node opens this panel instead of switching to the kanban
-  // view, so brainstorming and editing happen on the same surface. The panel
-  // edits the live Task object in Supabase but never moves the task between
-  // columns — the mind map's reconnections stay purely visual.
+  // ── Inline task panel ───────────────────────────────────────
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const openTask = useMemo(
     () => (openTaskId ? tasks.find((t) => t.taskId === openTaskId) ?? null : null),
     [openTaskId, tasks],
   );
+  // Refs read by callbacks baked into node data (declared before the graph).
+  const connectModeRef = useRef(false);
+  const addChildRef = useRef<((id: string) => void) | null>(null);
+  const addChildStable = useCallback((id: string) => addChildRef.current?.(id), []);
   const handleOpenTaskInline = useCallback((taskId: string) => {
+    // While connecting, a click on a card picks it instead of opening it.
+    if (connectModeRef.current) return;
     setOpenTaskId(taskId);
   }, []);
 
-  // Auto-derived structure from the project + tasks. We intercept the open
-  // callback here: the prop `onOpenTask` (used to switch to kanban) is no
-  // longer wired into the node — instead we open the inline panel.
+  // ── Placeholder panel ───────────────────────────────────────
+  const [openPlaceholderId, setOpenPlaceholderId] = useState<string | null>(null);
+  const openPlaceholder = useMemo(
+    () => (openPlaceholderId ? extras.ideas.find((i) => i.id === openPlaceholderId) ?? null : null),
+    [openPlaceholderId, extras.ideas],
+  );
+
+  // ── Collapse columns ────────────────────────────────────────
+  const collapsedSet = useMemo(() => new Set(extras.collapsedColumns ?? []), [extras.collapsedColumns]);
+  const toggleCollapse = useCallback(
+    (columnNodeId: string) => {
+      updateExtras((prev) => {
+        const cur = new Set(prev.collapsedColumns ?? []);
+        if (cur.has(columnNodeId)) cur.delete(columnNodeId);
+        else cur.add(columnNodeId);
+        const next: MindMapExtras = { ...prev };
+        if (cur.size > 0) next.collapsedColumns = [...cur];
+        else delete next.collapsedColumns;
+        return next;
+      });
+    },
+    [updateExtras],
+  );
+
+  // Board-derived graph.
   const baseGraph = useMemo(
     () =>
       buildBaseGraph(project, tasks, columns, {
@@ -1270,6 +522,9 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         onAttachFilesToTask: handleAttachFilesToTask,
         attachmentCounts,
         uploadingTaskIds,
+        collapsed: collapsedSet,
+        onToggleCollapse: toggleCollapse,
+        onAddChild: addChildStable,
       }),
     [
       project,
@@ -1279,10 +534,40 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       handleAttachFilesToTask,
       attachmentCounts,
       uploadingTaskIds,
+      collapsedSet,
+      toggleCollapse,
+      addChildStable,
     ],
   );
 
-  // Idea-node mutators (passed into IdeaNode data so the user can edit/delete inline).
+  // ── React Flow controlled state ─────────────────────────────
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+  /** Node to select on the next re-seed (new ideas). */
+  const pendingSelectRef = useRef<string | null>(null);
+
+  /** Current on-canvas box for a node (measured size when available). */
+  const boxOf = useCallback(
+    (id: string): Box | null => {
+      const n = nodesRef.current.find((x) => x.id === id);
+      if (!n) return null;
+      const kind = (n.type ?? 'idea') as BoardNodeKind | 'idea';
+      const fallback = NODE_SIZE[kind] ?? NODE_SIZE.idea;
+      return {
+        x: n.position.x,
+        y: n.position.y,
+        w: n.measured?.width ?? fallback.w,
+        h: n.measured?.height ?? fallback.h,
+      };
+    },
+    [],
+  );
+
+  // ── Idea mutations ──────────────────────────────────────────
   const handleIdeaChange = useCallback(
     (id: string, patch: Partial<ExtraIdea>) => {
       updateExtras((prev) => ({
@@ -1293,37 +578,142 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
     [updateExtras],
   );
 
-  const handleIdeaDelete = useCallback(
-    (id: string) => {
+  /** Delete ideas and/or links. Auto (board) links are hidden, not deleted;
+   *  board cards themselves can't be deleted from the map. */
+  const removeItems = useCallback(
+    (nodeIds: string[], edgeIds: string[]) => {
+      const ideaSet = new Set(nodeIds.filter((id) => id.startsWith(IDEA_NODE_PREFIX)));
+      const userEdgeSet = new Set(edgeIds.filter((id) => id.startsWith(USER_EDGE_PREFIX)));
+      const autoIds = edgeIds.filter((id) => id.startsWith(AUTO_EDGE_PREFIX));
+      if (ideaSet.size === 0 && userEdgeSet.size === 0 && autoIds.length === 0) {
+        if (nodeIds.length > 0) toast.message('Tasks and columns come from the board — edit them there.');
+        return;
+      }
+      const prevEdgeCount = extrasRef.current.edges.length;
+      const changeId = updateExtras((prev) => ({
+        ...prev,
+        ideas: prev.ideas.filter((i) => !ideaSet.has(i.id)),
+        edges: prev.edges.filter(
+          (e) => !userEdgeSet.has(e.id) && !ideaSet.has(e.source) && !ideaSet.has(e.target),
+        ),
+        positions: Object.fromEntries(Object.entries(prev.positions).filter(([k]) => !ideaSet.has(k))),
+        removedAutoEdges:
+          autoIds.length > 0 ? Array.from(new Set([...prev.removedAutoEdges, ...autoIds])) : prev.removedAutoEdges,
+      }));
+      if (editingId && ideaSet.has(editingId)) setEditingId(null);
+      if (openPlaceholderId && ideaSet.has(openPlaceholderId)) setOpenPlaceholderId(null);
+
+      const linkCount = prevEdgeCount - extrasRef.current.edges.length + autoIds.length;
+      const parts: string[] = [];
+      if (ideaSet.size > 0) parts.push(ideaSet.size === 1 ? '1 idea' : `${ideaSet.size} ideas`);
+      if (linkCount > 0) parts.push(linkCount === 1 ? '1 link' : `${linkCount} links`);
+      toastWithUndo(`Deleted ${parts.join(' and ')}`, changeId);
+    },
+    [updateExtras, editingId, openPlaceholderId, toastWithUndo],
+  );
+
+  const createIdea = useCallback(
+    (idea: ExtraIdea, linkFrom?: string, opts: { edit?: boolean } = {}) => {
       updateExtras((prev) => ({
         ...prev,
-        ideas: prev.ideas.filter((i) => i.id !== id),
-        edges: prev.edges.filter((e) => e.source !== id && e.target !== id),
-        positions: Object.fromEntries(
-          Object.entries(prev.positions).filter(([k]) => k !== id),
-        ),
+        ideas: [...prev.ideas, idea],
+        edges: linkFrom
+          ? [
+              ...prev.edges,
+              { id: newUserEdgeId(), source: linkFrom, target: idea.id, sourceHandle: 'r-src', targetHandle: 'l-tgt' },
+            ]
+          : prev.edges,
       }));
+      pendingSelectRef.current = idea.id;
+      if (opts.edit !== false) setEditingId(idea.id);
     },
     [updateExtras],
   );
 
-  // ── Placeholder task panel ─────────────────────────────────
-  // Clicking a task-shape placeholder opens this panel so the user can
-  // edit notes / subtasks / attach files. Everything saves into extras —
-  // never touches the kanban tasks table.
-  const [openPlaceholderId, setOpenPlaceholderId] = useState<string | null>(null);
-  const openPlaceholder = useMemo(
-    () =>
-      openPlaceholderId
-        ? extras.ideas.find((i) => i.id === openPlaceholderId) ?? null
-        : null,
-    [openPlaceholderId, extras.ideas],
-  );
-  const handleOpenPlaceholder = useCallback((id: string) => {
-    setOpenPlaceholderId(id);
-  }, []);
+  const viewportCentre = useCallback(() => {
+    const el = containerRef.current?.querySelector('.react-flow') as HTMLElement | null;
+    const rect = el?.getBoundingClientRect();
+    const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+    return flow.screenToFlowPosition({ x: cx, y: cy });
+  }, [flow]);
 
-  // Compose final node/edge arrays: base graph + position overrides + user ideas + user edges.
+  const addIdeaAt = useCallback(
+    (pos: { x: number; y: number }) => {
+      createIdea({
+        id: newIdeaId(),
+        label: 'New idea',
+        x: pos.x - NODE_SIZE.idea.w / 2,
+        y: pos.y - NODE_SIZE.idea.h / 2,
+        color: IDEA_PALETTE[0].name,
+      });
+    },
+    [createIdea],
+  );
+
+  const addIdea = useCallback(() => addIdeaAt(viewportCentre()), [addIdeaAt, viewportCentre]);
+
+  const ideaColorOf = useCallback(
+    (id: string) => extrasRef.current.ideas.find((i) => i.id === id)?.color,
+    [],
+  );
+
+  /** Tab: add an idea to the right of `parentId`, linked from it. */
+  const addChild = useCallback(
+    (parentId: string) => {
+      const parent = boxOf(parentId);
+      if (!parent) return;
+      const childBoxes = extrasRef.current.edges
+        .filter((e) => e.source === parentId)
+        .map((e) => boxOf(e.target))
+        .filter((b): b is Box => !!b && b.x > parent.x);
+      const pos = placeChild(parent, childBoxes);
+      createIdea(
+        {
+          id: newIdeaId(),
+          label: 'New idea',
+          x: pos.x,
+          y: pos.y,
+          color: ideaColorOf(parentId) ?? IDEA_PALETTE[0].name,
+        },
+        parentId,
+      );
+    },
+    [boxOf, createIdea, ideaColorOf],
+  );
+  addChildRef.current = addChild;
+
+  /** Enter on an idea: add a sibling below it (linked from the same parent). */
+  const addSibling = useCallback(
+    (id: string) => {
+      const box = boxOf(id);
+      if (!box) return;
+      const parentId = extrasRef.current.edges.find((e) => e.target === id)?.source;
+      const siblings = parentId
+        ? extrasRef.current.edges
+            .filter((e) => e.source === parentId && e.target !== id)
+            .map((e) => boxOf(e.target))
+            .filter((b): b is Box => !!b && Math.abs(b.x - box.x) < 40)
+        : [];
+      const pos = placeSibling(box, siblings);
+      createIdea(
+        { id: newIdeaId(), label: 'New idea', x: pos.x, y: pos.y, color: ideaColorOf(id) ?? IDEA_PALETTE[0].name },
+        parentId,
+      );
+    },
+    [boxOf, createIdea, ideaColorOf],
+  );
+
+  const commitLabel = useCallback(
+    (id: string, label: string) => {
+      setEditingId((cur) => (cur === id ? null : cur));
+      const idea = extrasRef.current.ideas.find((i) => i.id === id);
+      if (idea && idea.label !== label) handleIdeaChange(id, { label });
+    },
+    [handleIdeaChange],
+  );
+
+  // ── Compose nodes / edges ───────────────────────────────────
   const composedNodes = useMemo<Node[]>(() => {
     const base = baseGraph.nodes.map((n) => {
       const override = extras.positions[n.id];
@@ -1339,128 +729,101 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
           label: i.label,
           color: i.color,
           kind: i.kind,
-          // For project-header placeholders, surface the live project
-          // description as a subtitle. Real ProjectNode does the same, so the
-          // placeholder visually echoes the actual project root.
           projectDescription: i.kind === 'project' ? project.description : undefined,
-          // Surface attachment + subtask counts on task placeholders so the
-          // node shows the same micro-stats as a real task card.
-          attachmentCount: i.kind === 'task' ? (i.attachments?.length ?? 0) : 0,
+          attachmentCount: i.kind === 'task' ? i.attachments?.length ?? 0 : 0,
           subtaskProgress:
+            i.kind === 'task' ? { completed: subs.filter((s) => s.completed).length, total: subs.length } : undefined,
+          onOpen:
             i.kind === 'task'
-              ? {
-                  completed: subs.filter((s) => s.completed).length,
-                  total: subs.length,
+              ? () => {
+                  if (!connectModeRef.current) setOpenPlaceholderId(i.id);
                 }
               : undefined,
-          onOpen: i.kind === 'task' ? () => handleOpenPlaceholder(i.id) : undefined,
-          onChange: (label: string) => handleIdeaChange(i.id, { label }),
-          onDelete: () => handleIdeaDelete(i.id),
+          isEditing: editingId === i.id,
+          onStartEdit: () => setEditingId(i.id),
+          onCommit: (label: string) => commitLabel(i.id, label),
+          onCancelEdit: () => setEditingId((cur) => (cur === i.id ? null : cur)),
+          onCommitAndAddChild: (label: string) => {
+            commitLabel(i.id, label);
+            addChild(i.id);
+          },
+          onDelete: () => removeItems([i.id], []),
           onColorChange: (color: string) => handleIdeaChange(i.id, { color }),
+          onAddChild: () => addChild(i.id),
         } satisfies IdeaNodeData,
       };
     });
     return [...base, ...ideaNodes];
-  }, [
-    baseGraph.nodes,
-    extras,
-    handleIdeaChange,
-    handleIdeaDelete,
-    handleOpenPlaceholder,
-    project.description,
-  ]);
-
-  /** One-click delete fired from the X button on each edge. We don't touch
-   *  the React Flow `edges` state here; the composedEdges memo re-derives
-   *  from extras and the seeding useEffect resyncs the canvas, so the click
-   *  feels instant without us having to dual-write. Same classification as
-   *  the keyboard delete path so auto-edges hide and user-edges remove. */
-  const handleDeleteEdgeById = useCallback(
-    (edgeId: string) => {
-      if (edgeId.startsWith(USER_EDGE_PREFIX)) {
-        updateExtras((prev) => ({
-          ...prev,
-          edges: prev.edges.filter((e) => e.id !== edgeId),
-        }));
-      } else if (edgeId.startsWith(AUTO_EDGE_PREFIX)) {
-        updateExtras((prev) => ({
-          ...prev,
-          removedAutoEdges: prev.removedAutoEdges.includes(edgeId)
-            ? prev.removedAutoEdges
-            : [...prev.removedAutoEdges, edgeId],
-        }));
-      }
-    },
-    [updateExtras],
-  );
+  }, [baseGraph.nodes, extras, editingId, project.description, commitLabel, addChild, removeItems, handleIdeaChange]);
 
   const composedEdges = useMemo<Edge[]>(() => {
     const removed = new Set(extras.removedAutoEdges);
-    // Every visible edge — auto or user-drawn — is rendered through the
-    // `deletable` custom edge so it gets a one-click X button. The original
-    // smoothstep visuals come from the styles we set in buildBaseGraph;
-    // DeletableEdge re-uses smoothstep paths via getSmoothStepPath, so the
-    // shape stays identical to before — only the click affordance is new.
-    const stampDeletable = (edge: Edge): Edge => ({
-      ...edge,
-      type: 'deletable',
-      data: {
-        ...(edge.data as Record<string, unknown> | undefined),
-        onDelete: handleDeleteEdgeById,
-      } satisfies DeletableEdgeData,
-    });
-    const baseVisible = baseGraph.edges
+    const visibleIds = new Set(composedNodes.map((n) => n.id));
+    const data: DeletableEdgeData = {
+      onDelete: (edgeId: string) => removeItems([], [edgeId]),
+      curve: 'bezier',
+      revealOnHover: true,
+    };
+    const base = baseGraph.edges
       .filter((e) => !removed.has(e.id))
-      .map(stampDeletable);
-    const userEdges: Edge[] = extras.edges.map((e) =>
-      stampDeletable({
+      .map((e) => ({ ...e, type: 'deletable', data: { ...data, removeLabel: 'Hide link' } }));
+    const user: Edge[] = extras.edges
+      .filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
+      .map((e) => ({
         id: e.id,
         source: e.source,
         target: e.target,
         sourceHandle: e.sourceHandle ?? undefined,
         targetHandle: e.targetHandle ?? undefined,
-        animated: true,
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: 'rgb(99,102,241)',
-          width: 14,
-          height: 14,
-        },
-        style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
-      }),
-    );
-    return [...baseVisible, ...userEdges];
-  }, [baseGraph.edges, extras.edges, extras.removedAutoEdges, handleDeleteEdgeById]);
+        type: 'deletable',
+        markerEnd: USER_EDGE_MARKER,
+        style: USER_EDGE_STYLE,
+        data,
+      }));
+    return [...base, ...user];
+  }, [baseGraph.edges, extras.edges, extras.removedAutoEdges, composedNodes, removeItems]);
 
-  // React Flow controlled state. We seed from composedNodes/Edges and re-seed when the
-  // composition changes (e.g. tasks updated, idea added). Drag-in-flight changes go
-  // straight to local state for responsiveness; persistence happens on drag stop.
-  const [nodes, setNodes] = useState<Node[]>(composedNodes);
-  const [edges, setEdges] = useState<Edge[]>(composedEdges);
-
+  // Re-seed React Flow state when the composition changes, keeping selection
+  // and measured sizes so nothing flickers or deselects on every edit.
   useEffect(() => {
-    setNodes(composedNodes);
+    const select = pendingSelectRef.current;
+    pendingSelectRef.current = null;
+    setNodes((prev) => {
+      const prevById = new Map(prev.map((n) => [n.id, n]));
+      return composedNodes.map((n) => {
+        const old = prevById.get(n.id);
+        const selected = select ? n.id === select : !!old?.selected;
+        return old?.measured ? { ...n, selected, measured: old.measured } : { ...n, selected };
+      });
+    });
   }, [composedNodes]);
+
   useEffect(() => {
-    setEdges(composedEdges);
+    setEdges((prev) => {
+      const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id));
+      return composedEdges.map((e) => (sel.has(e.id) ? { ...e, selected: true } : e));
+    });
   }, [composedEdges]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes((nds) => applyNodeChanges(changes, nds));
-      // Persist position drops only — ignore the in-flight "dragging" updates so we
-      // don't hammer localStorage on every mouse move.
-      const finalDrops = changes.filter(
+      const drops = changes.filter(
         (c): c is Extract<NodeChange, { type: 'position' }> =>
           c.type === 'position' && c.dragging === false && !!c.position,
       );
-      if (finalDrops.length === 0) return;
+      if (drops.length === 0) return;
       updateExtras((prev) => {
         const positions = { ...prev.positions };
-        for (const c of finalDrops) {
-          if (c.position) positions[c.id] = c.position;
+        let changed = false;
+        for (const c of drops) {
+          if (!c.position) continue;
+          const old = positions[c.id];
+          if (old && old.x === c.position.x && old.y === c.position.y) continue;
+          positions[c.id] = c.position;
+          changed = true;
         }
-        return { ...prev, positions };
+        return changed ? { ...prev, positions } : prev;
       });
     },
     [updateExtras],
@@ -1473,458 +836,204 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
-      if (connection.source === connection.target) return; // disallow self-loop
-      const id = `${USER_EDGE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const newEdge: Edge = {
-        id,
-        source: connection.source,
-        target: connection.target,
-        sourceHandle: connection.sourceHandle ?? undefined,
-        targetHandle: connection.targetHandle ?? undefined,
-        type: 'deletable',
-        animated: true,
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: 'rgb(99,102,241)',
-          width: 14,
-          height: 14,
-        },
-        style: { stroke: 'rgb(99,102,241)', strokeWidth: 2 },
-        data: { onDelete: handleDeleteEdgeById } satisfies DeletableEdgeData,
-      };
-      setEdges((eds) => addEdge(newEdge, eds));
+      if (connection.source === connection.target) return;
       updateExtras((prev) => ({
         ...prev,
         edges: [
           ...prev.edges,
           {
-            id,
-            source: connection.source!,
-            target: connection.target!,
+            id: newUserEdgeId(),
+            source: connection.source,
+            target: connection.target,
             sourceHandle: connection.sourceHandle,
             targetHandle: connection.targetHandle,
           },
         ],
       }));
     },
-    [updateExtras, handleDeleteEdgeById],
-  );
-
-  // React Flow calls these *before* applying the delete, so we can both filter
-  // what the user is allowed to remove and keep our extras store in sync.
-  // Idea nodes and *both* edge kinds (user-drawn + auto/structural) are now
-  // deletable — for auto edges the deletion is a "hide" (tracked separately
-  // so we can restore later). Structural nodes (project / columns / tasks /
-  // subtasks) cannot be deleted from the canvas because they reflect data.
-  const onBeforeDelete = useCallback(
-    async ({ nodes: nDel, edges: eDel }: { nodes: Node[]; edges: Edge[] }) => {
-      const deletableNodes = nDel.filter((n) => n.id.startsWith(IDEA_NODE_PREFIX));
-      const deletableEdges = eDel.filter(
-        (e) =>
-          e.id.startsWith(USER_EDGE_PREFIX) ||
-          e.id.startsWith(AUTO_EDGE_PREFIX),
-      );
-      if (deletableNodes.length === 0 && deletableEdges.length === 0) {
-        return false;
-      }
-      return { nodes: deletableNodes, edges: deletableEdges };
-    },
-    [],
-  );
-
-  const onNodesDelete = useCallback(
-    (deleted: Node[]) => {
-      const ids = deleted.map((n) => n.id).filter((id) => id.startsWith(IDEA_NODE_PREFIX));
-      if (ids.length === 0) return;
-      updateExtras((prev) => ({
-        ...prev,
-        ideas: prev.ideas.filter((i) => !ids.includes(i.id)),
-        edges: prev.edges.filter((e) => !ids.includes(e.source) && !ids.includes(e.target)),
-        positions: Object.fromEntries(
-          Object.entries(prev.positions).filter(([k]) => !ids.includes(k)),
-        ),
-      }));
-    },
     [updateExtras],
   );
-
-  const onEdgesDelete = useCallback(
-    (deleted: Edge[]) => {
-      const userIds: string[] = [];
-      const autoIds: string[] = [];
-      for (const e of deleted) {
-        if (e.id.startsWith(USER_EDGE_PREFIX)) userIds.push(e.id);
-        else if (e.id.startsWith(AUTO_EDGE_PREFIX)) autoIds.push(e.id);
-      }
-      if (userIds.length === 0 && autoIds.length === 0) return;
-      updateExtras((prev) => ({
-        ...prev,
-        edges: prev.edges.filter((e) => !userIds.includes(e.id)),
-        // Track hidden auto-edges so they don't reappear on the next render
-        // (composedEdges filters them out). Use a Set to dedupe across runs.
-        removedAutoEdges:
-          autoIds.length > 0
-            ? Array.from(new Set([...prev.removedAutoEdges, ...autoIds]))
-            : prev.removedAutoEdges,
-      }));
-    },
-    [updateExtras],
-  );
-
-
-  // Toolbar actions
-  const addIdea = useCallback(() => {
-    // Drop the new node near the centre of the current viewport so the user actually
-    // sees it appear instead of guessing where it landed.
-    const containerEl = document.querySelector('.react-flow') as HTMLElement | null;
-    const rect = containerEl?.getBoundingClientRect();
-    const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
-    const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
-    const flowPos = flow.screenToFlowPosition({ x: cx, y: cy });
-    const id = `${IDEA_NODE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const idea: ExtraIdea = {
-      id,
-      label: 'New idea',
-      x: flowPos.x - 100,
-      y: flowPos.y - 24,
-      color: IDEA_PALETTE[0].name,
-    };
-    updateExtras((prev) => ({ ...prev, ideas: [...prev.ideas, idea] }));
-    // Nudge selection to the new node so the user can immediately delete or edit it.
-    requestAnimationFrame(() => {
-      setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === id })));
-    });
-  }, [flow, updateExtras]);
 
   // ── Add placeholder dialog (mind-map only) ───────────────────
   // Hard rule: NOTHING the user does on the mind map writes to the kanban.
-  // The three "Add" options drop a node into the mind map's local extras.
-  // Each kind renders in a different visual shell so it visually echoes the
-  // matching real node — task-card, column pill, or project header — but
-  // the data lives entirely in extras and never reaches the kanban.
-  const [addDialog, setAddDialog] = useState<{
-    open: boolean;
-    type: 'task' | 'column' | 'project';
-  }>({ open: false, type: 'task' });
+  const [addDialog, setAddDialog] = useState<{ open: boolean; type: PlaceholderKind }>({
+    open: false,
+    type: 'task',
+  });
   const [addTitle, setAddTitle] = useState('');
-  const [addSubmitting, setAddSubmitting] = useState(false);
 
   const openAddDialog = useCallback(
-    (type: 'task' | 'column' | 'project') => {
-      // Project headers default to the real project name so the user gets
-      // a one-tap experience: open dialog, hit Enter, header is on the canvas.
+    (type: PlaceholderKind) => {
       setAddTitle(type === 'project' ? project.name : '');
       setAddDialog({ open: true, type });
     },
     [project.name],
   );
 
-  const closeAddDialog = useCallback(() => {
-    if (addSubmitting) return;
-    setAddDialog((s) => ({ ...s, open: false }));
-  }, [addSubmitting]);
-
-  const submitAddDialog = useCallback(async () => {
+  const submitAddDialog = useCallback(() => {
     const title = addTitle.trim();
     if (!title) {
       toast.error('Give it a title first.');
       return;
     }
-
-    setAddSubmitting(true);
-    try {
-      // Drop the new node near the centre of the current viewport — same
-      // placement the existing `addIdea` uses.
-      const containerEl = document.querySelector('.react-flow') as HTMLElement | null;
-      const rect = containerEl?.getBoundingClientRect();
-      const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
-      const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
-      const flowPos = flow.screenToFlowPosition({ x: cx, y: cy });
-      const id = `${IDEA_NODE_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-      // Default colour per kind. All three names exist in IDEA_PALETTE so
-      // the per-node palette swap (hover toolbar) keeps working.
-      const colorByType: Record<'task' | 'column' | 'project', string> = {
-        task: 'emerald',
-        column: 'sky',
-        project: 'violet',
-      };
-
-      const idea: ExtraIdea = {
-        id,
+    const c = viewportCentre();
+    const type = addDialog.type;
+    createIdea(
+      {
+        id: newIdeaId(),
         label: title,
-        x: flowPos.x - 100,
-        y: flowPos.y - 24,
-        color: colorByType[addDialog.type],
-        kind: addDialog.type,
-      };
-      updateExtras((prev) => ({ ...prev, ideas: [...prev.ideas, idea] }));
-      requestAnimationFrame(() => {
-        setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === id })));
-      });
-
-      const successByKind: Record<'task' | 'column' | 'project', string> = {
-        task: 'Task added to mind map',
-        column: 'Column added to mind map',
-        project: 'Project header added to mind map',
-      };
-      toast.success(successByKind[addDialog.type]);
-      setAddDialog((s) => ({ ...s, open: false }));
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'Could not add — please try again.';
-      toast.error(msg);
-    } finally {
-      setAddSubmitting(false);
-    }
-  }, [addTitle, addDialog.type, flow, updateExtras]);
-
-  const deleteSelection = useCallback(() => {
-    const selectedNodeIds = nodes
-      .filter((n) => n.selected && n.id.startsWith(IDEA_NODE_PREFIX))
-      .map((n) => n.id);
-    const selectedEdgeIds = edges
-      .filter((e) => e.selected && e.id.startsWith(USER_EDGE_PREFIX))
-      .map((e) => e.id);
-    if (selectedNodeIds.length === 0 && selectedEdgeIds.length === 0) return;
-    setNodes((nds) => nds.filter((n) => !selectedNodeIds.includes(n.id)));
-    setEdges((eds) =>
-      eds.filter((e) => !selectedEdgeIds.includes(e.id) && !selectedNodeIds.includes(e.source) && !selectedNodeIds.includes(e.target)),
+        x: c.x - 150,
+        y: c.y - 40,
+        color: PLACEHOLDER_COLOR[type],
+        kind: type,
+      },
+      undefined,
+      { edit: false },
     );
-    updateExtras((prev) => ({
-      ...prev,
-      ideas: prev.ideas.filter((i) => !selectedNodeIds.includes(i.id)),
-      edges: prev.edges.filter(
-        (e) =>
-          !selectedEdgeIds.includes(e.id) &&
-          !selectedNodeIds.includes(e.source) &&
-          !selectedNodeIds.includes(e.target),
-      ),
-      positions: Object.fromEntries(
-        Object.entries(prev.positions).filter(([k]) => !selectedNodeIds.includes(k)),
-      ),
-    }));
-  }, [nodes, edges, updateExtras]);
+    setAddDialog((s) => ({ ...s, open: false }));
+  }, [addTitle, addDialog.type, viewportCentre, createIdea]);
+
+  // ── Bulk actions (confirmed + undoable) ─────────────────────
+  const [confirm, setConfirm] = useState<ConfirmKind>(null);
+
+  const clearPlaceholders = useCallback(() => {
+    const changeId = updateExtras((prev) =>
+      prev.ideas.length === 0 && prev.edges.length === 0
+        ? prev
+        : {
+            ...prev,
+            ideas: [],
+            edges: [],
+            positions: Object.fromEntries(
+              Object.entries(prev.positions).filter(([k]) => !k.startsWith(IDEA_NODE_PREFIX)),
+            ),
+          },
+    );
+    setEditingId(null);
+    setOpenPlaceholderId(null);
+    toastWithUndo('Cleared all ideas, placeholders and custom links', changeId);
+  }, [updateExtras, toastWithUndo]);
 
   const resetLayout = useCallback(() => {
-    if (!window.confirm('Reset all node positions and remove your custom ideas/connections?')) {
-      return;
-    }
-    updateExtras(() => EMPTY_EXTRAS);
-    requestAnimationFrame(() => flow.fitView({ padding: 0.2, duration: 300 }));
-  }, [flow, updateExtras]);
+    const changeId = updateExtras(() => ({ ...EMPTY_EXTRAS }));
+    setEditingId(null);
+    setOpenPlaceholderId(null);
+    toastWithUndo('Map reset', changeId);
+    requestAnimationFrame(() => flow.fitView({ padding: 0.2, duration: 200 }));
+  }, [updateExtras, toastWithUndo, flow]);
 
-  /** Wipe every user-added placeholder (Idea / Task / Column / Project) AND any
-   *  user-drawn edges in one shot. The auto-derived structural graph stays put
-   *  because that mirrors the kanban — we only clear what the user added on
-   *  the mind map surface. */
-  const deleteAllPlaceholders = useCallback(() => {
-    if (extras.ideas.length === 0 && extras.edges.length === 0) {
-      toast.message('Nothing to delete — no placeholders or custom links yet.');
-      return;
-    }
-    if (
-      !window.confirm(
-        `Delete all ${extras.ideas.length} placeholder${extras.ideas.length === 1 ? '' : 's'}` +
-          `${extras.edges.length > 0 ? ` and ${extras.edges.length} custom link${extras.edges.length === 1 ? '' : 's'}` : ''}? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-    updateExtras((prev) => ({
-      ...prev,
-      ideas: [],
-      edges: [],
-      // Drop manual position overrides for ideas — auto-graph positions stay.
-      positions: Object.fromEntries(
-        Object.entries(prev.positions).filter(([k]) => !k.startsWith(IDEA_NODE_PREFIX)),
-      ),
-    }));
-    toast.success('Cleared all placeholders');
-  }, [extras.ideas.length, extras.edges.length, updateExtras]);
+  const restoreLinks = useCallback(() => {
+    const n = extrasRef.current.removedAutoEdges.length;
+    const changeId = updateExtras((prev) =>
+      prev.removedAutoEdges.length === 0 ? prev : { ...prev, removedAutoEdges: [] },
+    );
+    toastWithUndo(n === 1 ? 'Restored 1 hidden link' : `Restored ${n} hidden links`, changeId);
+  }, [updateExtras, toastWithUndo]);
 
-  const fitView = useCallback(() => {
-    flow.fitView({ padding: 0.2, duration: 300 });
-  }, [flow]);
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useEffect(() => {
-    const onChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
-
-  const toggleFullscreen = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined);
-    } else {
-      void el.requestFullscreen?.().catch((err: unknown) => {
-        toast.error(
-          err instanceof Error
-            ? `Fullscreen blocked: ${err.message}`
-            : 'Fullscreen not available in this browser',
-        );
-      });
-    }
-  }, []);
-
-  const selectionHasUserItems = useMemo(
-    () =>
-      nodes.some((n) => n.selected && n.id.startsWith(IDEA_NODE_PREFIX)) ||
-      edges.some((e) => e.selected && e.id.startsWith(USER_EDGE_PREFIX)),
-    [nodes, edges],
-  );
-
-  // ── Keyboard shortcuts ──────────────────────────────────────
-  const [showShortcuts, setShowShortcuts] = useState(false);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      // Skip when user is typing in an input/textarea
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target.isContentEditable
-      )
-        return;
-
-      const mod = e.metaKey || e.ctrlKey;
-
-      if (mod && (e.key === '=' || e.key === '+')) {
-        e.preventDefault();
-        flow.zoomIn({ duration: 200 });
-      } else if (mod && e.key === '-') {
-        e.preventDefault();
-        flow.zoomOut({ duration: 200 });
-      } else if (mod && e.key === '0') {
-        e.preventDefault();
-        flow.fitView({ padding: 0.2, duration: 300 });
-      } else if (e.key === 'n' && !mod && !e.altKey) {
-        e.preventDefault();
-        addIdea();
-      } else if (e.key === '?' && !mod) {
-        e.preventDefault();
-        setShowShortcuts((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [flow, addIdea]);
-
-  // ── Export functions ─────────────────────────────────────────
-
-  const exportAsJson = useCallback(() => {
-    const data = flow.toObject();
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mindmap-${project.name.replace(/\s+/g, '-').toLowerCase()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [flow, project.name]);
-
-  const exportAsPng = useCallback(async () => {
-    const el = document.querySelector('.react-flow__viewport') as HTMLElement | null;
-    if (!el) return;
-    try {
-      const root = document.documentElement;
-      const rawBg = getComputedStyle(root).getPropertyValue('--background').trim();
-      let backgroundColor: string;
-      if (rawBg.length === 0) {
-        backgroundColor = window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? '#171717'
-          : '#ffffff';
-      } else if (rawBg.startsWith('#')) {
-        backgroundColor = rawBg;
-      } else {
-        const lower = rawBg.toLowerCase();
-        const isCompleteColorString =
-          lower.startsWith('hsl(') ||
-          lower.startsWith('hsla(') ||
-          lower.startsWith('rgb(') ||
-          lower.startsWith('rgba(') ||
-          lower.startsWith('var(') ||
-          rawBg.includes('(');
-        backgroundColor = isCompleteColorString ? rawBg : `hsl(${rawBg})`;
-      }
-
-      const { toPng } = await import('html-to-image') as {
-        toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string>;
+  const tidyUp = useCallback(
+    (animate = true) => {
+      const sizeFor = (n: Node, kind: BoardNodeKind | 'idea') => {
+        const live = nodesRef.current.find((x) => x.id === n.id);
+        const fb = NODE_SIZE[kind] ?? NODE_SIZE.idea;
+        return { w: live?.measured?.width ?? fb.w, h: live?.measured?.height ?? fb.h };
       };
-      const dataUrl = await toPng(el, {
-        backgroundColor,
-        pixelRatio: 2,
-        filter: (node: Element) => {
-          const cls = (node as HTMLElement).className;
-          if (typeof cls === 'string' && (cls.includes('react-flow__minimap') || cls.includes('react-flow__controls')))
-            return false;
-          return true;
-        },
+      const board = baseGraph.nodes.map((n) => ({
+        id: n.id,
+        kind: n.type as BoardNodeKind,
+        x: n.position.x,
+        y: n.position.y,
+        ...sizeFor(n, n.type as BoardNodeKind),
+      }));
+      const ideas = nodesRef.current
+        .filter((n) => n.type === 'idea')
+        .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, ...sizeFor(n, 'idea') }));
+      const ideaPositions = tidyLayout({
+        board,
+        ideas,
+        links: extrasRef.current.edges.map((e) => ({ source: e.source, target: e.target })),
       });
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `mindmap-${project.name.replace(/\s+/g, '-').toLowerCase()}.png`;
-      a.click();
-    } catch {
-      // html-to-image not installed — fall back to JSON
-      exportAsJson();
-    }
-  }, [project.name, exportAsJson]);
-
-  // ── Context menu state ──────────────────────────────────────
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    nodeId?: string;
-  } | null>(null);
-
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      // Check if we right-clicked on a node
-      const target = e.target as HTMLElement;
-      const nodeEl = target.closest('[data-id]');
-      const nodeId = nodeEl?.getAttribute('data-id') || undefined;
-      setContextMenu({ x: e.clientX, y: e.clientY, nodeId });
+      const changeId = updateExtras((prev) => ({ ...prev, positions: ideaPositions }));
+      if (changeId === null) return;
+      toastWithUndo('Map tidied up', changeId);
+      requestAnimationFrame(() => flow.fitView({ padding: 0.15, duration: animate ? 200 : 0 }));
     },
-    [],
+    [baseGraph.nodes, updateExtras, toastWithUndo, flow],
   );
 
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  // ── Find ─────────────────────────────────────────────────────
+  const [findOpen, setFindOpen] = useState(false);
+  const searchItems = useMemo<SearchItem[]>(() => {
+    const colTitle = new Map(columns.map((c) => [c.id, c.title]));
+    const items: SearchItem[] = [{ id: PROJECT_NODE_ID, label: project.name, kind: 'project' }];
+    for (const c of columns) items.push({ id: `${COLUMN_NODE_PREFIX}${c.id}`, label: c.title, kind: 'column' });
+    for (const t of tasks) {
+      const col = colTitle.get(t.status) ?? 'Unsorted';
+      items.push({ id: `${TASK_NODE_PREFIX}${t.taskId}`, label: t.title, kind: 'task', context: col });
+      (t.subtasks ?? []).forEach((s, i) =>
+        items.push({ id: subtaskNodeId(t.taskId, s.id, i), label: s.title, kind: 'subtask', context: t.title }),
+      );
+    }
+    for (const i of extras.ideas) {
+      items.push({
+        id: i.id,
+        label: i.label,
+        kind: 'idea',
+        context: i.kind ? `${i.kind[0].toUpperCase()}${i.kind.slice(1)} placeholder` : undefined,
+      });
+    }
+    return items;
+  }, [project.name, columns, tasks, extras.ideas]);
 
-  // ── "Connect" tool: click-two-nodes to wire instead of drag ────────
-  // Some users (especially on touch devices) struggle with the drag-from-
-  // handle gesture. Connect mode lets them tap one node, tap a second, and
-  // we wire them up — no precision required.
+  // One guaranteed fit once the first cards are measured (React Flow's own
+  // `fitView` prop can fire before the cloud copy of the layout arrives).
+  const didInitialFitRef = useRef(false);
+  useEffect(() => {
+    if (didInitialFitRef.current || !cloudLoaded) return;
+    if (!nodes.some((n) => n.measured?.width)) return;
+    didInitialFitRef.current = true;
+    requestAnimationFrame(() => void flow.fitView({ padding: 0.2, duration: 0 }));
+  }, [nodes, cloudLoaded, flow]);
+
+  const pendingFocusRef = useRef<{ id: string; duration: number } | null>(null);
+
+  const focusNode = useCallback(
+    (id: string, viaKeyboard: boolean) => {
+      const col = baseGraph.columnOf.get(id);
+      pendingFocusRef.current = { id, duration: viaKeyboard ? 0 : 250 };
+      if (col && collapsedSet.has(col)) {
+        // Expand first; the re-seed selects the card once it exists.
+        pendingSelectRef.current = id;
+        toggleCollapse(col);
+      } else {
+        setNodes((nds) => nds.map((n) => (n.selected !== (n.id === id) ? { ...n, selected: n.id === id } : n)));
+      }
+    },
+    [baseGraph.columnOf, collapsedSet, toggleCollapse],
+  );
+
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (!pending) return;
+    const n = nodes.find((x) => x.id === pending.id);
+    if (!n?.measured?.width) return; // wait until measured
+    pendingFocusRef.current = null;
+    flow.fitView({ nodes: [{ id: pending.id }], duration: pending.duration, maxZoom: 1.1, padding: 0.8 });
+  }, [nodes, flow]);
+
+  // ── Connect mode ─────────────────────────────────────────────
   const [connectMode, setConnectMode] = useState(false);
   const [connectFirstNodeId, setConnectFirstNodeId] = useState<string | null>(null);
-
+  connectModeRef.current = connectMode;
   const exitConnectMode = useCallback(() => {
     setConnectMode(false);
     setConnectFirstNodeId(null);
   }, []);
-
-  // Esc cancels connect mode mid-gesture.
-  useEffect(() => {
-    if (!connectMode) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') exitConnectMode();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+  const toggleConnect = useCallback(() => {
+    if (connectMode) exitConnectMode();
+    else setConnectMode(true);
   }, [connectMode, exitConnectMode]);
 
-  const handleNodeClickForConnect = useCallback(
+  const handleNodeClick = useCallback(
     (_e: React.MouseEvent, node: Node) => {
       if (!connectMode) return;
       if (!connectFirstNodeId) {
@@ -1932,309 +1041,512 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         return;
       }
       if (connectFirstNodeId === node.id) {
-        // Click same node twice = cancel selection
         setConnectFirstNodeId(null);
         return;
       }
-      // Wire it up via the same path drag-connect uses, so persistence and
-      // edge styling are identical. Pass null handles so React Flow picks
-      // sensible defaults based on node positions.
-      onConnect({
-        source: connectFirstNodeId,
-        target: node.id,
-        sourceHandle: null,
-        targetHandle: null,
-      });
+      onConnect({ source: connectFirstNodeId, target: node.id, sourceHandle: null, targetHandle: null });
       exitConnectMode();
       toast.success('Connected');
     },
     [connectMode, connectFirstNodeId, onConnect, exitConnectMode],
   );
 
+  // ── Fullscreen ───────────────────────────────────────────────
+  // CSS full-viewport mode (+ browser fullscreen on the document when
+  // allowed) so Radix portals — menus, dialogs, panels — stay visible.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setIsFullscreen(false);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  useEffect(
+    () => () => {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    },
+    [],
+  );
+  const toggleFullscreen = useCallback(() => {
+    if (isFullscreen) {
+      setIsFullscreen(false);
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    } else {
+      setIsFullscreen(true);
+      void document.documentElement.requestFullscreen?.().catch(() => undefined);
+    }
+  }, [isFullscreen]);
+
+  // ── Help / tip / minimap ─────────────────────────────────────
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [tipVisible, setTipVisible] = useState(() => !readTipDismissed());
+  const dismissTip = useCallback(() => {
+    writeTipDismissed();
+    setTipVisible(false);
+  }, []);
+  const [showMiniMap, setShowMiniMap] = useState(readMiniMapPref);
+  const toggleMiniMap = useCallback(() => {
+    setShowMiniMap((v) => {
+      try {
+        window.localStorage.setItem(MINIMAP_PREF_KEY, v ? '0' : '1');
+      } catch {
+        /* ignore */
+      }
+      return !v;
+    });
+  }, []);
+
+  // ── Export ───────────────────────────────────────────────────
+  const fileBase = `mindmap-${project.name.replace(/\s+/g, '-').toLowerCase()}`;
+
+  const exportAsJson = useCallback(() => {
+    const blob = new Blob([JSON.stringify(flow.toObject(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileBase}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [flow, fileBase]);
+
+  const exportAsPng = useCallback(async () => {
+    const el = containerRef.current?.querySelector('.react-flow__viewport') as HTMLElement | null;
+    if (!el) return;
+    try {
+      const rawBg = getComputedStyle(document.documentElement).getPropertyValue('--background').trim();
+      let backgroundColor: string;
+      if (rawBg.length === 0) {
+        backgroundColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#171717' : '#ffffff';
+      } else if (rawBg.startsWith('#') || rawBg.includes('(')) {
+        backgroundColor = rawBg;
+      } else {
+        backgroundColor = `hsl(${rawBg})`;
+      }
+      const { toPng } = (await import('html-to-image')) as {
+        toPng: (el: HTMLElement, opts: Record<string, unknown>) => Promise<string>;
+      };
+      const dataUrl = await toPng(el, {
+        backgroundColor,
+        pixelRatio: 2,
+        filter: (node: Element) => {
+          const cls = (node as HTMLElement).className;
+          return !(
+            typeof cls === 'string' &&
+            (cls.includes('react-flow__minimap') ||
+              cls.includes('react-flow__controls') ||
+              cls.includes('react-flow__edgelabel-renderer'))
+          );
+        },
+      });
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${fileBase}.png`;
+      a.click();
+    } catch {
+      // html-to-image not installed — fall back to JSON
+      exportAsJson();
+    }
+  }, [fileBase, exportAsJson]);
+
+  // ── Context menu ─────────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId?: string;
+    nodeType?: string;
+    edgeId?: string;
+  } | null>(null);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const openMenuAt = (e: React.MouseEvent | MouseEvent, extra: Partial<NonNullable<typeof contextMenu>> = {}) => {
+    e.preventDefault();
+    const W = 232;
+    const H = 280;
+    setContextMenu({
+      x: Math.max(8, Math.min(e.clientX, window.innerWidth - W - 8)),
+      y: Math.max(8, Math.min(e.clientY, window.innerHeight - H - 8)),
+      ...extra,
+    });
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('resize', close);
+    window.addEventListener('wheel', close, { passive: true });
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('wheel', close);
+    };
+  }, [contextMenu]);
+
+  // ── Keyboard ─────────────────────────────────────────────────
+  // Shortcuts only apply while the map is the active surface: focus is
+  // inside it, or nothing is focused and the last click landed inside it.
+  const pointerInsideRef = useRef(true);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      pointerInsideRef.current = !!containerRef.current?.contains(e.target as globalThis.Node);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
+    setEdges((eds) => eds.map((e) => (e.selected ? { ...e, selected: false } : e)));
+  }, []);
+
+  const anyModalOpen = addDialog.open || confirm !== null || !!openTaskId || !!openPlaceholderId;
+
+  // Latest-value ref so the window listener never goes stale.
+  const keyStateRef = useRef({
+    addIdea,
+    addChild,
+    addSibling,
+    undo,
+    redo,
+    removeItems,
+    clearSelection,
+    exitConnectMode,
+    connectMode,
+    showShortcuts,
+    contextMenu: !!contextMenu,
+    isFullscreen,
+    anyModalOpen,
+  });
+  keyStateRef.current = {
+    addIdea,
+    addChild,
+    addSibling,
+    undo,
+    redo,
+    removeItems,
+    clearSelection,
+    exitConnectMode,
+    connectMode,
+    showShortcuts,
+    contextMenu: !!contextMenu,
+    isFullscreen,
+    anyModalOpen,
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const s = keyStateRef.current;
+      if (s.anyModalOpen || e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      const inside = !!target && !!containerRef.current?.contains(target);
+      const bodyTarget = !target || target === document.body || target === document.documentElement;
+      if (!inside && !(bodyTarget && pointerInsideRef.current)) return;
+
+      const typing =
+        !!target &&
+        (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable);
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key;
+      const lower = key.toLowerCase();
+
+      if (mod && lower === 'f' && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setFindOpen(true);
+        return;
+      }
+      if (typing) return;
+      // Keys keep their normal meaning on focused controls: any button for
+      // Enter, and chrome outside the cards (toolbar, menus) for the rest.
+      const onControl = !!target?.closest('button, a, [role="menuitem"], [role="option"], [role="radio"]');
+      const onChrome = onControl && !target?.closest('.react-flow__node');
+
+      if (mod && lower === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) s.redo();
+        else s.undo();
+        return;
+      }
+      if (mod && lower === 'y') {
+        e.preventDefault();
+        s.redo();
+        return;
+      }
+      // Keyboard-driven camera moves are instant (no animation).
+      if (mod && (key === '=' || key === '+')) {
+        e.preventDefault();
+        void flow.zoomIn({ duration: 0 });
+        return;
+      }
+      if (mod && key === '-') {
+        e.preventDefault();
+        void flow.zoomOut({ duration: 0 });
+        return;
+      }
+      if (mod && key === '0') {
+        e.preventDefault();
+        void flow.fitView({ padding: 0.2, duration: 0 });
+        return;
+      }
+      if (mod || e.altKey) return;
+
+      const selectedNodes = nodesRef.current.filter((n) => n.selected);
+      const single = selectedNodes.length === 1 ? selectedNodes[0] : null;
+
+      switch (key) {
+        case 'n':
+        case 'N':
+          if (onChrome) return;
+          e.preventDefault();
+          s.addIdea();
+          return;
+        case 'c':
+        case 'C':
+          if (onChrome) return;
+          e.preventDefault();
+          if (s.connectMode) s.exitConnectMode();
+          else setConnectMode(true);
+          return;
+        case '?':
+          e.preventDefault();
+          setShowShortcuts((v) => !v);
+          return;
+        case 'Tab':
+          if (onChrome || !single || e.shiftKey) return;
+          e.preventDefault();
+          s.addChild(single.id);
+          return;
+        case 'Enter':
+          if (onControl || !single || single.type !== 'idea') return;
+          e.preventDefault();
+          s.addSibling(single.id);
+          return;
+        case 'F2':
+          if (!single || single.type !== 'idea') return;
+          e.preventDefault();
+          setEditingId(single.id);
+          return;
+        case 'Delete':
+        case 'Backspace': {
+          if (onChrome) return;
+          const nodeIds = selectedNodes.map((n) => n.id);
+          const edgeIds = edgesRef.current.filter((x) => x.selected).map((x) => x.id);
+          if (nodeIds.length === 0 && edgeIds.length === 0) return;
+          e.preventDefault();
+          s.removeItems(nodeIds, edgeIds);
+          return;
+        }
+        case 'Escape':
+          if (s.contextMenu) setContextMenu(null);
+          else if (s.connectMode) s.exitConnectMode();
+          else if (s.showShortcuts) setShowShortcuts(false);
+          else if (selectedNodes.length > 0 || edgesRef.current.some((x) => x.selected)) s.clearSelection();
+          else if (s.isFullscreen && !document.fullscreenElement) setIsFullscreen(false);
+          return;
+        default:
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [flow]);
+
+  // ── Toolbar props ────────────────────────────────────────────
+  const history = historyRef.current;
+  const toolbarProps: Omit<MindMapToolbarProps, 'zoom'> = {
+    modeSwitch,
+    onAddIdea: addIdea,
+    // Dialogs open a frame after the dropdown closes so Radix focus /
+    // pointer-events handling of the two layers can't collide.
+    onAddShape: (kind) => requestAnimationFrame(() => openAddDialog(kind)),
+    connectMode,
+    onToggleConnect: toggleConnect,
+    onTidyUp: () => tidyUp(true),
+    canUndo: historyCanUndo(history),
+    canRedo: historyCanRedo(history),
+    onUndo: undo,
+    onRedo: redo,
+    onZoomIn: () => void flow.zoomIn({ duration: 150 }),
+    onZoomOut: () => void flow.zoomOut({ duration: 150 }),
+    onZoomReset: () => void flow.zoomTo(1, { duration: 150 }),
+    onFitView: () => void flow.fitView({ padding: 0.2, duration: 200 }),
+    find: { open: findOpen, onOpenChange: setFindOpen, items: searchItems, onSelect: focusNode },
+    onExportPng: () => void exportAsPng(),
+    onExportJson: exportAsJson,
+    hiddenLinkCount: extras.removedAutoEdges.length,
+    onRestoreLinks: restoreLinks,
+    canClearPlaceholders: extras.ideas.length > 0 || extras.edges.length > 0,
+    onClearPlaceholders: () => requestAnimationFrame(() => setConfirm('clear')),
+    onResetLayout: () => requestAnimationFrame(() => setConfirm('reset')),
+    showMiniMap,
+    onToggleMiniMap: toggleMiniMap,
+    onShowShortcuts: () => setShowShortcuts(true),
+    isFullscreen,
+    onToggleFullscreen: toggleFullscreen,
+  };
+
+  const isEmpty = tasks.length === 0 && extras.ideas.length === 0;
+  const menuItem =
+    'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] text-foreground hover:bg-muted focus-visible:bg-muted focus-visible:outline-none [&_svg]:h-4 [&_svg]:w-4 [&_svg]:text-muted-foreground';
+  const ctxNode = contextMenu?.nodeId;
+  const ctxIsIdea = !!ctxNode?.startsWith(IDEA_NODE_PREFIX);
+
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full bg-background rounded-lg border border-border overflow-hidden"
-      onContextMenu={handleContextMenu}
-      onClick={closeContextMenu}
+      className={cn(
+        'mm-canvas relative h-full w-full overflow-hidden bg-background',
+        isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'rounded-xl border border-border',
+      )}
+      onClick={contextMenu ? closeContextMenu : undefined}
     >
-      {/* Floating toolbar */}
-      <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 rounded-lg border border-border bg-card/95 backdrop-blur px-1.5 py-1 shadow-md">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" title="Add to mind map">
-              <Plus className="w-3.5 h-3.5" />
-              Add
-              <ChevronDown className="w-3 h-3 opacity-60" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[260px]">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Add to mind map only — kanban is never changed
-            </DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => openAddDialog('task')}>
-              <CheckSquare className="w-3.5 h-3.5 mr-2 text-emerald-500" />
-              <div className="flex flex-col">
-                <span>Task</span>
-                <span className="text-[10px] text-muted-foreground">Task-card shape — like a real task</span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => openAddDialog('column')}>
-              <Columns className="w-3.5 h-3.5 mr-2 text-sky-500" />
-              <div className="flex flex-col">
-                <span>Column</span>
-                <span className="text-[10px] text-muted-foreground">Column-pill shape — like a real lane</span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => openAddDialog('project')}>
-              <Sparkles className="w-3.5 h-3.5 mr-2 text-primary" />
-              <div className="flex flex-col">
-                <span>Project header</span>
-                <span className="text-[10px] text-muted-foreground">Header card with the project name</span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={addIdea}>
-              <Lightbulb className="w-3.5 h-3.5 mr-2 text-amber-500" />
-              <div className="flex flex-col">
-                <span>Idea</span>
-                <span className="text-[10px] text-muted-foreground">Free-form brainstorm note</span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button
-          size="sm"
-          variant={connectMode ? 'default' : 'ghost'}
-          className={cn('h-8 gap-1.5 text-xs', connectMode && 'shadow-sm')}
-          onClick={() =>
-            connectMode ? exitConnectMode() : setConnectMode(true)
-          }
-          title="Click a node, then another, to connect them — no drag needed"
-          aria-pressed={connectMode}
-        >
-          <Link2 className="w-3.5 h-3.5" />
-          {connectMode ? 'Cancel' : 'Connect'}
-        </Button>
-        <span className="w-px h-5 bg-border" aria-hidden />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 text-xs disabled:opacity-40"
-          onClick={deleteSelection}
-          disabled={!selectionHasUserItems}
-          title="Delete selected (Del)"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          Delete
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 text-xs"
-          onClick={() => flow.zoomIn({ duration: 200 })}
-          title="Zoom in (Ctrl+=)"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 text-xs"
-          onClick={() => flow.zoomOut({ duration: 200 })}
-          title="Zoom out (Ctrl+-)"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 text-xs"
-          onClick={fitView}
-          title="Fit to screen (Ctrl+0)"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-          Fit
-        </Button>
-        <span className="w-px h-5 bg-border" aria-hidden />
-        {/* Export dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-xs" title="Export mind map">
-              <Download className="w-3.5 h-3.5" />
-              Export
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[160px]">
-            <DropdownMenuItem onClick={() => void exportAsPng()}>
-              <Image className="w-3.5 h-3.5 mr-2" />
-              Export as PNG
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={exportAsJson}>
-              <FileJson className="w-3.5 h-3.5 mr-2" />
-              Export as JSON
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <span className="w-px h-5 bg-border" aria-hidden />
-        {extras.removedAutoEdges.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 gap-1.5 text-xs text-amber-600 dark:text-amber-300 hover:bg-amber-500/10"
-            onClick={() =>
-              updateExtras((prev) => ({ ...prev, removedAutoEdges: [] }))
-            }
-            title={`Restore ${extras.removedAutoEdges.length} hidden connection${extras.removedAutoEdges.length === 1 ? '' : 's'}`}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Restore links ({extras.removedAutoEdges.length})
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive disabled:opacity-40"
-          onClick={deleteAllPlaceholders}
-          disabled={extras.ideas.length === 0 && extras.edges.length === 0}
-          title="Delete every placeholder & custom link in one go"
-        >
-          <Eraser className="w-3.5 h-3.5" />
-          Clear all
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
-          onClick={resetLayout}
-          title="Reset layout & remove custom items"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Reset
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 gap-1.5 text-xs"
-          onClick={toggleFullscreen}
-          title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Open mind map in fullscreen'}
-          aria-pressed={isFullscreen}
-        >
-          {isFullscreen ? (
-            <Minimize className="w-3.5 h-3.5" />
-          ) : (
-            <Maximize className="w-3.5 h-3.5" />
-          )}
-          {isFullscreen ? 'Exit' : 'Fullscreen'}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 text-xs text-muted-foreground"
-          onClick={() => setShowShortcuts((v) => !v)}
-          title="Keyboard shortcuts (?)"
-        >
-          <Keyboard className="w-3.5 h-3.5" />
-        </Button>
-      </div>
+      <style>{CANVAS_CSS}</style>
 
-      {/* Keyboard shortcuts panel */}
-      {showShortcuts && (
-        <div className="absolute top-14 left-3 z-20 rounded-lg border border-border bg-card/95 backdrop-blur shadow-lg p-3 w-[220px]">
-          <p className="text-xs font-semibold text-foreground mb-2">Keyboard Shortcuts</p>
-          <div className="space-y-1.5 text-[11px] text-muted-foreground">
-            {[
-              ['Ctrl/Cmd + =', 'Zoom in'],
-              ['Ctrl/Cmd + -', 'Zoom out'],
-              ['Ctrl/Cmd + 0', 'Fit view'],
-              ['N', 'Add idea node'],
-              ['Del / Backspace', 'Delete selected'],
-              ['?', 'Toggle shortcuts'],
-            ].map(([key, desc]) => (
-              <div key={key} className="flex justify-between gap-2">
-                <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-[10px]">
-                  {key}
-                </kbd>
-                <span>{desc}</span>
-              </div>
-            ))}
-          </div>
+      <ConnectedToolbar {...toolbarProps} />
+
+      {isEmpty && (
+        <MindMapEmptyState onAddIdea={addIdea} onOpenAI={() => onOpenAIMode?.()} />
+      )}
+
+      {/* Bottom-left: help button + shortcuts / first-time tip */}
+      <HelpButton
+        open={showShortcuts}
+        onToggle={() => {
+          setShowShortcuts((v) => !v);
+          if (tipVisible) dismissTip();
+        }}
+      />
+      {showShortcuts ? (
+        <ShortcutsPanel onClose={() => setShowShortcuts(false)} />
+      ) : (
+        tipVisible && !isEmpty && <FirstTimeTip onDismiss={dismissTip} />
+      )}
+
+      {connectMode && (
+        <div
+          role="status"
+          className="absolute bottom-4 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-popover px-3.5 py-2 text-[13px] font-medium text-popover-foreground shadow-lg"
+        >
+          <Link2 className="h-4 w-4 text-primary" aria-hidden />
+          {connectFirstNodeId ? 'Now click the card to connect to' : 'Click the first card'}
+          <span className="text-muted-foreground">· Esc to cancel</span>
         </div>
       )}
 
-      {/* Right-click context menu */}
+      {/* Right-click menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-[160px] rounded-lg border border-border bg-card shadow-xl py-1 animate-in fade-in zoom-in-95 duration-100"
+          role="menu"
+          aria-label="Map actions"
+          className="fixed z-50 w-[232px] rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-100"
           style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
-            onClick={() => { addIdea(); closeContextMenu(); }}
-          >
-            <Plus className="w-3.5 h-3.5" /> Add idea here
-          </button>
-          {contextMenu.nodeId?.startsWith(IDEA_NODE_PREFIX) && (
+          {!ctxNode && !contextMenu.edgeId && (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItem}
+              onClick={() => {
+                addIdeaAt(flow.screenToFlowPosition({ x: contextMenu.x, y: contextMenu.y }));
+                closeContextMenu();
+              }}
+            >
+              <Plus /> Add idea here
+            </button>
+          )}
+          {ctxNode && (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItem}
+              onClick={() => {
+                addChild(ctxNode);
+                closeContextMenu();
+              }}
+            >
+              <Plus /> Add connected idea
+              <span className="ml-auto text-[11px] text-muted-foreground">Tab</span>
+            </button>
+          )}
+          {contextMenu.nodeType === 'task' && ctxNode && (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItem}
+              onClick={() => {
+                setOpenTaskId(ctxNode.slice(TASK_NODE_PREFIX.length));
+                closeContextMenu();
+              }}
+            >
+              <ExternalLink /> Open task
+            </button>
+          )}
+          {ctxIsIdea && ctxNode && (
             <>
               <button
                 type="button"
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted"
+                role="menuitem"
+                className={menuItem}
                 onClick={() => {
-                  handleIdeaDelete(contextMenu.nodeId!);
+                  setEditingId(ctxNode);
                   closeContextMenu();
                 }}
               >
-                <Trash2 className="w-3.5 h-3.5" /> Delete idea
+                <Pencil /> Rename
+                <span className="ml-auto text-[11px] text-muted-foreground">F2</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={cn(menuItem, 'text-destructive [&_svg]:text-destructive')}
+                onClick={() => {
+                  removeItems([ctxNode], []);
+                  closeContextMenu();
+                }}
+              >
+                <Trash2 /> Delete
+                <span className="ml-auto text-[11px] text-muted-foreground">Del</span>
               </button>
             </>
           )}
-          <div className="h-px bg-border my-1" />
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
-            onClick={() => { fitView(); closeContextMenu(); }}
-          >
-            <Maximize2 className="w-3.5 h-3.5" /> Fit to screen
+          {contextMenu.edgeId && (
+            <button
+              type="button"
+              role="menuitem"
+              className={cn(menuItem, 'text-destructive [&_svg]:text-destructive')}
+              onClick={() => {
+                removeItems([], [contextMenu.edgeId!]);
+                closeContextMenu();
+              }}
+            >
+              <Trash2 /> {contextMenu.edgeId.startsWith(AUTO_EDGE_PREFIX) ? 'Hide link' : 'Delete link'}
+            </button>
+          )}
+          <div className="my-1 h-px bg-border" />
+          <button type="button" role="menuitem" className={menuItem} onClick={() => { tidyUp(true); closeContextMenu(); }}>
+            <LayoutGrid /> Tidy up
           </button>
           <button
             type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
-            onClick={() => { void exportAsPng(); closeContextMenu(); }}
+            role="menuitem"
+            className={menuItem}
+            onClick={() => {
+              void flow.fitView({ padding: 0.2, duration: 200 });
+              closeContextMenu();
+            }}
           >
-            <Image className="w-3.5 h-3.5" /> Export as PNG
+            <Scan /> Fit to screen
           </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
-            onClick={() => { exportAsJson(); closeContextMenu(); }}
-          >
-            <FileJson className="w-3.5 h-3.5" /> Export as JSON
+          <button type="button" role="menuitem" className={menuItem} onClick={() => { void exportAsPng(); closeContextMenu(); }}>
+            <Image /> Export PNG
           </button>
-        </div>
-      )}
-
-      {/* Hint pill */}
-      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-full border border-border bg-card/90 backdrop-blur px-2.5 py-1 shadow-sm text-[10.5px] text-muted-foreground">
-        <Lightbulb className="w-3 h-3 text-amber-500" />
-        N to add idea · Ctrl+=/- to zoom · Right-click for menu · ? for shortcuts
-      </div>
-
-      {/* Connect-mode hint banner */}
-      {connectMode && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium shadow-lg">
-          <Link2 className="w-3.5 h-3.5" />
-          {connectFirstNodeId ? 'Now click the second node' : 'Click the first node to connect'}
-          <span className="text-primary-foreground/60 ml-1">· Esc to cancel</span>
+          <button type="button" role="menuitem" className={menuItem} onClick={() => { exportAsJson(); closeContextMenu(); }}>
+            <FileJson /> Export JSON
+          </button>
         </div>
       )}
 
       <ReactFlow
         nodes={
           connectMode && connectFirstNodeId
-            ? nodes.map((n) =>
-                n.id === connectFirstNodeId ? { ...n, selected: true } : n,
-              )
+            ? nodes.map((n) => (n.id === connectFirstNodeId ? { ...n, selected: true } : n))
             : nodes
         }
         edges={edges}
@@ -2243,59 +1555,55 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onNodeClick={handleNodeClickForConnect}
-        onBeforeDelete={onBeforeDelete}
-        onNodesDelete={onNodesDelete}
-        onEdgesDelete={onEdgesDelete}
-        deleteKeyCode={['Delete', 'Backspace']}
+        onNodeClick={handleNodeClick}
+        onNodeDoubleClick={(_e, node) => {
+          if (node.type === 'idea') setEditingId(node.id);
+        }}
+        onPaneClick={() => {
+          if (editingId) setEditingId(null);
+        }}
+        onNodeContextMenu={(e, node) => openMenuAt(e, { nodeId: node.id, nodeType: node.type })}
+        onEdgeContextMenu={(e, edge) => openMenuAt(e, { edgeId: edge.id })}
+        onPaneContextMenu={(e) => openMenuAt(e)}
+        deleteKeyCode={null}
         multiSelectionKeyCode={['Meta', 'Control', 'Shift']}
         connectionRadius={28}
         connectOnClick={false}
-        defaultEdgeOptions={{
-          type: 'deletable',
-          markerEnd: { type: MarkerType.ArrowClosed },
-        }}
+        zoomOnDoubleClick={false}
+        defaultEdgeOptions={{ type: 'deletable' }}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
         maxZoom={1.6}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={20} size={1} className="opacity-50" />
-        <MiniMap
-          pannable
-          zoomable
-          className="!bg-card !border !border-border"
-          nodeColor={(n) => {
-            if (n.type === 'project') return 'rgb(99,102,241)';
-            if (n.type === 'column') {
-              const c = (n.data as { color?: string } | undefined)?.color;
-              return c || 'rgb(148,163,184)';
-            }
-            if (n.type === 'subtask') {
-              const done = (n.data as { completed?: boolean } | undefined)?.completed;
-              return done ? 'rgb(16,185,129)' : 'rgb(148,163,184)';
-            }
-            if (n.type === 'idea') {
-              const color = (n.data as { color?: string } | undefined)?.color;
-              const palette = IDEA_PALETTE.find((p) => p.name === color) || IDEA_PALETTE[0];
-              const map: Record<string, string> = {
-                violet: 'rgb(139,92,246)',
-                sky: 'rgb(14,165,233)',
-                emerald: 'rgb(16,185,129)',
-                amber: 'rgb(245,158,11)',
-                rose: 'rgb(244,63,94)',
-              };
-              return map[palette.name] || 'rgb(139,92,246)';
-            }
-            return 'rgb(59,130,246)';
-          }}
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={22}
+          size={1.2}
+          color="hsl(var(--muted-foreground) / 0.3)"
         />
-        <Controls className="!bg-card !border !border-border" />
+        {showMiniMap && (
+          <MiniMap
+            pannable
+            zoomable
+            ariaLabel="Mini map"
+            className="!rounded-xl !border !border-border !bg-card !shadow-sm"
+            maskColor="hsl(var(--background) / 0.65)"
+            nodeBorderRadius={6}
+            nodeColor={(n) => {
+              if (n.type === 'project') return 'hsl(var(--primary))';
+              if (n.type === 'column') {
+                return (n.data as { color?: string } | undefined)?.color || 'hsl(var(--muted-foreground))';
+              }
+              if (n.type === 'idea') return paletteFor((n.data as { color?: string } | undefined)?.color).solid;
+              if (n.type === 'subtask') return 'hsl(var(--muted-foreground) / 0.3)';
+              return 'hsl(var(--muted-foreground) / 0.55)';
+            }}
+          />
+        )}
       </ReactFlow>
 
-      {/* Inline task editor — opens on task-node click. The mind map never
-          navigates to the kanban now; everything happens here. */}
       <MindMapTaskPanel
         open={!!openTaskId}
         task={openTask}
@@ -2314,9 +1622,6 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         }}
       />
 
-      {/* Placeholder task panel — opens when a task-shape PLACEHOLDER is
-          clicked. Same UX as the real task panel but every change writes
-          to extras (mind-map only) rather than the tasks table. */}
       <MindMapPlaceholderPanel
         open={!!openPlaceholderId}
         placeholder={openPlaceholder}
@@ -2333,116 +1638,120 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
         }}
       />
 
-      {/* Modal for naming a Task / Column / Project note that lives on the
-          mind map only. Everything submitted here goes into per-user
-          mind-map state — the kanban board / project columns / tasks table
-          are never touched. */}
-      <Dialog open={addDialog.open} onOpenChange={(o) => !o && closeAddDialog()}>
+      {/* Name a Task / Column / Project placeholder (mind map only). */}
+      <Dialog open={addDialog.open} onOpenChange={(o) => !o && setAddDialog((s) => ({ ...s, open: false }))}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {addDialog.type === 'task' ? (
                 <>
-                  <CheckSquare className="w-4 h-4 text-emerald-500" /> Add task note
+                  <CheckSquare className="h-4 w-4 text-muted-foreground" /> Add task card
                 </>
               ) : addDialog.type === 'column' ? (
                 <>
-                  <Columns className="w-4 h-4 text-sky-500" /> Add column note
+                  <Columns className="h-4 w-4 text-muted-foreground" /> Add column
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 text-primary" /> Add project header
+                  <Sparkles className="h-4 w-4 text-muted-foreground" /> Add project header
                 </>
               )}
             </DialogTitle>
             <DialogDescription>
-              This adds a note to the mind map only. Nothing is added to the
-              kanban board or project columns.
+              A placeholder on the mind map only — nothing is added to the board.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
-                {addDialog.type === 'project' ? 'Header label' : 'Title'}
-              </label>
-              <Input
-                autoFocus
-                value={addTitle}
-                onChange={(e) => setAddTitle(e.target.value)}
-                placeholder={
-                  addDialog.type === 'task'
-                    ? 'e.g. Draft launch announcement'
-                    : addDialog.type === 'column'
-                      ? 'e.g. Review'
-                      : project.name
+          <div>
+            <label
+              htmlFor="mm-add-title"
+              className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
+            >
+              {addDialog.type === 'project' ? 'Header label' : 'Title'}
+            </label>
+            <Input
+              id="mm-add-title"
+              autoFocus
+              value={addTitle}
+              onChange={(e) => setAddTitle(e.target.value)}
+              placeholder={
+                addDialog.type === 'task'
+                  ? 'e.g. Draft launch announcement'
+                  : addDialog.type === 'column'
+                    ? 'e.g. Review'
+                    : project.name
+              }
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  submitAddDialog();
                 }
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void submitAddDialog();
-                  }
-                }}
-              />
-              {addDialog.type === 'project' && (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Pre-filled with this project's name — change it if you want a different label.
-                </p>
-              )}
-            </div>
+              }}
+            />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={closeAddDialog} disabled={addSubmitting}>
+            <Button variant="ghost" onClick={() => setAddDialog((s) => ({ ...s, open: false }))}>
               Cancel
             </Button>
-            <Button onClick={() => void submitAddDialog()} disabled={addSubmitting || !addTitle.trim()}>
-              {addSubmitting ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4 mr-2" />
-              )}
-              Add to mind map
+            <Button onClick={submitAddDialog} disabled={!addTitle.trim()}>
+              <Plus className="mr-1 h-4 w-4" />
+              Add to map
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirmations for bulk actions — both are undoable afterwards. */}
+      <AlertDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
+        <AlertDialogContent className="max-w-md rounded-xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm === 'reset' ? 'Reset the map layout?' : 'Clear all placeholders?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirm === 'reset'
+                ? 'Every card goes back to its automatic position, and your ideas, custom links and hidden-link settings are removed. The board itself is not changed. You can undo this.'
+                : `Removes ${extras.ideas.length === 1 ? '1 idea / placeholder' : `${extras.ideas.length} ideas and placeholders`}${
+                    extras.edges.length > 0
+                      ? ` and ${extras.edges.length === 1 ? '1 custom link' : `${extras.edges.length} custom links`}`
+                      : ''
+                  }. Board tasks and columns stay. You can undo this.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirm === 'reset') resetLayout();
+                else clearPlaceholders();
+                setConfirm(null);
+              }}
+            >
+              {confirm === 'reset' ? 'Reset layout' : 'Clear placeholders'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
 
 // ─────────────────────────────────────────────────────────────
-// Public component (wraps with ReactFlowProvider so useReactFlow works in MindMapInner)
+// Public component
 // ─────────────────────────────────────────────────────────────
 
-type MindMapMode = 'project' | 'ai';
-
-interface StructuralMapProps extends ProjectMindMapProps {
-  /** Set by the wrapper when the user clicks "Send to Project map" in AI mode.
-   *  Consumed once on mount via a useEffect, then cleared via onPendingImportApplied. */
-  pendingImport?: AIMapImportPayload | null;
-  onPendingImportApplied?: () => void;
-}
-
-const ProjectStructuralMap: React.FC<StructuralMapProps> = (props) => {
-  // Always mount the canvas so the toolbar's Add button (Task / Column /
-  // Project / Idea) is reachable even when the kanban has no tasks yet
-  // and no ideas have been saved. A static "empty" placeholder here would
-  // hide the canvas the empty-state hint itself tells the user to click,
-  // and would also briefly flash after a Send-to-Project-map import
-  // completes (between pendingImport clearing and the new ideas being
-  // observed via loadExtras).
-  return (
-    <ReactFlowProvider>
-      <MindMapInner {...props} />
-    </ReactFlowProvider>
-  );
-};
+const ProjectStructuralMap: React.FC<StructuralMapProps> = (props) => (
+  // Always mount the canvas so the toolbar is reachable even when the board
+  // has no tasks yet; the empty-state card sits on top of it.
+  <ReactFlowProvider>
+    <MindMapInner {...props} />
+  </ReactFlowProvider>
+);
 
 export const ProjectMindMap: React.FC<ProjectMindMapProps> = (props) => {
   const [mode, setMode] = useState<MindMapMode>('project');
-  // Hand-off slot for content sent from the AI map. The structural map drains
-  // it on mount via a useEffect, then calls back to clear it. Stored at the
-  // wrapper so it survives the ProjectStructuralMap remount that happens
-  // when modes flip.
+  // Hand-off slot for content sent from the AI map. Stored at the wrapper so
+  // it survives the ProjectStructuralMap remount when modes flip.
   const [pendingImport, setPendingImport] = useState<AIMapImportPayload | null>(null);
 
   useEffect(() => {
@@ -2458,53 +1767,22 @@ export const ProjectMindMap: React.FC<ProjectMindMapProps> = (props) => {
     setMode('project');
   }, []);
 
-  return (
-    <div className="h-full flex flex-col gap-2">
-      {/* Mode switcher — sits above the canvas so the existing toolbar inside
-          ProjectStructuralMap stays untouched. The AI map is a separate
-          self-contained surface; switching modes is purely visual. */}
-      <div className="flex items-center gap-1 rounded-lg border border-border bg-card/80 backdrop-blur p-0.5 self-start shadow-sm">
-        <button
-          type="button"
-          onClick={() => setMode('project')}
-          className={cn(
-            'px-3 py-1.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1.5',
-            mode === 'project'
-              ? 'bg-primary text-primary-foreground shadow'
-              : 'text-muted-foreground hover:text-foreground hover:bg-secondary',
-          )}
-          aria-pressed={mode === 'project'}
-        >
-          <Sparkles className="w-3 h-3" />
-          Project map
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode('ai')}
-          className={cn(
-            'px-3 py-1.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1.5',
-            mode === 'ai'
-              ? 'bg-primary text-primary-foreground shadow'
-              : 'text-muted-foreground hover:text-foreground hover:bg-secondary',
-          )}
-          aria-pressed={mode === 'ai'}
-        >
-          <Lightbulb className="w-3 h-3" />
-          AI mind map
-        </button>
-      </div>
+  const clearPendingImport = useCallback(() => setPendingImport(null), []);
+  const modeSwitch = <MindMapModeSwitch mode={mode} onChange={setMode} />;
 
-      <div className="flex-1 min-h-0">
-        {mode === 'project' ? (
-          <ProjectStructuralMap
-            {...props}
-            pendingImport={pendingImport}
-            onPendingImportApplied={() => setPendingImport(null)}
-          />
-        ) : (
-          <AIMindMap onSendToProjectMap={handleSendToProjectMap} />
-        )}
-      </div>
+  return (
+    <div className="h-full">
+      {mode === 'project' ? (
+        <ProjectStructuralMap
+          {...props}
+          pendingImport={pendingImport}
+          onPendingImportApplied={clearPendingImport}
+          modeSwitch={modeSwitch}
+          onOpenAIMode={() => setMode('ai')}
+        />
+      ) : (
+        <AIMindMap onSendToProjectMap={handleSendToProjectMap} headerSlot={modeSwitch} />
+      )}
     </div>
   );
 };

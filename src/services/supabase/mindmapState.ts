@@ -39,6 +39,8 @@ export interface MindMapExtras {
   positions: Record<string, { x: number; y: number }>;
   /** Auto-derived structural edge ids the user has hidden from the canvas. */
   removedAutoEdges: string[];
+  /** Board columns collapsed on the map (optional; older saves don't have it). */
+  collapsedColumns?: string[];
 }
 
 const EMPTY_EXTRAS: MindMapExtras = {
@@ -66,7 +68,11 @@ export async function loadMindMapState(
     if (!data?.state) return EMPTY_EXTRAS;
 
     const parsed = data.state as Partial<MindMapExtras>;
+    const collapsed = Array.isArray(parsed.collapsedColumns)
+      ? parsed.collapsedColumns.filter((v): v is string => typeof v === 'string')
+      : [];
     return {
+      ...(collapsed.length > 0 ? { collapsedColumns: collapsed } : {}),
       ideas: Array.isArray(parsed.ideas) ? parsed.ideas : [],
       edges: Array.isArray(parsed.edges) ? parsed.edges : [],
       positions:

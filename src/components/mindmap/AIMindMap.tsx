@@ -431,9 +431,11 @@ interface AIMindMapInnerProps {
    *  ideas/user-edges layer. The receiver remaps ids and offsets positions
    *  so the imported subgraph lands cleanly next to existing content. */
   onSendToProjectMap?: (payload: AIMapImportPayload) => void;
+  /** Rendered at the start of the header row (the Project / AI mode switch). */
+  headerSlot?: React.ReactNode;
 }
 
-const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap }) => {
+const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap, headerSlot }) => {
   const { user } = useAuth();
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -680,7 +682,8 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap }) =
       {/* Prompt strip */}
       <div className="rounded-lg border border-border bg-card/80 p-3 backdrop-blur">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {headerSlot}
             <Wand2 className="w-4 h-4 text-primary" />
             <p className="text-sm font-semibold text-foreground">AI mind map</p>
             <span className="text-xs text-muted-foreground hidden sm:inline">
@@ -890,11 +893,12 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap }) =
 
 interface AIMindMapProps {
   onSendToProjectMap?: (payload: AIMapImportPayload) => void;
+  headerSlot?: React.ReactNode;
 }
 
-export const AIMindMap: React.FC<AIMindMapProps> = ({ onSendToProjectMap }) => (
+export const AIMindMap: React.FC<AIMindMapProps> = ({ onSendToProjectMap, headerSlot }) => (
   <ReactFlowProvider>
-    <AIMindMapInner onSendToProjectMap={onSendToProjectMap} />
+    <AIMindMapInner onSendToProjectMap={onSendToProjectMap} headerSlot={headerSlot} />
   </ReactFlowProvider>
 );
 
