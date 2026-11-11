@@ -16,6 +16,8 @@ export interface TimeEntry {
   editedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** True when the shift was closed automatically after 9 hours. */
+  autoClosed?: boolean;
 }
 
 export interface ClockInInput {
@@ -50,6 +52,7 @@ const mapEntry = (row: Record<string, unknown>): TimeEntry => ({
   editedAt: row.edited_at ? new Date(row.edited_at as string) : null,
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
+  autoClosed: Boolean(row.auto_closed),
 });
 
 const isLocalOrg = (orgId: string) => orgId.startsWith("local-");

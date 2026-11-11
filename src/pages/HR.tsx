@@ -20,6 +20,7 @@ import {
   Users, Edit, Loader2, ShieldAlert, Lock, Trash2,
 } from 'lucide-react';
 import { TimeTracking } from '@/pages/TimeTracking';
+import { TeamAttendance } from '@/components/hr/TeamAttendance';
 import { Payroll } from '@/pages/Payroll';
 import { Expenses } from '@/pages/Expenses';
 import {
@@ -128,6 +129,9 @@ const fromProfile = (p: EmployeeProfile): FormState => ({
   taxIdLast4: p.taxIdLast4 ?? '',
   notes: p.notes ?? '',
 });
+
+/** Full HR (People, Time Tracking, Payroll, Expenses). Off for now — Attendance only. */
+const SHOW_FULL_HR = false;
 
 export const HR: React.FC = () => {
   const { user } = useAuth();
@@ -256,6 +260,21 @@ export const HR: React.FC = () => {
       setSaving(false);
     }
   };
+
+  // For now HR shows the team's attendance only (clock in / clock out).
+  // Flip SHOW_FULL_HR to bring back People / Time Tracking / Payroll / Expenses.
+  if (!SHOW_FULL_HR) {
+    return (
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+        <div className="px-4 pb-10 pt-4 md:px-8 md:pt-8">
+          <h1 className="mx-auto mb-5 flex max-w-5xl items-center gap-2 text-2xl font-bold md:text-3xl">
+            <Users className="h-6 w-6 text-primary" aria-hidden /> HR
+          </h1>
+          <TeamAttendance />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <>
