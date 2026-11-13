@@ -76,7 +76,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // ── Org-admin required (Dashboard / HR / Payroll / Time / Expenses /
   //    Reports / Contracts / Team / Files / Comments / Inbox) ─────────
-  // Do not render the route (or ClockGate) until org role is known — otherwise
+  // Do not render the route until org role is known — otherwise
   // restricted UI can flash before we redirect members to /tasks.
   if (requireOrgAdmin && orgLoading) {
     return (

@@ -3,7 +3,6 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Loader2Icon } from 'lucide-react';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { ProjectChromeProvider } from '@/context/ProjectChromeContext';
-import { ClockGate } from '@/components/auth/ClockGate';
 
 // Pending-invite escape hatch.
 //
@@ -36,10 +35,8 @@ const usePendingInviteRedirect = (): string | null => {
 // there is no full-screen flash between routes. The page-area Suspense
 // fallback is a small inline spinner inside <main>, not a full-viewport one.
 //
-// ClockGate is mounted once at this layer (instead of inside ProtectedRoute)
-// so its `useTimeTracking` query runs a single time per session — putting it
-// under ProtectedRoute previously made it remount on every navigation and
-// flash a full-screen "Loading your workspace…" spinner between page clicks.
+// There is no clock-in gate: people clock in/out with the Clock button in the
+// sidebar or a project's header, and forgotten shifts auto-close after 9h.
 export const AppLayout: React.FC = () => {
   const inviteRedirect = usePendingInviteRedirect();
   if (inviteRedirect) {
@@ -48,8 +45,7 @@ export const AppLayout: React.FC = () => {
 
   return (
     <ProjectChromeProvider>
-      <ClockGate>
-        {/* h-screen + overflow-hidden pins the shell to the viewport so the
+      {/* h-screen + overflow-hidden pins the shell to the viewport so the
             sidebar stays fixed and only the routed content (<main>) scrolls. */}
         <div className="flex h-screen bg-background pt-12 md:pt-0 overflow-hidden">
           <Sidebar />
@@ -65,7 +61,6 @@ export const AppLayout: React.FC = () => {
             </Suspense>
           </main>
         </div>
-      </ClockGate>
     </ProjectChromeProvider>
   );
 };
