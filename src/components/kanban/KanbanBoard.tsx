@@ -1147,7 +1147,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         onDragEnd={handleDragEnd}
       >
         {taskSwapMode && (
-          <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-foreground">
+          <div className="mx-4 mb-3 flex shrink-0 items-center justify-between gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-foreground">
             <span>
               {swapPickId
                 ? 'Click another task to swap positions (status + order).'
@@ -1166,7 +1166,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             </Button>
           </div>
         )}
-        <div className="flex min-w-max gap-4 px-1 pb-5">
+        <div className="flex min-h-[320px] min-w-max flex-1 gap-4 px-1 pb-3">
           <SortableContext
             items={columnSortIds}
             strategy={horizontalListSortingStrategy}
@@ -1193,7 +1193,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             ))}
           </SortableContext>
 
-          <div className="flex w-[18.5rem] flex-shrink-0 flex-col gap-2">
+          <div className="flex w-[18.5rem] flex-shrink-0 flex-col gap-2 self-start">
             <Button
               type="button"
               variant="outline"

@@ -135,7 +135,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
       <div
         ref={setListRef}
         className={cn(
-          'kanban-scroll flex-1 px-3 pb-3 overflow-y-auto overscroll-contain min-h-[220px] max-h-[calc(100vh-260px)]',
+          'kanban-scroll flex-1 min-h-0 px-3 pb-3 overflow-y-auto overscroll-contain',
           'rounded-b-lg',
           isOver && 'bg-primary/[0.06]',
         )}

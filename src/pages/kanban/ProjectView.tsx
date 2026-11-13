@@ -885,9 +885,10 @@ export const ProjectView: React.FC = () => {
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
-          <div className={`flex-1 min-w-0 px-4 pt-5 pb-24 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
+          <div className={`flex-1 min-w-0 px-4 pt-5 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden pb-2' : 'overflow-auto pb-24'}`}>
             {viewMode === 'kanban' ? (
-              <div ref={boardScrollRef} className="kanban-scroll h-full overflow-x-auto overflow-y-auto pb-20">
+              <div ref={boardScrollRef} className="kanban-scroll flex h-full flex-col overflow-x-auto overflow-y-auto">
+                {/* Columns fill the height; the sideways scrollbar sits at the very bottom. */}
                 <KanbanBoard
                   projectId={project.projectId}
                   project={project}
