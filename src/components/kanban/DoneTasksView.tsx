@@ -101,7 +101,8 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenTask(task.taskId)}
-                    className="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    disabled={!canEdit}
+                    className="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
                   >
                     <span className="block truncate text-sm font-medium text-muted-foreground line-through decoration-muted-foreground/50">
                       {task.title}

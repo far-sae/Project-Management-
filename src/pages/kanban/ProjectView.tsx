@@ -435,6 +435,18 @@ export const ProjectView: React.FC = () => {
     [setSearchParams],
   );
 
+  /** Open a task's window without leaving the current tab (Done). */
+  const openTaskInPlace = useCallback(
+    (taskId: string) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('taskId', taskId);
+        return next;
+      }, { replace: true });
+    },
+    [setSearchParams],
+  );
+
   const handleReopenTask = useCallback(
     async (task: Task, columnId: string) => {
       const ok = await editTask(task.taskId, { status: columnId });
@@ -672,6 +684,48 @@ export const ProjectView: React.FC = () => {
       </div>
     );
   }
+
+  // One board config for the Kanban view and for the Done tab, which uses
+  // it only to open the task window (hideBoard).
+  const renderKanbanBoard = (hideBoard: boolean) => (
+    <KanbanBoard
+      hideBoard={hideBoard}
+      projectId={project.projectId}
+      project={project}
+      projectName={project.name}
+      columns={boardColumns}
+      onColumnsChange={handleColumnsChange}
+      filterStatus={selectedStatus}
+      searchQuery={searchQuery}
+      sort={sortOption}
+      openTaskId={deepLinkTaskId}
+      onOpenedTask={handleOpenedTask}
+      tasks={tasks}
+      loading={tasksLoading}
+      addTask={addTask}
+      editTask={editTask}
+      removeTask={removeTask}
+      presencePeers={peers}
+      onActiveTaskChange={setActiveTaskId}
+      broadcastTyping={broadcastTyping}
+      typingPeers={typingPeers}
+      onTasksRefresh={refreshTasks}
+      onRequestManualSort={() => {
+        setSortOption('manual');
+        toast('Switched to manual order so drag-and-drop stays put.');
+      }}
+      onBeforeOpenTaskModal={() => {
+        searchQuerySnapshotRef.current = searchQuery;
+        boardTaskSearchRef.current?.blur();
+      }}
+      onAfterCloseTaskModal={() => {
+        if (searchQuerySnapshotRef.current !== null) {
+          setSearchQuery(searchQuerySnapshotRef.current);
+          searchQuerySnapshotRef.current = null;
+        }
+      }}
+    />
+  );
 
   return (
     <>
@@ -935,42 +989,7 @@ export const ProjectView: React.FC = () => {
             {viewMode === 'kanban' ? (
               <div ref={boardScrollRef} className="kanban-scroll flex h-full flex-col overflow-x-auto overflow-y-auto">
                 {/* Columns fill the height; the sideways scrollbar sits at the very bottom. */}
-                <KanbanBoard
-                  projectId={project.projectId}
-                  project={project}
-                  projectName={project.name}
-                  columns={boardColumns}
-                  onColumnsChange={handleColumnsChange}
-                  filterStatus={selectedStatus}
-                  searchQuery={searchQuery}
-                  sort={sortOption}
-                  openTaskId={deepLinkTaskId}
-                  onOpenedTask={handleOpenedTask}
-                  tasks={tasks}
-                  loading={tasksLoading}
-                  addTask={addTask}
-                  editTask={editTask}
-                  removeTask={removeTask}
-                  presencePeers={peers}
-                  onActiveTaskChange={setActiveTaskId}
-                  broadcastTyping={broadcastTyping}
-                  typingPeers={typingPeers}
-                  onTasksRefresh={refreshTasks}
-                  onRequestManualSort={() => {
-                    setSortOption('manual');
-                    toast('Switched to manual order so drag-and-drop stays put.');
-                  }}
-                  onBeforeOpenTaskModal={() => {
-                    searchQuerySnapshotRef.current = searchQuery;
-                    boardTaskSearchRef.current?.blur();
-                  }}
-                  onAfterCloseTaskModal={() => {
-                    if (searchQuerySnapshotRef.current !== null) {
-                      setSearchQuery(searchQuerySnapshotRef.current);
-                      searchQuerySnapshotRef.current = null;
-                    }
-                  }}
-                />
+                {renderKanbanBoard(false)}
               </div>
             ) : viewMode === 'timeline' ? (
               <TimelineView
@@ -980,28 +999,25 @@ export const ProjectView: React.FC = () => {
                 navigate={navigate}
               />
             ) : viewMode === 'done' ? (
+              <>
               <DoneTasksView
                 tasks={tasks}
                 columns={boardColumns}
                 searchQuery={searchQuery}
                 canEdit={!isViewer}
                 onReopen={handleReopenTask}
-                onOpenTask={openTaskOnBoard}
+                onOpenTask={openTaskInPlace}
               />
+              {/* Opens done tasks right here, without switching to the board. */}
+              {renderKanbanBoard(true)}
+              </>
             ) : viewMode === 'mindmap' ? (
               <div className="h-[calc(100vh-12rem)] min-h-[480px]">
                 <ProjectMindMap
                   project={project}
                   tasks={boardTasks}
                   columns={boardColumns}
-                  onOpenTask={(taskId) => {
-                    setSearchParams((prev) => {
-                      const next = new URLSearchParams(prev);
-                      next.set('taskId', taskId);
-                      return next;
-                    }, { replace: true });
-                    setViewMode('kanban');
-                  }}
+                  onOpenTask={openTaskOnBoard}
                 />
               </div>
             ) : (

@@ -106,6 +106,8 @@ interface KanbanBoardProps {
   onBeforeOpenTaskModal?: () => void;
   /** Fires once the task modal has fully closed — used by parents to restore the page search value. */
   onAfterCloseTaskModal?: () => void;
+  /** Render only the task window (no columns) — e.g. opening a task from the Done tab. */
+  hideBoard?: boolean;
 }
 
 const COLUMN_COLORS = [
@@ -154,6 +156,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onRequestManualSort,
   onBeforeOpenTaskModal,
   onAfterCloseTaskModal,
+  hideBoard = false,
 }) => {
   const { user } = useAuth();
   const projName = projectName || project?.name || 'Project';
@@ -1171,6 +1174,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   return (
     <>
+      {!hideBoard && (
       <DndContext
         sensors={sensors}
         collisionDetection={kanbanBoardCollisionDetection}
@@ -1309,7 +1313,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           ) : null}
         </DragOverlay>
       </DndContext>
+      )}
 
+      {!hideBoard && (
       <BulkActionBar
         selectedIds={selectedIds}
         tasks={filteredTasks}
@@ -1337,6 +1343,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         }
         onDelete={handleBulkDelete}
       />
+      )}
 
       <TaskModal
         key={selectedTask?.taskId ?? `new-${newTaskStatus}`}
