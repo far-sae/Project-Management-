@@ -21,7 +21,8 @@ import { ChatAttachmentList } from './ChatAttachmentList';
 import { format, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
 import { useLastSeen } from '@/hooks/useLastSeen';
-import { formatLastSeen, isUserOnline } from '@/services/supabase/lastSeen';
+import { presenceStatus } from '@/lib/presenceStatus';
+import type { PresencePeer } from '@/hooks/usePresence';
 
 export interface DirectMessageRecipient {
   userId: string;
@@ -34,6 +35,8 @@ interface DirectMessageDockProps {
   recipient: DirectMessageRecipient | null;
   organizationId?: string | null;
   onClose: () => void;
+  /** Live presence for the recipient (same source as the Team list). */
+  recipientPeer?: PresencePeer;
 }
 
 const messageDayLabel = (date: Date): string => {
@@ -52,6 +55,7 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   recipient,
   organizationId,
   onClose,
+  recipientPeer,
 }) => {
   const { user } = useAuth();
   const { actions: callActions, state: callState } = useCall();
@@ -220,8 +224,8 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
   const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(22rem,calc(100vw-2.5rem))]';
 
   const recipientLastSeen = lastSeenMap.get(recipient.userId) ?? null;
-  const recipientOnline = isUserOnline(recipientLastSeen);
-  const recipientStatusLabel = formatLastSeen(recipientLastSeen, recipientOnline);
+  const recipientStatus = presenceStatus(recipientPeer, recipientLastSeen);
+  const recipientOnline = recipientStatus.online;
 
   const rows = messages.map((msg, index) => {
     const createdAt = msg.createdAt;
@@ -265,16 +269,13 @@ export const DirectMessageDock: React.FC<DirectMessageDockProps> = ({
                   'text-[11px] truncate inline-flex items-center gap-1.5',
                   recipientOnline ? 'text-emerald-600' : 'text-muted-foreground',
                 )}
-                title={recipient.email || undefined}
+                title={recipientStatus.title}
               >
                 <span
                   aria-hidden
-                  className={cn(
-                    'inline-block w-1.5 h-1.5 rounded-full shrink-0',
-                    recipientOnline ? 'bg-emerald-500' : 'bg-muted-foreground/60',
-                  )}
+                  className={cn('inline-block w-1.5 h-1.5 rounded-full shrink-0', recipientStatus.dot)}
                 />
-                {recipientStatusLabel}
+                {recipientStatus.label}
               </p>
             </div>
           </div>

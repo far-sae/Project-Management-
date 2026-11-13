@@ -991,6 +991,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           recipient={dmRecipient}
           organizationId={project.organizationId}
           onClose={() => setDmRecipient(null)}
+          recipientPeer={dmRecipient ? presenceByUserId?.get(dmRecipient.userId) : undefined}
         />
       </div>
     );
@@ -1494,6 +1495,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       recipient={dmRecipient}
       organizationId={project.organizationId}
       onClose={() => setDmRecipient(null)}
+      recipientPeer={dmRecipient ? presenceByUserId?.get(dmRecipient.userId) : undefined}
     />
     </div>
   );

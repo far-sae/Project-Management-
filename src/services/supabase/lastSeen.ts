@@ -10,10 +10,20 @@ import { logger } from "@/lib/logger";
  * "Last seen 5 min ago" instead of just "Offline".
  */
 
+/** The migration-178 functions aren't deployed yet → use the old direct path. */
+const isMissingFunction = (error: { code?: string; message?: string } | null): boolean =>
+  !!error && (error.code === "PGRST202" || error.code === "42883" || /could not find the function/i.test(error.message ?? ""));
+
 /** Update the current user's `last_seen_at` to now. Fire-and-forget. */
 export const pingLastSeen = async (userId: string): Promise<void> => {
   if (!userId) return;
   try {
+    // touch_last_seen() only ever stamps the caller's own row (migration 178).
+    const rpc = await supabase.rpc("touch_last_seen");
+    if (!isMissingFunction(rpc.error)) {
+      if (rpc.error) logger.warn("pingLastSeen: touch_last_seen failed", rpc.error);
+      return;
+    }
     const { error } = await supabase
       .from("user_profiles")
       .update({ last_seen_at: new Date().toISOString() })
@@ -57,16 +67,24 @@ export const pingLastSeenKeepalive = (userId: string): void => {
       /* swallow — we'll try without bearer */
     }
 
+    const headers = {
+      apikey: supabaseAnonKey,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    };
+    void fetch(`${supabaseUrl}/rest/v1/rpc/touch_last_seen`, {
+      method: "POST",
+      keepalive: true,
+      headers,
+      body: "{}",
+    }).catch(() => {});
+    // Older path, kept until migration 178 is everywhere (harmless if blocked).
     const url = `${supabaseUrl}/rest/v1/user_profiles?id=eq.${encodeURIComponent(userId)}`;
     void fetch(url, {
       method: "PATCH",
       keepalive: true,
-      headers: {
-        apikey: supabaseAnonKey,
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
+      headers,
       body: JSON.stringify({ last_seen_at: new Date().toISOString() }),
     }).catch(() => {});
   } catch {
@@ -86,6 +104,20 @@ export const fetchLastSeenForUsers = async (
   const unique = Array.from(new Set(userIds.filter(Boolean)));
   if (unique.length === 0) return out;
 
+  // Profiles are private to their owner, so other people's last seen comes
+  // from get_last_seen() (teammates only — migration 178).
+  const rpc = await supabase.rpc("get_last_seen", { p_user_ids: unique });
+  if (!isMissingFunction(rpc.error)) {
+    if (rpc.error) {
+      logger.warn("fetchLastSeenForUsers: get_last_seen failed", rpc.error);
+      return out;
+    }
+    for (const row of (rpc.data ?? []) as Array<{ user_id: string; last_seen_at: string | null }>) {
+      out.set(row.user_id, row.last_seen_at ? new Date(row.last_seen_at) : null);
+    }
+    return out;
+  }
+
   const { data, error } = await supabase
     .from("user_profiles")
     .select("id,last_seen_at")
@@ -104,77 +136,29 @@ export const fetchLastSeenForUsers = async (
 };
 
 /**
- * Subscribe to last_seen_at changes for any user in `userIds`. Calls
- * `onChange` with a fresh map whenever any of the watched profiles emit an
- * UPDATE. Returns an unsubscribe function.
- */
-export const subscribeToLastSeen = (
-  userIds: string[],
-  onChange: (map: Map<string, Date | null>) => void,
-): (() => void) => {
-  const unique = Array.from(new Set(userIds.filter(Boolean)));
-  if (unique.length === 0) return () => {};
-
-  let current: Map<string, Date | null> = new Map();
-  let cancelled = false;
-
-  // Seed with current values then subscribe.
-  void fetchLastSeenForUsers(unique).then((map) => {
-    if (cancelled) return;
-    current = map;
-    onChange(new Map(current));
-  });
-
-  // We can't filter `in.(…)` from a realtime channel, so subscribe to all
-  // UPDATEs on user_profiles and drop those for irrelevant users on arrival.
-  // Volume is low: this fires once a minute per active session.
-  const watched = new Set(unique);
-  const channel = supabase
-    .channel(`last-seen-${unique.slice(0, 3).join("-")}-${Math.random().toString(36).slice(2, 8)}`)
-    .on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "user_profiles" },
-      (payload) => {
-        const row = payload.new as { id?: string; last_seen_at?: string | null };
-        if (!row?.id || !watched.has(row.id)) return;
-        const next = new Map(current);
-        next.set(row.id, row.last_seen_at ? new Date(row.last_seen_at) : null);
-        current = next;
-        onChange(new Map(current));
-      },
-    )
-    .subscribe();
-
-  return () => {
-    cancelled = true;
-    try {
-      supabase.removeChannel(channel);
-    } catch {
-      /* noop */
-    }
-  };
-};
-
-/**
  * Heuristic: treat any user pinged within the last 90 seconds as online.
  * The heartbeat fires every 60s while the tab is visible, so a 90s window
  * covers a normal beat plus jitter without flagging long-gone tabs.
  */
 export const ONLINE_THRESHOLD_MS = 90_000;
 
-export const isUserOnline = (lastSeenAt: Date | null | undefined): boolean => {
+export const isUserOnline = (
+  lastSeenAt: Date | null | undefined,
+  now: number = Date.now(),
+): boolean => {
   if (!lastSeenAt) return false;
-  return Date.now() - lastSeenAt.getTime() <= ONLINE_THRESHOLD_MS;
+  return now - lastSeenAt.getTime() <= ONLINE_THRESHOLD_MS;
 };
 
 /** Format a Date as "Online" / "Last seen Xm ago" — chat header style. */
 export const formatLastSeen = (
   lastSeenAt: Date | null | undefined,
   isOnline: boolean,
+  now: number = Date.now(),
 ): string => {
   if (isOnline) return "Online";
   if (!lastSeenAt) return "Offline";
-  const diffMs = Date.now() - lastSeenAt.getTime();
+  const diffMs = now - lastSeenAt.getTime();
   if (diffMs < 0) return "Online";
   const sec = Math.floor(diffMs / 1000);
   if (sec < 60) return "Last seen just now";

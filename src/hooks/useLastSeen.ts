@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import {
-  fetchLastSeenForUsers,
-  subscribeToLastSeen,
-} from "@/services/supabase/lastSeen";
+import { fetchLastSeenForUsers } from "@/services/supabase/lastSeen";
+
+/** How often to refresh teammates' last seen while a panel is open. */
+export const LAST_SEEN_REFRESH_MS = 45_000;
 
 /**
- * Resolve `last_seen_at` for a set of user ids, kept fresh via realtime.
- * Returns a `Map<userId, Date | null>`. Users without a `user_profiles` row
- * (or with a NULL last_seen_at) are simply absent from the map — render
- * "Offline" in that case.
+ * Resolve `last_seen_at` for a set of user ids. Returns a
+ * `Map<userId, Date | null>`; people we can't see are absent (render
+ * "Offline").
+ *
+ * Refreshes on an interval and when the tab regains focus. (A realtime
+ * subscription on user_profiles can't work: profiles are private, so
+ * other people's updates are never delivered.)
  */
 export const useLastSeen = (
   userIds: string[],
@@ -25,15 +28,25 @@ export const useLastSeen = (
     }
     const ids = key.split(",").filter(Boolean);
     let cancelled = false;
-    void fetchLastSeenForUsers(ids).then((m) => {
-      if (!cancelled) setMap(m);
-    });
-    const unsub = subscribeToLastSeen(ids, (m) => {
-      if (!cancelled) setMap(m);
-    });
+    const load = () => {
+      void fetchLastSeenForUsers(ids).then((m) => {
+        if (!cancelled) setMap(m);
+      });
+    };
+    load();
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, LAST_SEEN_REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       cancelled = true;
-      unsub();
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [key]);
 
