@@ -645,7 +645,7 @@ export const ProjectView: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_38rem,hsl(var(--background)))]">
+      <main className="h-full min-h-0 flex-1 min-w-0 flex flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_38rem,hsl(var(--background)))]">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}

@@ -23,6 +23,10 @@ function onScrollbar(el: Element, x: number, y: number): boolean {
  * Helps people on a laptop touchpad, where scrolling a wide board sideways
  * is awkward. Presses on cards, buttons and fields are left alone.
  *
+ * Also: an up/down mouse wheel slides the board left/right when the pointer
+ * isn't over a column that can scroll itself (headers, gaps, short columns).
+ * Column lists mark themselves with `data-column-scroll`.
+ *
  * Returns a callback ref, so it attaches whenever the element appears
  * (e.g. after a page finishes loading).
  */
@@ -81,10 +85,24 @@ export function useDragToScroll<T extends HTMLElement = HTMLDivElement>(): (node
       window.addEventListener('pointercancel', stop);
     };
 
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.shiftKey || e.defaultPrevented) return; // zoom / native sideways
+      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return; // touchpad sideways swipe
+      if (el.scrollHeight > el.clientHeight + 1) return; // board scrolls vertically itself
+      const target = e.target as Element | null;
+      const list = target?.closest('[data-column-scroll]') as HTMLElement | null;
+      if (list && list.scrollHeight > list.clientHeight + 1) return; // let the column scroll
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientWidth : 1;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY * unit;
+    };
+
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('click', swallowClick, true);
+    el.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('wheel', onWheel);
       el.removeEventListener('click', swallowClick, true);
       stop();
     };

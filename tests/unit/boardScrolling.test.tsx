@@ -156,3 +156,69 @@ describe('useScrollEdges', () => {
     expect(screen.queryByRole('button', { name: 'More tasks' })).toBeNull();
   });
 });
+
+function WheelBoard() {
+  const ref = useDragToScroll<HTMLDivElement>();
+  return (
+    <div ref={ref} data-testid="wboard">
+      <div data-testid="header">column header</div>
+      <div data-testid="list" data-column-scroll>
+        <div data-testid="inlist">card area</div>
+      </div>
+    </div>
+  );
+}
+
+function size(el: HTMLElement, scrollHeight: number, clientHeight: number) {
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, value: scrollHeight });
+  Object.defineProperty(el, 'clientHeight', { configurable: true, value: clientHeight });
+}
+
+describe('mouse wheel slides the board sideways', () => {
+  it('turns an up/down wheel into left/right over headers and gaps', () => {
+    render(<WheelBoard />);
+    const board = screen.getByTestId('wboard');
+    board.scrollLeft = 100;
+    fireEvent.wheel(screen.getByTestId('header'), { deltaY: 120 });
+    expect(board.scrollLeft).toBe(220);
+    fireEvent.wheel(screen.getByTestId('header'), { deltaY: -50 });
+    expect(board.scrollLeft).toBe(170);
+  });
+
+  it('leaves a long column to scroll itself', () => {
+    render(<WheelBoard />);
+    const board = screen.getByTestId('wboard');
+    size(screen.getByTestId('list'), 1000, 400);
+    board.scrollLeft = 100;
+    fireEvent.wheel(screen.getByTestId('inlist'), { deltaY: 120 });
+    expect(board.scrollLeft).toBe(100);
+  });
+
+  it('slides sideways over a short column that has nothing to scroll', () => {
+    render(<WheelBoard />);
+    const board = screen.getByTestId('wboard');
+    size(screen.getByTestId('list'), 300, 400);
+    board.scrollLeft = 100;
+    fireEvent.wheel(screen.getByTestId('inlist'), { deltaY: 120 });
+    expect(board.scrollLeft).toBe(220);
+  });
+
+  it('keeps zoom, shift+wheel and sideways touchpad swipes as the browser does them', () => {
+    render(<WheelBoard />);
+    const board = screen.getByTestId('wboard');
+    board.scrollLeft = 100;
+    fireEvent.wheel(screen.getByTestId('header'), { deltaY: 120, ctrlKey: true });
+    fireEvent.wheel(screen.getByTestId('header'), { deltaY: 120, shiftKey: true });
+    fireEvent.wheel(screen.getByTestId('header'), { deltaY: 10, deltaX: 80 });
+    expect(board.scrollLeft).toBe(100);
+  });
+
+  it('does not hijack the wheel when the board itself scrolls up and down', () => {
+    render(<WheelBoard />);
+    const board = screen.getByTestId('wboard');
+    size(board, 900, 500);
+    board.scrollLeft = 100;
+    fireEvent.wheel(screen.getByTestId('header'), { deltaY: 120 });
+    expect(board.scrollLeft).toBe(100);
+  });
+});
