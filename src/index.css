@@ -370,6 +370,30 @@
 }
 
 @layer components {
+  /* Kanban scroll areas: a wide, clearly visible scrollbar that is easy to
+     grab with a touchpad (the global one is thin and nearly invisible on the
+     dark theme). */
+  .kanban-scroll::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  .kanban-scroll::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.45);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    border-radius: 9999px;
+    min-height: 40px;
+  }
+  .kanban-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.7);
+    background-clip: padding-box;
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    .kanban-scroll {
+      scrollbar-width: auto;
+      scrollbar-color: hsl(var(--muted-foreground) / 0.5) transparent;
+    }
+  }
   .gradient-text {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
   }

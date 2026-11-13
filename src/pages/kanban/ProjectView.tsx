@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 
 import { useAuth } from '@/context/AuthContext';
 import { useTasks } from '@/hooks/useTasks';
+import { useDragToScroll } from '@/hooks/useDragToScroll';
 import { getProject, updateProject, verifyProjectLockPin } from '@/services/supabase/database';
 import { supabase } from '@/services/supabase';
 import { Project, Task, TaskStatus } from '@/types';
@@ -225,6 +226,8 @@ export const ProjectView: React.FC = () => {
    *  focus) get cleaned up automatically. */
   const searchQuerySnapshotRef = useRef<string | null>(null);
   const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline' | 'mindmap'>('kanban');
+  // Click-and-drag on empty board space slides the board (touchpad-friendly).
+  const boardScrollRef = useDragToScroll<HTMLDivElement>();
   const [sortOption, setSortOption] = useState<TaskSortOption>(() => {
     try {
       return (window.localStorage.getItem('project_sort_v1') as TaskSortOption) || 'manual';
@@ -884,7 +887,7 @@ export const ProjectView: React.FC = () => {
         <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
           <div className={`flex-1 min-w-0 px-4 pt-5 pb-24 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden' : 'overflow-auto'}`}>
             {viewMode === 'kanban' ? (
-              <div className="h-full overflow-x-auto overflow-y-auto pb-20">
+              <div ref={boardScrollRef} className="kanban-scroll h-full overflow-x-auto overflow-y-auto pb-20">
                 <KanbanBoard
                   projectId={project.projectId}
                   project={project}

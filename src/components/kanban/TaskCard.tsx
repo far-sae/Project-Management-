@@ -176,6 +176,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   return (
     <div
       ref={setNodeRef}
+      data-no-pan
       style={{
         ...style,
         borderLeftColor: isUrgentActive ? 'hsl(var(--destructive))' : priorityColor,

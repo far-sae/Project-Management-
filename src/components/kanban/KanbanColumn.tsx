@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Task } from '@/types';
 import { TaskCard } from './TaskCard';
 import { InlineAddCard } from './InlineAddCard';
 import { TaskCardSkeleton } from './TaskCardSkeleton';
-import { Plus, MoreHorizontal, Inbox } from 'lucide-react';
+import { Plus, MoreHorizontal, Inbox, ChevronDown } from 'lucide-react';
+import { useScrollEdges } from '@/hooks/useScrollEdges';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { PresencePeer } from '@/hooks/usePresence';
@@ -63,13 +64,24 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
     id,
     data: { status: id },
   });
+  // The list is its own scroll area; show a "More tasks" button while cards
+  // are hidden below, for people on a touchpad without a scroll wheel.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const setListRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      listRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef],
+  );
+  const { canScrollDown, scrollDown } = useScrollEdges(listRef);
 
   return (
     <div
       ref={boardColumnRef}
       style={boardColumnStyle}
       className={cn(
-        'flex w-[18.5rem] min-w-[18.5rem] flex-col overflow-hidden',
+        'relative flex w-[18.5rem] min-w-[18.5rem] flex-col overflow-hidden',
         'rounded-lg border border-border/70 bg-card/90',
         'shadow-sm shadow-black/10 ring-1 ring-inset ring-white/5 backdrop-blur',
         isOver && 'ring-2 ring-primary/40 ring-offset-0 border-primary/25',
@@ -121,9 +133,9 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
       </div>
 
       <div
-        ref={setNodeRef}
+        ref={setListRef}
         className={cn(
-          'flex-1 px-3 pb-3 overflow-y-auto min-h-[220px] max-h-[calc(100vh-260px)]',
+          'kanban-scroll flex-1 px-3 pb-3 overflow-y-auto overscroll-contain min-h-[220px] max-h-[calc(100vh-260px)]',
           'rounded-b-lg',
           isOver && 'bg-primary/[0.06]',
         )}
@@ -169,6 +181,19 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
           </div>
         )}
       </div>
+
+      {canScrollDown && !loading && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center rounded-b-lg bg-gradient-to-t from-card via-card/85 to-transparent px-3 pb-2.5 pt-10">
+          <button
+            type="button"
+            onClick={scrollDown}
+            className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-md transition-[transform,background-color] duration-150 ease-out hover:bg-secondary active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            More tasks
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
