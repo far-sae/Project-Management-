@@ -26,6 +26,7 @@ const Contracts = React.lazy(() => import('@/pages/Contracts').then((m) => ({ de
 const Reports = React.lazy(() => import('@/pages/Reports').then((m) => ({ default: m.Reports })));
 const TimelineOverview = React.lazy(() => import('@/pages/TimelineOverview').then((m) => ({ default: m.TimelineOverview })));
 const Settings = React.lazy(() => import('@/pages/Settings').then((m) => ({ default: m.Settings })));
+const CallCheck = React.lazy(() => import('@/pages/CallCheck').then((m) => ({ default: m.CallCheck })));
 const Inbox = React.lazy(() => import('@/pages/Inbox').then((m) => ({ default: m.Inbox })));
 const Workload = React.lazy(() => import('@/pages/Workload').then((m) => ({ default: m.Workload })));
 const TimeTracking = React.lazy(() => import('@/pages/TimeTracking').then((m) => ({ default: m.TimeTracking })));
@@ -349,6 +350,11 @@ const router = createBrowserRouter(
                   {lazyAppRoute(<TimelineOverview />)}
                 </ProtectedRoute>
               ),
+            },
+            {
+              // Any signed-in person: troubleshoot calls on this computer.
+              path: '/call-check',
+              element: <ProtectedRoute>{lazyAppRoute(<CallCheck />)}</ProtectedRoute>,
             },
             {
               path: '/settings',

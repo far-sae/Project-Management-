@@ -231,7 +231,7 @@ describe('LiveKitCallService.publishLocalMedia isolation', () => {
     });
     await svc.publishLocalMedia({ mic: true, camera: true });
     expect(setCameraEnabled).toHaveBeenCalledWith(true);
-    expect(onError).toHaveBeenCalledWith('mic denied');
-    expect(onError).toHaveBeenCalledWith('cam denied');
+    expect(onError).toHaveBeenCalledWith(expect.stringMatching(/microphone.*mic denied/));
+    expect(onError).toHaveBeenCalledWith(expect.stringMatching(/camera.*cam denied/));
   });
 });

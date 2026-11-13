@@ -1,3 +1,4 @@
+import { explainMediaError, type MediaKind } from '@/lib/callTroubleshoot';
 import {
   ConnectionState,
   DisconnectReason,
@@ -223,10 +224,8 @@ export class LiveKitCallService {
     // Separate tries: a mic failure must not stop the camera (or vice versa).
     // Surface permission failures so the UI can show a clear message — but
     // stay connected to the room.
-    const report = (err: unknown) =>
-      this.events.onError(
-        err instanceof Error ? err.message : 'Could not access microphone/camera',
-      );
+    const report = (err: unknown, kind: MediaKind) =>
+      this.events.onError(explainMediaError(err, kind));
     if (opts.mic && opts.camera) {
       // ONE permission request for both (Safari otherwise asks for the mic
       // and then the camera — two pop-ups every call).
@@ -244,14 +243,14 @@ export class LiveKitCallService {
       try {
         await room.localParticipant.setMicrophoneEnabled(true);
       } catch (err) {
-        report(err);
+        report(err, 'microphone');
       }
     }
     if (opts.camera) {
       try {
         await room.localParticipant.setCameraEnabled(true);
       } catch (err) {
-        report(err);
+        report(err, 'camera');
       }
     }
     this.emitParticipants();

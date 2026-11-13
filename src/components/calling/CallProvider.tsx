@@ -11,6 +11,7 @@ import { subscribeCallInbox } from '@/services/calling/callInbox';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
+import { explainConnectError } from '@/lib/callTroubleshoot';
 import type { VideoEffect } from '@/services/webrtc/BackgroundProcessor';
 import type {
   LiveKitCallService,
@@ -103,6 +104,8 @@ const CallCtx = createContext<CallContextValue | null>(null);
 const RING_TIMEOUT_MS = 30_000;
 const OFFER_RESEND_INTERVAL_MS = 3_000;
 const ENDED_DISMISS_MS = 3_000;
+/** Errors stay up longer so people can read them and open the call check. */
+const ERROR_DISMISS_MS = 12_000;
 /** Give up on a join that hasn't connected after this long. */
 const CONNECT_TIMEOUT_MS = 45_000;
 type ConnectionStateValue = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'signalReconnecting';
@@ -419,7 +422,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         ...IDLE_STATE,
         status: 'ended',
         error:
-          "Couldn't connect to the call. Check your internet connection and that camera and microphone access is allowed, then try again.",
+          "Couldn't connect to the call. Your internet, a firewall/VPN, or blocked camera and microphone access is usually the cause.",
+        connectFailed: true,
       });
       endStateTimeoutRef.current = setTimeout(() => {
         endStateTimeoutRef.current = null;
@@ -665,15 +669,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         setState((prev) => ({
           ...prev,
           status: 'ended',
-          error:
-            err instanceof Error
-              ? err.message
-              : 'Could not connect to the call server',
+          error: explainConnectError(err),
+        connectFailed: true,
         }));
         endStateTimeoutRef.current = setTimeout(() => {
           endStateTimeoutRef.current = null;
           setState((s) => (s.status === 'ended' ? IDLE_STATE : s));
-        }, ENDED_DISMISS_MS);
+        }, ERROR_DISMISS_MS);
         return;
       }
 
@@ -807,15 +809,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
       setState((prev) => ({
         ...prev,
         status: 'ended',
-        error:
-          err instanceof Error
-            ? err.message
-            : 'Could not connect to the call server',
+        error: explainConnectError(err),
+        connectFailed: true,
       }));
       endStateTimeoutRef.current = setTimeout(() => {
         endStateTimeoutRef.current = null;
         setState((s) => (s.status === 'ended' ? IDLE_STATE : s));
-      }, ENDED_DISMISS_MS);
+      }, ERROR_DISMISS_MS);
     }
   }, [
     state.status,
@@ -937,15 +937,13 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         setState((prev) => ({
           ...prev,
           status: 'ended',
-          error:
-            err instanceof Error
-              ? err.message
-              : 'Could not connect to the call server',
+          error: explainConnectError(err),
+        connectFailed: true,
         }));
         endStateTimeoutRef.current = setTimeout(() => {
           endStateTimeoutRef.current = null;
           setState((s) => (s.status === 'ended' ? IDLE_STATE : s));
-        }, ENDED_DISMISS_MS);
+        }, ERROR_DISMISS_MS);
         return;
       }
       // No one to wait for — the meeting is live as soon as we're in.

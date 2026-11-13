@@ -77,6 +77,8 @@ export interface CallState {
    */
   isOpenMeeting: boolean;
   error: string | null;
+  /** The call couldn't connect (vs. declined / no answer): offer the call check. */
+  connectFailed?: boolean;
 }
 
 // ── Ring inbox messages ─────────────────────────────────────

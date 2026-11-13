@@ -577,7 +577,15 @@ export const CallOverlay: React.FC = () => {
           <div className="flex flex-col items-center gap-3 animate-in fade-in duration-200">
             <p className="text-lg font-semibold">Call ended</p>
             {state.error && (
-              <p className="text-sm text-white/60">{state.error}</p>
+              <p className="max-w-md px-6 text-center text-sm text-white/70 text-pretty">{state.error}</p>
+            )}
+            {state.connectFailed && (
+              <a
+                href="/call-check"
+                className="rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+              >
+                Run a call check
+              </a>
             )}
           </div>
         </div>
