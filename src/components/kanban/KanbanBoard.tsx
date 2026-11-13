@@ -34,7 +34,13 @@ import {
   bulkReorderTasks,
 } from '@/services/supabase/database';
 import { logger } from '@/lib/logger';
-import { resolveTaskDisplayColumnId } from '@/lib/kanbanTaskColumn';
+import {
+  boardColumnsWithoutDone,
+  isCompletedTaskStatus,
+  isDoneColumn,
+  resolveDoneColumnId,
+  resolveTaskDisplayColumnId,
+} from '@/lib/kanbanTaskColumn';
 import { SortableBoardColumn } from './SortableBoardColumn';
 import {
   boardColumnSortId,
@@ -206,8 +212,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   columnsRef.current = columns;
 
   // ── Filtering + sorting ────────────────────────────────────
+  // Finished tasks leave the board — they're listed in the project's Done tab.
   const filteredTasks = useMemo(() => {
-    let list = tasks.filter((t) => !t.parentTaskId);
+    let list = tasks.filter((t) => !t.parentTaskId && !isCompletedTaskStatus(t.status, columns));
     if (filterStatus && filterStatus !== 'all') {
       list = list.filter((t) => t.status === filterStatus);
     }
@@ -220,7 +227,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       );
     }
     return list;
-  }, [tasks, filterStatus, searchQuery]);
+  }, [tasks, columns, filterStatus, searchQuery]);
 
   // ── DnD + modal state ─────────────────────────────────────
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -453,7 +460,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   );
 
   const sortedColumns = useMemo(
-    () => [...columns].sort((a, b) => a.order - b.order),
+    () => boardColumnsWithoutDone(columns).sort((a, b) => a.order - b.order),
     [columns],
   );
   const columnSortIds = useMemo(
@@ -516,6 +523,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               const c = columns.find((x) => x.id === cid)!;
               return { ...c, order: i };
             });
+            // Done columns are hidden from the board; keep them (at the end).
+            columns
+              .filter(isDoneColumn)
+              .forEach((c, j) => reordered.push({ ...c, order: newOrderIds.length + j }));
             setColumns(reordered);
             onColumnsChange?.(reordered);
           }
@@ -741,6 +752,27 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   }, [isViewer, onBeforeOpenTaskModal]);
 
   // ── Inline add ────────────────────────────────────────────
+  /** One-click ✓ on a card: finish the task (it moves to the Done tab), with Undo. */
+  const handleMarkDone = useCallback(
+    async (task: Task) => {
+      if (isViewer || !canMoveTask(task)) return;
+      const previous = task.status;
+      const ok = await editTask(task.taskId, { status: resolveDoneColumnId(columns) });
+      if (!ok) {
+        toast.error("Couldn't mark the task done");
+        return;
+      }
+      toast.success(`Done: ${task.title}`, {
+        description: 'Moved to the Done tab.',
+        action: {
+          label: 'Undo',
+          onClick: () => void editTask(task.taskId, { status: previous }),
+        },
+      });
+    },
+    [isViewer, canMoveTask, editTask, columns],
+  );
+
   const handleInlineAdd = useCallback(
     async (status: string, title: string) => {
       if (isViewer) {
@@ -1182,6 +1214,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 onAddTask={handleAddTask}
                 onEditColumn={() => handleEditColumn(column)}
                 onInlineAdd={handleInlineAdd}
+                onMarkDone={isViewer ? undefined : handleMarkDone}
                 loading={loading && tasks.length === 0}
                 selectedIds={selectedIds}
                 selectionMode={selectionMode}

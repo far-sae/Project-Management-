@@ -4,36 +4,38 @@ function sortCols(columns: KanbanColumn[]): KanbanColumn[] {
   return [...columns].sort((a, b) => a.order - b.order);
 }
 
-/** Last column by order, or column id/title "done" when present. */
-export function resolveDoneColumnId(columns: KanbanColumn[]): string {
-  if (!columns.length) return 'done';
-  const sorted = sortCols(columns);
-  const byId = sorted.find((c) => c.id.toLowerCase() === 'done');
-  if (byId) return byId.id;
-  const byTitle = sorted.find((c) => /^done$/i.test(c.title.trim()));
-  if (byTitle) return byTitle.id;
-  return sorted[sorted.length - 1].id;
+/** A column that means "finished": id `done`, or titled Done / Complete(d). */
+export function isDoneColumn(column: Pick<KanbanColumn, 'id' | 'title'>): boolean {
+  return column.id.toLowerCase() === 'done' || /^(done|complete|completed)$/i.test(column.title.trim());
 }
 
-/** Prefer `todo` when it is not the done column; else first non-done column by order. */
+/**
+ * Status to store when a task is marked done: the board's own Done column if
+ * it has one, otherwise `done`. Never the last column — on custom boards
+ * (e.g. "General … Leads") that silently filed finished work under Leads.
+ */
+export function resolveDoneColumnId(columns: KanbanColumn[]): string {
+  return sortCols(columns).find(isDoneColumn)?.id ?? 'done';
+}
+
+/** First column that isn't a Done column (where a reopened task goes). */
 export function resolveReopenColumnId(columns: KanbanColumn[]): string {
   if (!columns.length) return 'todo';
   const sorted = sortCols(columns);
-  const doneId = resolveDoneColumnId(columns);
-  const byTodo = sorted.find((c) => c.id.toLowerCase() === 'todo');
-  if (byTodo && byTodo.id !== doneId) return byTodo.id;
-  const firstOther = sorted.find((c) => c.id !== doneId);
-  return firstOther?.id ?? sorted[0].id;
+  const byTodo = sorted.find((c) => c.id.toLowerCase() === 'todo' && !isDoneColumn(c));
+  if (byTodo) return byTodo.id;
+  return sorted.find((c) => !isDoneColumn(c))?.id ?? sorted[0].id;
 }
 
-/** True if this status should be treated as completed for this board. */
-export function isCompletedTaskStatus(
-  status: string,
-  columns: KanbanColumn[],
-): boolean {
-  if (!columns.length) return status === 'done';
+/** True if this status means the task is finished on this board. */
+export function isCompletedTaskStatus(status: string, columns: KanbanColumn[]): boolean {
   if (status === 'done') return true;
-  return status === resolveDoneColumnId(columns);
+  return columns.some((c) => c.id === status && isDoneColumn(c));
+}
+
+/** Board columns minus Done columns — finished tasks live in the Done tab. */
+export function boardColumnsWithoutDone(columns: KanbanColumn[]): KanbanColumn[] {
+  return columns.filter((c) => !isDoneColumn(c));
 }
 
 /**
@@ -51,7 +53,7 @@ export function resolveTaskDisplayColumnId(
 
   const st = status.toLowerCase();
 
-  if (st === 'done') return resolveDoneColumnId(columns);
+  if (st === 'done') return sorted.find(isDoneColumn)?.id ?? sorted[sorted.length - 1].id;
 
   if (st === 'needreview') {
     const byTitle = sorted.find((c) => /review/i.test(c.title));

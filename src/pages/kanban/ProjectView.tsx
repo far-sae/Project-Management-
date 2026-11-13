@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, Download, KeyRound, Lock, Network } from 'lucide-react';
+import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, CheckCircle2, Download, KeyRound, Lock, Network } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -57,6 +57,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import LimitReachedModal from '@/components/ui/LimitReachedModal';
 import { ProjectMindMap } from '@/components/mindmap/ProjectMindMap';
+import { DoneTasksView } from '@/components/kanban/DoneTasksView';
+import { isCompletedTaskStatus } from '@/lib/kanbanTaskColumn';
 
 // ── Timeline view constants ────────────────────────────────
 const DAYS_WIDTH = 40;
@@ -225,7 +227,7 @@ export const ProjectView: React.FC = () => {
    *  leaked into the still-mounted search input (e.g., PIN typed before the dialog grabbed
    *  focus) get cleaned up automatically. */
   const searchQuerySnapshotRef = useRef<string | null>(null);
-  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline' | 'mindmap'>('kanban');
+  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline' | 'mindmap' | 'done'>('kanban');
   // Click-and-drag on empty board space slides the board (touchpad-friendly).
   const boardScrollRef = useDragToScroll<HTMLDivElement>();
   const [sortOption, setSortOption] = useState<TaskSortOption>(() => {
@@ -413,6 +415,34 @@ export const ProjectView: React.FC = () => {
         ? project.columns
         : DEFAULT_COLUMNS,
     [project?.columns]
+  );
+
+  const doneCount = useMemo(
+    () => tasks.filter((t) => !t.parentTaskId && isCompletedTaskStatus(t.status, boardColumns)).length,
+    [tasks, boardColumns],
+  );
+
+  /** Open a task in the board's task window (used by Mind map and Done). */
+  const openTaskOnBoard = useCallback(
+    (taskId: string) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('taskId', taskId);
+        return next;
+      }, { replace: true });
+      setViewMode('kanban');
+    },
+    [setSearchParams],
+  );
+
+  const handleReopenTask = useCallback(
+    async (task: Task, columnId: string) => {
+      const ok = await editTask(task.taskId, { status: columnId });
+      const title = boardColumns.find((c) => c.id === columnId)?.title ?? 'the board';
+      if (ok) toast.success(`Reopened — moved to ${title}`);
+      else toast.error("Couldn't reopen the task");
+    },
+    [editTask, boardColumns],
   );
 
   const handleColumnsChange = useCallback(
@@ -861,6 +891,22 @@ export const ProjectView: React.FC = () => {
                 >
                   <Network className="w-4 h-4" />
                 </Button>
+                <Button
+                  variant={viewMode === 'done' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-8 gap-1.5 rounded-md px-3"
+                  onClick={() => setViewMode('done')}
+                  title="Done tasks"
+                  aria-pressed={viewMode === 'done'}
+                >
+                  <CheckCircle2 className="w-4 h-4 text-success" aria-hidden />
+                  <span className="text-xs font-medium">Done</span>
+                  {doneCount > 0 && (
+                    <span className="rounded bg-muted px-1 text-[11px] tabular-nums text-muted-foreground">
+                      {doneCount}
+                    </span>
+                  )}
+                </Button>
               </div>
 
               <Button
@@ -932,6 +978,15 @@ export const ProjectView: React.FC = () => {
                 searchQuery={searchQuery}
                 selectedStatus={selectedStatus}
                 navigate={navigate}
+              />
+            ) : viewMode === 'done' ? (
+              <DoneTasksView
+                tasks={tasks}
+                columns={boardColumns}
+                searchQuery={searchQuery}
+                canEdit={!isViewer}
+                onReopen={handleReopenTask}
+                onOpenTask={openTaskOnBoard}
               />
             ) : viewMode === 'mindmap' ? (
               <div className="h-[calc(100vh-12rem)] min-h-[480px]">

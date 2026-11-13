@@ -38,6 +38,8 @@ interface TaskCardProps {
   dragDisabled?: boolean;
   /** First pick in swap-two-tasks mode. */
   swapHighlight?: boolean;
+  /** Shows a ✓ circle that marks the task done in one click. */
+  onMarkDone?: (task: Task) => void;
 }
 
 const PRIORITY_TONES: Record<
@@ -88,6 +90,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   peersOnTask,
   dragDisabled = false,
   swapHighlight = false,
+  onMarkDone,
 }) => {
   const { user } = useAuth();
   const { isAdmin } = useOrganization();
@@ -255,6 +258,25 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
       {/* Title row */}
       <div className="flex items-start gap-2 mb-1.5">
+        {onMarkDone && !selectable && !isLockMasked && !dragDisabled && (
+          <button
+            type="button"
+            aria-label={`Mark "${task.title}" as done`}
+            title="Mark as done"
+            // Keep the press from starting a card drag or opening the task.
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMarkDone(task);
+            }}
+            className="group/done -m-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.92] transition-transform duration-150 ease-out [.dense_&]:h-7 [.dense_&]:w-7"
+          >
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 border-muted-foreground/45 text-transparent transition-colors duration-150 group-hover/done:border-success group-hover/done:bg-success group-hover/done:text-success-foreground">
+              <Check className="h-3 w-3" strokeWidth={3} aria-hidden />
+            </span>
+          </button>
+        )}
         {isLockMasked ? (
           <div className="flex-1 flex items-center gap-2 rounded-md bg-warning-soft/60 px-2 py-1.5 ring-1 ring-warning/30">
             <Lock className="w-3.5 h-3.5 text-warning-soft-foreground shrink-0" />

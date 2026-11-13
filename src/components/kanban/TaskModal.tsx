@@ -78,6 +78,11 @@ import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { LinkifiedText } from '@/components/ui/LinkifiedText';
 import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
+import {
+  isCompletedTaskStatus,
+  resolveDoneColumnId,
+  resolveReopenColumnId,
+} from '@/lib/kanbanTaskColumn';
 import AttachmentPreview from '../ui/AttachmentPreview';
 import { TaskExpensesPanel } from '@/components/expenses/TaskExpensesPanel';
 import { Switch } from '@/components/ui/switch';
@@ -131,6 +136,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<string>(initialStatus);
+  const isDoneStatus = isCompletedTaskStatus(status, columns);
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [assignees, setAssignees] = useState<TaskAssignee[]>([]);
@@ -1505,11 +1511,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           <div className="flex items-start gap-2 px-4 pb-4 sm:px-6">
             <button
               type="button"
-              onClick={() => setStatus(status === 'done' ? 'todo' : 'done')}
+              onClick={() =>
+                setStatus(
+                  isDoneStatus
+                    ? task && !isCompletedTaskStatus(task.status, columns)
+                      ? task.status
+                      : resolveReopenColumnId(columns)
+                    : resolveDoneColumnId(columns),
+                )
+              }
               disabled={readOnlyTask}
-              aria-pressed={status === 'done'}
-              aria-label={status === 'done' ? 'Mark as not done' : 'Mark as done'}
-              title={status === 'done' ? 'Mark as not done' : 'Mark as done'}
+              aria-pressed={isDoneStatus}
+              aria-label={isDoneStatus ? 'Mark as not done' : 'Mark as done'}
+              title={isDoneStatus ? 'Mark as not done' : 'Mark as done'}
               className={cn(
                 'group -ml-1.5 mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed md:h-9 md:w-9',
                 FOCUS_RING,
@@ -1519,12 +1533,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <span
                 className={cn(
                   'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors',
-                  status === 'done'
+                  isDoneStatus
                     ? 'border-success bg-success text-success-foreground'
                     : 'border-muted-foreground/40 group-hover:border-foreground/60',
                 )}
               >
-                {status === 'done' && <Check className="h-3 w-3" strokeWidth={3} aria-hidden />}
+                {isDoneStatus && <Check className="h-3 w-3" strokeWidth={3} aria-hidden />}
               </span>
             </button>
             <label htmlFor={ids.title} className="sr-only">
@@ -2187,6 +2201,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         </span>
                       </SelectItem>
                     ))}
+                    {!columns.some((c) => c.id === 'done') && (
+                      <SelectItem value="done">
+                        <span className="flex items-center gap-2">
+                          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-success" />
+                          <span className="truncate">Done</span>
+                        </span>
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </PropertyRow>

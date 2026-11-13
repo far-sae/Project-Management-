@@ -20,6 +20,8 @@ export interface KanbanColumnProps {
   onAddTask?: (status: string) => void;
   onEditColumn?: () => void;
   onInlineAdd?: (status: string, title: string) => Promise<void> | void;
+  /** ✓ button on each card: mark the task done. */
+  onMarkDone?: (task: Task) => void;
   loading?: boolean;
   /** Set of task ids currently selected in multi-select mode. */
   selectedIds?: Set<string>;
@@ -48,6 +50,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
   onAddTask,
   onEditColumn,
   onInlineAdd,
+  onMarkDone,
   loading = false,
   selectedIds,
   selectionMode = false,
@@ -163,6 +166,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
                 peersOnTask={peersByTask?.get(task.taskId)}
                 dragDisabled={isTaskDragDisabled?.(task) ?? false}
                 swapHighlight={Boolean(swapPickId && swapPickId === task.taskId)}
+                onMarkDone={onMarkDone}
               />
             ))}
           </SortableContext>
