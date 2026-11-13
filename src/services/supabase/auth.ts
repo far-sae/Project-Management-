@@ -1,3 +1,4 @@
+import { googleClientId, startGoogleSignIn } from "./googleSignIn";
 import { supabase } from "./config";
 import { User, UserSubscription } from "@/types";
 import { logger } from "@/lib/logger";
@@ -327,6 +328,18 @@ export const signInWithGoogle = async (): Promise<void> => {
   const redirectTo = pendingInviteToken
     ? `${window.location.origin}/accept-invite/${pendingInviteToken}`
     : `${window.location.origin}/`;
+
+  // When configured, sign in through our own domain so Google's screen says
+  // "TaskCalendar" instead of "<project>.supabase.co" (see googleSignIn.ts).
+  const clientId = googleClientId();
+  if (clientId) {
+    await startGoogleSignIn({
+      clientId,
+      origin: window.location.origin,
+      next: pendingInviteToken ? `/accept-invite/${pendingInviteToken}` : "/",
+    });
+    return;
+  }
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
