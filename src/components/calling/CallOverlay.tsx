@@ -604,7 +604,7 @@ export const CallOverlay: React.FC = () => {
         contextLabel={
           state.context?.type === 'project' ? state.context.label : undefined
         }
-        onAccept={() => void actions.acceptCall()}
+        onAccept={(opts) => void actions.acceptCall(opts)}
         onReject={actions.rejectCall}
       />
     );

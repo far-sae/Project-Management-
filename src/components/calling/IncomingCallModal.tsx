@@ -6,7 +6,6 @@ import {
 } from '@/services/calling/incomingAlert';
 import { Phone, PhoneOff, Video } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import type { CallParticipant, CallMediaType } from '@/services/webrtc/types';
 
 interface IncomingCallModalProps {
@@ -18,7 +17,8 @@ interface IncomingCallModalProps {
    * they're being invited into a multi-party call, not a 1:1 DM.
    */
   contextLabel?: string;
-  onAccept: () => void;
+  /** `audioOnly`: answer a video call with the camera off. */
+  onAccept: (opts: { audioOnly: boolean }) => void;
   onReject: () => void;
 }
 
@@ -55,67 +55,75 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
     };
   }, [callerName, mediaType, contextLabel]);
 
+  const kind = mediaType === 'video' ? 'Video call' : 'Voice call';
+  const roundBtn =
+    'flex h-11 w-11 items-center justify-center rounded-full text-white shadow-md transition-transform duration-150 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card';
+
+  // Teams-style call card: sits in the bottom-right corner over whatever
+  // you're doing (no dimmed screen), with answer-with-video,
+  // answer-with-audio and decline.
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed bottom-4 left-4 right-4 z-[300] sm:bottom-6 sm:left-auto sm:right-6 sm:w-[380px] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200 motion-reduce:animate-none"
       role="alertdialog"
-      aria-label={`Incoming ${mediaType} call from ${caller.displayName}`}
+      aria-live="assertive"
+      aria-label={`Incoming ${mediaType} call from ${callerName}`}
     >
-      <div className="flex flex-col items-center gap-5 rounded-2xl border border-border bg-card p-8 shadow-2xl min-w-[280px] max-w-sm animate-in fade-in zoom-in-95 duration-200">
-        {/* Pulsing ring indicator */}
-        <div className="relative">
-          <div className="absolute inset-[-8px] rounded-full bg-primary/15 animate-ping" />
-          <div className="absolute inset-[-4px] rounded-full bg-primary/10 animate-pulse" />
-          <Avatar className="h-20 w-20 ring-4 ring-primary/30 relative">
-            <AvatarImage src={caller.photoURL} alt={caller.displayName} />
-            <AvatarFallback className="text-2xl bg-primary/10 text-primary">
-              {(caller.displayName || '?').charAt(0).toUpperCase()}
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75 motion-reduce:animate-none" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+        </span>
+        Incoming call
+      </div>
+      <div className="flex items-center gap-3 p-4">
+        <div className="relative shrink-0">
+          <span className="absolute -inset-1 rounded-full bg-primary/20 animate-pulse motion-reduce:animate-none" />
+          <Avatar className="relative h-12 w-12">
+            <AvatarImage src={caller.photoURL} alt={callerName} />
+            <AvatarFallback className="bg-primary/10 text-lg text-primary">
+              {callerName.charAt(0).toUpperCase()}
             </AvatarFallback>
           </Avatar>
         </div>
-
-        <div className="text-center">
-          <p className="text-lg font-semibold text-foreground">
-            {caller.displayName}
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold text-foreground" title={callerName}>
+            {callerName}
           </p>
-          {contextLabel && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              via {contextLabel}
-            </p>
-          )}
-          <p className="text-sm text-muted-foreground mt-1 animate-pulse">
-            Incoming {mediaType} call…
+          <p className="truncate text-sm text-muted-foreground">
+            {contextLabel ? `${kind} · ${contextLabel}` : kind}
           </p>
         </div>
-
-        <div className="flex items-center gap-6 mt-2">
-          <div className="flex flex-col items-center gap-1.5">
-            <Button
-              variant="destructive"
-              size="lg"
-              className="h-14 w-14 rounded-full shadow-lg"
-              onClick={onReject}
-              aria-label="Decline call"
+        <div className="flex shrink-0 items-center gap-2">
+          {mediaType === 'video' && (
+            <button
+              type="button"
+              className={`${roundBtn} bg-emerald-600 hover:bg-emerald-700`}
+              onClick={() => onAccept({ audioOnly: false })}
+              aria-label="Accept with video"
+              title="Accept with video"
             >
-              <PhoneOff className="h-6 w-6" />
-            </Button>
-            <span className="text-xs text-muted-foreground">Decline</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5">
-            <Button
-              size="lg"
-              className="h-14 w-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg"
-              onClick={onAccept}
-              aria-label="Accept call"
-            >
-              {mediaType === 'video' ? (
-                <Video className="h-6 w-6" />
-              ) : (
-                <Phone className="h-6 w-6" />
-              )}
-            </Button>
-            <span className="text-xs text-muted-foreground">Accept</span>
-          </div>
+              <Video className="h-5 w-5" />
+            </button>
+          )}
+          <button
+            type="button"
+            className={`${roundBtn} bg-emerald-600 hover:bg-emerald-700`}
+            onClick={() => onAccept({ audioOnly: mediaType === 'video' })}
+            aria-label="Accept with audio"
+            title="Accept with audio"
+          >
+            <Phone className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className={`${roundBtn} bg-red-600 hover:bg-red-700`}
+            onClick={onReject}
+            aria-label="Decline"
+            title="Decline"
+          >
+            <PhoneOff className="h-5 w-5" />
+          </button>
         </div>
       </div>
     </div>

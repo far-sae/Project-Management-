@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import { explainConnectError } from '@/lib/callTroubleshoot';
+import { callBackContext, showMissedCallNotification } from '@/services/calling/missedCall';
 import type { VideoEffect } from '@/services/webrtc/BackgroundProcessor';
 import type {
   LiveKitCallService,
@@ -58,7 +59,8 @@ interface CallActions {
     mediaType: CallMediaType,
     remoteParticipant: CallParticipant | CallParticipant[],
   ) => Promise<void>;
-  acceptCall: () => Promise<void>;
+  /** Answer the ringing call. `audioOnly` joins a video call with the camera off (Teams' "Accept with audio"). */
+  acceptCall: (opts?: { audioOnly?: boolean }) => Promise<void>;
   rejectCall: () => void;
   hangUp: () => void;
   toggleMute: () => void;
@@ -304,6 +306,27 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [localParticipant, sendInboxMessage]);
 
+  // ── Missed calls (Teams-style) ─────────────────────────────
+  // startCall is defined further down; the toast's "Call back" reads it
+  // through a ref so it always uses the latest version.
+  const startCallRef = useRef<CallActions['startCall'] | null>(null);
+  const notifyMissedCall = useCallback((ring: RingOffer) => {
+    const callerName = ring.from?.displayName || 'a teammate';
+    const contextLabel = ring.context?.type === 'project' ? ring.context.label : undefined;
+    const kind = ring.mediaType === 'video' ? 'Video call' : 'Voice call';
+    toast(`Missed call from ${callerName}`, {
+      description: contextLabel ? `${kind} · ${contextLabel}` : kind,
+      duration: 60_000,
+      action: {
+        label: 'Call back',
+        onClick: () => {
+          void startCallRef.current?.(callBackContext(ring), ring.mediaType, ring.from);
+        },
+      },
+    });
+    showMissedCallNotification({ callerName, mediaType: ring.mediaType, contextLabel });
+  }, []);
+
   // ── Global incoming-call listener ──────────────────────────
 
   useEffect(() => {
@@ -358,7 +381,19 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
             return;
           }
           // Either the caller bailed or someone else in the ring-all
-          // already picked up. Drop our incoming ring if it matches.
+          // already picked up. Drop our incoming ring if it matches —
+          // and if the caller hung up first, it's a missed call.
+          const ringing = latestCallStateRef.current;
+          const pending = pendingRingRef.current;
+          if (
+            msg.reason === 'cancelled' &&
+            pending?.callId === msg.callId &&
+            ringing.status === 'ringing' &&
+            ringing.direction === 'incoming' &&
+            ringing.callId === msg.callId
+          ) {
+            notifyMissedCall(pending);
+          }
           setState((prev) => {
             if (
               prev.status === 'ringing' &&
@@ -390,6 +425,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
           latestCallStateRef.current.direction === 'incoming';
         if (!stillIncoming) return;
         if (callId) declinedCallIdsRef.current.add(callId);
+        if (pendingRingRef.current) notifyMissedCall(pendingRingRef.current);
         resetCall();
       }, RING_TIMEOUT_MS);
 
@@ -400,7 +436,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       };
     }
-  }, [state.status, state.direction, state.callId, resetCall]);
+  }, [state.status, state.direction, state.callId, resetCall, notifyMissedCall]);
 
   // ── "Connecting" watchdog ──────────────────────────────────
   // A join that never completes (call server unreachable, the other person
@@ -783,14 +819,23 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     ],
   );
 
-  const acceptCall = useCallback(async () => {
+  startCallRef.current = startCall;
+
+  const acceptCall = useCallback(async (opts?: { audioOnly?: boolean }) => {
     const ring = pendingRingRef.current;
     if (!ring || !localParticipant) return;
     if (state.status !== 'ringing' || state.direction !== 'incoming') return;
 
+    const audioOnly = opts?.audioOnly === true;
     clearTimers();
     memberAnsweredRef.current = false;
-    setState((prev) => ({ ...prev, status: 'connecting' }));
+    // Audio-only keeps the call's own type, so the camera button stays
+    // there to turn video on later.
+    setState((prev) => ({
+      ...prev,
+      status: 'connecting',
+      isCameraOff: audioOnly ? true : prev.isCameraOff,
+    }));
 
     const acceptedCallId = state.callId;
     activeCallIdRef.current = acceptedCallId;
@@ -800,7 +845,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       await lk.connect({
         roomName: ring.roomName,
-        mediaType: ring.mediaType,
+        mediaType: audioOnly ? 'audio' : ring.mediaType,
         participantName: localParticipant.displayName,
       });
       pendingRingRef.current = null;
