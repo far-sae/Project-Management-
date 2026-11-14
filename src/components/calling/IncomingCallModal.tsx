@@ -17,6 +17,8 @@ interface IncomingCallModalProps {
    * they're being invited into a multi-party call, not a 1:1 DM.
    */
   contextLabel?: string;
+  /** Lets Accept / Decline on the desktop pop-up find this call. */
+  callId?: string | null;
   /** `audioOnly`: answer a video call with the camera off. */
   onAccept: (opts: { audioOnly: boolean }) => void;
   onReject: () => void;
@@ -26,6 +28,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   caller,
   mediaType,
   contextLabel,
+  callId,
   onAccept,
   onReject,
 }) => {
@@ -37,7 +40,12 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
     const stopRing = startIncomingRing();
     const stopFlash = startTitleFlash(`📞 ${callerName} is calling…`);
     const notify = () =>
-      showIncomingCallNotification({ callerName, mediaType, contextLabel });
+      showIncomingCallNotification({
+        callerName,
+        mediaType,
+        contextLabel,
+        ...(callId ? { callId } : {}),
+      });
     let closeNotification = notify();
     // Switched away after the ring started → notify now.
     const onAway = () => {
@@ -53,7 +61,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
       stopFlash();
       closeNotification();
     };
-  }, [callerName, mediaType, contextLabel]);
+  }, [callerName, mediaType, contextLabel, callId]);
 
   const kind = mediaType === 'video' ? 'Video call' : 'Voice call';
   const roundBtn =

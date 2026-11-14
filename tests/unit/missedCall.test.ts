@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callBackContext, showMissedCallNotification } from '@/services/calling/missedCall';
+import { __setCallWorkerForTests } from '@/services/calling/callWorker';
 
 const SAM = { userId: 'sam', displayName: 'Sam' };
 
@@ -53,5 +54,21 @@ describe('showMissedCallNotification', () => {
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
     showMissedCallNotification({ callerName: 'Sam', mediaType: 'audio' });
     expect(created).toHaveLength(0);
+  });
+
+  it('offers Call back right on the pop-up', () => {
+    fakeNotification('granted');
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const showNotification = vi.fn(async () => undefined);
+    __setCallWorkerForTests({ showNotification } as unknown as ServiceWorkerRegistration);
+    showMissedCallNotification({ callerName: 'Sam', mediaType: 'audio', callId: 'c9' });
+    __setCallWorkerForTests(null);
+    expect(showNotification).toHaveBeenCalledWith(
+      'Missed call from Sam',
+      expect.objectContaining({
+        data: { kind: 'missed', callId: 'c9' },
+        actions: [{ action: 'call-back', title: 'Call back' }],
+      }),
+    );
   });
 });

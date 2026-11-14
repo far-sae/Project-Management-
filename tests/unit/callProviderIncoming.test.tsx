@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   },
   inbox: null as null | ((p: unknown) => void),
   missed: [] as unknown[],
+  click: null as null | ((c: { action: string; callId?: string }) => void),
   toast: null as unknown as Record<string, ReturnType<typeof import('vitest').vi.fn>>,
 }));
 
@@ -79,6 +80,13 @@ vi.mock('sonner', () => {
 vi.mock('@/services/calling/callInbox', () => ({
   subscribeCallInbox: (_c: unknown, _u: string, onSignal: (p: unknown) => void) => {
     h.inbox = onSignal;
+    return () => {};
+  },
+}));
+vi.mock('@/services/calling/callWorker', async (orig) => ({
+  ...(await orig<typeof import('@/services/calling/callWorker')>()),
+  listenForCallNotificationClicks: (cb: (c: { action: string; callId?: string }) => void) => {
+    h.click = cb;
     return () => {};
   },
 }));
@@ -164,7 +172,7 @@ describe('CallProvider — answering like Teams', () => {
       'Missed call from Sam',
       expect.objectContaining({ action: expect.objectContaining({ label: 'Call back' }) }),
     );
-    expect(h.missed).toEqual([{ callerName: 'Sam', mediaType: 'audio', contextLabel: undefined }]);
+    expect(h.missed).toEqual([{ callerName: 'Sam', mediaType: 'audio', contextLabel: undefined, callId: 'c1' }]);
   });
 
   it('shows "Missed call" when the caller hangs up before you answer', () => {
@@ -206,5 +214,44 @@ describe('CallProvider — answering like Teams', () => {
     expect(ctx.state.direction).toBe('outgoing');
     expect(ctx.state.remoteParticipant?.userId).toBe('sam');
     expect(ctx.state.mediaType).toBe('audio');
+  });
+
+  it('Accept on the desktop pop-up answers the call', async () => {
+    renderProvider();
+    act(() => h.inbox!(ring()));
+    await act(async () => {
+      h.click!({ action: 'accept', callId: 'c1' });
+    });
+    expect(h.svc.connect).toHaveBeenCalledWith(expect.objectContaining({ roomName: 'dm:me__sam' }));
+  });
+
+  it('Decline on the desktop pop-up declines the call', () => {
+    renderProvider();
+    act(() => h.inbox!(ring()));
+    act(() => h.click!({ action: 'decline', callId: 'c1' }));
+    expect(ctx.state.status).toBe('idle');
+    expect(h.sent.some((m) => m.payload.type === 'ring-cancel')).toBe(true);
+  });
+
+  it('ignores pop-up clicks for a call that is no longer ringing', () => {
+    renderProvider();
+    act(() => h.inbox!(ring()));
+    act(() => h.click!({ action: 'accept', callId: 'old' }));
+    expect(h.svc.connect).not.toHaveBeenCalled();
+    expect(ctx.state.status).toBe('ringing');
+  });
+
+  it('Call back on the missed-call pop-up rings the caller', async () => {
+    vi.useFakeTimers();
+    renderProvider();
+    act(() => h.inbox!(ring({ mediaType: 'audio' })));
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    await act(async () => {
+      h.click!({ action: 'call-back', callId: 'c1' });
+    });
+    expect(ctx.state.direction).toBe('outgoing');
+    expect(ctx.state.remoteParticipant?.userId).toBe('sam');
   });
 });

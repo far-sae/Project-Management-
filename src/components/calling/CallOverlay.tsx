@@ -601,6 +601,7 @@ export const CallOverlay: React.FC = () => {
       <IncomingCallModal
         caller={state.remoteParticipant!}
         mediaType={state.mediaType}
+        callId={state.callId}
         contextLabel={
           state.context?.type === 'project' ? state.context.label : undefined
         }

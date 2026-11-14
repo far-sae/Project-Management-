@@ -14,6 +14,7 @@ function deps(over: Partial<CallCheckDeps> = {}): CallCheckDeps {
     getUserMedia: vi.fn(async () => stream() as unknown as MediaStream),
     checkServer: vi.fn(async () => ({ websocket: true, webrtc: true })),
     checkRinging: vi.fn(async () => true),
+    notificationPermission: () => 'granted',
     ...over,
   };
 }
@@ -30,8 +31,8 @@ describe('runCallCheck', () => {
   it('passes every step on a healthy machine and releases the devices', async () => {
     const d = deps();
     const { final } = await run(d);
-    expect(final.map((r) => r.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok']);
-    expect(final.map((r) => r.id)).toEqual(['browser', 'microphone', 'camera', 'server', 'ringing']);
+    expect(final.map((r) => r.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+    expect(final.map((r) => r.id)).toEqual(['browser', 'microphone', 'camera', 'server', 'ringing', 'alerts']);
     expect(d.getUserMedia).toHaveBeenCalledTimes(2);
   });
 
@@ -85,12 +86,21 @@ describe('runCallCheck', () => {
     const { final } = await run(d);
     expect(byId(final, 'browser').status).toBe('fail');
     expect(d.getUserMedia).not.toHaveBeenCalled();
-    expect(final.filter((r) => r.status === 'skipped')).toHaveLength(4);
+    expect(final.filter((r) => r.status === 'skipped')).toHaveLength(5);
   });
 
   it('streams progress so the page can show each step as it runs', async () => {
     const { updates } = await run(deps());
     expect(updates.length).toBeGreaterThan(5);
     expect(updates[0].some((r) => r.status === 'running')).toBe(true);
+  });
+
+  it('warns when desktop alerts are off, so calls would not pop up while minimised', async () => {
+    const off = await run(deps({ notificationPermission: () => 'default' }));
+    expect(byId(off.final, 'alerts')).toMatchObject({ status: 'warn', detail: expect.stringMatching(/minimised/) });
+    const blocked = await run(deps({ notificationPermission: () => 'denied' }));
+    expect(byId(blocked.final, 'alerts')).toMatchObject({ status: 'warn', detail: expect.stringMatching(/padlock/) });
+    const on = await run(deps());
+    expect(byId(on.final, 'alerts').status).toBe('ok');
   });
 });

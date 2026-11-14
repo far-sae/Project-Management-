@@ -6,6 +6,7 @@ import {
   shouldOfferCallAlerts,
   unlockCallAudio,
 } from '@/services/calling/incomingAlert';
+import { registerCallWorker } from '@/services/calling/callWorker';
 
 const OFFER_DELAY_MS = 4000;
 
@@ -18,6 +19,8 @@ export function useCallAlerts(signedIn: boolean): void {
   useEffect(() => {
     if (!signedIn) return;
     const removeUnlock = unlockCallAudio();
+    // Lets call pop-ups carry Accept / Decline buttons.
+    void registerCallWorker();
 
     const timer = setTimeout(() => {
       if (!shouldOfferCallAlerts()) return;

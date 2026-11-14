@@ -26,11 +26,14 @@ import {
   unlockAlertAudio,
   type Note,
 } from './alertAudio';
+import { callWorkerRegistration } from './callWorker';
 
 /** Matches the 30 s ring timeout in CallProvider. */
 export const RING_TOTAL_SECONDS = 30;
 export const CALL_ALERTS_DISMISSED_KEY = 'taskcalendar:call-alerts-dismissed';
 const NOTIFICATION_TAG = 'taskcalendar-incoming-call';
+/** App logo for desktop pop-ups (there is no favicon.ico). */
+export const NOTIFICATION_ICON = '/logo.png';
 
 
 export { getAlertAudioContext };
@@ -106,23 +109,58 @@ export function appIsInFront(): boolean {
 }
 
 /**
- * Desktop notification for an incoming call when the app isn't in front.
+ * Desktop notification for an incoming call when the app isn't in front —
+ * the OS slides it in from the side even when the browser is minimised.
+ * With the call worker registered it carries Accept / Decline buttons
+ * (Teams-style); otherwise it's a plain pop-up that opens the app.
  * Requires notification permission (see shouldOfferCallAlerts). Returns close().
  */
 export function showIncomingCallNotification(p: {
   callerName: string;
   mediaType: 'audio' | 'video';
   contextLabel?: string;
+  callId?: string;
 }): () => void {
   const N = (window as Window & { Notification?: typeof Notification }).Notification;
   if (!N || N.permission !== 'granted' || appIsInFront()) return () => {};
+  const kind = p.mediaType === 'video' ? 'Video call' : 'Voice call';
+  const title = `${p.callerName} is calling`;
+  const body = p.contextLabel ? `${kind} · ${p.contextLabel}` : kind;
+
+  const reg = callWorkerRegistration();
+  if (reg) {
+    const shown = reg
+      .showNotification(title, {
+        body,
+        tag: NOTIFICATION_TAG,
+        requireInteraction: true,
+        icon: NOTIFICATION_ICON,
+        data: { kind: 'incoming', callId: p.callId },
+        actions: [
+          { action: 'accept', title: p.mediaType === 'video' ? 'Accept with video' : 'Accept' },
+          { action: 'decline', title: 'Decline' },
+        ],
+      } as NotificationOptions)
+      .catch(() => undefined);
+    // Close only this call's pop-up (a newer call reuses the same tag).
+    return () => {
+      void shown
+        .then(() => reg.getNotifications({ tag: NOTIFICATION_TAG }))
+        .then((list) =>
+          list
+            .filter((n) => (n.data as { callId?: string } | null)?.callId === p.callId)
+            .forEach((n) => n.close()),
+        )
+        .catch(() => undefined);
+    };
+  }
+
   try {
-    const kind = p.mediaType === 'video' ? 'Video call' : 'Voice call';
-    const n = new N(`${p.callerName} is calling`, {
-      body: p.contextLabel ? `${kind} · ${p.contextLabel}` : kind,
+    const n = new N(title, {
+      body,
       tag: NOTIFICATION_TAG,
       requireInteraction: true,
-      icon: '/favicon.ico',
+      icon: NOTIFICATION_ICON,
     });
     n.onclick = () => {
       window.focus();

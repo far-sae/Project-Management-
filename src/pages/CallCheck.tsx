@@ -1,12 +1,15 @@
-import React, { useCallback, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Circle, Loader2, MinusCircle, XCircle } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, BellRing, CheckCircle2, Circle, Loader2, MinusCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/services/supabase/config';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import { dmRoomName, fetchLiveKitToken } from '@/services/livekit/fetchLiveKitToken';
+import { NOTIFICATION_ICON, requestCallAlerts } from '@/services/calling/incomingAlert';
+import { callWorkerRegistration, registerCallWorker } from '@/services/calling/callWorker';
 import {
+  alertsStepResult,
   runCallCheck,
   type CallCheckDeps,
   type CallCheckResult,
@@ -14,6 +17,28 @@ import {
 } from '@/services/calling/callCheck';
 
 const RINGING_TIMEOUT_MS = 8_000;
+const TEST_POPUP_DELAY_MS = 5_000;
+
+function notificationPermission(): NotificationPermission | 'unsupported' {
+  const N = (window as Window & { Notification?: typeof Notification }).Notification;
+  return N ? N.permission : 'unsupported';
+}
+
+/** A sample pop-up, shown even while this page is in front. */
+async function showTestPopup(): Promise<void> {
+  const title = 'Test call from TaskCalendar';
+  const options: NotificationOptions = {
+    body: 'This is how incoming calls pop up when TaskCalendar is minimised.',
+    icon: NOTIFICATION_ICON,
+    tag: 'taskcalendar-test-popup',
+  };
+  const reg = callWorkerRegistration() ?? (await registerCallWorker());
+  if (reg) {
+    await reg.showNotification(title, options);
+    return;
+  }
+  new Notification(title, options);
+}
 
 function realDeps(userId: string, displayName: string): CallCheckDeps {
   return {
@@ -34,6 +59,7 @@ function realDeps(userId: string, displayName: string): CallCheckDeps {
       const rtc = await check.checkWebRTC();
       return { websocket: true, webrtc: rtc.status === CheckStatus.SUCCESS };
     },
+    notificationPermission,
     checkRinging: () =>
       new Promise<boolean>((resolve) => {
         const ch = supabase.channel(`call-check:${userId}:${Date.now()}`, {
@@ -79,6 +105,30 @@ export const CallCheck: React.FC = () => {
   const { user } = useAuth();
   const [results, setResults] = useState<CallCheckResult[] | null>(null);
   const [running, setRunning] = useState(false);
+  const [permission, setPermission] = useState(notificationPermission);
+  const [testPending, setTestPending] = useState(false);
+  const testTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (testTimer.current) clearTimeout(testTimer.current);
+  }, []);
+
+  const turnOnPopups = useCallback(async () => {
+    const result = await requestCallAlerts();
+    const now = result === 'unsupported' ? 'unsupported' : notificationPermission();
+    setPermission(now);
+    const step = alertsStepResult(now);
+    setResults((prev) => prev?.map((r) => (r.id === 'alerts' ? { ...r, ...step } : r)) ?? prev);
+  }, []);
+
+  const sendTestPopup = useCallback(() => {
+    setTestPending(true);
+    testTimer.current = setTimeout(() => {
+      testTimer.current = null;
+      setTestPending(false);
+      void showTestPopup().catch(() => undefined);
+    }, TEST_POPUP_DELAY_MS);
+  }, []);
+  const popups = alertsStepResult(permission);
 
   const start = useCallback(async () => {
     if (!user || running) return;
@@ -105,6 +155,44 @@ export const CallCheck: React.FC = () => {
           tells you what to fix. Your browser may ask for camera and microphone access: choose Allow.
         </p>
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-4" aria-labelledby="popups-heading">
+        <div className="flex items-start gap-3">
+          <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0 space-y-3">
+            <div>
+              <h2 id="popups-heading" className="text-sm font-medium">
+                Call pop-ups when minimised
+              </h2>
+              <p className="mt-0.5 text-sm text-muted-foreground text-pretty">{popups.detail}</p>
+            </div>
+            {permission === 'default' && (
+              <Button type="button" size="sm" onClick={() => void turnOnPopups()} className="active:scale-[0.97]">
+                Turn on pop-ups
+              </Button>
+            )}
+            {permission === 'granted' && (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={sendTestPopup}
+                  disabled={testPending}
+                  className="active:scale-[0.97]"
+                >
+                  Send a test pop-up
+                </Button>
+                {testPending && (
+                  <span className="text-sm text-muted-foreground" aria-live="polite">
+                    Minimise this window now — the test pop-up arrives in 5 seconds.
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       <Button type="button" onClick={start} disabled={!user || running} className="active:scale-[0.97]">
         {running && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}

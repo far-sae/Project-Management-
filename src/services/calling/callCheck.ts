@@ -6,7 +6,7 @@ import { explainConnectError, explainMediaError } from '@/lib/callTroubleshoot';
  * injected so the steps can be tested without a browser.
  */
 
-export type CallCheckStepId = 'browser' | 'microphone' | 'camera' | 'server' | 'ringing';
+export type CallCheckStepId = 'browser' | 'microphone' | 'camera' | 'server' | 'ringing' | 'alerts';
 export type CallCheckStatus = 'pending' | 'running' | 'ok' | 'warn' | 'fail' | 'skipped';
 
 export interface CallCheckResult {
@@ -23,6 +23,8 @@ export interface CallCheckDeps {
   checkServer: () => Promise<{ websocket: boolean; webrtc: boolean }>;
   /** Send a message to ourselves over the channel incoming calls ring on. */
   checkRinging: () => Promise<boolean>;
+  /** Desktop notification permission, so calls pop up when the app is minimised. */
+  notificationPermission: () => NotificationPermission | 'unsupported';
 }
 
 const STEPS: Array<{ id: CallCheckStepId; label: string }> = [
@@ -31,7 +33,39 @@ const STEPS: Array<{ id: CallCheckStepId; label: string }> = [
   { id: 'camera', label: 'Camera' },
   { id: 'server', label: 'Call connection' },
   { id: 'ringing', label: 'Incoming calls' },
+  { id: 'alerts', label: 'Pop-ups when minimised' },
 ];
+
+/** Result of the "Pop-ups when minimised" step for a notification permission. */
+export function alertsStepResult(
+  permission: NotificationPermission | 'unsupported',
+): { status: CallCheckStatus; detail: string } {
+  if (permission === 'granted') {
+    return {
+      status: 'ok',
+      detail:
+        'Calls pop up in the corner of your screen with Accept and Decline, even when TaskCalendar is minimised. If nothing appears, check Windows Settings → System → Notifications: your browser must be On and Do not disturb Off.',
+    };
+  }
+  if (permission === 'denied') {
+    return {
+      status: 'warn',
+      detail:
+        'Pop-ups are blocked, so you only see calls while TaskCalendar is on screen. Click the padlock left of the address bar → Notifications → Allow, then reload.',
+    };
+  }
+  if (permission === 'unsupported') {
+    return {
+      status: 'warn',
+      detail: 'This browser can’t show call pop-ups when it’s minimised. Use Chrome or Edge.',
+    };
+  }
+  return {
+    status: 'warn',
+    detail:
+      'Pop-ups are off, so you won’t see calls while TaskCalendar is minimised or behind another window. Turn them on below.',
+  };
+}
 
 const MISSING_DEVICE = new Set(['NotFoundError', 'DevicesNotFoundError', 'OverconstrainedError']);
 
@@ -101,6 +135,9 @@ export async function runCallCheck(
       ? 'Incoming calls can reach this browser. Keep a TaskCalendar tab open to get rung.'
       : 'Incoming calls can’t reach this browser. A firewall, VPN, antivirus web shield or ad-blocker extension is likely blocking it — try turning them off or another network.',
   );
+
+  const alerts = alertsStepResult(deps.notificationPermission());
+  set('alerts', alerts.status, alerts.detail);
 
   return results;
 }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { __setCallWorkerForTests } from '@/services/calling/callWorker';
 import {
   RING_TOTAL_SECONDS,
   CALL_ALERTS_DISMISSED_KEY,
@@ -165,6 +166,54 @@ describe('showIncomingCallNotification', () => {
     FakeNotification.permission = 'denied';
     showIncomingCallNotification({ callerName: 'Sam', mediaType: 'audio' });
     expect(FakeNotification.instances).toHaveLength(0);
+  });
+});
+
+describe('showIncomingCallNotification — Teams-style pop-up with buttons', () => {
+  type Shown = { title: string; options: NotificationOptions & { actions?: Array<{ action: string }> }; close: ReturnType<typeof vi.fn> };
+  const fakeReg = () => {
+    const shown: Shown[] = [];
+    const reg = {
+      showNotification: vi.fn(async (title: string, options: NotificationOptions) => {
+        shown.push({ title, options, close: vi.fn() });
+      }),
+      getNotifications: vi.fn(async () => shown.map((s) => ({ data: s.options.data, close: s.close }))),
+    };
+    __setCallWorkerForTests(reg as unknown as ServiceWorkerRegistration);
+    return shown;
+  };
+  beforeEach(() => {
+    FakeNotification.instances = [];
+    FakeNotification.permission = 'granted';
+    (window as unknown as { Notification: unknown }).Notification = FakeNotification;
+  });
+  afterEach(() => {
+    __setCallWorkerForTests(null);
+    vi.restoreAllMocks();
+  });
+
+  it('shows Accept and Decline buttons on the pop-up when TaskCalendar is minimised', async () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const shown = fakeReg();
+    showIncomingCallNotification({ callerName: 'Sam', mediaType: 'video', callId: 'c1' });
+    await Promise.resolve();
+    expect(FakeNotification.instances).toHaveLength(0);
+    expect(shown[0].title).toBe('Sam is calling');
+    expect(shown[0].options.tag).toBe('taskcalendar-incoming-call');
+    expect(shown[0].options.requireInteraction).toBe(true);
+    expect(shown[0].options.data).toEqual({ kind: 'incoming', callId: 'c1' });
+    expect(shown[0].options.actions?.map((a) => a.action)).toEqual(['accept', 'decline']);
+  });
+
+  it('closes only this call\u2019s pop-up when the ring stops', async () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    const shown = fakeReg();
+    const close1 = showIncomingCallNotification({ callerName: 'Sam', mediaType: 'audio', callId: 'c1' });
+    showIncomingCallNotification({ callerName: 'Ali', mediaType: 'audio', callId: 'c2' });
+    close1();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(shown[0].close).toHaveBeenCalled();
+    expect(shown[1].close).not.toHaveBeenCalled();
   });
 });
 

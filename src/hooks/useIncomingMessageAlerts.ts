@@ -12,7 +12,7 @@ export function showMessageNotification(p: { title: string; body: string; tag: s
   const N = (window as Window & { Notification?: typeof Notification }).Notification;
   if (!N || N.permission !== 'granted' || appIsInFront()) return;
   try {
-    const n = new N(p.title, { body: p.body, tag: p.tag, icon: '/favicon.ico' });
+    const n = new N(p.title, { body: p.body, tag: p.tag, icon: '/logo.png' });
     n.onclick = () => {
       window.focus();
       n.close();

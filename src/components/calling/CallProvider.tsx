@@ -13,6 +13,7 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import { explainConnectError } from '@/lib/callTroubleshoot';
 import { callBackContext, showMissedCallNotification } from '@/services/calling/missedCall';
+import { listenForCallNotificationClicks } from '@/services/calling/callWorker';
 import type { VideoEffect } from '@/services/webrtc/BackgroundProcessor';
 import type {
   LiveKitCallService,
@@ -310,7 +311,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   // startCall is defined further down; the toast's "Call back" reads it
   // through a ref so it always uses the latest version.
   const startCallRef = useRef<CallActions['startCall'] | null>(null);
+  /** Missed rings by callId, so "Call back" on a desktop pop-up can ring them. */
+  const missedRingsRef = useRef(new Map<string, RingOffer>());
   const notifyMissedCall = useCallback((ring: RingOffer) => {
+    missedRingsRef.current.set(ring.callId, ring);
     const callerName = ring.from?.displayName || 'a teammate';
     const contextLabel = ring.context?.type === 'project' ? ring.context.label : undefined;
     const kind = ring.mediaType === 'video' ? 'Video call' : 'Voice call';
@@ -324,7 +328,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
         },
       },
     });
-    showMissedCallNotification({ callerName, mediaType: ring.mediaType, contextLabel });
+    showMissedCallNotification({ callerName, mediaType: ring.mediaType, contextLabel, callId: ring.callId });
   }, []);
 
   // ── Global incoming-call listener ──────────────────────────
@@ -893,6 +897,28 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     resetCall();
   }, [state.callId, localParticipant, resetCall, sendInboxMessage]);
+
+  // Accept / Decline / Call back clicked on the desktop pop-up (call-sw.js).
+  const acceptCallRef = useRef(acceptCall);
+  acceptCallRef.current = acceptCall;
+  const rejectCallRef = useRef(rejectCall);
+  rejectCallRef.current = rejectCall;
+  useEffect(
+    () =>
+      listenForCallNotificationClicks(({ action, callId }) => {
+        if (!callId) return;
+        if (action === 'call-back') {
+          const ring = missedRingsRef.current.get(callId);
+          if (ring) void startCallRef.current?.(callBackContext(ring), ring.mediaType, ring.from);
+          return;
+        }
+        const cur = latestCallStateRef.current;
+        if (cur.status !== 'ringing' || cur.direction !== 'incoming' || cur.callId !== callId) return;
+        if (action === 'accept') void acceptCallRef.current();
+        else if (action === 'decline') rejectCallRef.current();
+      }),
+    [],
+  );
 
   const hangUp = useCallback(() => {
     // If no teammate has picked up yet, broadcast cancel to everyone we
