@@ -206,3 +206,47 @@ describe('TaskModal links', () => {
   });
 });
 
+
+describe('TaskModal description editing', () => {
+  const longText = 'Gmail account\nline two\nline three\nline four\nline five\nline six\nline seven';
+  const withText = () => ({ ...task, description: longText }) as Task;
+  let restoreScrollHeight: () => void = () => undefined;
+
+  beforeEach(() => {
+    const proto = HTMLTextAreaElement.prototype;
+    const original = Object.getOwnPropertyDescriptor(proto, 'scrollHeight');
+    Object.defineProperty(proto, 'scrollHeight', { configurable: true, get: () => 400 });
+    restoreScrollHeight = () => {
+      if (original) Object.defineProperty(proto, 'scrollHeight', original);
+      else delete (proto as unknown as Record<string, unknown>).scrollHeight;
+    };
+  });
+  afterEach(() => {
+    restoreScrollHeight();
+    delete (document as unknown as Record<string, unknown>).caretRangeFromPoint;
+  });
+
+  it('keeps the full height when you click a long description to edit it', async () => {
+    render(<TaskModal open onClose={vi.fn()} task={withText()} projectId="p1" onSave={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /description\. press enter to edit/i }));
+    const box = (await screen.findByPlaceholderText(/add a description/i)) as HTMLTextAreaElement;
+    expect(box.style.height).toBe('400px');
+  });
+
+  it('puts the cursor where you clicked in the text', async () => {
+    render(<TaskModal open onClose={vi.fn()} task={withText()} projectId="p1" onSave={vi.fn()} />);
+    const view = await screen.findByRole('button', { name: /description\. press enter to edit/i });
+    const textNode = Array.from(view.querySelectorAll('*'))
+      .flatMap((el) => Array.from(el.childNodes))
+      .find((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.startsWith('Gmail')) as Text;
+    (document as unknown as { caretRangeFromPoint: () => Range }).caretRangeFromPoint = () => {
+      const r = document.createRange();
+      r.setStart(textNode, 5); // after "Gmail"
+      return r;
+    };
+    fireEvent.click(view, { clientX: 10, clientY: 10 });
+    const box = (await screen.findByPlaceholderText(/add a description/i)) as HTMLTextAreaElement;
+    expect(box.selectionStart).toBe(5);
+    expect(box.selectionEnd).toBe(5);
+  });
+});

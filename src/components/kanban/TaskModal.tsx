@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, useId } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useId } from 'react';
 import {
   Task, TaskPriority, KanbanColumn, DEFAULT_COLUMNS, PRIORITY_COLORS,
   CreateTaskInput, TaskAssignee, Project, TaskComment,
@@ -77,6 +77,7 @@ import { AssigneePicker } from './AssigneePicker';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { LinkifiedText } from '@/components/ui/LinkifiedText';
+import { textOffsetFromPoint } from '@/lib/caretOffset';
 import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
 import {
   isCompletedTaskStatus,
@@ -185,6 +186,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
   /** Existing tasks show the description as text with clickable links until you click to edit. */
   const [editingDescription, setEditingDescription] = useState(false);
+  /** Where to put the cursor when the description switches to editing. */
+  const descriptionCaretRef = useRef<number | null>(null);
   const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentTypingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -565,13 +568,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     [broadcastTyping],
   );
 
-  // Auto-grow description textarea
-  useEffect(() => {
+  // Auto-grow the description textarea to fit its text. Runs before paint
+  // and again when switching from the read view, so clicking a long
+  // description to edit it never collapses it to three lines.
+  useLayoutEffect(() => {
     const el = descriptionTextareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.max(el.scrollHeight, 96)}px`;
-  }, [description]);
+    const border = el.offsetHeight - el.clientHeight;
+    el.style.height = `${Math.max(el.scrollHeight + border, 96)}px`;
+  }, [description, editingDescription]);
+
+  // Entering edit mode: cursor goes where the text was clicked (or the end).
+  useLayoutEffect(() => {
+    if (!editingDescription) return;
+    const el = descriptionTextareaRef.current;
+    if (!el) return;
+    const at = descriptionCaretRef.current ?? el.value.length;
+    descriptionCaretRef.current = null;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(at, at);
+  }, [editingDescription]);
 
   // Load assignable members
   useEffect(() => {
@@ -1552,7 +1569,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 // Plain Enter moves on to the description; Cmd/Ctrl+Enter saves (dialog-level).
                 if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
-                  descriptionTextareaRef.current?.focus();
+                  if (descriptionTextareaRef.current) descriptionTextareaRef.current.focus();
+                  else if (!readOnlyTask) setEditingDescription(true);
                 }
               }}
               placeholder="Task title"
@@ -1651,7 +1669,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   role={readOnlyTask ? undefined : 'button'}
                   tabIndex={readOnlyTask ? undefined : 0}
                   aria-label={readOnlyTask ? undefined : 'Description. Press Enter to edit.'}
-                  onClick={readOnlyTask ? undefined : () => setEditingDescription(true)}
+                  onClick={
+                    readOnlyTask
+                      ? undefined
+                      : (e) => {
+                          // Selecting text to copy it shouldn't switch to editing.
+                          const sel = window.getSelection();
+                          if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+                          descriptionCaretRef.current = textOffsetFromPoint(
+                            e.currentTarget,
+                            e.clientX,
+                            e.clientY,
+                          );
+                          setEditingDescription(true);
+                        }
+                  }
                   onKeyDown={
                     readOnlyTask
                       ? undefined
@@ -1679,10 +1711,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   onBlur={() => setEditingDescription(false)}
-                  autoFocus={editingDescription}
                   placeholder="Add a description, link, or note…"
                   rows={3}
-                  className="min-h-24 resize-none rounded-lg border-border bg-background px-3 py-2 text-base leading-relaxed transition-colors md:text-sm"
+                  className="min-h-24 resize-none overflow-hidden rounded-lg border-border bg-background px-3 py-2 text-base leading-relaxed transition-colors md:text-sm"
                 />
               )}
               {aiError && (
