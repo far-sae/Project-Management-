@@ -250,3 +250,29 @@ describe('TaskModal description editing', () => {
     expect(box.selectionEnd).toBe(5);
   });
 });
+
+describe('TaskModal team permissions', () => {
+  afterEach(() => {
+    org.isAdmin = true;
+  });
+  const othersTask = { ...task, createdBy: 'someone-else', assignees: [] } as unknown as Task;
+
+  it('lets a team member edit an unassigned task someone else created', async () => {
+    org.isAdmin = false;
+    render(<TaskModal open onClose={vi.fn()} task={othersTask} projectId="p1" onSave={vi.fn()} />);
+    await screen.findByLabelText('Task title');
+    expect(screen.queryByText(/you can view this task/i)).toBeNull();
+    expect(screen.queryByText(/view only/i)).toBeNull();
+  });
+
+  it('keeps the task read-only for someone with view-only access to the project', async () => {
+    org.isAdmin = false;
+    const project = {
+      projectId: 'p1',
+      ownerId: 'owner',
+      members: [{ userId: 'u1', role: 'viewer' }],
+    } as unknown as import('@/types').Project;
+    render(<TaskModal open onClose={vi.fn()} task={othersTask} project={project} projectId="p1" onSave={vi.fn()} />);
+    expect(await screen.findByText(/view-only access to this project/i)).toBeTruthy();
+  });
+});

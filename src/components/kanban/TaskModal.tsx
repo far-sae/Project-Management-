@@ -226,18 +226,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   /**
    * PIN vs no-PIN lock: with PIN, only session unlock allows edit; without PIN,
    * owner/admin/creator may edit (see canOverrideTaskLock).
-   * Member gate: org admin / project owner can edit any task; others only creator or assignee.
+   * Team members can edit any unlocked task in a project they can open —
+   * the same rule the database enforces (tasks_update_authorized). Only
+   * workspace viewers and people with view-only access to this project can't.
    */
-  const isAssignedToTask = Boolean(
-    user && task?.assignees?.some((a) => a.userId === user.userId),
-  );
-  const memberLockedTask = Boolean(
-    isEditing &&
-      task &&
+  const isProjectViewer = Boolean(
+    user &&
       !isAdmin &&
-      project?.ownerId !== user?.userId &&
-      task.createdBy !== user?.userId &&
-      !isAssignedToTask,
+      project?.ownerId !== user.userId &&
+      project?.members?.some((m) => m.userId === user.userId && m.role === 'viewer'),
   );
 
   /** PIN / no-PIN lock only (not member role or viewer). */
@@ -246,8 +243,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       task?.isLocked &&
       (lockedWithPin ? !pinUnlockedSession : !canOverrideTaskLock),
   );
-  /** Role / assignment restrictions (excludes lock mechanics). */
-  const permissionReadOnly = Boolean(memberLockedTask || isViewer);
+  /** Role restrictions (excludes lock mechanics). */
+  const permissionReadOnly = Boolean(isViewer || isProjectViewer);
   const readOnlyTask = Boolean(lockReadOnly || permissionReadOnly);
 
   /** Until PIN is entered, hide title, description, comments, activity. Strictly enforced —
@@ -1626,7 +1623,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <span>
                     {isViewer
                       ? 'You have view-only access to this workspace — you cannot edit tasks.'
-                      : 'You can view this task, but only the creator, assignees, project owner, or a workspace admin can change it.'}
+                      : 'You have view-only access to this project — ask the project owner to make you a member to edit tasks.'}
                   </span>
                 </div>
               )}

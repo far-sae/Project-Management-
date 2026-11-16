@@ -168,6 +168,32 @@ export const isOrganizationOwner = async (
   return data?.owner_id === userId;
 };
 
+/**
+ * Full access inside a workspace: the owner has it, and everyone the owner
+ * added to the workspace shares it — an employee's own trial or plan never
+ * limits what they can do in their employer's workspace.
+ */
+export const hasWorkspaceFullAccess = async (
+  userId: string,
+  organizationId: string,
+): Promise<boolean> => {
+  if (isAppOwner(userId)) return true;
+  if (!organizationId || organizationId.startsWith("local-")) return false;
+  const { data } = await supabase
+    .from("organizations")
+    .select("owner_id, members")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (!data) return false;
+  if (data.owner_id === userId) return true;
+  const members = Array.isArray(data.members)
+    ? (data.members as Array<{ userId?: string; status?: string }>)
+    : [];
+  return members.some(
+    (m) => m?.userId === userId && (!m.status || m.status === "active"),
+  );
+};
+
 // Get limits for a user based on their subscription
 const getUserLimits = async (userId: string) => {
   const { data, error } = await supabase
@@ -223,7 +249,7 @@ export const checkProjectLimit = async (
   max: number | null;
   message: string;
 }> => {
-  if (await isOrganizationOwner(userId, organizationId))
+  if (await hasWorkspaceFullAccess(userId, organizationId))
     return { allowed: true, current: 0, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
@@ -258,7 +284,7 @@ export const checkWorkspaceLimit = async (
   max: number | null;
   message: string;
 }> => {
-  if (await isOrganizationOwner(userId, organizationId))
+  if (await hasWorkspaceFullAccess(userId, organizationId))
     return { allowed: true, current: 0, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
@@ -302,7 +328,7 @@ export const checkTaskLimit = async (
     .select("organization_id")
     .eq("project_id", projectId)
     .maybeSingle();
-  if (proj?.organization_id && (await isOrganizationOwner(userId, proj.organization_id)))
+  if (proj?.organization_id && (await hasWorkspaceFullAccess(userId, proj.organization_id)))
     return { allowed: true, current: 0, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
@@ -333,7 +359,7 @@ export const checkTeamMemberLimit = async (
   currentMemberCount: number,
   organizationId?: string,
 ): Promise<{ allowed: boolean; max: number | null; message: string }> => {
-  if (organizationId && (await isOrganizationOwner(userId, organizationId)))
+  if (organizationId && (await hasWorkspaceFullAccess(userId, organizationId)))
     return { allowed: true, max: null, message: "" };
   const limits = await getUserLimits(userId);
 
