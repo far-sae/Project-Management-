@@ -253,3 +253,34 @@ describe('CallOverlay — guests', () => {
     expect(h.call.actions.setRecordingFlag).toHaveBeenCalledWith(true);
   });
 });
+
+describe('CallOverlay grid with 3 or more people', () => {
+  const bob = peer({ userId: 'bob', displayName: 'Bob' });
+  let restore: () => void = () => undefined;
+  beforeEach(() => {
+    const proto = HTMLElement.prototype;
+    const w = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
+    const hgt = Object.getOwnPropertyDescriptor(proto, 'clientHeight');
+    Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 1280 });
+    Object.defineProperty(proto, 'clientHeight', { configurable: true, get: () => 520 });
+    restore = () => {
+      if (w) Object.defineProperty(proto, 'clientWidth', w);
+      if (hgt) Object.defineProperty(proto, 'clientHeight', hgt);
+    };
+  });
+  afterEach(() => restore());
+
+  it('fits all 3 people on screen: two on top, one centred below', () => {
+    setCall({ participants: [me, alice, bob] });
+    render(<CallOverlay />);
+    const grid = screen.getByTestId('call-grid');
+    expect(grid.getAttribute('data-cols')).toBe('2');
+    const rows = Array.from(grid.children);
+    expect(rows.map((r) => r.children.length)).toEqual([2, 1]);
+    const tile = rows[0].children[0] as HTMLElement;
+    const h = parseInt(tile.style.height, 10);
+    // Two rows plus the gap fit inside the 520px stage.
+    expect(h * 2 + 12).toBeLessThanOrEqual(520);
+    expect(screen.getByText('Bob')).toBeTruthy();
+  });
+});

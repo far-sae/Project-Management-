@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   GripVertical,
@@ -24,6 +24,7 @@ import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
 import { transcribeRecording } from '@/services/ai/transcribeRecording';
 import { ParticipantTile, RemoteAudioSink } from './CallTiles';
 import { MiniCallView } from './MiniCallView';
+import { bestGridLayout } from './gridLayout';
 import { GuestAdmitBanners, type GuestDecision } from './GuestAdmitBanners';
 import { usePipWindow } from '@/hooks/usePipWindow';
 import { requestVideoPipFor } from '@/services/calling/pip';
@@ -205,19 +206,60 @@ function useCallTimer(connected: boolean) {
 
 // ── Grid layout helpers ──────────────────────────────────────
 
+const GRID_GAP = 12;
+
 /**
- * Pick a tailwind grid-cols class based on tile count. We prefer "fewer
- * but bigger" tiles over packing into a wide grid, so 4 participants
- * stays 2x2 instead of 1x4.
+ * Everyone's video, sized to fit the stage (Meet / Teams style): the
+ * biggest 16:9 tiles that fit in both directions, rows centred, an odd
+ * tile out centred on the last row. Before the stage is measured (first
+ * frame, tests) it falls back to two columns.
  */
-function gridColsFor(count: number): string {
-  if (count <= 1) return 'grid-cols-1';
-  if (count === 2) return 'grid-cols-2';
-  if (count <= 4) return 'grid-cols-2';
-  if (count <= 6) return 'grid-cols-3';
-  if (count <= 9) return 'grid-cols-3';
-  return 'grid-cols-4';
-}
+const VideoGrid: React.FC<{ tiles: CallPeerSnapshot[] }> = ({ tiles }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const layout =
+    size && size.w > 0 && size.h > 0
+      ? bestGridLayout(tiles.length, size.w, size.h, GRID_GAP)
+      : null;
+  const cols = layout?.cols ?? Math.min(2, tiles.length);
+  const rows: CallPeerSnapshot[][] = [];
+  for (let i = 0; i < tiles.length; i += cols) rows.push(tiles.slice(i, i + cols));
+
+  return (
+    <div
+      ref={ref}
+      data-testid="call-grid"
+      data-cols={cols}
+      className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 self-stretch"
+    >
+      {rows.map((row, r) => (
+        <div key={r} className="flex w-full justify-center gap-3">
+          {row.map((p) => (
+            <ParticipantTile
+              key={p.userId}
+              snap={p}
+              className={layout ? 'shrink-0' : 'aspect-video min-w-0 flex-1'}
+              style={
+                layout ? { width: layout.tileWidth, height: layout.tileHeight } : undefined
+              }
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 // ── Picture-in-picture dimensions ────────────────────────────
 
@@ -816,7 +858,7 @@ export const CallOverlay: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-[250] flex flex-col bg-black/95 text-white"
+      className="fixed inset-0 z-[250] flex flex-col bg-neutral-950 text-white"
       role="dialog"
       aria-label="Active call"
     >
@@ -914,21 +956,7 @@ export const CallOverlay: React.FC = () => {
             className="flex-1 h-full aspect-video sm:aspect-auto"
           />
         ) : (
-          // Grid for everyone. CSS grid with a count-aware col template.
-          <div
-            className={cn(
-              'grid gap-3 w-full h-full content-center',
-              gridColsFor(allTiles.length),
-            )}
-          >
-            {allTiles.map((p) => (
-              <ParticipantTile
-                key={p.userId}
-                snap={p}
-                className="aspect-video w-full"
-              />
-            ))}
-          </div>
+          <VideoGrid tiles={allTiles} />
         )}
 
         {state.error && (

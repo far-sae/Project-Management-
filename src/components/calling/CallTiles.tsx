@@ -38,6 +38,7 @@ interface ParticipantTileProps {
   /** Outline the tile when LiveKit reports this peer as actively speaking. */
   showSpeakingRing?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }
 
 export const ParticipantTile: React.FC<ParticipantTileProps> = ({
@@ -45,6 +46,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
   compact = false,
   showSpeakingRing = true,
   className,
+  style,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -61,6 +63,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
 
   return (
     <div
+      style={style}
       className={cn(
         'relative bg-black/70 rounded-xl overflow-hidden flex items-center justify-center',
         showSpeakingRing && snap.isSpeaking && !snap.isLocal &&
