@@ -22,6 +22,14 @@ export function showMessageNotification(p: { title: string; body: string; tag: s
   }
 }
 
+/** Fired on window for every DM sent to the signed-in user (the chat dock listens). */
+export const DM_RECEIVED_EVENT = 'taskcalendar:dm-received';
+export interface DmReceivedDetail {
+  senderId: string;
+  displayName: string;
+  organizationId: string | null;
+}
+
 const nameCache = new Map<string, string>();
 
 async function senderName(userId: string): Promise<string> {
@@ -71,14 +79,20 @@ export function useIncomingMessageAlerts(userId: string | null | undefined): voi
           const sender = typeof row.sender_id === 'string' ? row.sender_id : '';
           if (!sender || sender === userId) return;
           playChatChime();
-          if (appIsInFront()) return;
-          void senderName(sender).then((name) =>
+          void senderName(sender).then((name) => {
+            const detail: DmReceivedDetail = {
+              senderId: sender,
+              displayName: name,
+              organizationId: typeof row.organization_id === 'string' ? row.organization_id : null,
+            };
+            window.dispatchEvent(new CustomEvent(DM_RECEIVED_EVENT, { detail }));
+            if (appIsInFront()) return;
             showMessageNotification({
               title: `New message from ${name}`,
               body: preview(row.body),
               tag: `taskcalendar-dm-${sender}`,
-            }),
-          );
+            });
+          });
         },
       )
       .subscribe();

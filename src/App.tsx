@@ -64,6 +64,7 @@ import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
 import CookieBanner from '@/components/landing/CookieBanner';
 import { CallProvider } from '@/components/calling/CallProvider';
+import { ChatDockProvider } from '@/components/messaging/ChatDock';
 import { AppLayout } from '@/components/layout/AppLayout';
 const CommandPalette = React.lazy(() =>
   import('@/components/command/CommandPalette').then((m) => ({ default: m.CommandPalette })),
@@ -397,7 +398,9 @@ export default function App() {
           <OrganizationProvider>
             <SubscriptionProvider>
               <CallProvider>
-                <RouterProvider router={router} future={{ v7_startTransition: true }} />
+                <ChatDockProvider>
+                  <RouterProvider router={router} future={{ v7_startTransition: true }} />
+                </ChatDockProvider>
                 <Suspense fallback={null}>
                   <CallOverlay />
                 </Suspense>

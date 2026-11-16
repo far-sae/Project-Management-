@@ -276,3 +276,21 @@ describe('TaskModal team permissions', () => {
     expect(await screen.findByText(/view-only access to this project/i)).toBeTruthy();
   });
 });
+
+describe('TaskModal description links while editing', () => {
+  it('keeps links clickable after you click into the description to edit it', async () => {
+    const withLink = { ...task, description: 'Brief: https://figma.com/file/abc and mail hello@acme.co' } as Task;
+    render(<TaskModal open onClose={vi.fn()} task={withLink} projectId="p1" onSave={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /description\. press enter to edit/i }));
+    const box = (await screen.findByPlaceholderText(/add a description/i)) as HTMLTextAreaElement;
+    const link = screen.getByRole('link', { name: /figma\.com\/file\/abc/i });
+    expect(link.getAttribute('href')).toBe('https://figma.com/file/abc');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(screen.getByRole('link', { name: /hello@acme\.co/i }).getAttribute('href')).toBe('mailto:hello@acme.co');
+    // Pressing on a link must not blur the box (which would swap the view and swallow the click).
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    link.dispatchEvent(press);
+    expect(press.defaultPrevented).toBe(true);
+    expect(box).toBeTruthy();
+  });
+});

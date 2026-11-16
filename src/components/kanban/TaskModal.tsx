@@ -78,6 +78,7 @@ import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { LinkifiedText } from '@/components/ui/LinkifiedText';
 import { textOffsetFromPoint } from '@/lib/caretOffset';
+import { splitLinks } from '@/lib/linkify';
 import { cn, formatDistanceSafe, truncateFileName } from '@/lib/utils';
 import {
   isCompletedTaskStatus,
@@ -136,6 +137,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const descriptionLinks = useMemo(
+    () =>
+      splitLinks(description).filter(
+        (p): p is Extract<ReturnType<typeof splitLinks>[number], { type: 'link' }> => p.type === 'link',
+      ),
+    [description],
+  );
   const [status, setStatus] = useState<string>(initialStatus);
   const isDoneStatus = isCompletedTaskStatus(status, columns);
   const [priority, setPriority] = useState<TaskPriority>('medium');
@@ -1713,6 +1721,35 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   className="min-h-24 resize-none overflow-hidden rounded-lg border-border bg-background px-3 py-2 text-base leading-relaxed transition-colors md:text-sm"
                 />
               )}
+              {descriptionLinks.length > 0 &&
+                !(readOnlyTask || (isEditing && description.trim() && !editingDescription)) && (
+                  // While editing, links in the text stay one click away.
+                  // mousedown is cancelled so the box keeps focus — otherwise
+                  // the blur swaps views and the click lands on nothing.
+                  <div className="flex flex-wrap items-center gap-1.5" aria-label="Links in description">
+                    {descriptionLinks.map((l, i) => (
+                      <a
+                        key={`${l.href}-${i}`}
+                        href={l.href}
+                        {...(l.href.startsWith('mailto:') ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
+                        onMouseDown={(e) => e.preventDefault()}
+                        title={l.href}
+                        className={cn(
+                          'inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/60 px-2 py-1 text-xs text-primary',
+                          'transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          PRESS,
+                        )}
+                      >
+                        {l.href.startsWith('mailto:') ? (
+                          <Mail className="h-3 w-3 shrink-0" aria-hidden />
+                        ) : (
+                          <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+                        )}
+                        <span className="truncate">{l.value}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               {aiError && (
                 <p role="alert" className="text-xs text-destructive">{aiError}</p>
               )}

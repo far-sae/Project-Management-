@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { DirectMessageDock, type DirectMessageRecipient } from '@/components/messaging/DirectMessageDock';
+import { useChatDock, useChatDockInset } from '@/components/messaging/ChatDock';
 import { useCall } from '@/hooks/useCall';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
 import { cn } from '@/lib/utils';
@@ -444,15 +444,18 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   const [chatPendingFiles, setChatPendingFiles] = useState<File[]>([]);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const [reactionMenuForId, setReactionMenuForId] = useState<string | null>(null);
-  /** When a teammate's row in the Team tab is clicked, this recipient drives the
-   *  bottom-left DirectMessageDock. Null = no DM open. */
-  const [dmRecipient, setDmRecipient] = useState<DirectMessageRecipient | null>(null);
+  /** Clicking a teammate opens their chat in the app-wide bottom chat dock
+   *  (Teams style): it minimises to a bar instead of vanishing and stays
+   *  open across pages. */
+  const { openChat } = useChatDock();
+  // Keep the dock clear of this panel: next to the open panel, or the launcher.
+  useChatDockInset(open ? 25 : 5.5);
 
   const openDirectMessage = useCallback(
     (m: { userId?: string; displayName?: string; email?: string; photoURL?: string }) => {
       if (!user?.userId) return;
       if (!m.userId || m.userId === user.userId) return;
-      setDmRecipient({
+      openChat({
         userId: m.userId,
         displayName: resolveMemberDisplayName(
           m.userId,
@@ -461,9 +464,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         ),
         email: m.email,
         photoURL: m.photoURL,
+        organizationId: project.organizationId ?? null,
       });
     },
-    [user?.userId],
+    [user?.userId, openChat, project.organizationId],
   );
   /** Goes true once we discover the reactions table doesn't exist on this deployment so we
    *  can stop showing the smiley trigger and stop emitting fresh error toasts every click. */
@@ -987,12 +991,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             </span>
           )}
         </button>
-        <DirectMessageDock
-          recipient={dmRecipient}
-          organizationId={project.organizationId}
-          onClose={() => setDmRecipient(null)}
-          recipientPeer={dmRecipient ? presenceByUserId?.get(dmRecipient.userId) : undefined}
-        />
       </div>
     );
   }
@@ -1032,14 +1030,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 rounded-full text-muted-foreground hover:text-emerald-600"
-                  aria-label="Start audio call"
+                  aria-label="Voice call everyone in this project"
                   disabled={!hasOtherMemberToCall || isViewerOrg}
                   aria-disabled={!hasOtherMemberToCall || isViewerOrg}
                   title={
                     isViewerOrg
                       ? 'View-only — calls are disabled for your role.'
                       : hasOtherMemberToCall
-                        ? undefined
+                        ? 'Rings everyone in this project — to call one person, open their chat from the Team tab'
                         : 'No other members to call — invite someone to this project first.'
                   }
                   onClick={() => {
@@ -1068,14 +1066,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
-                  aria-label="Start video call"
+                  aria-label="Video call everyone in this project"
                   disabled={!hasOtherMemberToCall || isViewerOrg}
                   aria-disabled={!hasOtherMemberToCall || isViewerOrg}
                   title={
                     isViewerOrg
                       ? 'View-only — calls are disabled for your role.'
                       : hasOtherMemberToCall
-                        ? undefined
+                        ? 'Rings everyone in this project — to call one person, open their chat from the Team tab'
                         : 'No other members to call — invite someone to this project first.'
                   }
                   onClick={() => {
@@ -1491,12 +1489,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         </TabsContent>
       </Tabs>
     </aside>
-    <DirectMessageDock
-      recipient={dmRecipient}
-      organizationId={project.organizationId}
-      onClose={() => setDmRecipient(null)}
-      recipientPeer={dmRecipient ? presenceByUserId?.get(dmRecipient.userId) : undefined}
-    />
     </div>
   );
 };
