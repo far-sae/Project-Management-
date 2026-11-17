@@ -49,10 +49,10 @@ import {
 } from '@/services/supabase/database';
 import { ATTACHMENTS_BUCKET, deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
 import { ChatAttachmentList } from '@/components/messaging/ChatAttachmentList';
+import { ChatBubble, ProjectChatMessage as ChatMessageRow } from './ProjectChatMessage';
 import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
-import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
 import { buildProjectCallTargets } from '@/services/calling/callTargets';
 import { playChatChime } from '@/lib/notificationSound';
 import { PresenceStatusInline } from '@/components/presence/PresenceStatusInline';
@@ -517,7 +517,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         const previous = chatMessages[index - 1];
         const showDay =
           !previous || !isSameDay(new Date(previous.createdAt), createdAt);
-        return { msg, createdAt, showDay };
+        // Same person within 5 minutes → one run (no repeated avatar/name).
+        const grouped =
+          !showDay &&
+          previous?.userId === msg.userId &&
+          createdAt.getTime() - new Date(previous.createdAt).getTime() < 5 * 60_000;
+        return { msg, createdAt, showDay, grouped };
       }),
     [chatMessages],
   );
@@ -1003,23 +1008,33 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     >
       <aside
         className={cn(
-          'pointer-events-auto flex flex-col overflow-hidden rounded-lg border border-border/70',
-          'bg-card/95 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl',
+          'pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-border/70',
+          'bg-card shadow-[0_18px_60px_rgba(0,0,0,0.28)]',
+          'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
           railWidth,
           'h-[min(34rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
         )}
       >
         <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-              <MessageSquare className="h-4 w-4" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
+              {(project.name || '#').charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground truncate leading-tight">
                 {project.name}
               </p>
-              <p className="text-[11px] text-muted-foreground">
-                {dedupedMembers.length} members · {chatMessages.length} messages
+              <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
+                <span>{dedupedMembers.length} members</span>
+                {chatOnlinePeers.length > 0 && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span className="inline-flex items-center gap-1 text-emerald-600">
+                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      {chatOnlinePeers.length} online
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -1135,24 +1150,24 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         </div>
 
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="shrink-0 mx-2 mt-2 grid h-10 grid-cols-3 gap-0.5 rounded-lg border border-border/50 bg-muted/40 p-0.5">
+        <TabsList className="shrink-0 grid h-10 grid-cols-3 gap-0 rounded-none border-b border-border/70 bg-transparent p-0">
           <TabsTrigger
             value="chat"
-            className="text-xs sm:text-sm gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+            className="h-full gap-1.5 rounded-none border-b-2 border-transparent text-xs text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:text-sm"
           >
             <MessageSquare className="h-3.5 w-3.5 shrink-0" />
             Chat
           </TabsTrigger>
           <TabsTrigger
             value="members"
-            className="text-xs sm:text-sm gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+            className="h-full gap-1.5 rounded-none border-b-2 border-transparent text-xs text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:text-sm"
           >
             <Users className="h-3.5 w-3.5 shrink-0" />
             Team
           </TabsTrigger>
           <TabsTrigger
             value="activity"
-            className="text-xs sm:text-sm gap-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm"
+            className="h-full gap-1.5 rounded-none border-b-2 border-transparent text-xs text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:text-sm"
           >
             <ActivityIcon className="h-3.5 w-3.5 shrink-0" />
             Feed
@@ -1161,12 +1176,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
 
         <TabsContent
           value="chat"
-          className="flex-1 flex flex-col min-h-0 mt-2 px-0 data-[state=inactive]:hidden overflow-hidden"
+          className="flex-1 flex flex-col min-h-0 mt-0 px-0 data-[state=inactive]:hidden overflow-hidden"
         >
           <div
             ref={chatScrollRef}
             onScroll={handleChatScroll}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 pb-3 scroll-smooth"
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-1 scroll-smooth"
           >
             {chatLoading ? (
               <div className="flex justify-center py-8">
@@ -1183,47 +1198,41 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {chatRows.map(({ msg, createdAt, showDay }) => {
+              <div className="pb-1">
+                {chatRows.map(({ msg, createdAt, showDay, grouped }) => {
                   const mine = msg.userId === user?.userId;
                   const authorLabel = mine
                     ? 'You'
                     : displayNameForChatUser(msg.userId, msg.displayName);
                   const reactionsForMsg = reactionsByMessageId[msg.messageId];
+                  const callPayload = parseCallRecordingBody(msg.body);
+                  const canReact = !reactionsUnavailable && !isViewerOrg;
                   return (
                     <div key={msg.messageId}>
                       {showDay && (
-                        <div className="sticky top-2 z-10 flex justify-center py-2">
-                          <span className="rounded-full border border-border bg-card/95 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur">
+                        <div className="flex items-center gap-3 pb-1 pt-4" role="separator">
+                          <span aria-hidden className="h-px flex-1 bg-border/70" />
+                          <span className="text-[11px] font-medium text-muted-foreground">
                             {messageDayLabel(createdAt)}
                           </span>
+                          <span aria-hidden className="h-px flex-1 bg-border/70" />
                         </div>
                       )}
-                      <div className={cn('flex gap-2 group/msg', mine && 'justify-end')}>
-                        {!mine && (
-                          <Avatar className="w-7 h-7 shrink-0 mt-5">
-                            <AvatarImage src={msg.photoURL} alt={authorLabel} />
-                            <AvatarFallback className="text-[11px] bg-primary-soft text-primary-soft-foreground">
-                              {(authorLabel || '?').charAt(0).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                        )}
-                        <div className={cn('max-w-[78%] min-w-0', mine && 'flex flex-col items-end')}>
-                          <div
-                            className={cn(
-                              'mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap',
-                              mine && 'justify-end',
-                            )}
-                          >
-                            <span className="font-medium text-foreground">{authorLabel}</span>
-                            {!mine && (
-                              <PresenceStatusInline
-                                peer={presenceByUserId?.get(msg.userId)}
-                                lastSeenAt={lastSeenByUserId.get(msg.userId) ?? null}
-                                className="gap-1"
-                              />
-                            )}
-                            <span>{format(createdAt, 'p')}</span>
+                      <ChatMessageRow
+                        mine={mine}
+                        grouped={grouped}
+                        authorLabel={authorLabel}
+                        photoURL={msg.photoURL}
+                        createdAt={createdAt}
+                        presence={
+                          <PresenceStatusInline
+                            peer={presenceByUserId?.get(msg.userId)}
+                            lastSeenAt={lastSeenByUserId.get(msg.userId) ?? null}
+                            className="gap-1"
+                          />
+                        }
+                        actions={
+                          canReact ? (
                             <Popover
                               modal={false}
                               open={reactionMenuForId === msg.messageId}
@@ -1234,16 +1243,11 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               <PopoverTrigger asChild>
                                 <button
                                   type="button"
-                                  hidden={reactionsUnavailable || isViewerOrg}
-                                  className={cn(
-                                    'rounded-md p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/90',
-                                    'opacity-70 group-hover/msg:opacity-100 focus:opacity-100 transition-opacity',
-                                    (reactionsUnavailable || isViewerOrg) && 'hidden',
-                                  )}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   aria-label="Add reaction"
-                                  disabled={isViewerOrg}
+                                  title="React"
                                 >
-                                  <Smile className="w-3.5 h-3.5" />
+                                  <Smile className="h-3.5 w-3.5" />
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent
@@ -1283,99 +1287,74 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                                 </div>
                               </PopoverContent>
                             </Popover>
-                          </div>
-                          {(() => {
-                            const callPayload = parseCallRecordingBody(msg.body);
-                            if (callPayload) {
-                              return (
-                                <CallRecordingCard payload={callPayload} mine={mine} />
-                              );
-                            }
-                            return msg.body ? (
-                              <div
-                                className={cn(
-                                  'rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words',
-                                  mine
-                                    ? 'rounded-br-sm bg-primary text-primary-foreground shadow-sm'
-                                    : 'rounded-bl-sm bg-muted text-foreground border border-border/60',
+                          ) : undefined
+                        }
+                        content={
+                          callPayload ? (
+                            <CallRecordingCard payload={callPayload} mine={mine} />
+                          ) : msg.body ? (
+                            <ChatBubble text={msg.body} mine={mine} grouped={grouped} />
+                          ) : null
+                        }
+                        footer={
+                          <>
+                            <ChatAttachmentList attachments={msg.attachments} mine={mine} />
+                                {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
+                                  <div
+                                    className={cn(
+                                      'flex flex-wrap gap-1 mt-1.5 max-w-full',
+                                      mine && 'justify-end',
+                                    )}
+                                  >
+                                    {Object.entries(reactionsForMsg).map(([emoji, userIds]) =>
+                                      isViewerOrg ? (
+                                        <span
+                                          key={emoji}
+                                          className={cn(
+                                            'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
+                                            'bg-background/90 shadow-sm cursor-default',
+                                            userIds.includes(user?.userId ?? '') &&
+                                              'border-primary/50 bg-primary/15',
+                                          )}
+                                          title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
+                                        >
+                                          <span className="leading-none">{emoji}</span>
+                                          <span className="tabular-nums text-muted-foreground">
+                                            {userIds.length}
+                                          </span>
+                                        </span>
+                                      ) : (
+                                        <button
+                                          key={emoji}
+                                          type="button"
+                                          className={cn(
+                                            'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
+                                            'bg-background/90 hover:bg-muted/90 shadow-sm',
+                                            userIds.includes(user?.userId ?? '') &&
+                                              'border-primary/50 bg-primary/15',
+                                          )}
+                                          onClick={() => void handleToggleReaction(msg.messageId, emoji)}
+                                          title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
+                                        >
+                                          <span className="leading-none">{emoji}</span>
+                                          <span className="tabular-nums text-muted-foreground">
+                                            {userIds.length}
+                                          </span>
+                                        </button>
+                                      ),
+                                    )}
+                                  </div>
                                 )}
-                              >
-                                {msg.body}
-                              </div>
-                            ) : null;
-                          })()}
-                          <ChatAttachmentList attachments={msg.attachments} mine={mine} />
-                          {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
-                            <div
-                              className={cn(
-                                'flex flex-wrap gap-1 mt-1.5 max-w-full',
-                                mine && 'justify-end',
-                              )}
-                            >
-                              {Object.entries(reactionsForMsg).map(([emoji, userIds]) =>
-                                isViewerOrg ? (
-                                  <span
-                                    key={emoji}
-                                    className={cn(
-                                      'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
-                                      'bg-background/90 shadow-sm cursor-default',
-                                      userIds.includes(user?.userId ?? '') &&
-                                        'border-primary/50 bg-primary/15',
-                                    )}
-                                    title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
-                                  >
-                                    <span className="leading-none">{emoji}</span>
-                                    <span className="tabular-nums text-muted-foreground">
-                                      {userIds.length}
-                                    </span>
-                                  </span>
-                                ) : (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    className={cn(
-                                      'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
-                                      'bg-background/90 hover:bg-muted/90 shadow-sm',
-                                      userIds.includes(user?.userId ?? '') &&
-                                        'border-primary/50 bg-primary/15',
-                                    )}
-                                    onClick={() => void handleToggleReaction(msg.messageId, emoji)}
-                                    title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
-                                  >
-                                    <span className="leading-none">{emoji}</span>
-                                    <span className="tabular-nums text-muted-foreground">
-                                      {userIds.length}
-                                    </span>
-                                  </button>
-                                ),
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                                </>
+                        }
+                      />
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-          <div className="shrink-0 border-t border-border/70 bg-card/80 p-2.5 pt-2">
-            {chatOnlinePeers.length > 0 ? (
-              <div className="flex items-center gap-2 min-h-0 mb-2 px-0.5">
-                <span className="text-[10px] font-medium text-muted-foreground shrink-0">
-                  Online now
-                </span>
-                <div className="min-w-0 flex-1 flex justify-end overflow-hidden">
-                  <PresenceAvatars
-                    peers={chatOnlinePeers}
-                    max={8}
-                    size={24}
-                    showLabels
-                    className="max-w-full"
-                  />
-                </div>
-              </div>
-            ) : null}
+          <div className="shrink-0 px-2.5 pb-2.5 pt-1">
             {chatPendingFiles.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {chatPendingFiles.map((f, idx) => (
@@ -1402,73 +1381,67 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 You have view-only access to this workspace.
               </div>
             ) : (
-            <div className="rounded-lg border border-border/60 bg-background/90 p-1.5 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
-              <MentionTextarea
+            <div className="flex items-end gap-0.5 rounded-2xl border border-border/70 bg-background p-1 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
+              <input
+                ref={chatFileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={onPickChatFiles}
+              />
+              <EmojiPickerButton
                 value={chatInput}
                 onChange={setChatInput}
-                members={mentionMembers}
-                excludeUserId={user?.userId}
-                placeholder="Write a message… (@ to mention someone)"
-                rows={2}
-                className="min-h-[3rem] resize-none rounded-md border-0 bg-transparent px-2.5 py-1.5 text-[13px] leading-relaxed shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/70"
                 disabled={!user || chatSending}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    void handleSendChat();
-                  }
-                }}
               />
-              <div className="flex items-center justify-between gap-2 px-1.5 pb-0.5">
-                <div className="flex items-center gap-1 min-w-0">
-                  <EmojiPickerButton
-                    value={chatInput}
-                    onChange={setChatInput}
-                    disabled={!user || chatSending}
-                  />
-                  <input
-                    ref={chatFileInputRef}
-                    type="file"
-                    multiple
-                    hidden
-                    onChange={onPickChatFiles}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                    onClick={() => chatFileInputRef.current?.click()}
-                    disabled={!user || chatSending}
-                    aria-label="Attach file"
-                    title="Attach file"
-                  >
-                    <Paperclip className="w-3.5 h-3.5" />
-                  </Button>
-                  <p className="text-[10.5px] text-muted-foreground truncate">
-                    Enter to send · Shift+Enter for newline
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 rounded-md px-3 text-xs"
-                  disabled={
-                    !user || chatSending ||
-                    (!chatInput.trim() && chatPendingFiles.length === 0)
-                  }
-                  onClick={() => void handleSendChat()}
-                >
-                  {chatSending ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <>
-                      <Send className="w-3 h-3 mr-1" />
-                      Send
-                    </>
-                  )}
-                </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                onClick={() => chatFileInputRef.current?.click()}
+                disabled={!user || chatSending}
+                aria-label="Attach file"
+                title="Attach file"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+              <div className="min-w-0 flex-1">
+                <MentionTextarea
+                  value={chatInput}
+                  onChange={setChatInput}
+                  members={mentionMembers}
+                  excludeUserId={user?.userId}
+                  placeholder="Message the team… (@ to mention)"
+                  rows={1}
+                  className="max-h-32 min-h-8 resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 text-[13px] leading-snug shadow-none [field-sizing:content] focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/70"
+                  disabled={!user || chatSending}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void handleSendChat();
+                    }
+                  }}
+                />
               </div>
+              <Button
+                type="button"
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-full transition-transform active:scale-[0.97]"
+                disabled={
+                  !user || chatSending ||
+                  (!chatInput.trim() && chatPendingFiles.length === 0)
+                }
+                onClick={() => void handleSendChat()}
+                aria-label="Send message"
+                title="Send (Enter) · Shift+Enter for a new line"
+              >
+                {chatSending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
             </div>
             )}
           </div>
