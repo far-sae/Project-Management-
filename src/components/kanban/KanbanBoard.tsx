@@ -34,6 +34,7 @@ import {
   bulkReorderTasks,
 } from '@/services/supabase/database';
 import { logger } from '@/lib/logger';
+import { pickNewTaskStatus } from '@/lib/newTaskStatus';
 import {
   boardColumnsWithoutDone,
   isCompletedTaskStatus,
@@ -108,6 +109,8 @@ interface KanbanBoardProps {
   onAfterCloseTaskModal?: () => void;
   /** Render only the task window (no columns) — e.g. opening a task from the Done tab. */
   hideBoard?: boolean;
+  /** Bump to open the new-task editor from outside (page header "New task"). */
+  addTaskRequest?: number;
 }
 
 const COLUMN_COLORS = [
@@ -157,6 +160,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onBeforeOpenTaskModal,
   onAfterCloseTaskModal,
   hideBoard = false,
+  addTaskRequest = 0,
 }) => {
   const { user } = useAuth();
   const projName = projectName || project?.name || 'Project';
@@ -753,6 +757,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setNewTaskStatus(status);
     setIsModalOpen(true);
   }, [isViewer, onBeforeOpenTaskModal]);
+
+  // "New task" in the page header: open the editor in the right column.
+  const lastAddTaskRequest = useRef(addTaskRequest);
+  useEffect(() => {
+    if (addTaskRequest === lastAddTaskRequest.current) return;
+    lastAddTaskRequest.current = addTaskRequest;
+    const status = pickNewTaskStatus(columns, filterStatus);
+    if (status) handleAddTask(status);
+  }, [addTaskRequest, columns, filterStatus, handleAddTask]);
 
   // ── Inline add ────────────────────────────────────────────
   /** One-click ✓ on a card: finish the task (it moves to the Done tab), with Undo. */

@@ -36,7 +36,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   return (
     <header
       className={cn(
-        'sticky top-0 z-10 border-b border-border/70 bg-card/80 shadow-sm shadow-black/5 backdrop-blur-xl',
+        'sticky top-0 z-10 border-b border-border bg-background',
         className,
       )}
     >
@@ -55,11 +55,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <button
               type="button"
               onClick={() => (onSearchClick ? onSearchClick() : openCommandPalette())}
-              className="hidden h-10 w-80 items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 text-sm text-muted-foreground shadow-sm transition-colors hover:bg-secondary md:flex"
+              className="hidden h-8 w-60 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-secondary md:flex"
             >
               <Search className="w-4 h-4" />
               <span className="flex-1 text-left">Search projects, tasks…</span>
-              <kbd className="rounded border border-border/70 bg-card px-1.5 py-0.5 text-[10px] font-medium">
+              <kbd className="rounded border border-border bg-secondary px-1.5 text-[11px] font-medium leading-[18px]">
                 {isMac ? '⌘K' : 'Ctrl K'}
               </kbd>
             </button>

@@ -209,14 +209,14 @@ export const Sidebar: React.FC = () => {
   const body = (
     <>
       {/* Brand + workspace switcher */}
-      <div className="p-3 border-b border-border space-y-2">
+      <div className="space-y-2 px-3 pb-1 pt-3">
         <div className="flex items-center justify-between gap-2">
           <Link
             to="/dashboard"
             className="flex min-w-0 items-center gap-2 leading-none"
           >
-            <TaskCalendarLogo sizeClass="h-8 w-8" />
-            <h1 className="truncate font-semibold text-foreground">TaskCalendar</h1>
+            <TaskCalendarLogo sizeClass="h-6 w-6" />
+            <span className="truncate text-sm font-semibold text-foreground">TaskCalendar</span>
           </Link>
           <NotificationBell />
         </div>
@@ -239,7 +239,7 @@ export const Sidebar: React.FC = () => {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4">
         {/* Quick navigation — full / member / viewer surfaces, narrowed per workspace. */}
         <QuickMenu items={quickItems} />
 
@@ -249,10 +249,10 @@ export const Sidebar: React.FC = () => {
             <button
               type="button"
               onClick={() => setProjectsSectionOpen((v) => !v)}
-              className="flex-1 flex items-center justify-between gap-2 min-w-0 px-1 py-0.5 rounded-md hover:bg-secondary/60 transition-colors text-left"
+              className="flex h-7 min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 text-left transition-colors hover:bg-foreground/[0.05]"
               aria-expanded={projectsSectionOpen}
             >
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <h3 className="text-xs font-medium text-muted-foreground">
                 {project ? 'Switch project' : 'Projects'}
               </h3>
               <span className="inline-flex items-center gap-1 shrink-0">
@@ -276,7 +276,7 @@ export const Sidebar: React.FC = () => {
             <div className="min-h-0 overflow-hidden">
               <nav
                 className={cn(
-                  'space-y-0.5 pt-2',
+                  'space-y-0.5 pt-1',
                   project && 'max-h-44 overflow-y-auto pr-0.5',
                 )}
               >
@@ -299,21 +299,21 @@ export const Sidebar: React.FC = () => {
                     <div
                       key={p.projectId}
                       className={cn(
-                        'group flex items-center gap-2 rounded-lg pr-1 transition-colors',
+                        'group flex items-center gap-1 rounded-md pr-1 transition-colors',
                         active
-                          ? 'bg-primary-soft text-primary-soft-foreground'
-                          : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                          ? 'bg-foreground/[0.07] text-foreground'
+                          : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground',
                       )}
                     >
                       <Link
                         to={`/project/${p.projectId}`}
-                        className="flex-1 flex items-center gap-2 min-w-0 px-2 py-1.5"
+                        className="flex h-10 min-w-0 flex-1 items-center gap-2.5 px-2 md:h-8"
                       >
                         <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          className="h-2 w-2 shrink-0 rounded-[2px]"
                           style={{ background: p.coverColor || 'hsl(var(--primary))' }}
                         />
-                        <span className="text-sm font-medium truncate">{p.name}</span>
+                        <span className="truncate text-[13px] font-medium">{p.name}</span>
                         {p.isLocked && p.hasLockPin && !sessionUnlocked && (
                           <span title="PIN required to open" className="inline-flex">
                             <Lock className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-label="Project locked with PIN" />
@@ -377,7 +377,7 @@ export const Sidebar: React.FC = () => {
 
         {/* Secondary nav */}
         <nav className="space-y-0.5">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+          <h3 className="mb-1 flex h-7 items-center px-2 text-xs font-medium text-muted-foreground">
             Workspace
           </h3>
           {bottomMenuItems.map((item) => {
@@ -393,7 +393,7 @@ export const Sidebar: React.FC = () => {
               <button
                 key={item.href}
                 onClick={() => navigate('/pricing')}
-                className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground/70 hover:bg-secondary transition-colors"
+                className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted-foreground/70 transition-colors hover:bg-foreground/[0.05] md:h-8"
               >
                 <Icon className="w-4 h-4" />
                 <span className="flex-1 text-left">{item.label}</span>
@@ -404,10 +404,10 @@ export const Sidebar: React.FC = () => {
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex h-10 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors md:h-8',
                   active
-                    ? 'bg-primary-soft text-primary-soft-foreground'
-                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                    ? 'bg-foreground/[0.07] text-foreground'
+                    : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground',
                 )}
               >
                 <Icon className="w-4 h-4" />
@@ -419,21 +419,21 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Bottom: account panel slides up from bottom on open */}
-      <div className="p-3 border-t border-border shrink-0 overflow-hidden">
+      <div className="shrink-0 overflow-hidden border-t border-border p-2">
         <AnimatePresence mode="wait" initial={false}>
           {!footerExpanded ? (
             <motion.button
               key="account-collapsed"
               type="button"
               onClick={() => setFooterExpanded(true)}
-              className="w-full flex items-center gap-2 rounded-lg border border-border px-2 py-2 text-left hover:bg-secondary transition-colors"
+              className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-foreground/[0.05]"
               aria-expanded={false}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
             >
-              <Avatar className="w-8 h-8 shrink-0">
+              <Avatar className="h-7 w-7 shrink-0">
                 <AvatarImage src={user?.photoURL} alt={user?.displayName} />
                 <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
                   {user?.displayName?.charAt(0).toUpperCase() || 'U'}
@@ -441,7 +441,7 @@ export const Sidebar: React.FC = () => {
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-foreground truncate">Account</p>
-                <p className="text-[10px] text-muted-foreground truncate">
+                <p className="truncate text-[11px] text-muted-foreground">
                   Theme, settings, sign out
                 </p>
               </div>
@@ -459,7 +459,7 @@ export const Sidebar: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setFooterExpanded(false)}
-                className="w-full flex items-center justify-between rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
+                className="flex h-7 w-full items-center justify-between rounded-md px-2 text-xs text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
                 aria-expanded
               >
                 <span className="font-medium">Account &amp; workspace</span>
@@ -479,7 +479,7 @@ export const Sidebar: React.FC = () => {
               {isAdmin && (
                 <Link
                   to="/admin"
-                  className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium text-violet-600 dark:text-violet-300 hover:bg-violet-500/10 transition-colors"
+                  className="flex h-10 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground md:h-8"
                 >
                   <Shield className="w-4 h-4" />
                   <span>Admin Panel</span>
@@ -489,10 +489,10 @@ export const Sidebar: React.FC = () => {
               <Link
                 to="/settings"
                 className={cn(
-                  'flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex h-10 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors md:h-8',
                   location.pathname === '/settings'
-                    ? 'bg-primary-soft text-primary-soft-foreground'
-                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                    ? 'bg-foreground/[0.07] text-foreground'
+                    : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground',
                 )}
               >
                 <Settings className="w-4 h-4" />
@@ -536,7 +536,7 @@ export const Sidebar: React.FC = () => {
       {/* Mobile-only top bar: keeps the hamburger reachable from anywhere on
           the page without each page having to opt in. The bar is sticky-fixed
           at the top so it stays visible while content underneath scrolls. */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center gap-2 px-3 h-12 bg-card/95 backdrop-blur border-b border-border">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 flex items-center gap-2 px-3 h-12 bg-background border-b border-border">
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
@@ -558,7 +558,7 @@ export const Sidebar: React.FC = () => {
       {/* Desktop sidebar — unchanged width and behaviour for >= md screens.
           overflow-y-auto so a long projects list can scroll inside the sidebar
           itself without pushing the page's main scroll. */}
-      <aside className="w-64 bg-card border-r border-border h-screen hidden md:flex flex-col shrink-0 overflow-y-auto">
+      <aside className="hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-border bg-surface-2 md:flex">
         {body}
       </aside>
 
@@ -572,11 +572,11 @@ export const Sidebar: React.FC = () => {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-[1px] animate-in fade-in duration-150"
+            className="absolute inset-0 bg-black/40 animate-in fade-in duration-150"
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />
-          <aside className="relative w-72 max-w-[85vw] h-full bg-card border-r border-border flex flex-col animate-in slide-in-from-left-2 duration-200">
+          <aside className="relative flex h-full w-72 max-w-[85vw] flex-col border-r border-border bg-surface-2 animate-in slide-in-from-left-2 duration-200">
             <button
               type="button"
               onClick={() => setMobileOpen(false)}

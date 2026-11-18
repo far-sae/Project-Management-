@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, CheckCircle2, Download, KeyRound, Lock, Network } from 'lucide-react';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, CheckCircle2, Download, KeyRound, Lock, Network, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -187,6 +187,16 @@ const TimelineView: React.FC<TimelineViewProps> = ({
   );
 };
 
+/** Underlined view tab in the project header (Board / List / Timeline …). */
+const viewTabClass = (active: boolean) =>
+  cn(
+    'inline-flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium transition-colors',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+    active
+      ? 'border-foreground text-foreground'
+      : 'border-transparent text-muted-foreground hover:text-foreground',
+  );
+
 export const ProjectView: React.FC = () => {
   const { projectId } = useParams<{ projectId: string; }>();
   const navigate = useNavigate();
@@ -228,6 +238,8 @@ export const ProjectView: React.FC = () => {
    *  focus) get cleaned up automatically. */
   const searchQuerySnapshotRef = useRef<string | null>(null);
   const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'timeline' | 'mindmap' | 'done'>('kanban');
+  /** Bumped by the header's "New task" button; the board opens its editor. */
+  const [addTaskRequest, setAddTaskRequest] = useState(0);
   // Click-and-drag on empty board space slides the board (touchpad-friendly).
   const boardScrollRef = useDragToScroll<HTMLDivElement>();
   const [sortOption, setSortOption] = useState<TaskSortOption>(() => {
@@ -690,6 +702,7 @@ export const ProjectView: React.FC = () => {
   const renderKanbanBoard = (hideBoard: boolean) => (
     <KanbanBoard
       hideBoard={hideBoard}
+      addTaskRequest={addTaskRequest}
       projectId={project.projectId}
       project={project}
       projectName={project.name}
@@ -729,23 +742,32 @@ export const ProjectView: React.FC = () => {
 
   return (
     <>
-      <main className="h-full min-h-0 flex-1 min-w-0 flex flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_38rem,hsl(var(--background)))]">
+      <main className="h-full min-h-0 flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}
 
         <AppHeader
-          className="border-border/70 bg-card/80 shadow-sm shadow-black/5"
           left={
-            <Breadcrumb>
-              <BreadcrumbList>
+            <Breadcrumb className="min-w-0">
+              <BreadcrumbList className="flex-nowrap">
                 <BreadcrumbItem>
-                  <BreadcrumbLink href="/dashboard">Projects</BreadcrumbLink>
+                  <BreadcrumbLink asChild>
+                    <Link to="/dashboard">Projects</Link>
+                  </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="truncate max-w-[14rem]">
-                    {project.name}
+                <BreadcrumbItem className="min-w-0">
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 shrink-0 rounded-[2px]"
+                    style={{ background: project.coverColor || 'hsl(var(--primary))' }}
+                  />
+                  <BreadcrumbPage
+                    className="max-w-[14rem] truncate font-semibold sm:max-w-[22rem]"
+                    title={project.description || project.name}
+                  >
+                    <h1 className="inline">{project.name}</h1>
                   </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
@@ -765,7 +787,7 @@ export const ProjectView: React.FC = () => {
         />
 
         {dueDayParam && (
-          <div className="flex items-center justify-between gap-3 px-4 lg:px-6 py-2 border-b border-border/70 bg-card/70 text-sm backdrop-blur">
+          <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2 text-[13px] lg:px-6">
             <p className="text-muted-foreground">
               Showing tasks due{' '}
               <span className="font-medium text-foreground">{dueDayParam}</span>
@@ -776,36 +798,72 @@ export const ProjectView: React.FC = () => {
           </div>
         )}
 
-        <div className="border-b border-border/70 bg-card/75 px-4 py-4 shadow-sm shadow-black/5 backdrop-blur-xl lg:px-6">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3 min-w-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => navigate('/dashboard')}
-                aria-label="Back to projects"
-                className="h-10 w-10 shrink-0 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
+        <div className="border-b border-border bg-background px-4 lg:px-6">
+          <div className="flex flex-col">
+            <div className="flex flex-wrap items-end justify-between gap-x-4">
+            <div
+              className="-mb-px flex min-w-0 items-stretch gap-1 overflow-x-auto"
+              role="group"
+              aria-label="Project views"
+            >
+              <button
+                type="button"
+                className={viewTabClass(viewMode === 'kanban')}
+                onClick={() => setViewMode('kanban')}
+                title="Kanban"
+                aria-pressed={viewMode === 'kanban'}
               >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div
-                className="h-10 w-1.5 rounded-full shrink-0 shadow-sm"
-                style={{ background: project.coverColor || 'hsl(var(--primary))' }}
-              />
-              <div className="min-w-0">
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground truncate">
-                  {project.name}
-                </h1>
-                {project.description && (
-                  <p className="mt-0.5 text-sm text-muted-foreground truncate">
-                    {project.description}
-                  </p>
+                <LayoutGrid className="h-4 w-4" aria-hidden />
+                Board
+              </button>
+              <button
+                type="button"
+                className={viewTabClass(viewMode === 'list')}
+                onClick={() => setViewMode('list')}
+                title="List"
+                aria-pressed={viewMode === 'list'}
+              >
+                <List className="h-4 w-4" aria-hidden />
+                List
+              </button>
+              <button
+                type="button"
+                className={viewTabClass(viewMode === 'timeline')}
+                onClick={() => setViewMode('timeline')}
+                title="Timeline"
+                aria-pressed={viewMode === 'timeline'}
+              >
+                <GanttChartSquare className="h-4 w-4" aria-hidden />
+                Timeline
+              </button>
+              <button
+                type="button"
+                className={viewTabClass(viewMode === 'mindmap')}
+                onClick={() => setViewMode('mindmap')}
+                title="Mind map"
+                aria-pressed={viewMode === 'mindmap'}
+              >
+                <Network className="h-4 w-4" aria-hidden />
+                Mind map
+              </button>
+              <button
+                type="button"
+                className={viewTabClass(viewMode === 'done')}
+                onClick={() => setViewMode('done')}
+                title="Done tasks"
+                aria-pressed={viewMode === 'done'}
+              >
+                <CheckCircle2 className="h-4 w-4" aria-hidden />
+                Done
+                {doneCount > 0 && (
+                  <span className="tabular-nums font-normal text-muted-foreground">
+                    {doneCount}
+                  </span>
                 )}
-              </div>
+              </button>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <div className="flex min-w-0 items-center gap-2 overflow-x-auto py-2">
               {!isViewer && (
                 <ClockButton
                   projectId={project.projectId}
@@ -814,21 +872,21 @@ export const ProjectView: React.FC = () => {
               )}
 
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   ref={boardTaskSearchRef}
                   aria-label="Search tasks"
                   placeholder="Search tasks…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10 w-56 rounded-lg border-border/70 bg-background/80 pl-9 shadow-sm md:w-72"
+                  className="w-44 pl-8 md:w-56"
                 />
               </div>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-10 rounded-lg border-border/70 bg-background/80 px-3 shadow-sm">
-                    <Filter className="w-4 h-4 mr-2" />
+                  <Button variant="outline">
+                    <Filter className="w-4 h-4" />
                     Filter
                   </Button>
                 </DropdownMenuTrigger>
@@ -853,8 +911,8 @@ export const ProjectView: React.FC = () => {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-10 rounded-lg border-border/70 bg-background/80 px-3 shadow-sm">
-                    <ArrowUpDown className="w-4 h-4 mr-2" />
+                  <Button variant="outline">
+                    <ArrowUpDown className="w-4 h-4" />
                     Sort
                   </Button>
                 </DropdownMenuTrigger>
@@ -893,7 +951,7 @@ export const ProjectView: React.FC = () => {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" title="Import / Export" className="h-10 w-10 rounded-lg border-border/70 bg-background/80 p-0 shadow-sm">
+                  <Button variant="outline" size="icon" title="Import / Export" aria-label="Import / Export" className="shrink-0">
                     <Download className="w-4 h-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -905,87 +963,43 @@ export const ProjectView: React.FC = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div className="flex h-10 overflow-hidden rounded-lg border border-border/70 bg-background/80 p-0.5 shadow-sm">
-                <Button
-                  variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 rounded-md px-3"
-                  onClick={() => setViewMode('kanban')}
-                  title="Kanban"
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 rounded-md px-3"
-                  onClick={() => setViewMode('list')}
-                  title="List"
-                >
-                  <List className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant={viewMode === 'timeline' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 rounded-md px-3"
-                  onClick={() => setViewMode('timeline')}
-                  title="Timeline"
-                >
-                  <GanttChartSquare className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant={viewMode === 'mindmap' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className={cn(
-                    'h-8 rounded-md px-3 text-primary hover:text-primary',
-                    viewMode === 'mindmap' && 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
-                  )}
-                  onClick={() => setViewMode('mindmap')}
-                  title="Mind map"
-                >
-                  <Network className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant={viewMode === 'done' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-8 gap-1.5 rounded-md px-3"
-                  onClick={() => setViewMode('done')}
-                  title="Done tasks"
-                  aria-pressed={viewMode === 'done'}
-                >
-                  <CheckCircle2 className="w-4 h-4 text-success" aria-hidden />
-                  <span className="text-xs font-medium">Done</span>
-                  {doneCount > 0 && (
-                    <span className="rounded bg-muted px-1 text-[11px] tabular-nums text-muted-foreground">
-                      {doneCount}
-                    </span>
-                  )}
-                </Button>
-              </div>
-
               <Button
                 variant="outline"
-                size="sm"
+                size="icon"
                 onClick={() => navigate('/settings')}
-                className="h-10 w-10 rounded-lg border-border/70 bg-background/80 p-0 shadow-sm"
+                aria-label="Settings"
+                title="Settings"
+                className="shrink-0"
               >
                 <Settings className="w-4 h-4" />
               </Button>
+
+              {!isViewer && viewMode === 'kanban' && (
+                <Button
+                  className="shrink-0"
+                  onClick={() => setAddTaskRequest((n) => n + 1)}
+                >
+                  <Plus className="w-4 h-4" />
+                  New task
+                </Button>
+              )}
             </div>
             </div>
             {user?.userId ? (
-              <AIProjectHealth
-                projectId={project.projectId}
-                projectName={project.name}
-                userId={user.userId}
-                tasks={tasks}
-              />
+              <div className="pb-3 pt-1">
+                <AIProjectHealth
+                  projectId={project.projectId}
+                  projectName={project.name}
+                  userId={user.userId}
+                  tasks={tasks}
+                />
+              </div>
             ) : null}
           </div>
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
-          <div className={`flex-1 min-w-0 px-4 pt-5 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden pb-2' : 'overflow-auto pb-24'}`}>
+          <div className={`flex-1 min-w-0 px-4 pt-4 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden pb-2' : 'overflow-auto pb-24'}`}>
             {viewMode === 'kanban' ? (
               <div ref={boardScrollRef} className="kanban-scroll flex h-full flex-col overflow-x-auto overflow-y-auto">
                 {/* Columns fill the height; the sideways scrollbar sits at the very bottom. */}

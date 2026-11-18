@@ -5,26 +5,26 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation",
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 touch-manipulation",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+          "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline:
-          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
+          "border border-input bg-background hover:bg-secondary hover:text-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/70",
+        ghost: "hover:bg-secondary hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "min-h-[44px] md:min-h-9 h-auto md:h-9 px-4 py-2",
-        sm: "min-h-[40px] md:min-h-8 h-auto md:h-8 rounded-md px-3 text-xs",
-        lg: "min-h-[48px] md:min-h-10 h-auto md:h-10 rounded-md px-8",
-        icon: "min-h-[44px] min-w-[44px] md:min-h-9 md:min-w-9 h-auto w-auto md:h-9 md:w-9",
+        default: "min-h-[44px] md:min-h-8 h-auto md:h-8 px-3 py-1.5",
+        sm: "min-h-[40px] md:min-h-7 h-auto md:h-7 rounded-md px-2.5 text-xs",
+        lg: "min-h-[48px] md:min-h-10 h-auto md:h-10 rounded-md px-5 text-sm",
+        icon: "min-h-[44px] min-w-[44px] md:min-h-8 md:min-w-8 h-auto w-auto md:h-8 md:w-8",
       },
     },
     defaultVariants: {

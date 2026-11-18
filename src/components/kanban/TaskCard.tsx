@@ -49,20 +49,23 @@ const PRIORITY_TONES: Record<
   high: {
     dot: 'bg-destructive',
     label: 'High',
-    chip: 'bg-destructive-soft text-destructive-soft-foreground',
+    chip: 'border-destructive/30 bg-destructive-soft text-destructive-soft-foreground',
   },
   medium: {
     dot: 'bg-warning',
     label: 'Medium',
-    chip:
-      'bg-warning-soft text-warning-soft-foreground border border-warning/35',
+    chip: 'border-warning/40 bg-warning-soft text-warning-soft-foreground',
   },
   low: {
-    dot: 'bg-success',
+    dot: 'bg-muted-foreground/60',
     label: 'Low',
-    chip: 'bg-success-soft text-success-soft-foreground',
+    chip: 'border-border bg-secondary text-secondary-foreground',
   },
 };
+
+/** Shared pill shape for the label row (urgent / priority / locked). */
+const PILL =
+  'inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[11px] font-semibold leading-none';
 
 /** Human-friendly relative day label, e.g. "Today", "Tomorrow", "in 3d", "2d ago". */
 const relativeDay = (date: Date): string => {
@@ -173,17 +176,20 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       ? PRIORITY_TONES[task.priority]
       : null;
 
-  const priorityColor = task.priorityColor || 'hsl(var(--muted-foreground))';
-  const isUrgentActive = Boolean(task.urgent && task.status !== 'done');
+  const isDone = task.status === 'done';
+  const isUrgentActive = Boolean(task.urgent && !isDone);
+  // How loud the card is: urgent > high priority > everything else.
+  const level: 'urgent' | 'high' | 'normal' = isUrgentActive
+    ? 'urgent'
+    : task.priority === 'high' && !isDone
+      ? 'high'
+      : 'normal';
 
   return (
     <div
       ref={setNodeRef}
       data-no-pan
-      style={{
-        ...style,
-        borderLeftColor: isUrgentActive ? 'hsl(var(--destructive))' : priorityColor,
-      }}
+      style={style}
       {...(selectable ? {} : attributes)}
       {...(selectable ? {} : listeners)}
       onClick={(e) => {
@@ -194,18 +200,21 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         onClick?.(task, e);
       }}
       className={cn(
-        'group relative mb-2.5 rounded-lg border border-border/70 border-l-[3px] bg-background/80 p-3 text-card-foreground shadow-sm',
-        'transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-card hover:shadow-md',
-        isUrgentActive &&
-          'border-destructive/45 bg-destructive/[0.07] ring-1 ring-destructive/25 hover:border-destructive/50 hover:bg-destructive/[0.09]',
+        'group relative mb-2 flex flex-col gap-2 rounded-lg border bg-card p-3 text-card-foreground',
+        'transition-[border-color,box-shadow] duration-150 hover:shadow-sm',
+        level === 'urgent' &&
+          'border-destructive/50 bg-destructive-soft hover:border-destructive/70',
+        level === 'high' && 'border-destructive/30 hover:border-destructive/50',
+        level === 'normal' && 'border-border hover:border-foreground/25',
         selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
         selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
         swapHighlight && 'ring-2 ring-amber-500 ring-offset-1 ring-offset-background',
         isCurrentlyDragging && 'opacity-60 shadow-lg',
         // Compact density
-        '[.dense_&]:p-2 [.dense_&]:mb-1.5',
+        '[.dense_&]:gap-1.5 [.dense_&]:p-2 [.dense_&]:mb-1.5',
       )}
       data-task-card
+      data-level={level}
     >
       {/* Selection checkbox in selectable mode */}
       {selectable && (
@@ -256,8 +265,69 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </div>
       )}
 
+      {/* Label row: urgency and priority lead, so the eye lands on them first. */}
+      {(task.urgent || priorityTone || task.isLocked || (!isLockMasked && task.tags && task.tags.length > 0)) && (
+        <div className={cn('flex flex-wrap items-center gap-1', selectable && 'pr-6')}>
+          {task.urgent && (
+            <span
+              className={cn(
+                PILL,
+                isDone
+                  ? 'border-border bg-secondary text-secondary-foreground'
+                  : 'border-destructive bg-destructive text-destructive-foreground',
+              )}
+            >
+              <AlertTriangle className="h-3 w-3" strokeWidth={2.25} aria-hidden />
+              Urgent
+            </span>
+          )}
+
+          {priorityTone && (
+            <span
+              className={cn(
+                PILL,
+                isDone ? 'border-border bg-secondary text-secondary-foreground' : priorityTone.chip,
+              )}
+              title={`Priority: ${priorityTone.label}`}
+            >
+              <span
+                className={cn('h-1.5 w-1.5 rounded-full', isDone ? 'bg-muted-foreground/60' : priorityTone.dot)}
+                style={!isDone && task.priorityColor ? { backgroundColor: task.priorityColor } : undefined}
+              />
+              {priorityTone.label}
+            </span>
+          )}
+
+          {task.isLocked && (
+            <span
+              className={cn(PILL, 'border-warning/40 bg-warning-soft text-warning-soft-foreground')}
+              title="Locked - only visible to creator, assignees, and project owner"
+            >
+              <Lock className="h-3 w-3" aria-hidden />
+              Locked
+            </span>
+          )}
+
+          {!isLockMasked &&
+            task.tags &&
+            task.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex h-5 items-center rounded border border-border bg-background px-1.5 text-[11px] text-muted-foreground [.dense_&]:hidden"
+              >
+                {tag}
+              </span>
+            ))}
+          {!isLockMasked && task.tags && task.tags.length > 3 && (
+            <span className="text-[11px] text-muted-foreground [.dense_&]:hidden">
+              +{task.tags.length - 3}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Title row */}
-      <div className="flex items-start gap-2 mb-1.5">
+      <div className="flex items-start gap-2">
         {onMarkDone && !selectable && !isLockMasked && !dragDisabled && (
           <button
             type="button"
@@ -272,8 +342,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             }}
             className="group/done -m-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.92] transition-transform duration-150 ease-out [.dense_&]:h-7 [.dense_&]:w-7"
           >
-            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 border-muted-foreground/45 text-transparent transition-colors duration-150 group-hover/done:border-success group-hover/done:bg-success group-hover/done:text-success-foreground">
-              <Check className="h-3 w-3" strokeWidth={3} aria-hidden />
+            <span className="flex h-4 w-4 items-center justify-center rounded-full border-[1.5px] border-muted-foreground/50 bg-background text-transparent transition-colors duration-150 group-hover/done:border-success group-hover/done:bg-success group-hover/done:text-success-foreground">
+              <Check className="h-2.5 w-2.5" strokeWidth={3} aria-hidden />
             </span>
           </button>
         )}
@@ -294,106 +364,57 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             )}
           </div>
         ) : (
-          <h4 className="flex-1 font-medium text-sm text-foreground line-clamp-2 [.dense_&]:text-[13px] leading-snug">
+          <h4
+            className={cn(
+              'flex-1 text-sm font-medium leading-snug line-clamp-2 [.dense_&]:text-[13px]',
+              isDone ? 'text-muted-foreground' : 'text-foreground',
+            )}
+          >
             {task.title}
           </h4>
         )}
       </div>
 
       {!isLockMasked && task.description && (
-        <p className="text-xs text-muted-foreground/90 mb-2 line-clamp-2 [.dense_&]:hidden">
+        <p className="text-xs text-muted-foreground line-clamp-2 [.dense_&]:hidden">
           {task.description}
         </p>
       )}
 
       {isLockMasked && (
-        <p className="text-[11px] text-muted-foreground mb-2 [.dense_&]:hidden">
+        <p className="text-[11px] text-muted-foreground [.dense_&]:hidden">
           Title, description, and comments are hidden until you unlock this task.
         </p>
       )}
 
       {/* Subtask progress */}
       {!isLockMasked && subtaskProgress && (
-        <div className="mb-2">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-0.5">
-            <span className="inline-flex items-center gap-1">
-              <CheckSquare className="w-3 h-3" />
-              {subtaskProgress.done}/{subtaskProgress.total}
-            </span>
-            <span>{Math.round(subtaskProgress.pct)}%</span>
-          </div>
-          <div className="h-1 rounded-full bg-secondary overflow-hidden">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <CheckSquare className="h-3 w-3 shrink-0" aria-hidden />
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-foreground/10">
             <div
-              className="h-full bg-primary transition-all"
+              className="h-full rounded-full bg-foreground/70 transition-all"
               style={{ width: `${subtaskProgress.pct}%` }}
             />
           </div>
+          <span className="tabular-nums">
+            {subtaskProgress.done}/{subtaskProgress.total}
+          </span>
         </div>
       )}
 
-      {/* Tags */}
-      {!isLockMasked && task.tags && task.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-2 [.dense_&]:hidden">
-          {task.tags.slice(0, 3).map((tag) => (
-            <span
-              key={tag}
-              className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-secondary text-secondary-foreground"
-            >
-              {tag}
-            </span>
-          ))}
-          {task.tags.length > 3 && (
-            <span className="text-[10px] text-muted-foreground">
-              +{task.tags.length - 3}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Footer row: chips + assignees */}
-      <div className="flex items-center justify-between gap-2 mt-1">
-        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-          {priorityTone && (
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
-                priorityTone.chip,
-              )}
-              title={`Priority: ${priorityTone.label}`}
-            >
-              <span className={cn('w-1.5 h-1.5 rounded-full', priorityTone.dot)} />
-              {priorityTone.label}
-            </span>
-          )}
-
-          {task.urgent && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-destructive-soft px-1.5 py-0.5 text-[10px] font-medium text-destructive-soft-foreground">
-              <AlertTriangle className="w-3 h-3" />
-              Urgent
-            </span>
-          )}
-
-          {task.isLocked && (
-            <span
-              className="inline-flex items-center gap-1 rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-medium text-warning-soft-foreground"
-              title="Locked - only visible to creator, assignees, and project owner"
-            >
-              <Lock className="w-3 h-3" />
-              Locked
-            </span>
-          )}
-
+      {/* Footer row: dates, counts + assignees */}
+      <div className="flex min-h-5 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
           {task.dueDate && (
             <span
               className={cn(
-                'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
-                isOverdue
-                  ? 'bg-destructive-soft text-destructive-soft-foreground'
-                  : 'bg-secondary text-secondary-foreground',
+                'inline-flex items-center gap-1',
+                isOverdue && 'font-medium text-destructive',
               )}
               title={new Date(task.dueDate).toLocaleDateString()}
             >
-              <Calendar className="w-3 h-3" />
+              <Calendar className="h-3.5 w-3.5" aria-hidden />
               {relativeDay(new Date(task.dueDate))}
             </span>
           )}
@@ -401,7 +422,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           {meeting && meeting.status.kind !== 'ended' && (
             <span
               className={cn(
-                'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums',
+                'inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-[11px] font-medium tabular-nums',
                 meeting.status.kind === 'live'
                   ? 'bg-destructive-soft text-destructive-soft-foreground'
                   : meeting.status.kind === 'soon'
@@ -418,15 +439,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           )}
 
           {!isLockMasked && commentsCount > 0 && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-              <MessageSquare className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1">
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden />
               {commentsCount}
             </span>
           )}
 
           {!isLockMasked && attachments.length > 0 && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Paperclip className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1">
+              <Paperclip className="h-3.5 w-3.5" aria-hidden />
               {attachments.length}
             </span>
           )}
@@ -437,7 +458,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             {assignees.slice(0, 3).map((assignee) => (
               <Avatar
                 key={assignee.userId}
-                className="w-6 h-6 border-2 border-card ring-0 [.dense_&]:w-5 [.dense_&]:h-5"
+                className="h-5 w-5 border-2 border-card ring-0"
                 title={assignee?.displayName}
               >
                 <AvatarImage
@@ -451,7 +472,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             ))}
             {assignees.length > 3 && (
               <div
-                className="w-6 h-6 rounded-full bg-secondary border-2 border-card flex items-center justify-center [.dense_&]:w-5 [.dense_&]:h-5"
+                className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-secondary"
                 title={assignees
                   .slice(3)
                   .map((a) => a.displayName)

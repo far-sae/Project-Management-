@@ -60,20 +60,20 @@ export const InlineAddCard: React.FC<InlineAddCardProps> = ({
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          'group w-full flex items-center gap-1.5 px-2 py-1.5 mb-2 rounded-md',
-          'text-xs font-medium text-muted-foreground',
-          'border border-dashed border-border hover:border-foreground/30 hover:text-foreground hover:bg-secondary/40',
+          'group mb-2 flex h-8 w-full items-center gap-1.5 rounded-md px-2',
+          'text-[13px] font-medium text-muted-foreground',
+          'hover:bg-foreground/[0.06] hover:text-foreground',
           'transition-colors',
         )}
       >
-        <Plus className="w-3.5 h-3.5" />
+        <Plus className="h-4 w-4" />
         Add task
       </button>
     );
   }
 
   return (
-    <div className="mb-2 rounded-md border border-border bg-card shadow-sm focus-within:ring-2 focus-within:ring-primary/40">
+    <div className="mb-2 rounded-lg border border-border bg-card focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25">
       <textarea
         ref={textareaRef}
         value={value}
@@ -100,7 +100,7 @@ export const InlineAddCard: React.FC<InlineAddCardProps> = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="px-2"
             onClick={close}
             disabled={submitting}
           >
@@ -109,7 +109,7 @@ export const InlineAddCard: React.FC<InlineAddCardProps> = ({
           <Button
             type="button"
             size="sm"
-            className="h-7 px-3 text-xs"
+            className="px-3"
             onClick={submit}
             disabled={!value.trim() || submitting}
           >

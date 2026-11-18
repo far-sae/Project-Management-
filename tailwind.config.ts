@@ -91,11 +91,14 @@ const config: Config = {
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
   		},
+  		fontFamily: {
+  			sans: ['"Geist Variable"', 'Geist', '"Segoe UI Variable Text"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Helvetica', 'Arial', 'sans-serif']
+  		},
   		boxShadow: {
-  			soft: '0 2px 15px -3px hsl(var(--primary) / 0.1), 0 10px 20px -2px hsl(var(--primary) / 0.04)',
-  			glow: '0 0 40px hsl(var(--primary) / 0.15)',
-  			card: '0 4px 6px -1px hsl(var(--foreground) / 0.05), 0 2px 4px -2px hsl(var(--foreground) / 0.05)',
-  			'card-hover': '0 10px 30px -5px hsl(var(--primary) / 0.15)'
+  			soft: '0 2px 8px rgb(0 0 0 / 0.06)',
+  			glow: '0 0 0 1px hsl(var(--primary) / 0.2)',
+  			card: '0 0 0 0 rgb(0 0 0 / 0)',
+  			'card-hover': '0 4px 12px rgb(0 0 0 / 0.08)'
   		},
   		keyframes: {
   			'accordion-down': {

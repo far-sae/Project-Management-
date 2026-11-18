@@ -113,22 +113,20 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
             <button
               type="button"
               className={cn(
-                'flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg border border-border bg-background hover:bg-secondary transition-colors text-left min-w-0',
+                'flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-2 text-left transition-colors hover:bg-secondary',
                 className,
               )}
             >
-              <span className="w-7 h-7 rounded-md bg-primary-soft text-primary-soft-foreground flex items-center justify-center shrink-0">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-foreground text-background">
                 {isAll ? (
-                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <LayoutGrid className="h-3 w-3" />
                 ) : (
-                  <Boxes className="w-3.5 h-3.5" />
+                  <Boxes className="h-3 w-3" />
                 )}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground leading-none">
-                  Workspace
-                </p>
-                <p className="text-sm font-semibold text-foreground truncate leading-tight mt-0.5">
+                <p className="sr-only">Workspace</p>
+                <p className="truncate text-[13px] font-medium leading-tight text-foreground">
                   {triggerLabel}
                 </p>
               </div>
@@ -201,7 +199,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
                 type="button"
                 aria-label="Create workspace or project"
                 title="Create workspace or project"
-                className="flex items-center justify-center w-8 h-8 rounded-lg border border-border bg-background hover:bg-secondary transition-colors shrink-0 text-muted-foreground hover:text-foreground"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
               >
                 <Plus className="w-4 h-4" />
               </button>

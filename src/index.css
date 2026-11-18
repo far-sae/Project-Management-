@@ -8,29 +8,29 @@
      ──────────────────────────────────────────────────────────── */
   :root {
     --background: 0 0% 100%;
-    --foreground: 222 22% 12%;
+    --foreground: 0 0% 9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 22% 12%;
+    --card-foreground: 0 0% 9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 22% 12%;
+    --popover-foreground: 0 0% 9%;
 
     /* Primary = brand accent (default orange). Per-workspace accents
        override these via [data-accent="…"] selectors below. */
-    --primary: 24 95% 53%;
+    --primary: 17 88% 40%;
     --primary-foreground: 0 0% 100%;
     --primary-soft: 24 95% 95%;
-    --primary-soft-foreground: 22 80% 30%;
+    --primary-soft-foreground: 17 80% 30%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 222 22% 18%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
 
-    --accent: 24 95% 95%;
-    --accent-foreground: 22 80% 30%;
+    --accent: 0 0% 95%;
+    --accent-foreground: 0 0% 9%;
 
     --success: 142 70% 38%;
     --success-foreground: 0 0% 100%;
@@ -42,7 +42,7 @@
     --warning-soft: 38 92% 95%;
     --warning-soft-foreground: 26 70% 28%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 4 74% 49%;
     --destructive-foreground: 0 0% 100%;
     --destructive-soft: 0 72% 95%;
     --destructive-soft-foreground: 0 72% 38%;
@@ -52,11 +52,11 @@
     --info-soft: 217 91% 95%;
     --info-soft-foreground: 217 80% 32%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 24 95% 53%;
+    --border: 0 0% 92%;
+    --input: 0 0% 88%;
+    --ring: 21 90% 48%;
 
-    --radius: 0.625rem;
+    --radius: 0.5rem;
 
     --hero-gradient: linear-gradient(
       135deg,
@@ -80,8 +80,8 @@
 
     /* Surfaces: subtle elevation for stacked panels */
     --surface-1: 0 0% 100%;
-    --surface-2: 220 14% 98%;
-    --surface-3: 220 14% 96%;
+    --surface-2: 0 0% 98%;
+    --surface-3: 0 0% 96%;
 
     color-scheme: light;
   }
@@ -90,28 +90,28 @@
      Dark theme overrides
      ──────────────────────────────────────────────────────────── */
   .dark {
-    --background: 222 24% 7%;
-    --foreground: 210 20% 96%;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 93%;
 
-    --card: 222 22% 10%;
-    --card-foreground: 210 20% 96%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 93%;
 
-    --popover: 222 22% 10%;
-    --popover-foreground: 210 20% 96%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 93%;
 
     --primary: 24 95% 58%;
-    --primary-foreground: 222 30% 8%;
+    --primary-foreground: 0 0% 7%;
     --primary-soft: 24 70% 18%;
     --primary-soft-foreground: 24 95% 80%;
 
-    --secondary: 222 18% 16%;
-    --secondary-foreground: 210 20% 96%;
+    --secondary: 0 0% 13%;
+    --secondary-foreground: 0 0% 93%;
 
-    --muted: 222 18% 16%;
-    --muted-foreground: 220 9% 64%;
+    --muted: 0 0% 13%;
+    --muted-foreground: 0 0% 63%;
 
-    --accent: 24 70% 18%;
-    --accent-foreground: 24 95% 80%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 93%;
 
     --success: 142 65% 45%;
     --success-foreground: 0 0% 100%;
@@ -133,8 +133,8 @@
     --info-soft: 217 60% 18%;
     --info-soft-foreground: 217 80% 78%;
 
-    --border: 222 18% 18%;
-    --input: 222 18% 18%;
+    --border: 0 0% 16%;
+    --input: 0 0% 20%;
     --ring: 24 95% 58%;
 
     --hero-gradient: linear-gradient(
@@ -150,9 +150,9 @@
     --chart-4: 43 74% 66%;
     --chart-5: 262 83% 70%;
 
-    --surface-1: 222 22% 10%;
-    --surface-2: 222 22% 12%;
-    --surface-3: 222 22% 14%;
+    --surface-1: 0 0% 7%;
+    --surface-2: 0 0% 9%;
+    --surface-3: 0 0% 12%;
 
     color-scheme: dark;
   }
@@ -166,8 +166,6 @@
     --primary: 217 91% 60%;
     --primary-soft: 217 91% 95%;
     --primary-soft-foreground: 217 80% 30%;
-    --accent: 217 91% 95%;
-    --accent-foreground: 217 80% 30%;
     --ring: 217 91% 60%;
     --chart-1: 217 91% 60%;
     --hero-gradient: linear-gradient(
@@ -181,8 +179,6 @@
     --primary: 217 91% 65%;
     --primary-soft: 217 60% 18%;
     --primary-soft-foreground: 217 90% 80%;
-    --accent: 217 60% 18%;
-    --accent-foreground: 217 90% 80%;
     --ring: 217 91% 65%;
     --chart-1: 217 91% 65%;
   }
@@ -191,8 +187,6 @@
     --primary: 262 83% 62%;
     --primary-soft: 262 80% 95%;
     --primary-soft-foreground: 262 70% 30%;
-    --accent: 262 80% 95%;
-    --accent-foreground: 262 70% 30%;
     --ring: 262 83% 62%;
     --chart-1: 262 83% 62%;
     --hero-gradient: linear-gradient(
@@ -206,8 +200,6 @@
     --primary: 262 83% 70%;
     --primary-soft: 262 50% 22%;
     --primary-soft-foreground: 262 90% 85%;
-    --accent: 262 50% 22%;
-    --accent-foreground: 262 90% 85%;
     --ring: 262 83% 70%;
     --chart-1: 262 83% 70%;
   }
@@ -216,8 +208,6 @@
     --primary: 152 70% 42%;
     --primary-soft: 152 65% 92%;
     --primary-soft-foreground: 152 60% 22%;
-    --accent: 152 65% 92%;
-    --accent-foreground: 152 60% 22%;
     --ring: 152 70% 42%;
     --chart-1: 152 70% 42%;
     --hero-gradient: linear-gradient(
@@ -231,8 +221,6 @@
     --primary: 152 65% 50%;
     --primary-soft: 152 50% 16%;
     --primary-soft-foreground: 152 80% 80%;
-    --accent: 152 50% 16%;
-    --accent-foreground: 152 80% 80%;
     --ring: 152 65% 50%;
     --chart-1: 152 65% 50%;
   }
@@ -241,8 +229,6 @@
     --primary: 330 81% 60%;
     --primary-soft: 330 80% 95%;
     --primary-soft-foreground: 330 70% 30%;
-    --accent: 330 80% 95%;
-    --accent-foreground: 330 70% 30%;
     --ring: 330 81% 60%;
     --chart-1: 330 81% 60%;
     --hero-gradient: linear-gradient(
@@ -256,8 +242,6 @@
     --primary: 330 81% 65%;
     --primary-soft: 330 50% 22%;
     --primary-soft-foreground: 330 90% 85%;
-    --accent: 330 50% 22%;
-    --accent-foreground: 330 90% 85%;
     --ring: 330 81% 65%;
     --chart-1: 330 81% 65%;
   }
@@ -267,8 +251,6 @@
     --primary-foreground: 0 0% 100%;
     --primary-soft: 220 14% 94%;
     --primary-soft-foreground: 220 14% 22%;
-    --accent: 220 14% 94%;
-    --accent-foreground: 220 14% 22%;
     --ring: 220 14% 28%;
     --chart-1: 220 14% 35%;
     --hero-gradient: linear-gradient(
@@ -283,8 +265,6 @@
     --primary-foreground: 222 30% 10%;
     --primary-soft: 220 14% 22%;
     --primary-soft-foreground: 220 14% 85%;
-    --accent: 220 14% 22%;
-    --accent-foreground: 220 14% 85%;
     --ring: 220 14% 75%;
     --chart-1: 220 14% 75%;
   }
@@ -308,9 +288,9 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: "Segoe UI Variable Text", -apple-system, BlinkMacSystemFont,
-      "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 1rem;
+    font-family: "Geist Variable", "Geist", "Segoe UI Variable Text", -apple-system,
+      BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 0.875rem;
     font-weight: 400;
     line-height: 1.45;
     letter-spacing: -0.006em;
@@ -321,8 +301,7 @@
   }
 
   html {
-    /* A restrained lift from 16px: X-like readability without oversized UI. */
-    font-size: 16.5px;
+    font-size: 16px;
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -435,7 +414,7 @@
   }
 
   .stat-card {
-    @apply bg-card rounded-xl border border-border p-6 shadow-card;
+    @apply bg-card rounded-lg border border-border p-5;
   }
 
   .nav-link {

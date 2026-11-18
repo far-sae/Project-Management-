@@ -18,11 +18,9 @@ export const QuickMenu: React.FC<QuickMenuProps> = ({ items }) => {
   const location = useLocation();
 
   return (
-    <div className="mb-6">
-      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-        Quick Menu
-      </h3>
-      <nav className="space-y-1">
+    <div>
+      <h3 className="sr-only">Quick Menu</h3>
+      <nav className="space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.href;
@@ -32,18 +30,18 @@ export const QuickMenu: React.FC<QuickMenuProps> = ({ items }) => {
               key={item.href}
               to={item.href}
               className={cn(
-                'flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                'flex h-10 items-center justify-between gap-2 rounded-md px-2 text-[13px] font-medium transition-colors md:h-8',
                 isActive
-                  ? 'bg-primary-soft text-primary-soft-foreground'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                  ? 'bg-foreground/[0.07] text-foreground'
+                  : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground'
               )}
             >
-              <div className="flex items-center gap-3">
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate">{item.label}</span>
               </div>
               {item.badge !== undefined && item.badge > 0 && (
-                <span className="bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">
+                <span className="min-w-[18px] rounded-full bg-foreground px-1.5 text-center text-[11px] leading-[18px] text-background tabular-nums">
                   {item.badge}
                 </span>
               )}

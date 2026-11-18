@@ -15,7 +15,7 @@ export const TaskCardSkeleton: React.FC<TaskCardSkeletonProps> = ({
         <div
           key={i}
           className={cn(
-            'rounded-lg border border-border bg-card p-3 mb-2.5',
+            'rounded-lg border border-border bg-card p-3 mb-2',
             'animate-pulse',
           )}
           aria-hidden="true"

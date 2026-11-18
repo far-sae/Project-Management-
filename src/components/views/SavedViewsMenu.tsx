@@ -160,8 +160,8 @@ export const SavedViewsMenu: React.FC<SavedViewsMenuProps> = ({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
-            <Eye className="w-4 h-4 mr-2" />
+          <Button variant="outline">
+            <Eye className="w-4 h-4" />
             Views
           </Button>
         </DropdownMenuTrigger>

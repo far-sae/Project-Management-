@@ -67,11 +67,11 @@ export const ClockButton: React.FC<Props> = ({
       type="button"
       onClick={handleToggle}
       disabled={busy || loading}
-      variant={onClock ? 'destructive' : 'default'}
+      variant={onClock ? 'default' : 'outline'}
       size={size === 'sm' ? 'sm' : 'default'}
       className={cn(
         'gap-1.5',
-        onClock && 'bg-emerald-600 hover:bg-emerald-700 text-white',
+        onClock && 'bg-success text-success-foreground hover:bg-success/90',
         className,
       )}
       aria-label={onClock ? 'Clock out' : 'Clock in'}
