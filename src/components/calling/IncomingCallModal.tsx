@@ -27,7 +27,7 @@ interface IncomingCallModalProps {
 
 /** One of the three 44px answer buttons. */
 const action =
-  'inline-flex h-11 min-w-0 flex-1 basis-[88px] items-center justify-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
+  'inline-flex h-11 min-w-0 flex-1 basis-[88px] items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
 
 export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   caller,
@@ -90,7 +90,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
         <p className="truncate text-base font-semibold text-foreground" title={callerName}>
           {callerName}
         </p>
-        <p className="truncate text-[13px] text-muted-foreground">
+        <p className="truncate text-sm text-muted-foreground">
           {contextLabel ? `${kind} · ${contextLabel}` : kind}
         </p>
       </div>

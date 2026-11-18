@@ -105,7 +105,7 @@ export const CrmCalendarPage: React.FC = () => {
                 <>
                   <div className="grid grid-cols-7 mb-2">
                     {WEEKDAYS.map((w) => (
-                      <div key={w} className="text-[11px] uppercase tracking-wide text-muted-foreground text-center">
+                      <div key={w} className="text-xs uppercase tracking-wide text-muted-foreground text-center">
                         {w}
                       </div>
                     ))}
@@ -133,7 +133,7 @@ export const CrmCalendarPage: React.FC = () => {
                               {d.getDate()}
                             </span>
                             {dayItems.length > 0 && (
-                              <span className="text-[10px] text-muted-foreground">{dayItems.length}</span>
+                              <span className="text-[0.6875rem] text-muted-foreground">{dayItems.length}</span>
                             )}
                           </div>
                           <div className="space-y-0.5">
@@ -146,13 +146,13 @@ export const CrmCalendarPage: React.FC = () => {
                                   : 'bg-primary/20 text-primary';
                               const label = it.kind === 'task' ? it.task.title : it.deal.name;
                               return (
-                                <div key={idx} className={`truncate rounded px-1 py-0.5 text-[10px] ${cls}`}>
+                                <div key={idx} className={`truncate rounded px-1 py-0.5 text-[0.6875rem] ${cls}`}>
                                   {label}
                                 </div>
                               );
                             })}
                             {dayItems.length > 3 && (
-                              <div className="text-[10px] text-muted-foreground pl-1">+{dayItems.length - 3} more</div>
+                              <div className="text-[0.6875rem] text-muted-foreground pl-1">+{dayItems.length - 3} more</div>
                             )}
                           </div>
                         </button>

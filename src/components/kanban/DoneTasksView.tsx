@@ -61,7 +61,7 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <div className="flex w-full flex-col gap-6">
       <div>
         <h2 className="flex items-center gap-2 text-base font-semibold">
           Done
@@ -69,7 +69,7 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
             {doneTasks.length}
           </span>
         </h2>
-        <p className="mt-1 text-[13px] text-muted-foreground text-pretty">
+        <p className="mt-1 text-sm text-muted-foreground text-pretty">
           Finished tasks from this project. Click the circle on any card in the board to move it here.
         </p>
       </div>
@@ -77,7 +77,7 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
       {groups.length === 0 ? (
         <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
           <CheckCircle2 className="mb-3 h-5 w-5 text-muted-foreground" aria-hidden />
-          <p className="text-[13px] font-medium">
+          <p className="text-sm font-medium">
             {searchQuery.trim() ? 'No finished tasks match your search' : 'Nothing finished yet'}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -101,7 +101,7 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
               {group.tasks.map((task) => (
                 <li
                   key={task.taskId}
-                  className="flex min-h-12 items-center gap-3 border-b border-border/60 px-4 py-1.5 text-[13px] transition-colors last:border-0 hover:bg-surface-2"
+                  className="flex min-h-12 items-center gap-3 border-b border-border/60 px-4 py-1.5 text-sm transition-colors last:border-0 hover:bg-surface-2"
                 >
                   <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
                   <button
@@ -123,7 +123,7 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
                       {task.assignees.slice(0, 3).map((a) => (
                         <Avatar key={a.userId} className="h-6 w-6 ring-2 ring-background" title={a.displayName}>
                           <AvatarImage src={a.photoURL} alt="" />
-                          <AvatarFallback className="bg-secondary text-[10px] font-semibold text-foreground">
+                          <AvatarFallback className="bg-secondary text-[0.6875rem] font-semibold text-foreground">
                             {(a.displayName || '?').charAt(0).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>

@@ -67,7 +67,7 @@ export const ProjectTeamMemberRow: React.FC<ProjectTeamMemberRowProps> = ({
       <span className="relative shrink-0">
         <Avatar className="h-8 w-8">
           <AvatarImage src={member.photoURL} alt="" />
-          <AvatarFallback className="bg-primary-soft text-[13px] font-semibold text-primary-soft-foreground">
+          <AvatarFallback className="bg-primary-soft text-sm font-semibold text-primary-soft-foreground">
             {(name || '?').charAt(0).toUpperCase()}
           </AvatarFallback>
         </Avatar>
@@ -81,11 +81,11 @@ export const ProjectTeamMemberRow: React.FC<ProjectTeamMemberRowProps> = ({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-[13px] font-medium leading-[18px] text-foreground">
+          <span className="truncate text-sm font-medium leading-[18px] text-foreground">
             {name}
           </span>
           {isSelf && <span className="shrink-0 text-xs text-muted-foreground">(you)</span>}
-          <span className="shrink-0 rounded bg-secondary px-1.5 text-[11px] font-medium leading-4 text-muted-foreground">
+          <span className="shrink-0 rounded bg-secondary px-1.5 text-xs font-medium leading-4 text-muted-foreground">
             {roleLabel}
           </span>
         </span>

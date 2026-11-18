@@ -396,7 +396,7 @@ export const GuestJoin: React.FC = () => {
           style={{ display: hasPreview && camOn ? 'block' : 'none' }}
         />
         {!(hasPreview && camOn) && (
-          <span className={cn('text-[13px]', CALL_MUTED_TEXT)}>Camera off</span>
+          <span className={cn('text-sm', CALL_MUTED_TEXT)}>Camera off</span>
         )}
         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-2">
           <button
@@ -418,7 +418,7 @@ export const GuestJoin: React.FC = () => {
         </div>
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="guest-name" className="text-[13px] font-medium">Your name</label>
+        <label htmlFor="guest-name" className="text-sm font-medium">Your name</label>
         <Input
           id="guest-name"
           value={name}

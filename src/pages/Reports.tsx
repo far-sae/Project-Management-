@@ -512,11 +512,11 @@ export const Reports: React.FC = () => {
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader left={<span className="text-sm font-semibold">Reports</span>} />
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+          <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
             <PageHeader title="Reports" description="Productivity insights and analytics" />
             <div className="flex flex-col items-center justify-center rounded-lg border border-border py-16 text-center">
               <Lock className="mb-3 h-5 w-5 text-muted-foreground" />
-              <p className="text-[13px] font-medium text-foreground">Reports &amp; Analytics</p>
+              <p className="text-sm font-medium text-foreground">Reports &amp; Analytics</p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
                 Get productivity insights — task overview, workload per user, time tracking, and workspace dashboards.
               </p>
@@ -536,7 +536,7 @@ export const Reports: React.FC = () => {
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader left={<span className="text-sm font-semibold">Reports</span>} />
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
         <PageHeader
           title="Reports"
           description={
@@ -578,7 +578,7 @@ export const Reports: React.FC = () => {
           <div className="flex gap-4">
             <button
               onClick={() => setActiveTab('projects')}
-              className={`-mb-px px-1 py-2 font-medium text-[13px] border-b-2 transition-colors ${activeTab === 'projects'
+              className={`-mb-px px-1 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'projects'
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
@@ -587,7 +587,7 @@ export const Reports: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('business')}
-              className={`-mb-px px-1 py-2 font-medium text-[13px] border-b-2 transition-colors ${activeTab === 'business'
+              className={`-mb-px px-1 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'business'
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
@@ -596,7 +596,7 @@ export const Reports: React.FC = () => {
             </button>
             <button
               onClick={() => navigate('/workload')}
-              className="-mb-px px-1 py-2 font-medium text-[13px] border-b-2 transition-colors border-transparent text-muted-foreground hover:text-foreground"
+              className="-mb-px px-1 py-2 font-medium text-sm border-b-2 transition-colors border-transparent text-muted-foreground hover:text-foreground"
             >
               Workload →
             </button>
@@ -633,7 +633,7 @@ export const Reports: React.FC = () => {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <CardTitle className="text-base">AI Insights</CardTitle>
-                            <Badge variant="outline" className="border-primary/40 text-primary bg-primary/10 text-[10px]">
+                            <Badge variant="outline" className="border-primary/40 text-primary bg-primary/10 text-[0.6875rem]">
                               Beta
                             </Badge>
                           </div>
@@ -644,7 +644,7 @@ export const Reports: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         {aiInsights && (
-                          <span className="text-[11px] text-muted-foreground hidden md:inline">
+                          <span className="text-xs text-muted-foreground hidden md:inline">
                             Generated {format(new Date(aiInsights.generatedAt), 'MMM d, p')}
                           </span>
                         )}
@@ -777,7 +777,7 @@ export const Reports: React.FC = () => {
                                   key={`${idx}-${rec.slice(0, 12)}`}
                                   className="flex items-start gap-2 text-sm"
                                 >
-                                  <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary text-[11px] font-semibold shrink-0">
+                                  <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-semibold shrink-0">
                                     {idx + 1}
                                   </span>
                                   <span className="leading-relaxed">{rec}</span>
@@ -1149,7 +1149,7 @@ export const Reports: React.FC = () => {
             ) : businessContracts.length === 0 ? (
               <div className="text-center py-16 text-muted-foreground border border-border rounded-lg">
                 <FileText className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
-                <p className="text-[13px] font-medium text-foreground">No contracts yet</p>
+                <p className="text-sm font-medium text-foreground">No contracts yet</p>
                 <p className="text-xs">Create contracts to see business metrics</p>
                 <Button
                   className="mt-4"

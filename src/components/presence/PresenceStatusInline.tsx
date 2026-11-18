@@ -17,7 +17,7 @@ export const PresenceStatusInline: React.FC<{
       title={title}
     >
       <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dot)} aria-hidden />
-      <span className="text-[11px] leading-none text-muted-foreground">{label}</span>
+      <span className="text-xs leading-none text-muted-foreground">{label}</span>
     </span>
   );
 };

@@ -1300,9 +1300,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
     return (
       <span>
-        <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-sans text-[11px] font-medium">{modKey}</kbd>
+        <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-sans text-xs font-medium">{modKey}</kbd>
         <span className="mx-0.5">+</span>
-        <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-sans text-[11px] font-medium">Enter</kbd>{' '}
+        <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-sans text-xs font-medium">Enter</kbd>{' '}
         to create
       </span>
     );
@@ -1354,7 +1354,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         onKeyDown={handleDialogKeyDown}
         className={cn(
           'flex flex-col gap-0 overflow-hidden border border-border bg-card p-0 pt-0 pb-0 focus-visible:outline-none sm:rounded-xl sm:p-0 sm:pt-0 sm:pb-0 [&>button]:hidden',
-          mustUnlockToView ? 'sm:max-w-md' : 'sm:max-w-[1040px]',
+          mustUnlockToView ? 'sm:max-w-md' : 'sm:max-w-[66rem]',
           isEditing && !mustUnlockToView ? 'h-[calc(100dvh-3rem)] sm:h-[90vh]' : 'sm:max-h-[90vh]',
         )}
       >
@@ -1375,7 +1375,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </span>
             <div className="max-w-sm space-y-1.5">
               <h2 className="text-base font-semibold text-foreground">This task is locked</h2>
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 Enter the PIN to view details, comments, and activity. When you close this task or
                 save changes, you will need the PIN again to view or edit it.
               </p>
@@ -1426,7 +1426,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-b border-border py-1 pl-4 pr-2 sm:pl-6 sm:pr-3 md:py-2">
           <nav
             aria-label="Task location"
-            className="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-muted-foreground"
+            className="flex min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground"
           >
             <span className="min-w-0 truncate" title={projectName || 'Project'}>
               {projectName || 'Project'}
@@ -1594,14 +1594,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             {saveError && (
               <div
                 role="alert"
-                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-[13px] text-destructive-soft-foreground"
+                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive-soft-foreground"
               >
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <span className="min-w-0 break-words">{saveError}</span>
               </div>
             )}
             {lockReadOnly && (
-              <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-[13px] text-warning-soft-foreground">
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm text-warning-soft-foreground">
                 <Lock className="h-4 w-4 shrink-0" aria-hidden />
                 {hasLockPin ? (
                   <>
@@ -1627,7 +1627,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             )}
             {permissionReadOnly && !lockReadOnly && (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-foreground">
                 <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 <span>
                   {isViewer
@@ -1640,7 +1640,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         )}
 
         {/* ── Body: one scroll region on mobile, two on md+ ─────── */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain md:grid md:grid-cols-[minmax(0,1fr)_300px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem]">
           {/*
             Main column. On mobile it dissolves (`contents`) so the order is
             task → properties → discussion: the properties never end up
@@ -1738,18 +1738,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             }
                           }
                     }
+                    data-boxed="true"
                     className={cn(
-                      'whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground',
+                      // Always a visible box, with the same size and padding as
+                      // the editor, so it is clear where to click and nothing
+                      // jumps when editing starts.
+                      'min-h-24 whitespace-pre-wrap break-words rounded-md border border-input bg-background px-3 py-2 text-base leading-relaxed text-foreground md:text-sm',
                       readOnlyTask
                         ? 'cursor-default'
-                        : 'cursor-text rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-card',
+                        : 'cursor-text transition-colors hover:border-foreground/30 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25',
                       !description.trim() && 'text-muted-foreground',
                     )}
                   >
                     {description.trim() ? (
                       <LinkifiedText text={description} linkClassName={TEXT_LINK} />
-                    ) : (
+                    ) : readOnlyTask ? (
                       'No description'
+                    ) : (
+                      'Add a description, link, or note…'
                     )}
                   </div>
                 ) : (
@@ -1994,7 +2000,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     excludeUserId={user?.userId}
                     placeholder="Add context for your team (@ to mention)"
                     rows={2}
-                    className="min-h-[72px] resize-none rounded-md px-3 py-2 text-base md:text-sm"
+                    className="min-h-24 resize-none rounded-md px-3 py-2 text-base md:text-sm"
                   />
                 </section>
               )}
@@ -2070,7 +2076,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           placeholder="Write a comment… (@ to mention)"
                           aria-label="Write a comment"
                           rows={2}
-                          className="min-h-14 resize-none rounded-lg border-0 bg-transparent px-3 pb-0 pt-2.5 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
+                          className="min-h-24 resize-none rounded-lg border-0 bg-transparent px-3 pb-0 pt-2.5 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
                         />
                         {task?.taskId && typingPeers && <TypingIndicator peers={typingPeers(task.taskId)} />}
 
@@ -2198,7 +2204,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     {!commentsLoaded ? (
                       <ListSkeleton label="Loading comments" rows={2} />
                     ) : commentCount === 0 ? (
-                      <p className="py-6 text-center text-[13px] text-muted-foreground">
+                      <p className="py-6 text-center text-sm text-muted-foreground">
                         No comments yet{readOnlyTask ? '.' : ' — start the conversation above.'}
                       </p>
                     ) : (
@@ -2214,7 +2220,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                             <div className="min-w-0 flex-1">
                               <div className="flex min-h-7 items-center justify-between gap-2">
                                 <div className="flex min-w-0 items-baseline gap-2">
-                                  <span className="truncate text-[13px] font-semibold text-foreground" title={comment.displayName}>
+                                  <span className="truncate text-sm font-semibold text-foreground" title={comment.displayName}>
                                     {comment.displayName}
                                   </span>
                                   <time
@@ -2248,7 +2254,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 )}
                               </div>
                               {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
-                                <span className="mb-1 inline-flex h-5 items-center gap-1 rounded-full border border-success/30 bg-success-soft px-1.5 text-[11px] font-medium text-success-soft-foreground tabular-nums">
+                                <span className="mb-1 inline-flex h-5 items-center gap-1 rounded-full border border-success/30 bg-success-soft px-1.5 text-xs font-medium text-success-soft-foreground tabular-nums">
                                   <Clock className="h-3 w-3" aria-hidden />
                                   {formatTimeLogged(comment.timeSpentMinutes)} logged
                                 </span>
@@ -2389,7 +2395,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </span>
                   ))}
                   {readOnlyTask ? (
-                    tags.length === 0 && <span className="text-[13px] text-muted-foreground">None</span>
+                    tags.length === 0 && <span className="text-sm text-muted-foreground">None</span>
                   ) : (
                     <input
                       id={ids.tags}
@@ -2397,7 +2403,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setTagInput(e.target.value)}
                       placeholder={tags.length ? 'Add…' : 'Add tag…'}
                       autoComplete="off"
-                      className="h-8 min-w-[64px] flex-1 rounded bg-transparent text-base outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-2 md:h-6 md:text-[13px]"
+                      className="h-8 min-w-[64px] flex-1 rounded bg-transparent text-base outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-2 md:h-6 md:text-sm"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ',') {
                           if (e.metaKey || e.ctrlKey) return;
@@ -2423,7 +2429,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   />
                   <span
                     className={cn(
-                      'text-[13px]',
+                      'text-sm',
                       urgent ? 'font-medium text-destructive' : 'text-muted-foreground',
                     )}
                   >
@@ -2450,7 +2456,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     rel="noopener noreferrer"
                     title={task.googleMeetLink}
                     className={cn(
-                      'inline-flex h-8 max-w-full items-center gap-1.5 self-start rounded-md px-2 text-[13px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline',
+                      'inline-flex h-8 max-w-full items-center gap-1.5 self-start rounded-md px-2 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline',
                       FOCUS_RING,
                     )}
                   >
@@ -2480,7 +2486,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   />
                   <span
                     className={cn(
-                      'truncate text-[13px]',
+                      'truncate text-sm',
                       isLocked ? 'font-medium text-warning-soft-foreground' : 'text-muted-foreground',
                     )}
                   >
@@ -2608,7 +2614,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         {/* ── Footer: save status + the two actions ───────────────── */}
         <footer className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-border px-4 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] sm:px-6 sm:pb-2">
           {/* Own row on phones so it never squeezes against the buttons. */}
-          <p className="min-w-0 basis-full text-[13px] text-muted-foreground sm:flex-1 sm:basis-0" aria-live="polite">
+          <p className="min-w-0 basis-full text-sm text-muted-foreground sm:flex-1 sm:basis-0" aria-live="polite">
             {footerHint}
           </p>
           <div className="ml-auto flex shrink-0 items-center gap-2">

@@ -238,7 +238,7 @@ const AINode: React.FC<{ data: AINodeData; selected?: boolean }> = memo(
         {isRoot && !editing && (
           <div className="flex items-center gap-1.5 mb-0.5">
             <Sparkles className="w-3 h-3 text-primary" />
-            <p className="text-[10px] font-semibold text-primary/80">
+            <p className="text-[0.6875rem] font-semibold text-primary/80">
               Topic
             </p>
           </div>
@@ -295,7 +295,7 @@ const AINode: React.FC<{ data: AINodeData; selected?: boolean }> = memo(
             }}
             title="Edit label"
             aria-label="Edit label"
-            className="px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+            className="px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground hover:text-foreground"
           >
             Edit
           </button>
@@ -769,7 +769,7 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap, hea
                 Send to Project map
               </Button>
             )}
-            <span className="ml-auto text-[10px] text-muted-foreground hidden sm:inline">
+            <span className="ml-auto text-[0.6875rem] text-muted-foreground hidden sm:inline">
               ⌘/Ctrl + ↵ to generate · Double-click a node to rename · Del to remove
             </span>
           </div>
@@ -781,13 +781,13 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap, hea
           {error && <p className="text-xs text-destructive">{error}</p>}
           {!hasGenerated && !loading && !error && (
             <div className="flex flex-wrap gap-1.5 pt-1">
-              <span className="text-[11px] text-muted-foreground mr-1">Try:</span>
+              <span className="text-xs text-muted-foreground mr-1">Try:</span>
               {SAMPLES.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => setText(s)}
-                  className="text-[11px] px-2 py-0.5 rounded-full border border-border bg-background hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-xs px-2 py-0.5 rounded-full border border-border bg-background hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {s.length > 56 ? `${s.slice(0, 56)}…` : s}
                 </button>

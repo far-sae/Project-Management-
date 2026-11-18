@@ -339,12 +339,12 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
         {items.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
             <Wallet className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-            <p className="text-[13px] font-medium">No payslips on this run.</p>
+            <p className="text-sm font-medium">No payslips on this run.</p>
             <p className="text-xs text-muted-foreground">Add employees in HR and recreate.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-[13px]">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
                   <th scope="col" className="px-4 font-medium">Employee</th>
@@ -625,7 +625,7 @@ export const Payroll: React.FC<{
       <button
         type="button"
         onClick={() => setOpenRunId(r.runId)}
-        className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left text-[13px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -651,11 +651,11 @@ export const Payroll: React.FC<{
   );
 
   const body = (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
       {!canView ? (
         <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-12 text-center">
           <ShieldAlert className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-          <p className="text-[13px] font-medium">
+          <p className="text-sm font-medium">
             Payroll is visible to organization owners and admins only.
           </p>
         </div>
@@ -683,7 +683,7 @@ export const Payroll: React.FC<{
             ) : sortedRuns.length === 0 ? (
               <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
                 <Wallet className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                <p className="text-[13px] font-medium">No payroll runs yet.</p>
+                <p className="text-sm font-medium">No payroll runs yet.</p>
                 <p className="text-xs text-muted-foreground">
                   Click <strong className="font-medium text-foreground">New payroll</strong> to
                   build one for a date range.

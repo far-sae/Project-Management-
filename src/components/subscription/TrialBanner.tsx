@@ -56,7 +56,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
   // ── EXPIRED STATE ─────────────────────────────────────────
   if (isExpired) {
     return (
-      <div className={cn('border-b bg-surface-2 text-[13px]', className)}>
+      <div className={cn('border-b bg-surface-2 text-sm', className)}>
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -86,7 +86,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
   // ── FULL VARIANT (top banner) ─────────────────────────────
   if (variant === 'full') {
     return (
-      <div className={cn('border-b bg-surface-2 text-[13px]', className)}>
+      <div className={cn('border-b bg-surface-2 text-sm', className)}>
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
             <Clock className={cn('h-4 w-4 shrink-0', isUrgent ? 'text-destructive' : 'text-muted-foreground')} />
@@ -141,7 +141,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
         }
         <div className="min-w-0">
           <p className={cn(
-            'text-[13px] font-medium truncate',
+            'text-sm font-medium truncate',
             isUrgent ? 'text-destructive-soft-foreground' : 'text-foreground'
           )}>
             {isUrgent ? '⚠️ ' : ''}{daysRemaining} day{daysRemaining !== 1 ? 's' : ''} left

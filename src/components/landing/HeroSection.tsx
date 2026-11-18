@@ -90,7 +90,7 @@ const HeroSection = () => {
                 <div className="w-3 h-3 rounded-full bg-amber-400/70" />
                 <div className="w-3 h-3 rounded-full bg-emerald-400/70" />
                 <span className="ml-2 text-xs font-semibold text-foreground/90">Sprint Board · Q2 launch</span>
-                <span className="ml-auto text-[10px] text-muted-foreground">Live</span>
+                <span className="ml-auto text-[0.6875rem] text-muted-foreground">Live</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <KanbanColumn title="To do" items={['Design homepage', 'Write API docs']} />
@@ -110,13 +110,13 @@ const HeroSection = () => {
                 </div>
                 <div className="text-xs">
                   <div className="font-semibold text-foreground/90">Deal Won: Acme Corp</div>
-                  <div className="text-[10px] text-muted-foreground">£48,000 · closed today</div>
+                  <div className="text-[0.6875rem] text-muted-foreground">£48,000 · closed today</div>
                 </div>
               </div>
-              <button className="w-full rounded-lg bg-emerald-500 text-white text-[11px] font-semibold px-2 py-1.5">
+              <button className="w-full rounded-lg bg-emerald-500 text-white text-xs font-semibold px-2 py-1.5">
                 → Create workspace & project
               </button>
-              <div className="mt-1.5 text-[10px] text-muted-foreground text-center">
+              <div className="mt-1.5 text-[0.6875rem] text-muted-foreground text-center">
                 One click into <strong>project management</strong>
               </div>
             </motion.div>
@@ -131,7 +131,7 @@ const HeroSection = () => {
                   <TrendingUp className="h-3.5 w-3.5 text-orange-500" />
                   Pipeline
                 </div>
-                <div className="text-[10px] text-emerald-500 font-medium">+12%</div>
+                <div className="text-[0.6875rem] text-emerald-500 font-medium">+12%</div>
               </div>
               <FunnelMini />
             </motion.div>
@@ -142,7 +142,7 @@ const HeroSection = () => {
               className="absolute top-32 -left-2 bg-card rounded-xl border border-border shadow-lg shadow-emerald-500/10 px-3 py-2 flex items-center gap-2 z-30"
             >
               <Video className="h-4 w-4 text-emerald-500" />
-              <div className="text-[11px]">
+              <div className="text-xs">
                 <div className="font-semibold text-foreground/90">Meet attached</div>
                 <div className="text-muted-foreground">Tomorrow · 3:00 PM</div>
               </div>
@@ -159,7 +159,7 @@ const HeroSection = () => {
                 </div>
                 <span className="text-xs font-semibold text-foreground/90">Note · Acme Corp</span>
               </div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 Follow up next Tuesday. They want the pricing PDF and a
                 proposal template.
               </p>
@@ -179,10 +179,10 @@ const KanbanColumn: React.FC<{
   accent?: boolean;
 }> = ({ title, items, accent }) => (
   <div className={`rounded-lg p-2 ${accent ? 'bg-orange-500/5 border border-orange-500/20' : 'bg-muted/40'}`}>
-    <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">{title}</div>
+    <div className="text-[0.6875rem] uppercase tracking-wide text-muted-foreground mb-2">{title}</div>
     <div className="space-y-1.5">
       {items.map((it) => (
-        <div key={it} className="bg-card rounded-md px-2 py-1.5 text-[11px] text-foreground/90 border border-border/60">
+        <div key={it} className="bg-card rounded-md px-2 py-1.5 text-xs text-foreground/90 border border-border/60">
           {it}
         </div>
       ))}
@@ -200,7 +200,7 @@ const FunnelMini: React.FC = () => {
   return (
     <div className="space-y-1">
       {stages.map((s) => (
-        <div key={s.name} className="flex items-center gap-2 text-[10px]">
+        <div key={s.name} className="flex items-center gap-2 text-[0.6875rem]">
           <span className="w-14 shrink-0 text-muted-foreground">{s.name}</span>
           <div className="flex-1 h-3 rounded bg-muted/50 overflow-hidden">
             <motion.div

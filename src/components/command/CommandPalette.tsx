@@ -131,7 +131,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                   placeholder="Type a command, task, or project…"
                   className="flex-1 h-12 bg-transparent text-foreground placeholder:text-muted-foreground outline-none border-0 text-sm"
                 />
-                <kbd className="hidden sm:inline-flex text-[11px] font-medium px-1.5 rounded border border-border bg-secondary text-muted-foreground">
+                <kbd className="hidden sm:inline-flex text-xs font-medium px-1.5 rounded border border-border bg-secondary text-muted-foreground">
                   esc
                 </kbd>
               </div>
@@ -319,7 +319,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                       >
                         <CheckSquare className="w-4 h-4 text-muted-foreground" />
                         <span className="truncate">{t.title}</span>
-                        <span className="ml-auto text-[11px] text-muted-foreground">
+                        <span className="ml-auto text-xs text-muted-foreground">
                           {t.status === "undefined" ? "todo" : t.status}
                         </span>
                       </Command.Item>
@@ -393,7 +393,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 </Command.Group>
               </Command.List>
 
-              <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-surface-2 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-surface-2 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <Hint label="↑↓ navigate" />
                   <Hint label="↵ open" />
@@ -423,14 +423,14 @@ const groupCls =
   "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground";
 
 const itemCls =
-  "flex min-h-9 items-center gap-2 px-2 rounded-md text-[13px] cursor-pointer aria-selected:bg-secondary aria-selected:text-foreground text-foreground hover:bg-secondary";
+  "flex min-h-9 items-center gap-2 px-2 rounded-md text-sm cursor-pointer aria-selected:bg-secondary aria-selected:text-foreground text-foreground hover:bg-secondary";
 
 const Shortcut: React.FC<{ keys: string[] }> = ({ keys }) => (
   <span className="ml-auto flex items-center gap-1">
     {keys.map((k, i) => (
       <kbd
         key={i}
-        className="text-[11px] font-medium px-1.5 rounded border border-border bg-secondary text-muted-foreground"
+        className="text-xs font-medium px-1.5 rounded border border-border bg-secondary text-muted-foreground"
       >
         {k}
       </kbd>
@@ -528,7 +528,7 @@ const ShortcutsModal: React.FC<ShortcutsModalProps> = ({
                         {item.keys.map((k, j) => (
                           <kbd
                             key={j}
-                            className="text-[11px] font-medium px-1.5 rounded border border-border bg-secondary text-foreground"
+                            className="text-xs font-medium px-1.5 rounded border border-border bg-secondary text-foreground"
                           >
                             {k}
                           </kbd>

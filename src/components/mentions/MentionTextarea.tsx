@@ -204,7 +204,7 @@ export const MentionTextarea = React.forwardRef<
               role="option"
               aria-selected={idx === highlight}
               className={cn(
-                "flex w-full items-center gap-2 px-2 py-1.5 text-left text-[13px] hover:bg-secondary",
+                "flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-secondary",
                 idx === highlight && "bg-secondary",
               )}
               onMouseDown={(ev) => {
@@ -215,7 +215,7 @@ export const MentionTextarea = React.forwardRef<
             >
               <Avatar className="h-7 w-7 shrink-0">
                 <AvatarImage src={m.photoURL} alt="" />
-                <AvatarFallback className="text-[10px]">
+                <AvatarFallback className="text-[0.6875rem]">
                   {(m.displayName || "?").charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>

@@ -165,7 +165,7 @@ export const CallCheck: React.FC = () => {
                 <h2 id="popups-heading" className="text-sm font-semibold">
                   Call pop-ups when minimised
                 </h2>
-                <p className="mt-0.5 text-[13px] text-muted-foreground text-pretty">{popups.detail}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground text-pretty">{popups.detail}</p>
               </div>
               {permission === 'default' && (
                 <Button type="button" size="sm" onClick={() => void turnOnPopups()}>
@@ -184,7 +184,7 @@ export const CallCheck: React.FC = () => {
                     Send a test pop-up
                   </Button>
                   {testPending && (
-                    <span className="text-[13px] text-muted-foreground" aria-live="polite">
+                    <span className="text-sm text-muted-foreground" aria-live="polite">
                       Minimise this window now — the test pop-up arrives in 5 seconds.
                     </span>
                   )}
@@ -214,14 +214,14 @@ export const CallCheck: React.FC = () => {
               >
                 <span className="mt-0.5 shrink-0">{ICON[r.status]}</span>
                 <div className="min-w-0">
-                  <p className="text-[13px] font-medium">
+                  <p className="text-sm font-medium">
                     {r.label}
                     <span className="sr-only"> — {STATUS_TEXT[r.status]}</span>
                   </p>
                   {r.detail && (
                     <p
                       className={cn(
-                        'mt-0.5 text-[13px] text-pretty break-words',
+                        'mt-0.5 text-sm text-pretty break-words',
                         r.status === 'fail' ? 'text-foreground' : 'text-muted-foreground',
                       )}
                     >
@@ -235,7 +235,7 @@ export const CallCheck: React.FC = () => {
         )}
 
         {done && (
-          <p className="text-[13px] text-muted-foreground text-pretty">
+          <p className="text-sm text-muted-foreground text-pretty">
             {problems === 0
               ? 'Everything a call needs works on this computer. If calls still fail, make sure the person calling you is in the same project, and keep a TaskCalendar tab open so you can be rung.'
               : 'Fix the failed items above, reload this page and run the check again. Also check that your laptop’s camera or microphone isn’t switched off with a keyboard key.'}

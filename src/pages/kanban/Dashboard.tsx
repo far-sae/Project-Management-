@@ -113,7 +113,7 @@ function projectPinLocked(project: Project) {
   return Boolean(project.isLocked && project.hasLockPin);
 }
 
-const PROJECT_GRID = 'grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))]';
+const PROJECT_GRID = 'grid gap-3 p-3 grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))]';
 
 /** A clickable row inside a list card. */
 const LIST_ROW =
@@ -145,7 +145,7 @@ const EmptyState: React.FC<{
 }> = ({ icon: Icon, title, hint, className, children }) => (
   <div className={cn('flex flex-col items-center justify-center px-4 py-8 text-center', className)}>
     <Icon className="mb-2 h-5 w-5 text-muted-foreground" aria-hidden />
-    <p className="text-[13px] font-medium text-foreground">{title}</p>
+    <p className="text-sm font-medium text-foreground">{title}</p>
     {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
     {children && <div className="mt-4">{children}</div>}
   </div>
@@ -818,7 +818,7 @@ export const Dashboard: React.FC = () => {
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}
 
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader
             title={welcomeTitle(user?.displayName)}
             description="Tasks, activity and projects across your workspace."
@@ -926,18 +926,19 @@ export const Dashboard: React.FC = () => {
 
                 <div className="flex flex-wrap items-start gap-6">
                   {/* Main column */}
-                  <div className="flex min-w-0 flex-[2_1_480px] flex-col gap-6">
+                  <div className="flex min-w-0 flex-[1_1_480px] flex-col gap-6">
                     {/* Projects */}
-                    <section className="flex flex-col gap-3">
-                      <div className="flex min-h-8 items-center justify-between gap-3">
-                        <h2 className="text-base font-semibold text-foreground">Projects</h2>
-                        {!projectsLoading && (
-                          <span className="text-[13px] tabular-nums text-muted-foreground">
+                    <ListCard
+                      title="Projects"
+                      meta={
+                        !projectsLoading && (
+                          <span className="tabular-nums">
                             {filteredProjects.length}{' '}
                             {filteredProjects.length === 1 ? 'project' : 'projects'}
                           </span>
-                        )}
-                      </div>
+                        )
+                      }
+                    >
                       {projectsLoading ? (
                         <SectionSpinner />
                       ) : filteredProjects.length === 0 ? (
@@ -945,7 +946,7 @@ export const Dashboard: React.FC = () => {
                           icon={FolderKanban}
                           title="No projects yet"
                           hint="Create your first project to get started"
-                          className="rounded-lg border border-dashed border-foreground/15 py-12"
+                          className="py-12"
                         >
                           <Button onClick={() => setShowCreateModal(true)}>
                             <Plus className="w-4 h-4" />
@@ -959,14 +960,14 @@ export const Dashboard: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setShowCreateModal(true)}
-                            className="flex min-h-32 items-center justify-center gap-1.5 rounded-lg border border-dashed border-foreground/20 bg-background text-[13px] font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="flex min-h-32 items-center justify-center gap-1.5 rounded-lg border border-dashed border-foreground/20 bg-background text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <Plus className="h-4 w-4" aria-hidden />
                             New project
                           </button>
                         </div>
                       )}
-                    </section>
+                    </ListCard>
 
                     {/* Upcoming deadlines */}
                     <ListCard title="Upcoming Deadlines" meta="Next 10 tasks by due date">
@@ -982,7 +983,7 @@ export const Dashboard: React.FC = () => {
                             onClick={() => navigate(`/project/${task.projectId}`)}
                             className={cn(LIST_ROW, 'flex-wrap gap-y-0.5 py-2 sm:flex-nowrap')}
                           >
-                            <span className="min-w-0 basis-full truncate text-[13px] font-medium text-foreground sm:flex-1 sm:basis-0">
+                            <span className="min-w-0 basis-full truncate text-sm font-medium text-foreground sm:flex-1 sm:basis-0">
                               {task.title}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground sm:max-w-[40%] sm:flex-none">
@@ -998,24 +999,18 @@ export const Dashboard: React.FC = () => {
 
                     {/* Shared with me */}
                     {sharedProjects.length > 0 && (
-                      <section className="flex flex-col gap-3">
-                        <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3">
-                          <h2 className="text-base font-semibold text-foreground">Shared with me</h2>
-                          <span className="text-[13px] text-muted-foreground">
-                            Projects you've been invited to
-                          </span>
-                        </div>
+                      <ListCard title="Shared with me" meta="Projects you've been invited to">
                         <div className={PROJECT_GRID}>
                           {sharedProjects.map((project) =>
                             renderProjectCard(project, 'Owned by project owner'),
                           )}
                         </div>
-                      </section>
+                      </ListCard>
                     )}
                   </div>
 
                   {/* Side column */}
-                  <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">
+                  <div className="flex w-full min-w-0 shrink-0 flex-col gap-6 xl:w-[24rem]">
                     {/* Tasks for Today */}
                     <ListCard
                       title="Tasks for Today"
@@ -1049,14 +1044,14 @@ export const Dashboard: React.FC = () => {
                               className={cn('h-1.5 w-1.5 shrink-0 rounded-full', taskDotClass(task))}
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[13px] font-medium text-foreground">
+                              <span className="block truncate text-sm font-medium text-foreground">
                                 {task.title}
                               </span>
                               <span className="block truncate text-xs text-muted-foreground">
                                 {getProjectName(task.projectId)}
                               </span>
                             </span>
-                            <span className="max-w-[40%] shrink-0 truncate rounded border border-border px-1.5 text-[11px] capitalize leading-[18px] text-muted-foreground">
+                            <span className="max-w-[40%] shrink-0 truncate rounded border border-border px-1.5 text-xs capitalize leading-[18px] text-muted-foreground">
                               {task.status}
                             </span>
                           </button>
@@ -1068,7 +1063,7 @@ export const Dashboard: React.FC = () => {
                     <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
                       <div className="flex items-baseline justify-between gap-3">
                         <h2 className="text-sm font-semibold text-foreground">Workspace Pulse</h2>
-                        <span className="text-[13px] font-semibold tabular-nums text-foreground">
+                        <span className="text-sm font-semibold tabular-nums text-foreground">
                           {completionRate}% complete
                         </span>
                       </div>
@@ -1130,9 +1125,9 @@ export const Dashboard: React.FC = () => {
                             onClick={() => navigate(`/project/${ev.projectId}`)}
                             className={cn(LIST_ROW, 'items-start gap-2.5 py-2.5')}
                           >
-                            <ActivityAvatar ev={ev} className="h-6 w-6 text-[11px]" />
+                            <ActivityAvatar ev={ev} className="h-6 w-6 text-xs" />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[13px] font-medium leading-[18px] text-foreground">
+                              <span className="block truncate text-sm font-medium leading-[18px] text-foreground">
                                 {ev.taskTitle || ev.projectName || 'Project activity'}
                               </span>
                               <span className="mt-0.5 block truncate text-xs text-muted-foreground">
@@ -1173,7 +1168,7 @@ export const Dashboard: React.FC = () => {
                     >
                       <ActivityAvatar ev={ev} className="h-8 w-8 text-xs" />
                       <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap gap-x-1.5 text-[13px] leading-5">
+                        <span className="flex flex-wrap gap-x-1.5 text-sm leading-5">
                           <span className="font-medium text-foreground">{ev.displayName}</span>
                           <span className="text-muted-foreground">
                             {ev.type === 'task_created' && 'created task'}
@@ -1435,7 +1430,7 @@ export const Dashboard: React.FC = () => {
                         className="flex min-h-11 items-center justify-between gap-3 border-b border-border/60 px-3 py-1.5 last:border-0"
                       >
                         <div className="min-w-0">
-                          <p className="truncate text-[13px] font-medium text-foreground">
+                          <p className="truncate text-sm font-medium text-foreground">
                             {def?.label ?? key}
                           </p>
                           {def?.group && (
@@ -1589,7 +1584,7 @@ export const Dashboard: React.FC = () => {
             <div className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                     Lock with PIN
                   </div>

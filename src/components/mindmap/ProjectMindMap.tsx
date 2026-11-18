@@ -1383,7 +1383,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
 
   const isEmpty = tasks.length === 0 && extras.ideas.length === 0;
   const menuItem =
-    'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] text-foreground hover:bg-muted focus-visible:bg-muted focus-visible:outline-none [&_svg]:h-4 [&_svg]:w-4 [&_svg]:text-muted-foreground';
+    'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm text-foreground hover:bg-muted focus-visible:bg-muted focus-visible:outline-none [&_svg]:h-4 [&_svg]:w-4 [&_svg]:text-muted-foreground';
   const ctxNode = contextMenu?.nodeId;
   const ctxIsIdea = !!ctxNode?.startsWith(IDEA_NODE_PREFIX);
 
@@ -1421,7 +1421,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
       {connectMode && (
         <div
           role="status"
-          className="absolute bottom-4 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-popover px-3.5 py-2 text-[13px] font-medium text-popover-foreground shadow-lg"
+          className="absolute bottom-4 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-popover px-3.5 py-2 text-sm font-medium text-popover-foreground shadow-lg"
         >
           <Link2 className="h-4 w-4 text-primary" aria-hidden />
           {connectFirstNodeId ? 'Now click the card to connect to' : 'Click the first card'}
@@ -1462,7 +1462,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
               }}
             >
               <Plus /> Add connected idea
-              <span className="ml-auto text-[11px] text-muted-foreground">Tab</span>
+              <span className="ml-auto text-xs text-muted-foreground">Tab</span>
             </button>
           )}
           {contextMenu.nodeType === 'task' && ctxNode && (
@@ -1490,7 +1490,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
                 }}
               >
                 <Pencil /> Rename
-                <span className="ml-auto text-[11px] text-muted-foreground">F2</span>
+                <span className="ml-auto text-xs text-muted-foreground">F2</span>
               </button>
               <button
                 type="button"
@@ -1502,7 +1502,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
                 }}
               >
                 <Trash2 /> Delete
-                <span className="ml-auto text-[11px] text-muted-foreground">Del</span>
+                <span className="ml-auto text-xs text-muted-foreground">Del</span>
               </button>
             </>
           )}
@@ -1664,7 +1664,7 @@ const MindMapInner: React.FC<StructuralMapProps> = ({
           <div>
             <label
               htmlFor="mm-add-title"
-              className="mb-1.5 block text-[12px] font-medium text-muted-foreground"
+              className="mb-1.5 block text-xs font-medium text-muted-foreground"
             >
               {addDialog.type === 'project' ? 'Header label' : 'Title'}
             </label>

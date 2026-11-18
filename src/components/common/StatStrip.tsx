@@ -25,7 +25,7 @@ export const StatStrip: React.FC<{ items: StatItem[]; className?: string }> = ({
     <dl className="-ml-px -mt-px flex flex-wrap">
       {items.map((item, i) => (
         <div key={i} className="flex min-w-0 flex-1 basis-36 flex-col gap-1 border-l border-t border-border p-4">
-          <dt className="truncate text-[13px] text-muted-foreground">{item.label}</dt>
+          <dt className="truncate text-sm text-muted-foreground">{item.label}</dt>
           <dd
             data-tone={item.tone ?? 'default'}
             className={cn('text-2xl font-semibold leading-8 tracking-tight tabular-nums', TONE[item.tone ?? 'default'])}

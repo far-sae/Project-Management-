@@ -171,7 +171,7 @@ function KanbanVisual() {
 
 function HandoffVisual() {
   return (
-    <div className="h-full flex items-center gap-2 text-[10px]">
+    <div className="h-full flex items-center gap-2 text-[0.6875rem]">
       <div className="flex-1 rounded bg-emerald-500/10 border border-emerald-500/30 p-1.5">
         <div className="text-emerald-500 font-bold text-[9px]">DEAL WON</div>
         <div className="text-foreground/90">Acme Corp</div>
@@ -215,7 +215,7 @@ function ReportsVisual() {
 
 function WorkspaceScopeVisual() {
   return (
-    <div className="h-full flex flex-col gap-1.5 text-[10px]">
+    <div className="h-full flex flex-col gap-1.5 text-[0.6875rem]">
       <div className="rounded bg-card border border-primary/40 px-2 py-1 text-primary flex items-center justify-between">
         <span className="font-semibold">Acme workspace</span>
         <span className="text-[9px]">selected</span>
@@ -254,7 +254,7 @@ function ImportVisual() {
 
 function CurrencyVisual() {
   return (
-    <div className="h-full grid grid-cols-4 gap-1 text-[10px]">
+    <div className="h-full grid grid-cols-4 gap-1 text-[0.6875rem]">
       {[
         { s: '$', code: 'USD' },
         { s: '£', code: 'GBP', accent: true },
@@ -279,7 +279,7 @@ function CurrencyVisual() {
 
 function NotesVisual() {
   return (
-    <div className="space-y-1 h-full text-[10px]">
+    <div className="space-y-1 h-full text-[0.6875rem]">
       {[
         'Follow up Tuesday with proposal',
         'They liked the pricing page',
@@ -302,7 +302,7 @@ function NotesVisual() {
 
 function MeetVisual() {
   return (
-    <div className="h-full flex items-center gap-3 text-[10px]">
+    <div className="h-full flex items-center gap-3 text-[0.6875rem]">
       <div className="h-10 w-10 rounded-lg bg-emerald-500/15 grid place-items-center text-emerald-500 font-bold">
         Meet
       </div>
@@ -317,7 +317,7 @@ function MeetVisual() {
 
 function HrVisual() {
   return (
-    <div className="h-full grid grid-cols-2 gap-1 text-[10px]">
+    <div className="h-full grid grid-cols-2 gap-1 text-[0.6875rem]">
       {[
         { label: 'People', val: '24' },
         { label: 'On leave', val: '2' },
@@ -361,7 +361,7 @@ function TimelineVisual() {
 
 function TeamVisual() {
   return (
-    <div className="h-full flex items-center gap-3 text-[10px]">
+    <div className="h-full flex items-center gap-3 text-[0.6875rem]">
       <div className="flex -space-x-2">
         {['F', 'A', 'M', 'S'].map((c, i) => (
           <div key={i} className={`h-6 w-6 rounded-full border-2 border-card grid place-items-center text-[9px] font-bold ${['bg-orange-500/80', 'bg-emerald-500/80', 'bg-sky-500/80', 'bg-purple-500/80'][i]} text-white`}>
@@ -379,7 +379,7 @@ function TeamVisual() {
 
 function CalSyncVisual() {
   return (
-    <div className="h-full flex items-center gap-3 text-[10px]">
+    <div className="h-full flex items-center gap-3 text-[0.6875rem]">
       <div className="h-10 w-10 rounded-lg bg-blue-500/15 grid place-items-center text-blue-500 text-xs font-bold">
         G
       </div>

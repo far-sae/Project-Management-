@@ -259,13 +259,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             task.tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
-                className="inline-flex h-5 items-center rounded border border-border bg-background px-1.5 text-[11px] text-muted-foreground [.dense_&]:hidden"
+                className="inline-flex h-5 items-center rounded border border-border bg-background px-1.5 text-xs text-muted-foreground [.dense_&]:hidden"
               >
                 {tag}
               </span>
             ))}
           {!isLockMasked && task.tags && task.tags.length > 3 && (
-            <span className="text-[11px] text-muted-foreground [.dense_&]:hidden">
+            <span className="text-xs text-muted-foreground [.dense_&]:hidden">
               +{task.tags.length - 3}
             </span>
           )}
@@ -296,12 +296,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         {isLockMasked ? (
           <div className="flex-1 flex items-center gap-2 rounded-md bg-warning-soft/60 px-2 py-1.5 ring-1 ring-warning/30">
             <Lock className="w-3.5 h-3.5 text-warning-soft-foreground shrink-0" />
-            <span className="text-[12px] font-medium text-warning-soft-foreground tracking-wide">
+            <span className="text-xs font-medium text-warning-soft-foreground tracking-wide">
               Locked task
             </span>
             {task.hasLockPin && (
               <span
-                className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-warning-soft-foreground/80"
+                className="ml-auto inline-flex items-center gap-1 text-[0.6875rem] uppercase tracking-wider text-warning-soft-foreground/80"
                 title="A PIN is required to view"
               >
                 <KeyRound className="w-3 h-3" />
@@ -312,7 +312,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         ) : (
           <h4
             className={cn(
-              'flex-1 text-sm font-medium leading-snug line-clamp-2 [.dense_&]:text-[13px]',
+              'flex-1 text-sm font-medium leading-snug line-clamp-2 [.dense_&]:text-sm',
               isDone ? 'text-muted-foreground' : 'text-foreground',
             )}
           >
@@ -328,14 +328,14 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       )}
 
       {isLockMasked && (
-        <p className="text-[11px] text-muted-foreground [.dense_&]:hidden">
+        <p className="text-xs text-muted-foreground [.dense_&]:hidden">
           Title, description, and comments are hidden until you unlock this task.
         </p>
       )}
 
       {/* Subtask progress */}
       {!isLockMasked && subtaskProgress && (
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <CheckSquare className="h-3 w-3 shrink-0" aria-hidden />
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-foreground/10">
             <div
@@ -368,7 +368,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           {meeting && meeting.status.kind !== 'ended' && (
             <span
               className={cn(
-                'inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-[11px] font-medium tabular-nums',
+                'inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-xs font-medium tabular-nums',
                 meeting.status.kind === 'live'
                   ? 'bg-destructive-soft text-destructive-soft-foreground'
                   : meeting.status.kind === 'soon'
@@ -411,7 +411,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                   src={assignee?.photoURL}
                   alt={assignee?.displayName}
                 />
-                <AvatarFallback className="text-[10px] bg-primary-soft text-primary-soft-foreground font-medium">
+                <AvatarFallback className="text-[0.6875rem] bg-primary-soft text-primary-soft-foreground font-medium">
                   {(assignee?.displayName || '').charAt(0).toUpperCase() || '?'}
                 </AvatarFallback>
               </Avatar>
@@ -424,7 +424,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                   .map((a) => a.displayName)
                   .join(', ')}
               >
-                <span className="text-[10px] text-secondary-foreground font-medium">
+                <span className="text-[0.6875rem] text-secondary-foreground font-medium">
                   +{assignees.length - 3}
                 </span>
               </div>

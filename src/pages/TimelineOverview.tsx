@@ -152,7 +152,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3">
         <Users className="h-5 w-5 text-muted-foreground" />
-        <p className="text-[13px] font-medium text-foreground">No projects yet</p>
+        <p className="text-sm font-medium text-foreground">No projects yet</p>
         <p className="text-xs text-muted-foreground text-center max-w-md">
           Create or join a project to see it on the timeline. You can set optional start/end dates on projects for more accurate ranges.
         </p>
@@ -165,14 +165,14 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
       {/* Month header */}
       <div className="sticky top-0 z-20 bg-card border-b border-border">
         <div className="flex">
-          <div className="w-56 sm:w-96 shrink-0 border-r border-border bg-muted/40 px-3 sm:px-4 py-2 text-[11px] font-semibold text-muted-foreground">
+          <div className="w-56 sm:w-96 shrink-0 border-r border-border bg-muted/40 px-3 sm:px-4 py-2 text-xs font-semibold text-muted-foreground">
             Project
           </div>
           <div className="flex relative" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
             {monthHeaders.map((m, i) => (
               <div
                 key={i}
-                className="text-[11px] font-semibold py-2 px-2 border-r border-border/70 text-foreground/80"
+                className="text-xs font-semibold py-2 px-2 border-r border-border/70 text-foreground/80"
                 style={{ width: m.days * columnWidth }}
               >
                 {m.month} {m.year}
@@ -190,7 +190,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                 key={i}
                 id={d.isToday && highlightToday ? 'resource-today-marker' : undefined}
                 className={cn(
-                  'text-[11px] text-center py-1.5 border-r border-border/60 tabular-nums',
+                  'text-xs text-center py-1.5 border-r border-border/60 tabular-nums',
                   d.isToday && highlightToday
                     ? 'bg-primary/15 text-primary font-semibold ring-1 ring-inset ring-primary/30'
                     : 'text-muted-foreground'
@@ -291,7 +291,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {project.effectiveStart.toLocaleDateString()} → {project.effectiveEnd.toLocaleDateString()}
                   </span>
                 </div>
@@ -303,7 +303,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   <Avatar key={m.userId} className="w-6 h-6 ring-2 ring-card shadow-sm">
                     <AvatarImage src={m.photoURL} />
                     <AvatarFallback
-                      className="text-[10px] font-semibold text-white"
+                      className="text-[0.6875rem] font-semibold text-white"
                       style={{ backgroundColor: barColor }}
                     >
                       {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
@@ -311,7 +311,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   </Avatar>
                 ))}
                 {resolvedMembers.length > 4 && (
-                  <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[10px] text-muted-foreground font-semibold">
+                  <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[0.6875rem] text-muted-foreground font-semibold">
                     +{resolvedMembers.length - 4}
                   </div>
                 )}
@@ -382,7 +382,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                     </span>
                   )}
                   {isActive && widthPx > 160 && (
-                    <span className="ml-auto text-[10px] font-semibold text-white/90 tabular-nums px-1.5 py-0.5 rounded bg-black/20">
+                    <span className="ml-auto text-[0.6875rem] font-semibold text-white/90 tabular-nums px-1.5 py-0.5 rounded bg-black/20">
                       {progressPct}%
                     </span>
                   )}
@@ -485,11 +485,11 @@ export const TimelineOverview: React.FC = () => {
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader left={<span className="text-sm font-semibold">Timeline Overview</span>} />
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+          <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
             <PageHeader title="Timeline Overview" description="Visual timeline of all your projects" />
             <div className="flex flex-col items-center justify-center rounded-lg border border-border py-16 text-center">
               <Lock className="mb-3 h-5 w-5 text-muted-foreground" />
-              <p className="text-[13px] font-medium text-foreground">Timeline Overview</p>
+              <p className="text-sm font-medium text-foreground">Timeline Overview</p>
               <p className="mt-1 max-w-md text-xs text-muted-foreground">
                 Visualize all your projects on an interactive Gantt-style timeline.
               </p>
@@ -516,7 +516,7 @@ export const TimelineOverview: React.FC = () => {
               <span className="hidden text-xs text-muted-foreground sm:inline">
                 {projects.length} {projects.length === 1 ? 'project' : 'projects'}
               </span>
-              <span className="hidden md:inline-flex items-center rounded border bg-secondary px-1.5 text-[11px] text-muted-foreground">
+              <span className="hidden md:inline-flex items-center rounded border bg-secondary px-1.5 text-xs text-muted-foreground">
                 {timeGranularity === 'day'
                   ? 'Day view'
                   : timeGranularity === 'week'

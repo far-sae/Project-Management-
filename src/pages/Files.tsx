@@ -279,7 +279,7 @@ export const Files: React.FC = () => {
     <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
       <AppHeader left={<span className="text-sm font-semibold">My Files</span>} />
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+      <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
       <PageHeader
         title="My Files"
         description="Your personal storage. Files here are private to you — no one else in your organization can see them."
@@ -396,7 +396,7 @@ export const Files: React.FC = () => {
             </div>
           </div>
           {selectedIds.size > 0 && (
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border bg-secondary px-3 py-2 text-[13px]">
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border bg-secondary px-3 py-2 text-sm">
               <span className="font-medium text-foreground">
                 {selectedIds.size} file{selectedIds.size === 1 ? '' : 's'} selected
               </span>
@@ -438,12 +438,12 @@ export const Files: React.FC = () => {
           {loading ? (
             <div className="text-center py-16 text-muted-foreground">
               <Loader2 className="h-5 w-5 mx-auto mb-3 animate-spin" />
-              <p className="text-[13px]">Loading files...</p>
+              <p className="text-sm">Loading files...</p>
             </div>
           ) : filteredFiles.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <Folder className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
-              <p className="text-[13px] font-medium text-foreground">No files yet</p>
+              <p className="text-sm font-medium text-foreground">No files yet</p>
               <p className="text-xs">Upload files to get started</p>
               <Button
                 className="mt-4"

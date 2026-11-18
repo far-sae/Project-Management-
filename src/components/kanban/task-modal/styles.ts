@@ -24,10 +24,10 @@ export const FOCUS_RING =
  * 8px in (`px-2`) — the one left edge every value in the panel shares.
  */
 export const GHOST_FIELD =
-  'w-full gap-2 rounded-md border border-transparent bg-transparent px-2 text-left text-[13px] font-medium shadow-none transition-colors hover:bg-foreground/[0.05] focus-visible:ring-offset-0 data-[state=open]:bg-foreground/[0.05] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent';
+  'w-full gap-2 rounded-md border border-transparent bg-transparent px-2 text-left text-sm font-medium shadow-none transition-colors hover:bg-foreground/[0.05] focus-visible:ring-offset-0 data-[state=open]:bg-foreground/[0.05] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent';
 
 /** Section heading in the main column (sentence case, one style everywhere). */
-export const SECTION_LABEL = 'text-[13px] font-medium text-muted-foreground';
+export const SECTION_LABEL = 'text-sm font-medium text-muted-foreground';
 
 /** Links inside task text: plain foreground, underlined. */
 export const TEXT_LINK = 'text-foreground decoration-foreground/40 hover:decoration-foreground';
@@ -48,10 +48,10 @@ export const PROPERTY_GRID = 'grid grid-cols-[96px_minmax(0,1fr)] items-start ga
 
 /** Label cell of a property row: one control tall. */
 export const PROPERTY_LABEL =
-  'flex h-11 select-none items-center text-[13px] text-muted-foreground md:h-8';
+  'flex h-11 select-none items-center text-sm text-muted-foreground md:h-8';
 
 /** Value cell of a property row: at least one control tall. */
 export const PROPERTY_VALUE = 'flex min-h-11 min-w-0 flex-col justify-center md:min-h-8';
 
 /** Plain (non-control) value content, on the shared value text edge. */
-export const PROPERTY_TEXT = 'flex min-h-11 min-w-0 items-center gap-2 px-2 text-[13px] md:min-h-8';
+export const PROPERTY_TEXT = 'flex min-h-11 min-w-0 items-center gap-2 px-2 text-sm md:min-h-8';

@@ -741,11 +741,11 @@ export const Team: React.FC = () => {
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
         <AppHeader left={<span className="text-sm font-semibold">Team</span>} />
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+          <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
             <PageHeader title="Team" description="Manage your team members and their roles" />
             <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-16 text-center">
               <Lock className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-              <h2 className="text-[13px] font-medium text-foreground">Team Collaboration</h2>
+              <h2 className="text-sm font-medium text-foreground">Team Collaboration</h2>
               <p className="max-w-md text-xs text-muted-foreground">
                 Invite team members, assign roles, and collaborate on projects together.
               </p>
@@ -766,7 +766,7 @@ export const Team: React.FC = () => {
     <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <AppHeader left={<span className="text-sm font-semibold">Team</span>} />
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader
             title="Team"
             description={
@@ -825,7 +825,7 @@ export const Team: React.FC = () => {
               {!selectedProject ? (
                 <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
                   <Users className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                  <p className="text-[13px] font-medium">Select a project to view team members</p>
+                  <p className="text-sm font-medium">Select a project to view team members</p>
                 </div>
               ) : loading ? (
                 <div className="flex items-center justify-center py-12">
@@ -834,11 +834,11 @@ export const Team: React.FC = () => {
               ) : allMembers.length === 0 ? (
                 <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
                   <Users className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                  <p className="text-[13px] font-medium">No team members yet</p>
+                  <p className="text-sm font-medium">No team members yet</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-left text-[13px]" aria-label="Team members">
+                  <table className="w-full min-w-[760px] text-left text-sm" aria-label="Team members">
                     <thead>
                       <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
                         <th scope="col" className="px-4 font-medium">Member</th>
@@ -982,7 +982,7 @@ export const Team: React.FC = () => {
                 {pendingInvitations.map((invitation) => (
                   <li
                     key={invitation.invitationId}
-                    className="flex min-h-[52px] flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/60 px-4 py-2 text-[13px] transition-colors last:border-0 hover:bg-surface-2"
+                    className="flex min-h-[52px] flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/60 px-4 py-2 text-sm transition-colors last:border-0 hover:bg-surface-2"
                   >
                     <div className="min-w-0 flex-1 basis-52">
                       <p className="truncate font-medium text-foreground">{invitation.inviteeEmail}</p>

@@ -126,7 +126,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
               </span>
               <div className="flex-1 min-w-0">
                 <p className="sr-only">Workspace</p>
-                <p className="truncate text-[13px] font-medium leading-tight text-foreground">
+                <p className="truncate text-sm font-medium leading-tight text-foreground">
                   {triggerLabel}
                 </p>
               </div>

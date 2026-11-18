@@ -390,7 +390,7 @@ export const AcceptInvite: React.FC = () => {
         <Card className="w-full max-w-md rounded-xl">
           <CardContent className="py-12 text-center">
             <Loader2 className="h-5 w-5 mx-auto animate-spin text-muted-foreground" />
-            <p className="mt-3 text-[13px] text-muted-foreground">Loading invitation...</p>
+            <p className="mt-3 text-sm text-muted-foreground">Loading invitation...</p>
           </CardContent>
         </Card>
       </div>

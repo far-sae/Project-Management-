@@ -181,12 +181,12 @@ export const TimeTracking: React.FC = () => {
     const userIsSelf = e.userId === user?.userId;
     const canEdit = isOwner;
     return (
-      <tr key={e.entryId} className="min-h-12 border-b border-border/60 last:border-0 text-[13px] hover:bg-surface-2">
+      <tr key={e.entryId} className="min-h-12 border-b border-border/60 last:border-0 text-sm hover:bg-surface-2">
         <td className="px-4 py-2">
           <div className="flex items-center gap-2 min-w-0">
             <Avatar className="w-7 h-7 shrink-0">
               <AvatarImage src={memberPhoto(e.userId)} alt={e.userName ?? ''} />
-              <AvatarFallback className="text-[11px]">
+              <AvatarFallback className="text-xs">
                 {(e.userName ?? '?').charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -251,7 +251,7 @@ export const TimeTracking: React.FC = () => {
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader left={<span className="text-sm font-semibold">Time Tracking</span>} />
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader
             title="Time Tracking"
             description={
@@ -280,7 +280,7 @@ export const TimeTracking: React.FC = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               {openEntry && (
-                <div className="rounded-lg border border-success/30 bg-success-soft p-3 text-[13px]">
+                <div className="rounded-lg border border-success/30 bg-success-soft p-3 text-sm">
                   Started {format(openEntry.clockedInAt, 'MMM d, p')} — running for{' '}
                   <span className="font-mono font-semibold">
                     <LiveDuration start={openEntry.clockedInAt} />
@@ -384,7 +384,7 @@ export const TimeTracking: React.FC = () => {
                           <li key={m.userId} className="flex items-center gap-3 py-2">
                             <Avatar className="w-8 h-8">
                               <AvatarImage src={memberPhoto(m.userId)} alt={m.userName} />
-                              <AvatarFallback className="text-[11px]">
+                              <AvatarFallback className="text-xs">
                                 {m.userName.charAt(0).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>

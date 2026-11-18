@@ -101,7 +101,7 @@ export const TeamAttendance: React.FC = () => {
                   const [y, m, d] = e.target.value.split('-').map(Number);
                   if (y && m && d) setDay(new Date(y, m - 1, d));
                 }}
-                className="h-full min-w-0 border-0 bg-background px-2.5 text-base font-medium tabular-nums text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:text-[13px]"
+                className="h-full min-w-0 border-0 bg-background px-2.5 text-base font-medium tabular-nums text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:text-sm"
               />
               <button
                 type="button"
@@ -140,14 +140,14 @@ export const TeamAttendance: React.FC = () => {
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
             <Users className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-            <p className="text-[13px] font-medium">No team members yet.</p>
+            <p className="text-sm font-medium">No team members yet.</p>
             <p className="text-xs text-muted-foreground">
               People show up here once they join your organization.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-[13px]">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
                   <th scope="col" className="px-4 font-medium">Member</th>
@@ -173,7 +173,7 @@ export const TeamAttendance: React.FC = () => {
                         <div className="flex min-w-0 items-center gap-2.5">
                           <Avatar className="h-6 w-6 shrink-0">
                             <AvatarImage src={r.photoURL} alt="" />
-                            <AvatarFallback className="text-[11px] font-semibold">
+                            <AvatarFallback className="text-xs font-semibold">
                               {r.name.charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>

@@ -278,7 +278,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
               {/* Title */}
               <div>
-                <label className="text-[11px] font-semibold text-muted-foreground mb-1 block">
+                <label className="text-xs font-semibold text-muted-foreground mb-1 block">
                   Title
                 </label>
                 <Input
@@ -291,7 +291,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
 
               {/* Description / notes */}
               <div>
-                <label className="text-[11px] font-semibold text-muted-foreground mb-1 block">
+                <label className="text-xs font-semibold text-muted-foreground mb-1 block">
                   Notes
                 </label>
                 <Textarea
@@ -306,10 +306,10 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
               {/* Subtasks */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-semibold text-muted-foreground">
+                  <label className="text-xs font-semibold text-muted-foreground">
                     Subtasks
                   </label>
-                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {subtasks.filter((s) => s.completed).length}/{subtasks.length}
                   </span>
                 </div>
@@ -379,7 +379,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
               {/* Attachments */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-semibold text-muted-foreground">
+                  <label className="text-xs font-semibold text-muted-foreground">
                     Attachments
                   </label>
                   <Button
@@ -429,7 +429,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
                           <p className="text-sm font-medium text-foreground truncate" title={f.fileName}>
                             {f.fileName}
                           </p>
-                          <p className="text-[11px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {formatFileSize(f.fileSize)}
                           </p>
                         </div>
@@ -460,7 +460,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
 
             {/* Footer */}
             <div className="border-t border-border px-5 py-3 flex items-center justify-between gap-2">
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {dirty ? 'Unsaved changes' : 'Up to date'}
               </p>
               <div className="flex items-center gap-2">

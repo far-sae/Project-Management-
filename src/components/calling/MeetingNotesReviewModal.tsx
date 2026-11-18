@@ -209,7 +209,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
 
         <div>
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-            <label htmlFor="meeting-transcript" className="text-[13px] font-medium text-foreground">
+            <label htmlFor="meeting-transcript" className="text-sm font-medium text-foreground">
               Transcript
             </label>
             <Button

@@ -184,7 +184,7 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
               {errorBanner}
 
               <div className="space-y-2">
-                <p className="text-[13px] font-medium text-muted-foreground">
+                <p className="text-sm font-medium text-muted-foreground">
                   Select subtasks to create (<span className="tabular-nums">{selectedSubtasks.size}</span> selected)
                 </p>
                 {subtasks.map((subtask, index) => {
@@ -224,7 +224,7 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
                           <span className="mt-2 flex flex-wrap items-center gap-1">
                             <PriorityPill priority={subtask.priority} />
                             {subtask.estimatedDuration && (
-                              <span className="inline-flex h-5 items-center rounded border border-border bg-background px-1.5 text-[11px] text-muted-foreground">
+                              <span className="inline-flex h-5 items-center rounded border border-border bg-background px-1.5 text-xs text-muted-foreground">
                                 {subtask.estimatedDuration}
                               </span>
                             )}

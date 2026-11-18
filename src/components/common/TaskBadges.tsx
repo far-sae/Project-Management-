@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 
 /** Shared pill shape for task labels (urgent / priority / locked). */
 export const TASK_PILL =
-  'inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 text-[11px] font-semibold leading-none';
+  'inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 text-xs font-semibold leading-none';
 
 const QUIET = 'border-border bg-secondary text-secondary-foreground';
 

@@ -79,14 +79,14 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
         <Sparkles className="h-4 w-4" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium text-muted-foreground">Project</p>
+        <p className="text-xs font-medium text-muted-foreground">Project</p>
         <p className="text-[15px] font-semibold leading-snug text-foreground line-clamp-2">{data.label}</p>
       </div>
     </div>
     {data.description ? (
-      <p className="mt-2 text-[12.5px] leading-snug text-muted-foreground line-clamp-2">{data.description}</p>
+      <p className="mt-2 text-sm leading-snug text-muted-foreground line-clamp-2">{data.description}</p>
     ) : null}
-    <div className="mt-3 flex items-center gap-3 border-t border-border pt-2.5 text-[12px] text-muted-foreground tabular-nums">
+    <div className="mt-3 flex items-center gap-3 border-t border-border pt-2.5 text-xs text-muted-foreground tabular-nums">
       <span>{plural(data.taskCount, 'task')}</span>
       <span aria-hidden className="h-3 w-px bg-border" />
       <span>{plural(data.columnCount, 'column')}</span>
@@ -119,11 +119,11 @@ export const ColumnNode: React.FC<{ data: ColumnNodeData; selected?: boolean }> 
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{data.label}</p>
-          <p className="text-[12px] text-muted-foreground tabular-nums">{plural(data.count, 'task')}</p>
+          <p className="text-xs text-muted-foreground tabular-nums">{plural(data.count, 'task')}</p>
         </div>
         {data.collapsed && data.count > 0 && (
           <span
-            className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary-soft-foreground tabular-nums"
+            className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-semibold text-primary-soft-foreground tabular-nums"
             title={`${plural(data.count, 'task')} hidden`}
           >
             +{data.count}
@@ -208,14 +208,14 @@ const AvatarStack: React.FC<{ people: TaskAssigneeChip[] }> = ({ people }) => {
           <span
             key={`${p.name}-${i}`}
             title={p.name}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground ring-2 ring-card"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[0.6875rem] font-semibold text-foreground ring-2 ring-card"
           >
             {initialsOf(p.name)}
           </span>
         ),
       )}
       {extra > 0 && (
-        <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold text-muted-foreground ring-2 ring-card tabular-nums">
+        <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-muted px-1 text-[0.6875rem] font-semibold text-muted-foreground ring-2 ring-card tabular-nums">
           +{extra}
         </span>
       )}
@@ -237,7 +237,7 @@ export const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({
         aria-label={`Open task ${data.label}`}
       >
         <p className="text-[14px] font-medium leading-snug text-foreground line-clamp-2 break-words">{data.label}</p>
-        <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <span
             className="inline-block h-2 w-2 shrink-0 rounded-full"
             style={{ backgroundColor: data.columnColor || 'hsl(var(--muted-foreground))' }}
@@ -250,7 +250,7 @@ export const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({
             {data.priority && (
               <span
                 className={cn(
-                  'rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize',
+                  'rounded-md px-1.5 py-0.5 text-xs font-medium capitalize',
                   PRIORITY_CLASSES[data.priority] || 'bg-muted text-muted-foreground',
                 )}
               >
@@ -260,7 +260,7 @@ export const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({
             {data.dueLabel && (
               <span
                 className={cn(
-                  'inline-flex items-center gap-1 text-[11px] tabular-nums',
+                  'inline-flex items-center gap-1 text-xs tabular-nums',
                   data.overdue ? 'font-medium text-destructive' : 'text-muted-foreground',
                 )}
                 title={data.overdue ? 'Overdue' : 'Due date'}
@@ -270,13 +270,13 @@ export const TaskNode: React.FC<{ data: TaskNodeData; selected?: boolean }> = ({
               </span>
             )}
             {data.subtaskTotal > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums" title="Subtasks done">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums" title="Subtasks done">
                 <Check className="h-3 w-3" aria-hidden />
                 {data.subtaskDone}/{data.subtaskTotal}
               </span>
             )}
             {data.attachmentCount > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums" title="Attachments">
+              <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums" title="Attachments">
                 <Paperclip className="h-3 w-3" aria-hidden />
                 {data.attachmentCount}
               </span>
@@ -366,7 +366,7 @@ export const SubtaskNode: React.FC<{ data: SubtaskNodeData; selected?: boolean }
       </span>
       <p
         className={cn(
-          'truncate text-[13px] leading-snug',
+          'truncate text-sm leading-snug',
           data.completed ? 'text-muted-foreground line-through' : 'text-foreground',
         )}
       >
@@ -486,7 +486,7 @@ export const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({
   };
 
   const placeholderTag = (
-    <span className="rounded-md border border-dashed border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+    <span className="rounded-md border border-dashed border-border px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
       Placeholder
     </span>
   );
@@ -576,14 +576,14 @@ export const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({
       <div className={placeholderCard('w-[300px] px-4 py-3')} onDoubleClick={onDoubleClick}>
         <ConnectionHandles visible={selected} />
         <div className="flex items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden /> Project
           </span>
           {placeholderTag}
         </div>
         <div className="mt-1 flex items-start gap-2">{labelBlock}</div>
         {data.projectDescription && !editing && (
-          <p className="mt-1 text-[12px] leading-snug text-muted-foreground line-clamp-2">{data.projectDescription}</p>
+          <p className="mt-1 text-xs leading-snug text-muted-foreground line-clamp-2">{data.projectDescription}</p>
         )}
         {hoverToolbar}
       </div>
@@ -623,13 +623,13 @@ export const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             {placeholderTag}
             {sp && sp.total > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
                 <Check className="h-3 w-3" aria-hidden />
                 {sp.completed}/{sp.total}
               </span>
             )}
             {attachments > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums">
+              <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums">
                 <Paperclip className="h-3 w-3" aria-hidden />
                 {attachments}
               </span>
@@ -637,7 +637,7 @@ export const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({
             {data.onOpen && !editing && (
               <button
                 type="button"
-                className="nodrag ml-auto rounded-md px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="nodrag ml-auto rounded-md px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={(e) => {
                   e.stopPropagation();
                   data.onOpen?.();

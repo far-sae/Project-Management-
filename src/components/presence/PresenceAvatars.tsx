@@ -101,7 +101,7 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({
             ) : (
               <div
                 className={cn(
-                  'flex items-center justify-center rounded-full text-[11px] font-semibold ring-2 ring-card',
+                  'flex items-center justify-center rounded-full text-xs font-semibold ring-2 ring-card',
                   colorFor(peer.userId),
                 )}
                 style={{ width: size, height: size }}

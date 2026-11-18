@@ -88,7 +88,7 @@ export const PresenceStatusMenu: React.FC<PresenceStatusMenuProps> = ({
           >
             <div className="flex items-center gap-2 w-full">
               {o.icon}
-              <span className="flex-1 text-[13px] font-medium">{o.label}</span>
+              <span className="flex-1 text-sm font-medium">{o.label}</span>
               {preference === o.value && (
                 <Check className="h-4 w-4 shrink-0 text-foreground" />
               )}
@@ -99,7 +99,7 @@ export const PresenceStatusMenu: React.FC<PresenceStatusMenuProps> = ({
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <p className="px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
           With <span className="font-medium text-foreground">Auto</span>, others see
           you online or offline based on this tab. Other modes are manual.
         </p>
@@ -177,7 +177,7 @@ export const PresenceStatusAvatarMenu: React.FC<PresenceStatusMenuProps & { clas
           >
             <div className="flex items-center gap-2 w-full">
               {o.icon}
-              <span className="flex-1 text-[13px] font-medium">{o.label}</span>
+              <span className="flex-1 text-sm font-medium">{o.label}</span>
               {preference === o.value && (
                 <Check className="h-4 w-4 shrink-0 text-foreground" />
               )}
@@ -188,7 +188,7 @@ export const PresenceStatusAvatarMenu: React.FC<PresenceStatusMenuProps & { clas
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <p className="px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
           With <span className="font-medium text-foreground">Auto</span>, others see
           you online or offline based on this tab. Other modes are manual.
         </p>

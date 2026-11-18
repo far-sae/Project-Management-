@@ -104,7 +104,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
         </DialogHeader>
 
         {otherProjects === 0 ? (
-          <p className="text-[13px] text-muted-foreground">There's no other project to move it to.</p>
+          <p className="text-sm text-muted-foreground">There's no other project to move it to.</p>
         ) : (
           <>
             <div className="relative">
@@ -127,7 +127,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
               className="max-h-64 space-y-1 overflow-y-auto"
             >
               {options.length === 0 && (
-                <p className="px-1 py-2 text-[13px] text-muted-foreground">No projects match.</p>
+                <p className="px-1 py-2 text-sm text-muted-foreground">No projects match.</p>
               )}
               {options.map((p) => {
                 const selected = choice === p.projectId;
@@ -141,7 +141,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
                     disabled={moving}
                     onClick={() => pickProject(p.projectId)}
                     className={cn(
-                      'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border px-3 py-1 text-left text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:min-h-8',
+                      'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border px-3 py-1 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:min-h-8',
                       selected
                         ? 'border-foreground/30 bg-surface-2 text-foreground'
                         : 'border-border hover:bg-secondary',
@@ -163,7 +163,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
 
             {choice && (
               <div className="space-y-1.5">
-                <label htmlFor="move-task-column" className="block text-[13px] font-medium text-muted-foreground">
+                <label htmlFor="move-task-column" className="block text-sm font-medium text-muted-foreground">
                   Column
                 </label>
                 <select
@@ -171,7 +171,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
                   value={column}
                   onChange={(e) => setColumn(e.target.value)}
                   disabled={moving}
-                  className="h-11 w-full rounded-md border border-input bg-background px-2 text-base transition-colors focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50 md:h-8 md:text-[13px]"
+                  className="h-11 w-full rounded-md border border-input bg-background px-2 text-base transition-colors focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50 md:h-8 md:text-sm"
                 >
                   {targetColumns.map((c) => (
                     <option key={c.id} value={c.id}>

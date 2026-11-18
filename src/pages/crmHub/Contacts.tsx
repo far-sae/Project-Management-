@@ -301,7 +301,7 @@ export const CrmContactsPage: React.FC = () => {
                                   return (
                                     <span
                                       key={tid}
-                                      className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                                      className="inline-block text-[0.6875rem] font-medium px-1.5 py-0.5 rounded-full"
                                       style={{ backgroundColor: `${t.color}22`, color: t.color, border: `1px solid ${t.color}44` }}
                                     >
                                       {t.name}
@@ -322,7 +322,7 @@ export const CrmContactsPage: React.FC = () => {
                             {humanize(c.lifecycleStage)}
                           </span>
                           {view === 'all' && user && c.ownerId === user.userId && (
-                            <span className="ml-1 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                            <span className="ml-1 inline-block text-[0.6875rem] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
                               Mine
                             </span>
                           )}

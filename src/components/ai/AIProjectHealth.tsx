@@ -238,7 +238,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
               {tone && (
                 <span
                   className={cn(
-                    'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
+                    'rounded-full px-1.5 py-0.5 text-xs font-medium',
                     tone.bg,
                     tone.text,
                   )}
@@ -247,7 +247,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
                 </span>
               )}
               {health && (
-                <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                <span className="text-xs text-muted-foreground hidden sm:inline">
                   · {format(new Date(health.generatedAt), 'p')}
                 </span>
               )}
@@ -313,7 +313,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
                 <span className={cn('text-[1.7rem] font-bold leading-none tabular-nums', tone?.text)}>
                   {health.score}
                 </span>
-                <span className="text-[11px] text-muted-foreground">/ 100</span>
+                <span className="text-xs text-muted-foreground">/ 100</span>
               </div>
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                 <div
@@ -368,14 +368,14 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
           </div>
           {health.recommendations.length > 0 && (
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1 mb-1.5">
+              <p className="text-[0.6875rem] uppercase tracking-wider text-muted-foreground flex items-center gap-1 mb-1.5">
                 <Lightbulb className="w-3 h-3" />
                 Recommended next steps
               </p>
               <ol className="space-y-1">
                 {health.recommendations.map((r, i) => (
                   <li key={i} className="flex gap-2 text-xs leading-relaxed">
-                    <span className="mt-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-secondary text-[10px] font-semibold text-secondary-foreground shrink-0">
+                    <span className="mt-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-secondary text-[0.6875rem] font-semibold text-secondary-foreground shrink-0">
                       {i + 1}
                     </span>
                     <span>{r}</span>

@@ -52,7 +52,7 @@ function loadDock(userId: string | undefined): ChatDockState {
 function maxExpandedForViewport(): number {
   const w = typeof window === 'undefined' ? 1280 : window.innerWidth;
   if (w < 640) return 1;
-  if (w < 1100) return 2;
+  if (w < 1600) return 2;
   return 3;
 }
 

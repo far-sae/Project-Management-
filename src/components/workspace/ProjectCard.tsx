@@ -93,7 +93,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project, onOpen, lock,
         )}
       </div>
 
-      <p className="min-h-5 truncate text-[13px] text-muted-foreground">
+      <p className="min-h-5 truncate text-sm text-muted-foreground">
         {project.description || 'No description'}
       </p>
 

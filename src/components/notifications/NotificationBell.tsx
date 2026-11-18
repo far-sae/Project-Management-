@@ -55,7 +55,7 @@ export const NotificationBell: React.FC = () => {
         >
           <Bell aria-hidden />
           {unreadCount > 0 && (
-            <span className="absolute right-1 top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-[5px] text-[11px] font-medium leading-none tabular-nums text-destructive-foreground md:-right-1 md:-top-1">
+            <span className="absolute right-1 top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-[5px] text-xs font-medium leading-none tabular-nums text-destructive-foreground md:-right-1 md:-top-1">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
@@ -75,14 +75,14 @@ export const NotificationBell: React.FC = () => {
         ) : notifications.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-4 py-8 text-center">
             <Bell className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-            <p className="text-[13px] font-medium text-foreground">No notifications yet</p>
+            <p className="text-sm font-medium text-foreground">No notifications yet</p>
           </div>
         ) : (
           notifications.slice(0, 20).map((n) => (
             <DropdownMenuItem
               key={n.notificationId}
               onClick={() => handleClick(n)}
-              className="flex min-h-12 cursor-pointer items-start gap-2 rounded-none border-b border-border/60 px-3 py-2.5 text-[13px] focus:bg-surface-2 focus:text-foreground"
+              className="flex min-h-12 cursor-pointer items-start gap-2 rounded-none border-b border-border/60 px-3 py-2.5 text-sm focus:bg-surface-2 focus:text-foreground"
             >
               {/* Unread marker; the empty slot keeps read rows aligned. */}
               <span
@@ -114,7 +114,7 @@ export const NotificationBell: React.FC = () => {
           ))
         )}
         <DropdownMenuItem
-          className="h-10 cursor-pointer justify-center rounded-none text-[13px] font-medium text-foreground focus:bg-surface-2 focus:text-foreground"
+          className="h-10 cursor-pointer justify-center rounded-none text-sm font-medium text-foreground focus:bg-surface-2 focus:text-foreground"
           onClick={() => {
             setOpen(false);
             navigate("/inbox");

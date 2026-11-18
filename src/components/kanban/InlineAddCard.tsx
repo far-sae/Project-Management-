@@ -61,7 +61,7 @@ export const InlineAddCard: React.FC<InlineAddCardProps> = ({
         onClick={() => setOpen(true)}
         className={cn(
           'group mb-2 flex h-8 w-full items-center gap-1.5 rounded-md px-2',
-          'text-[13px] font-medium text-muted-foreground',
+          'text-sm font-medium text-muted-foreground',
           'hover:bg-foreground/[0.06] hover:text-foreground',
           'transition-colors',
         )}
@@ -92,7 +92,7 @@ export const InlineAddCard: React.FC<InlineAddCardProps> = ({
         }}
       />
       <div className="flex items-center justify-between border-t border-border px-2 py-1.5">
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-[0.6875rem] text-muted-foreground">
           Enter to add &middot; Esc to cancel
         </span>
         <div className="flex items-center gap-1">

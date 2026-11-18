@@ -98,10 +98,10 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
               className="h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: color }}
             />
-            <h3 className="truncate text-[13px] font-semibold leading-tight text-foreground">
+            <h3 className="truncate text-sm font-semibold leading-tight text-foreground">
               {title}
             </h3>
-            <span className="text-[13px] tabular-nums text-muted-foreground">
+            <span className="text-sm tabular-nums text-muted-foreground">
               {tasks.length}
             </span>
           </div>
@@ -173,7 +173,7 @@ export const KanbanColumnComponent: React.FC<KanbanColumnProps> = ({
         {!loading && tasks.length === 0 && (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-foreground/15 px-3 py-8 text-center">
             <Inbox className="mb-2 h-5 w-5 text-muted-foreground" aria-hidden />
-            <p className="text-[13px] font-medium text-foreground">
+            <p className="text-sm font-medium text-foreground">
               No tasks here
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">

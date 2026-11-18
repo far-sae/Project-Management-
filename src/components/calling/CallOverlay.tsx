@@ -635,7 +635,7 @@ export const CallOverlay: React.FC = () => {
           >
             <p className="text-base font-semibold">Call ended</p>
             {state.error && (
-              <p className={cn('text-[13px] text-pretty', CALL_MUTED_TEXT)}>{state.error}</p>
+              <p className={cn('text-sm text-pretty', CALL_MUTED_TEXT)}>{state.error}</p>
             )}
             {state.connectFailed && (
               <a href="/call-check" className={cn(CALL_BAR_BUTTON, 'px-3')}>
@@ -698,7 +698,7 @@ export const CallOverlay: React.FC = () => {
                 </Avatar>
               ))}
               {state.remoteParticipants.length > 4 && (
-                <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#3a3a3a] text-[13px] font-medium text-white ring-2 ring-[#1c1c1c] tabular-nums">
+                <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#3a3a3a] text-sm font-medium text-white ring-2 ring-[#1c1c1c] tabular-nums">
                   +{state.remoteParticipants.length - 4}
                 </span>
               )}
@@ -713,7 +713,7 @@ export const CallOverlay: React.FC = () => {
           )}
           <div className="w-full min-w-0 text-center">
             <p className="truncate text-base font-semibold">{remoteName}</p>
-            <p className={cn('text-[13px]', CALL_MUTED_TEXT)}>
+            <p className={cn('text-sm', CALL_MUTED_TEXT)}>
               {isMultiParty
                 ? `Ringing ${state.remoteParticipants.length} teammates…`
                 : 'Calling…'}{' '}
@@ -735,7 +735,7 @@ export const CallOverlay: React.FC = () => {
             )}
             <button
               type="button"
-              className={cn(CALL_ROUND, CALL_ROUND_DANGER, 'h-10 gap-1.5 px-5 text-[13px] font-semibold')}
+              className={cn(CALL_ROUND, CALL_ROUND_DANGER, 'h-10 gap-1.5 px-5 text-sm font-semibold')}
               onClick={actions.hangUp}
               aria-label="Cancel call"
             >
@@ -806,7 +806,7 @@ export const CallOverlay: React.FC = () => {
             </div>
           )}
           {remoteSnaps.length > 1 && (
-            <span className="absolute right-2 top-2 z-[3] inline-flex h-5 items-center rounded-md bg-black/70 px-1.5 text-[11px] font-medium text-white tabular-nums">
+            <span className="absolute right-2 top-2 z-[3] inline-flex h-5 items-center rounded-md bg-black/70 px-1.5 text-xs font-medium text-white tabular-nums">
               +{remoteSnaps.length - 1} more
             </span>
           )}
@@ -814,7 +814,7 @@ export const CallOverlay: React.FC = () => {
             <div
               className={cn(
                 CALL_RECORDING_BADGE,
-                'pointer-events-none absolute left-2 top-2 z-[3] h-5 px-2 text-[11px]',
+                'pointer-events-none absolute left-2 top-2 z-[3] h-5 px-2 text-xs',
               )}
             >
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
@@ -825,7 +825,7 @@ export const CallOverlay: React.FC = () => {
         {admitBanners(true, 'px-2 pt-2')}
         <div className="flex items-center gap-1.5 py-2 pl-3 pr-2">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-semibold leading-[18px]">{headlineLabel}</p>
+            <p className="truncate text-sm font-semibold leading-[18px]">{headlineLabel}</p>
             <p className={cn('truncate text-xs leading-4 tabular-nums', CALL_MUTED_TEXT)}>
               {statusLabel}
             </p>
@@ -944,7 +944,7 @@ export const CallOverlay: React.FC = () => {
           // "connecting" affordance instead of an empty black box.
           <div className={cn('flex flex-1 flex-col items-center justify-center gap-3', CALL_MUTED_TEXT)}>
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#3a3a3a] border-t-white" />
-            <p className="text-[13px]">{statusLabel}</p>
+            <p className="text-sm">{statusLabel}</p>
           </div>
         ) : screenSharer ? (
           // Screen-share layout: presenter takes the main stage, others
@@ -979,7 +979,7 @@ export const CallOverlay: React.FC = () => {
         )}
 
         {state.error && (
-          <div className="absolute left-1/2 top-3 z-10 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-lg bg-destructive px-3 py-2 text-[13px] text-destructive-foreground">
+          <div className="absolute left-1/2 top-3 z-10 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-lg bg-destructive px-3 py-2 text-sm text-destructive-foreground">
             {state.error}
           </div>
         )}

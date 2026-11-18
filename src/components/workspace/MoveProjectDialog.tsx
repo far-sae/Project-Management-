@@ -78,7 +78,7 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
         </DialogHeader>
 
         {options.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             There's no other workspace to move to. Create one first.
           </p>
         ) : (
@@ -95,7 +95,7 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
                   disabled={moving}
                   onClick={() => setChoice(o.id)}
                   className={cn(
-                    'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-[13px] font-medium text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:min-h-9',
+                    'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-sm font-medium text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:min-h-9',
                     selected
                       ? 'border-foreground/60 bg-secondary'
                       : 'border-border hover:bg-surface-2',

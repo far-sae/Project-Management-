@@ -92,7 +92,7 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
           <span
             className={cn(
               CALL_RECORDING_BADGE,
-              'pointer-events-none absolute left-1.5 top-1.5 z-[3] h-5 px-2 text-[11px]',
+              'pointer-events-none absolute left-1.5 top-1.5 z-[3] h-5 px-2 text-xs',
             )}
           >
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />

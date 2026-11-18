@@ -56,7 +56,7 @@ export const PRESSABLE =
 
 const toolBtn = (opts: { icon?: boolean; active?: boolean } = {}) =>
   cn(
-    'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium',
+    'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-sm font-medium',
     '[@media(pointer:coarse)]:h-10',
     opts.icon ? 'w-8 [@media(pointer:coarse)]:w-10' : 'px-2.5',
     opts.active
@@ -86,7 +86,7 @@ export const MindMapModeSwitch: React.FC<{
       aria-checked={mode === value}
       onClick={() => onChange(value)}
       className={cn(
-        'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium [@media(pointer:coarse)]:h-9',
+        'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium [@media(pointer:coarse)]:h-9',
         '[&_svg]:h-3.5 [&_svg]:w-3.5',
         mode === value
           ? 'bg-card text-foreground shadow-sm'
@@ -193,7 +193,7 @@ export const MindMapFind: React.FC<MindMapFindProps> = ({ open, onOpenChange, it
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={results[active] ? `${listId}-${active}` : undefined}
-          className="w-40 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground sm:w-52"
+          className="w-40 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground sm:w-52"
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
@@ -228,7 +228,7 @@ export const MindMapFind: React.FC<MindMapFindProps> = ({ open, onOpenChange, it
       {query.trim() && (
         <div className="absolute left-0 top-full z-30 mt-1.5 w-72 overflow-hidden rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg">
           {results.length === 0 ? (
-            <p className="px-2.5 py-2 text-[13px] text-muted-foreground">No matches on this map</p>
+            <p className="px-2.5 py-2 text-sm text-muted-foreground">No matches on this map</p>
           ) : (
             <ul id={listId} role="listbox" aria-label="Matches">
               {results.map((r, i) => (
@@ -241,15 +241,15 @@ export const MindMapFind: React.FC<MindMapFindProps> = ({ open, onOpenChange, it
                   onMouseEnter={() => setActive(i)}
                   onClick={() => choose(i, false)}
                   className={cn(
-                    'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px]',
+                    'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm',
                     i === active ? 'bg-muted text-foreground' : 'text-foreground',
                   )}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{r.label}</span>
-                    {r.context && <span className="block truncate text-[11px] text-muted-foreground">{r.context}</span>}
+                    {r.context && <span className="block truncate text-xs text-muted-foreground">{r.context}</span>}
                   </span>
-                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
                     {KIND_LABEL[r.kind]}
                   </span>
                 </li>
@@ -303,8 +303,8 @@ export const MindMapToolbar: React.FC<MindMapToolbarProps> = (p) => {
     <DropdownMenuItem onSelect={() => p.onAddShape(kind)} className="items-start gap-2.5 py-2">
       <span className="mt-0.5 text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">{icon}</span>
       <span className="flex flex-col">
-        <span className="text-[13px] font-medium">{title}</span>
-        <span className="text-[12px] text-muted-foreground">{desc}</span>
+        <span className="text-sm font-medium">{title}</span>
+        <span className="text-xs text-muted-foreground">{desc}</span>
       </span>
     </DropdownMenuItem>
   );
@@ -325,7 +325,7 @@ export const MindMapToolbar: React.FC<MindMapToolbarProps> = (p) => {
           onClick={p.onAddIdea}
           title="Add idea (N)"
           className={cn(
-            'inline-flex h-8 items-center gap-1.5 rounded-l-lg bg-primary pl-2.5 pr-2 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 [@media(pointer:coarse)]:h-10',
+            'inline-flex h-8 items-center gap-1.5 rounded-l-lg bg-primary pl-2.5 pr-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 [@media(pointer:coarse)]:h-10',
             '[&_svg]:h-4 [&_svg]:w-4',
             PRESSABLE,
           )}
@@ -351,8 +351,8 @@ export const MindMapToolbar: React.FC<MindMapToolbarProps> = (p) => {
             <DropdownMenuItem onSelect={p.onAddIdea} className="items-start gap-2.5 py-2">
               <span className="mt-0.5 text-muted-foreground"><Lightbulb className="h-4 w-4" /></span>
               <span className="flex flex-1 flex-col">
-                <span className="text-[13px] font-medium">Idea</span>
-                <span className="text-[12px] text-muted-foreground">A free-form note you can link to anything</span>
+                <span className="text-sm font-medium">Idea</span>
+                <span className="text-xs text-muted-foreground">A free-form note you can link to anything</span>
               </span>
               <DropdownMenuShortcut>N</DropdownMenuShortcut>
             </DropdownMenuItem>
@@ -360,7 +360,7 @@ export const MindMapToolbar: React.FC<MindMapToolbarProps> = (p) => {
             {shapeItem('column', <Columns />, 'Column', 'Looks like a board column')}
             {shapeItem('project', <Sparkles />, 'Project header', 'A header card for a group of ideas')}
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[11.5px] font-normal text-muted-foreground">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
               Placeholders only — the board isn’t changed
             </DropdownMenuLabel>
           </DropdownMenuContent>

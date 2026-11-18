@@ -216,7 +216,7 @@ export const ProjectsDashboard: React.FC = () => {
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
       <AppHeader left={<span className="text-sm font-semibold">Projects dashboard</span>} />
       <div className="flex-1 overflow-y-auto">
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+    <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
       <PageHeader
         title="Projects dashboard"
         description={
@@ -314,7 +314,7 @@ export const ProjectsDashboard: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {p.overdue > 0 && (
-                        <span className="rounded bg-destructive-soft px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                        <span className="rounded bg-destructive-soft px-1.5 py-0.5 text-[0.6875rem] font-medium text-destructive">
                           {p.overdue} overdue
                         </span>
                       )}

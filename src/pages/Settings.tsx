@@ -465,7 +465,7 @@ export const Settings: React.FC = () => {
     <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <AppHeader left={<span className="text-sm font-semibold">Settings</span>} />
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
         <PageHeader title="Settings" description="Manage your account and preferences" />
 
         <Tabs
@@ -519,7 +519,7 @@ export const Settings: React.FC = () => {
             </TabsList>
           </div>
 
-          <div className="min-w-0">
+          <div className="min-w-0 max-w-5xl [&>[role=tabpanel]]:mt-0">
 
           {/* APPEARANCE TAB */}
           <TabsContent value="appearance">

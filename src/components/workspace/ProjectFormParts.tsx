@@ -12,7 +12,7 @@ export const PROJECT_COLORS = [
 ];
 
 /** Field label size used in the workspace dialogs (`Label` adds the weight). */
-export const FIELD_LABEL = 'text-[13px]';
+export const FIELD_LABEL = 'text-sm';
 
 /** Dialog footers stack on phones; this keeps the stacked buttons apart. */
 export const DIALOG_FOOTER = 'gap-2 sm:gap-0';
@@ -20,7 +20,7 @@ export const DIALOG_FOOTER = 'gap-2 sm:gap-0';
 export const FormError: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <p
     role="alert"
-    className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-[13px] text-destructive-soft-foreground"
+    className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive-soft-foreground"
   >
     {children}
   </p>
@@ -61,14 +61,14 @@ interface TemplatePickerProps {
 export const TemplatePicker: React.FC<TemplatePickerProps> = ({ templates, loading, selectedId, onSelect }) => {
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-8 text-[13px] text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
         Loading templates...
       </div>
     );
   }
   if (templates.length === 0) {
-    return <div className="py-8 text-center text-[13px] text-muted-foreground">No templates available yet.</div>;
+    return <div className="py-8 text-center text-sm text-muted-foreground">No templates available yet.</div>;
   }
   return (
     <div className="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
@@ -93,9 +93,9 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({ templates, loadi
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <p className="truncate text-[13px] font-medium text-foreground">{tpl.name}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{tpl.name}</p>
                   {tpl.isBuiltin && (
-                    <span className="shrink-0 rounded border border-border px-1.5 text-[11px] leading-[18px] text-muted-foreground">
+                    <span className="shrink-0 rounded border border-border px-1.5 text-xs leading-[18px] text-muted-foreground">
                       Built-in
                     </span>
                   )}

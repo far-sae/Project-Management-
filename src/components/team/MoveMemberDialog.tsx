@@ -144,7 +144,7 @@ export const MoveMemberDialog: React.FC<MoveMemberDialogProps> = ({
                     disabled={moving}
                     onClick={() => setChoice(p.projectId)}
                     className={cn(
-                      'flex min-h-9 w-full items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      'flex min-h-9 w-full items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       selected
                         ? 'border-foreground/40 bg-secondary font-medium text-foreground'
                         : 'border-border hover:bg-secondary',
@@ -164,7 +164,7 @@ export const MoveMemberDialog: React.FC<MoveMemberDialogProps> = ({
               })}
             </div>
 
-            <label className="flex items-start gap-2 text-[13px]">
+            <label className="flex items-start gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={unassignTasks}

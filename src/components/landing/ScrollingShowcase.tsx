@@ -98,14 +98,14 @@ const mockScreens: MockScreen[] = [
     Icon: LayoutList,
     accentClass: 'bg-orange-500/15 text-orange-500',
     render: () => (
-      <div className="grid grid-cols-3 gap-2 h-full text-[11px]">
+      <div className="grid grid-cols-3 gap-2 h-full text-xs">
         {[
           { name: 'To do', items: ['Design hero', 'Write API docs', 'Onboarding video'] },
           { name: 'In progress', items: ['Build dashboard', 'User auth'], accent: true },
           { name: 'Done', items: ['Setup CI/CD', 'Logo'] },
         ].map((col) => (
           <div key={col.name} className={`rounded p-2 ${col.accent ? 'bg-orange-500/5 border border-orange-500/20' : 'bg-muted/30'}`}>
-            <div className="text-[10px] uppercase text-muted-foreground mb-2">{col.name}</div>
+            <div className="text-[0.6875rem] uppercase text-muted-foreground mb-2">{col.name}</div>
             <div className="space-y-1.5">
               {col.items.map((it) => (
                 <div key={it} className="rounded bg-card border border-border/60 px-2 py-1 text-foreground/90">{it}</div>
@@ -182,7 +182,7 @@ const mockScreens: MockScreen[] = [
 ];
 
 const DealKanbanMock: React.FC = () => (
-  <div className="grid grid-cols-4 gap-1 h-full text-[10px]">
+  <div className="grid grid-cols-4 gap-1 h-full text-[0.6875rem]">
     {[
       { name: 'Lead', deals: ['Nimbus', 'Brightline'], val: '£24k' },
       { name: 'Qualified', deals: ['Acme', 'Forge'], val: '£62k', accent: true },
@@ -212,7 +212,7 @@ const DealKanbanMock: React.FC = () => (
 );
 
 const HandoffMock: React.FC = () => (
-  <div className="h-full flex flex-col gap-2 text-[11px]">
+  <div className="h-full flex flex-col gap-2 text-xs">
     <div className="rounded bg-emerald-500/10 border border-emerald-500/30 p-2.5">
       <div className="flex items-center gap-2">
         <div className="text-emerald-500 text-lg">🏆</div>
@@ -225,7 +225,7 @@ const HandoffMock: React.FC = () => (
     <button className="rounded-lg bg-emerald-500 text-white font-semibold py-1.5 text-sm">
       → Create workspace & project
     </button>
-    <div className="flex-1 rounded bg-muted/30 p-2 text-[10px]">
+    <div className="flex-1 rounded bg-muted/30 p-2 text-[0.6875rem]">
       <div className="uppercase text-[9px] tracking-wide text-muted-foreground mb-1">Auto-created</div>
       <div className="flex items-center gap-1">
         <span className="text-orange-500">▸</span>
@@ -240,7 +240,7 @@ const HandoffMock: React.FC = () => (
 );
 
 const CalendarMock: React.FC = () => (
-  <div className="grid grid-cols-7 gap-1 h-full text-[10px]">
+  <div className="grid grid-cols-7 gap-1 h-full text-[0.6875rem]">
     {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, index) => (
       <div key={`${d}-${index}`} className="text-center text-muted-foreground">{d}</div>
     ))}
@@ -269,7 +269,7 @@ const TimelineMock: React.FC = () => (
       { name: 'Beta launch', start: 60, len: 30, accent: false },
       { name: 'Marketing', start: 70, len: 25, accent: false },
     ].map((row) => (
-      <div key={row.name} className="flex items-center gap-2 text-[10px]">
+      <div key={row.name} className="flex items-center gap-2 text-[0.6875rem]">
         <div className="w-20 shrink-0 truncate text-foreground/80">{row.name}</div>
         <div className="flex-1 h-3 rounded bg-muted/30 relative overflow-hidden">
           <div
@@ -283,7 +283,7 @@ const TimelineMock: React.FC = () => (
 );
 
 const CrmDashboardMock: React.FC = () => (
-  <div className="grid grid-cols-2 gap-2 h-full text-[10px]">
+  <div className="grid grid-cols-2 gap-2 h-full text-[0.6875rem]">
     <div className="rounded bg-muted/30 p-2">
       <div className="text-muted-foreground mb-1">Open deals</div>
       <div className="text-lg font-bold text-foreground">£182k</div>
@@ -324,7 +324,7 @@ const CrmDashboardMock: React.FC = () => (
 );
 
 const ImportMock: React.FC = () => (
-  <div className="h-full flex flex-col gap-1.5 text-[10px]">
+  <div className="h-full flex flex-col gap-1.5 text-[0.6875rem]">
     <div className="flex items-center gap-2 rounded bg-muted/30 p-2">
       <div className="text-xl">📄</div>
       <div className="flex-1">
@@ -353,7 +353,7 @@ const ImportMock: React.FC = () => (
 );
 
 const CurrencyMock: React.FC = () => (
-  <div className="h-full grid grid-cols-4 gap-1 text-[10px]">
+  <div className="h-full grid grid-cols-4 gap-1 text-[0.6875rem]">
     {[
       { s: '$', code: 'USD' },
       { s: '£', code: 'GBP', accent: true },
@@ -380,9 +380,9 @@ const CurrencyMock: React.FC = () => (
 );
 
 const NotesMock: React.FC = () => (
-  <div className="h-full flex flex-col gap-1.5 text-[10px]">
+  <div className="h-full flex flex-col gap-1.5 text-[0.6875rem]">
     <div className="flex items-center gap-2 border-b border-border/60 pb-1">
-      <div className="h-6 w-6 rounded-full bg-orange-500 grid place-items-center text-white text-[10px] font-bold">A</div>
+      <div className="h-6 w-6 rounded-full bg-orange-500 grid place-items-center text-white text-[0.6875rem] font-bold">A</div>
       <div>
         <div className="font-semibold text-foreground">Alice Chen — Acme Corp</div>
         <div className="text-[9px] text-muted-foreground">Head of Ops</div>
@@ -402,7 +402,7 @@ const NotesMock: React.FC = () => (
 );
 
 const HrMock: React.FC = () => (
-  <div className="h-full grid grid-cols-2 gap-2 text-[10px]">
+  <div className="h-full grid grid-cols-2 gap-2 text-[0.6875rem]">
     <div className="rounded bg-muted/30 p-2">
       <div className="text-muted-foreground text-[9px] uppercase">People</div>
       <div className="font-bold text-foreground text-lg">24</div>

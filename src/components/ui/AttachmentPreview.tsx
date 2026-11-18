@@ -49,7 +49,7 @@ const LightboxModal: React.FC<{
             download={attachment.fileName}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             onClick={(e) => e.stopPropagation()}
           >
             <Download className="w-3.5 h-3.5" />
@@ -127,7 +127,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
             // ✅ PDF — icon + filename, click opens iframe modal
             <div
               key={att.fileId}
-              className="group inline-flex h-8 max-w-[250px] items-center gap-2 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-secondary cursor-pointer"
+              className="group inline-flex h-8 max-w-[250px] items-center gap-2 rounded-md border border-border bg-background px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary cursor-pointer"
               onClick={(e) => handleClick(e, att, category)}
               title={att.fileName}
             >
@@ -145,7 +145,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => stopPropagation && e.stopPropagation()}
-              className="group inline-flex h-8 max-w-[250px] items-center gap-2 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-secondary"
+              className="group inline-flex h-8 max-w-[250px] items-center gap-2 rounded-md border border-border bg-background px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
               title={att.fileName}
             >
               <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />

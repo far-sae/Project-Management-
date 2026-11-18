@@ -294,7 +294,7 @@ export const SignupForm: React.FC = () => {
                   className="pl-10 md:h-10"
                 />
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Used as the default for deals, invoices, expenses. Change anytime in Settings → Organization.
               </p>
             </div>
@@ -355,7 +355,7 @@ export const SignupForm: React.FC = () => {
             Google
           </Button>
           {!agreedToTerms && (
-            <p className="text-[11px] text-muted-foreground text-center">
+            <p className="text-xs text-muted-foreground text-center">
               Tick the box above to enable Google sign-up.
             </p>
           )}

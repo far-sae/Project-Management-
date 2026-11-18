@@ -192,7 +192,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
 /** Underlined view tab in the project header (Board / List / Timeline …). */
 const viewTabClass = (active: boolean) =>
   cn(
-    'inline-flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[13px] font-medium transition-colors',
+    'inline-flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-sm font-medium transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
     active
       ? 'border-foreground text-foreground'
@@ -789,7 +789,7 @@ export const ProjectView: React.FC = () => {
         />
 
         {dueDayParam && (
-          <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2 text-[13px] lg:px-6">
+          <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2 text-sm lg:px-6">
             <p className="text-muted-foreground">
               Showing tasks due{' '}
               <span className="font-medium text-foreground">{dueDayParam}</span>
@@ -1038,7 +1038,7 @@ export const ProjectView: React.FC = () => {
               </div>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-border bg-card">
-                <table className="w-full min-w-[560px] text-left text-[13px]">
+                <table className="w-full min-w-[560px] text-left text-sm">
                   <thead className="border-b border-border bg-surface-2 text-xs text-muted-foreground">
                     <tr>
                       <th className="h-10 px-4 font-medium">Title</th>

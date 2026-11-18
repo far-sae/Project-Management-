@@ -185,7 +185,7 @@ export const SavedViewsMenu: React.FC<SavedViewsMenuProps> = ({
             >
               <span className="flex-1 truncate">{v.name}</span>
               <span
-                className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
+                className="inline-flex items-center gap-1 text-[0.6875rem] text-muted-foreground"
                 title={scopeLabel(v.scope)}
               >
                 {scopeIcon(v.scope)}

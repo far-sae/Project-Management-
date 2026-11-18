@@ -167,7 +167,7 @@ export const AuditLogSettingsTab: React.FC = () => {
                     <div key={e.eventId} className="p-2.5 flex items-start gap-3">
                       <Badge
                         variant="outline"
-                        className={`text-[10px] shrink-0 ${ACTION_BADGE[e.action] ?? ''}`}
+                        className={`text-[0.6875rem] shrink-0 ${ACTION_BADGE[e.action] ?? ''}`}
                       >
                         {prettyAction(e.action)}
                       </Badge>
@@ -182,14 +182,14 @@ export const AuditLogSettingsTab: React.FC = () => {
                           )}
                         </p>
                         {Object.keys(e.metadata).length > 0 && (
-                          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
                             {Object.entries(e.metadata)
                               .map(([k, v]) => `${k}: ${String(v)}`)
                               .join(' · ')}
                           </p>
                         )}
                       </div>
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {format(e.occurredAt, 'p')}
                       </span>
                     </div>

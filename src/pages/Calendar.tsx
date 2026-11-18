@@ -44,7 +44,7 @@ const STEP_BUTTON =
   'flex w-11 shrink-0 items-center justify-center bg-background text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:w-8';
 
 /** Shared chip shape for tasks in the grid and the legend. */
-const CHIP = 'h-5 rounded border px-1.5 text-[11px] font-medium leading-[18px]';
+const CHIP = 'h-5 rounded border px-1.5 text-xs font-medium leading-[18px]';
 
 export const Calendar: React.FC = () => {
   const navigate = useNavigate();
@@ -255,7 +255,7 @@ export const Calendar: React.FC = () => {
           ))}
 
           {dayTasks.length > 2 && (
-            <span className="px-1.5 text-[11px] text-muted-foreground">
+            <span className="px-1.5 text-xs text-muted-foreground">
               +{dayTasks.length - 2} more
             </span>
           )}
@@ -277,7 +277,7 @@ export const Calendar: React.FC = () => {
         <AppHeader left={<span className="text-sm font-semibold">Calendar</span>} />
 
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+          <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
             <PageHeader
               title={`${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
               description="View tasks by due date"

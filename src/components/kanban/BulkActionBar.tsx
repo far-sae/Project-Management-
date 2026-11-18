@@ -72,7 +72,7 @@ export const BulkActionBar: React.FC<BulkActionBarProps> = ({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 24, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border border-border bg-card p-1.5 text-[13px] text-foreground shadow-lg"
+            className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-1 rounded-xl border border-border bg-card p-1.5 text-sm text-foreground shadow-lg"
             role="toolbar"
             aria-label="Bulk task actions"
           >

@@ -225,7 +225,7 @@ export const OnboardingChecklist: React.FC = () => {
               <div className="min-w-0 flex-1">
                 <p
                   className={cn(
-                    'text-[13px] font-medium text-foreground',
+                    'text-sm font-medium text-foreground',
                     step.done && 'text-muted-foreground line-through',
                   )}
                 >

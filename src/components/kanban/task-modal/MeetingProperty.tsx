@@ -113,7 +113,7 @@ export const MeetingProperty: React.FC<MeetingPropertyProps> = ({
         </span>
         <div className={PROPERTY_VALUE}>
           {readOnly ? (
-            <span className="px-2 text-[13px] text-muted-foreground">None</span>
+            <span className="px-2 text-sm text-muted-foreground">None</span>
           ) : (
             <Button
               type="button"

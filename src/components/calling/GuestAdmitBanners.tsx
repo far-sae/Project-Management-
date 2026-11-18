@@ -30,7 +30,7 @@ export const GuestAdmitBanners: React.FC<GuestAdmitBannersProps> = ({
     'inline-flex shrink-0 items-center justify-center rounded-md font-medium transition-colors',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80',
     'disabled:pointer-events-none disabled:opacity-50',
-    compact ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-[13px]',
+    compact ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-sm',
   );
   return (
     <div className={cn('flex flex-col gap-2', className)}>
@@ -44,7 +44,7 @@ export const GuestAdmitBanners: React.FC<GuestAdmitBannersProps> = ({
               'flex items-center gap-2 border text-white shadow-[0_12px_32px_rgba(0,0,0,0.24)]',
               CALL_BORDER,
               CALL_SURFACE,
-              compact ? 'rounded-lg py-1.5 pl-2.5 pr-1.5 text-xs' : 'rounded-xl py-2 pl-3 pr-2 text-[13px]',
+              compact ? 'rounded-lg py-1.5 pl-2.5 pr-1.5 text-xs' : 'rounded-xl py-2 pl-3 pr-2 text-sm',
             )}
           >
             <span className="min-w-0 flex-1 truncate">

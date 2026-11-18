@@ -209,11 +209,11 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm font-semibold text-foreground">Your AI brief</h2>
-              <span className="text-[11px] font-medium text-primary bg-primary-soft rounded-full px-1.5 py-0.5">
+              <span className="text-xs font-medium text-primary bg-primary-soft rounded-full px-1.5 py-0.5">
                 Beta
               </span>
               {brief && (
-                <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                <span className="text-xs text-muted-foreground hidden sm:inline">
                   · Generated {format(new Date(brief.generatedAt), 'p')}
                 </span>
               )}
@@ -348,7 +348,7 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
                         onClick={() => f.taskId && onOpenTask?.(f.taskId)}
                         className="w-full text-left rounded-md border border-border/60 bg-card hover:bg-muted/40 transition-colors p-2.5 flex gap-2.5"
                       >
-                        <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-soft text-primary-soft-foreground text-[11px] font-semibold shrink-0">
+                        <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-soft text-primary-soft-foreground text-xs font-semibold shrink-0">
                           {idx + 1}
                         </span>
                         <span className="min-w-0 flex-1">

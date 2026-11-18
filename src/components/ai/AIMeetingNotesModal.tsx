@@ -258,7 +258,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                       drafts.forEach((_, i) => (next[i] = true));
                       setSelected(next);
                     }}
-                    className="text-[11px] text-primary-soft-foreground hover:underline"
+                    className="text-xs text-primary-soft-foreground hover:underline"
                   >
                     Select all
                   </button>
@@ -266,7 +266,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelected({})}
-                    className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                    className="text-xs text-muted-foreground hover:text-foreground hover:underline"
                   >
                     Clear
                   </button>
@@ -312,7 +312,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                             {d.priority && (
                               <span
                                 className={cn(
-                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.6875rem] font-medium',
                                   d.priority === 'high'
                                     ? 'bg-destructive-soft text-destructive-soft-foreground'
                                     : d.priority === 'low'
@@ -325,13 +325,13 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                               </span>
                             )}
                             {dueValid && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-info-soft text-info-soft-foreground">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.6875rem] font-medium bg-info-soft text-info-soft-foreground">
                                 <Calendar className="w-2.5 h-2.5" />
                                 {format(dueValid, 'MMM d')}
                               </span>
                             )}
                             {d.assigneeUserIds.length > 0 && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary-soft text-primary-soft-foreground">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.6875rem] font-medium bg-primary-soft text-primary-soft-foreground">
                                 <Users className="w-2.5 h-2.5" />
                                 {d.assigneeUserIds
                                   .map((id) => memberById.get(id)?.displayName || '?')
@@ -341,21 +341,21 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                             {d.tags.map((t) => (
                               <span
                                 key={t}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.6875rem] font-medium bg-muted text-foreground"
                               >
                                 <Tag className="w-2.5 h-2.5" />
                                 {t}
                               </span>
                             ))}
                             {d.subtasks.length > 0 && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.6875rem] font-medium bg-secondary text-secondary-foreground">
                                 <ListTree className="w-2.5 h-2.5" />
                                 {d.subtasks.length} subtask{d.subtasks.length === 1 ? '' : 's'}
                               </span>
                             )}
                           </div>
                           {d.rationale && (
-                            <p className="text-[11px] text-muted-foreground italic mt-1.5">
+                            <p className="text-xs text-muted-foreground italic mt-1.5">
                               {d.rationale}
                             </p>
                           )}
@@ -363,7 +363,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                             <button
                               type="button"
                               onClick={() => setExpanded((e) => ({ ...e, [idx]: !e[idx] }))}
-                              className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                              className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                             >
                               {isExpanded ? (
                                 <>

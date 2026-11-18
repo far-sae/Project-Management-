@@ -56,7 +56,7 @@ export const ChatAttachmentList: React.FC<Props> = ({ attachments, mine }) => {
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">{att.fileName}</p>
-              <p className="text-[11px] text-muted-foreground tabular-nums">
+              <p className="text-xs text-muted-foreground tabular-nums">
                 {formatFileSize(att.fileSize)}
               </p>
             </div>

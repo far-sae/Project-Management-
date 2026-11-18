@@ -337,7 +337,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               <p className="mt-1 text-xs text-muted-foreground">
                 {fields.map((f) => f.label + (f.required ? ' *' : '')).join(', ')}
               </p>
-              <p className="mt-2 text-[11px] text-muted-foreground">
+              <p className="mt-2 text-xs text-muted-foreground">
                 Anything else in your file (columns not in this list) can be saved as
                 a <span className="font-medium">Custom field</span> during mapping.
                 {resource === 'contacts' && ' Optional — if your CSV doesn’t have a category column, you’ll assign one in step 3.'}
@@ -398,7 +398,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                         </Select>
                         {mapping[h] === CUSTOM && (
                           <div className="mt-1.5 flex items-center gap-2">
-                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">Save as</span>
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">Save as</span>
                             <Input
                               value={customNames[h] ?? ''}
                               onChange={(e) => setCustomNames({ ...customNames, [h]: e.target.value })}
@@ -507,7 +507,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                           placeholder="e.g. VIP customers"
                           maxLength={64}
                         />
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           Free text. Anything you type becomes a reusable category next time.
                         </p>
                       </div>

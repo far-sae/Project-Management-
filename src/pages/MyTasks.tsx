@@ -114,7 +114,7 @@ function getDueCalendarDayStartMs(task: {
 }
 
 /** Sentence-case label above a block in the detail panel. */
-const SECTION_LABEL = 'text-[13px] font-medium text-muted-foreground';
+const SECTION_LABEL = 'text-sm font-medium text-muted-foreground';
 
 /** The round done-check used on task rows and subtasks. */
 const CheckMark: React.FC<{ checked: boolean; busy?: boolean }> = ({ checked, busy = false }) =>
@@ -870,7 +870,7 @@ export const MyTasks: React.FC = () => {
                     <div className="flex flex-col gap-5">
                       {taskGroups.map((group) => (
                         <section key={group.label} className="flex flex-col gap-2">
-                          <h2 className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
+                          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
                             {group.label}
                             <span className="font-normal tabular-nums text-muted-foreground">
                               {group.tasks.length}
@@ -893,7 +893,7 @@ export const MyTasks: React.FC = () => {
                                   onClick={() => setSelectedTask(task)}
                                   data-level={level}
                                   className={cn(
-                                    'flex min-h-11 cursor-pointer items-center gap-2.5 border-b px-3 py-1.5 text-[13px] transition-colors last:border-b-0',
+                                    'flex min-h-11 cursor-pointer items-center gap-2.5 border-b px-3 py-1.5 text-sm transition-colors last:border-b-0',
                                     TASK_LEVEL_SURFACE[level],
                                     // Rows share one hairline; only the surface carries the level.
                                     'border-border/60',
@@ -944,7 +944,7 @@ export const MyTasks: React.FC = () => {
                                       {task.tags?.slice(0, 2).map((t) => (
                                         <span
                                           key={t}
-                                          className="hidden h-5 max-w-[88px] shrink-0 items-center rounded border border-border bg-background px-1.5 text-[11px] text-muted-foreground 2xl:inline-flex"
+                                          className="hidden h-5 max-w-[88px] shrink-0 items-center rounded border border-border bg-background px-1.5 text-xs text-muted-foreground 2xl:inline-flex"
                                         >
                                           <span className="truncate">{t}</span>
                                         </span>
@@ -954,13 +954,13 @@ export const MyTasks: React.FC = () => {
                                           {task.assignees.slice(0, 3).map((a) => (
                                             <Avatar key={a.userId} className="h-5 w-5 border-2 border-background" title={a.displayName}>
                                               <AvatarImage src={a.photoURL} />
-                                              <AvatarFallback className="bg-primary-soft text-[10px] font-medium text-primary-soft-foreground">
+                                              <AvatarFallback className="bg-primary-soft text-[0.6875rem] font-medium text-primary-soft-foreground">
                                                 {a.displayName?.charAt(0).toUpperCase() || '?'}
                                               </AvatarFallback>
                                             </Avatar>
                                           ))}
                                           {task.assignees.length > 3 && (
-                                            <span className="flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-secondary px-1 text-[10px] font-medium text-secondary-foreground">
+                                            <span className="flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-secondary px-1 text-[0.6875rem] font-medium text-secondary-foreground">
                                               +{task.assignees.length - 3}
                                             </span>
                                           )}
@@ -988,7 +988,7 @@ export const MyTasks: React.FC = () => {
                           <CheckSquare className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
                           {workloadDeepLink ? (
                             <>
-                              <p className="text-[13px] font-medium text-foreground">No tasks match this view</p>
+                              <p className="text-sm font-medium text-foreground">No tasks match this view</p>
                               <p className="text-xs text-muted-foreground">Try another day or clear the workload filter.</p>
                               <Button type="button" variant="outline" size="sm" className="mt-2" onClick={clearWorkloadQuery}>
                                 Clear filter
@@ -996,7 +996,7 @@ export const MyTasks: React.FC = () => {
                             </>
                           ) : (
                             <>
-                              <p className="text-[13px] font-medium text-foreground">No tasks assigned to you</p>
+                              <p className="text-sm font-medium text-foreground">No tasks assigned to you</p>
                               <p className="text-xs text-muted-foreground">Tasks assigned to you will appear here</p>
                             </>
                           )}
@@ -1006,12 +1006,12 @@ export const MyTasks: React.FC = () => {
                   )
                 ) : recentActivity.length > 0 ? (
                   <section className="flex flex-col gap-2">
-                    <h3 className="text-[13px] font-semibold text-foreground">Recent Activity</h3>
+                    <h3 className="text-sm font-semibold text-foreground">Recent Activity</h3>
                     <div className="overflow-hidden rounded-lg border border-border bg-background">
                       {recentActivity.map((task) => (
                         <div
                           key={task.taskId}
-                          className="flex min-h-12 cursor-pointer items-center gap-3 border-b border-border/60 px-4 py-2 text-[13px] transition-colors last:border-b-0 hover:bg-surface-2"
+                          className="flex min-h-12 cursor-pointer items-center gap-3 border-b border-border/60 px-4 py-2 text-sm transition-colors last:border-b-0 hover:bg-surface-2"
                           onClick={() => { setSelectedTask(task); setActiveMainTab('mytasks'); }}
                         >
                           <CheckSquare className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -1030,7 +1030,7 @@ export const MyTasks: React.FC = () => {
                 ) : (
                   <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-12 text-center">
                     <Calendar className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                    <p className="text-[13px] font-medium text-foreground">No recent updates</p>
+                    <p className="text-sm font-medium text-foreground">No recent updates</p>
                     <p className="text-xs text-muted-foreground">Activity on your tasks will appear here</p>
                   </div>
                 )}
@@ -1060,7 +1060,7 @@ export const MyTasks: React.FC = () => {
                     <ChevronLeft aria-hidden />
                     Back
                   </Button>
-                  <span className="flex-1 truncate text-[13px] font-medium text-foreground">
+                  <span className="flex-1 truncate text-sm font-medium text-foreground">
                     {selectedTask.title}
                   </span>
                 </div>
@@ -1070,7 +1070,7 @@ export const MyTasks: React.FC = () => {
                   <div className="mx-auto flex min-h-[320px] w-full max-w-sm flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
                     <Lock className="h-5 w-5 text-muted-foreground" aria-hidden />
                     <h2 className="text-base font-semibold text-foreground">This task is locked</h2>
-                    <p className="text-[13px] text-muted-foreground">
+                    <p className="text-sm text-muted-foreground">
                       Enter the PIN to view details, comments, and activity on this panel.
                     </p>
                     <Input
@@ -1120,7 +1120,7 @@ export const MyTasks: React.FC = () => {
 
                       <h2 className="text-lg font-semibold tracking-tight text-foreground">{selectedTask.title}</h2>
 
-                      <dl className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-y-2 text-[13px]">
+                      <dl className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-y-2 text-sm">
                         <dt className="text-muted-foreground">Project</dt>
                         <dd className="flex min-w-0 items-center gap-2 font-medium text-foreground">
                           <span
@@ -1154,7 +1154,7 @@ export const MyTasks: React.FC = () => {
                             <dd className="flex min-w-0 items-center gap-2 font-medium text-foreground">
                               <Avatar className="h-5 w-5 shrink-0">
                                 <AvatarImage src={selectedTask.assignees[0].photoURL} />
-                                <AvatarFallback className="bg-primary-soft text-[10px] font-medium text-primary-soft-foreground">
+                                <AvatarFallback className="bg-primary-soft text-[0.6875rem] font-medium text-primary-soft-foreground">
                                   {selectedTask.assignees[0].displayName?.charAt(0).toUpperCase() || '?'}
                                 </AvatarFallback>
                               </Avatar>
@@ -1195,7 +1195,7 @@ export const MyTasks: React.FC = () => {
                             {(selectedTask.tags || []).map((tag) => (
                               <span
                                 key={tag}
-                                className="inline-flex h-5 items-center gap-1 rounded border border-border bg-background pl-1.5 pr-0.5 text-[11px] text-muted-foreground"
+                                className="inline-flex h-5 items-center gap-1 rounded border border-border bg-background pl-1.5 pr-0.5 text-xs text-muted-foreground"
                               >
                                 {tag}
                                 <button
@@ -1239,7 +1239,7 @@ export const MyTasks: React.FC = () => {
 
                         {selectedTask.description && (
                           <div>
-                            <ul className="list-inside list-disc space-y-1 text-pretty text-[13px] leading-5 text-foreground">
+                            <ul className="list-inside list-disc space-y-1 text-pretty text-sm leading-5 text-foreground">
                               {selectedTask.description.split('\n').filter(Boolean).map((line, i) => (
                                 <li key={i}>{line.replace(/^[-•]\s*/, '')}</li>
                               ))}
@@ -1253,7 +1253,7 @@ export const MyTasks: React.FC = () => {
 
                       {/* Subtasks */}
                       <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-3 text-[13px]">
+                        <div className="flex items-center gap-3 text-sm">
                           <h4 className={SECTION_LABEL}>Subtasks</h4>
                           {selectedSubtaskProgress && (
                             <>
@@ -1272,7 +1272,7 @@ export const MyTasks: React.FC = () => {
                         <div className="flex flex-col">
                           {(selectedTask.subtasks && selectedTask.subtasks.length > 0) ? (
                             selectedTask.subtasks.map((subtask) => (
-                              <div key={subtask.id} className="group -mx-2 flex min-h-7 items-center gap-2 rounded-md px-2 text-[13px] hover:bg-secondary">
+                              <div key={subtask.id} className="group -mx-2 flex min-h-7 items-center gap-2 rounded-md px-2 text-sm hover:bg-secondary">
                                 <button
                                   type="button"
                                   onClick={() => handleToggleInlineSubtask(subtask.id)}
@@ -1288,7 +1288,7 @@ export const MyTasks: React.FC = () => {
                             ))
                           ) : subtasksForSelected.length > 0 ? (
                             subtasksForSelected.map((subtask) => (
-                              <div key={subtask.taskId} className="group -mx-2 flex min-h-7 items-center gap-2 rounded-md px-2 text-[13px] hover:bg-secondary">
+                              <div key={subtask.taskId} className="group -mx-2 flex min-h-7 items-center gap-2 rounded-md px-2 text-sm hover:bg-secondary">
                                 <button
                                   type="button"
                                   onClick={(e) => handleToggleStatus(subtask, e)}
@@ -1303,14 +1303,14 @@ export const MyTasks: React.FC = () => {
                               </div>
                             ))
                           ) : null}
-                          <div className="flex min-h-7 items-center gap-2 pt-1 text-[13px]">
+                          <div className="flex min-h-7 items-center gap-2 pt-1 text-sm">
                             <Circle className="h-4 w-4 shrink-0 text-muted-foreground/50" aria-hidden />
                             <input
                               type="text"
                               value={newSubtaskTitle}
                               onChange={(e) => setNewSubtaskTitle(e.target.value)}
                               placeholder="Add a subtask..."
-                              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+                              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
                             />
                             <Button type="button" variant="outline" size="sm" onClick={handleAddSubtask} disabled={!newSubtaskTitle.trim()}>Add</Button>
@@ -1381,13 +1381,13 @@ export const MyTasks: React.FC = () => {
                                     aria-label="Time spent in minutes"
                                     className="w-24"
                                   />
-                                  <span className="text-[13px] text-muted-foreground">min</span>
+                                  <span className="text-sm text-muted-foreground">min</span>
                                 </div>
                               )}
                               {commentAttachmentFiles.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2">
                                   {commentAttachmentFiles.map((f, i) => (
-                                    <span key={i} className="inline-flex h-5 max-w-full items-center gap-1 rounded border border-border bg-background pl-1.5 pr-0.5 text-[11px] text-muted-foreground">
+                                    <span key={i} className="inline-flex h-5 max-w-full items-center gap-1 rounded border border-border bg-background pl-1.5 pr-0.5 text-xs text-muted-foreground">
                                       <span className="truncate">{f.name}</span>
                                       <button
                                         type="button"
@@ -1413,7 +1413,7 @@ export const MyTasks: React.FC = () => {
                                 </Avatar>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-x-2">
-                                    <span className="text-[13px] font-medium text-foreground">{comment.displayName}</span>
+                                    <span className="text-sm font-medium text-foreground">{comment.displayName}</span>
                                     <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}</span>
                                   </div>
                                   {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
@@ -1422,7 +1422,7 @@ export const MyTasks: React.FC = () => {
                                     </StatusPill>
                                   )}
                                   {comment.text?.trim() && (
-                                    <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-5 text-foreground">{comment.text}</p>
+                                    <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-foreground">{comment.text}</p>
                                   )}
                                   {comment.attachments && comment.attachments.length > 0 && (
                                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1443,8 +1443,8 @@ export const MyTasks: React.FC = () => {
                           <TabsContent value="activity">
                             <div className="flex flex-col gap-2.5">
                               {taskComments.map((c) => (
-                                <div key={c.commentId} className="flex items-start gap-2.5 text-[13px]">
-                                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-medium text-secondary-foreground">
+                                <div key={c.commentId} className="flex items-start gap-2.5 text-sm">
+                                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[0.6875rem] font-medium text-secondary-foreground">
                                     {c.displayName?.charAt(0) || '?'}
                                   </div>
                                   <div className="min-w-0 flex-1">
@@ -1459,7 +1459,7 @@ export const MyTasks: React.FC = () => {
                                   </div>
                                 </div>
                               ))}
-                              <div className="flex items-start gap-2.5 text-[13px]">
+                              <div className="flex items-start gap-2.5 text-sm">
                                 <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
                                   <Check className="h-3 w-3" aria-hidden />
                                 </div>
@@ -1503,7 +1503,7 @@ export const MyTasks: React.FC = () => {
               ) : (
                 <div className="flex min-h-[320px] flex-1 flex-col items-center justify-center gap-1 p-6 text-center">
                   <CheckSquare className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                  <p className="text-[13px] font-medium text-foreground">Select a task</p>
+                  <p className="text-sm font-medium text-foreground">Select a task</p>
                   <p className="text-xs text-muted-foreground">Click on a task to see details</p>
                 </div>
               )}

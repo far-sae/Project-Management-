@@ -70,7 +70,7 @@ export const PresenceAvatars: React.FC<{ peers: PresencePeer[] }> = ({ peers }) 
           ) : (
             <span
               key={peer.userId}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-foreground ring-2 ring-card"
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground ring-2 ring-card"
             >
               {(peer.displayName || '?').charAt(0).toUpperCase()}
             </span>
@@ -78,7 +78,7 @@ export const PresenceAvatars: React.FC<{ peers: PresencePeer[] }> = ({ peers }) 
         )}
       </div>
       {peers.length > 3 && (
-        <span aria-hidden className="text-[11px] font-medium text-muted-foreground tabular-nums">
+        <span aria-hidden className="text-xs font-medium text-muted-foreground tabular-nums">
           +{peers.length - 3}
         </span>
       )}
@@ -137,7 +137,7 @@ export const ActivityList: React.FC<{ events: ActivityEvent[]; loading: boolean 
   if (loading) return <ListSkeleton label="Loading activity" />;
   if (events.length === 0) {
     return (
-      <p className="py-8 text-center text-[13px] text-muted-foreground">
+      <p className="py-8 text-center text-sm text-muted-foreground">
         No activity yet — changes, subtasks and comments will show up here.
       </p>
     );
@@ -145,7 +145,7 @@ export const ActivityList: React.FC<{ events: ActivityEvent[]; loading: boolean 
   return (
     <ol className="space-y-3">
       {events.map((ev) => (
-        <li key={ev.activityId} className="flex items-start gap-2.5 text-[13px]">
+        <li key={ev.activityId} className="flex items-start gap-2.5 text-sm">
           <span
             aria-hidden
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground"
@@ -190,7 +190,7 @@ export const CommentSummaryCard: React.FC<{
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold leading-tight text-foreground">AI thread summary</p>
+          <p className="text-sm font-semibold leading-tight text-foreground">AI thread summary</p>
           <p className="truncate text-xs leading-tight text-muted-foreground">
             <span className="tabular-nums">{count}</span> comments · TL;DR with decisions and action items
           </p>
@@ -245,7 +245,7 @@ export const CommentSummaryCard: React.FC<{
         {summary && (
           <>
             {summary.tldr && (
-              <p className="text-[13px] leading-relaxed">
+              <p className="text-sm leading-relaxed">
                 <span className="mr-1.5 text-xs font-medium text-muted-foreground">TL;DR</span>
                 {summary.tldr}
               </p>
@@ -253,7 +253,7 @@ export const CommentSummaryCard: React.FC<{
             {summary.decisions.length > 0 && (
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">Decisions</p>
-                <ul className="space-y-1 text-[13px] leading-relaxed">
+                <ul className="space-y-1 text-sm leading-relaxed">
                   {summary.decisions.map((d, i) => (
                     <li key={i} className="flex gap-1.5">
                       <Check className="mt-0.5 h-3 w-3 shrink-0 text-success" aria-hidden />
@@ -266,7 +266,7 @@ export const CommentSummaryCard: React.FC<{
             {summary.openQuestions.length > 0 && (
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">Open questions</p>
-                <ul className="space-y-1 text-[13px] leading-relaxed">
+                <ul className="space-y-1 text-sm leading-relaxed">
                   {summary.openQuestions.map((q, i) => (
                     <li key={i} className="flex gap-1.5">
                       <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden />
@@ -279,7 +279,7 @@ export const CommentSummaryCard: React.FC<{
             {summary.actionItems.length > 0 && (
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">Action items</p>
-                <ul className="space-y-1 text-[13px] leading-relaxed">
+                <ul className="space-y-1 text-sm leading-relaxed">
                   {summary.actionItems.map((a, i) => (
                     <li key={i} className="flex gap-1.5">
                       <span className="shrink-0 text-muted-foreground" aria-hidden>→</span>

@@ -207,7 +207,7 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
                     setText(example);
                     void handleParse(example);
                   }}
-                  className="text-[11px] px-2 py-1 rounded-full bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/60 transition-colors"
+                  className="text-xs px-2 py-1 rounded-full bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/60 transition-colors"
                 >
                   {example.length > 60 ? `${example.slice(0, 57)}…` : example}
                 </button>
@@ -263,7 +263,7 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 {draft.priority && (
                   <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                       draft.priority === 'high'
                         ? 'bg-destructive-soft text-destructive-soft-foreground'
                         : draft.priority === 'low'
@@ -276,18 +276,18 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
                   </span>
                 )}
                 {previewDueValid && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-info-soft text-info-soft-foreground">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-info-soft text-info-soft-foreground">
                     <Calendar className="w-3 h-3" />
                     {format(previewDueValid, 'EEE, MMM d')}
                   </span>
                 )}
                 {draft.status && columns.find((c) => c.id === draft.status) && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-secondary text-secondary-foreground">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
                     {columns.find((c) => c.id === draft.status)?.title}
                   </span>
                 )}
                 {draft.assigneeUserIds.length > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary-soft text-primary-soft-foreground">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary-soft text-primary-soft-foreground">
                     <Users className="w-3 h-3" />
                     {draft.assigneeUserIds
                       .map((id) => memberById.get(id)?.displayName || 'Unknown')
@@ -298,7 +298,7 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
                   draft.tags.map((t) => (
                     <span
                       key={t}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-foreground"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-foreground"
                     >
                       <Tag className="w-3 h-3" />
                       {t}
@@ -306,7 +306,7 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
                   ))}
               </div>
               {draft.notes && (
-                <div className="flex items-start gap-2 text-[12px] text-muted-foreground bg-muted/30 rounded-md px-2 py-1.5">
+                <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md px-2 py-1.5">
                   <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                   <span>{draft.notes}</span>
                 </div>

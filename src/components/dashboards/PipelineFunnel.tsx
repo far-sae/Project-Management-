@@ -39,7 +39,7 @@ export const PipelineFunnel: React.FC<Props> = ({ data, valueFormatter }) => {
                 className="h-full rounded transition-[width] duration-300"
                 style={{ width: `${pct}%`, background: color }}
               />
-              <div className="absolute inset-0 flex items-center justify-between px-2 text-[11px] font-medium text-foreground/90">
+              <div className="absolute inset-0 flex items-center justify-between px-2 text-xs font-medium text-foreground/90">
                 <span>{d.count}</span>
                 {d.value != null && (
                   <span className="text-muted-foreground">

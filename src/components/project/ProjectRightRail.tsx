@@ -87,7 +87,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 /** Reaction count under a message: a 22px bordered pill. */
 const REACTION_CHIP =
-  'inline-flex h-[22px] items-center gap-1 rounded-full border border-border bg-card px-2 text-[11px] font-medium text-muted-foreground';
+  'inline-flex h-[22px] items-center gap-1 rounded-full border border-border bg-card px-2 text-xs font-medium text-muted-foreground';
 /** …tinted when you are one of the people who reacted. */
 const REACTION_CHIP_MINE = 'border-primary/40 bg-primary-soft text-primary-soft-foreground';
 
@@ -184,15 +184,15 @@ const CallRecordingCard: React.FC<{ payload: CallRecordingChatPayload }> = ({ pa
   const [showTranscript, setShowTranscript] = React.useState(false);
   const duration = formatCallDuration(payload.durationSec);
   return (
-    <div className="min-w-[240px] max-w-[340px] rounded-lg border border-border bg-card p-3 text-[13px] leading-5 text-foreground">
+    <div className="min-w-[240px] max-w-[340px] rounded-lg border border-border bg-card p-3 text-sm leading-5 text-foreground">
       <div className="mb-2 flex items-center gap-2">
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-destructive-soft text-destructive-soft-foreground">
           <Mic className="h-3.5 w-3.5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-foreground">Recorded call</p>
+          <p className="text-sm font-semibold text-foreground">Recorded call</p>
           {duration && (
-            <p className="text-[11px] text-muted-foreground tabular-nums">Duration {duration}</p>
+            <p className="text-xs text-muted-foreground tabular-nums">Duration {duration}</p>
           )}
         </div>
       </div>
@@ -206,7 +206,7 @@ const CallRecordingCard: React.FC<{ payload: CallRecordingChatPayload }> = ({ pa
         <a
           href={payload.url}
           download={payload.fileName || 'call.webm'}
-          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           title="Download audio"
         >
           <Download className="h-3 w-3" />
@@ -216,7 +216,7 @@ const CallRecordingCard: React.FC<{ payload: CallRecordingChatPayload }> = ({ pa
           <button
             type="button"
             onClick={() => setShowTranscript((v) => !v)}
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             title={showTranscript ? 'Hide transcript' : 'Show transcript'}
           >
             <FileText className="h-3 w-3" />
@@ -439,7 +439,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
    *  open across pages. */
   const { openChat } = useChatDock();
   // Keep the dock clear of this panel: next to the open panel, or the launcher.
-  useChatDockInset(open ? 25 : 5.5);
+  useChatDockInset(open ? 29 : 6);
 
   const openDirectMessage = useCallback(
     (m: { userId?: string; displayName?: string; email?: string; photoURL?: string }) => {
@@ -829,7 +829,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       </div>
       <div className="flex flex-col">
         {dedupedMembers.length === 0 && (
-          <p className="px-2 py-2 text-[13px] text-muted-foreground">No members yet</p>
+          <p className="px-2 py-2 text-sm text-muted-foreground">No members yet</p>
         )}
         {dedupedMembers.map((m) => {
           const profile = m.userId ? projectProfilesByUserId.get(m.userId) : undefined;
@@ -879,7 +879,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       <h3 className="mb-3 text-xs font-medium text-muted-foreground">Activity</h3>
       <div className="space-y-4">
         {projectEvents.length === 0 && (
-          <p className="py-2 text-[13px] text-muted-foreground">No recent activity</p>
+          <p className="py-2 text-sm text-muted-foreground">No recent activity</p>
         )}
         {projectEvents.map((e) => {
           const Icon = ACTIVITY_ICONS[e.type] || ActivityIcon;
@@ -892,7 +892,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="text-[13px] leading-5">
+                <p className="text-sm leading-5">
                   <span className="font-medium text-foreground">{e.displayName}</span>{' '}
                   <span className="text-muted-foreground">
                     {summarizeActivity(e.type, e.payload as any)}
@@ -904,7 +904,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     </>
                   )}
                 </p>
-                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                   <Icon className="h-3 w-3" />
                   {formatDistanceToNow(new Date(e.createdAt), { addSuffix: true })}
                 </p>
@@ -916,7 +916,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     </section>
   );
 
-  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(23rem,calc(100vw-2.5rem))]';
+  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(27rem,calc(100vw-2.5rem))]';
   /** The one soft shadow the floating project chat uses. */
   const floatingShadow = 'shadow-[0_12px_32px_rgba(0,0,0,0.10)]';
   const viewOnlyTitle = 'View-only — calls are disabled for your role.';
@@ -947,18 +947,18 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           aria-label={`Open project messages — ${project.name}`}
           title={`${project.name} · ${dedupedMembers.length} members${chatMessages.length > 0 ? '' : ' · Start the conversation'}`}
           className={cn(
-            'pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center',
+            'pointer-events-auto relative inline-flex h-14 w-14 items-center justify-center',
             'rounded-full bg-primary text-primary-foreground transition-colors',
             floatingShadow,
             'hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           )}
         >
-          <MessageSquare className="h-5 w-5" />
+          <MessageSquare className="h-6 w-6" />
           {unreadCount > 0 && (
             <span
               className={cn(
                 'absolute -right-1.5 -top-1.5 min-w-[18px] rounded-full px-[5px]',
-                'bg-destructive text-center text-[11px] font-semibold leading-[18px] text-destructive-foreground tabular-nums',
+                'bg-destructive text-center text-xs font-semibold leading-[18px] text-destructive-foreground tabular-nums',
                 'ring-2 ring-background',
               )}
             >
@@ -982,7 +982,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           floatingShadow,
           'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
           railWidth,
-          'h-[min(37.5rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
+          'h-[min(44rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
         )}
       >
         <div className="flex min-h-14 shrink-0 items-center gap-2.5 border-b border-border pl-3 pr-2">
@@ -1132,7 +1132,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
             ) : chatMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
                 <MessageSquare className="mb-2 h-5 w-5 text-muted-foreground" />
-                <p className="text-[13px] font-medium text-foreground">No project messages yet</p>
+                <p className="text-sm font-medium text-foreground">No project messages yet</p>
                 <p className="mt-1 max-w-xs text-xs text-muted-foreground">
                   Start a conversation, share blockers, or use @name to notify a teammate.
                 </p>
@@ -1152,7 +1152,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                       {showDay && (
                         <div className="flex items-center gap-3 pb-1 pt-3" role="separator">
                           <span aria-hidden className="h-px flex-1 bg-border" />
-                          <span className="text-[11px] font-medium text-muted-foreground">
+                          <span className="text-xs font-medium text-muted-foreground">
                             {messageDayLabel(createdAt)}
                           </span>
                           <span aria-hidden className="h-px flex-1 bg-border" />
@@ -1295,7 +1295,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 {chatPendingFiles.map((f, idx) => (
                   <span
                     key={`${f.name}-${idx}`}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px]"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
                   >
                     <Paperclip className="h-3 w-3" />
                     <span className="max-w-[10rem] truncate">{f.name}</span>

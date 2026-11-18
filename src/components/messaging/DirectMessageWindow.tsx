@@ -252,7 +252,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
     return (
       <div
         className={cn(
-          'pointer-events-auto flex h-11 w-44 shrink-0 items-center overflow-hidden rounded-t-xl border border-b-0 border-border bg-card sm:w-52',
+          'pointer-events-auto flex h-12 w-48 shrink-0 items-center overflow-hidden rounded-t-xl border border-b-0 border-border bg-card sm:w-60',
           'shadow-[0_-4px_16px_rgba(0,0,0,0.08)]',
           'animate-in fade-in slide-in-from-bottom-2 duration-200 motion-reduce:animate-none',
         )}
@@ -263,12 +263,12 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
           aria-label={`Open chat with ${recipient.displayName}${unread ? ` (${unread} unread)` : ''}`}
           className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2.5 pr-1 text-left transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
-          {avatar('h-6 w-6', 'text-[11px]')}
-          <span className={cn('min-w-0 flex-1 truncate text-[13px]', unread ? 'font-semibold' : 'font-medium')}>
+          {avatar('h-6 w-6', 'text-xs')}
+          <span className={cn('min-w-0 flex-1 truncate text-sm', unread ? 'font-semibold' : 'font-medium')}>
             {recipient.displayName}
           </span>
           {unread > 0 && (
-            <span className="min-w-[18px] shrink-0 rounded-full bg-destructive px-[5px] text-center text-[11px] font-semibold leading-[18px] text-destructive-foreground tabular-nums">
+            <span className="min-w-[18px] shrink-0 rounded-full bg-destructive px-[5px] text-center text-xs font-semibold leading-[18px] text-destructive-foreground tabular-nums">
               {unread > 99 ? '99+' : unread}
             </span>
           )}
@@ -298,8 +298,8 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
       className={cn(
         'pointer-events-auto flex shrink-0 flex-col overflow-hidden rounded-t-xl border border-b-0 border-border bg-card',
         'shadow-[0_-8px_32px_rgba(0,0,0,0.12)]',
-        'w-[calc(100vw-1rem)] sm:w-80',
-        'h-[min(28.75rem,calc(100svh-4rem))]',
+        'w-[calc(100vw-1rem)] sm:w-[23rem]',
+        'h-[min(34rem,calc(100svh-4rem))]',
         'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
       )}
     >
@@ -311,9 +311,9 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
           tabIndex={-1}
           className="flex min-w-0 flex-1 items-center gap-2.5 self-stretch text-left"
         >
-          {avatar('h-8 w-8', 'text-[13px]')}
+          {avatar('h-8 w-8', 'text-sm')}
           <span className="min-w-0">
-            <span className="block truncate text-[13px] font-semibold leading-[18px] text-foreground">
+            <span className="block truncate text-sm font-semibold leading-[18px] text-foreground">
               {recipient.displayName}
             </span>
             <span
@@ -387,7 +387,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
             <MessageSquare className="mb-2 h-5 w-5 text-muted-foreground" />
-            <p className="text-[13px] font-medium text-foreground">Start the conversation</p>
+            <p className="text-sm font-medium text-foreground">Start the conversation</p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground">
               Send {firstName} a private message.
             </p>
@@ -407,7 +407,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
                   {showDay && (
                     <div className="flex items-center gap-3 pb-1 pt-3" role="separator">
                       <span aria-hidden className="h-px flex-1 bg-border" />
-                      <span className="text-[11px] font-medium text-muted-foreground">
+                      <span className="text-xs font-medium text-muted-foreground">
                         {messageDayLabel(msg.createdAt)}
                       </span>
                       <span aria-hidden className="h-px flex-1 bg-border" />
@@ -416,7 +416,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
                   <div className={cn('flex', mine && 'justify-end', grouped ? 'mt-0.5' : 'mt-2.5')}>
                     <div className={cn('min-w-0 max-w-[82%]', mine && 'flex flex-col items-end')}>
                       {!grouped && (
-                        <div className="mb-0.5 text-[11px] leading-4 text-muted-foreground tabular-nums">
+                        <div className="mb-0.5 text-xs leading-4 text-muted-foreground tabular-nums">
                           {format(msg.createdAt, 'p')}
                         </div>
                       )}
@@ -437,7 +437,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
             {pendingFiles.map((f, idx) => (
               <span
                 key={`${f.name}-${idx}`}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px]"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs"
               >
                 <Paperclip className="h-3 w-3" />
                 <span className="max-w-[10rem] truncate">{f.name}</span>

@@ -218,11 +218,11 @@ const DesignPreview: React.FC = () => {
 
         <Section title="Fields">
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-[13px] font-medium">
+            <label className="flex flex-col gap-1.5 text-sm font-medium">
               Project name
               <Input defaultValue="Website relaunch" />
             </label>
-            <label className="flex flex-col gap-1.5 text-[13px] font-medium">
+            <label className="flex flex-col gap-1.5 text-sm font-medium">
               Workspace
               <Select defaultValue="all">
                 <SelectTrigger>
@@ -234,11 +234,11 @@ const DesignPreview: React.FC = () => {
                 </SelectContent>
               </Select>
             </label>
-            <label className="flex flex-col gap-1.5 text-[13px] font-medium sm:col-span-2">
+            <label className="flex flex-col gap-1.5 text-sm font-medium sm:col-span-2">
               Description
               <Textarea placeholder="Add a description, link, or note…" />
             </label>
-            <div className="flex items-center gap-6 text-[13px]">
+            <div className="flex items-center gap-6 text-sm">
               <label className="flex items-center gap-2">
                 <Switch defaultChecked /> Lock with PIN
               </label>

@@ -249,6 +249,13 @@ describe('TaskModal description editing', () => {
     expect(box.selectionStart).toBe(5);
     expect(box.selectionEnd).toBe(5);
   });
+
+  it('shows the description inside a visible box before you click it', async () => {
+    render(<TaskModal open onClose={vi.fn()} task={withText()} projectId="p1" onSave={vi.fn()} />);
+    const view = await screen.findByRole('button', { name: /description\. press enter to edit/i });
+    expect(view.getAttribute('data-boxed')).toBe('true');
+    expect(view.className).toMatch(/(^|\s)border(\s|$)/);
+  });
 });
 
 describe('TaskModal team permissions', () => {

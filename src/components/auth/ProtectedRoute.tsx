@@ -44,7 +44,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
-          <p className="mt-2 text-[13px] text-muted-foreground">Loading...</p>
+          <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -83,7 +83,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
-          <p className="mt-2 text-[13px] text-muted-foreground">Loading...</p>
+          <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -102,7 +102,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
-          <p className="mt-2 text-[13px] text-muted-foreground">Loading...</p>
+          <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );

@@ -137,7 +137,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         )}
       >
         <Upload className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
-        <p className="text-[13px] font-medium text-foreground">
+        <p className="text-sm font-medium text-foreground">
           {isDragging ? 'Drop files here' : 'Drag and drop files here'}
         </p>
         <p className="text-xs text-muted-foreground mt-1">or click to browse</p>

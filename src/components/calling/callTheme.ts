@@ -24,7 +24,7 @@ const FOCUS =
  * Bordered dark button for the top bar (32px; 40px on touch screens).
  * Add `px-3` for a labelled button or `w-10 md:w-8` for an icon-only one.
  */
-export const CALL_BAR_BUTTON = `inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-[#3a3a3a] bg-[#1c1c1c] text-[13px] font-medium text-white transition-colors hover:bg-[#3a3a3a] disabled:pointer-events-none disabled:opacity-50 md:h-8 ${FOCUS}`;
+export const CALL_BAR_BUTTON = `inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-[#3a3a3a] bg-[#1c1c1c] text-sm font-medium text-white transition-colors hover:bg-[#3a3a3a] disabled:pointer-events-none disabled:opacity-50 md:h-8 ${FOCUS}`;
 
 /** Round control (mute, camera, …). Add a size and one of the states below. */
 export const CALL_ROUND = `inline-flex shrink-0 items-center justify-center rounded-full transition-colors disabled:pointer-events-none disabled:opacity-50 ${FOCUS}`;

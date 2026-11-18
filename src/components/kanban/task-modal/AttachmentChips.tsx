@@ -29,7 +29,7 @@ const KIND_ICON: Record<AttachmentKind, typeof Paperclip> = {
 };
 
 const CHIP =
-  'inline-flex h-8 max-w-full items-center gap-2 rounded-md border border-border bg-background px-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'inline-flex h-8 max-w-full items-center gap-2 rounded-md border border-border bg-background px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 /**
  * The task's files as compact bordered chips. Images and PDFs open in a

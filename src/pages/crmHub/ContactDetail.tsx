@@ -331,7 +331,7 @@ export const CrmContactDetailPage: React.FC = () => {
             <Card>
               <CardContent className="space-y-3 p-5">
                 <h3 className="text-sm font-semibold">Custom fields</h3>
-                <p className="text-[11px] text-muted-foreground -mt-2">
+                <p className="text-xs text-muted-foreground -mt-2">
                   Captured from CSV import.
                 </p>
                 {Object.entries(contact.customFields).map(([k, v]) => (

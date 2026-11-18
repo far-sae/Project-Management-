@@ -30,7 +30,7 @@ export const QuickMenu: React.FC<QuickMenuProps> = ({ items }) => {
               key={item.href}
               to={item.href}
               className={cn(
-                'flex h-10 items-center justify-between gap-2 rounded-md px-2 text-[13px] font-medium transition-colors md:h-8',
+                'flex h-10 items-center justify-between gap-2 rounded-md px-2 text-sm font-medium transition-colors md:h-8',
                 isActive
                   ? 'bg-foreground/[0.07] text-foreground'
                   : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground'
@@ -41,7 +41,7 @@ export const QuickMenu: React.FC<QuickMenuProps> = ({ items }) => {
                 <span className="truncate">{item.label}</span>
               </div>
               {item.badge !== undefined && item.badge > 0 && (
-                <span className="min-w-[18px] rounded-full bg-foreground px-1.5 text-center text-[11px] leading-[18px] text-background tabular-nums">
+                <span className="min-w-[18px] rounded-full bg-foreground px-1.5 text-center text-xs leading-[18px] text-background tabular-nums">
                   {item.badge}
                 </span>
               )}

@@ -143,10 +143,10 @@ export const MfaSettingsTab: React.FC = () => {
           <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
             <div className="flex flex-col items-center gap-2 rounded-md border p-3 bg-card">
               <img src={draft.qrDataUrl} alt="TOTP QR code" className="w-[200px] h-[200px]" />
-              <p className="text-[10px] text-muted-foreground text-center">
+              <p className="text-[0.6875rem] text-muted-foreground text-center">
                 Or paste this secret into your app:
               </p>
-              <code className="text-[11px] font-mono break-all text-center select-all">
+              <code className="text-xs font-mono break-all text-center select-all">
                 {draft.secret}
               </code>
             </div>
@@ -164,7 +164,7 @@ export const MfaSettingsTab: React.FC = () => {
               </div>
               <div>
                 <Label className="text-xs">Recovery codes — save these now</Label>
-                <div className="rounded-md border bg-muted/40 p-2 grid grid-cols-2 gap-1 font-mono text-[11px]">
+                <div className="rounded-md border bg-muted/40 p-2 grid grid-cols-2 gap-1 font-mono text-xs">
                   {draft.recoveryCodes.map((c) => <code key={c}>{c}</code>)}
                 </div>
                 <Button
@@ -177,7 +177,7 @@ export const MfaSettingsTab: React.FC = () => {
                   {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   {copied ? 'Copied' : 'Copy all codes'}
                 </Button>
-                <p className="text-[11px] text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Each code works once if you lose access to your authenticator.
                 </p>
               </div>

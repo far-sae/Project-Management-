@@ -59,7 +59,7 @@ const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
 
 /** Small square tag (4px corners) for roles and employment type. */
 const TAG =
-  'inline-flex h-5 shrink-0 items-center rounded border border-border px-1.5 text-[11px] text-muted-foreground';
+  'inline-flex h-5 shrink-0 items-center rounded border border-border px-1.5 text-xs text-muted-foreground';
 
 /** 28px square icon button in a table row (touch-sized on phones). */
 const ROW_ICON_BUTTON = 'w-10 px-0 text-muted-foreground md:w-7';
@@ -275,7 +275,7 @@ export const HR: React.FC = () => {
           }
         />
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6">
+          <div className="w-full px-4 py-6 lg:px-6">
             <TeamAttendance />
           </div>
         </div>
@@ -298,7 +298,7 @@ export const HR: React.FC = () => {
           </div>
 
           <TabsContent value="people" className="mt-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+            <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
               <PageHeader
                 title="HR Directory"
                 description={
@@ -322,7 +322,7 @@ export const HR: React.FC = () => {
                 ) : visibleDirectory.length === 0 ? (
                   <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
                     <Users className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                    <p className="text-[13px] font-medium">
+                    <p className="text-sm font-medium">
                       {directory.length === 0
                         ? 'No team members yet.'
                         : 'No employees with a hire date in this range.'}
@@ -330,7 +330,7 @@ export const HR: React.FC = () => {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-left text-[13px]">
+                    <table className="w-full min-w-[760px] text-left text-sm">
                       <thead>
                         <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
                           <th scope="col" className="px-4 font-medium">Member</th>
@@ -354,7 +354,7 @@ export const HR: React.FC = () => {
                                 <div className="flex min-w-0 items-center gap-2.5">
                                   <Avatar className="h-7 w-7 shrink-0">
                                     <AvatarImage src={entry.photoURL} alt={entry.displayName} />
-                                    <AvatarFallback className="text-[11px] font-semibold">
+                                    <AvatarFallback className="text-xs font-semibold">
                                       {entry.displayName.charAt(0).toUpperCase() || '?'}
                                     </AvatarFallback>
                                   </Avatar>

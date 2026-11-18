@@ -172,7 +172,7 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
           {/* Create new workspace card */}
           <button
             type="button"
-            className="flex min-h-28 items-center justify-center gap-1.5 rounded-lg border border-dashed border-foreground/20 bg-background p-4 text-[13px] font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex min-h-28 items-center justify-center gap-1.5 rounded-lg border border-dashed border-foreground/20 bg-background p-4 text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               onCreateWorkspace();
               onOpenChange(false);

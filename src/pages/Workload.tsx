@@ -233,7 +233,7 @@ export const Workload: React.FC = () => {
       <AppHeader left={<span className="text-sm font-semibold">Workload</span>} />
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader
             title="Workload"
             description="Tasks due per assignee for the selected week. Heat reflects load vs daily capacity."
@@ -296,25 +296,25 @@ export const Workload: React.FC = () => {
             </div>
 
             {capacityError && (
-              <p className="border-b border-border px-4 py-2.5 text-[13px] text-destructive" role="alert">
+              <p className="border-b border-border px-4 py-2.5 text-sm text-destructive" role="alert">
                 {capacityError}
               </p>
             )}
             {tasksLoading || capacityLoading ? (
-              <div className="flex items-center justify-center gap-2 py-12 text-[13px] text-muted-foreground">
+              <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 Loading workload…
               </div>
             ) : rows.length === 0 ? (
               <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
                 <Users className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                <p className="text-[13px] font-medium text-foreground">
+                <p className="text-sm font-medium text-foreground">
                   No team members in this organization yet.
                 </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-[13px]">
+                <table className="w-full min-w-[640px] text-sm">
                   <thead>
                     <tr className="h-10 border-b border-border bg-surface-2 text-left text-xs text-muted-foreground">
                       <th className="px-4 font-medium">Member</th>
@@ -359,7 +359,7 @@ export const Workload: React.FC = () => {
                                   src={row.member.photoURL}
                                   alt={row.member.displayName}
                                 />
-                                <AvatarFallback className="bg-primary-soft text-[10px] font-medium text-primary-soft-foreground">
+                                <AvatarFallback className="bg-primary-soft text-[0.6875rem] font-medium text-primary-soft-foreground">
                                   {initialsOf(row.member.displayName)}
                                 </AvatarFallback>
                               </Avatar>

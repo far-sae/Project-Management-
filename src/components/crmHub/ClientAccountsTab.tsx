@@ -144,7 +144,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                 <div className="flex items-center gap-2"><Badge variant="outline">{account.billingType === 'monthly' ? `${money(account.agreedAmount)}/month` : 'One-time'}</Badge><Button size="sm" variant="outline" onClick={() => setPaying(account)}>Add payment</Button></div>
               </div>
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-12">
-                {MONTHS.map((month, index) => <div key={month} className="rounded-md bg-muted/50 p-2 text-center"><p className="text-[10px] text-muted-foreground">{month}</p><p className="text-xs font-medium">{money(summary.monthlyPaid[index])}</p></div>)}
+                {MONTHS.map((month, index) => <div key={month} className="rounded-md bg-muted/50 p-2 text-center"><p className="text-[0.6875rem] text-muted-foreground">{month}</p><p className="text-xs font-medium">{money(summary.monthlyPaid[index])}</p></div>)}
               </div>
               <div className="grid gap-2 text-sm sm:grid-cols-4">
                 <span>Opening: <b>{money(account.openingPaid)}</b></span><span>Agreed: <b>{money(summary.due)}</b></span><span>Paid: <b>{money(summary.paid)}</b></span><span>Outstanding: <b className={summary.outstanding > 0 ? 'text-destructive' : 'text-emerald-600'}>{money(summary.outstanding)}</b></span>

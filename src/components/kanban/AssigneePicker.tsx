@@ -98,7 +98,7 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
           >
             <Avatar className="h-[18px] w-[18px] shrink-0">
               <AvatarImage src={photoURL} alt="" />
-              <AvatarFallback className="bg-secondary text-[10px] font-semibold text-foreground">
+              <AvatarFallback className="bg-secondary text-[0.6875rem] font-semibold text-foreground">
                 {display.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -147,12 +147,12 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
                 placeholder="Search people…"
                 aria-label="Search people"
                 autoFocus
-                className="h-8 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-[13px]"
+                className="h-8 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
               />
             </div>
             <div className="max-h-64 overflow-y-auto py-1">
               {filtered.length === 0 ? (
-                <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
                   No matching members
                 </div>
               ) : (
@@ -171,14 +171,14 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
                     >
                       <Avatar className="h-6 w-6 shrink-0">
                         <AvatarImage src={m.photoURL} alt="" />
-                        <AvatarFallback className="bg-secondary text-[11px] font-semibold text-foreground">
+                        <AvatarFallback className="bg-secondary text-xs font-semibold text-foreground">
                           {(m.displayName || m.email || '?')
                             .charAt(0)
                             .toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-foreground">
+                        <p className="truncate text-sm font-medium text-foreground">
                           {m.displayName || m.email || 'Unknown'}
                         </p>
                         {m.email && (

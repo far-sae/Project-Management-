@@ -112,7 +112,7 @@ export const Comments: React.FC = () => {
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
         <AppHeader left={<span className="text-sm font-semibold">Comments</span>} />
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+          <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
             <PageHeader title="Comments" description="Sign in to view your task comments." />
           </div>
         </div>
@@ -126,7 +126,7 @@ export const Comments: React.FC = () => {
         <AppHeader left={<span className="text-sm font-semibold">Comments</span>} />
 
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+          <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
             <PageHeader
               title="Comments"
               description="Recent comments and conversations across your tasks and projects"
@@ -191,7 +191,7 @@ export const Comments: React.FC = () => {
                     ) : tabbedComments.length === 0 ? (
                       <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-12 text-center">
                         <MessageSquare className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                        <p className="text-[13px] font-medium text-foreground">
+                        <p className="text-sm font-medium text-foreground">
                           {value === 'mentions'
                             ? 'No mentions yet'
                             : value === 'mine'
@@ -221,7 +221,7 @@ export const Comments: React.FC = () => {
                                   setSelectedComment(comment);
                                 }
                               }}
-                              className="group flex min-h-12 cursor-pointer gap-3 border-b border-border/60 px-4 py-3 text-[13px] outline-none transition-colors last:border-b-0 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                              className="group flex min-h-12 cursor-pointer gap-3 border-b border-border/60 px-4 py-3 text-sm outline-none transition-colors last:border-b-0 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                             >
                               {comment.photoURL ? (
                                 <img
@@ -325,7 +325,7 @@ export const Comments: React.FC = () => {
                         {(selectedComment.displayName || '?').charAt(0).toUpperCase()}
                       </div>
                     )}
-                    <div className="text-[13px]">
+                    <div className="text-sm">
                       <span className="font-medium">{selectedComment.displayName}</span>
                       <span className="ml-1 text-muted-foreground">
                         on <span className="font-medium text-foreground">{selectedComment.taskTitle}</span>
@@ -334,7 +334,7 @@ export const Comments: React.FC = () => {
                     </div>
                   </div>
                   {selectedComment.text?.trim() && (
-                    <div className="whitespace-pre-wrap rounded-md border border-border bg-surface-2 p-3 text-[13px] leading-5 text-foreground">
+                    <div className="whitespace-pre-wrap rounded-md border border-border bg-surface-2 p-3 text-sm leading-5 text-foreground">
                       {selectedComment.text}
                     </div>
                   )}

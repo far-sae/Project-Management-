@@ -114,7 +114,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
       <div
         className={cn(
           'absolute bottom-2 left-2 right-2 z-[2] flex items-center gap-1.5 font-medium text-white',
-          compact ? 'text-[11px]' : 'text-xs',
+          compact ? 'text-xs' : 'text-xs',
         )}
       >
         <span
@@ -131,7 +131,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
         {snap.role === 'guest' && (
           <span
             className={cn(
-              'inline-flex shrink-0 items-center rounded bg-warning px-1.5 text-[11px] text-warning-foreground',
+              'inline-flex shrink-0 items-center rounded bg-warning px-1.5 text-xs text-warning-foreground',
               compact ? 'h-5' : 'h-6',
             )}
           >
@@ -165,7 +165,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
         {snap.isScreenSharing && (
           <span
             className={cn(
-              'inline-flex shrink-0 items-center rounded bg-success px-1.5 text-[11px] text-success-foreground',
+              'inline-flex shrink-0 items-center rounded bg-success px-1.5 text-xs text-success-foreground',
               compact ? 'h-5' : 'h-6',
             )}
           >

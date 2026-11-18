@@ -313,7 +313,7 @@ export const Sidebar: React.FC = () => {
                           className="h-2 w-2 shrink-0 rounded-[2px]"
                           style={{ background: p.coverColor || 'hsl(var(--primary))' }}
                         />
-                        <span className="truncate text-[13px] font-medium">{p.name}</span>
+                        <span className="truncate text-sm font-medium">{p.name}</span>
                         {p.isLocked && p.hasLockPin && !sessionUnlocked && (
                           <span title="PIN required to open" className="inline-flex">
                             <Lock className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-label="Project locked with PIN" />
@@ -393,7 +393,7 @@ export const Sidebar: React.FC = () => {
               <button
                 key={item.href}
                 onClick={() => navigate('/pricing')}
-                className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted-foreground/70 transition-colors hover:bg-foreground/[0.05] md:h-8"
+                className="flex h-10 w-full items-center gap-2 rounded-md px-2 text-sm font-medium text-muted-foreground/70 transition-colors hover:bg-foreground/[0.05] md:h-8"
               >
                 <Icon className="w-4 h-4" />
                 <span className="flex-1 text-left">{item.label}</span>
@@ -404,7 +404,7 @@ export const Sidebar: React.FC = () => {
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  'flex h-10 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors md:h-8',
+                  'flex h-10 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors md:h-8',
                   active
                     ? 'bg-foreground/[0.07] text-foreground'
                     : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground',
@@ -441,7 +441,7 @@ export const Sidebar: React.FC = () => {
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-foreground truncate">Account</p>
-                <p className="truncate text-[11px] text-muted-foreground">
+                <p className="truncate text-xs text-muted-foreground">
                   Theme, settings, sign out
                 </p>
               </div>
@@ -479,7 +479,7 @@ export const Sidebar: React.FC = () => {
               {isAdmin && (
                 <Link
                   to="/admin"
-                  className="flex h-10 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground md:h-8"
+                  className="flex h-10 items-center gap-2 rounded-md px-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground md:h-8"
                 >
                   <Shield className="w-4 h-4" />
                   <span>Admin Panel</span>
@@ -489,7 +489,7 @@ export const Sidebar: React.FC = () => {
               <Link
                 to="/settings"
                 className={cn(
-                  'flex h-10 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition-colors md:h-8',
+                  'flex h-10 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors md:h-8',
                   location.pathname === '/settings'
                     ? 'bg-foreground/[0.07] text-foreground'
                     : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground',

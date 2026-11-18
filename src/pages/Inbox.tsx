@@ -254,7 +254,7 @@ export const Inbox: React.FC = () => {
       <AppHeader left={<span className="text-sm font-semibold">Inbox</span>} right={null} />
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader
             title="Inbox"
             description={
@@ -330,7 +330,7 @@ export const Inbox: React.FC = () => {
                     ) : items.length === 0 ? (
                       <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-12 text-center">
                         <InboxIcon className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                        <p className="text-[13px] font-medium text-foreground">
+                        <p className="text-sm font-medium text-foreground">
                           {emptyCopy[filterTab].title}
                         </p>
                         <p className="max-w-sm text-xs text-muted-foreground">
@@ -344,7 +344,7 @@ export const Inbox: React.FC = () => {
                             key={n.notificationId}
                             role="button"
                             tabIndex={0}
-                            className="group relative flex min-h-12 cursor-pointer gap-3 border-b border-border/60 px-4 py-2.5 text-[13px] outline-none transition-colors last:border-b-0 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                            className="group relative flex min-h-12 cursor-pointer gap-3 border-b border-border/60 px-4 py-2.5 text-sm outline-none transition-colors last:border-b-0 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                             onClick={() => handleOpen(n)}
                             onKeyDown={(e) => {
                               if (e.currentTarget !== e.target) return;

@@ -165,7 +165,7 @@ export const NotifyModal: React.FC<NotifyModalProps> = ({
 
           <div className="max-h-56 space-y-0.5 overflow-y-auto">
             {filteredMembers.length === 0 ? (
-              <p className="py-6 text-center text-[13px] text-muted-foreground">
+              <p className="py-6 text-center text-sm text-muted-foreground">
                 No team members found
               </p>
             ) : (
@@ -186,7 +186,7 @@ export const NotifyModal: React.FC<NotifyModalProps> = ({
                       </AvatarFallback>
                     </Avatar>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-foreground">
+                      <span className="block truncate text-sm font-medium text-foreground">
                         {m.displayName || m.email || 'Unknown'}
                       </span>
                       {m.email && (
