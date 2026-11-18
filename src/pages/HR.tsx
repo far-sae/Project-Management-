@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,9 +16,6 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import {
   Users, Edit, Loader2, ShieldAlert, Lock, Trash2,
 } from 'lucide-react';
 import { AppHeader } from '@/components/layout/AppHeader';
@@ -25,6 +23,12 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill } from '@/components/common/StatusPill';
 import { TimeTracking } from '@/pages/TimeTracking';
 import { TeamAttendance } from '@/components/hr/TeamAttendance';
+import { HrOverviewTab } from '@/components/hr/HrOverviewTab';
+import { HrLeaveTab } from '@/components/hr/HrLeaveTab';
+import { HrDocumentsTab } from '@/components/hr/HrDocumentsTab';
+import { HR_TABS, isHrTab, type HrPerson, type HrTab } from '@/components/hr/types';
+import { useLeave } from '@/hooks/useLeave';
+import { useEmployeeDocuments } from '@/hooks/useEmployeeDocuments';
 import { Payroll } from '@/pages/Payroll';
 import { Expenses } from '@/pages/Expenses';
 import {
@@ -125,8 +129,9 @@ const fromProfile = (p: EmployeeProfile): FormState => ({
   notes: p.notes ?? '',
 });
 
-/** Full HR (People, Time Tracking, Payroll, Expenses). Off for now — Attendance only. */
-const SHOW_FULL_HR = false;
+/** Padding shared by every HR tab body. */
+const TAB_BODY = 'flex w-full flex-col gap-6 px-4 py-6 lg:px-6';
+const TAB_PANEL = 'mt-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden';
 
 export const HR: React.FC = () => {
   const { user } = useAuth();
@@ -135,6 +140,22 @@ export const HR: React.FC = () => {
     useEmployees();
   const orgCurrency = useOrgCurrency();
   const fmt = useFormatMoney();
+  const leave = useLeave();
+  const docs = useEmployeeDocuments();
+
+  // The open tab lives in the address (?tab=leave) so it can be linked to.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: HrTab = isHrTab(tabParam) ? tabParam : 'overview';
+  const openTab = useCallback(
+    (tab: string) => {
+      const next = new URLSearchParams(searchParams);
+      if (tab === 'overview') next.delete('tab');
+      else next.set('tab', tab);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   const [editingMember, setEditingMember] = useState<{
     userId: string;
@@ -256,51 +277,52 @@ export const HR: React.FC = () => {
     }
   };
 
-  // For now HR shows the team's attendance only (clock in / clock out).
-  // Flip SHOW_FULL_HR to bring back People / Time Tracking / Payroll / Expenses.
-  if (!SHOW_FULL_HR) {
-    return (
-      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        <AppHeader
-          left={
-            <Breadcrumb className="min-w-0">
-              <BreadcrumbList className="flex-nowrap">
-                <BreadcrumbItem>HR</BreadcrumbItem>
-                <BreadcrumbSeparator>/</BreadcrumbSeparator>
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="font-semibold">Attendance</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="w-full px-4 py-6 lg:px-6">
-            <TeamAttendance />
-          </div>
-        </div>
-      </main>
-    );
-  }
+  // Everyone in the organization, for the tabs that list people.
+  const people: HrPerson[] = directory;
 
   return (
     <>
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
         <AppHeader left={<span className="text-sm font-semibold">HR</span>} />
-        <Tabs defaultValue="people" className="flex min-h-0 flex-1 flex-col">
-          <div className="shrink-0 border-b border-border px-4 lg:px-6">
+        <Tabs value={activeTab} onValueChange={openTab} className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 overflow-x-auto border-b border-border px-4 lg:px-6">
             <TabsList className="border-b-0">
-              <TabsTrigger value="people">People</TabsTrigger>
-              <TabsTrigger value="time-tracking">Time Tracking</TabsTrigger>
-              <TabsTrigger value="payroll">Payroll</TabsTrigger>
-              <TabsTrigger value="expenses">Expenses</TabsTrigger>
+              {HR_TABS.map((t) => (
+                <TabsTrigger key={t.value} value={t.value}>
+                  {t.label}
+                </TabsTrigger>
+              ))}
             </TabsList>
           </div>
 
-          <TabsContent value="people" className="mt-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
+          <TabsContent value="overview" className={TAB_PANEL}>
+            <div className={TAB_BODY}>
+              <HrOverviewTab people={people} leave={leave} docs={docs} onOpenTab={openTab} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="attendance" className={TAB_PANEL}>
+            <div className={TAB_BODY}>
+              <TeamAttendance />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="leave" className={TAB_PANEL}>
+            <div className={TAB_BODY}>
+              <HrLeaveTab people={people} leave={leave} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="documents" className={TAB_PANEL}>
+            <div className={TAB_BODY}>
+              <HrDocumentsTab people={people} docs={docs} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="people" className={TAB_PANEL}>
+            <div className={TAB_BODY}>
               <PageHeader
-                title="HR Directory"
+                title="People"
                 description={
                   <>
                     Job titles, employment, and pay rates.
@@ -444,16 +466,16 @@ export const HR: React.FC = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="time-tracking" className="mt-0 min-h-0 flex-1 overflow-y-auto">
-            <TimeTracking />
+          <TabsContent value="time-tracking" className={TAB_PANEL}>
+            <TimeTracking embedded />
           </TabsContent>
 
-          <TabsContent value="payroll" className="mt-0 min-h-0 flex-1 overflow-y-auto">
+          <TabsContent value="payroll" className={TAB_PANEL}>
             <Payroll embedded />
           </TabsContent>
 
-          <TabsContent value="expenses" className="mt-0 min-h-0 flex-1 overflow-y-auto">
-            <Expenses />
+          <TabsContent value="expenses" className={TAB_PANEL}>
+            <Expenses embedded />
           </TabsContent>
         </Tabs>
       </main>

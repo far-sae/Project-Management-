@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Loader2,
   Users,
-  Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -12,13 +11,13 @@ import {
   addDays,
   format,
   isSameDay,
-  isAfter,
-  isBefore,
   endOfWeek,
 } from 'date-fns';
 
 import { AppHeader } from '@/components/layout/AppHeader';
 import { PageHeader } from '@/components/common/PageHeader';
+import { StatStrip } from '@/components/common/StatStrip';
+import { buildMemberWorkload, type MemberWorkloadData } from '@/lib/workload';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -46,20 +45,13 @@ import {
   DateRangeValue,
 } from '@/components/common/DateRangeFilter';
 
-interface WorkloadCell {
-  date: Date;
-  count: number;
-  isOverdue: boolean;
-  tasks: Task[];
-}
-
-interface MemberWorkload {
+interface MemberWorkload extends MemberWorkloadData {
   member: OrganizationMember;
-  cells: WorkloadCell[];
-  weekTotal: number;
   capacityHoursPerWeek: number;
   /** Estimated hours used; we treat each task as ~4 hours by default. */
   estimatedHours: number;
+  /** Share of weekly capacity used, as a whole percentage. */
+  loadPct: number;
 }
 
 const HOURS_PER_TASK_DEFAULT = 4;
@@ -168,48 +160,30 @@ export const Workload: React.FC = () => {
     return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   }, [weekStart]);
 
-  const weekEnd = useMemo(() => endOfWeek(weekStart, { weekStartsOn: 1 }), [weekStart]);
 
   const rows: MemberWorkload[] = useMemo(() => {
     return members.map((m) => {
-      const tasksInWeek = tasks.filter((t: Task) => {
-        if (!t.dueDate) return false;
-        const isAssigned = t.assignees?.some((a) => a.userId === m.userId);
-        if (!isAssigned) return false;
-        const due = new Date(t.dueDate);
-        return !isBefore(due, weekStart) && !isAfter(due, weekEnd);
-      });
-      const cells = weekDays.map((day) => {
-        const dayTasks = tasksInWeek.filter((t) =>
-          t.dueDate ? isSameDay(new Date(t.dueDate), day) : false,
-        );
-        const isOverdue = dayTasks.some(
-          (t) =>
-            t.status !== 'done' &&
-            t.dueDate &&
-            isBefore(new Date(t.dueDate), new Date()) &&
-            !isSameDay(new Date(t.dueDate), new Date()),
-        );
-        return {
-          date: day,
-          count: dayTasks.length,
-          isOverdue,
-          tasks: dayTasks,
-        };
-      });
-      const weekTotal = cells.reduce((sum, c) => sum + c.count, 0);
+      const data = buildMemberWorkload(tasks, m.userId, weekStart);
       const capacityHoursPerWeek =
         capacityMap.get(m.userId) ?? DEFAULT_HOURS_PER_WEEK;
-      const estimatedHours = weekTotal * hoursPerTask;
-      return {
-        member: m,
-        cells,
-        weekTotal,
-        capacityHoursPerWeek,
-        estimatedHours,
-      };
+      const estimatedHours = data.loadTasks * hoursPerTask;
+      const loadPct = Math.min(
+        999,
+        Math.round(capacityHoursPerWeek > 0 ? (estimatedHours / capacityHoursPerWeek) * 100 : 0),
+      );
+      return { ...data, member: m, capacityHoursPerWeek, estimatedHours, loadPct };
     });
-  }, [members, tasks, weekDays, weekStart, weekEnd, capacityMap, hoursPerTask]);
+  }, [members, tasks, weekStart, capacityMap, hoursPerTask]);
+
+  const totals = useMemo(
+    () => ({
+      open: rows.reduce((n, r) => n + r.weekOpen, 0),
+      overdue: rows.reduce((n, r) => n + r.overdue.length, 0),
+      unscheduled: rows.reduce((n, r) => n + r.unscheduled.length, 0),
+      overCapacity: rows.filter((r) => r.loadPct > 100).length,
+    }),
+    [rows],
+  );
 
   const goPrevWeek = () => navigateToWeek(addDays(weekStart, -7));
   const goNextWeek = () => navigateToWeek(addDays(weekStart, 7));
@@ -228,6 +202,15 @@ export const Workload: React.FC = () => {
 
   if (!user) return null;
 
+
+  const titles = (list: Task[]): string | undefined =>
+    list.length === 0
+      ? undefined
+      : list
+          .slice(0, 8)
+          .map((t) => t.title)
+          .join(' · ') + (list.length > 8 ? ` (+${list.length - 8} more)` : '');
+
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <AppHeader left={<span className="text-sm font-semibold">Workload</span>} />
@@ -236,7 +219,7 @@ export const Workload: React.FC = () => {
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader
             title="Workload"
-            description="Tasks due per assignee for the selected week. Heat reflects load vs daily capacity."
+            description="Open tasks per person for the selected week. Finished tasks are left out; overdue work is added to this week."
             actions={
               <>
                 <DateRangeFilter
@@ -244,24 +227,23 @@ export const Workload: React.FC = () => {
                   onChange={onDateRangeChange}
                   allowAllTime={false}
                 />
-                <div className="flex items-center gap-1">
+                <div className="flex items-center overflow-hidden rounded-md border border-input">
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="min-w-[40px] px-0 text-muted-foreground md:min-w-7"
+                    size="icon"
+                    className="rounded-none border-r border-input"
                     onClick={goPrevWeek}
                     aria-label="Previous week"
                   >
                     <ChevronLeft aria-hidden />
                   </Button>
-                  <Button variant="outline" size="sm" className="tabular-nums" onClick={goToday}>
-                    <CalendarIcon aria-hidden />
-                    {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d')}
+                  <Button variant="ghost" className="rounded-none" onClick={goToday}>
+                    This week
                   </Button>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="min-w-[40px] px-0 text-muted-foreground md:min-w-7"
+                    size="icon"
+                    className="rounded-none border-l border-input"
                     onClick={goNextWeek}
                     aria-label="Next week"
                   >
@@ -270,6 +252,25 @@ export const Workload: React.FC = () => {
                 </div>
               </>
             }
+          />
+
+          <StatStrip
+            items={[
+              { label: 'Open this week', value: totals.open, note: 'Due in the selected week' },
+              {
+                label: 'Overdue',
+                value: totals.overdue,
+                note: 'Due before this week, still open',
+                tone: totals.overdue > 0 ? 'danger' : 'default',
+              },
+              { label: 'No due date', value: totals.unscheduled, note: 'Open, not scheduled' },
+              {
+                label: 'Over capacity',
+                value: totals.overCapacity,
+                note: totals.overCapacity === 1 ? 'person above 100%' : 'people above 100%',
+                tone: totals.overCapacity > 0 ? 'danger' : 'default',
+              },
+            ]}
           />
 
           <section className="overflow-hidden rounded-lg border border-border bg-background">
@@ -314,10 +315,22 @@ export const Workload: React.FC = () => {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
+                {/* Fixed layout: the seven days share the free width equally,
+                    so columns line up from row to row at any screen size. */}
+                <table className="w-full min-w-[60rem] table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[15rem]" />
+                    <col className="w-[5.5rem]" />
+                    {weekDays.map((d) => (
+                      <col key={d.toISOString()} />
+                    ))}
+                    <col className="w-[5.5rem]" />
+                    <col className="w-[11rem]" />
+                  </colgroup>
                   <thead>
                     <tr className="h-10 border-b border-border bg-surface-2 text-left text-xs text-muted-foreground">
                       <th className="px-4 font-medium">Member</th>
+                      <th className="px-1.5 text-center font-medium">Overdue</th>
                       {weekDays.map((d) => (
                         <th
                           key={d.toISOString()}
@@ -326,10 +339,11 @@ export const Workload: React.FC = () => {
                             isSameDay(d, new Date()) && 'font-semibold text-foreground',
                           )}
                         >
-                          <div>{format(d, 'EEE')}</div>
-                          <div className="tabular-nums">{format(d, 'd')}</div>
+                          <span className="block">{format(d, 'EEE')}</span>
+                          <span className="block tabular-nums">{format(d, 'd')}</span>
                         </th>
                       ))}
+                      <th className="px-1.5 text-center font-medium">No date</th>
                       <th className="px-4 text-right font-medium">Load</th>
                     </tr>
                   </thead>
@@ -339,14 +353,8 @@ export const Workload: React.FC = () => {
                         row.capacityHoursPerWeek > 0 && hoursPerTask > 0
                           ? row.capacityHoursPerWeek / hoursPerTask / 5
                           : 1;
-                      const loadPct = Math.min(
-                        999,
-                        Math.round(
-                          row.capacityHoursPerWeek > 0
-                            ? (row.estimatedHours / row.capacityHoursPerWeek) * 100
-                            : 0,
-                        ),
-                      );
+                      const { loadPct } = row;
+                      const name = row.member.displayName;
                       return (
                         <tr
                           key={row.member.userId}
@@ -355,66 +363,75 @@ export const Workload: React.FC = () => {
                           <td className="px-4 py-2">
                             <div className="flex min-w-0 items-center gap-2">
                               <Avatar className="h-7 w-7 shrink-0">
-                                <AvatarImage
-                                  src={row.member.photoURL}
-                                  alt={row.member.displayName}
-                                />
+                                <AvatarImage src={row.member.photoURL} alt={name} />
                                 <AvatarFallback className="bg-primary-soft text-[0.6875rem] font-medium text-primary-soft-foreground">
-                                  {initialsOf(row.member.displayName)}
+                                  {initialsOf(name)}
                                 </AvatarFallback>
                               </Avatar>
                               <div className="min-w-0">
-                                <p className="truncate font-medium text-foreground">
-                                  {row.member.displayName}
-                                </p>
+                                <p className="truncate font-medium text-foreground">{name}</p>
                                 <p className="truncate text-xs tabular-nums text-muted-foreground">
                                   {row.capacityHoursPerWeek}h/week
+                                  {row.doneThisWeek > 0 && ` · ${row.doneThisWeek} done`}
                                 </p>
                               </div>
                             </div>
                           </td>
-                          {row.cells.map((cell) => {
-                            const tip =
-                              cell.tasks.length === 0
-                                ? undefined
-                                : cell.tasks
-                                    .slice(0, 8)
-                                    .map((t) => t.title)
-                                    .join(' · ') +
-                                  (cell.tasks.length > 8
-                                    ? ` (+${cell.tasks.length - 8} more)`
-                                    : '');
-                            return (
-                              <td
-                                key={cell.date.toISOString()}
-                                className="px-1.5 py-2 text-center"
+                          <td className="px-1.5 py-2 text-center">
+                            <span
+                              aria-label={`${name}: ${row.overdue.length} overdue task${row.overdue.length === 1 ? '' : 's'}`}
+                              title={titles(row.overdue)}
+                              className={cn(
+                                'mx-auto flex h-8 w-full items-center justify-center rounded-md border text-xs font-medium tabular-nums',
+                                row.overdue.length > 0
+                                  ? 'border-destructive/30 bg-destructive-soft text-destructive-soft-foreground'
+                                  : 'border-transparent text-muted-foreground',
+                              )}
+                            >
+                              {row.overdue.length > 0 ? row.overdue.length : '–'}
+                            </span>
+                          </td>
+                          {row.cells.map((cell) => (
+                            <td key={cell.date.toISOString()} className="px-1.5 py-2 text-center">
+                              <button
+                                type="button"
+                                disabled={cell.count === 0}
+                                title={titles(cell.tasks)}
+                                aria-label={`${name}, ${format(cell.date, 'EEE MMM d')}: ${cell.count} task${cell.count === 1 ? '' : 's'} due`}
+                                onClick={() => {
+                                  if (cell.tasks.length === 0) return;
+                                  const ymd = format(cell.date, 'yyyy-MM-dd');
+                                  navigate(
+                                    `/tasks?dueDay=${encodeURIComponent(ymd)}&assigneeId=${encodeURIComponent(row.member.userId)}`,
+                                  );
+                                }}
+                                className={cn(
+                                  'mx-auto flex h-8 w-full items-center justify-center rounded-md border border-transparent text-xs font-medium tabular-nums',
+                                  heatColor(cell.count, capacityPerDay),
+                                  cell.isOverdue && 'border-destructive/50',
+                                  cell.count > 0 &&
+                                    'cursor-pointer transition-colors hover:border-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                  cell.count === 0 && 'cursor-default',
+                                )}
                               >
-                                <button
-                                  type="button"
-                                  disabled={cell.count === 0}
-                                  title={tip}
-                                  aria-label={`${row.member.displayName}, ${format(cell.date, 'EEE MMM d')}: ${cell.count} task${cell.count === 1 ? '' : 's'} due`}
-                                  onClick={() => {
-                                    if (cell.tasks.length === 0) return;
-                                    const ymd = format(cell.date, 'yyyy-MM-dd');
-                                    navigate(
-                                      `/tasks?dueDay=${encodeURIComponent(ymd)}&assigneeId=${encodeURIComponent(row.member.userId)}`,
-                                    );
-                                  }}
-                                  className={cn(
-                                    'mx-auto flex h-8 w-full min-w-9 items-center justify-center rounded-md border border-transparent text-xs font-medium tabular-nums',
-                                    heatColor(cell.count, capacityPerDay),
-                                    cell.isOverdue && 'border-destructive/50',
-                                    cell.count > 0 &&
-                                      'cursor-pointer transition-colors hover:border-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                    cell.count === 0 && 'cursor-default',
-                                  )}
-                                >
-                                  {cell.count > 0 ? cell.count : ''}
-                                </button>
-                              </td>
-                            );
-                          })}
+                                {cell.count > 0 ? cell.count : ''}
+                              </button>
+                            </td>
+                          ))}
+                          <td className="px-1.5 py-2 text-center">
+                            <span
+                              aria-label={`${name}: ${row.unscheduled.length} task${row.unscheduled.length === 1 ? '' : 's'} with no due date`}
+                              title={titles(row.unscheduled)}
+                              className={cn(
+                                'mx-auto flex h-8 w-full items-center justify-center rounded-md border text-xs font-medium tabular-nums',
+                                row.unscheduled.length > 0
+                                  ? 'border-border bg-background text-foreground'
+                                  : 'border-transparent text-muted-foreground',
+                              )}
+                            >
+                              {row.unscheduled.length > 0 ? row.unscheduled.length : '–'}
+                            </span>
+                          </td>
                           <td className="px-4 py-2 text-right">
                             <div
                               className={cn(
@@ -426,7 +443,7 @@ export const Workload: React.FC = () => {
                                     : 'text-muted-foreground',
                               )}
                             >
-                              <div className="h-1 w-24 overflow-hidden rounded-full bg-foreground/10">
+                              <div className="h-1 w-20 overflow-hidden rounded-full bg-foreground/10">
                                 <div
                                   className={cn(
                                     'h-full rounded-full',
@@ -462,5 +479,3 @@ export const Workload: React.FC = () => {
     </main>
   );
 };
-
-export default Workload;

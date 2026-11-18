@@ -216,6 +216,33 @@ describe('Workload page', () => {
     expect(myRow.querySelector('.bg-foreground\\/70')).toBeTruthy();
     expect(myRow.querySelector('.bg-foreground\\/10')).toBeTruthy();
   });
+
+  it('leaves finished tasks out of the load and shows overdue and undated work in their own columns', async () => {
+    // 4h per task, 8h weeks. Sara: one finished today (ignored), one overdue
+    // from last month (counts), one with no date (listed, not counted) = 50%.
+    h.capacity = 8;
+    const longAgo = new Date(now.getTime() - 40 * 86_400_000);
+    h.tasks = [
+      { ...dueToday('1', 'u2'), status: 'done' },
+      { ...dueToday('2', 'u2'), dueDate: longAgo },
+      { ...dueToday('3', 'u2'), dueDate: null },
+    ];
+    inRouter(<Workload />);
+    const saraRow = (await screen.findByText('Sara Khan')).closest('tr') as HTMLElement;
+    expect(within(saraRow).getByText('50%')).toBeTruthy();
+    expect(within(saraRow).getByLabelText('Sara Khan: 1 overdue task').textContent).toBe('1');
+    expect(within(saraRow).getByLabelText('Sara Khan: 1 task with no due date').textContent).toBe('1');
+    expect(screen.getByRole('columnheader', { name: 'Overdue' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'No date' })).toBeTruthy();
+  });
+
+  it('shows the week once, with one set of week controls', async () => {
+    inRouter(<Workload />);
+    await screen.findByText('Me Myself');
+    expect(screen.getAllByRole('button', { name: 'Previous week' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'This week' })).toBeTruthy();
+    expect(screen.getAllByText(/^[A-Z][a-z]{2} \d+ – [A-Z][a-z]{2} \d+$/)).toHaveLength(1);
+  });
 });
 
 describe('Notification bell', () => {

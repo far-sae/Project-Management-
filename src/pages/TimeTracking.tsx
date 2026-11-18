@@ -46,7 +46,10 @@ const toDatetimeLocal = (d: Date) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-export const TimeTracking: React.FC = () => {
+export const TimeTracking: React.FC<{
+  /** Inside the HR tabs: the page's own header bar is left out. */
+  embedded?: boolean;
+}> = ({ embedded = false }) => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const {
@@ -249,7 +252,7 @@ export const TimeTracking: React.FC = () => {
   return (
     <>
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <AppHeader left={<span className="text-sm font-semibold">Time Tracking</span>} />
+        {!embedded && <AppHeader left={<span className="text-sm font-semibold">Time Tracking</span>} />}
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader

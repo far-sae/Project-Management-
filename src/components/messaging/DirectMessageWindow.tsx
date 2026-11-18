@@ -298,8 +298,8 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
       className={cn(
         'pointer-events-auto flex shrink-0 flex-col overflow-hidden rounded-t-xl border border-b-0 border-border bg-card',
         'shadow-[0_-8px_32px_rgba(0,0,0,0.12)]',
-        'w-[calc(100vw-1rem)] sm:w-[23rem]',
-        'h-[min(34rem,calc(100svh-4rem))]',
+        'w-[calc(100vw-1rem)] sm:w-[21rem]',
+        'h-[min(30rem,calc(100svh-4rem))]',
         'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
       )}
     >

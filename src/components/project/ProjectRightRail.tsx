@@ -439,7 +439,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
    *  open across pages. */
   const { openChat } = useChatDock();
   // Keep the dock clear of this panel: next to the open panel, or the launcher.
-  useChatDockInset(open ? 29 : 6);
+  useChatDockInset(open ? 25.5 : 5.5);
 
   const openDirectMessage = useCallback(
     (m: { userId?: string; displayName?: string; email?: string; photoURL?: string }) => {
@@ -916,7 +916,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     </section>
   );
 
-  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(27rem,calc(100vw-2.5rem))]';
+  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(23.5rem,calc(100vw-2.5rem))]';
   /** The one soft shadow the floating project chat uses. */
   const floatingShadow = 'shadow-[0_12px_32px_rgba(0,0,0,0.10)]';
   const viewOnlyTitle = 'View-only — calls are disabled for your role.';
@@ -947,13 +947,13 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           aria-label={`Open project messages — ${project.name}`}
           title={`${project.name} · ${dedupedMembers.length} members${chatMessages.length > 0 ? '' : ' · Start the conversation'}`}
           className={cn(
-            'pointer-events-auto relative inline-flex h-14 w-14 items-center justify-center',
+            'pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center',
             'rounded-full bg-primary text-primary-foreground transition-colors',
             floatingShadow,
             'hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           )}
         >
-          <MessageSquare className="h-6 w-6" />
+          <MessageSquare className="h-5 w-5" />
           {unreadCount > 0 && (
             <span
               className={cn(
@@ -982,7 +982,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           floatingShadow,
           'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
           railWidth,
-          'h-[min(44rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
+          'h-[min(36rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
         )}
       >
         <div className="flex min-h-14 shrink-0 items-center gap-2.5 border-b border-border pl-3 pr-2">

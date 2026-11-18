@@ -88,7 +88,10 @@ const statusBadge = (s: ExpenseStatus) => {
   }
 };
 
-export const Expenses: React.FC = () => {
+export const Expenses: React.FC<{
+  /** Inside the HR tabs: the page's own header bar is left out. */
+  embedded?: boolean;
+}> = ({ embedded = false }) => {
   const { user } = useAuth();
   const {
     organizationId, expenses, loading, create, update, remove, canManage,
@@ -409,7 +412,7 @@ export const Expenses: React.FC = () => {
   return (
     <>
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <AppHeader left={<span className="text-sm font-semibold">Expenses</span>} />
+        {!embedded && <AppHeader left={<span className="text-sm font-semibold">Expenses</span>} />}
         <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader

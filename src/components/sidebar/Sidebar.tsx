@@ -6,7 +6,6 @@ import {
   Users,
   UserCheck,
   Calendar,
-  MessageSquare,
   BarChart3,
   Settings,
   LogOut,
@@ -178,7 +177,6 @@ export const Sidebar: React.FC = () => {
   const bottomMenuItems = canSeePeopleOps
     ? ([
         { icon: GanttChartSquare, label: 'Timeline', href: '/timeline', feature: 'timeline_overview' as const },
-        { icon: MessageSquare, label: 'Comments', href: '/comments', feature: null },
       ] as const)
     : isViewer
       ? ([

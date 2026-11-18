@@ -12,7 +12,7 @@ export const ChatBubble: React.FC<{ text: string; mine: boolean; grouped?: boole
 }) => (
   <div
     className={cn(
-      'whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm leading-5',
+      'whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[0.8125rem] leading-5',
       mine ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground',
       // The corner nearest the sender is tightened on the first bubble of a run.
       !grouped && (mine ? 'rounded-tr' : 'rounded-tl'),
