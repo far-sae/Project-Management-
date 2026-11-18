@@ -61,53 +61,59 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <div>
-        <h2 className="flex items-center gap-2 text-xl font-semibold">
-          <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />
+        <h2 className="flex items-center gap-2 text-base font-semibold">
           Done
-          <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
+          <span className="text-xs font-medium tabular-nums text-muted-foreground">
             {doneTasks.length}
           </span>
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground text-pretty">
+        <p className="mt-1 text-[13px] text-muted-foreground text-pretty">
           Finished tasks from this project. Click the circle on any card in the board to move it here.
         </p>
       </div>
 
       {groups.length === 0 ? (
-        <div className="flex flex-col items-center rounded-xl border border-dashed border-border bg-muted/20 px-6 py-14 text-center">
-          <CheckCircle2 className="mb-3 h-8 w-8 text-muted-foreground/60" aria-hidden />
-          <p className="text-sm font-medium">
+        <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-6 py-12 text-center">
+          <CheckCircle2 className="mb-3 h-5 w-5 text-muted-foreground" aria-hidden />
+          <p className="text-[13px] font-medium">
             {searchQuery.trim() ? 'No finished tasks match your search' : 'Nothing finished yet'}
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             Tick the circle on a task card and it will show up here.
           </p>
         </div>
       ) : (
         groups.map((group) => (
-          <section key={group.label} aria-labelledby={`done-${group.label}`}>
+          <section
+            key={group.label}
+            aria-labelledby={`done-${group.label}`}
+            className="overflow-hidden rounded-lg border border-border"
+          >
             <h3
               id={`done-${group.label}`}
-              className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+              className="flex h-10 items-center border-b border-border bg-surface-2 px-4 text-xs font-medium tabular-nums text-muted-foreground"
             >
               {group.label} · {group.tasks.length}
             </h3>
-            <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            <ul>
               {group.tasks.map((task) => (
-                <li key={task.taskId} className="flex items-center gap-3 px-4 py-3">
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-success" aria-hidden />
+                <li
+                  key={task.taskId}
+                  className="flex min-h-12 items-center gap-3 border-b border-border/60 px-4 py-1.5 text-[13px] transition-colors last:border-0 hover:bg-surface-2"
+                >
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
                   <button
                     type="button"
                     onClick={() => onOpenTask(task.taskId)}
                     disabled={!canEdit}
-                    className="min-w-0 flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+                    className="flex min-w-0 flex-1 flex-col rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default sm:flex-row sm:items-center sm:gap-3"
                   >
-                    <span className="block truncate text-sm font-medium text-muted-foreground line-through decoration-muted-foreground/50">
+                    <span className="block min-w-0 truncate font-medium text-muted-foreground line-through decoration-muted-foreground/50 sm:flex-1">
                       {task.title}
                     </span>
-                    <span className="block text-xs text-muted-foreground">
+                    <span className="block shrink-0 text-xs tabular-nums text-muted-foreground">
                       Done {formatDistanceToNow(finishedAt(task), { addSuffix: true })}
                     </span>
                   </button>
@@ -115,9 +121,9 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
                   {task.assignees.length > 0 && (
                     <div className="hidden shrink-0 -space-x-1.5 sm:flex" aria-label="Assignees">
                       {task.assignees.slice(0, 3).map((a) => (
-                        <Avatar key={a.userId} className="h-6 w-6 ring-2 ring-card" title={a.displayName}>
+                        <Avatar key={a.userId} className="h-6 w-6 ring-2 ring-background" title={a.displayName}>
                           <AvatarImage src={a.photoURL} alt="" />
-                          <AvatarFallback className="text-[10px]">
+                          <AvatarFallback className="bg-secondary text-[10px] font-semibold text-foreground">
                             {(a.displayName || '?').charAt(0).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
@@ -132,21 +138,21 @@ export const DoneTasksView: React.FC<DoneTasksViewProps> = ({
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8 shrink-0 gap-1 active:scale-[0.97]"
+                          className="shrink-0 gap-1 active:scale-[0.97]"
                           disabled={reopeningId === task.taskId}
                           aria-label={`Reopen "${task.title}"`}
                         >
                           {reopeningId === task.taskId ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            <Loader2 className="!size-3.5 animate-spin" aria-hidden />
                           ) : (
-                            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                            <RotateCcw className="!size-3.5" aria-hidden />
                           )}
                           <span className="hidden sm:inline">Reopen</span>
-                          <ChevronDown className="h-3 w-3 opacity-60" aria-hidden />
+                          <ChevronDown className="!size-3 opacity-60" aria-hidden />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Move back to</DropdownMenuLabel>
+                        <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Move back to</DropdownMenuLabel>
                         {reopenTargets.map((c) => (
                           <DropdownMenuItem key={c.id} onSelect={() => void reopen(task, c.id)}>
                             <span aria-hidden className="mr-2 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />

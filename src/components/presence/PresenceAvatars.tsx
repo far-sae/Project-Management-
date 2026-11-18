@@ -43,9 +43,9 @@ const statusClasses = (a?: PresenceAvailability): string => {
     case 'offline':
       return 'bg-muted-foreground/70';
     case 'dnd':
-      return 'bg-amber-500';
+      return 'bg-warning';
     case 'holiday':
-      return 'bg-sky-500';
+      return 'bg-info';
     default:
       return 'bg-success';
   }
@@ -101,7 +101,7 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({
             ) : (
               <div
                 className={cn(
-                  'rounded-full flex items-center justify-center text-[10px] font-semibold ring-2 ring-card',
+                  'flex items-center justify-center rounded-full text-[11px] font-semibold ring-2 ring-card',
                   colorFor(peer.userId),
                 )}
                 style={{ width: size, height: size }}
@@ -111,7 +111,7 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({
             )}
             <span
               className={cn(
-                'absolute -bottom-0.5 -right-0.5 block w-2.5 h-2.5 rounded-full ring-2 ring-card',
+                'absolute -bottom-px -right-px block h-2 w-2 rounded-full ring-2 ring-card',
                 statusClasses(peer.availability),
               )}
               aria-hidden
@@ -121,7 +121,7 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({
       </div>
       {overflow > 0 && (
         <div
-          className="ml-2 inline-flex items-center justify-center rounded-full bg-secondary text-secondary-foreground text-[11px] font-medium px-2 h-6"
+          className="ml-2 inline-flex h-[22px] items-center justify-center rounded-full border border-border bg-secondary px-2 text-xs font-medium text-muted-foreground tabular-nums"
           title={peers.slice(max).map((p) => p.displayName).join(', ')}
         >
           +{overflow}

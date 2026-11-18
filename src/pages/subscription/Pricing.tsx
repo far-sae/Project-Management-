@@ -103,7 +103,7 @@ export const Pricing: React.FC = () => {
         <Card className="max-w-md mx-auto border-border">
           <CardContent className="pt-6">
             <div className="text-center py-8">
-              <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto mb-3" />
               <h3 className="text-lg font-semibold text-foreground mb-2">Applying your subscription</h3>
               <p className="text-sm text-muted-foreground">You’ll be redirected to the dashboard in a moment.</p>
             </div>
@@ -122,7 +122,7 @@ export const Pricing: React.FC = () => {
             onClick={() => setSelectedPlan(null)}
             className="mb-6"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="w-4 h-4" />
             Back to plans
           </Button>
 
@@ -145,19 +145,19 @@ export const Pricing: React.FC = () => {
             variant="ghost"
             onClick={() => navigate(user ? '/dashboard' : '/')}
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="w-4 h-4" />
             {user ? 'Back to Dashboard' : 'Back'}
           </Button>
 
           {trialInfo?.isInTrial && (
-            <div className="bg-primary/15 text-primary border border-primary/20 px-4 py-2 rounded-full text-sm font-medium">
+            <div className="border border-border bg-secondary text-foreground px-3 py-1 rounded-full text-xs font-medium">
               {trialInfo.daysRemaining} days left in trial
             </div>
           )}
         </div>
 
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-foreground mb-4">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground mb-4">
             Choose Your Plan
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
@@ -173,7 +173,7 @@ export const Pricing: React.FC = () => {
         <PricingTiers onSelectPlan={handleSelectPlan} />
 
         <div className="mt-16">
-          <h2 className="text-2xl font-bold text-center text-foreground mb-8">
+          <h2 className="text-2xl font-semibold text-center text-foreground mb-8">
             Why Choose TaskCalendar?
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -182,7 +182,7 @@ export const Pricing: React.FC = () => {
               return (
                 <div
                   key={index}
-                  className="bg-card text-card-foreground border border-border rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow"
+                  className="bg-card text-card-foreground border border-border rounded-xl p-6"
                 >
                   <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
                     <Icon className="w-6 h-6 text-primary" />
@@ -195,8 +195,8 @@ export const Pricing: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-16 bg-card border border-border rounded-2xl p-8 text-center">
-          <h2 className="text-2xl font-bold text-foreground mb-4">
+        <div className="mt-16 bg-card border border-border rounded-xl p-8 text-center">
+          <h2 className="text-2xl font-semibold text-foreground mb-4">
             Questions? We&apos;re here to help.
           </h2>
           <p className="text-muted-foreground mb-6">

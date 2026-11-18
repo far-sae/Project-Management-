@@ -204,8 +204,8 @@ export const MentionTextarea = React.forwardRef<
               role="option"
               aria-selected={idx === highlight}
               className={cn(
-                "flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-accent",
-                idx === highlight && "bg-accent",
+                "flex w-full items-center gap-2 px-2 py-1.5 text-left text-[13px] hover:bg-secondary",
+                idx === highlight && "bg-secondary",
               )}
               onMouseDown={(ev) => {
                 ev.preventDefault();

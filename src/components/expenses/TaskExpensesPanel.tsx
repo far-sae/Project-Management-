@@ -15,11 +15,11 @@ import { AddExpenseDialog } from './AddExpenseDialog';
 const statusBadge = (s: ExpenseStatus) => {
   const map: Record<ExpenseStatus, string> = {
     approved:
-      'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+      'bg-success/15 text-success-soft-foreground border-success/30',
     rejected:
-      'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30',
+      'bg-destructive/15 text-destructive-soft-foreground border-destructive/30',
     pending:
-      'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+      'bg-warning/15 text-warning-soft-foreground border-warning/30',
   };
   return (
     <Badge variant="outline" className={map[s]}>
@@ -91,10 +91,9 @@ export const TaskExpensesPanel: React.FC<Props> = ({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-7"
             onClick={() => setShowAdd(true)}
           >
-            <Plus className="w-3.5 h-3.5 mr-1" /> Add
+            <Plus className="w-3.5 h-3.5" /> Add
           </Button>
         )}
       </div>
@@ -146,21 +145,21 @@ export const TaskExpensesPanel: React.FC<Props> = ({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-6 px-2 text-xs border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
+                      className="h-6 px-2 text-xs border-success/30 text-success-soft-foreground hover:bg-success/10"
                       disabled={busyId === e.expenseId}
                       onClick={() => setStatus(e, 'approved')}
                     >
-                      <Check className="w-3 h-3 mr-1" />
+                      <Check className="w-3 h-3" />
                       Approve
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-6 px-2 text-xs border-red-500/30 text-red-700 dark:text-red-300 hover:bg-red-500/10"
+                      className="h-6 px-2 text-xs border-destructive/30 text-destructive-soft-foreground hover:bg-destructive/10"
                       disabled={busyId === e.expenseId}
                       onClick={() => setStatus(e, 'rejected')}
                     >
-                      <X className="w-3 h-3 mr-1" />
+                      <X className="w-3 h-3" />
                       Reject
                     </Button>
                   </div>

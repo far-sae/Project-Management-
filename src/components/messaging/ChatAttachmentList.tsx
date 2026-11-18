@@ -19,7 +19,7 @@ export const ChatAttachmentList: React.FC<Props> = ({ attachments, mine }) => {
   return (
     <div
       className={cn(
-        'mt-1.5 flex flex-col gap-1.5 max-w-full',
+        'mt-1 flex max-w-full flex-col gap-1',
         mine && 'items-end',
       )}
     >
@@ -30,7 +30,7 @@ export const ChatAttachmentList: React.FC<Props> = ({ attachments, mine }) => {
             href={att.fileUrl}
             target="_blank"
             rel="noreferrer"
-            className="block overflow-hidden rounded-lg border border-border/60 max-w-[14rem]"
+            className="block max-w-[14rem] overflow-hidden rounded-lg border border-border"
             title={att.fileName}
           >
             <img
@@ -47,25 +47,20 @@ export const ChatAttachmentList: React.FC<Props> = ({ attachments, mine }) => {
             target="_blank"
             rel="noreferrer"
             download={att.fileName}
-            className={cn(
-              'inline-flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs max-w-[14rem]',
-              mine
-                ? 'border-primary-foreground/30 bg-primary/80 text-primary-foreground hover:bg-primary'
-                : 'border-border bg-background hover:bg-muted',
-            )}
+            className="inline-flex max-w-[14rem] items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-foreground transition-colors hover:bg-secondary"
           >
             {att.fileType.includes('pdf') || att.fileType.includes('text') ? (
-              <FileText className="w-4 h-4 shrink-0" />
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
             ) : (
-              <ImageIcon className="w-4 h-4 shrink-0" />
+              <ImageIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">{att.fileName}</p>
-              <p className="text-[10px] opacity-70">
+              <p className="text-[11px] text-muted-foreground tabular-nums">
                 {formatFileSize(att.fileSize)}
               </p>
             </div>
-            <Download className="w-3 h-3 shrink-0" />
+            <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </a>
         ),
       )}

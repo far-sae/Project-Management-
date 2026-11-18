@@ -1,20 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from '@/components/ui/breadcrumb';
 import {
   MessageSquare,
   Clock,
@@ -42,7 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { cn, formatDistanceSafe } from '@/lib/utils';
+import { formatDistanceSafe } from '@/lib/utils';
 
 type CommentTab = 'all' | 'mentions' | 'mine';
 
@@ -115,213 +109,196 @@ export const Comments: React.FC = () => {
 
   if (!user) {
     return (
-      <main className="flex-1 overflow-y-auto p-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Comments</h1>
-        <p className="text-muted-foreground">Sign in to view your task comments.</p>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <AppHeader left={<span className="text-sm font-semibold">Comments</span>} />
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+            <PageHeader title="Comments" description="Sign in to view your task comments." />
+          </div>
+        </div>
       </main>
     );
   }
 
   return (
     <>
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <AppHeader
-          left={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4" />
-                    Comments
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-        />
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <AppHeader left={<span className="text-sm font-semibold">Comments</span>} />
 
         <div className="flex-1 overflow-y-auto">
-          <div className="w-full max-w-[1200px] mx-auto px-4 lg:px-6 py-6">
-            <Card className="overflow-hidden">
-              <CardHeader className="pb-3 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-base font-semibold">Recent comments</CardTitle>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Conversations across your tasks and projects
-                    </p>
-                  </div>
-                </div>
-                <div className="relative w-full max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    placeholder="Search comments…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9 h-9"
-                  />
-                </div>
-              </CardHeader>
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+            <PageHeader
+              title="Comments"
+              description="Recent comments and conversations across your tasks and projects"
+            />
 
-              <CardContent className="pt-0 space-y-4">
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Error loading comments</AlertTitle>
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
+            <div className="flex flex-col gap-4">
+              <div className="relative w-full max-w-xs">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Search comments"
+                  placeholder="Search comments…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
 
-                <Tabs value={tab} onValueChange={(v) => setTab(v as CommentTab)}>
-                  <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-secondary/50 p-1 mb-2">
-                    <TabsTrigger value="all" className="text-xs sm:text-sm">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error loading comments</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <Tabs value={tab} onValueChange={(v) => setTab(v as CommentTab)}>
+                {/* The tab row scrolls sideways rather than wrapping when it is too wide. */}
+                <div className="overflow-x-auto">
+                  <TabsList className="flex w-max min-w-full">
+                    <TabsTrigger value="all">
                       All
-                      <span className="ml-1.5 tabular-nums text-[10px] text-muted-foreground">
+                      <span className="text-xs font-normal tabular-nums text-muted-foreground">
                         {counts.all}
                       </span>
                     </TabsTrigger>
-                    <TabsTrigger value="mentions" className="text-xs sm:text-sm">
-                      <AtSign className="w-3 h-3 mr-1" />
+                    <TabsTrigger value="mentions">
+                      <AtSign className="h-3.5 w-3.5" aria-hidden />
                       Mentions
-                      <span className="ml-1.5 tabular-nums text-[10px] text-muted-foreground">
+                      <span className="text-xs font-normal tabular-nums text-muted-foreground">
                         {counts.mentions}
                       </span>
                     </TabsTrigger>
-                    <TabsTrigger value="mine" className="text-xs sm:text-sm">
+                    <TabsTrigger value="mine">
                       Mine
-                      <span className="ml-1.5 tabular-nums text-[10px] text-muted-foreground">
+                      <span className="text-xs font-normal tabular-nums text-muted-foreground">
                         {counts.mine}
                       </span>
                     </TabsTrigger>
                   </TabsList>
+                </div>
 
-                  {(['all', 'mentions', 'mine'] as const).map((value) => (
-                    <TabsContent
-                      key={value}
-                      value={value}
-                      className="mt-0 focus-visible:outline-none"
-                    >
-                      {loading ? (
-                        <div className="flex items-center justify-center py-16">
-                          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : tabbedComments.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center text-center py-16 px-4 rounded-lg border border-dashed border-border bg-muted/20">
-                          <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center mb-3">
-                            <MessageSquare className="w-6 h-6 text-muted-foreground" />
-                          </div>
-                          <p className="text-sm font-medium text-foreground">
-                            {value === 'mentions'
-                              ? 'No mentions yet'
-                              : value === 'mine'
-                              ? 'No comments by you'
-                              : 'No comments yet'}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                            {value === 'mentions'
-                              ? 'Use @name in a comment to ping someone — those mentions show up here.'
-                              : 'Comments on tasks across your projects will appear here.'}
-                          </p>
-                        </div>
-                      ) : (
-                        <ul className="divide-y divide-border rounded-lg border border-border bg-background overflow-hidden">
-                          {tabbedComments.map((comment) => {
-                            const isMine = user?.userId === comment.userId;
-                            return (
-                              <li
-                                key={comment.commentId}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => setSelectedComment(comment)}
-                                onKeyDown={(e) => {
-                                  if (e.currentTarget !== e.target) return;
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    setSelectedComment(comment);
-                                  }
-                                }}
-                                className={cn(
-                                  'group flex gap-3 px-4 py-3.5 cursor-pointer transition-colors outline-none',
-                                  'hover:bg-secondary/40 focus-visible:bg-secondary/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                                )}
-                              >
-                                {comment.photoURL ? (
-                                  <img
-                                    src={comment.photoURL}
-                                    alt={comment.displayName}
-                                    className="w-9 h-9 rounded-full object-cover ring-1 ring-border shrink-0"
-                                  />
-                                ) : (
-                                  <div className="w-9 h-9 rounded-full bg-primary-soft text-primary-soft-foreground font-semibold text-sm flex items-center justify-center shrink-0">
-                                    {(comment.displayName || '?').charAt(0).toUpperCase()}
-                                  </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-sm">
-                                    <span className="font-medium text-foreground">
-                                      {comment.displayName}
-                                      {isMine && (
-                                        <span className="ml-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                                          You
-                                        </span>
-                                      )}
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                      on
-                                    </span>
-                                    <span
-                                      className="font-medium text-primary truncate max-w-[20rem]"
-                                      title={comment.taskTitle}
-                                    >
-                                      {comment.taskTitle}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground/80">
-                                      · {comment.projectName}
-                                    </span>
-                                  </div>
-
-                                  {comment.text?.trim() && (
-                                    <p className="mt-1 text-sm text-foreground/90 line-clamp-3 whitespace-pre-wrap">
-                                      {comment.text}
-                                    </p>
-                                  )}
-
-                                  {comment.attachments && comment.attachments.length > 0 && (
-                                    <div className="mt-2">
-                                      <AttachmentPreview
-                                        attachments={comment.attachments}
-                                        stopPropagation={true}
-                                      />
-                                    </div>
-                                  )}
-
-                                  <div className="mt-2 flex items-center justify-between">
-                                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                      <Clock className="w-3 h-3" />
-                                      {formatDistanceSafe(comment.createdAt)}
-                                      {comment.isEdited && (
-                                        <>
-                                          <span className="text-muted-foreground/60">·</span>
-                                          <span>edited</span>
-                                        </>
-                                      )}
-                                    </div>
-                                    <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                                      Open task
-                                      <ArrowRight className="w-3 h-3" />
-                                    </span>
-                                  </div>
+                {(['all', 'mentions', 'mine'] as const).map((value) => (
+                  <TabsContent
+                    key={value}
+                    value={value}
+                    className="focus-visible:outline-none"
+                  >
+                    {loading ? (
+                      <div className="flex items-center justify-center py-16">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : tabbedComments.length === 0 ? (
+                      <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-12 text-center">
+                        <MessageSquare className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                        <p className="text-[13px] font-medium text-foreground">
+                          {value === 'mentions'
+                            ? 'No mentions yet'
+                            : value === 'mine'
+                            ? 'No comments by you'
+                            : 'No comments yet'}
+                        </p>
+                        <p className="max-w-sm text-xs text-muted-foreground">
+                          {value === 'mentions'
+                            ? 'Use @name in a comment to ping someone — those mentions show up here.'
+                            : 'Comments on tasks across your projects will appear here.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <ul className="overflow-hidden rounded-lg border border-border bg-background">
+                        {tabbedComments.map((comment) => {
+                          const isMine = user?.userId === comment.userId;
+                          return (
+                            <li
+                              key={comment.commentId}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setSelectedComment(comment)}
+                              onKeyDown={(e) => {
+                                if (e.currentTarget !== e.target) return;
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setSelectedComment(comment);
+                                }
+                              }}
+                              className="group flex min-h-12 cursor-pointer gap-3 border-b border-border/60 px-4 py-3 text-[13px] outline-none transition-colors last:border-b-0 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                            >
+                              {comment.photoURL ? (
+                                <img
+                                  src={comment.photoURL}
+                                  alt={comment.displayName}
+                                  className="h-7 w-7 shrink-0 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-medium text-primary-soft-foreground">
+                                  {(comment.displayName || '?').charAt(0).toUpperCase()}
                                 </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </TabsContent>
-                  ))}
-                </Tabs>
-              </CardContent>
-            </Card>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                  <span className="font-medium text-foreground">
+                                    {comment.displayName}
+                                    {isMine && (
+                                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                                        You
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    on
+                                  </span>
+                                  <span
+                                    className="max-w-[20rem] truncate font-medium text-foreground"
+                                    title={comment.taskTitle}
+                                  >
+                                    {comment.taskTitle}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    · {comment.projectName}
+                                  </span>
+                                </div>
+
+                                {comment.text?.trim() && (
+                                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words leading-5 text-foreground">
+                                    {comment.text}
+                                  </p>
+                                )}
+
+                                {comment.attachments && comment.attachments.length > 0 && (
+                                  <div className="mt-2">
+                                    <AttachmentPreview
+                                      attachments={comment.attachments}
+                                      stopPropagation={true}
+                                    />
+                                  </div>
+                                )}
+
+                                <div className="mt-1.5 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Clock className="h-3 w-3" aria-hidden />
+                                    {formatDistanceSafe(comment.createdAt)}
+                                    {comment.isEdited && (
+                                      <>
+                                        <span aria-hidden>·</span>
+                                        <span>edited</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                                    Open task
+                                    <ArrowRight className="h-3 w-3" aria-hidden />
+                                  </span>
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </TabsContent>
+                ))}
+              </Tabs>
+            </div>
           </div>
         </div>
       </main>
@@ -335,7 +312,7 @@ export const Comments: React.FC = () => {
             <AlertDialogTitle>Comment</AlertDialogTitle>
             <AlertDialogDescription asChild>
               {selectedComment && (
-                <div className="space-y-3 mt-2 text-foreground/90">
+                <div className="mt-2 space-y-3 text-foreground">
                   <div className="flex items-center gap-2">
                     {selectedComment.photoURL ? (
                       <img
@@ -344,20 +321,20 @@ export const Comments: React.FC = () => {
                         className="w-8 h-8 rounded-full object-cover ring-1 ring-border"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-primary-soft text-primary-soft-foreground font-semibold text-xs flex items-center justify-center">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-soft text-xs font-medium text-primary-soft-foreground">
                         {(selectedComment.displayName || '?').charAt(0).toUpperCase()}
                       </div>
                     )}
-                    <div className="text-sm">
+                    <div className="text-[13px]">
                       <span className="font-medium">{selectedComment.displayName}</span>
                       <span className="ml-1 text-muted-foreground">
-                        on <strong className="text-foreground">{selectedComment.taskTitle}</strong>
-                        {' '}in <strong className="text-foreground">{selectedComment.projectName}</strong>
+                        on <span className="font-medium text-foreground">{selectedComment.taskTitle}</span>
+                        {' '}in <span className="font-medium text-foreground">{selectedComment.projectName}</span>
                       </span>
                     </div>
                   </div>
                   {selectedComment.text?.trim() && (
-                    <div className="bg-secondary/50 p-3 rounded-md text-sm border border-border whitespace-pre-wrap">
+                    <div className="whitespace-pre-wrap rounded-md border border-border bg-surface-2 p-3 text-[13px] leading-5 text-foreground">
                       {selectedComment.text}
                     </div>
                   )}
@@ -385,7 +362,7 @@ export const Comments: React.FC = () => {
             <AlertDialogCancel onClick={() => setSelectedComment(null)}>
               Close
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmNavigation} className="gap-1.5">
+            <AlertDialogAction onClick={handleConfirmNavigation}>
               <ExternalLink className="w-4 h-4" />
               View task
             </AlertDialogAction>

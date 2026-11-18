@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
+import { DIALOG_FOOTER, FIELD_LABEL, FormError } from '@/components/workspace/ProjectFormParts';
 
 interface WorkspaceModalProps {
   open: boolean;
@@ -56,19 +57,15 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]" aria-describedby={undefined}>
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Create New Workspace</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4 py-4">
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-4">
+            {error && <FormError>{error}</FormError>}
             <div className="space-y-2">
-              <Label htmlFor="workspace-name">Workspace Name *</Label>
+              <Label htmlFor="workspace-name" className={FIELD_LABEL}>Workspace Name *</Label>
               <Input
                 id="workspace-name"
                 value={name}
@@ -78,7 +75,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="workspace-description">Description</Label>
+              <Label htmlFor="workspace-description" className={FIELD_LABEL}>Description</Label>
               <Textarea
                 id="workspace-description"
                 value={description}
@@ -89,13 +86,13 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={DIALOG_FOOTER}>
             <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
               Cancel
             </Button>
             <Button type="submit" disabled={loading || !name.trim()}>
               {loading ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</>
+                <><Loader2 className="w-4 h-4 animate-spin" />Creating...</>
               ) : (
                 'Create Workspace'
               )}

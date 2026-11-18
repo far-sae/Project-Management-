@@ -387,10 +387,10 @@ export const AcceptInvite: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md rounded-xl">
           <CardContent className="py-12 text-center">
-            <Loader2 className="w-12 h-12 mx-auto animate-spin text-orange-500" />
-            <p className="mt-4 text-muted-foreground">Loading invitation...</p>
+            <Loader2 className="h-5 w-5 mx-auto animate-spin text-muted-foreground" />
+            <p className="mt-3 text-[13px] text-muted-foreground">Loading invitation...</p>
           </CardContent>
         </Card>
       </div>
@@ -407,12 +407,10 @@ export const AcceptInvite: React.FC = () => {
   if (!loading && !invitation && !user && !error) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md rounded-xl">
           <CardHeader className="text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center">
-              <Mail className="w-8 h-8 text-white" />
-            </div>
-            <CardTitle className="text-2xl">Sign in to view your invitation</CardTitle>
+            <Mail className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
+            <CardTitle className="text-xl">Sign in to view your invitation</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground text-center">
@@ -421,7 +419,7 @@ export const AcceptInvite: React.FC = () => {
               for you.
             </p>
             <Button
-              className="w-full bg-gradient-to-r from-orange-500 to-red-500"
+              size="lg" className="w-full"
               onClick={async () => {
                 try {
                   sessionStorage.setItem("pendingInviteToken", token || "");
@@ -436,7 +434,7 @@ export const AcceptInvite: React.FC = () => {
             </Button>
             <Button
               variant="outline"
-              className="w-full"
+              size="lg" className="w-full"
               onClick={() => navigate(`/login?redirect=/accept-invite/${token}`)}
             >
               Sign in with email
@@ -451,9 +449,9 @@ export const AcceptInvite: React.FC = () => {
   if (error && !invitation) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md rounded-xl">
           <CardContent className="py-12 text-center">
-            <XCircle className="w-16 h-16 mx-auto text-red-500" />
+            <XCircle className="h-5 w-5 mx-auto text-destructive" />
             <h2 className="mt-4 text-xl font-semibold text-foreground">
               Invalid Invitation
             </h2>
@@ -475,9 +473,9 @@ export const AcceptInvite: React.FC = () => {
   if (success) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
+        <Card className="w-full max-w-md rounded-xl">
           <CardContent className="py-12 text-center">
-            <CheckCircle className="w-16 h-16 mx-auto text-green-500" />
+            <CheckCircle className="h-5 w-5 mx-auto text-success" />
             <h2 className="mt-4 text-xl font-semibold text-foreground">
               Welcome to the team!
             </h2>
@@ -494,12 +492,10 @@ export const AcceptInvite: React.FC = () => {
   // ─── Render: Main ──────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md rounded-xl">
         <CardHeader className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center">
-            <Mail className="w-8 h-8 text-white" />
-          </div>
-          <CardTitle className="text-2xl">Project Invitation</CardTitle>
+          <Mail className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
+          <CardTitle className="text-xl">Project Invitation</CardTitle>
         </CardHeader>
 
         <CardContent className="space-y-6">
@@ -513,16 +509,16 @@ export const AcceptInvite: React.FC = () => {
                   </span>{" "}
                   has invited you to join
                 </p>
-                <p className="text-2xl font-bold text-foreground mt-2">
+                <p className="text-2xl font-semibold text-foreground mt-2">
                   {invitation.projectName}
                 </p>
               </div>
 
               {/* Details card */}
-              <div className="bg-muted/50 border border-border rounded-lg p-4 space-y-2">
+              <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Invited email:</span>
-                  <span className="font-medium text-orange-600 dark:text-orange-400">
+                  <span className="font-medium text-foreground">
                     {invitation.inviteeEmail}
                   </span>
                 </div>
@@ -548,17 +544,17 @@ export const AcceptInvite: React.FC = () => {
 
               {/* ✅ Wrong account warning */}
               {isEmailMismatch && (
-                <Alert className="bg-yellow-50 border-yellow-200 text-yellow-900 dark:bg-yellow-500/10 dark:border-yellow-500/30 dark:text-yellow-200">
-                  <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                <Alert className="bg-warning-soft border-warning/30 text-warning-soft-foreground">
+                  <AlertTriangle className="h-5 w-5 text-warning-soft-foreground" />
                   <AlertTitle>Wrong account</AlertTitle>
-                  <AlertDescription className="text-yellow-800 dark:text-yellow-200/90">
+                  <AlertDescription className="text-warning-soft-foreground">
                     This invite was sent to{" "}
                     <strong>{invitation.inviteeEmail}</strong>, but you're
                     signed in as <strong>{user?.email}</strong>.
                     <Button
                       variant="outline"
                       size="sm"
-                      className="mt-3 border-yellow-400 text-yellow-800 hover:bg-yellow-100 dark:border-yellow-500/40 dark:text-yellow-100 dark:hover:bg-yellow-500/20 dark:bg-transparent"
+                      className="mt-3 border-warning text-warning-soft-foreground hover:bg-warning-soft dark:bg-transparent"
                       onClick={handleSignOut}
                     >
                       Switch to correct account
@@ -578,8 +574,8 @@ export const AcceptInvite: React.FC = () => {
 
               {/* Awaiting email confirmation */}
               {awaitingEmailConfirm ? (
-                <Alert className="bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-200">
-                  <Mail className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <Alert className="bg-info-soft border-info/30 text-info-soft-foreground">
+                  <Mail className="h-5 w-5 text-info" />
                   <AlertTitle>Confirm your email</AlertTitle>
                   <AlertDescription>
                     We sent a confirmation link to <strong>{signupEmail}</strong>.
@@ -613,14 +609,14 @@ export const AcceptInvite: React.FC = () => {
                           signupEmail &&
                             signupEmail.toLowerCase() !==
                             invitation.inviteeEmail.toLowerCase()
-                            ? "border-red-400"
+                            ? "border-destructive"
                             : ""
                         }
                       />
                       {signupEmail &&
                         signupEmail.toLowerCase() !==
                         invitation.inviteeEmail.toLowerCase() && (
-                          <p className="text-xs text-red-600 dark:text-red-400">
+                          <p className="text-xs text-destructive">
                             ⚠️ Use the invited email: {invitation.inviteeEmail}
                           </p>
                         )}
@@ -631,7 +627,7 @@ export const AcceptInvite: React.FC = () => {
                         onChange={(e) => setSignupPassword(e.target.value)}
                       />
                       <Button
-                        className="w-full bg-gradient-to-r from-orange-500 to-red-500"
+                        size="lg" className="w-full"
                         onClick={handleSignup}
                         disabled={
                           signingUp ||
@@ -641,13 +637,13 @@ export const AcceptInvite: React.FC = () => {
                         }
                       >
                         {signingUp && (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         )}
                         Create Account & Accept
                       </Button>
                       <Button
                         variant="ghost"
-                        className="w-full"
+                        size="lg" className="w-full"
                         onClick={() => setShowSignupForm(false)}
                       >
                         Already have an account? Sign in with Google
@@ -658,14 +654,14 @@ export const AcceptInvite: React.FC = () => {
                       <div className="flex gap-3">
                         <Button
                           variant="outline"
-                          className="flex-1"
+                          size="lg" className="flex-1"
                           onClick={handleDeclineClick}
                           disabled={processing}
                         >
                           Decline
                         </Button>
                         <Button
-                          className="flex-1 bg-gradient-to-r from-orange-500 to-red-500"
+                          size="lg" className="flex-1"
                           onClick={handleAccept}
                           disabled={processing}
                         >
@@ -674,7 +670,7 @@ export const AcceptInvite: React.FC = () => {
                       </div>
                       <Button
                         variant="outline"
-                        className="w-full"
+                        size="lg" className="w-full"
                         onClick={() => {
                           setSignupEmail(invitation.inviteeEmail); // ✅ Pre-fill correct email
                           setShowSignupForm(true);
@@ -684,7 +680,7 @@ export const AcceptInvite: React.FC = () => {
                       </Button>
                       <Button
                         variant="ghost"
-                        className="w-full"
+                        size="lg" className="w-full"
                         onClick={() => navigate(`/login?redirect=/accept-invite/${token}`)}
                       >
                         Already have account? Sign in with email
@@ -698,14 +694,14 @@ export const AcceptInvite: React.FC = () => {
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
-                      className="flex-1"
+                      size="lg" className="flex-1"
                       onClick={handleDeclineClick}
                       disabled={processing}
                     >
                       Decline
                     </Button>
                     <Button
-                      className="flex-1 bg-gradient-to-r from-orange-500 to-red-500"
+                      size="lg" className="flex-1"
                       onClick={handleAccept}
                       disabled={processing || isEmailMismatch}
                       title={
@@ -716,7 +712,7 @@ export const AcceptInvite: React.FC = () => {
                     >
                       {processing ? (
                         <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
                           Processing...
                         </>
                       ) : (
@@ -748,7 +744,7 @@ export const AcceptInvite: React.FC = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDecline} className="bg-red-500 hover:bg-red-600">
+            <AlertDialogAction onClick={handleConfirmDecline} className="bg-destructive hover:bg-destructive/90">
               Decline
             </AlertDialogAction>
           </AlertDialogFooter>

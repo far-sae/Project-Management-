@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { TaskCalendarLogo } from '@/components/brand/TaskCalendarLogo';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatStrip } from '@/components/common/StatStrip';
+import { UrgentBadge } from '@/components/common/TaskBadges';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useProjects } from '@/hooks/useProjects';
@@ -28,12 +31,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { CALENDAR_CHIP_CLASS, CALENDAR_CHIP_LEGEND, calendarChipClass } from './calendarTaskChip';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+/** Previous / next button inside the joined month navigator. */
+const STEP_BUTTON =
+  'flex w-11 shrink-0 items-center justify-center bg-background text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:w-8';
+
+/** Shared chip shape for tasks in the grid and the legend. */
+const CHIP = 'h-5 rounded border px-1.5 text-[11px] font-medium leading-[18px]';
 
 export const Calendar: React.FC = () => {
   const navigate = useNavigate();
@@ -192,63 +203,69 @@ export const Calendar: React.FC = () => {
   const completedMonthTasks = monthTasks.filter((task) => task.status === 'done').length;
   const urgentMonthTasks = monthTasks.filter((task) => task.urgent).length;
 
+  /** A greyed-out day from the month before or after, to square off the grid. */
+  const outsideDay = (key: string, day: number) => (
+    <div key={key} className="min-h-[104px] bg-surface-2 p-1.5" aria-hidden>
+      <span className="flex h-6 w-6 items-center justify-center text-xs font-medium tabular-nums text-muted-foreground/70">
+        {day}
+      </span>
+    </div>
+  );
+
   const renderCalendarDays = () => {
     const days: JSX.Element[] = [];
 
+    const daysInPrevMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0).getDate();
     for (let i = 0; i < startingDay; i++) {
-      days.push(<div key={`empty-${i}`} className="min-h-28 rounded-lg border border-border/40 bg-muted/15" />);
+      days.push(outsideDay(`before-${i}`, daysInPrevMonth - startingDay + 1 + i));
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
       const dayTasks = getTasksForDay(day);
 
       days.push(
-        <div
-          key={day}
-          className={`min-h-28 cursor-pointer overflow-y-auto rounded-lg border p-2.5 transition-colors hover:bg-muted/40 ${isToday(day) ? 'border-primary/40 bg-primary/10 shadow-sm' : 'border-border/60 bg-card/85'
-            }`}
-        >
+        <div key={day} className="flex min-h-[104px] min-w-0 flex-col gap-1 bg-background p-1.5">
           <span
-            className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm ${isToday(day)
-              ? 'bg-primary text-primary-foreground font-bold shadow-sm'
-              : 'text-foreground'
-              }`}
+            className={cn(
+              'flex h-6 w-6 items-center justify-center rounded-full text-xs tabular-nums',
+              isToday(day) ? 'bg-foreground font-semibold text-background' : 'font-medium text-foreground',
+            )}
+            aria-current={isToday(day) ? 'date' : undefined}
           >
             {day}
           </span>
 
-          {dayTasks.length > 0 && (
-            <div className="mt-1 space-y-0.5">
-              {dayTasks.slice(0, 2).map((task) => (
-                <div
-                  key={task.taskId}
-                  className={`flex cursor-pointer items-center gap-1 truncate rounded-md px-1.5 py-1 text-xs
-                    ${task.status === 'done'
-                      ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 line-through hover:bg-emerald-500/30'
-                      : task.urgent
-                        ? 'bg-destructive/25 text-destructive ring-1 ring-destructive/40 border border-destructive/35 hover:bg-destructive/35 font-medium'
-                        : 'bg-primary/20 text-primary hover:bg-primary/30'
-                    }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedTask(task);
-                  }}
-                  title={`${task.title} - ${getProjectName(task.projectId)} (${task.status})`}
-                >
-                  {task.status === 'done' && <span>✓</span>}
-                  {task.title}
-                </div>
-              ))}
-
-              {dayTasks.length > 2 && (
-                <div className="px-1 text-xs text-muted-foreground">
-                  +{dayTasks.length - 2} more
-                </div>
+          {dayTasks.slice(0, 2).map((task) => (
+            <button
+              key={task.taskId}
+              type="button"
+              className={cn(
+                CHIP,
+                'block w-full truncate text-left transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                calendarChipClass(task),
               )}
-            </div>
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedTask(task);
+              }}
+              title={`${task.title} - ${getProjectName(task.projectId)} (${task.status})`}
+            >
+              {task.title}
+            </button>
+          ))}
+
+          {dayTasks.length > 2 && (
+            <span className="px-1.5 text-[11px] text-muted-foreground">
+              +{dayTasks.length - 2} more
+            </span>
           )}
         </div>
       );
+    }
+
+    const trailing = (7 - ((startingDay + daysInMonth) % 7)) % 7;
+    for (let i = 1; i <= trailing; i++) {
+      days.push(outsideDay(`after-${i}`, i));
     }
 
     return days;
@@ -256,84 +273,89 @@ export const Calendar: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))] p-4 sm:p-6 lg:p-8">
-        <div className="mb-6 rounded-lg border border-border/70 bg-card/80 p-5 shadow-sm shadow-black/5 backdrop-blur-xl">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 leading-none">
-              <TaskCalendarLogo sizeClass="h-9 w-9 sm:h-10 sm:w-10" />
-              <div className="min-w-0 pt-0.5">
-                <h1 className="text-3xl font-bold text-foreground">TaskCalendar</h1>
-                <p className="mt-1 text-muted-foreground">View tasks by due date</p>
+      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <AppHeader left={<span className="text-sm font-semibold">Calendar</span>} />
+
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+            <PageHeader
+              title={`${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
+              description="View tasks by due date"
+              actions={
+                <>
+                  <Button variant="ghost" onClick={() => setCurrentDate(new Date())}>
+                    Today
+                  </Button>
+                  <div className="flex h-11 items-stretch overflow-hidden rounded-md border border-input bg-background md:h-8">
+                    <button
+                      type="button"
+                      className={cn(STEP_BUTTON, 'border-r border-input')}
+                      onClick={prevMonth}
+                      aria-label="Previous month"
+                    >
+                      <ChevronLeft className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className={STEP_BUTTON}
+                      onClick={nextMonth}
+                      aria-label="Next month"
+                    >
+                      <ChevronRight className="h-4 w-4" aria-hidden />
+                    </button>
+                  </div>
+                </>
+              }
+            />
+
+            <StatStrip
+              items={[
+                { label: 'Due this month', value: monthTasks.length },
+                { label: 'Completed', value: completedMonthTasks },
+                { label: 'Urgent', value: urgentMonthTasks, tone: 'danger' },
+              ]}
+            />
+
+            <div className="flex flex-col gap-3">
+              <ul className="flex flex-wrap items-center gap-2" aria-label="Task colours">
+                {CALENDAR_CHIP_LEGEND.map(({ level, label }) => (
+                  <li key={level} className={cn(CHIP, 'px-2 font-semibold', CALENDAR_CHIP_CLASS[level])}>
+                    {label}
+                  </li>
+                ))}
+              </ul>
+
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error loading tasks</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="overflow-hidden rounded-lg border border-border">
+                {loading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading tasks" />
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[760px]">
+                      <div className="grid h-9 grid-cols-7 items-center border-b border-border bg-surface-2 text-xs font-medium text-muted-foreground">
+                        {DAYS.map((day) => (
+                          <span key={day} className="px-2.5">
+                            {day}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-px bg-border">{renderCalendarDays()}</div>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setCurrentDate(new Date())}
-                className="rounded-lg bg-background/80"
-              >
-                <CalendarIcon className="w-4 h-4 mr-2" />
-                Today
-              </Button>
-            </div>
-          </div>
-          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-              <p className="text-xs font-medium text-muted-foreground">Due this month</p>
-              <p className="mt-1 text-2xl font-semibold">{monthTasks.length}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-              <p className="text-xs font-medium text-muted-foreground">Completed</p>
-              <p className="mt-1 text-2xl font-semibold text-success">{completedMonthTasks}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-              <p className="text-xs font-medium text-muted-foreground">Urgent</p>
-              <p className="mt-1 text-2xl font-semibold text-destructive">{urgentMonthTasks}</p>
             </div>
           </div>
         </div>
-
-        <Card className="overflow-hidden rounded-lg border-border/70 bg-card/85 shadow-sm shadow-black/5">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" className="rounded-lg" onClick={prevMonth}>
-                <ChevronLeft className="w-5 h-5" />
-              </Button>
-              <CardTitle>
-                {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
-              </CardTitle>
-              <Button variant="ghost" size="icon" className="rounded-lg" onClick={nextMonth}>
-                <ChevronRight className="w-5 h-5" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {error && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Error loading tasks</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-7 gap-2">
-                {DAYS.map((day) => (
-                  <div
-                    key={day}
-                    className="flex h-10 items-center justify-center rounded-lg bg-muted/30 text-sm font-medium text-muted-foreground"
-                  >
-                    {day}
-                  </div>
-                ))}
-                {renderCalendarDays()}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </main>
 
       {/* Task Details Dialog */}
@@ -341,18 +363,31 @@ export const Calendar: React.FC = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{selectedTask?.title}</AlertDialogTitle>
-            <AlertDialogDescription>
-              <div className="space-y-2 mt-2">
-                <p><strong>Project:</strong> {selectedTask ? getProjectName(selectedTask.projectId) : '-'}</p>
-                <p><strong>Status:</strong> <span className="capitalize">{selectedTask?.status}</span></p>
+            <AlertDialogDescription asChild>
+              <div className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+                <p>
+                  <span className="font-medium text-foreground">Project:</span>{' '}
+                  {selectedTask ? getProjectName(selectedTask.projectId) : '-'}
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Status:</span>{' '}
+                  <span className="capitalize">{selectedTask?.status}</span>
+                </p>
                 {selectedTask?.dueDate && (
-                  <p><strong>Due Date:</strong> {new Date(selectedTask.dueDate).toLocaleDateString()}</p>
+                  <p>
+                    <span className="font-medium text-foreground">Due Date:</span>{' '}
+                    <span className="tabular-nums">{new Date(selectedTask.dueDate).toLocaleDateString()}</span>
+                  </p>
                 )}
                 {selectedTask?.priority && (
-                  <p><strong>Priority:</strong> {selectedTask.priority}</p>
+                  <p>
+                    <span className="font-medium text-foreground">Priority:</span> {selectedTask.priority}
+                  </p>
                 )}
                 {selectedTask?.urgent && (
-                  <p className="text-red-600 font-semibold">⚠️ Urgent</p>
+                  <p className="pt-1">
+                    <UrgentBadge />
+                  </p>
                 )}
               </div>
             </AlertDialogDescription>

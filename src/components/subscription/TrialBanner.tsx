@@ -4,7 +4,7 @@ import { useSubscription } from '@/context/SubscriptionContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
-import { Clock, CreditCard, X, CheckCircle } from 'lucide-react';
+import { Clock, X, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -56,37 +56,27 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
   // ── EXPIRED STATE ─────────────────────────────────────────
   if (isExpired) {
     return (
-      <div className={cn(
-        'relative overflow-hidden bg-gradient-to-r from-gray-700 to-gray-900',
-        className
-      )}>
-        <div className="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-3">
-              <Clock className="w-5 h-5 text-white shrink-0" />
-              <p className="text-white font-medium text-sm">
-                Your Advanced trial has ended. You're now on the free Starter plan.
-                Upgrade anytime to restore full access.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => navigate('/pricing')}
-                className="bg-white text-gray-900 hover:bg-gray-100 font-medium"
-              >
-                <CreditCard className="w-4 h-4 mr-2" />
-                Upgrade Now
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-white hover:bg-white/20 h-8 w-8"
-                onClick={handleDismiss}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
+      <div className={cn('border-b bg-surface-2 text-[13px]', className)}>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <p className="font-medium text-foreground">
+              Your Advanced trial has ended. You're now on the free Starter plan.
+              Upgrade anytime to restore full access.
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="sm" onClick={() => navigate('/pricing')}>
+              Upgrade Now
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDismiss}
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>
@@ -96,53 +86,39 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
   // ── FULL VARIANT (top banner) ─────────────────────────────
   if (variant === 'full') {
     return (
-      <div className={cn(
-        'relative overflow-hidden',
-        isUrgent
-          ? 'bg-gradient-to-r from-red-500 to-orange-500'
-          : 'bg-gradient-to-r from-orange-500 to-yellow-500',
-        className
-      )}>
-        <div className="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-3">
-              <Clock className="w-5 h-5 text-white shrink-0" />
-              <p className="text-white font-medium text-sm">
-                {isUrgent ? (
-                  <>
-                    ⚠️ Advanced trial ends in{' '}
-                    <strong>{daysRemaining} day{daysRemaining !== 1 ? 's' : ''}</strong>!
-                    Upgrade now to keep full access.
-                  </>
-                ) : (
-                  <>
-                    🚀 You have{' '}
-                    <strong>{daysRemaining} days</strong>{' '}
-                    left on your free <strong>Advanced trial</strong>.
-                    Upgrade before it ends to keep all features.
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => navigate('/pricing')}
-                className="bg-white text-orange-600 hover:bg-orange-50 font-medium"
-              >
-                <CreditCard className="w-4 h-4 mr-2" />
-                Upgrade Now
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-white hover:bg-white/20 h-8 w-8"
-                onClick={handleDismiss}
-                aria-label="Dismiss"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
+      <div className={cn('border-b bg-surface-2 text-[13px]', className)}>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-2">
+            <Clock className={cn('h-4 w-4 shrink-0', isUrgent ? 'text-destructive' : 'text-muted-foreground')} />
+            <p className="font-medium text-foreground">
+              {isUrgent ? (
+                <>
+                  ⚠️ Advanced trial ends in{' '}
+                  <strong>{daysRemaining} day{daysRemaining !== 1 ? 's' : ''}</strong>!
+                  Upgrade now to keep full access.
+                </>
+              ) : (
+                <>
+                  🚀 You have{' '}
+                  <strong>{daysRemaining} days</strong>{' '}
+                  left on your free <strong>Advanced trial</strong>.
+                  Upgrade before it ends to keep all features.
+                </>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="sm" onClick={() => navigate('/pricing')}>
+              Upgrade Now
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDismiss}
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>
@@ -154,27 +130,25 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
     <div className={cn(
       'flex items-center justify-between p-3 rounded-lg gap-2',
       isUrgent
-        ? 'bg-red-50 border border-red-200'
-        : isHealthy
-          ? 'bg-green-50 border border-green-200'
-          : 'bg-orange-50 border border-orange-200',
+        ? 'bg-destructive-soft border border-destructive/30'
+        : 'bg-surface-2 border border-border',
       className
     )}>
       <div className="flex items-center gap-2 min-w-0">
         {isHealthy
-          ? <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
-          : <Clock className={cn('w-4 h-4 shrink-0', isUrgent ? 'text-red-600' : 'text-orange-600')} />
+          ? <CheckCircle className="w-4 h-4 text-success shrink-0" />
+          : <Clock className={cn('w-4 h-4 shrink-0', isUrgent ? 'text-destructive' : 'text-muted-foreground')} />
         }
         <div className="min-w-0">
           <p className={cn(
-            'text-sm font-medium truncate',
-            isUrgent ? 'text-red-800' : isHealthy ? 'text-green-800' : 'text-orange-800'
+            'text-[13px] font-medium truncate',
+            isUrgent ? 'text-destructive-soft-foreground' : 'text-foreground'
           )}>
             {isUrgent ? '⚠️ ' : ''}{daysRemaining} day{daysRemaining !== 1 ? 's' : ''} left
           </p>
           <p className={cn(
             'text-xs truncate',
-            isUrgent ? 'text-red-600' : isHealthy ? 'text-green-600' : 'text-orange-600'
+            isUrgent ? 'text-destructive' : 'text-muted-foreground'
           )}>
             Advanced trial
           </p>
@@ -186,7 +160,7 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
           size="sm"
           className={cn(
             'text-xs p-0 h-auto font-medium',
-            isUrgent ? 'text-red-600' : 'text-orange-600'
+            isUrgent ? 'text-destructive' : 'text-foreground'
           )}
           onClick={() => navigate('/pricing')}
         >
@@ -195,8 +169,9 @@ export const TrialBanner: React.FC<TrialBannerProps> = ({
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5 text-gray-400 hover:text-gray-600"
+          className="h-5 w-5 text-muted-foreground hover:text-muted-foreground"
           onClick={handleDismiss}
+          aria-label="Dismiss"
         >
           <X className="w-3 h-3" />
         </Button>

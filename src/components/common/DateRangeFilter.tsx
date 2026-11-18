@@ -148,8 +148,7 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className={cn('h-8 justify-start text-left font-normal gap-1.5', className)}
+          className={cn('justify-start text-left font-normal', className)}
         >
           <CalendarIcon className="w-3.5 h-3.5" />
           <span className="truncate">{summarize(value)}</span>
@@ -221,7 +220,7 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
           )}
         </div>
         <div className="p-2">
-          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider px-1 mb-1">
+          <p className="mb-1 px-1 text-xs font-medium text-muted-foreground">
             Custom range
           </p>
           <CalendarComp
@@ -249,7 +248,6 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
             <Button
               type="button"
               size="sm"
-              className="h-7 text-xs"
               disabled={!pickingStart || !pickingEnd}
               onClick={applyCustom}
             >
@@ -272,7 +270,7 @@ const PresetButton: React.FC<{
     type="button"
     variant={active ? 'default' : 'ghost'}
     size="sm"
-    className={cn('h-7 justify-start text-xs', className)}
+    className={cn('justify-start', className)}
     onClick={onClick}
   >
     {children}

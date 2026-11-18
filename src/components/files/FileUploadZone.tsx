@@ -129,19 +129,19 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         onDrop={handleDrop}
         onClick={handleClick}
         className={cn(
-          'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
+          'border border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
           isDragging
-            ? 'border-orange-500 bg-orange-50'
-            : 'border-gray-300 hover:border-orange-400 hover:bg-orange-50/50',
+            ? 'border-primary bg-primary/10'
+            : 'border-border hover:border-primary hover:bg-secondary',
           disabled && 'opacity-50 cursor-not-allowed'
         )}
       >
-        <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-        <p className="text-gray-700 font-medium">
+        <Upload className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
+        <p className="text-[13px] font-medium text-foreground">
           {isDragging ? 'Drop files here' : 'Drag and drop files here'}
         </p>
-        <p className="text-sm text-gray-500 mt-1">or click to browse</p>
-        <p className="text-xs text-gray-400 mt-2">Max file size: {maxSizeMB}MB</p>
+        <p className="text-xs text-muted-foreground mt-1">or click to browse</p>
+        <p className="text-xs text-muted-foreground mt-2">Max file size: {maxSizeMB}MB</p>
 
         <input
           ref={inputRef}
@@ -195,13 +195,13 @@ export const FileUploadItem: React.FC<FileUploadItemProps> = ({
 
   return (
     <>
-      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+      <div className="flex items-center gap-3 p-3 bg-secondary rounded-lg">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-700 truncate">{fileName}</p>
+          <p className="text-sm font-medium text-muted-foreground truncate">{fileName}</p>
           {status === 'uploading' && (
-            <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="mt-1 h-1 bg-foreground/10 rounded-full overflow-hidden">
               <div
-                className="h-full bg-orange-500 transition-all duration-300"
+                className="h-full bg-foreground/70 transition-all duration-300"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -213,18 +213,18 @@ export const FileUploadItem: React.FC<FileUploadItemProps> = ({
             </Alert>
           )}
           {status === 'completed' && (
-            <p className="text-xs text-green-600 mt-1">Upload complete</p>
+            <p className="text-xs text-success mt-1">Upload complete</p>
           )}
         </div>
         {status === 'uploading' && (
-          <Loader2 className="w-5 h-5 text-orange-500 animate-spin" />
+          <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
         )}
         {status === 'completed' && onRemove && (
           <Button
             variant="ghost"
             size="sm"
             onClick={handleRemove}
-            className="text-gray-400 hover:text-red-500"
+            className="text-muted-foreground hover:text-destructive"
             aria-label="Remove file"
           >
             <X className="w-4 h-4" />
@@ -242,7 +242,7 @@ export const FileUploadItem: React.FC<FileUploadItemProps> = ({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRemove} className="bg-red-500 hover:bg-red-600">
+            <AlertDialogAction onClick={confirmRemove} className="bg-destructive hover:bg-destructive/90">
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -64,8 +64,7 @@ export const PresenceStatusMenu: React.FC<PresenceStatusMenuProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs font-normal"
+          className="font-normal"
           title="How you appear to others in this project"
         >
           <span className="text-muted-foreground" aria-hidden>
@@ -74,7 +73,7 @@ export const PresenceStatusMenu: React.FC<PresenceStatusMenuProps> = ({
           <span className="max-w-[9rem] truncate hidden sm:inline">
             {active.label}
           </span>
-          <Circle className="w-2 h-2 fill-primary text-primary shrink-0" aria-hidden />
+          <Circle className="!size-2 shrink-0 fill-primary text-primary" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
@@ -89,18 +88,18 @@ export const PresenceStatusMenu: React.FC<PresenceStatusMenuProps> = ({
           >
             <div className="flex items-center gap-2 w-full">
               {o.icon}
-              <span className="font-medium text-sm flex-1">{o.label}</span>
+              <span className="flex-1 text-[13px] font-medium">{o.label}</span>
               {preference === o.value && (
-                <Check className="w-4 h-4 text-primary shrink-0" />
+                <Check className="h-4 w-4 shrink-0 text-foreground" />
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground pl-6 leading-snug">
+            <p className="pl-6 text-xs leading-snug text-muted-foreground">
               {o.description}
             </p>
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <p className="px-2 py-1.5 text-[10px] text-muted-foreground leading-relaxed">
+        <p className="px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
           With <span className="font-medium text-foreground">Auto</span>, others see
           you online or offline based on this tab. Other modes are manual.
         </p>
@@ -114,12 +113,12 @@ const avatarStatusDot = (p: PresenceStatusPreference): string => {
     case 'appear_offline':
       return 'bg-muted-foreground/80';
     case 'dnd':
-      return 'bg-amber-500';
+      return 'bg-warning';
     case 'holiday':
-      return 'bg-sky-500';
+      return 'bg-info';
     case 'auto':
     default:
-      return 'bg-emerald-500';
+      return 'bg-success';
   }
 };
 
@@ -151,13 +150,15 @@ export const PresenceStatusAvatarMenu: React.FC<PresenceStatusMenuProps & { clas
           title="Your status in this project"
           aria-label="Your status in this project"
         >
-          <Avatar className="h-8 w-8 ring-2 ring-border">
+          <Avatar className="h-8 w-8">
             <AvatarImage src={user?.photoURL || undefined} alt={user?.displayName || ''} />
-            <AvatarFallback className="text-xs">{initial}</AvatarFallback>
+            <AvatarFallback className="bg-primary-soft text-xs font-semibold text-primary-soft-foreground">
+              {initial}
+            </AvatarFallback>
           </Avatar>
           <span
             className={cn(
-              'absolute bottom-0 right-0 block w-2.5 h-2.5 rounded-full ring-2 ring-card',
+              'absolute -bottom-px -right-px block h-2 w-2 rounded-full ring-2 ring-background',
               avatarStatusDot(preference),
             )}
             aria-hidden
@@ -176,18 +177,18 @@ export const PresenceStatusAvatarMenu: React.FC<PresenceStatusMenuProps & { clas
           >
             <div className="flex items-center gap-2 w-full">
               {o.icon}
-              <span className="font-medium text-sm flex-1">{o.label}</span>
+              <span className="flex-1 text-[13px] font-medium">{o.label}</span>
               {preference === o.value && (
-                <Check className="w-4 h-4 text-primary shrink-0" />
+                <Check className="h-4 w-4 shrink-0 text-foreground" />
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground pl-6 leading-snug">
+            <p className="pl-6 text-xs leading-snug text-muted-foreground">
               {o.description}
             </p>
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <p className="px-2 py-1.5 text-[10px] text-muted-foreground leading-relaxed">
+        <p className="px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
           With <span className="font-medium text-foreground">Auto</span>, others see
           you online or offline based on this tab. Other modes are manual.
         </p>

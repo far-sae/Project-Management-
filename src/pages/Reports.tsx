@@ -6,9 +6,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  BarChart3, TrendingUp, CheckCircle, Clock, Loader2, ArrowRight,
+  BarChart3, TrendingUp, Loader2, ArrowRight,
   Users, Briefcase, Timer, LayoutDashboard, FolderKanban, Lock,
-  DollarSign, FileText, RefreshCw, AlertTriangle, AlertCircle, X,
+  FileText, RefreshCw, AlertTriangle, AlertCircle, X,
   Sparkles, Brain, ShieldAlert, Lightbulb, MessageSquare, Send, Trophy,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -45,6 +45,9 @@ import {
   type AIError,
 } from '@/services/ai';
 import { Input } from '@/components/ui/input';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatStrip } from '@/components/common/StatStrip';
 import { Badge } from '@/components/ui/badge';
 import {
   DateRangeFilter,
@@ -506,82 +509,77 @@ export const Reports: React.FC = () => {
   // Feature gate
   if (!hasFeature('reports')) {
     return (
-      <main className="flex-1 overflow-y-auto p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground">Reports</h1>
-            <p className="text-muted-foreground">Productivity insights and analytics</p>
-          </div>
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center">
-            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
-              <Lock className="w-8 h-8 text-orange-500" />
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <AppHeader left={<span className="text-sm font-semibold">Reports</span>} />
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+            <PageHeader title="Reports" description="Productivity insights and analytics" />
+            <div className="flex flex-col items-center justify-center rounded-lg border border-border py-16 text-center">
+              <Lock className="mb-3 h-5 w-5 text-muted-foreground" />
+              <p className="text-[13px] font-medium text-foreground">Reports &amp; Analytics</p>
+              <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                Get productivity insights — task overview, workload per user, time tracking, and workspace dashboards.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Available on Basic plan and above</p>
+              <Button className="mt-4" onClick={() => navigate('/pricing')}>
+                Upgrade to Basic
+              </Button>
             </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Reports & Analytics</h2>
-            <p className="text-muted-foreground mb-2 max-w-md">
-              Get productivity insights — task overview, workload per user, time tracking, and workspace dashboards.
-            </p>
-            <p className="text-sm text-orange-600 font-medium mb-6">
-              Available on Basic plan and above
-            </p>
-            <Button
-              className="bg-gradient-to-r from-orange-500 to-red-500"
-              onClick={() => navigate('/pricing')}
-            >
-              Upgrade to Basic
-            </Button>
           </div>
-        </main>
+        </div>
+      </main>
     );
   }
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Reports</h1>
-            <p className="text-muted-foreground">
-              {activeTab === 'projects'
-                ? 'Productivity insights – task overview, workload, time tracking, and workspace dashboard'
-                : 'Business metrics – contracts, values, and client insights'}
-            </p>
-          </div>
-
-          {/* Workspace + date filters (only for projects tab) */}
-          {activeTab === 'projects' && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <DateRangeFilter value={dateRange} onChange={setDateRange} />
-              {/* Only offer the in-page workspace filter while the sidebar
-                  shows all workspaces — otherwise the sidebar owns the scope. */}
-              {isAll && (
-                <>
-                  <span className="text-sm font-medium text-foreground">Workspace</span>
-                  <Select value={reportWorkspaceId} onValueChange={setReportWorkspaceId}>
-                    <SelectTrigger className="w-[220px] bg-background">
-                      <SelectValue placeholder="All workspaces" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL_WORKSPACES_ID}>All workspaces</SelectItem>
-                      {workspaceListForSelect.map((w) => (
-                        <SelectItem key={w.workspaceId} value={w.workspaceId}>
-                          {getWorkspaceDisplayName(w)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <AppHeader left={<span className="text-sm font-semibold">Reports</span>} />
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+        <PageHeader
+          title="Reports"
+          description={
+            activeTab === 'projects'
+              ? 'Productivity insights – task overview, workload, time tracking, and workspace dashboard'
+              : 'Business metrics – contracts, values, and client insights'
+          }
+          actions={
+            activeTab === 'projects' ? (
+              <>
+                <DateRangeFilter value={dateRange} onChange={setDateRange} />
+                {/* Only offer the in-page workspace filter while the sidebar
+                    shows all workspaces — otherwise the sidebar owns the scope. */}
+                {isAll && (
+                  <>
+                    <span className="text-sm font-medium text-foreground">Workspace</span>
+                    <Select value={reportWorkspaceId} onValueChange={setReportWorkspaceId}>
+                      <SelectTrigger className="w-[220px] bg-background">
+                        <SelectValue placeholder="All workspaces" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ALL_WORKSPACES_ID}>All workspaces</SelectItem>
+                        {workspaceListForSelect.map((w) => (
+                          <SelectItem key={w.workspaceId} value={w.workspaceId}>
+                            {getWorkspaceDisplayName(w)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
+              </>
+            ) : undefined
+          }
+        />
 
         {/* Tab Navigation */}
-        <div className="border-b mb-6">
+        <div className="border-b">
           <div className="flex gap-4">
             <button
               onClick={() => setActiveTab('projects')}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'projects'
-                ? 'border-orange-500 text-orange-600'
+              className={`-mb-px px-1 py-2 font-medium text-[13px] border-b-2 transition-colors ${activeTab === 'projects'
+                ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
             >
@@ -589,8 +587,8 @@ export const Reports: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('business')}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeTab === 'business'
-                ? 'border-orange-500 text-orange-600'
+              className={`-mb-px px-1 py-2 font-medium text-[13px] border-b-2 transition-colors ${activeTab === 'business'
+                ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
             >
@@ -598,7 +596,7 @@ export const Reports: React.FC = () => {
             </button>
             <button
               onClick={() => navigate('/workload')}
-              className="px-4 py-2 font-medium text-sm border-b-2 transition-colors border-transparent text-muted-foreground hover:text-foreground"
+              className="-mb-px px-1 py-2 font-medium text-[13px] border-b-2 transition-colors border-transparent text-muted-foreground hover:text-foreground"
             >
               Workload →
             </button>
@@ -610,66 +608,32 @@ export const Reports: React.FC = () => {
           <>
             {loading ? (
               <div className="flex justify-center py-16">
-                <Loader2 className="w-12 h-12 animate-spin text-orange-500" />
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             ) : (
               <>
                 {/* KPI Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  <Card className="border border-border shadow-md bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">Total Projects</CardTitle>
-                      <BarChart3 className="w-4 h-4 text-blue-500" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{totalProjects}</div>
-                      <p className="text-xs text-muted-foreground">{reportWorkspaceId === ALL_WORKSPACES_ID ? 'Active projects' : 'In selected workspace'}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border border-border shadow-md bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">Total Tasks</CardTitle>
-                      <Clock className="w-4 h-4 text-orange-500" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{totalTasks}</div>
-                      <p className="text-xs text-muted-foreground">{reportWorkspaceId === ALL_WORKSPACES_ID ? 'Across all projects' : 'In selected workspace'}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border border-border shadow-md bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">Completed</CardTitle>
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{completedTasks}</div>
-                      <p className="text-xs text-muted-foreground">Tasks completed</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border border-border shadow-md bg-card">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">Completion Rate</CardTitle>
-                      <TrendingUp className="w-4 h-4 text-purple-500" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{completionRate}%</div>
-                      <p className="text-xs text-muted-foreground">Overall progress</p>
-                    </CardContent>
-                  </Card>
-                </div>
+                <StatStrip
+                  items={[
+                    { label: 'Total projects', value: totalProjects, note: reportWorkspaceId === ALL_WORKSPACES_ID ? 'Active projects' : 'In selected workspace' },
+                    { label: 'Total tasks', value: totalTasks, note: reportWorkspaceId === ALL_WORKSPACES_ID ? 'Across all projects' : 'In selected workspace' },
+                    { label: 'Completed', value: completedTasks, note: 'Tasks completed', tone: 'success' },
+                    { label: 'Completion rate', value: `${completionRate}%`, note: 'Overall progress' },
+                  ]}
+                />
 
                 {/* AI Insights */}
-                <Card className="mb-6 border bg-gradient-to-br from-violet-500/[0.06] via-card to-orange-500/[0.04] border-violet-500/30 shadow-md overflow-hidden">
+                <Card className="border border-primary/30 overflow-hidden">
                   <CardHeader className="pb-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-violet-500/10 ring-1 ring-violet-500/30 text-violet-500 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 ring-1 ring-primary/30 text-primary flex items-center justify-center">
                           <Brain className="w-5 h-5" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <CardTitle className="text-base">AI Insights</CardTitle>
-                            <Badge variant="outline" className="border-violet-500/40 text-violet-600 dark:text-violet-300 bg-violet-500/10 text-[10px] uppercase tracking-wider">
+                            <Badge variant="outline" className="border-primary/40 text-primary bg-primary/10 text-[10px]">
                               Beta
                             </Badge>
                           </div>
@@ -688,21 +652,21 @@ export const Reports: React.FC = () => {
                           size="sm"
                           disabled={!aiAvailable || aiInsightsLoading || totalTasks === 0}
                           onClick={handleGenerateAiInsights}
-                          className="bg-gradient-to-r from-violet-500 to-orange-500 text-white border-0 hover:opacity-90"
+                         
                         >
                           {aiInsightsLoading ? (
                             <>
-                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               Analyzing…
                             </>
                           ) : aiInsights ? (
                             <>
-                              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                              <RefreshCw className="w-3.5 h-3.5" />
                               Regenerate
                             </>
                           ) : (
                             <>
-                              <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                              <Sparkles className="w-3.5 h-3.5" />
                               Generate insights
                             </>
                           )}
@@ -740,7 +704,7 @@ export const Reports: React.FC = () => {
                             key={label}
                             className="rounded-lg border border-border/60 bg-card/60 p-3 flex items-start gap-2.5"
                           >
-                            <Icon className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                            <Icon className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                             <div>
                               <p className="text-sm font-medium">{label}</p>
                               <p className="text-xs text-muted-foreground">{desc}</p>
@@ -758,8 +722,8 @@ export const Reports: React.FC = () => {
                     )}
                     {aiInsights && (
                       <>
-                        <div className="rounded-lg border border-border/60 bg-card/70 p-4">
-                          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                        <div className="rounded-lg border border-border/60 bg-card p-4">
+                          <p className="text-xs font-medium text-muted-foreground mb-1.5">
                             Executive summary
                           </p>
                           <p className="text-sm leading-relaxed">{aiInsights.summary}</p>
@@ -768,12 +732,12 @@ export const Reports: React.FC = () => {
                           {aiInsights.highlights.map((h, idx) => {
                             const tone =
                               h.type === 'win'
-                                ? { Icon: Trophy, ring: 'ring-emerald-500/30', text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10' }
+                                ? { Icon: Trophy, ring: 'ring-success/30', text: 'text-success', bg: 'bg-success/10' }
                                 : h.type === 'risk'
-                                  ? { Icon: ShieldAlert, ring: 'ring-red-500/30', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10' }
+                                  ? { Icon: ShieldAlert, ring: 'ring-destructive/30', text: 'text-destructive', bg: 'bg-destructive/10' }
                                   : h.type === 'forecast'
-                                    ? { Icon: TrendingUp, ring: 'ring-blue-500/30', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' }
-                                    : { Icon: Lightbulb, ring: 'ring-amber-500/30', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-500/10' };
+                                    ? { Icon: TrendingUp, ring: 'ring-info/30', text: 'text-info', bg: 'bg-info/10' }
+                                    : { Icon: Lightbulb, ring: 'ring-warning/30', text: 'text-warning-soft-foreground', bg: 'bg-warning/10' };
                             const Icon = tone.Icon;
                             return (
                               <div
@@ -792,10 +756,10 @@ export const Reports: React.FC = () => {
                           })}
                         </div>
                         {aiInsights.forecast && (
-                          <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 flex gap-2.5">
-                            <TrendingUp className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                          <div className="rounded-lg border border-info/30 bg-info/5 p-3 flex gap-2.5">
+                            <TrendingUp className="w-4 h-4 text-info mt-0.5 shrink-0" />
                             <div>
-                              <p className="text-[11px] uppercase tracking-wider text-blue-600 dark:text-blue-300 mb-0.5">
+                              <p className="text-xs font-medium text-info mb-0.5">
                                 Forecast
                               </p>
                               <p className="text-sm leading-relaxed">{aiInsights.forecast}</p>
@@ -804,7 +768,7 @@ export const Reports: React.FC = () => {
                         )}
                         {aiInsights.recommendations.length > 0 && (
                           <div>
-                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
+                            <p className="text-xs font-medium text-muted-foreground mb-2">
                               Recommended next steps
                             </p>
                             <ol className="space-y-1.5">
@@ -813,7 +777,7 @@ export const Reports: React.FC = () => {
                                   key={`${idx}-${rec.slice(0, 12)}`}
                                   className="flex items-start gap-2 text-sm"
                                 >
-                                  <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500/15 text-violet-600 dark:text-violet-300 text-[11px] font-semibold shrink-0">
+                                  <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/15 text-primary text-[11px] font-semibold shrink-0">
                                     {idx + 1}
                                   </span>
                                   <span className="leading-relaxed">{rec}</span>
@@ -827,7 +791,7 @@ export const Reports: React.FC = () => {
 
                     {/* Ask AI follow-up */}
                     <div className="pt-3 border-t border-border/60">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
                         <MessageSquare className="w-3 h-3" />
                         Ask anything about your data
                       </p>
@@ -855,7 +819,7 @@ export const Reports: React.FC = () => {
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
                             <>
-                              <Send className="w-3.5 h-3.5 mr-1.5" />
+                              <Send className="w-3.5 h-3.5" />
                               Ask
                             </>
                           )}
@@ -866,7 +830,7 @@ export const Reports: React.FC = () => {
                       )}
                       {aiAnswer && (
                         <div className="mt-3 rounded-lg border border-border/60 bg-card p-3">
-                          <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">
                             Answer
                           </p>
                           <p className="text-sm leading-relaxed whitespace-pre-wrap">{aiAnswer}</p>
@@ -877,17 +841,17 @@ export const Reports: React.FC = () => {
                 </Card>
 
                 {/* Time Tracking Card */}
-                <Card className="mb-6 border border-border shadow-md bg-card">
+                <Card>
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
-                      <Timer className="w-5 h-5 text-orange-500" />
+                      <Timer className="h-4 w-4 text-muted-foreground" />
                       <CardTitle>Time tracking</CardTitle>
                     </div>
                     <p className="text-sm text-muted-foreground">Time logged in comments</p>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center gap-4">
-                      <div className="text-3xl font-bold text-foreground">
+                      <div className="text-3xl font-semibold text-foreground">
                         {Math.floor(timeLoggedMinutes / 60)}h {timeLoggedMinutes % 60}m
                       </div>
                       <p className="text-sm text-muted-foreground">total from your comments</p>
@@ -896,11 +860,11 @@ export const Reports: React.FC = () => {
                 </Card>
 
                 {/* Task Overview and User Workload */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                  <Card className="border border-border shadow-md bg-card">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
-                        <LayoutDashboard className="w-5 h-5 text-orange-500" />
+                        <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
                         <CardTitle>Task overview</CardTitle>
                       </div>
                       <p className="text-sm text-muted-foreground">Recent activity</p>
@@ -931,10 +895,10 @@ export const Reports: React.FC = () => {
                     </CardContent>
                   </Card>
 
-                  <Card className="border border-border shadow-md bg-card">
+                  <Card>
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
-                        <Users className="w-5 h-5 text-blue-500" />
+                        <Users className="h-4 w-4 text-muted-foreground" />
                         <CardTitle>Tasks by user</CardTitle>
                       </div>
                       <p className="text-sm text-muted-foreground">Workload per assignee</p>
@@ -950,7 +914,7 @@ export const Reports: React.FC = () => {
                             return (
                               <div key={userId} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted/80 transition-colors">
                                 <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-medium text-sm shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-info-soft flex items-center justify-center text-info-soft-foreground font-medium text-sm shrink-0">
                                     {displayName.charAt(0).toUpperCase()}
                                   </div>
                                   <div>
@@ -974,10 +938,10 @@ export const Reports: React.FC = () => {
                 {/* Workspace Dashboard — a per-workspace breakdown only makes
                     sense while the sidebar isn't already scoping to one. */}
                 {isAll && (
-                <Card className="mb-6 border border-border shadow-md bg-card">
+                <Card>
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
-                      <Briefcase className="w-5 h-5 text-purple-500" />
+                      <Briefcase className="h-4 w-4 text-muted-foreground" />
                       <CardTitle>Workspace dashboard</CardTitle>
                     </div>
                     <p className="text-sm text-muted-foreground">Projects and tasks per workspace</p>
@@ -987,17 +951,17 @@ export const Reports: React.FC = () => {
                       {workspaceStats.map((ws) => {
                         const rate = ws.taskCount > 0 ? Math.round((ws.completedCount / ws.taskCount) * 100) : 0;
                         return (
-                          <div key={ws.workspaceId} onClick={() => navigate('/dashboard')} className="p-4 rounded-xl border border-border hover:border-orange-500/50 hover:bg-orange-500/10 cursor-pointer transition-all">
+                          <div key={ws.workspaceId} onClick={() => navigate('/dashboard')} className="p-4 rounded-lg border border-border hover:border-primary/50 hover:bg-primary/10 cursor-pointer transition-all">
                             <div className="flex items-center gap-2 mb-2">
-                              <FolderKanban className="w-4 h-4 text-purple-500" />
+                              <FolderKanban className="w-4 h-4 text-primary" />
                               <span className="font-medium text-foreground">{ws.name}</span>
                             </div>
                             <div className="flex gap-4 text-sm">
                               <span className="text-muted-foreground">{ws.projectCount} projects</span>
                               <span className="text-muted-foreground">{ws.taskCount} tasks</span>
                             </div>
-                            <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-gradient-to-r from-purple-500 to-orange-500 rounded-full" style={{ width: `${rate}%` }} />
+                            <div className="mt-2 h-1 bg-foreground/10 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full bg-foreground/70" style={{ width: `${rate}%` }} />
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">{rate}% complete</p>
                           </div>
@@ -1010,10 +974,10 @@ export const Reports: React.FC = () => {
 
                 {/* Organization Members */}
                 {organization?.members && organization.members.length > 0 && (
-                  <Card className="mb-6 border border-border shadow-md bg-card">
+                  <Card>
                     <CardHeader className="pb-2">
                       <div className="flex items-center gap-2">
-                        <Users className="w-5 h-5 text-green-500" />
+                        <Users className="h-4 w-4 text-muted-foreground" />
                         <CardTitle>Users</CardTitle>
                       </div>
                       <p className="text-sm text-muted-foreground">Organization members</p>
@@ -1035,7 +999,7 @@ export const Reports: React.FC = () => {
                           const workload = tasksByUser.find((w) => w.userId === m.userId);
                           return (
                             <div key={m.userId} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border">
-                              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-medium text-sm">
+                              <div className="w-8 h-8 rounded-full bg-success-soft flex items-center justify-center text-success-soft-foreground font-medium text-sm">
                                 {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
                               </div>
                               <div>
@@ -1052,7 +1016,7 @@ export const Reports: React.FC = () => {
 
                 {/* Project Progress and Task Distribution */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card className="border border-border shadow-md bg-card">
+                  <Card>
                     <CardHeader>
                       <CardTitle>Project progress</CardTitle>
                       <p className="text-sm text-muted-foreground">Completion by project</p>
@@ -1060,7 +1024,7 @@ export const Reports: React.FC = () => {
                     <CardContent>
                       {filteredProjects.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
-                          <BarChart3 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                          <BarChart3 className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
                           <p>{reportWorkspaceId === ALL_WORKSPACES_ID ? 'No projects to display' : 'No projects in this workspace'}</p>
                         </div>
                       ) : (
@@ -1078,8 +1042,8 @@ export const Reports: React.FC = () => {
                                   <span className="font-medium">{project.name}</span>
                                   <span className="text-sm text-muted-foreground">{progress}%</span>
                                 </div>
-                                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                                  <div className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                                <div className="h-1 bg-foreground/10 rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full bg-foreground/70 transition-all" style={{ width: `${progress}%` }} />
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-1">{scoped.completedTasks} of {scoped.totalTasks} tasks completed</p>
                               </div>
@@ -1090,7 +1054,7 @@ export const Reports: React.FC = () => {
                     </CardContent>
                   </Card>
 
-                  <Card className="border border-border shadow-md bg-card">
+                  <Card>
                     <CardHeader>
                       <CardTitle>Team members</CardTitle>
                       <p className="text-sm text-muted-foreground">Organization members</p>
@@ -1098,7 +1062,7 @@ export const Reports: React.FC = () => {
                     <CardContent>
                       {!organization?.members || organization.members.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
-                          <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+                          <Users className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
                           <p>No team members yet</p>
                         </div>
                       ) : (
@@ -1130,12 +1094,12 @@ export const Reports: React.FC = () => {
                                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/team'); } }}
                                   className="flex flex-1 items-center gap-3 cursor-pointer min-w-0"
                                 >
-                                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-medium text-sm shrink-0">
+                                  <div className="w-8 h-8 rounded-full bg-success-soft flex items-center justify-center text-success-soft-foreground font-medium text-sm shrink-0">
                                     {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
                                   </div>
                                   <div className="min-w-0">
                                     <span className="font-medium">{displayName}</span>
-                                    {isOwner && <span className="ml-2 text-xs text-orange-600 font-medium">Owner</span>}
+                                    {isOwner && <span className="ml-2 text-xs text-primary font-medium">Owner</span>}
                                     <p className="text-xs text-muted-foreground">{m.role || 'member'}</p>
                                   </div>
                                 </div>
@@ -1146,7 +1110,7 @@ export const Reports: React.FC = () => {
                                     <button
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); setMemberToRemove({ userId: m.userId, displayName }); }}
-                                      className="p-1.5 rounded-md text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors"
+                                      className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive-soft transition-colors"
                                       aria-label={`Remove ${displayName} from organization`}
                                     >
                                       <X className="w-4 h-4" />
@@ -1172,7 +1136,7 @@ export const Reports: React.FC = () => {
         {activeTab === 'business' && (
           <>
             {businessError && (
-              <Alert variant="destructive" className="mb-6">
+              <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Error loading business data</AlertTitle>
                 <AlertDescription>{businessError}</AlertDescription>
@@ -1180,15 +1144,15 @@ export const Reports: React.FC = () => {
             )}
             {businessLoading ? (
               <div className="flex justify-center py-16">
-                <Loader2 className="w-12 h-12 animate-spin text-orange-500" />
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             ) : businessContracts.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground border-2 border-dashed border-border rounded-xl">
-                <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
-                <p className="text-lg font-medium">No contracts yet</p>
-                <p className="text-sm">Create contracts to see business metrics</p>
+              <div className="text-center py-16 text-muted-foreground border border-border rounded-lg">
+                <FileText className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
+                <p className="text-[13px] font-medium text-foreground">No contracts yet</p>
+                <p className="text-xs">Create contracts to see business metrics</p>
                 <Button
-                  className="mt-4 bg-gradient-to-r from-orange-500 to-red-500"
+                  className="mt-4"
                   onClick={() => navigate('/contracts')}
                 >
                   Go to Contracts
@@ -1197,8 +1161,8 @@ export const Reports: React.FC = () => {
             ) : (
               <div className="space-y-6">
                 {/* Header with Currency Filter and Refresh */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-4">
                     <Select value={selectedCurrency} onValueChange={setSelectedCurrency}>
                       <SelectTrigger className="w-[180px]">
                         <SelectValue placeholder="All Currencies" />
@@ -1217,64 +1181,20 @@ export const Reports: React.FC = () => {
                     </p>
                   </div>
                   <Button variant="outline" size="sm" onClick={fetchBusinessData}>
-                    <RefreshCw className="w-4 h-4 mr-2" />
+                    <RefreshCw className="w-4 h-4" />
                     Refresh
                   </Button>
                 </div>
 
                 {/* KPI Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Total Contracts</p>
-                          <p className="text-2xl font-bold">{businessMetrics.totalContracts}</p>
-                        </div>
-                        <FileText className="w-8 h-8 text-blue-500 opacity-75" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Total Value</p>
-                          <p className="text-2xl font-bold">
-                            {businessMetrics.currentSymbol}{businessMetrics.totalValue.toLocaleString()}
-                          </p>
-                        </div>
-                        <DollarSign className="w-8 h-8 text-green-500 opacity-75" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Average Value</p>
-                          <p className="text-2xl font-bold">
-                            {businessMetrics.currentSymbol}{businessMetrics.avgValue.toLocaleString()}
-                          </p>
-                        </div>
-                        <TrendingUp className="w-8 h-8 text-purple-500 opacity-75" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Active Contracts</p>
-                          <p className="text-2xl font-bold text-green-600">
-                            {businessMetrics.byStatus.accepted}
-                          </p>
-                        </div>
-                        <CheckCircle className="w-8 h-8 text-green-500 opacity-75" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                <StatStrip
+                  items={[
+                    { label: 'Total contracts', value: businessMetrics.totalContracts },
+                    { label: 'Total value', value: `${businessMetrics.currentSymbol}${businessMetrics.totalValue.toLocaleString()}` },
+                    { label: 'Average value', value: `${businessMetrics.currentSymbol}${businessMetrics.avgValue.toLocaleString()}` },
+                    { label: 'Active contracts', value: businessMetrics.byStatus.accepted, tone: 'success' },
+                  ]}
+                />
 
                 {/* Status and Currency Distribution */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1285,10 +1205,10 @@ export const Reports: React.FC = () => {
                     <CardContent>
                       <div className="space-y-3">
                         {[
-                          { status: 'Draft', count: businessMetrics.byStatus.draft, color: 'bg-gray-400' },
-                          { status: 'Pending', count: businessMetrics.byStatus.pending, color: 'bg-yellow-400' },
-                          { status: 'Accepted', count: businessMetrics.byStatus.accepted, color: 'bg-green-400' },
-                          { status: 'Expired', count: businessMetrics.byStatus.expired, color: 'bg-red-400' },
+                          { status: 'Draft', count: businessMetrics.byStatus.draft, color: 'bg-muted-foreground/40' },
+                          { status: 'Pending', count: businessMetrics.byStatus.pending, color: 'bg-warning' },
+                          { status: 'Accepted', count: businessMetrics.byStatus.accepted, color: 'bg-success' },
+                          { status: 'Expired', count: businessMetrics.byStatus.expired, color: 'bg-destructive' },
                         ].map((item) => (
                           <div key={item.status} className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -1338,7 +1258,7 @@ export const Reports: React.FC = () => {
                               <p className="font-medium">{client.name}</p>
                               <p className="text-sm text-muted-foreground">{client.count} contracts</p>
                             </div>
-                            <p className="font-bold text-orange-600">
+                            <p className="font-semibold text-primary">
                               {businessMetrics.currentSymbol}{client.value.toLocaleString()}
                             </p>
                           </div>
@@ -1350,13 +1270,13 @@ export const Reports: React.FC = () => {
 
                 {/* Expiring Soon Alert */}
                 {businessMetrics.expiringSoon.length > 0 && (
-                  <Card className="border-yellow-200 bg-yellow-50">
+                  <Card className="border-warning/30 bg-warning-soft">
                     <CardHeader>
                       <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-5 h-5 text-yellow-600" />
-                        <CardTitle className="text-yellow-800">Contracts Expiring Soon</CardTitle>
+                        <AlertTriangle className="h-4 w-4 text-warning-soft-foreground" />
+                        <CardTitle className="text-warning-soft-foreground">Contracts Expiring Soon</CardTitle>
                       </div>
-                      <p className="text-sm text-yellow-700">
+                      <p className="text-sm text-warning-soft-foreground">
                         {businessMetrics.expiringSoon.length} contract(s) expiring in the next 30 days
                       </p>
                     </CardHeader>
@@ -1365,13 +1285,13 @@ export const Reports: React.FC = () => {
                         {businessMetrics.expiringSoon.slice(0, 5).map((contract) => {
                           const currencySymbol = CURRENCY_SYMBOLS[contract.currency || 'USD']?.symbol || '$';
                           return (
-                            <div key={contract.contractId} className="flex items-center justify-between p-2 bg-card rounded border border-yellow-200/50">
+                            <div key={contract.contractId} className="flex items-center justify-between p-2 bg-card rounded border border-warning/50">
                               <div>
                                 <p className="font-medium">{contract.title}</p>
                                 <p className="text-sm text-muted-foreground">{contract.client}</p>
                               </div>
                               <div className="text-right">
-                                <p className="text-sm font-medium text-yellow-700">
+                                <p className="text-sm font-medium text-warning-soft-foreground">
                                   {format(new Date(contract.endDate!), 'MMM d, yyyy')}
                                 </p>
                                 {contract.value && (
@@ -1391,6 +1311,8 @@ export const Reports: React.FC = () => {
             )}
           </>
         )}
+        </div>
+        </div>
       </main>
 
       {/* Confirmation Dialog */}
@@ -1409,7 +1331,7 @@ export const Reports: React.FC = () => {
                 confirmDialog.onConfirm();
                 setConfirmDialog({ ...confirmDialog, open: false });
               }}
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-destructive hover:bg-destructive/90"
             >
               Confirm
             </AlertDialogAction>
@@ -1446,11 +1368,11 @@ export const Reports: React.FC = () => {
                   setRemoveMemberLoading(false);
                 }
               }}
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-destructive hover:bg-destructive/90"
             >
               {removeMemberLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Removing...
                 </>
               ) : (

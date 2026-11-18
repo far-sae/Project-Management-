@@ -79,7 +79,7 @@ export const ProjectNode: React.FC<{ data: ProjectNodeData; selected?: boolean }
         <Sparkles className="h-4 w-4" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Project</p>
+        <p className="text-[11px] font-medium text-muted-foreground">Project</p>
         <p className="text-[15px] font-semibold leading-snug text-foreground line-clamp-2">{data.label}</p>
       </div>
     </div>
@@ -486,7 +486,7 @@ export const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({
   };
 
   const placeholderTag = (
-    <span className="rounded-md border border-dashed border-border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+    <span className="rounded-md border border-dashed border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
       Placeholder
     </span>
   );
@@ -576,7 +576,7 @@ export const IdeaNode: React.FC<{ data: IdeaNodeData; selected?: boolean }> = ({
       <div className={placeholderCard('w-[300px] px-4 py-3')} onDoubleClick={onDoubleClick}>
         <ConnectionHandles visible={selected} />
         <div className="flex items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden /> Project
           </span>
           {placeholderTag}

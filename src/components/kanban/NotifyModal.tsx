@@ -148,71 +148,83 @@ export const NotifyModal: React.FC<NotifyModalProps> = ({
         <DialogHeader>
           <DialogTitle>Notify</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search
+              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
             <Input
               placeholder="Search by name or email..."
+              aria-label="Search by name or email"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-8"
             />
           </div>
 
-          <div className="max-h-48 overflow-y-auto space-y-1">
+          <div className="max-h-56 space-y-0.5 overflow-y-auto">
             {filteredMembers.length === 0 ? (
-              <p className="text-sm text-gray-500 py-4 text-center">
+              <p className="py-6 text-center text-[13px] text-muted-foreground">
                 No team members found
               </p>
             ) : (
-              filteredMembers.map((m) => (
-                <button
-                  key={m.userId}
-                  type="button"
-                  onClick={() => toggleMember(m.userId)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 text-left"
-                >
-                  <Avatar className="w-8 h-8">
-                    <AvatarImage src={m.photoURL} />
-                    <AvatarFallback className="bg-teal-100 text-teal-700 text-sm">
-                      {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {m.displayName || m.email || 'Unknown'}
-                    </p>
-                    {m.email && (
-                      <p className="text-xs text-gray-500 truncate">{m.email}</p>
-                    )}
-                  </div>
-                  <div
-                    className={cn(
-                      'w-5 h-5 rounded border-2 flex items-center justify-center shrink-0',
-                      selectedIds.has(m.userId)
-                        ? 'bg-orange-500 border-orange-500 text-white'
-                        : 'border-gray-300'
-                    )}
+              filteredMembers.map((m) => {
+                const selected = selectedIds.has(m.userId);
+                return (
+                  <button
+                    key={m.userId}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleMember(m.userId)}
+                    className="flex min-h-11 w-full items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none"
                   >
-                    {selectedIds.has(m.userId) && <Check className="w-3 h-3" />}
-                  </div>
-                </button>
-              ))
+                    <Avatar className="h-7 w-7 shrink-0">
+                      <AvatarImage src={m.photoURL} alt="" />
+                      <AvatarFallback className="bg-secondary text-xs font-semibold text-foreground">
+                        {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-foreground">
+                        {m.displayName || m.email || 'Unknown'}
+                      </span>
+                      {m.email && (
+                        <span className="block truncate text-xs text-muted-foreground">{m.email}</span>
+                      )}
+                    </span>
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors',
+                        selected
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-input bg-background',
+                      )}
+                    >
+                      {selected && <Check className="h-3 w-3" strokeWidth={3} />}
+                    </span>
+                  </button>
+                );
+              })
             )}
           </div>
 
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={selectAll}
-            className="text-sm text-orange-600 hover:text-orange-700"
+            className="text-muted-foreground hover:text-foreground"
           >
             Select All / None
-          </button>
+          </Button>
 
           <Button
+            type="button"
             onClick={handleDone}
             disabled={loading || recipientIds.length === 0}
-            className="w-full bg-orange-500 hover:bg-orange-600"
+            className="w-full"
           >
             Done
           </Button>

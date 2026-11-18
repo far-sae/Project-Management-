@@ -41,6 +41,8 @@ import {
   clearProjectLockUnlockedInSession,
 } from '@/lib/projectLockPin';
 import { cn } from '@/lib/utils';
+import { StatusPill } from '@/components/common/StatusPill';
+import { PriorityPill, UrgentBadge } from '@/components/common/TaskBadges';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -111,7 +113,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
   };
 
   return (
-    <div className="bg-card rounded-lg border border-border overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <div className="min-w-[600px]">
         <div className="flex border-b border-border">
           <div className="w-64 shrink-0 p-3 font-medium text-foreground border-r border-border">
@@ -153,7 +155,7 @@ const TimelineView: React.FC<TimelineViewProps> = ({
             return (
               <div
                 key={task.taskId}
-                className="flex items-center border-b border-border/60 hover:bg-secondary/50 cursor-pointer"
+                className="flex cursor-pointer items-center border-b border-border/60 hover:bg-surface-2"
                 onClick={() => navigate(`/project/${task.projectId}`)}
               >
                 <div className="w-64 shrink-0 p-3 border-r border-border">
@@ -168,10 +170,10 @@ const TimelineView: React.FC<TimelineViewProps> = ({
                       width: '120px',
                       backgroundColor:
                         task.status === 'done'
-                          ? '#22c55e'
+                          ? 'hsl(var(--success))'
                           : task.status === 'inprogress'
-                            ? '#3b82f6'
-                            : '#f97316',
+                            ? 'hsl(var(--info))'
+                            : 'hsl(var(--primary))',
                       color: 'white',
                     }}
                   >
@@ -1035,17 +1037,17 @@ export const ProjectView: React.FC = () => {
                 />
               </div>
             ) : (
-              <div className="bg-card rounded-lg border border-border overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-secondary border-b border-border">
+              <div className="overflow-x-auto rounded-lg border border-border bg-card">
+                <table className="w-full min-w-[560px] text-left text-[13px]">
+                  <thead className="border-b border-border bg-surface-2 text-xs text-muted-foreground">
                     <tr>
-                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Title</th>
-                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Status</th>
-                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Priority</th>
-                      <th className="px-4 py-3 text-sm font-medium text-muted-foreground">Due Date</th>
+                      <th className="h-10 px-4 font-medium">Title</th>
+                      <th className="h-10 px-4 font-medium">Status</th>
+                      <th className="h-10 px-4 font-medium">Priority</th>
+                      <th className="h-10 px-4 font-medium">Due Date</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border">
+                  <tbody className="divide-y divide-border/60">
                     {boardTasks
                       .filter((t) => selectedStatus === 'all' || t.status === selectedStatus)
                       .filter((t) =>
@@ -1055,8 +1057,8 @@ export const ProjectView: React.FC = () => {
                           : true
                       )
                       .map((task) => (
-                        <tr key={task.taskId} className="hover:bg-secondary/50">
-                          <td className="px-4 py-3">
+                        <tr key={task.taskId} className="hover:bg-surface-2">
+                          <td className="px-4 py-2.5">
                             <span className="font-medium text-foreground">{task.title}</span>
                             {task.description && (
                               <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
@@ -1064,15 +1066,23 @@ export const ProjectView: React.FC = () => {
                               </p>
                             )}
                           </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground">
-                              {task.status === 'undefined' ? 'To-do' : task.status}
+                          <td className="px-4 py-2.5">
+                            <StatusPill tone="neutral" dot={false}>
+                              {boardColumns.find((c) => c.id === task.status)?.title ??
+                                (task.status === 'undefined' ? 'To-do' : task.status)}
+                            </StatusPill>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="flex flex-wrap items-center gap-1">
+                              {task.urgent && <UrgentBadge muted={task.status === 'done'} />}
+                              <PriorityPill
+                                priority={task.priority}
+                                color={task.priorityColor}
+                                muted={task.status === 'done'}
+                              />
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            <span className="capitalize text-sm text-foreground">{task.priority}</span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-muted-foreground">
+                          <td className="px-4 py-2.5 tabular-nums text-muted-foreground">
                             {task.dueDate
                               ? new Date(task.dueDate).toLocaleDateString()
                               : '—'}

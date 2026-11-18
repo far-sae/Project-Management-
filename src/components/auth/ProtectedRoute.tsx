@@ -41,10 +41,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // full-page unmount/remount flashes on every state transition.
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto" />
-          <p className="mt-2 text-gray-600">Loading...</p>
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
+          <p className="mt-2 text-[13px] text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -80,10 +80,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // restricted UI can flash before we redirect members to /tasks.
   if (requireOrgAdmin && orgLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto" />
-          <p className="mt-2 text-gray-600">Loading...</p>
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
+          <p className="mt-2 text-[13px] text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
@@ -99,10 +99,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // (member-fallback) permissions for a custom-role user. App owner bypasses.
   if (requirePage && permissionsLoading && !isAppOwner(user.userId)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-orange-500 mx-auto" />
-          <p className="mt-2 text-gray-600">Loading...</p>
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto" />
+          <p className="mt-2 text-[13px] text-muted-foreground">Loading...</p>
         </div>
       </div>
     );

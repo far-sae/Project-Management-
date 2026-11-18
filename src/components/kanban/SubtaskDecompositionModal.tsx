@@ -7,9 +7,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Loader2, Sparkles, Plus, CheckCircle2 } from 'lucide-react';
+import { Check, Loader2, Sparkles, Plus } from 'lucide-react';
+import { PriorityPill } from '@/components/common/TaskBadges';
 import { decomposeTask, isAIEnabled, AIError, Subtask } from '@/services/ai';
 import { CreateTaskInput, TaskPriority } from '@/types';
+import { cn } from '@/lib/utils';
 
 interface SubtaskDecompositionModalProps {
   open: boolean;
@@ -105,153 +107,156 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
     onClose();
   };
 
+  const errorBanner = error && (
+    <p
+      role="alert"
+      className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-xs text-destructive-soft-foreground"
+    >
+      {error}
+    </p>
+  );
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col" aria-describedby={undefined}>
+      <DialogContent
+        className="flex max-h-[80vh] flex-col overflow-hidden focus-visible:outline-none sm:max-w-[600px]"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-orange-500" />
+            <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
             Break Down Task with AI
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {subtasks.length === 0 ? (
-            <div className="space-y-4 py-4">
-              <div className="p-4 bg-gray-50 rounded-md">
-                <p className="text-sm font-medium text-gray-700 mb-1">
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+                <p className="break-words text-sm font-medium text-foreground">
                   {parentTask.title}
                 </p>
-                <p className="text-xs text-gray-600">
+                <p className="mt-0.5 break-words text-xs text-muted-foreground">
                   {parentTask.description || 'No description provided'}
                 </p>
               </div>
 
               {!aiEnabled && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
-                  <p className="text-xs text-amber-800">AI is not configured. Deploy the ai-chat Edge Function and set OPENAI_API_KEY in Supabase.</p>
-                </div>
+                <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-soft-foreground">
+                  AI is not configured. Deploy the ai-chat Edge Function and set OPENAI_API_KEY in Supabase.
+                </p>
               )}
 
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-xs text-red-700">{error}</p>
-                </div>
-              )}
+              {errorBanner}
 
               <Button
+                type="button"
                 onClick={handleDecompose}
                 disabled={loading || !aiEnabled}
-                className="w-full bg-gradient-to-r from-orange-500 to-red-500"
+                className="w-full"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="animate-spin" aria-hidden />
                     Analyzing Task...
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    <Sparkles aria-hidden />
                     Generate Subtasks with AI
                   </>
                 )}
               </Button>
 
-              <p className="text-xs text-gray-500 text-center">
+              <p className="text-center text-xs text-muted-foreground">
                 AI will analyze your task and suggest 3-7 actionable subtasks
               </p>
             </div>
           ) : (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
               {reasoning && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                  <p className="text-xs font-medium text-blue-900 mb-1">AI Analysis</p>
-                  <p className="text-xs text-blue-700">{reasoning}</p>
+                <div className="rounded-lg border border-border bg-surface-2 px-3 py-2.5">
+                  <p className="text-xs font-medium text-foreground">AI Analysis</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{reasoning}</p>
                 </div>
               )}
 
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-xs text-red-700">{error}</p>
-                </div>
-              )}
+              {errorBanner}
 
               <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-700">
-                  Select subtasks to create ({selectedSubtasks.size} selected)
+                <p className="text-[13px] font-medium text-muted-foreground">
+                  Select subtasks to create (<span className="tabular-nums">{selectedSubtasks.size}</span> selected)
                 </p>
-                {subtasks.map((subtask, index) => (
-                  <div
-                    key={index}
-                    className={`p-3 border rounded-md cursor-pointer transition-colors ${
-                      selectedSubtasks.has(index)
-                        ? 'border-orange-500 bg-orange-50'
-                        : 'border-gray-200 bg-white hover:bg-gray-50'
-                    }`}
-                    onClick={() => toggleSubtask(index)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5">
-                        {selectedSubtasks.has(index) ? (
-                          <CheckCircle2 className="w-5 h-5 text-orange-500" />
-                        ) : (
-                          <div className="w-5 h-5 border-2 border-gray-300 rounded-full" />
+                {subtasks.map((subtask, index) => {
+                  const selected = selectedSubtasks.has(index);
+                  return (
+                    <button
+                      type="button"
+                      key={index}
+                      aria-pressed={selected}
+                      onClick={() => toggleSubtask(index)}
+                      className={cn(
+                        'flex w-full items-start gap-2.5 rounded-md border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        selected
+                          ? 'border-foreground/30 bg-surface-2'
+                          : 'border-border bg-background hover:bg-secondary',
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors',
+                          selected
+                            ? 'border-foreground bg-foreground text-background'
+                            : 'border-muted-foreground/50 bg-background',
                         )}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">
+                      >
+                        {selected && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-words text-sm font-medium text-foreground">
                           {subtask.title}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
+                        </span>
+                        <span className="mt-0.5 block break-words text-xs text-muted-foreground">
                           {subtask.description}
-                        </p>
-                        <div className="flex gap-2 mt-2">
-                          {subtask.priority && (
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded ${
-                                subtask.priority === 'high'
-                                  ? 'bg-red-100 text-red-700'
-                                  : subtask.priority === 'medium'
-                                  ? 'bg-yellow-100 text-yellow-700'
-                                  : 'bg-green-100 text-green-700'
-                              }`}
-                            >
-                              {subtask.priority}
-                            </span>
-                          )}
-                          {subtask.estimatedDuration && (
-                            <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                              {subtask.estimatedDuration}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                        </span>
+                        {(subtask.priority || subtask.estimatedDuration) && (
+                          <span className="mt-2 flex flex-wrap items-center gap-1">
+                            <PriorityPill priority={subtask.priority} />
+                            {subtask.estimatedDuration && (
+                              <span className="inline-flex h-5 items-center rounded border border-border bg-background px-1.5 text-[11px] text-muted-foreground">
+                                {subtask.estimatedDuration}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
 
-        <DialogFooter className="border-t pt-4">
+        <DialogFooter className="gap-2 border-t border-border pt-4 sm:gap-0">
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel
           </Button>
           {subtasks.length > 0 && (
             <Button
+              type="button"
               onClick={handleCreateSubtasks}
               disabled={selectedSubtasks.size === 0 || creating}
-              className="bg-gradient-to-r from-orange-500 to-red-500"
             >
               {creating ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="animate-spin" aria-hidden />
                   Creating...
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus aria-hidden />
                   Create {selectedSubtasks.size} Subtask
                   {selectedSubtasks.size !== 1 ? 's' : ''}
                 </>

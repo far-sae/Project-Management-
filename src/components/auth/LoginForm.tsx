@@ -85,9 +85,9 @@ export const LoginForm: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md border border-border bg-card">
+      <Card className="w-full max-w-md rounded-xl border border-border bg-card">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Welcome back</CardTitle>
+          <CardTitle className="text-2xl font-semibold text-center">Welcome back</CardTitle>
           <CardDescription className="text-center">
             Sign in to your account to continue
           </CardDescription>
@@ -105,7 +105,7 @@ export const LoginForm: React.FC = () => {
                   placeholder="name@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 md:h-10"
                   disabled={loading}
                   autoComplete="email"
                 />
@@ -122,7 +122,7 @@ export const LoginForm: React.FC = () => {
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 md:h-10"
                   disabled={loading}
                   autoComplete="current-password"
                 />
@@ -131,11 +131,11 @@ export const LoginForm: React.FC = () => {
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+              size="lg" className="w-full"
               disabled={loading}
             >
               {loading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in...</>
+                <><Loader2 className="h-4 w-4 animate-spin" />Signing in...</>
               ) : (
                 'Sign in'
               )}
@@ -146,7 +146,7 @@ export const LoginForm: React.FC = () => {
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
+            <div className="relative flex justify-center text-xs">
               <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
             </div>
           </div>
@@ -154,11 +154,11 @@ export const LoginForm: React.FC = () => {
           <Button
             type="button"
             variant="outline"
-            className="w-full"
+            size="lg" className="w-full"
             onClick={handleGoogleSignIn}
             disabled={loading}
           >
-            <FcGoogle className="mr-2 h-4 w-4" />
+            <FcGoogle className="h-4 w-4" />
             Google
           </Button>
         </CardContent>

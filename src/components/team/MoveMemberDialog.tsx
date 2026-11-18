@@ -128,7 +128,7 @@ export const MoveMemberDialog: React.FC<MoveMemberDialogProps> = ({
                 disabled={moving}
               />
             </div>
-            <div role="radiogroup" aria-label="Destination project" className="max-h-64 space-y-1.5 overflow-y-auto">
+            <div role="radiogroup" aria-label="Destination project" className="max-h-64 space-y-1 overflow-y-auto">
               {options.length === 0 && (
                 <p className="px-1 py-2 text-sm text-muted-foreground">No projects match.</p>
               )}
@@ -144,27 +144,27 @@ export const MoveMemberDialog: React.FC<MoveMemberDialogProps> = ({
                     disabled={moving}
                     onClick={() => setChoice(p.projectId)}
                     className={cn(
-                      'flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                      'flex min-h-9 w-full items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       selected
-                        ? 'border-primary bg-primary/10 text-foreground'
+                        ? 'border-foreground/40 bg-secondary font-medium text-foreground'
                         : 'border-border hover:bg-secondary',
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        className="h-2 w-2 shrink-0 rounded-[2px]"
                         style={{ backgroundColor: p.coverColor || 'hsl(var(--primary))' }}
                         aria-hidden
                       />
                       <span className="truncate">{p.name}</span>
                     </span>
-                    {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                    {selected && <Check className="h-4 w-4 shrink-0 text-foreground" aria-hidden />}
                   </button>
                 );
               })}
             </div>
 
-            <label className="flex items-start gap-2 text-sm">
+            <label className="flex items-start gap-2 text-[13px]">
               <input
                 type="checkbox"
                 checked={unassignTasks}
@@ -182,7 +182,7 @@ export const MoveMemberDialog: React.FC<MoveMemberDialogProps> = ({
             Cancel
           </Button>
           <Button type="button" onClick={() => void handleMove()} disabled={!choice || moving}>
-            {moving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {moving && <Loader2 className="animate-spin" aria-hidden />}
             Move
           </Button>
         </DialogFooter>

@@ -179,7 +179,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Mic className="h-4 w-4 text-primary" />
+            <Mic className="h-4 w-4 text-muted-foreground" aria-hidden />
             Meeting recording
           </DialogTitle>
           <DialogDescription>
@@ -191,16 +191,16 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
         </DialogHeader>
 
         {audioUrl && (
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
+          <div className="rounded-lg border border-border bg-surface-2 p-3">
             <audio controls src={audioUrl} className="w-full" />
             <div className="mt-2 flex justify-end">
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={handleDownloadAudio}
-                className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download />
                 Download audio
               </Button>
             </div>
@@ -208,8 +208,8 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
         )}
 
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-medium text-foreground">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <label htmlFor="meeting-transcript" className="text-[13px] font-medium text-foreground">
               Transcript
             </label>
             <Button
@@ -217,9 +217,9 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
               variant="ghost"
               onClick={handleDownloadTranscript}
               disabled={!transcript.trim()}
-              className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground"
             >
-              <FileText className="h-3.5 w-3.5" />
+              <FileText />
               Download .txt
             </Button>
           </div>
@@ -230,12 +230,12 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
             </p>
           )}
           <Textarea
+            id="meeting-transcript"
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
             rows={8}
             disabled={transcribing}
             placeholder="The transcript from your meeting will appear here. You can edit it before generating notes."
-            className="text-sm"
           />
           {!transcript.trim() && !transcribing && (
             <p className="mt-1 text-xs text-muted-foreground">
@@ -256,13 +256,8 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
               !aiAvailable ||
               !userId?.trim()
             }
-            className="gap-2"
           >
-            {generating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
+            {generating ? <Loader2 className="animate-spin" /> : <Sparkles />}
             Generate AI notes
           </Button>
           {!aiAvailable && (
@@ -282,9 +277,9 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
         </div>
 
         {notes && (
-          <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <div className="space-y-3 rounded-lg border border-border p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
                 Summary
               </p>
               <p className="text-sm text-foreground whitespace-pre-wrap">
@@ -293,7 +288,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
             </div>
             {notes.decisions.length > 0 && (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
                   Decisions
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-sm text-foreground">
@@ -303,13 +298,13 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
             )}
             {notes.actionItems.length > 0 && (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
                   Action items
                 </p>
                 <ul className="space-y-1 text-sm text-foreground">
                   {notes.actionItems.map((a, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <span className="mt-1 inline-block h-3.5 w-3.5 rounded border border-border" aria-hidden="true" />
+                      <span className="mt-[3px] inline-block h-3.5 w-3.5 shrink-0 rounded border border-input" aria-hidden="true" />
                       <span className="flex-1">
                         {a.title}
                         {a.owner && (
@@ -326,7 +321,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
             )}
             {notes.openQuestions.length > 0 && (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
                   Open questions
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-sm text-foreground">
@@ -339,9 +334,9 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
                 size="sm"
                 variant="ghost"
                 onClick={handleDownloadNotes}
-                className="h-7 gap-1.5 text-xs"
+                className="text-muted-foreground"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download />
                 Download notes (.md)
               </Button>
             </div>
@@ -349,7 +344,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
         )}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

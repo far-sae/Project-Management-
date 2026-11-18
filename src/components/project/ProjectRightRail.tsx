@@ -8,7 +8,6 @@ import {
   UserPlus,
   Send,
   Loader2,
-  Users,
   Minus,
   Smile,
   Phone,
@@ -50,6 +49,7 @@ import {
 import { ATTACHMENTS_BUCKET, deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
 import { ChatAttachmentList } from '@/components/messaging/ChatAttachmentList';
 import { ChatBubble, ProjectChatMessage as ChatMessageRow } from './ProjectChatMessage';
+import { ProjectTeamMemberRow } from './ProjectTeamMemberRow';
 import { dispatchNotificationsRefresh } from '@/lib/notificationEvents';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
@@ -78,18 +78,18 @@ interface ProjectRightRailProps {
 /** WhatsApp-style quick reactions on project chat bubbles */
 const CHAT_QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
 
-const ROLE_BADGES: Record<string, { label: string; className: string }> = {
-  owner: {
-    label: 'Owner',
-    className: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
-  },
-  admin: { label: 'Admin', className: 'bg-info-soft text-info' },
-  member: {
-    label: 'Member',
-    className: 'bg-secondary text-secondary-foreground',
-  },
-  viewer: { label: 'Viewer', className: 'bg-success-soft text-success' },
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  member: 'Member',
+  viewer: 'Viewer',
 };
+
+/** Reaction count under a message: a 22px bordered pill. */
+const REACTION_CHIP =
+  'inline-flex h-[22px] items-center gap-1 rounded-full border border-border bg-card px-2 text-[11px] font-medium text-muted-foreground';
+/** …tinted when you are one of the people who reacted. */
+const REACTION_CHIP_MINE = 'border-primary/40 bg-primary-soft text-primary-soft-foreground';
 
 const ACTIVITY_ICONS: Record<string, React.ElementType> = {
   task_created: Plus,
@@ -180,29 +180,19 @@ function formatCallDuration(sec: number | undefined): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const CallRecordingCard: React.FC<{
-  payload: CallRecordingChatPayload;
-  mine: boolean;
-}> = ({ payload, mine }) => {
+const CallRecordingCard: React.FC<{ payload: CallRecordingChatPayload }> = ({ payload }) => {
   const [showTranscript, setShowTranscript] = React.useState(false);
   const duration = formatCallDuration(payload.durationSec);
   return (
-    <div
-      className={cn(
-        'rounded-lg p-3 text-[13px] leading-relaxed border min-w-[240px] max-w-[340px]',
-        mine
-          ? 'rounded-br-sm bg-primary/10 border-primary/30 text-foreground'
-          : 'rounded-bl-sm bg-muted text-foreground border-border/60',
-      )}
-    >
-      <div className="flex items-center gap-2 mb-2">
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500/15 text-red-500">
-          <Mic className="w-3.5 h-3.5" />
+    <div className="min-w-[240px] max-w-[340px] rounded-lg border border-border bg-card p-3 text-[13px] leading-5 text-foreground">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-destructive-soft text-destructive-soft-foreground">
+          <Mic className="h-3.5 w-3.5" />
         </span>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-[13px] font-semibold text-foreground">Recorded call</p>
           {duration && (
-            <p className="text-[11px] text-muted-foreground">Duration {duration}</p>
+            <p className="text-[11px] text-muted-foreground tabular-nums">Duration {duration}</p>
           )}
         </div>
       </div>
@@ -212,14 +202,14 @@ const CallRecordingCard: React.FC<{
         className="w-full h-9"
         preload="none"
       />
-      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <a
           href={payload.url}
           download={payload.fileName || 'call.webm'}
           className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
           title="Download audio"
         >
-          <Download className="w-3 h-3" />
+          <Download className="h-3 w-3" />
           Audio
         </a>
         {payload.transcript && payload.transcript.trim() && (
@@ -229,13 +219,13 @@ const CallRecordingCard: React.FC<{
             className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
             title={showTranscript ? 'Hide transcript' : 'Show transcript'}
           >
-            <FileText className="w-3 h-3" />
+            <FileText className="h-3 w-3" />
             {showTranscript ? 'Hide transcript' : 'Show transcript'}
           </button>
         )}
       </div>
       {showTranscript && payload.transcript && (
-        <p className="mt-2 max-h-40 overflow-y-auto rounded-md bg-background/60 border border-border/60 px-2 py-1.5 text-[12px] whitespace-pre-wrap text-foreground/90">
+        <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-surface-2 px-2 py-1.5 text-xs text-foreground">
           {payload.transcript}
         </p>
       )}
@@ -821,30 +811,27 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     [],
   );
 
+  /** Per-person call buttons follow the same rule as the project call buttons. */
+  const canShowCalls = isMediaSupported() && callState.status === 'idle';
+
   const membersSection = (
-    <section className="p-3">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <section className="flex min-h-full flex-col p-2">
+      <div className="flex min-h-8 items-center justify-between gap-2 px-2">
+        <h3 className="text-xs font-medium text-muted-foreground">
           Members ({dedupedMembers.length})
         </h3>
         {onInviteClick && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs text-primary hover:text-primary"
-            onClick={onInviteClick}
-          >
-            <UserPlus className="w-3 h-3 mr-1" />
+          <Button variant="ghost" size="sm" onClick={onInviteClick}>
+            <UserPlus />
             Invite
           </Button>
         )}
       </div>
-      <div className="space-y-1">
+      <div className="flex flex-col">
         {dedupedMembers.length === 0 && (
-          <p className="text-sm text-muted-foreground py-2">No members yet</p>
+          <p className="px-2 py-2 text-[13px] text-muted-foreground">No members yet</p>
         )}
         {dedupedMembers.map((m) => {
-          const role = ROLE_BADGES[m.role] || ROLE_BADGES.member;
           const profile = m.userId ? projectProfilesByUserId.get(m.userId) : undefined;
           const memberLabel = m.userId
             ? displayNameForChatUser(m.userId, m.displayName)
@@ -852,85 +839,60 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           const memberEmail = profile?.email || m.email;
           const memberPhotoURL = profile?.photoURL || m.photoURL;
           const isSelf = !!user?.userId && m.userId === user.userId;
-          const canDm = !!m.userId && !isSelf;
           return (
-            <button
-              type="button"
+            <ProjectTeamMemberRow
               key={m.userId || m.email}
-              onClick={canDm ? () => openDirectMessage({
-                ...m,
+              member={{
+                userId: m.userId || undefined,
                 displayName: memberLabel,
-                email: memberEmail,
+                email: m.email,
                 photoURL: memberPhotoURL,
-              }) : undefined}
-              disabled={!canDm}
-              title={canDm ? `Message ${memberLabel}` : undefined}
-              className={cn(
-                'flex w-full items-center gap-2 p-1.5 rounded-lg text-left',
-                canDm
-                  ? 'hover:bg-secondary cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                  : 'cursor-default',
-              )}
-            >
-              <Avatar className="w-9 h-9">
-                <AvatarImage src={memberPhotoURL} alt={memberLabel} />
-                <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
-                  {memberLabel.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {memberLabel}
-                    {isSelf && (
-                      <span className="ml-1 text-[10px] text-muted-foreground font-normal">
-                        (you)
-                      </span>
-                    )}
-                  </p>
-                  <PresenceStatusInline
-                    peer={m.userId ? presenceByUserId?.get(m.userId) : undefined}
-                    lastSeenAt={m.userId ? lastSeenByUserId.get(m.userId) ?? null : null}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground truncate">{m.email}</p>
-              </div>
-              <span
-                className={cn(
-                  'text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full',
-                  role.className,
-                )}
-              >
-                {role.label}
-              </span>
-            </button>
+              }}
+              roleLabel={ROLE_LABELS[m.role] || ROLE_LABELS.member}
+              isSelf={isSelf}
+              peer={m.userId ? presenceByUserId?.get(m.userId) : undefined}
+              lastSeenAt={m.userId ? lastSeenByUserId.get(m.userId) ?? null : null}
+              callsDisabled={isViewerOrg}
+              onMessage={() =>
+                openDirectMessage({
+                  ...m,
+                  displayName: memberLabel,
+                  email: memberEmail,
+                  photoURL: memberPhotoURL,
+                })
+              }
+            />
           );
         })}
       </div>
+      {canShowCalls && hasOtherMemberToCall && (
+        <p className="mx-2 mb-1 mt-auto border-t border-border pt-3 text-xs leading-[18px] text-muted-foreground">
+          Calling from a person&apos;s row rings only that person. The call buttons at the top
+          ring everyone in the project.
+        </p>
+      )}
     </section>
   );
 
   const activitySection = (
-    <section className="p-4">
-      <h3 className="text-sm font-semibold text-muted-foreground mb-3">
-        Activity
-      </h3>
+    <section className="p-3">
+      <h3 className="mb-3 text-xs font-medium text-muted-foreground">Activity</h3>
       <div className="space-y-4">
         {projectEvents.length === 0 && (
-          <p className="text-sm text-muted-foreground py-2">No recent activity</p>
+          <p className="py-2 text-[13px] text-muted-foreground">No recent activity</p>
         )}
         {projectEvents.map((e) => {
           const Icon = ACTIVITY_ICONS[e.type] || ActivityIcon;
           return (
             <div key={e.activityId} className="flex gap-2">
-              <Avatar className="w-8 h-8 shrink-0">
+              <Avatar className="h-7 w-7 shrink-0">
                 <AvatarImage src={e.photoURL} alt={e.displayName} />
-                <AvatarFallback className="bg-secondary text-foreground text-[10px]">
+                <AvatarFallback className="bg-primary-soft text-xs font-semibold text-primary-soft-foreground">
                   {(e.displayName || '?').charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm leading-relaxed">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] leading-5">
                   <span className="font-medium text-foreground">{e.displayName}</span>{' '}
                   <span className="text-muted-foreground">
                     {summarizeActivity(e.type, e.payload as any)}
@@ -942,8 +904,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     </>
                   )}
                 </p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                  <Icon className="w-3 h-3" />
+                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Icon className="h-3 w-3" />
                   {formatDistanceToNow(new Date(e.createdAt), { addSuffix: true })}
                 </p>
               </div>
@@ -955,6 +917,14 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   );
 
   const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(23rem,calc(100vw-2.5rem))]';
+  /** The one soft shadow the floating project chat uses. */
+  const floatingShadow = 'shadow-[0_12px_32px_rgba(0,0,0,0.10)]';
+  const viewOnlyTitle = 'View-only — calls are disabled for your role.';
+  const projectCallTitle = isViewerOrg
+    ? viewOnlyTitle
+    : hasOtherMemberToCall
+      ? 'Rings everyone in this project — to call one person, open their chat from the Team tab'
+      : 'No other members to call — invite someone to this project first.';
 
   if (!open) {
     return (
@@ -977,19 +947,19 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           aria-label={`Open project messages — ${project.name}`}
           title={`${project.name} · ${dedupedMembers.length} members${chatMessages.length > 0 ? '' : ' · Start the conversation'}`}
           className={cn(
-            'pointer-events-auto group relative inline-flex items-center justify-center backdrop-blur-xl',
-            'h-14 w-14 rounded-full border border-border/70 bg-primary text-primary-foreground',
-            'shadow-[0_12px_36px_rgba(0,0,0,0.32)] transition-all duration-150',
-            'hover:-translate-y-0.5 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+            'pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center',
+            'rounded-full bg-primary text-primary-foreground transition-colors',
+            floatingShadow,
+            'hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           )}
         >
-          <MessageSquare className="h-6 w-6" />
+          <MessageSquare className="h-5 w-5" />
           {unreadCount > 0 && (
             <span
               className={cn(
-                'absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full',
-                'bg-destructive text-destructive-foreground text-[10px] font-semibold leading-5 text-center',
-                'ring-2 ring-card shadow-sm',
+                'absolute -right-1.5 -top-1.5 min-w-[18px] rounded-full px-[5px]',
+                'bg-destructive text-center text-[11px] font-semibold leading-[18px] text-destructive-foreground tabular-nums',
+                'ring-2 ring-background',
               )}
             >
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -1008,53 +978,49 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     >
       <aside
         className={cn(
-          'pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-border/70',
-          'bg-card shadow-[0_18px_60px_rgba(0,0,0,0.28)]',
+          'pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-border bg-card',
+          floatingShadow,
           'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
           railWidth,
-          'h-[min(34rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
+          'h-[min(37.5rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
         )}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
-              {(project.name || '#').charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground truncate leading-tight">
-                {project.name}
-              </p>
-              <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
-                <span>{dedupedMembers.length} members</span>
-                {chatOnlinePeers.length > 0 && (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span className="inline-flex items-center gap-1 text-emerald-600">
-                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      {chatOnlinePeers.length} online
-                    </span>
-                  </>
-                )}
-              </p>
-            </div>
+        <div className="flex min-h-14 shrink-0 items-center gap-2.5 border-b border-border pl-3 pr-2">
+          <div
+            aria-hidden
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-white"
+            style={{ background: project.coverColor || 'hsl(var(--primary))' }}
+          >
+            {(project.name || '#').charAt(0).toUpperCase()}
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {isMediaSupported() && callState.status === 'idle' && (
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold leading-[18px] text-foreground">
+              {project.name}
+            </p>
+            <p className="flex items-center gap-1.5 truncate text-xs leading-4 text-muted-foreground">
+              <span>{dedupedMembers.length} members</span>
+              {chatOnlinePeers.length > 0 && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="inline-flex items-center gap-1 text-success-soft-foreground">
+                    <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-success" />
+                    {chatOnlinePeers.length} online
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center">
+            {canShowCalls && (
               <>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-emerald-600"
+                  className="text-muted-foreground"
                   aria-label="Voice call everyone in this project"
                   disabled={!hasOtherMemberToCall || isViewerOrg}
                   aria-disabled={!hasOtherMemberToCall || isViewerOrg}
-                  title={
-                    isViewerOrg
-                      ? 'View-only — calls are disabled for your role.'
-                      : hasOtherMemberToCall
-                        ? 'Rings everyone in this project — to call one person, open their chat from the Team tab'
-                        : 'No other members to call — invite someone to this project first.'
-                  }
+                  title={projectCallTitle}
                   onClick={() => {
                     if (isViewerOrg || !hasOtherMemberToCall) return;
                     // "Ring all" — fan out the offer to every other project
@@ -1075,22 +1041,16 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     );
                   }}
                 >
-                  <Phone className="h-4 w-4" />
+                  <Phone />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
+                  className="text-muted-foreground"
                   aria-label="Video call everyone in this project"
                   disabled={!hasOtherMemberToCall || isViewerOrg}
                   aria-disabled={!hasOtherMemberToCall || isViewerOrg}
-                  title={
-                    isViewerOrg
-                      ? 'View-only — calls are disabled for your role.'
-                      : hasOtherMemberToCall
-                        ? 'Rings everyone in this project — to call one person, open their chat from the Team tab'
-                        : 'No other members to call — invite someone to this project first.'
-                  }
+                  title={projectCallTitle}
                   onClick={() => {
                     if (isViewerOrg || !hasOtherMemberToCall) return;
                     // Ring every other project member — see audio-call note
@@ -1109,18 +1069,18 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     );
                   }}
                 >
-                  <Video className="h-4 w-4" />
+                  <Video />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
+                  className="text-muted-foreground"
                   aria-label="Start meeting"
                   disabled={isViewerOrg}
                   aria-disabled={isViewerOrg}
                   title={
                     isViewerOrg
-                      ? 'View-only — calls are disabled for your role.'
+                      ? viewOnlyTitle
                       : 'Start meeting — join the room now and invite guests with a link'
                   }
                   onClick={() => {
@@ -1133,45 +1093,27 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     );
                   }}
                 >
-                  <CalendarPlus className="h-4 w-4" />
+                  <CalendarPlus />
                 </Button>
               </>
             )}
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground"
               onClick={() => onOpenChange(false)}
               aria-label="Minimize project messages"
             >
-              <Minus className="h-5 w-5" />
+              <Minus />
             </Button>
           </div>
         </div>
 
       <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="shrink-0 grid h-10 grid-cols-3 gap-0 rounded-none border-b border-border/70 bg-transparent p-0">
-          <TabsTrigger
-            value="chat"
-            className="h-full gap-1.5 rounded-none border-b-2 border-transparent text-xs text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:text-sm"
-          >
-            <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-            Chat
-          </TabsTrigger>
-          <TabsTrigger
-            value="members"
-            className="h-full gap-1.5 rounded-none border-b-2 border-transparent text-xs text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:text-sm"
-          >
-            <Users className="h-3.5 w-3.5 shrink-0" />
-            Team
-          </TabsTrigger>
-          <TabsTrigger
-            value="activity"
-            className="h-full gap-1.5 rounded-none border-b-2 border-transparent text-xs text-muted-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none sm:text-sm"
-          >
-            <ActivityIcon className="h-3.5 w-3.5 shrink-0" />
-            Feed
-          </TabsTrigger>
+        <TabsList className="grid w-full shrink-0 grid-cols-3 gap-0">
+          <TabsTrigger value="chat">Chat</TabsTrigger>
+          <TabsTrigger value="members">Team</TabsTrigger>
+          <TabsTrigger value="activity">Feed</TabsTrigger>
         </TabsList>
 
         <TabsContent
@@ -1185,15 +1127,13 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           >
             {chatLoading ? (
               <div className="flex justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             ) : chatMessages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center text-center py-12 px-4">
-                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
-                  <MessageSquare className="w-6 h-6" />
-                </div>
-                <p className="text-sm font-medium text-foreground">No project messages yet</p>
-                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+              <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+                <MessageSquare className="mb-2 h-5 w-5 text-muted-foreground" />
+                <p className="text-[13px] font-medium text-foreground">No project messages yet</p>
+                <p className="mt-1 max-w-xs text-xs text-muted-foreground">
                   Start a conversation, share blockers, or use @name to notify a teammate.
                 </p>
               </div>
@@ -1210,12 +1150,12 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   return (
                     <div key={msg.messageId}>
                       {showDay && (
-                        <div className="flex items-center gap-3 pb-1 pt-4" role="separator">
-                          <span aria-hidden className="h-px flex-1 bg-border/70" />
+                        <div className="flex items-center gap-3 pb-1 pt-3" role="separator">
+                          <span aria-hidden className="h-px flex-1 bg-border" />
                           <span className="text-[11px] font-medium text-muted-foreground">
                             {messageDayLabel(createdAt)}
                           </span>
-                          <span aria-hidden className="h-px flex-1 bg-border/70" />
+                          <span aria-hidden className="h-px flex-1 bg-border" />
                         </div>
                       )}
                       <ChatMessageRow
@@ -1243,7 +1183,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                               <PopoverTrigger asChild>
                                 <button
                                   type="button"
-                                  className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   aria-label="Add reaction"
                                   title="React"
                                 >
@@ -1262,7 +1202,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                                     <button
                                       key={emoji}
                                       type="button"
-                                      className="text-[22px] leading-none hover:bg-muted rounded-md p-1.5 min-w-[2.25rem]"
+                                      className="min-w-[2.25rem] rounded-md p-1.5 text-[22px] leading-none hover:bg-secondary"
                                       onPointerDown={(e) => e.preventDefault()}
                                       onClick={() => {
                                         void handleToggleReaction(msg.messageId, emoji);
@@ -1291,7 +1231,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                         }
                         content={
                           callPayload ? (
-                            <CallRecordingCard payload={callPayload} mine={mine} />
+                            <CallRecordingCard payload={callPayload} />
                           ) : msg.body ? (
                             <ChatBubble text={msg.body} mine={mine} grouped={grouped} />
                           ) : null
@@ -1299,53 +1239,48 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                         footer={
                           <>
                             <ChatAttachmentList attachments={msg.attachments} mine={mine} />
-                                {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
-                                  <div
-                                    className={cn(
-                                      'flex flex-wrap gap-1 mt-1.5 max-w-full',
-                                      mine && 'justify-end',
-                                    )}
-                                  >
-                                    {Object.entries(reactionsForMsg).map(([emoji, userIds]) =>
-                                      isViewerOrg ? (
-                                        <span
-                                          key={emoji}
-                                          className={cn(
-                                            'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
-                                            'bg-background/90 shadow-sm cursor-default',
-                                            userIds.includes(user?.userId ?? '') &&
-                                              'border-primary/50 bg-primary/15',
-                                          )}
-                                          title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
-                                        >
-                                          <span className="leading-none">{emoji}</span>
-                                          <span className="tabular-nums text-muted-foreground">
-                                            {userIds.length}
-                                          </span>
-                                        </span>
-                                      ) : (
-                                        <button
-                                          key={emoji}
-                                          type="button"
-                                          className={cn(
-                                            'inline-flex items-center gap-0.5 rounded-full border border-border/70 px-1.5 py-0.5 text-[11px]',
-                                            'bg-background/90 hover:bg-muted/90 shadow-sm',
-                                            userIds.includes(user?.userId ?? '') &&
-                                              'border-primary/50 bg-primary/15',
-                                          )}
-                                          onClick={() => void handleToggleReaction(msg.messageId, emoji)}
-                                          title={`${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`}
-                                        >
-                                          <span className="leading-none">{emoji}</span>
-                                          <span className="tabular-nums text-muted-foreground">
-                                            {userIds.length}
-                                          </span>
-                                        </button>
-                                      ),
-                                    )}
-                                  </div>
+                            {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
+                              <div
+                                className={cn(
+                                  'mt-1 flex max-w-full flex-wrap gap-1',
+                                  mine && 'justify-end',
                                 )}
-                                </>
+                              >
+                                {Object.entries(reactionsForMsg).map(([emoji, userIds]) => {
+                                  const chipClass = cn(
+                                    REACTION_CHIP,
+                                    userIds.includes(user?.userId ?? '') && REACTION_CHIP_MINE,
+                                  );
+                                  const chipTitle = `${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`;
+                                  const chipBody = (
+                                    <>
+                                      <span className="text-xs leading-none">{emoji}</span>
+                                      <span className="tabular-nums">{userIds.length}</span>
+                                    </>
+                                  );
+                                  return isViewerOrg ? (
+                                    <span
+                                      key={emoji}
+                                      className={cn(chipClass, 'cursor-default')}
+                                      title={chipTitle}
+                                    >
+                                      {chipBody}
+                                    </span>
+                                  ) : (
+                                    <button
+                                      key={emoji}
+                                      type="button"
+                                      className={cn(chipClass, 'transition-colors hover:bg-secondary')}
+                                      onClick={() => void handleToggleReaction(msg.messageId, emoji)}
+                                      title={chipTitle}
+                                    >
+                                      {chipBody}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
                         }
                       />
                     </div>
@@ -1362,7 +1297,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                     key={`${f.name}-${idx}`}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px]"
                   >
-                    <Paperclip className="w-3 h-3" />
+                    <Paperclip className="h-3 w-3" />
                     <span className="max-w-[10rem] truncate">{f.name}</span>
                     <button
                       type="button"
@@ -1370,18 +1305,18 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                       aria-label={`Remove ${f.name}`}
                       className="text-muted-foreground hover:text-destructive"
                     >
-                      <XIcon className="w-3 h-3" />
+                      <XIcon className="h-3 w-3" />
                     </button>
                   </span>
                 ))}
               </div>
             )}
             {isViewerOrg ? (
-              <div className="rounded-lg border border-dashed border-border/60 bg-background/40 p-3 text-center text-[12px] text-muted-foreground">
+              <div className="rounded-lg border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
                 You have view-only access to this workspace.
               </div>
             ) : (
-            <div className="flex items-end gap-0.5 rounded-2xl border border-border/70 bg-background p-1 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
+            <div className="flex items-end gap-0.5 rounded-[20px] border border-input p-1 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25">
               <input
                 ref={chatFileInputRef}
                 type="file"
@@ -1393,20 +1328,21 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 value={chatInput}
                 onChange={setChatInput}
                 disabled={!user || chatSending}
+                className="rounded-full"
               />
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                className="shrink-0 rounded-full text-muted-foreground"
                 onClick={() => chatFileInputRef.current?.click()}
                 disabled={!user || chatSending}
                 aria-label="Attach file"
                 title="Attach file"
               >
-                <Paperclip className="h-4 w-4" />
+                <Paperclip />
               </Button>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 self-center">
                 <MentionTextarea
                   value={chatInput}
                   onChange={setChatInput}
@@ -1414,7 +1350,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   excludeUserId={user?.userId}
                   placeholder="Message the team… (@ to mention)"
                   rows={1}
-                  className="max-h-32 min-h-8 resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 text-[13px] leading-snug shadow-none [field-sizing:content] focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/70"
+                  className="max-h-32 min-h-8 resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 leading-5 shadow-none [field-sizing:content] focus-visible:ring-0 focus-visible:ring-offset-0"
                   disabled={!user || chatSending}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1427,7 +1363,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               <Button
                 type="button"
                 size="icon"
-                className="h-8 w-8 shrink-0 rounded-full transition-transform active:scale-[0.97]"
+                className="shrink-0 rounded-full"
                 disabled={
                   !user || chatSending ||
                   (!chatInput.trim() && chatPendingFiles.length === 0)
@@ -1436,11 +1372,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                 aria-label="Send message"
                 title="Send (Enter) · Shift+Enter for a new line"
               >
-                {chatSending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
+                {chatSending ? <Loader2 className="animate-spin" /> : <Send />}
               </Button>
             </div>
             )}

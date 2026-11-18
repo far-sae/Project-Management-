@@ -247,7 +247,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
   return (
     <div className="fixed inset-0 z-[260]" role="dialog" aria-modal="true">
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[1px] animate-in fade-in duration-150"
+        className="absolute inset-0 bg-black/40 animate-in fade-in duration-150"
         onClick={() => onOpenChange(false)}
         aria-hidden="true"
       />
@@ -278,7 +278,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
               {/* Title */}
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                <label className="text-[11px] font-semibold text-muted-foreground mb-1 block">
                   Title
                 </label>
                 <Input
@@ -291,7 +291,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
 
               {/* Description / notes */}
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                <label className="text-[11px] font-semibold text-muted-foreground mb-1 block">
                   Notes
                 </label>
                 <Textarea
@@ -306,7 +306,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
               {/* Subtasks */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <label className="text-[11px] font-semibold text-muted-foreground">
                     Subtasks
                   </label>
                   <span className="text-[11px] text-muted-foreground tabular-nums">
@@ -326,7 +326,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
                         aria-label={s.completed ? 'Mark incomplete' : 'Mark complete'}
                       >
                         {s.completed ? (
-                          <CheckSquare className="w-4 h-4 text-emerald-500" />
+                          <CheckSquare className="w-4 h-4 text-success" />
                         ) : (
                           <SquareIcon className="w-4 h-4" />
                         )}
@@ -360,14 +360,14 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
                         }
                       }}
                       placeholder="Add a subtask"
-                      className="h-8 text-sm"
+                      className="text-sm"
                     />
                     <Button
                       type="button"
                       size="sm"
                       onClick={handleAddSubtask}
                       disabled={!newSubtaskTitle.trim()}
-                      className="h-8 gap-1.5"
+                      className="gap-1.5"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       Add
@@ -379,7 +379,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
               {/* Attachments */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <label className="text-[11px] font-semibold text-muted-foreground">
                     Attachments
                   </label>
                   <Button
@@ -388,7 +388,7 @@ export const MindMapTaskPanel: React.FC<MindMapTaskPanelProps> = ({
                     variant="outline"
                     onClick={handleAttachClick}
                     disabled={uploading}
-                    className="h-7 gap-1.5"
+                    className="gap-1.5"
                   >
                     {uploading ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />

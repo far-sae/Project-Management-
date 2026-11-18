@@ -167,6 +167,17 @@ const router = createBrowserRouter(
         { path: '/join/:token', element: lazyRoute(<GuestJoin />) },
         { path: '/auth/google', element: lazyRoute(<GoogleCallback />) },
         { path: '/', element: lazyRoute(<LandingPage />) },
+        // Dev-only component preview (not in the production bundle).
+        ...(import.meta.env.DEV
+          ? [
+              {
+                path: '/__preview',
+                element: lazyRoute(
+                  React.createElement(React.lazy(() => import('@/dev/DesignPreview'))),
+                ),
+              },
+            ]
+          : []),
         {
           // All authenticated app routes share a single layout — the sidebar
           // mounts once here and stays mounted across navigation. Without

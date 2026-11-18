@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 const now = new Date();
 const h = vi.hoisted(() => ({ entries: [] as unknown[] }));
@@ -48,5 +48,39 @@ describe('TeamAttendance', () => {
     expect(within(ben).getByText('Not clocked in')).toBeTruthy();
     expect(screen.queryByText('Gone')).toBeNull();
     expect(screen.getByText('1 / 2')).toBeTruthy();
+  });
+
+  it('shows each status as a pill in its own tone', () => {
+    const start = new Date(now.getTime() - 2 * 3600_000);
+    h.entries = [
+      {
+        entryId: 'e1', organizationId: 'o1', userId: 'ana',
+        clockedInAt: start, clockedOutAt: null, durationSeconds: null,
+        createdAt: start, updatedAt: start,
+      },
+    ];
+    render(<TeamAttendance />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Attendance' })).toBeTruthy();
+    expect(screen.getByText('On the clock').getAttribute('data-tone')).toBe('success');
+    expect(screen.getByText('Not clocked in').getAttribute('data-tone')).toBe('muted');
+  });
+
+  it('steps through days with one joined control, and Today only shows on another day', () => {
+    h.entries = [];
+    render(<TeamAttendance />);
+    expect(screen.queryByRole('button', { name: 'Today' })).toBeNull();
+    const next = screen.getByRole('button', { name: 'Next day' }) as HTMLButtonElement;
+    expect(next.disabled).toBe(true);
+    const dayField = screen.getByLabelText('Day') as HTMLInputElement;
+    const todayValue = dayField.value;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
+    expect(dayField.value).not.toBe(todayValue);
+    expect(next.disabled).toBe(false);
+    expect(screen.getByText('On the clock now').nextElementSibling?.textContent).toBe('—');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(dayField.value).toBe(todayValue);
+    expect(screen.queryByRole('button', { name: 'Today' })).toBeNull();
   });
 });

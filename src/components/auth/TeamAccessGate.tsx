@@ -29,7 +29,7 @@ export const TeamAccessGate: React.FC<{ children: React.ReactNode }> = ({ childr
   if (permissionsLoading || projectsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" aria-label="Loading" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading" />
       </div>
     );
   }

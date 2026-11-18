@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, subDays, startOfDay, differenceInDays } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -205,25 +207,27 @@ export const ProjectsDashboard: React.FC = () => {
   if (tasksLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading dashboard…
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading dashboard…
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:px-8 md:py-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Projects dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <AppHeader left={<span className="text-sm font-semibold">Projects dashboard</span>} />
+      <div className="flex-1 overflow-y-auto">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+      <PageHeader
+        title="Projects dashboard"
+        description={
+          <>
             Overview of {scopedTasks.length.toLocaleString()} tasks across{' '}
             {visibleProjectIds.size} project{visibleProjectIds.size === 1 ? '' : 's'}.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+          </>
+        }
+        actions={
           <Select value={range} onValueChange={(v) => setRange(v as Range)}>
-            <SelectTrigger className="h-9 w-[120px]">
+            <SelectTrigger className="w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -232,11 +236,11 @@ export const ProjectsDashboard: React.FC = () => {
               <SelectItem value="90d">Last 90 days</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-      </div>
+        }
+      />
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiTile
           label="Active tasks"
           value={activeCount.toLocaleString()}
@@ -263,7 +267,7 @@ export const ProjectsDashboard: React.FC = () => {
       </div>
 
       {/* Row 2: donut + throughput */}
-      <div className="grid lg:grid-cols-3 gap-3">
+      <div className="grid lg:grid-cols-3 gap-4">
         <ChartCard title="Task status" subtitle="Current snapshot" bodyHeight="h-64">
           <div className="grid grid-cols-[1fr_auto] gap-3 h-full">
             <StatusDonut
@@ -288,7 +292,7 @@ export const ProjectsDashboard: React.FC = () => {
       </div>
 
       {/* Row 3: workload + project completion */}
-      <div className="grid lg:grid-cols-2 gap-3">
+      <div className="grid lg:grid-cols-2 gap-4">
         <ChartCard title="Open tasks by assignee" subtitle="Top 10 — workload distribution" bodyHeight="h-72">
           <BarHorizontal data={workloadData} highlightTop />
         </ChartCard>
@@ -310,7 +314,7 @@ export const ProjectsDashboard: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {p.overdue > 0 && (
-                        <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-600">
+                        <span className="rounded bg-destructive-soft px-1.5 py-0.5 text-[10px] font-medium text-destructive">
                           {p.overdue} overdue
                         </span>
                       )}
@@ -318,10 +322,10 @@ export const ProjectsDashboard: React.FC = () => {
                       <span className="tabular-nums font-medium text-foreground">{fmtPct(p.pct)}</span>
                     </div>
                   </div>
-                  <div className="mt-1.5 h-1.5 rounded bg-muted overflow-hidden">
+                  <div className="mt-1.5 h-1 rounded-full bg-foreground/10 overflow-hidden">
                     <div
-                      className="h-full bg-foreground rounded"
-                      style={{ width: `${p.pct}%`, backgroundColor: p.pct === 100 ? '#22c55e' : palette.primary }}
+                      className="h-full rounded-full bg-foreground/70"
+                      style={{ width: `${p.pct}%` }}
                     />
                   </div>
                 </button>
@@ -338,11 +342,13 @@ export const ProjectsDashboard: React.FC = () => {
             Want CRM-side insights too?
           </div>
           <Button variant="outline" size="sm" onClick={() => navigate('/dashboard/clients')}>
-            Open CRM dashboard <ArrowRight className="ml-1 h-3.5 w-3.5" />
+            Open CRM dashboard <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         </CardContent>
       </Card>
     </div>
+      </div>
+    </main>
   );
 };
 

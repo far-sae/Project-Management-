@@ -194,7 +194,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/30 text-blue-500 flex items-center justify-center">
+            <span className="w-7 h-7 rounded-lg bg-info-soft text-info flex items-center justify-center">
               <FileText className="w-3.5 h-3.5" />
             </span>
             Extract tasks from notes
@@ -218,7 +218,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
           )}
 
           {!aiAvailable && (
-            <div className="flex items-start gap-2 text-xs rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-3 py-2">
+            <div className="flex items-start gap-2 text-xs rounded-md border border-warning/30 bg-warning-soft text-warning-soft-foreground px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
                 AI is not configured. Deploy the <code>ai-chat</code> Supabase function to use
@@ -258,7 +258,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                       drafts.forEach((_, i) => (next[i] = true));
                       setSelected(next);
                     }}
-                    className="text-[11px] text-violet-600 dark:text-violet-300 hover:underline"
+                    className="text-[11px] text-primary-soft-foreground hover:underline"
                   >
                     Select all
                   </button>
@@ -282,7 +282,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                       key={`${d.title}-${idx}`}
                       className={cn(
                         'rounded-lg border bg-card transition-colors',
-                        isSelected ? 'border-violet-500/40' : 'border-border/70',
+                        isSelected ? 'border-primary/40' : 'border-border/70',
                       )}
                     >
                       <div className="flex items-start gap-3 p-3">
@@ -294,7 +294,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                           className={cn(
                             'mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors',
                             isSelected
-                              ? 'bg-violet-500 border-violet-500 text-white'
+                              ? 'bg-primary border-primary text-primary-foreground'
                               : 'border-border bg-background',
                           )}
                           aria-label={isSelected ? 'Deselect task' : 'Select task'}
@@ -314,10 +314,10 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                                 className={cn(
                                   'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium',
                                   d.priority === 'high'
-                                    ? 'bg-red-500/15 text-red-600 dark:text-red-300'
+                                    ? 'bg-destructive-soft text-destructive-soft-foreground'
                                     : d.priority === 'low'
-                                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300'
-                                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+                                      ? 'bg-success-soft text-success-soft-foreground'
+                                      : 'bg-warning-soft text-warning-soft-foreground',
                                 )}
                               >
                                 <Flag className="w-2.5 h-2.5" />
@@ -325,13 +325,13 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
                               </span>
                             )}
                             {dueValid && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/15 text-blue-600 dark:text-blue-300">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-info-soft text-info-soft-foreground">
                                 <Calendar className="w-2.5 h-2.5" />
                                 {format(dueValid, 'MMM d')}
                               </span>
                             )}
                             {d.assigneeUserIds.length > 0 && (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-violet-500/15 text-violet-600 dark:text-violet-300">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary-soft text-primary-soft-foreground">
                                 <Users className="w-2.5 h-2.5" />
                                 {d.assigneeUserIds
                                   .map((id) => memberById.get(id)?.displayName || '?')
@@ -395,7 +395,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
           )}
 
           {createdCount !== null && createdCount > 0 && (
-            <div className="flex items-start gap-2 text-xs rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 px-3 py-2">
+            <div className="flex items-start gap-2 text-xs rounded-md border border-success/30 bg-success-soft text-success-soft-foreground px-3 py-2">
               <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
                 Created {createdCount} task{createdCount === 1 ? '' : 's'} on the board.
@@ -416,16 +416,15 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
             <Button
               onClick={() => void handleParse()}
               disabled={!aiAvailable || parsing || notes.trim().length < 30}
-              className="bg-gradient-to-r from-blue-500 to-violet-500 text-white border-0 hover:opacity-90"
             >
               {parsing ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Extracting
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 mr-2" />
+                  <Sparkles className="w-4 h-4" />
                   Extract tasks
                 </>
               )}
@@ -449,7 +448,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
               >
                 {creating ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Creating
                   </>
                 ) : (

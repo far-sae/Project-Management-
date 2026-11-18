@@ -94,7 +94,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !moving && onOpenChange(next)}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="break-words">Move “{task?.title}”</DialogTitle>
           <DialogDescription>
@@ -104,11 +104,14 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
         </DialogHeader>
 
         {otherProjects === 0 ? (
-          <p className="text-sm text-muted-foreground">There's no other project to move it to.</p>
+          <p className="text-[13px] text-muted-foreground">There's no other project to move it to.</p>
         ) : (
           <>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -121,10 +124,10 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
             <div
               role="radiogroup"
               aria-label="Destination project"
-              className="max-h-64 space-y-1.5 overflow-y-auto"
+              className="max-h-64 space-y-1 overflow-y-auto"
             >
               {options.length === 0 && (
-                <p className="px-1 py-2 text-sm text-muted-foreground">No projects match.</p>
+                <p className="px-1 py-2 text-[13px] text-muted-foreground">No projects match.</p>
               )}
               {options.map((p) => {
                 const selected = choice === p.projectId;
@@ -138,21 +141,21 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
                     disabled={moving}
                     onClick={() => pickProject(p.projectId)}
                     className={cn(
-                      'flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                      'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border px-3 py-1 text-left text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:min-h-8',
                       selected
-                        ? 'border-primary bg-primary/10 text-foreground'
+                        ? 'border-foreground/30 bg-surface-2 text-foreground'
                         : 'border-border hover:bg-secondary',
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        className="h-2 w-2 shrink-0 rounded-full"
                         style={{ backgroundColor: p.coverColor || 'hsl(var(--primary))' }}
                         aria-hidden
                       />
                       <span className="truncate">{p.name}</span>
                     </span>
-                    {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                    {selected && <Check className="h-4 w-4 shrink-0 text-foreground" aria-hidden />}
                   </button>
                 );
               })}
@@ -160,7 +163,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
 
             {choice && (
               <div className="space-y-1.5">
-                <label htmlFor="move-task-column" className="text-sm font-medium">
+                <label htmlFor="move-task-column" className="block text-[13px] font-medium text-muted-foreground">
                   Column
                 </label>
                 <select
@@ -168,7 +171,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
                   value={column}
                   onChange={(e) => setColumn(e.target.value)}
                   disabled={moving}
-                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="h-11 w-full rounded-md border border-input bg-background px-2 text-base transition-colors focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50 md:h-8 md:text-[13px]"
                 >
                   {targetColumns.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -181,12 +184,12 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
           </>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={moving}>
             Cancel
           </Button>
           <Button type="button" onClick={() => void handleMove()} disabled={!choice || moving}>
-            {moving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {moving && <Loader2 className="animate-spin" aria-hidden />}
             Move
           </Button>
         </DialogFooter>

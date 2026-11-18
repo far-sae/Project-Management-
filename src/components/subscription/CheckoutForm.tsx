@@ -169,7 +169,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
       <Card className="w-full max-w-md mx-auto">
         <CardContent className="pt-6">
           <div className="text-center py-8">
-            <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto mb-4" />
+            <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-foreground mb-2">
               Verifying Your Subscription
             </h3>
@@ -209,7 +209,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
         <CardContent className="pt-6 text-center py-8">
           <p className="text-muted-foreground mb-4">Premium is a custom enterprise plan.</p>
           <Button
-            className="bg-gradient-to-r from-orange-500 to-red-500"
+           
             onClick={() => window.location.href = 'mailto:support@yourdomain.com'}
           >
             Contact Sales
@@ -255,13 +255,13 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
                   {pricing.currencySymbol}{originalPrice}
                 </span>
               )}
-              <span className="text-lg font-bold text-foreground tabular-nums">
+              <span className="text-lg font-semibold text-foreground tabular-nums">
                 {pricing.currencySymbol}{displayPrice}
               </span>
             </div>
           </div>
           {showPromo && (
-            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <p className="text-xs font-medium text-success">
               Promo: {tierPricing.promoMonths} month{tierPricing.promoMonths > 1 ? 's' : ''} offer
             </p>
           )}
@@ -275,20 +275,20 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
           <h4 className="text-sm font-medium">What's included:</h4>
           <ul className="space-y-1">
             {tierPricing.features.slice(0, 5).map((feature, index) => (
-              <li key={index} className="flex items-center gap-2 text-sm text-gray-600">
-                <Check className="w-4 h-4 text-green-500 shrink-0" />
+              <li key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Check className="w-4 h-4 text-success shrink-0" />
                 {feature}
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Shield className="w-4 h-4" />
           <span>Secure payment powered by Stripe</span>
         </div>
 
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Confirmation sent to <strong>{user?.email}</strong>.{' '}
           Auto-renews {billingCycle === 'monthly' ? 'monthly' : 'yearly'} — cancel anytime in Settings.
         </p>
@@ -296,16 +296,16 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
 
       <CardFooter className="flex flex-col gap-3">
         <Button
-          className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+          className="w-full"
           onClick={handleCheckout}
           disabled={loading || isBlocked}
         >
           {loading ? (
-            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</>
+            <><Loader2 className="w-4 h-4 animate-spin" />Processing...</>
           ) : isBlocked ? (
             isSameTier ? 'Current Plan' : 'Downgrade Not Available'
           ) : (
-            <><CreditCard className="w-4 h-4 mr-2" />Start Subscription</>
+            <><CreditCard className="w-4 h-4" />Start Subscription</>
           )}
         </Button>
 
@@ -318,7 +318,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
               toast.success('Subscription status refreshed');
             }}
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
+            <RefreshCw className="w-4 h-4" />
             Refresh Status
           </Button>
         )}

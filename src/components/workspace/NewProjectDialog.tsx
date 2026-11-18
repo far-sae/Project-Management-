@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -18,8 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, LayoutTemplate } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Loader2 } from 'lucide-react';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 import { useProjects } from '@/hooks/useProjects';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
@@ -30,11 +30,14 @@ import { fetchProjectTemplates } from '@/services/supabase/templates';
 import type { ProjectTemplate } from '@/types/projectTemplate';
 import { createTask } from '@/services/supabase/database';
 import LimitReachedModal from '@/components/ui/LimitReachedModal';
-
-const PROJECT_COLORS = [
-  '#f97316', '#ef4444', '#22c55e', '#3b82f6',
-  '#a855f7', '#ec4899', '#14b8a6', '#f59e0b',
-];
+import {
+  ColorSwatchRow,
+  DIALOG_FOOTER,
+  FIELD_LABEL,
+  FormError,
+  PROJECT_COLORS,
+  TemplatePicker,
+} from '@/components/workspace/ProjectFormParts';
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -194,81 +197,34 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={(v) => { if (!v) resetAndClose(); }}>
-        <DialogContent aria-describedby={undefined} className="max-w-2xl">
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Create New Project</DialogTitle>
           </DialogHeader>
 
           <Tabs value={createTab} onValueChange={(v) => setCreateTab(v as 'blank' | 'template')}>
-            <TabsList className="grid grid-cols-2 w-full">
+            <TabsList className="w-full">
               <TabsTrigger value="blank">Blank project</TabsTrigger>
               <TabsTrigger value="template">From template</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="template" className="pt-3">
-              {templatesLoading ? (
-                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Loading templates...
-                </div>
-              ) : templates.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-8">
-                  No templates available yet.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-                  {templates.map((tpl) => {
-                    const isSelected = selectedTemplate?.id === tpl.id;
-                    return (
-                      <button
-                        key={tpl.id}
-                        type="button"
-                        onClick={() => setSelectedTemplate(tpl)}
-                        className={cn(
-                          'text-left rounded-lg border p-3 transition-colors hover:border-primary/40 hover:bg-primary/5',
-                          isSelected ? 'border-primary bg-primary/10' : 'border-border bg-card',
-                        )}
-                      >
-                        <div className="flex items-start gap-2">
-                          <div className="rounded-md bg-primary/10 text-primary p-1.5">
-                            <LayoutTemplate className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-foreground truncate">{tpl.name}</p>
-                              {tpl.isBuiltin && (
-                                <span className="text-[10px] uppercase tracking-wide bg-muted text-muted-foreground rounded px-1.5 py-0.5">
-                                  Built-in
-                                </span>
-                              )}
-                            </div>
-                            {tpl.description && (
-                              <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                                {tpl.description}
-                              </p>
-                            )}
-                            <p className="text-[11px] text-muted-foreground mt-1">
-                              {tpl.columns.length} columns · {tpl.tasks.length} starter tasks
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+            <TabsContent value="template" className="mt-3">
+              <TemplatePicker
+                templates={templates}
+                loading={templatesLoading}
+                selectedId={selectedTemplate?.id}
+                onSelect={setSelectedTemplate}
+              />
             </TabsContent>
           </Tabs>
 
-          <form onSubmit={handleSubmit} className="space-y-4 mt-3">
-            {createError && (
-              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{createError}</p>
-            )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {createError && <FormError>{createError}</FormError>}
 
             <div className="space-y-2">
-              <Label>Workspace</Label>
+              <Label className={FIELD_LABEL}>Workspace</Label>
               <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
-                <SelectTrigger className="w-[200px] shadow-sm">
+                <SelectTrigger className="sm:w-[240px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -283,7 +239,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="np-name">Project Name</Label>
+              <Label htmlFor="np-name" className={FIELD_LABEL}>Project Name</Label>
               <Input
                 id="np-name"
                 value={name}
@@ -294,7 +250,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="np-description">Description</Label>
+              <Label htmlFor="np-description" className={FIELD_LABEL}>Description</Label>
               <Input
                 id="np-description"
                 value={description}
@@ -304,26 +260,13 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
             </div>
 
             <div className="space-y-2">
-              <Label>Color</Label>
-              <div className="flex gap-2">
-                {PROJECT_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setSelectedColor(color)}
-                    className={cn(
-                      'w-8 h-8 rounded-full transition-transform',
-                      selectedColor === color && 'ring-2 ring-offset-2 ring-border scale-110',
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
+              <Label className={FIELD_LABEL}>Color</Label>
+              <ColorSwatchRow value={selectedColor} onChange={setSelectedColor} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="np-start">Start Date</Label>
+                <Label htmlFor="np-start" className={FIELD_LABEL}>Start Date</Label>
                 <Input
                   id="np-start"
                   type="date"
@@ -332,7 +275,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="np-end">End Date</Label>
+                <Label htmlFor="np-end" className={FIELD_LABEL}>End Date</Label>
                 <Input
                   id="np-end"
                   type="date"
@@ -342,7 +285,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <DialogFooter className={DIALOG_FOOTER}>
               <Button
                 type="button"
                 variant="outline"
@@ -353,7 +296,6 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
               </Button>
               <Button
                 type="submit"
-                className="bg-gradient-to-r from-orange-500 to-red-500"
                 disabled={
                   creating ||
                   !name.trim() ||
@@ -362,14 +304,14 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
               >
                 {creating ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Creating...
                   </>
                 ) : (
                   'Create Project'
                 )}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

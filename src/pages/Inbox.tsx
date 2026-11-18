@@ -22,18 +22,12 @@ import {
 } from '@/components/common/DateRangeFilter';
 
 import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '@/components/ui/tabs';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from '@/components/ui/breadcrumb';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -87,6 +81,13 @@ const SNOOZE_OPTIONS: { id: string; label: string; ms: number }[] = [
 
 type FilterTab = 'all' | 'mentions' | 'assigned' | 'unread';
 
+const TABS: { id: FilterTab; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'mentions', label: 'Mentions' },
+  { id: 'assigned', label: 'Assigned' },
+  { id: 'unread', label: 'Unread' },
+];
+
 const isMention = (n: AppNotification) => n.type === 'comment_mention';
 const isAssignment = (n: AppNotification) => n.type === 'task_assigned';
 
@@ -111,21 +112,16 @@ const typeIcon = (type: AppNotification['type']) => {
   }
 };
 
+/** Icon bubble: neutral, except unread overdue / reminder items, which keep a quiet tint. */
 const typeBubbleClasses = (type: AppNotification['type'], unread: boolean): string => {
-  if (!unread) return 'bg-secondary text-secondary-foreground';
+  if (!unread) return 'bg-secondary text-muted-foreground';
   switch (type) {
     case 'task_overdue':
-      return 'bg-red-500/15 text-red-600 dark:text-red-300 ring-1 ring-red-500/30';
+      return 'bg-destructive-soft text-destructive-soft-foreground';
     case 'task_reminder':
-      return 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30';
-    case 'task_assigned':
-      return 'bg-blue-500/15 text-blue-600 dark:text-blue-300 ring-1 ring-blue-500/30';
-    case 'comment_mention':
-      return 'bg-violet-500/15 text-violet-600 dark:text-violet-300 ring-1 ring-violet-500/30';
-    case 'task_completed':
-      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30';
+      return 'bg-warning-soft text-warning-soft-foreground';
     default:
-      return 'bg-primary text-primary-foreground';
+      return 'bg-secondary text-foreground';
   }
 };
 
@@ -254,230 +250,214 @@ export const Inbox: React.FC = () => {
   }, [notifications]);
 
   return (
-    <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <AppHeader
-          left={
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="flex items-center gap-2">
-                    <InboxIcon className="w-4 h-4" />
-                    Inbox
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          }
-          right={null}
-        />
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <AppHeader left={<span className="text-sm font-semibold">Inbox</span>} right={null} />
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="w-full max-w-[1200px] mx-auto px-4 lg:px-6 py-6">
-            <Card className="overflow-hidden">
-              <CardHeader className="pb-3 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="min-w-0">
-                    <CardTitle className="text-base font-semibold">Notifications</CardTitle>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {unreadCount > 0
-                        ? `${unreadCount} unread · stay on top of mentions, assignments and reminders`
-                        : "You're all caught up"}
-                    </p>
-                  </div>
-                  {unreadCount > 0 && (
-                    <Button variant="outline" size="sm" onClick={handleMarkAllRead} className="shrink-0 w-fit">
-                      <CheckCheck className="w-4 h-4 mr-1.5" />
-                      Mark all read
-                    </Button>
-                  )}
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <div className="relative w-full max-w-md">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      placeholder="Search notifications…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="pl-9 h-9"
-                    />
-                  </div>
-                  <DateRangeFilter value={dateRange} onChange={setDateRange} />
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-4">
-                <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-                  <TabsList className="w-full justify-start flex-wrap h-auto gap-1 bg-secondary/50 p-1 mb-2">
-                    <TabsTrigger value="all" className="text-xs sm:text-sm">
-                      All
-                      <span className="ml-1.5 tabular-nums text-[10px] text-muted-foreground">{counts.all}</span>
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+          <PageHeader
+            title="Inbox"
+            description={
+              unreadCount > 0
+                ? `${unreadCount} unread · stay on top of mentions, assignments and reminders`
+                : "You're all caught up"
+            }
+            actions={
+              unreadCount > 0 ? (
+                <Button variant="outline" onClick={handleMarkAllRead}>
+                  <CheckCheck aria-hidden />
+                  Mark all read
+                </Button>
+              ) : undefined
+            }
+          />
+
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-full max-w-xs">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Search notifications"
+                  placeholder="Search notifications…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            </div>
+
+            <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+              {/* The tab row scrolls sideways rather than wrapping when it is too wide. */}
+              <div className="overflow-x-auto">
+                <TabsList className="flex w-max min-w-full">
+                  {TABS.map((t) => (
+                    <TabsTrigger key={t.id} value={t.id}>
+                      {t.label}
+                      <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                        {counts[t.id]}
+                      </span>
                     </TabsTrigger>
-                    <TabsTrigger value="mentions" className="text-xs sm:text-sm">
-                      Mentions
-                      <span className="ml-1.5 tabular-nums text-[10px] text-muted-foreground">{counts.mentions}</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="assigned" className="text-xs sm:text-sm">
-                      Assigned
-                      <span className="ml-1.5 tabular-nums text-[10px] text-muted-foreground">{counts.assigned}</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="unread" className="text-xs sm:text-sm">
-                      Unread
-                      <span className="ml-1.5 tabular-nums text-[10px] text-muted-foreground">{counts.unread}</span>
-                    </TabsTrigger>
-                  </TabsList>
-                  {(['all', 'mentions', 'assigned', 'unread'] as const).map((filterTab) => {
-                    const items = getVisibleForTab(filterTab);
-                    const emptyCopy: Record<FilterTab, { title: string; hint: string }> = {
-                      all: {
-                        title: "You're all caught up",
-                        hint: 'New mentions, assignments, and reminders show up here.',
-                      },
-                      mentions: {
-                        title: 'No mentions yet',
-                        hint: 'Use @name in a task comment (matching a teammate) to notify them.',
-                      },
-                      assigned: {
-                        title: 'No assignment notifications',
-                        hint: 'When someone assigns you to a task, it will appear here.',
-                      },
-                      unread: {
-                        title: 'No unread notifications',
-                        hint: 'Everything in your inbox has been read.',
-                      },
-                    };
-                    return (
-                      <TabsContent key={filterTab} value={filterTab} className="mt-0 focus-visible:outline-none">
-                        {loading ? (
-                          <div className="flex items-center justify-center py-16">
-                            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                          </div>
-                        ) : items.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center text-center py-16 px-4 rounded-lg border border-dashed border-border bg-muted/20">
-                            <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center mb-3">
-                              <InboxIcon className="w-6 h-6 text-muted-foreground" />
+                  ))}
+                </TabsList>
+              </div>
+              {(['all', 'mentions', 'assigned', 'unread'] as const).map((filterTab) => {
+                const items = getVisibleForTab(filterTab);
+                const emptyCopy: Record<FilterTab, { title: string; hint: string }> = {
+                  all: {
+                    title: "You're all caught up",
+                    hint: 'New mentions, assignments, and reminders show up here.',
+                  },
+                  mentions: {
+                    title: 'No mentions yet',
+                    hint: 'Use @name in a task comment (matching a teammate) to notify them.',
+                  },
+                  assigned: {
+                    title: 'No assignment notifications',
+                    hint: 'When someone assigns you to a task, it will appear here.',
+                  },
+                  unread: {
+                    title: 'No unread notifications',
+                    hint: 'Everything in your inbox has been read.',
+                  },
+                };
+                return (
+                  <TabsContent key={filterTab} value={filterTab} className="focus-visible:outline-none">
+                    {loading ? (
+                      <div className="flex items-center justify-center py-16">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : items.length === 0 ? (
+                      <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-12 text-center">
+                        <InboxIcon className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                        <p className="text-[13px] font-medium text-foreground">
+                          {emptyCopy[filterTab].title}
+                        </p>
+                        <p className="max-w-sm text-xs text-muted-foreground">
+                          {emptyCopy[filterTab].hint}
+                        </p>
+                      </div>
+                    ) : (
+                      <ul className="overflow-hidden rounded-lg border border-border bg-background">
+                        {items.map((n) => (
+                          <li
+                            key={n.notificationId}
+                            role="button"
+                            tabIndex={0}
+                            className="group relative flex min-h-12 cursor-pointer gap-3 border-b border-border/60 px-4 py-2.5 text-[13px] outline-none transition-colors last:border-b-0 hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                            onClick={() => handleOpen(n)}
+                            onKeyDown={(e) => {
+                              if (e.currentTarget !== e.target) return;
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleOpen(n);
+                              }
+                            }}
+                          >
+                            <div
+                              className={cn(
+                                'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+                                typeBubbleClasses(n.type, !n.read),
+                              )}
+                            >
+                              {typeIcon(n.type)}
                             </div>
-                            <p className="text-sm font-medium text-foreground">
-                              {emptyCopy[filterTab].title}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                              {emptyCopy[filterTab].hint}
-                            </p>
-                          </div>
-                        ) : (
-                          <ul className="divide-y divide-border rounded-lg border border-border bg-background overflow-hidden">
-                            {items.map((n) => (
-                              <li
-                                key={n.notificationId}
-                                role="button"
-                                tabIndex={0}
-                                className={cn(
-                                  'group relative flex gap-3 px-4 py-3 cursor-pointer hover:bg-secondary/40 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                                  !n.read && 'bg-primary/5',
-                                )}
-                                onClick={() => handleOpen(n)}
-                                onKeyDown={(e) => {
-                                  if (e.currentTarget !== e.target) return;
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    handleOpen(n);
-                                  }
-                                }}
-                              >
-                                <div
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p
                                   className={cn(
-                                    'mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors',
-                                    typeBubbleClasses(n.type, !n.read),
+                                    'truncate text-foreground',
+                                    n.read ? 'font-normal' : 'font-medium',
                                   )}
                                 >
-                                  {typeIcon(n.type)}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="text-sm font-medium text-foreground truncate">
-                                      {n.title}
-                                    </p>
-                                    {!n.read && (
-                                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary" />
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-muted-foreground line-clamp-2">
-                                    {n.body}
-                                  </p>
-                                  <p className="text-[11px] text-muted-foreground mt-1">
-                                    {formatDistanceToNow(new Date(n.createdAt), {
-                                      addSuffix: true,
-                                    })}
-                                  </p>
-                                </div>
+                                  {n.title}
+                                </p>
+                                {!n.read && (
+                                  <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                                )}
+                              </div>
+                              <p className="line-clamp-2 text-xs text-muted-foreground">
+                                {n.body}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(n.createdAt), {
+                                  addSuffix: true,
+                                })}
+                              </p>
+                            </div>
 
-                                <div
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity flex items-start gap-1 shrink-0"
-                                  onClick={(e) => e.stopPropagation()}
+                            {/* Row actions: shown on hover / keyboard focus, and always on touch screens. */}
+                            <div
+                              className="flex shrink-0 items-start gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {!n.read && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-7 px-0 text-muted-foreground"
+                                  onClick={() => markAsRead(n.notificationId)}
+                                  title="Mark as read"
+                                  aria-label="Mark as read"
                                 >
-                                  {!n.read && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs"
-                                      onClick={() => markAsRead(n.notificationId)}
-                                      title="Mark as read"
-                                    >
-                                      <CheckCheck className="w-3.5 h-3.5" />
-                                    </Button>
-                                  )}
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 px-2 text-xs"
-                                        title="Snooze"
-                                      >
-                                        <AlarmClock className="w-3.5 h-3.5" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      {SNOOZE_OPTIONS.map((opt) => (
-                                        <DropdownMenuItem
-                                          key={opt.id}
-                                          onClick={() => handleSnooze(n, opt.ms)}
-                                        >
-                                          {opt.label}
-                                        </DropdownMenuItem>
-                                      ))}
-                                      {n.projectId && (
-                                        <DropdownMenuItem
-                                          onClick={() => toggleMute(n.projectId!)}
-                                        >
-                                          {isMuted(n.projectId)
-                                            ? 'Unmute project'
-                                            : 'Mute project'}
-                                        </DropdownMenuItem>
-                                      )}
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
+                                  <CheckCheck aria-hidden />
+                                </Button>
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                                    onClick={() => handleDelete(n)}
-                                    title="Delete"
+                                    className="w-7 px-0 text-muted-foreground"
+                                    title="Snooze"
+                                    aria-label="Snooze"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <AlarmClock aria-hidden />
                                   </Button>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </TabsContent>
-                    );
-                  })}
-                </Tabs>
-              </CardContent>
-            </Card>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {SNOOZE_OPTIONS.map((opt) => (
+                                    <DropdownMenuItem
+                                      key={opt.id}
+                                      onClick={() => handleSnooze(n, opt.ms)}
+                                    >
+                                      {opt.label}
+                                    </DropdownMenuItem>
+                                  ))}
+                                  {n.projectId && (
+                                    <DropdownMenuItem
+                                      onClick={() => toggleMute(n.projectId!)}
+                                    >
+                                      {isMuted(n.projectId)
+                                        ? 'Unmute project'
+                                        : 'Mute project'}
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-7 px-0 text-muted-foreground hover:text-destructive"
+                                onClick={() => handleDelete(n)}
+                                title="Delete"
+                                aria-label="Delete"
+                              >
+                                <Trash2 aria-hidden />
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TabsContent>
+                );
+              })}
+            </Tabs>
           </div>
         </div>
-      </main>
+      </div>
+    </main>
   );
 };
 

@@ -87,15 +87,15 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
           aria-label={ariaLabel}
           disabled={disabled}
           variant="outline"
-          size="sm"
           className={cn(
-            'h-8 justify-start text-left font-normal',
-            !value && 'text-muted-foreground',
-            isOverdue && 'border-destructive/40 text-destructive',
+            'justify-start gap-2 px-2 text-left font-medium',
+            isOverdue && 'border-destructive/40',
             className,
+            !value && 'font-normal text-muted-foreground',
+            isOverdue && 'text-destructive',
           )}
         >
-          <CalendarIcon className="w-3.5 h-3.5 mr-1.5" />
+          <CalendarIcon aria-hidden className={cn(!isOverdue && 'text-muted-foreground')} />
           <span className="truncate">
             {value ? formatRelative(new Date(value)) : placeholder}
           </span>
@@ -103,7 +103,8 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
             <span
               role="button"
               tabIndex={0}
-              className="ml-auto pl-2 text-muted-foreground hover:text-foreground"
+              aria-label="Clear date"
+              className="-mr-1 ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={(e) => {
                 e.stopPropagation();
                 onChange(null);
@@ -116,7 +117,7 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
                 }
               }}
             >
-              <X className="w-3.5 h-3.5" />
+              <X aria-hidden className="!size-3.5" />
             </span>
           )}
         </Button>
@@ -130,15 +131,15 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
         // to click reliably. Letting it grow to ~320px gives the
         // arrows breathing room without affecting the inline picker
         // it sits next to.
-        className="w-auto p-0 max-w-[340px]"
+        className="w-auto max-w-[340px] p-0"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <div className="grid grid-cols-2 gap-1 px-2 pt-2 pb-1">
+        <div className="grid grid-cols-2 gap-1 border-b border-border p-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 justify-start text-xs"
+            className="justify-start"
             onClick={() => setOffset(0)}
           >
             Today
@@ -147,7 +148,7 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 justify-start text-xs"
+            className="justify-start"
             onClick={() => setOffset(1)}
           >
             Tomorrow
@@ -156,7 +157,7 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 justify-start text-xs"
+            className="justify-start"
             onClick={() => setOffset(7)}
           >
             Next week
@@ -165,7 +166,7 @@ export const DayPickerPopover: React.FC<DayPickerPopoverProps> = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 justify-start text-xs text-destructive"
+            className="justify-start text-destructive hover:text-destructive"
             onClick={() => setOffset(null)}
           >
             Clear

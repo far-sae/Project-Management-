@@ -23,15 +23,15 @@ export const KpiTile: React.FC<Props> = ({
   label, value, deltaPct = null, hint, sparkline, accent = false, icon: Icon,
 }) => {
   const deltaColor =
-    deltaPct == null ? '' : deltaPct >= 0 ? 'text-emerald-600' : 'text-rose-600';
+    deltaPct == null ? '' : deltaPct >= 0 ? 'text-success' : 'text-destructive';
   const deltaPrefix = deltaPct == null ? '' : deltaPct > 0 ? '+' : '';
   return (
-    <Card className={cn(accent && 'border-orange-200 bg-orange-50/40 dark:border-orange-500/30 dark:bg-orange-500/10')}>
+    <Card className={cn(accent && 'border-primary/30')}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground truncate flex items-center gap-1.5">
-              {Icon && <Icon className={cn('w-3.5 h-3.5', accent && 'text-orange-500')} />}
+            <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
+              {Icon && <Icon className={cn('w-3.5 h-3.5', accent && 'text-primary')} />}
               {label}
             </p>
             <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>

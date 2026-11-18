@@ -261,7 +261,7 @@ export const AddExpenseDialog: React.FC<Props> = ({
               Cancel
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               Submit for approval
             </Button>
           </DialogFooter>

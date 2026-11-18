@@ -36,8 +36,8 @@ export function presenceStatus(
 
   if (peer) {
     if (peer.availability === 'offline') return away('bg-muted-foreground/70');
-    if (peer.availability === 'dnd') return { label: 'Do not disturb', online: true, dot: 'bg-amber-500', title: 'Do not disturb' };
-    if (peer.availability === 'holiday') return { label: 'Holiday', online: false, dot: 'bg-sky-500', title: 'On holiday' };
+    if (peer.availability === 'dnd') return { label: 'Do not disturb', online: true, dot: 'bg-warning', title: 'Do not disturb' };
+    if (peer.availability === 'holiday') return { label: 'Holiday', online: false, dot: 'bg-info', title: 'On holiday' };
     return { label: 'Online', online: true, dot: 'bg-success', title: 'Online now' };
   }
   if (isUserOnline(lastSeenAt, t)) return { label: 'Online', online: true, dot: 'bg-success', title: 'Online now' };

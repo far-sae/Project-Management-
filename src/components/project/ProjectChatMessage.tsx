@@ -12,12 +12,10 @@ export const ChatBubble: React.FC<{ text: string; mine: boolean; grouped?: boole
 }) => (
   <div
     className={cn(
-      'whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[13px] leading-relaxed',
-      mine
-        ? 'bg-primary text-primary-foreground'
-        : 'bg-muted text-foreground',
-      // The corner nearest the sender is squared off on the first bubble only.
-      !grouped && (mine ? 'rounded-tr-md' : 'rounded-tl-md'),
+      'whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[13px] leading-5',
+      mine ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground',
+      // The corner nearest the sender is tightened on the first bubble of a run.
+      !grouped && (mine ? 'rounded-tr' : 'rounded-tl'),
     )}
   >
     <LinkifiedText
@@ -65,9 +63,9 @@ export const ProjectChatMessage: React.FC<ProjectChatMessageProps> = ({
       (grouped ? (
         <span aria-hidden className="w-7 shrink-0" />
       ) : (
-        <Avatar data-testid="chat-avatar" className="mt-0.5 h-7 w-7 shrink-0">
+        <Avatar data-testid="chat-avatar" className="h-7 w-7 shrink-0">
           <AvatarImage src={photoURL} alt="" />
-          <AvatarFallback className="bg-primary-soft text-[11px] text-primary-soft-foreground">
+          <AvatarFallback className="bg-primary-soft text-xs font-semibold text-primary-soft-foreground">
             {(authorLabel || '?').charAt(0).toUpperCase()}
           </AvatarFallback>
         </Avatar>
@@ -76,12 +74,12 @@ export const ProjectChatMessage: React.FC<ProjectChatMessageProps> = ({
       {!grouped && (
         <div
           className={cn(
-            'mb-0.5 flex min-w-0 items-baseline gap-1.5 px-1 text-[11px] text-muted-foreground',
+            'mb-0.5 flex min-w-0 items-baseline gap-1.5 text-[11px] leading-4 text-muted-foreground',
             mine && 'justify-end',
           )}
         >
           {!mine && (
-            <span className="truncate text-[12px] font-semibold text-foreground">{authorLabel}</span>
+            <span className="truncate text-xs font-semibold text-foreground">{authorLabel}</span>
           )}
           {!mine && presence}
           <time className="shrink-0 tabular-nums" dateTime={createdAt.toISOString()}>

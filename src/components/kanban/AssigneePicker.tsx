@@ -4,7 +4,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Search, UserPlus, X, Check } from 'lucide-react';
 import { TaskAssignee } from '@/types';
@@ -88,18 +87,18 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
 
   return (
     <div className="min-w-0">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
         {value.map((a) => {
           const { display, photoURL } = resolveDisplay(a);
           return (
           <span
             key={a.userId}
             data-assignee-chip
-            className="inline-flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-secondary pl-1 pr-1 text-xs"
+            className="inline-flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-full border border-border bg-background pl-0.5 pr-0.5 text-xs font-medium"
           >
-            <Avatar className="h-5 w-5 shrink-0">
+            <Avatar className="h-[18px] w-[18px] shrink-0">
               <AvatarImage src={photoURL} alt="" />
-              <AvatarFallback className="text-[10px] bg-primary-soft text-primary-soft-foreground">
+              <AvatarFallback className="bg-secondary text-[10px] font-semibold text-foreground">
                 {display.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -107,14 +106,14 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
               {display}
             </span>
             {disabled ? (
-              <span className="w-0.5 shrink-0" aria-hidden />
+              <span className="w-1 shrink-0" aria-hidden />
             ) : (
               <button
                 type="button"
                 onClick={() =>
                   onChange(value.filter((x) => x.userId !== a.userId))
                 }
-                className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label={`Remove ${display}`}
               >
                 <X className="h-3 w-3" aria-hidden />
@@ -126,35 +125,34 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
 
         <Popover open={disabled ? false : open} onOpenChange={disabled ? () => {} : setOpen}>
           <PopoverTrigger asChild>
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 shrink-0 gap-1 rounded-full border-dashed bg-transparent px-2.5 text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-foreground active:scale-[0.97] motion-safe:transition-transform"
+              className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-dashed border-input px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-secondary data-[state=open]:text-foreground"
               disabled={disabled}
             >
               <UserPlus className="h-3.5 w-3.5" aria-hidden />
               Assign
-            </Button>
+            </button>
           </PopoverTrigger>
           <PopoverContent
             align="start"
             className="w-72 p-0"
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-              <Search className="w-4 h-4 text-muted-foreground" />
+            <div className="flex h-10 items-center gap-2 border-b border-border px-3">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search people…"
+                aria-label="Search people"
                 autoFocus
-                className="flex-1 h-7 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="h-8 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-[13px]"
               />
             </div>
             <div className="max-h-64 overflow-y-auto py-1">
               {filtered.length === 0 ? (
-                <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
                   No matching members
                 </div>
               ) : (
@@ -165,31 +163,32 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
                       type="button"
                       key={m.userId}
                       onClick={() => toggle(m)}
+                      aria-pressed={selected}
                       className={cn(
-                        'w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-secondary',
-                        selected && 'bg-secondary/60',
+                        'flex min-h-10 w-full items-center gap-2 px-3 py-1 text-left transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none',
+                        selected && 'bg-surface-2',
                       )}
                     >
-                      <Avatar className="w-7 h-7 shrink-0">
-                        <AvatarImage src={m.photoURL} alt={m.displayName} />
-                        <AvatarFallback className="text-xs bg-primary-soft text-primary-soft-foreground">
+                      <Avatar className="h-6 w-6 shrink-0">
+                        <AvatarImage src={m.photoURL} alt="" />
+                        <AvatarFallback className="bg-secondary text-[11px] font-semibold text-foreground">
                           {(m.displayName || m.email || '?')
                             .charAt(0)
                             .toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate text-foreground">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-medium text-foreground">
                           {m.displayName || m.email || 'Unknown'}
                         </p>
                         {m.email && (
-                          <p className="text-[11px] text-muted-foreground truncate">
+                          <p className="truncate text-xs text-muted-foreground">
                             {m.email}
                           </p>
                         )}
                       </div>
                       {selected && (
-                        <Check className="w-4 h-4 text-primary shrink-0" />
+                        <Check className="h-4 w-4 shrink-0 text-foreground" aria-hidden />
                       )}
                     </button>
                   );

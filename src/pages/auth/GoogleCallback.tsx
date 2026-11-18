@@ -32,7 +32,7 @@ export const GoogleCallback: React.FC = () => {
         </>
       ) : (
         <>
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden />
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
           <p className="text-sm text-muted-foreground">Signing you in…</p>
         </>
       )}

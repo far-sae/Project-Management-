@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { AppHeader } from "@/components/layout/AppHeader";
+import { PageHeader } from "@/components/common/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -206,7 +208,7 @@ export const Settings: React.FC = () => {
     return (
       <main className="flex-1 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mx-auto mb-3" />
           <p className="text-muted-foreground">Loading settings...</p>
         </div>
       </main>
@@ -460,11 +462,11 @@ export const Settings: React.FC = () => {
   };
 
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
-        <div className="mb-6 md:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Settings</h1>
-          <p className="text-muted-foreground">Manage your account and preferences</p>
-        </div>
+    <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <AppHeader left={<span className="text-sm font-semibold">Settings</span>} />
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+        <PageHeader title="Settings" description="Manage your account and preferences" />
 
         <Tabs
           defaultValue={initialTab}
@@ -481,14 +483,10 @@ export const Settings: React.FC = () => {
           <div className="md:sticky md:top-6 md:self-start">
             <TabsList
               className={cn(
-                // base reset of the inline-flex/h-12/rounded-xl/bg-secondary
-                // defaults from the primitive, since the vertical layout
-                // wants something completely different visually.
-                'h-auto w-full p-0 bg-transparent text-muted-foreground',
-                // mobile: horizontal scrolling pill bar
-                'flex flex-row gap-1 overflow-x-auto whitespace-nowrap',
-                // desktop: vertical card with section spacing
-                'md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:rounded-lg md:border md:bg-card md:p-2'
+                // mobile: horizontal scrolling underline tabs
+                'w-full flex-row overflow-x-auto whitespace-nowrap',
+                // desktop: vertical rail with section labels
+                'md:h-auto md:flex-col md:items-stretch md:gap-0.5 md:overflow-visible md:border-b-0'
               )}
             >
               {/* ───── Account ───── */}
@@ -563,7 +561,7 @@ export const Settings: React.FC = () => {
                 <div className="flex items-center gap-6">
                   <Avatar className="w-20 h-20">
                     <AvatarImage src={user?.photoURL} />
-                    <AvatarFallback className="bg-orange-100 text-orange-700 text-2xl">
+                    <AvatarFallback className="bg-primary/10 text-primary text-2xl">
                       {user?.displayName?.charAt(0).toUpperCase() || "U"}
                     </AvatarFallback>
                   </Avatar>
@@ -581,9 +579,9 @@ export const Settings: React.FC = () => {
                       disabled={photoLoading}
                     >
                       {photoLoading ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        <Camera className="w-4 h-4 mr-2" />
+                        <Camera className="w-4 h-4" />
                       )}
                       Change Photo
                     </Button>
@@ -627,12 +625,12 @@ export const Settings: React.FC = () => {
                 <Button
                   onClick={handleSaveProfile}
                   disabled={profileLoading}
-                  className="bg-gradient-to-r from-orange-500 to-red-500"
+                 
                 >
                   {profileLoading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Save className="w-4 h-4 mr-2" />
+                    <Save className="w-4 h-4" />
                   )}
                   Save Changes
                 </Button>
@@ -655,7 +653,7 @@ export const Settings: React.FC = () => {
                       notifSaveState === 'idle'
                         ? 'opacity-0 pointer-events-none'
                         : 'opacity-100'
-                    } ${notifSaveState === 'saved' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}
+                    } ${notifSaveState === 'saved' ? 'text-success' : 'text-muted-foreground'}`}
                   >
                     {notifSaveState === 'saving' ? (
                       <>
@@ -664,7 +662,7 @@ export const Settings: React.FC = () => {
                       </>
                     ) : notifSaveState === 'saved' ? (
                       <>
-                        <span className="inline-flex w-1.5 h-1.5 rounded-full bg-green-500" />
+                        <span className="inline-flex w-1.5 h-1.5 rounded-full bg-success" />
                         Saved
                       </>
                     ) : null}
@@ -687,10 +685,10 @@ export const Settings: React.FC = () => {
               </CardHeader>
               <CardContent className="space-y-6">
                 <section>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-3">
                     Channels
                   </p>
-                  <div className="rounded-xl border border-border/70 divide-y divide-border/60 overflow-hidden bg-card">
+                  <div className="rounded-lg border border-border divide-y divide-border/60 overflow-hidden bg-card">
                     {(
                       [
                         {
@@ -728,10 +726,10 @@ export const Settings: React.FC = () => {
                 </section>
 
                 <section>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-3">
                     What you get notified about
                   </p>
-                  <div className="rounded-xl border border-border/70 divide-y divide-border/60 overflow-hidden bg-card">
+                  <div className="rounded-lg border border-border divide-y divide-border/60 overflow-hidden bg-card">
                     {(
                       [
                         {
@@ -802,7 +800,7 @@ export const Settings: React.FC = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="p-4 rounded-lg border border-orange-500/30 bg-gradient-to-br from-orange-500/10 to-card">
+                <div className="p-4 rounded-lg border border-primary/30">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <div className="flex items-center gap-2">
@@ -813,13 +811,13 @@ export const Settings: React.FC = () => {
                               ? `${subscription.tier.charAt(0).toUpperCase()}${subscription.tier.slice(1)} Plan`
                               : "No Plan"}
                         </p>
-                        <Badge className="bg-orange-500/15 text-orange-900 dark:text-orange-200 border border-orange-500/30">
+                        <Badge className="bg-primary/15 text-primary border border-primary/30">
                           {subscription?.status || "Unknown"}
                         </Badge>
                       </div>
                       {trialInfo && (
                         <>
-                          <p className="text-sm text-orange-800 dark:text-orange-200/90 mt-1">
+                          <p className="text-sm text-primary mt-1">
                             {trialInfo.daysRemaining} days remaining in your
                             free trial.
                           </p>
@@ -842,7 +840,7 @@ export const Settings: React.FC = () => {
                         )}
                     </div>
                     <Button
-                      className="bg-gradient-to-r from-orange-500 to-red-500"
+                     
                       onClick={() => navigate("/pricing")}
                     >
                       {subscription?.status === "active"
@@ -867,7 +865,7 @@ export const Settings: React.FC = () => {
                         onCheckedChange={handleCancelAtPeriodEnd}
                       />
                     </div>
-                    <div className="flex items-center justify-between p-4 border rounded-lg border-orange-500/30 bg-orange-500/5">
+                    <div className="flex items-center justify-between p-4 border rounded-lg border-primary/30 bg-primary/5">
                       <div>
                         <p className="font-medium">Cancel immediately</p>
                         <p className="text-sm text-muted-foreground">
@@ -877,7 +875,7 @@ export const Settings: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="border-orange-300 text-orange-700 hover:bg-orange-100"
+                        className="border-primary/30 text-primary hover:bg-primary/10"
                         disabled={cancelNowLoading}
                         onClick={handleCancelNow}
                       >
@@ -944,7 +942,7 @@ export const Settings: React.FC = () => {
                         disabled={passwordLoading}
                       >
                         {passwordLoading && (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          <Loader2 className="w-4 h-4 animate-spin" />
                         )}
                         Update Password
                       </Button>
@@ -955,7 +953,7 @@ export const Settings: React.FC = () => {
                 <Separator />
 
                 <div>
-                  <h3 className="font-medium mb-2 text-red-600">Danger Zone</h3>
+                  <h3 className="font-medium mb-2 text-destructive">Danger Zone</h3>
                   <p className="text-sm text-muted-foreground mb-3">
                     To delete your account, contact our support team.
                   </p>
@@ -968,6 +966,8 @@ export const Settings: React.FC = () => {
           </TabsContent>
           </div>
         </Tabs>
+        </div>
+        </div>
       </main>
   );
 };
@@ -984,21 +984,19 @@ const SettingsTab: React.FC<{
   <TabsTrigger
     value={value}
     className={cn(
-      'gap-2 shrink-0',
-      // mobile pill
-      'rounded-md',
-      // desktop full-width left-aligned row
-      'md:w-full md:justify-start md:rounded-md md:px-3 md:py-2'
+      'shrink-0',
+      // desktop full-width left-aligned row, filled when active
+      'md:mb-0 md:h-8 md:w-full md:justify-start md:rounded-md md:border-b-0 md:px-3 md:data-[state=active]:bg-secondary'
     )}
   >
-    <Icon className="w-4 h-4" />
+    <Icon className="h-4 w-4" />
     {children}
   </TabsTrigger>
 );
 
 const SettingsSectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  // Hidden on mobile (no room), shown as a small uppercase label on desktop.
-  <p className="hidden md:block px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground first:pt-1">
+  // Hidden on mobile (no room), shown as a small label on desktop.
+  <p className="hidden md:block px-3 pt-3 pb-1 text-xs font-medium text-muted-foreground first:pt-1">
     {children}
   </p>
 );

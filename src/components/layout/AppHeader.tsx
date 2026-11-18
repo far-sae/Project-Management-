@@ -55,11 +55,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <button
               type="button"
               onClick={() => (onSearchClick ? onSearchClick() : openCommandPalette())}
-              className="hidden h-8 w-60 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-secondary md:flex"
+              className="hidden h-8 w-64 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-secondary md:flex"
             >
               <Search className="w-4 h-4" />
-              <span className="flex-1 text-left">Search projects, tasks…</span>
-              <kbd className="rounded border border-border bg-secondary px-1.5 text-[11px] font-medium leading-[18px]">
+              <span className="min-w-0 flex-1 truncate text-left">Search projects, tasks…</span>
+              <kbd className="shrink-0 rounded border border-border bg-secondary px-1.5 font-sans text-[11px] font-medium leading-[18px]">
                 {isMac ? '⌘K' : 'Ctrl K'}
               </kbd>
             </button>

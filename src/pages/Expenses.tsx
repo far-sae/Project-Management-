@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { StatusPill } from '@/components/common/StatusPill';
+import { StatStrip } from '@/components/common/StatStrip';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,8 +19,8 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Receipt, Plus, Loader2, Paperclip, FileText, Check, X, Trash2, Edit,
-  ExternalLink, DollarSign, Filter,
+  Plus, Loader2, Paperclip, FileText, Check, X, Trash2, Edit,
+  ExternalLink, Filter,
 } from 'lucide-react';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/context/AuthContext';
@@ -67,21 +71,19 @@ const statusBadge = (s: ExpenseStatus) => {
   switch (s) {
     case 'approved':
       return (
-        <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-          <Check className="w-3 h-3 mr-1" /> Approved
-        </Badge>
+        <StatusPill tone="success" dot={false}>
+          <Check className="h-3 w-3" /> Approved
+        </StatusPill>
       );
     case 'rejected':
       return (
-        <Badge className="bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30">
-          <X className="w-3 h-3 mr-1" /> Rejected
-        </Badge>
+        <StatusPill tone="danger" dot={false}>
+          <X className="h-3 w-3" /> Rejected
+        </StatusPill>
       );
     default:
       return (
-        <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30">
-          Pending
-        </Badge>
+        <StatusPill tone="warning">Pending</StatusPill>
       );
   }
 };
@@ -340,13 +342,13 @@ export const Expenses: React.FC = () => {
                 {expense.taskTitle && <span>Task: {expense.taskTitle}</span>}
               </div>
               {expense.statusReason && (
-                <p className="text-xs text-red-600 dark:text-red-300 mt-1">
+                <p className="text-xs text-destructive mt-1">
                   Note: {expense.statusReason}
                 </p>
               )}
             </div>
             <div className="text-right shrink-0">
-              <p className="text-lg font-bold text-foreground">
+              <p className="text-base font-semibold tabular-nums text-foreground">
                 {fmt(expense.amount, expense.currency)}
               </p>
             </div>
@@ -370,23 +372,23 @@ export const Expenses: React.FC = () => {
               <>
                 <Button
                   size="sm" variant="outline"
-                  className="border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
+                  className="border-success/30 text-success-soft-foreground hover:bg-success-soft"
                   onClick={() => setStatus(expense, 'approved')}
                 >
-                  <Check className="w-4 h-4 mr-1" /> Approve
+                  <Check className="w-4 h-4" /> Approve
                 </Button>
                 <Button
                   size="sm" variant="outline"
-                  className="border-red-500/30 text-red-700 dark:text-red-300 hover:bg-red-500/10"
+                  className="border-destructive/30 text-destructive-soft-foreground hover:bg-destructive-soft"
                   onClick={() => setRejecting(expense)}
                 >
-                  <X className="w-4 h-4 mr-1" /> Reject
+                  <X className="w-4 h-4" /> Reject
                 </Button>
               </>
             )}
             {canEditThis && (
               <Button size="sm" variant="ghost" onClick={() => openEdit(expense)}>
-                <Edit className="w-4 h-4 mr-1" /> Edit
+                <Edit className="w-4 h-4" /> Edit
               </Button>
             )}
             {canDeleteThis && (
@@ -395,7 +397,7 @@ export const Expenses: React.FC = () => {
                 className="text-destructive hover:text-destructive"
                 onClick={() => setDeleting(expense)}
               >
-                <Trash2 className="w-4 h-4 mr-1" /> Delete
+                <Trash2 className="w-4 h-4" /> Delete
               </Button>
             )}
           </div>
@@ -406,39 +408,28 @@ export const Expenses: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        <div className="max-w-5xl mx-auto space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-                <Receipt className="w-6 h-6 text-primary" /> Expenses
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <AppHeader left={<span className="text-sm font-semibold">Expenses</span>} />
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+          <PageHeader
+            title="Expenses"
+            description={
+              <>
                 Submit material costs &amp; invoices, attach them to a task.
                 {canManage && ' Owner + admin can review and approve.'}
-              </p>
-            </div>
-            <Button onClick={openCreate}>
-              <Plus className="w-4 h-4 mr-2" /> Add expense
-            </Button>
-          </div>
+              </>
+            }
+            actions={
+              <Button onClick={openCreate}>
+                <Plus className="w-4 h-4" /> Add expense
+              </Button>
+            }
+          />
 
           {/* Totals */}
           {totals.length > 0 && (
-            <Card>
-              <CardContent className="pt-4 flex flex-wrap gap-4">
-                {totals.map(([cur, total]) => (
-                  <div key={cur} className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">{cur} total</span>
-                    <span className="font-semibold">
-                      {fmt(total, cur)}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            <StatStrip items={totals.map(([cur, total]) => ({ label: `${cur} total`, value: fmt(total, cur) }))} />
           )}
 
           {/* Tabs and filter */}
@@ -483,13 +474,14 @@ export const Expenses: React.FC = () => {
             </div>
           ) : visible.length === 0 ? (
             <Card>
-              <CardContent className="text-center py-10 text-sm text-muted-foreground">
+              <CardContent className="text-center py-10 text-[13px] text-muted-foreground">
                 No expenses to show. Click <strong>Add expense</strong> to submit one.
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-3">{visible.map(renderCard)}</div>
           )}
+        </div>
         </div>
       </main>
 
@@ -670,7 +662,7 @@ export const Expenses: React.FC = () => {
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
-                {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {editing ? 'Save' : 'Submit expense'}
               </Button>
             </DialogFooter>
@@ -736,7 +728,7 @@ export const Expenses: React.FC = () => {
               disabled={deleteBusy}
               aria-busy={deleteBusy}
             >
-              {deleteBusy && <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />}
+              {deleteBusy && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
               Delete
             </Button>
           </DialogFooter>

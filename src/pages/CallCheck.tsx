@@ -83,12 +83,12 @@ function realDeps(userId: string, displayName: string): CallCheckDeps {
 }
 
 const ICON: Record<CallCheckStatus, React.ReactNode> = {
-  pending: <Circle className="h-5 w-5 text-muted-foreground/50" aria-hidden />,
-  running: <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />,
-  ok: <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />,
-  warn: <AlertTriangle className="h-5 w-5 text-warning" aria-hidden />,
-  fail: <XCircle className="h-5 w-5 text-destructive" aria-hidden />,
-  skipped: <MinusCircle className="h-5 w-5 text-muted-foreground/50" aria-hidden />,
+  pending: <Circle className="h-4 w-4 text-muted-foreground/50" aria-hidden />,
+  running: <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />,
+  ok: <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />,
+  warn: <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />,
+  fail: <XCircle className="h-4 w-4 text-destructive" aria-hidden />,
+  skipped: <MinusCircle className="h-4 w-4 text-muted-foreground/50" aria-hidden />,
 };
 
 const STATUS_TEXT: Record<CallCheckStatus, string> = {
@@ -147,91 +147,101 @@ export const CallCheck: React.FC = () => {
   const problems = results?.filter((r) => r.status === 'fail').length ?? 0;
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-balance">Call check</h1>
-        <p className="mt-1 text-sm text-muted-foreground text-pretty">
-          Tests your browser, microphone, camera and connection — the same things a call needs — and
-          tells you what to fix. Your browser may ask for camera and microphone access: choose Allow.
-        </p>
-      </div>
-
-      <section className="rounded-xl border border-border bg-card p-4" aria-labelledby="popups-heading">
-        <div className="flex items-start gap-3">
-          <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
-          <div className="min-w-0 space-y-3">
-            <div>
-              <h2 id="popups-heading" className="text-sm font-medium">
-                Call pop-ups when minimised
-              </h2>
-              <p className="mt-0.5 text-sm text-muted-foreground text-pretty">{popups.detail}</p>
-            </div>
-            {permission === 'default' && (
-              <Button type="button" size="sm" onClick={() => void turnOnPopups()} className="active:scale-[0.97]">
-                Turn on pop-ups
-              </Button>
-            )}
-            {permission === 'granted' && (
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={sendTestPopup}
-                  disabled={testPending}
-                  className="active:scale-[0.97]"
-                >
-                  Send a test pop-up
-                </Button>
-                {testPending && (
-                  <span className="text-sm text-muted-foreground" aria-live="polite">
-                    Minimise this window now — the test pop-up arrives in 5 seconds.
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+    <div className="flex w-full justify-center px-4 py-8 sm:py-12">
+      <div className="flex w-full max-w-md flex-col gap-5 rounded-lg border border-border bg-card p-5 sm:p-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">Call check</h1>
+          <p className="mt-1 text-sm text-muted-foreground text-pretty">
+            Tests your browser, microphone, camera and connection — the same things a call needs — and
+            tells you what to fix. Your browser may ask for camera and microphone access: choose Allow.
+          </p>
         </div>
-      </section>
 
-      <Button type="button" onClick={start} disabled={!user || running} className="active:scale-[0.97]">
-        {running && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-        {running ? 'Checking…' : results ? 'Run again' : 'Start check'}
-      </Button>
-
-      {results && (
-        <ol className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card" aria-live="polite">
-          {results.map((r) => (
-            <li key={r.id} className="flex gap-3 px-4 py-3">
-              <span className="mt-0.5 shrink-0">{ICON[r.status]}</span>
-              <div className="min-w-0">
-                <p className="text-sm font-medium">
-                  {r.label}
-                  <span className="sr-only"> — {STATUS_TEXT[r.status]}</span>
-                </p>
-                {r.detail && (
-                  <p
-                    className={cn(
-                      'mt-0.5 text-sm text-pretty break-words',
-                      r.status === 'fail' ? 'text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    {r.detail}
-                  </p>
-                )}
+        <section className="rounded-lg border border-border p-4" aria-labelledby="popups-heading">
+          <div className="flex items-start gap-3">
+            <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <div className="min-w-0 space-y-3">
+              <div>
+                <h2 id="popups-heading" className="text-sm font-semibold">
+                  Call pop-ups when minimised
+                </h2>
+                <p className="mt-0.5 text-[13px] text-muted-foreground text-pretty">{popups.detail}</p>
               </div>
-            </li>
-          ))}
-        </ol>
-      )}
+              {permission === 'default' && (
+                <Button type="button" size="sm" onClick={() => void turnOnPopups()}>
+                  Turn on pop-ups
+                </Button>
+              )}
+              {permission === 'granted' && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={sendTestPopup}
+                    disabled={testPending}
+                  >
+                    Send a test pop-up
+                  </Button>
+                  {testPending && (
+                    <span className="text-[13px] text-muted-foreground" aria-live="polite">
+                      Minimise this window now — the test pop-up arrives in 5 seconds.
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
 
-      {done && (
-        <p className="text-sm text-muted-foreground text-pretty">
-          {problems === 0
-            ? 'Everything a call needs works on this computer. If calls still fail, make sure the person calling you is in the same project, and keep a TaskCalendar tab open so you can be rung.'
-            : 'Fix the failed items above, reload this page and run the check again. Also check that your laptop’s camera or microphone isn’t switched off with a keyboard key.'}
-        </p>
-      )}
+        <Button
+          type="button"
+          size="lg"
+          className="w-full"
+          onClick={start}
+          disabled={!user || running}
+        >
+          {running && <Loader2 className="animate-spin" aria-hidden />}
+          {running ? 'Checking…' : results ? 'Run again' : 'Start check'}
+        </Button>
+
+        {results && (
+          <ol className="overflow-hidden rounded-lg border border-border" aria-live="polite">
+            {results.map((r) => (
+              <li
+                key={r.id}
+                className="flex min-h-12 gap-3 border-b border-border/60 px-4 py-3 last:border-0"
+              >
+                <span className="mt-0.5 shrink-0">{ICON[r.status]}</span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium">
+                    {r.label}
+                    <span className="sr-only"> — {STATUS_TEXT[r.status]}</span>
+                  </p>
+                  {r.detail && (
+                    <p
+                      className={cn(
+                        'mt-0.5 text-[13px] text-pretty break-words',
+                        r.status === 'fail' ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      {r.detail}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+
+        {done && (
+          <p className="text-[13px] text-muted-foreground text-pretty">
+            {problems === 0
+              ? 'Everything a call needs works on this computer. If calls still fail, make sure the person calling you is in the same project, and keep a TaskCalendar tab open so you can be rung.'
+              : 'Fix the failed items above, reload this page and run the check again. Also check that your laptop’s camera or microphone isn’t switched off with a keyboard key.'}
+          </p>
+        )}
+      </div>
     </div>
   );
 };

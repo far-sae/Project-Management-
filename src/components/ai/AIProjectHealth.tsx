@@ -109,10 +109,10 @@ const STATUS_TONES: Record<
   { ring: string; bar: string; text: string; bg: string; label: string }
 > = {
   excellent: {
-    ring: 'ring-emerald-500/40',
-    bar: 'bg-emerald-500',
-    text: 'text-emerald-700 dark:text-emerald-300',
-    bg: 'bg-emerald-500/10',
+    ring: 'ring-success/30',
+    bar: 'bg-success',
+    text: 'text-success-soft-foreground',
+    bg: 'bg-success-soft',
     label: 'Excellent',
   },
   good: {
@@ -123,17 +123,17 @@ const STATUS_TONES: Record<
     label: 'Good',
   },
   watch: {
-    ring: 'ring-amber-500/40',
-    bar: 'bg-amber-500',
-    text: 'text-amber-700 dark:text-amber-300',
-    bg: 'bg-amber-500/10',
+    ring: 'ring-warning/40',
+    bar: 'bg-warning',
+    text: 'text-warning-soft-foreground',
+    bg: 'bg-warning-soft',
     label: 'Watch',
   },
   'at-risk': {
-    ring: 'ring-red-500/40',
-    bar: 'bg-red-500',
-    text: 'text-red-700 dark:text-red-300',
-    bg: 'bg-red-500/10',
+    ring: 'ring-destructive/30',
+    bar: 'bg-destructive',
+    text: 'text-destructive-soft-foreground',
+    bg: 'bg-destructive-soft',
     label: 'At risk',
   },
 };
@@ -217,21 +217,19 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
   return (
     <section
       className={cn(
-        'overflow-hidden rounded-lg border bg-background/70 shadow-sm shadow-black/5 backdrop-blur transition-colors',
-        tone ? tone.ring + ' border-border/70 ring-1' : 'border-border/70',
-        !tone && 'border-violet-500/25',
+        'overflow-hidden rounded-lg border border-border bg-card transition-colors',
+        tone && tone.ring + ' ring-1',
       )}
     >
       <div className="flex items-center gap-3 p-3">
         <div
           className={cn(
-            'w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ring-1',
-            tone ? tone.bg : 'bg-violet-500/10 ring-violet-500/30',
-            tone ? tone.text : 'text-violet-500',
-            tone ? '' : 'ring-violet-500/30',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
+            tone ? tone.bg : 'bg-secondary',
+            tone ? tone.text : 'text-muted-foreground',
           )}
         >
-          <Activity className="w-5 h-5" />
+          <Activity className="h-4 w-4" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -240,7 +238,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
               {tone && (
                 <span
                   className={cn(
-                    'text-[10px] font-semibold uppercase tracking-wider rounded-full px-1.5 py-0.5',
+                    'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
                     tone.bg,
                     tone.text,
                   )}
@@ -257,18 +255,13 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
             <div className="flex items-center gap-1.5">
               <Button
                 size="sm"
-                variant={health ? 'outline' : 'default'}
+                variant="outline"
                 disabled={!aiAvailable || loading || tasks.length === 0}
                 onClick={handleAssess}
-                className={
-                  health
-                    ? 'h-8 rounded-md text-xs'
-                    : 'h-8 rounded-md border-0 bg-violet-600 text-xs text-white hover:bg-violet-500'
-                }
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Reading
                   </>
                 ) : health ? (
@@ -341,15 +334,15 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
         <div className="border-t border-border/60 px-3.5 py-3 space-y-3 bg-card/50">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {health.strengths.length > 0 && (
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1 mb-1.5">
+              <div className="rounded-lg border border-success/30 bg-success-soft p-2.5">
+                <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-success-soft-foreground">
                   <Trophy className="w-3 h-3" />
                   Strengths
                 </p>
                 <ul className="space-y-1 text-xs leading-relaxed">
                   {health.strengths.map((s, i) => (
                     <li key={i} className="flex gap-1.5">
-                      <span className="text-emerald-500 shrink-0">•</span>
+                      <span className="shrink-0 text-success">•</span>
                       <span>{s}</span>
                     </li>
                   ))}
@@ -357,15 +350,15 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
               </div>
             )}
             {health.risks.length > 0 && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/[0.06] p-2.5">
-                <p className="text-[10px] uppercase tracking-wider text-red-700 dark:text-red-300 flex items-center gap-1 mb-1.5">
+              <div className="rounded-lg border border-destructive/30 bg-destructive-soft p-2.5">
+                <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-destructive-soft-foreground">
                   <ShieldAlert className="w-3 h-3" />
                   Risks
                 </p>
                 <ul className="space-y-1 text-xs leading-relaxed">
                   {health.risks.map((r, i) => (
                     <li key={i} className="flex gap-1.5">
-                      <span className="text-red-500 shrink-0">•</span>
+                      <span className="shrink-0 text-destructive">•</span>
                       <span>{r}</span>
                     </li>
                   ))}
@@ -382,7 +375,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
               <ol className="space-y-1">
                 {health.recommendations.map((r, i) => (
                   <li key={i} className="flex gap-2 text-xs leading-relaxed">
-                    <span className="mt-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-violet-500/15 text-violet-700 dark:text-violet-300 text-[10px] font-semibold shrink-0">
+                    <span className="mt-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-secondary text-[10px] font-semibold text-secondary-foreground shrink-0">
                       {i + 1}
                     </span>
                     <span>{r}</span>

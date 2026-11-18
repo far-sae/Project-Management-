@@ -86,7 +86,7 @@ export const AppearanceSettings: React.FC = () => {
                   type="button"
                   onClick={() => setMode(m.id)}
                   className={cn(
-                    "rounded-xl border p-4 text-left transition-all",
+                    "rounded-lg border p-4 text-left transition-colors",
                     active
                       ? "border-primary bg-primary/5 ring-1 ring-primary"
                       : "border-border hover:border-primary/40 hover:bg-secondary/50"
@@ -135,7 +135,7 @@ export const AppearanceSettings: React.FC = () => {
                   className={cn(
                     "group flex items-center gap-2 px-3 py-2 rounded-full border transition-all",
                     active
-                      ? "border-foreground/40 shadow-sm"
+                      ? "border-foreground/40"
                       : "border-border hover:border-foreground/30"
                   )}
                   aria-pressed={active}
@@ -171,7 +171,7 @@ export const AppearanceSettings: React.FC = () => {
                   type="button"
                   onClick={() => setDensity(d.id)}
                   className={cn(
-                    "rounded-xl border p-4 text-left transition-all",
+                    "rounded-lg border p-4 text-left transition-colors",
                     active
                       ? "border-primary bg-primary/5 ring-1 ring-primary"
                       : "border-border hover:border-primary/40 hover:bg-secondary/50"

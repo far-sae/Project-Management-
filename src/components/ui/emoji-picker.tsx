@@ -56,10 +56,9 @@ export function EmojiPickerButton({
           variant="ghost"
           size="icon"
           disabled={disabled}
-          className={cn(
-            'h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted',
-            className,
-          )}
+          aria-label="Add emoji"
+          title="Add emoji"
+          className={cn('shrink-0 text-muted-foreground hover:text-foreground', className)}
         >
           <Smile className="w-4 h-4" />
         </Button>

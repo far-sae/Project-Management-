@@ -68,7 +68,7 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !moving && onOpenChange(next)}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="break-words">Move “{project?.name}”</DialogTitle>
           <DialogDescription>
@@ -78,11 +78,11 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
         </DialogHeader>
 
         {options.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             There's no other workspace to move to. Create one first.
           </p>
         ) : (
-          <div role="radiogroup" aria-label="Destination workspace" className="max-h-72 space-y-1.5 overflow-y-auto">
+          <div role="radiogroup" aria-label="Destination workspace" className="max-h-72 space-y-1.5 overflow-y-auto p-0.5">
             {options.map((o) => {
               const selected = choice === o.id;
               return (
@@ -95,26 +95,26 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
                   disabled={moving}
                   onClick={() => setChoice(o.id)}
                   className={cn(
-                    'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                    'flex min-h-11 w-full items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-[13px] font-medium text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 md:min-h-9',
                     selected
-                      ? 'border-primary bg-primary/10 text-foreground'
-                      : 'border-border hover:bg-secondary',
+                      ? 'border-foreground/60 bg-secondary'
+                      : 'border-border hover:bg-surface-2',
                   )}
                 >
                   <span className="truncate">{o.label}</span>
-                  {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                  {selected && <Check className="h-4 w-4 shrink-0 text-foreground" aria-hidden />}
                 </button>
               );
             })}
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={moving}>
             Cancel
           </Button>
           <Button type="button" onClick={() => void handleMove()} disabled={!choice || moving}>
-            {moving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {moving && <Loader2 className="h-4 w-4 animate-spin" />}
             Move
           </Button>
         </DialogFooter>

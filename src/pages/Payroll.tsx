@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +11,10 @@ import {
   Wallet, Plus, Loader2, ChevronLeft, Lock, ShieldAlert, CheckCircle2,
   Trash2,
 } from 'lucide-react';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatStrip } from '@/components/common/StatStrip';
+import { StatusPill } from '@/components/common/StatusPill';
 import { usePayrollRuns, usePayrollRunDetail } from '@/hooks/usePayroll';
 import { useEmployees } from '@/hooks/useEmployees';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
@@ -23,25 +25,9 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 
 const statusBadge = (s: PayrollStatus) => {
-  if (s === 'paid') {
-    return (
-      <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-        Paid
-      </Badge>
-    );
-  }
-  if (s === 'finalized') {
-    return (
-      <Badge className="bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30">
-        Finalized
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30">
-      Draft
-    </Badge>
-  );
+  if (s === 'paid') return <StatusPill tone="success">Paid</StatusPill>;
+  if (s === 'finalized') return <StatusPill tone="info">Finalized</StatusPill>;
+  return <StatusPill tone="warning">Draft</StatusPill>;
 };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -148,7 +134,7 @@ const NewRunDialog: React.FC<{
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {busy && <Loader2 className="animate-spin" aria-hidden />}
               Create draft
             </Button>
           </DialogFooter>
@@ -190,7 +176,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
   if (loading || !run) {
     return (
       <div className="flex items-center justify-center py-10">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading payroll run" />
       </div>
     );
   }
@@ -271,17 +257,21 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 min-w-0">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ChevronLeft className="w-4 h-4 mr-1" /> Runs
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <div>
+          <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
+            <ChevronLeft aria-hidden /> Runs
           </Button>
-          <div>
-            <h2 className="text-lg font-semibold">
+        </div>
+        <PageHeader
+          title={
+            <span className="tabular-nums">
               {format(run.periodStart, 'MMM d')} – {format(run.periodEnd, 'MMM d, yyyy')}
-            </h2>
-            <div className="text-xs text-muted-foreground flex items-center gap-2">
+            </span>
+          }
+          description={
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
               {statusBadge(run.status)}
               {run.payDate && <span>Pay {format(run.payDate, 'MMM d, yyyy')}</span>}
               {run.finalizedAt && (
@@ -290,146 +280,137 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
               {run.paidAt && (
                 <span>Paid {format(run.paidAt, 'MMM d')} by {run.paidByName ?? '—'}</span>
               )}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canFinalize && (
-            <Button onClick={() => setStatus('finalized')} disabled={busy === 'finalized'}>
-              {busy === 'finalized' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Finalize
-            </Button>
-          )}
-          {canMarkPaid && (
-            <Button onClick={() => setStatus('paid')} disabled={busy === 'paid'}>
-              {busy === 'paid' && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as paid
-            </Button>
-          )}
-          {canUnmarkPaid && (
-            <Button
-              variant="outline"
-              onClick={() => setConfirmUnmark(true)}
-              disabled={busy === 'finalized'}
-            >
-              {busy === 'finalized' && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            </span>
+          }
+          actions={
+            <>
+              {canUnmarkPaid && (
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmUnmark(true)}
+                  disabled={busy === 'finalized'}
+                >
+                  {busy === 'finalized' && <Loader2 className="animate-spin" aria-hidden />}
+                  Unmark as paid
+                </Button>
               )}
-              Unmark as paid
-            </Button>
-          )}
-          {(run.status === 'draft' || isOwner) && (
-            <Button
-              variant="outline"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="w-4 h-4 mr-2" /> Delete
-            </Button>
-          )}
-        </div>
+              {(run.status === 'draft' || isOwner) && (
+                <Button
+                  variant="outline"
+                  className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 aria-hidden /> Delete
+                </Button>
+              )}
+              {canFinalize && (
+                <Button onClick={() => setStatus('finalized')} disabled={busy === 'finalized'}>
+                  {busy === 'finalized' && <Loader2 className="animate-spin" aria-hidden />}
+                  Finalize
+                </Button>
+              )}
+              {canMarkPaid && (
+                <Button onClick={() => setStatus('paid')} disabled={busy === 'paid'}>
+                  {busy === 'paid' ? (
+                    <Loader2 className="animate-spin" aria-hidden />
+                  ) : (
+                    <CheckCircle2 aria-hidden />
+                  )}
+                  Mark as paid
+                </Button>
+              )}
+            </>
+          }
+        />
       </div>
 
       {/* Totals */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Gross</p>
-            <p className="text-lg font-bold">{fmt(run.totalGross, totalsCurrency)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Reimbursements</p>
-            <p className="text-lg font-bold">{fmt(run.totalReimbursement, totalsCurrency)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Deductions</p>
-            <p className="text-lg font-bold">{fmt(run.totalDeduction, totalsCurrency)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Net pay</p>
-            <p className="text-lg font-bold text-primary">{fmt(run.totalNet, totalsCurrency)}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <StatStrip
+        items={[
+          { label: 'Gross', value: fmt(run.totalGross, totalsCurrency) },
+          { label: 'Reimbursements', value: fmt(run.totalReimbursement, totalsCurrency) },
+          { label: 'Deductions', value: fmt(run.totalDeduction, totalsCurrency) },
+          { label: 'Net pay', value: fmt(run.totalNet, totalsCurrency) },
+        ]}
+      />
 
       {/* Items table */}
-      <Card>
-        <CardContent className="pt-4">
-          {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
-              No payslips on this run. Add employees in HR and recreate.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase text-muted-foreground border-b border-border">
-                  <tr>
-                    <th className="py-2 pr-3">Employee</th>
-                    <th className="py-2 pr-3 text-right">Hours</th>
-                    <th className="py-2 pr-3 text-right">Rate</th>
-                    <th className="py-2 pr-3 text-right">Gross</th>
-                    <th className="py-2 pr-3 text-right">Reimb.</th>
-                    <th className="py-2 pr-3 text-right">Deductions</th>
-                    <th className="py-2 pr-3 text-right">Net</th>
-                    <th className="py-2 text-right"></th>
+      <div className="overflow-hidden rounded-lg border border-border">
+        {items.length === 0 ? (
+          <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
+            <Wallet className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+            <p className="text-[13px] font-medium">No payslips on this run.</p>
+            <p className="text-xs text-muted-foreground">Add employees in HR and recreate.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-[13px]">
+              <thead>
+                <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
+                  <th scope="col" className="px-4 font-medium">Employee</th>
+                  <th scope="col" className="px-4 text-right font-medium">Hours</th>
+                  <th scope="col" className="px-4 text-right font-medium">Rate</th>
+                  <th scope="col" className="px-4 text-right font-medium">Gross</th>
+                  <th scope="col" className="px-4 text-right font-medium">Reimb.</th>
+                  <th scope="col" className="px-4 text-right font-medium">Deductions</th>
+                  <th scope="col" className="px-4 text-right font-medium">Net</th>
+                  <th scope="col" className="px-4 text-right font-medium">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((i) => (
+                  <tr
+                    key={i.itemId}
+                    className="h-12 border-b border-border/60 transition-colors last:border-0 hover:bg-surface-2"
+                  >
+                    <td className="px-4 py-1.5">
+                      <div className="font-medium">{i.userName ?? 'Unknown'}</div>
+                      {i.jobTitle && (
+                        <div className="text-xs text-muted-foreground">{i.jobTitle}</div>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 text-right tabular-nums">
+                      {i.payType === 'hourly'
+                        ? `${i.regularHours.toFixed(2)}${i.overtimeHours > 0 ? ` + ${i.overtimeHours.toFixed(2)} OT` : ''}`
+                        : '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 text-right tabular-nums">
+                      {i.payType === 'hourly'
+                        ? fmt(i.hourlyRate, i.currency)
+                        : fmt(i.salaryAmount, i.currency)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 text-right tabular-nums">
+                      {fmt(i.grossPay, i.currency)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 text-right tabular-nums">
+                      {fmt(i.expenseReimbursementTotal, i.currency)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 text-right tabular-nums">
+                      {fmt(i.deduction + i.taxWithholding, i.currency)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 text-right font-semibold tabular-nums">
+                      {fmt(i.netPay, i.currency)}
+                    </td>
+                    <td className="px-4 text-right">
+                      {canEdit ? (
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(i)}>
+                          Edit
+                        </Button>
+                      ) : (
+                        <span title="Editing is restricted to owner + admin">
+                          <Lock className="inline h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                        </span>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {items.map((i) => (
-                    <tr key={i.itemId} className="border-b border-border last:border-0">
-                      <td className="py-2 pr-3">
-                        <div className="font-medium">{i.userName ?? 'Unknown'}</div>
-                        {i.jobTitle && (
-                          <div className="text-xs text-muted-foreground">{i.jobTitle}</div>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        {i.payType === 'hourly'
-                          ? `${i.regularHours.toFixed(2)}${i.overtimeHours > 0 ? ` + ${i.overtimeHours.toFixed(2)} OT` : ''}`
-                          : '—'}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        {i.payType === 'hourly'
-                          ? fmt(i.hourlyRate, i.currency)
-                          : fmt(i.salaryAmount, i.currency)}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        {fmt(i.grossPay, i.currency)}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        {fmt(i.expenseReimbursementTotal, i.currency)}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        {fmt(i.deduction + i.taxWithholding, i.currency)}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono font-semibold">
-                        {fmt(i.netPay, i.currency)}
-                      </td>
-                      <td className="py-2 text-right">
-                        {canEdit ? (
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(i)}>
-                            Edit
-                          </Button>
-                        ) : (
-                          <span title="Editing is restricted to owner + admin">
-                            <Lock className="w-3.5 h-3.5 text-muted-foreground inline" />
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Edit item dialog */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
@@ -444,8 +425,8 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
           {editing && (
             <div className="space-y-3">
               {run.status === 'finalized' && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                  <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning-soft p-2.5 text-xs text-warning-soft-foreground">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                   <span>
                     This run is finalized. Edits made here are post-finalization
                     corrections — totals will recalculate and the run will keep
@@ -455,8 +436,8 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
                 </div>
               )}
               {run.status === 'paid' && (
-                <div className="rounded-md border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
-                  <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive-soft p-2.5 text-xs text-destructive-soft-foreground">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                   <span>
                     This run is <strong>paid</strong>. Editing now records a
                     correction against an already-disbursed payslip — the run
@@ -554,7 +535,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
             <Button onClick={saveEdit} disabled={saving}>
-              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {saving && <Loader2 className="animate-spin" aria-hidden />}
               Save
             </Button>
           </DialogFooter>
@@ -604,7 +585,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
               disabled={busy === 'finalized'}
             >
               {busy === 'finalized' && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="animate-spin" aria-hidden />
               )}
               Unmark as paid
             </Button>
@@ -615,7 +596,10 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
   );
 };
 
-export const Payroll: React.FC = () => {
+export const Payroll: React.FC<{
+  /** Rendered inside another page (the HR tabs): no page header bar of its own. */
+  embedded?: boolean;
+}> = ({ embedded = false }) => {
   const { runs, loading, canView, canCreate } = usePayrollRuns();
   const fmt = useFormatMoney();
   const [openRunId, setOpenRunId] = useState<string | null>(null);
@@ -637,28 +621,28 @@ export const Payroll: React.FC = () => {
   );
 
   const renderRunRow = (r: PayrollRun) => (
-    <li key={r.runId}>
+    <li key={r.runId} className="border-b border-border/60 last:border-0">
       <button
         type="button"
         onClick={() => setOpenRunId(r.runId)}
-        className="w-full text-left rounded-lg border border-border bg-card hover:bg-secondary/40 transition-colors p-3 flex items-center justify-between gap-3"
+        className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2 text-left text-[13px] transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium tabular-nums">
               {format(r.periodStart, 'MMM d')} – {format(r.periodEnd, 'MMM d, yyyy')}
             </span>
             {statusBadge(r.status)}
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5">
+          <div className="mt-0.5 text-xs text-muted-foreground">
             Created by {r.createdByName ?? 'Unknown'} on{' '}
             {format(r.createdAt, 'MMM d')}
             {r.payDate && ` · Pay date ${format(r.payDate, 'MMM d')}`}
           </div>
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-xs text-muted-foreground uppercase tracking-wide">Net</div>
-          <div className="font-mono font-semibold">
+        <div className="shrink-0 text-right">
+          <div className="text-xs font-medium text-muted-foreground">Net</div>
+          <div className="font-semibold tabular-nums">
             {fmt(r.totalNet, r.currency)}
           </div>
         </div>
@@ -666,58 +650,64 @@ export const Payroll: React.FC = () => {
     </li>
   );
 
+  const body = (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+      {!canView ? (
+        <div className="flex flex-col items-center gap-1 rounded-lg border border-border px-4 py-12 text-center">
+          <ShieldAlert className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+          <p className="text-[13px] font-medium">
+            Payroll is visible to organization owners and admins only.
+          </p>
+        </div>
+      ) : openRunId ? (
+        <RunDetail runId={openRunId} onBack={() => setOpenRunId(null)} />
+      ) : (
+        <>
+          <PageHeader
+            title="Payroll"
+            description="Period-based payslips. Pulls hours from Time Tracking and approved Expenses automatically."
+            actions={
+              canCreate && (
+                <Button onClick={() => setShowCreate(true)}>
+                  <Plus aria-hidden /> New payroll
+                </Button>
+              )
+            }
+          />
+
+          <div className="overflow-hidden rounded-lg border border-border">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading payroll runs" />
+              </div>
+            ) : sortedRuns.length === 0 ? (
+              <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
+                <Wallet className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                <p className="text-[13px] font-medium">No payroll runs yet.</p>
+                <p className="text-xs text-muted-foreground">
+                  Click <strong className="font-medium text-foreground">New payroll</strong> to
+                  build one for a date range.
+                </p>
+              </div>
+            ) : (
+              <ul>{sortedRuns.map(renderRunRow)}</ul>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        <div className="max-w-6xl mx-auto space-y-6">
-          {!canView ? (
-            <Card>
-              <CardContent className="pt-6 pb-6 text-center text-sm text-muted-foreground">
-                <ShieldAlert className="w-6 h-6 mx-auto mb-2 text-amber-500" />
-                Payroll is visible to organization owners and admins only.
-              </CardContent>
-            </Card>
-          ) : openRunId ? (
-            <RunDetail runId={openRunId} onBack={() => setOpenRunId(null)} />
-          ) : (
-            <>
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-                    <Wallet className="w-6 h-6 text-primary" /> Payroll
-                  </h1>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Period-based payslips. Pulls hours from Time Tracking and
-                    approved Expenses automatically.
-                  </p>
-                </div>
-                {canCreate && (
-                  <Button onClick={() => setShowCreate(true)}>
-                    <Plus className="w-4 h-4 mr-2" /> New payroll
-                  </Button>
-                )}
-              </div>
-
-              {loading ? (
-                <div className="flex items-center justify-center py-10">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : sortedRuns.length === 0 ? (
-                <Card>
-                  <CardContent className="text-center py-10 text-sm text-muted-foreground">
-                    No payroll runs yet. Click <strong>New payroll</strong> to
-                    build one for a date range.
-                  </CardContent>
-                </Card>
-              ) : (
-                <ul className="space-y-2">
-                  {sortedRuns.map(renderRunRow)}
-                </ul>
-              )}
-            </>
-          )}
-        </div>
-      </main>
+      {embedded ? (
+        body
+      ) : (
+        <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+          <AppHeader left={<span className="text-sm font-semibold">Payroll</span>} />
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">{body}</div>
+        </main>
+      )}
 
       <NewRunDialog
         open={showCreate}

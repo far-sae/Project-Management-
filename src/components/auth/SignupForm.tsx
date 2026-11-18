@@ -162,9 +162,9 @@ export const SignupForm: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md border border-border bg-card">
+      <Card className="w-full max-w-md rounded-xl border border-border bg-card">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Create an account</CardTitle>
+          <CardTitle className="text-2xl font-semibold text-center">Create an account</CardTitle>
           <CardDescription className="text-center">
             Start your free 28-day trial today
           </CardDescription>
@@ -193,7 +193,7 @@ export const SignupForm: React.FC = () => {
                   placeholder="John Doe"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 md:h-10"
                   disabled={loading}
                   autoComplete="name"
                   aria-required="true"
@@ -211,7 +211,7 @@ export const SignupForm: React.FC = () => {
                   placeholder="name@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 md:h-10"
                   disabled={loading}
                   autoComplete="email"
                   aria-required="true"
@@ -229,7 +229,7 @@ export const SignupForm: React.FC = () => {
                   placeholder="Create a password (min 8 chars)"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10"
+                  className="pl-10 pr-10 md:h-10"
                   disabled={loading}
                   autoComplete="new-password"
                   aria-required="true"
@@ -261,7 +261,7 @@ export const SignupForm: React.FC = () => {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   onBlur={handleConfirmPasswordBlur}
-                  className="pl-10 pr-10"
+                  className="pl-10 pr-10 md:h-10"
                   disabled={loading}
                   autoComplete="new-password"
                   aria-required="true"
@@ -291,7 +291,7 @@ export const SignupForm: React.FC = () => {
                   onValueChange={setCurrency}
                   disabled={loading}
                   showLabels
-                  className="pl-10"
+                  className="pl-10 md:h-10"
                 />
               </div>
               <p className="text-[11px] text-muted-foreground">
@@ -323,11 +323,11 @@ export const SignupForm: React.FC = () => {
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+              size="lg" className="w-full"
               disabled={loading || isFormEmpty || !agreedToTerms}
             >
               {loading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating account...</>
+                <><Loader2 className="h-4 w-4 animate-spin" />Creating account...</>
               ) : (
                 'Start free trial'
               )}
@@ -338,20 +338,20 @@ export const SignupForm: React.FC = () => {
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-gray-500">Or continue with</span>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-2 text-muted-foreground">Or continue with</span>
             </div>
           </div>
 
           <Button
             type="button"
             variant="outline"
-            className="w-full"
+            size="lg" className="w-full"
             onClick={handleGoogleSignIn}
             disabled={loading || !agreedToTerms}
             title={!agreedToTerms ? 'Accept the Terms and Privacy Policy first' : undefined}
           >
-            <FcGoogle className="mr-2 h-4 w-4" />
+            <FcGoogle className="h-4 w-4" />
             Google
           </Button>
           {!agreedToTerms && (

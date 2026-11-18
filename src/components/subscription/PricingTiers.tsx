@@ -103,7 +103,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
         />
         <Label className={cn('cursor-pointer', billingCycle === 'yearly' && 'font-semibold text-foreground')}>
           Yearly
-          <span className="ml-2 text-xs bg-green-500/15 text-green-800 dark:text-green-200 px-2 py-0.5 rounded-full">
+          <span className="ml-2 text-xs bg-success/15 text-success-soft-foreground px-2 py-0.5 rounded-full">
             Save ~2 months
           </span>
         </Label>
@@ -135,17 +135,16 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
             <Card
               key={tier}
               className={cn(
-                'relative flex flex-col transition-shadow hover:shadow-lg bg-card text-card-foreground',
-                config.isPopular && 'border-orange-500 border-2 dark:border-orange-500 shadow-lg',
-                isStarter && 'border-border bg-muted/40 dark:bg-muted/20',
-                !isStarter && !config.isPopular && 'dark:border-border/80',
-                isCurrentPlan && 'ring-2 ring-green-500/70 dark:ring-green-500/50',
+                'relative flex flex-col bg-card text-card-foreground',
+                config.isPopular && 'border-primary',
+                isStarter && 'border-border bg-surface-2',
+                                isCurrentPlan && 'border-success',
               )}
             >
               {/* Popular badge */}
               {config.isPopular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                  <span className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
+                  <span className="bg-primary text-primary-foreground text-xs font-medium px-2.5 py-0.5 rounded-full flex items-center gap-1">
                     <Star className="w-3 h-3" /> Most Popular
                   </span>
                 </div>
@@ -154,7 +153,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
               {/* Current plan badge */}
               {isCurrentPlan && (
                 <div className="absolute -top-3 right-3 z-10">
-                  <span className="bg-green-500 text-white text-xs font-semibold px-3 py-1 rounded-full">
+                  <span className="bg-success text-success-foreground text-xs font-medium px-2.5 py-0.5 rounded-full">
                     ✓ Current
                   </span>
                 </div>
@@ -166,7 +165,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
                   isStarter
                     ? 'bg-muted'
                     : config.isPopular
-                      ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
+                      ? 'bg-primary/15 text-primary'
                       : 'bg-primary/10 text-primary'
                 )}>
                   <Icon className={cn(
@@ -182,12 +181,12 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
                 {/* Price */}
                 <div className="mb-3">
                   {isStarter ? (
-                    <div className="text-4xl font-bold text-foreground">
+                    <div className="text-4xl font-semibold text-foreground">
                       Free
                       <p className="text-sm font-normal text-muted-foreground mt-1">forever</p>
                     </div>
                   ) : isPremium ? (
-                    <div className="text-3xl font-bold text-foreground">
+                    <div className="text-3xl font-semibold text-foreground">
                       Custom
                       <p className="text-sm font-normal text-muted-foreground mt-1">contact us</p>
                     </div>
@@ -199,7 +198,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
                             {pricing.currencySymbol}{originalPrice}
                           </span>
                         )}
-                        <span className="text-4xl font-bold text-foreground" aria-live="polite">
+                        <span className="text-4xl font-semibold text-foreground" aria-live="polite">
                           {pricing.currencySymbol}{displayPrice}
                         </span>
                       </div>
@@ -212,13 +211,13 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
 
                 {/* Promo badge */}
                 {showPromo && (
-                  <Badge className="mb-3 bg-green-500/15 text-green-800 dark:text-green-200 hover:bg-green-500/20 border border-green-500/20 text-xs">
+                  <Badge className="mb-3 bg-success/15 text-success-soft-foreground hover:bg-success/20 border border-success/20 text-xs">
                     🎉 {tier === 'basic' ? 'First 3 months offer' : 'First month offer'}
                   </Badge>
                 )}
 
                 {tier === 'advanced' && tierPricing.extraUserPrice && (
-                  <p className="text-xs text-orange-600 dark:text-orange-400 font-medium mb-2">
+                  <p className="text-xs text-primary font-medium mb-2">
                     +{pricing.currencySymbol}{tierPricing.extraUserPrice}/member per month beyond 10
                     {billingCycle === 'yearly' && ' (seats add-on)'}
                   </p>
@@ -230,7 +229,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
                     <li key={i} className="flex items-start gap-2">
                       <Check className={cn(
                         'w-4 h-4 flex-shrink-0 mt-0.5',
-                        isStarter ? 'text-muted-foreground' : 'text-green-600 dark:text-green-500'
+                        isStarter ? 'text-muted-foreground' : 'text-success'
                       )} />
                       <span className={cn(
                         'text-sm',
@@ -250,7 +249,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
                     isStarter
                       ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
                       : config.isPopular
-                        ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-primary-foreground'
+                        ? 'text-primary-foreground'
                         : isPremium
                           ? 'bg-foreground text-background hover:bg-foreground/90'
                           : ''
@@ -260,15 +259,15 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ onSelectPlan, loadin
                   disabled={isCurrentPlan || (loading && !isPremium && !isStarter) || starterLoading}
                 >
                   {isStarter && starterLoading ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Activating...</>
+                    <><Loader2 className="w-4 h-4 animate-spin" />Activating...</>
                   ) : isSelected ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</>
+                    <><Loader2 className="w-4 h-4 animate-spin" />Processing...</>
                   ) : isCurrentPlan ? (
                     '✓ Current Plan'
                   ) : isStarter ? (
                     'Use Free Plan'
                   ) : isPremium ? (
-                    <><Mail className="w-4 h-4 mr-2" />Talk to Us</>
+                    <><Mail className="w-4 h-4" />Talk to Us</>
                   ) : (
                     'Get Started'
                   )}

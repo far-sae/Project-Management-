@@ -17,6 +17,17 @@ import {
   type CallPeerSnapshot,
 } from '@/services/livekit/LiveKitCallService';
 import { anyoneRecording, visiblePeers } from '@/services/livekit/callHelpers';
+import {
+  CALL_HAIRLINE,
+  CALL_MUTED_TEXT,
+  CALL_RECORDING_BADGE,
+  CALL_ROUND,
+  CALL_ROUND_IDLE,
+  CALL_ROUND_TOGGLED,
+  CALL_STAGE,
+  CALL_SURFACE,
+} from '@/components/calling/callTheme';
+import { cn } from '@/lib/utils';
 
 type Phase =
   | 'form'
@@ -267,15 +278,18 @@ export const GuestJoin: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [phase, hasMember, finish]);
 
+  // Every state outside the call itself is one centred card.
   const shell = (children: React.ReactNode) => (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
-      {children}
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 text-foreground">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 sm:p-6">
+        {children}
+      </div>
     </div>
   );
 
   if (phase === 'ended' || phase === 'denied' || phase === 'timeout' || phase === 'expired') {
     return shell(
-      <p className="text-lg text-center" role="status">
+      <p className="text-center text-base font-medium" role="status">
         {TERMINAL_COPY[phase]}
       </p>,
     );
@@ -283,22 +297,26 @@ export const GuestJoin: React.FC = () => {
 
   if (phase === 'error') {
     return shell(
-      <div className="text-center space-y-3" role="alert">
-        <p className="text-lg">{errorMsg || 'Something went wrong.'}</p>
-        <Button onClick={() => finish('form')}>Try again</Button>
+      <div className="flex flex-col items-center gap-4 text-center" role="alert">
+        <p className="text-base font-medium">{errorMsg || 'Something went wrong.'}</p>
+        <Button size="lg" className="w-full" onClick={() => finish('form')}>
+          Try again
+        </Button>
       </div>,
     );
   }
 
   if (phase === 'waiting') {
     return shell(
-      <div className="text-center space-y-4">
-        <p className="text-lg" role="status">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <p className="text-base font-medium" role="status">
           {peers.some((p) => p.role === 'member' && !p.isLocal)
             ? 'Waiting for someone to let you in…'
             : 'Waiting for the host to join…'}
         </p>
-        <Button variant="outline" onClick={() => finish('form')}>Cancel</Button>
+        <Button variant="outline" size="lg" className="w-full" onClick={() => finish('form')}>
+          Cancel
+        </Button>
       </div>,
     );
   }
@@ -308,17 +326,18 @@ export const GuestJoin: React.FC = () => {
     const recording = anyoneRecording(peers);
     const local = peers.find((p) => p.isLocal);
     return (
-      <div className="relative min-h-screen bg-black text-white flex flex-col">
+      <div className={cn('relative flex min-h-screen flex-col', CALL_STAGE)}>
         {recording && (
           <div
             role="status"
             aria-live="polite"
-            className="absolute top-3 left-3 z-10 rounded-md bg-red-600 px-2 py-1 text-xs font-medium"
+            className={cn(CALL_RECORDING_BADGE, 'absolute left-3 top-3 z-10 h-6 px-2.5 text-xs')}
           >
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
             Recording
           </div>
         )}
-        <div className="flex-1 grid gap-2 p-2 auto-rows-fr grid-cols-1 sm:grid-cols-2">
+        <div className="grid flex-1 auto-rows-fr grid-cols-1 gap-3 p-3 sm:grid-cols-2">
           {shown.map((p) => (
             <ParticipantTile
               key={p.userId}
@@ -330,6 +349,7 @@ export const GuestJoin: React.FC = () => {
         {shown.filter((p) => !p.isLocal).map((p) => (
           <RemoteAudioSink key={`a-${p.userId}`} snap={p} />
         ))}
+        <div className={cn('border-t', CALL_HAIRLINE)}>
         <CallControls
           isMuted={local?.isMicMuted ?? !micOn}
           isCameraOff={local?.isCameraOff ?? !camOn}
@@ -344,20 +364,29 @@ export const GuestJoin: React.FC = () => {
           onToggleBackgroundEffect={() => void toggleBlur()}
           onHangUp={() => finish('ended')}
         />
+        </div>
       </div>
     );
   }
 
   // form
+  const previewButton = cn(CALL_ROUND, 'h-9 w-9');
   return shell(
-    <div className="w-full max-w-md space-y-4">
-      <div className="text-center space-y-1">
-        <h1 className="text-xl font-semibold">{info.label || 'Join call'}</h1>
+    <div className="flex flex-col gap-4">
+      <div className="space-y-1 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-balance">
+          {info.label || 'Join call'}
+        </h1>
         {info.inviterName && (
           <p className="text-sm text-muted-foreground">Invited by {info.inviterName}</p>
         )}
       </div>
-      <div className="relative aspect-video overflow-hidden rounded-xl bg-black/80 flex items-center justify-center">
+      <div
+        className={cn(
+          'relative flex aspect-video items-center justify-center overflow-hidden rounded-[10px]',
+          CALL_SURFACE,
+        )}
+      >
         <video
           ref={previewVideoRef}
           autoPlay
@@ -367,33 +396,29 @@ export const GuestJoin: React.FC = () => {
           style={{ display: hasPreview && camOn ? 'block' : 'none' }}
         />
         {!(hasPreview && camOn) && (
-          <span className="text-sm text-white/70">Camera off</span>
+          <span className={cn('text-[13px]', CALL_MUTED_TEXT)}>Camera off</span>
         )}
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2">
-          <Button
+        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-2">
+          <button
             type="button"
-            size="icon"
-            variant="secondary"
-            className="rounded-full"
+            className={cn(previewButton, micOn ? CALL_ROUND_IDLE : CALL_ROUND_TOGGLED)}
             aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}
             onClick={toggleMicPreview}
           >
             {micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            size="icon"
-            variant="secondary"
-            className="rounded-full"
+            className={cn(previewButton, camOn ? CALL_ROUND_IDLE : CALL_ROUND_TOGGLED)}
             aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
             onClick={toggleCamPreview}
           >
             {camOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-          </Button>
+          </button>
         </div>
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="guest-name" className="text-sm font-medium">Your name</label>
+        <label htmlFor="guest-name" className="text-[13px] font-medium">Your name</label>
         <Input
           id="guest-name"
           value={name}
@@ -405,10 +430,15 @@ export const GuestJoin: React.FC = () => {
           }}
         />
       </div>
-      <p className="text-xs text-muted-foreground text-center">This call may be recorded.</p>
-      <Button className="w-full" disabled={!trimmed || submitting} onClick={() => void onAskToJoin()}>
+      <Button
+        size="lg"
+        className="w-full"
+        disabled={!trimmed || submitting}
+        onClick={() => void onAskToJoin()}
+      >
         Ask to join
       </Button>
+      <p className="text-center text-xs text-muted-foreground">This call may be recorded.</p>
     </div>,
   );
 };

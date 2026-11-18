@@ -19,6 +19,8 @@ import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useSubscription } from '@/context/SubscriptionContext';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 
@@ -149,11 +151,9 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
   if (visibleProjects.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 ring-1 ring-primary/20 flex items-center justify-center">
-          <Users className="w-8 h-8 text-primary" />
-        </div>
-        <p className="text-lg font-medium text-foreground">No projects yet</p>
-        <p className="text-sm text-muted-foreground text-center max-w-md">
+        <Users className="h-5 w-5 text-muted-foreground" />
+        <p className="text-[13px] font-medium text-foreground">No projects yet</p>
+        <p className="text-xs text-muted-foreground text-center max-w-md">
           Create or join a project to see it on the timeline. You can set optional start/end dates on projects for more accurate ranges.
         </p>
       </div>
@@ -163,16 +163,16 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
   return (
     <div className="min-w-max">
       {/* Month header */}
-      <div className="sticky top-0 z-20 bg-card/95 backdrop-blur-sm border-b border-border">
+      <div className="sticky top-0 z-20 bg-card border-b border-border">
         <div className="flex">
-          <div className="w-56 sm:w-96 shrink-0 border-r border-border bg-muted/40 px-3 sm:px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+          <div className="w-56 sm:w-96 shrink-0 border-r border-border bg-muted/40 px-3 sm:px-4 py-2 text-[11px] font-semibold text-muted-foreground">
             Project
           </div>
           <div className="flex relative" style={{ minWidth: (showWeekends ? totalDays : filteredDayNumbers.length) * columnWidth }}>
             {monthHeaders.map((m, i) => (
               <div
                 key={i}
-                className="text-[11px] font-semibold py-2 px-2 border-r border-border/70 text-foreground/80 uppercase tracking-wider"
+                className="text-[11px] font-semibold py-2 px-2 border-r border-border/70 text-foreground/80"
                 style={{ width: m.days * columnWidth }}
               >
                 {m.month} {m.year}
@@ -192,7 +192,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                 className={cn(
                   'text-[11px] text-center py-1.5 border-r border-border/60 tabular-nums',
                   d.isToday && highlightToday
-                    ? 'bg-primary/15 text-primary font-bold ring-1 ring-inset ring-primary/30'
+                    ? 'bg-primary/15 text-primary font-semibold ring-1 ring-inset ring-primary/30'
                     : 'text-muted-foreground'
                 )}
                 style={{ width: columnWidth }}
@@ -280,10 +280,10 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   </span>
                   <span
                     className={cn(
-                      'text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider font-semibold ring-1',
-                      status === 'overdue' && 'bg-red-500/15 text-red-600 dark:text-red-300 ring-red-500/30',
-                      status === 'active' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-emerald-500/30',
-                      status === 'upcoming' && 'bg-blue-500/15 text-blue-700 dark:text-blue-300 ring-blue-500/30',
+                      'text-[9px] px-1.5 py-0.5 rounded-full font-semibold ring-1',
+                      status === 'overdue' && 'bg-destructive/15 text-destructive ring-destructive/30',
+                      status === 'active' && 'bg-success/15 text-success-soft-foreground ring-success/30',
+                      status === 'upcoming' && 'bg-info/15 text-info-soft-foreground ring-info/30',
                       status === 'done' && 'bg-secondary text-muted-foreground ring-border',
                     )}
                   >
@@ -303,7 +303,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   <Avatar key={m.userId} className="w-6 h-6 ring-2 ring-card shadow-sm">
                     <AvatarImage src={m.photoURL} />
                     <AvatarFallback
-                      className="text-[10px] font-bold text-white"
+                      className="text-[10px] font-semibold text-white"
                       style={{ backgroundColor: barColor }}
                     >
                       {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
@@ -311,7 +311,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   </Avatar>
                 ))}
                 {resolvedMembers.length > 4 && (
-                  <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[10px] text-muted-foreground font-bold">
+                  <div className="w-6 h-6 rounded-full bg-muted ring-2 ring-card flex items-center justify-center text-[10px] text-muted-foreground font-semibold">
                     +{resolvedMembers.length - 4}
                   </div>
                 )}
@@ -337,9 +337,8 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
               {/* Project bar */}
               <div
                 className={cn(
-                  'absolute top-1/2 -translate-y-1/2 rounded-lg flex items-center overflow-hidden cursor-pointer ring-1 transition-all',
-                  'shadow-sm hover:shadow-md hover:ring-2',
-                  status === 'overdue' && 'ring-red-500/50',
+                  'absolute top-1/2 -translate-y-1/2 rounded-md flex items-center overflow-hidden cursor-pointer ring-1 transition-colors',
+                  status === 'overdue' && 'ring-destructive/50',
                   status === 'active' && 'ring-white/30',
                   status === 'upcoming' && 'ring-white/30',
                   status === 'done' && 'ring-white/20 opacity-80',
@@ -348,10 +347,7 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                   left: leftPx,
                   width: widthPx,
                   height: 32,
-                  background:
-                    status === 'overdue'
-                      ? `linear-gradient(135deg, #ef4444, #b91c1c)`
-                      : `linear-gradient(135deg, ${barColor}, ${barColor}cc)`,
+                  backgroundColor: status === 'overdue' ? 'hsl(var(--destructive))' : barColor,
                 }}
                 onClick={() => navigate(`/project/${project.projectId}`)}
                 title={`${project.name} · ${project.effectiveStart.toLocaleDateString()} → ${project.effectiveEnd.toLocaleDateString()}`}
@@ -374,19 +370,19 @@ const ResourceTimeline: React.FC<ResourceTimelineProps> = ({
                         <div
                           key={m.userId}
                           title={m.displayName || m.email}
-                          className="w-5 h-5 rounded-full ring-1 ring-white/70 flex items-center justify-center text-white text-[9px] font-bold bg-white/25 backdrop-blur-sm"
+                          className="w-5 h-5 rounded-full ring-1 ring-white/70 flex items-center justify-center text-white text-[9px] font-semibold bg-white/25"
                         >
                           {(m.displayName || m.email || '?').charAt(0).toUpperCase()}
                         </div>
                       ))}
                   </div>
                   {showTaskLabels && widthPx > 100 && (
-                    <span className="text-white text-xs font-semibold truncate ml-1 drop-shadow-sm">
+                    <span className="text-white text-xs font-semibold truncate ml-1 ">
                       {project.name}
                     </span>
                   )}
                   {isActive && widthPx > 160 && (
-                    <span className="ml-auto text-[10px] font-bold text-white/90 tabular-nums px-1.5 py-0.5 rounded bg-black/20">
+                    <span className="ml-auto text-[10px] font-semibold text-white/90 tabular-nums px-1.5 py-0.5 rounded bg-black/20">
                       {progressPct}%
                     </span>
                   )}
@@ -474,7 +470,7 @@ export const TimelineOverview: React.FC = () => {
   if (subscriptionLoading || !isReady) {
     return (
       <main className="flex-1 overflow-hidden flex flex-col items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-primary mb-4" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mb-3" />
         <p className="text-muted-foreground">Loading timeline features...</p>
       </main>
     );
@@ -486,30 +482,25 @@ export const TimelineOverview: React.FC = () => {
   // legitimately invited to use.
   if (isOrgOwner && !hasFeature('timeline_overview')) {
     return (
-      <main className="flex-1 overflow-y-auto p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">Timeline Overview</h1>
-            <p className="text-muted-foreground">Visual timeline of all your projects</p>
-          </div>
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center bg-card/40">
-            <div className="w-16 h-16 bg-primary/10 ring-1 ring-primary/20 rounded-2xl flex items-center justify-center mb-4">
-              <Lock className="w-8 h-8 text-primary" />
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <AppHeader left={<span className="text-sm font-semibold">Timeline Overview</span>} />
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+            <PageHeader title="Timeline Overview" description="Visual timeline of all your projects" />
+            <div className="flex flex-col items-center justify-center rounded-lg border border-border py-16 text-center">
+              <Lock className="mb-3 h-5 w-5 text-muted-foreground" />
+              <p className="text-[13px] font-medium text-foreground">Timeline Overview</p>
+              <p className="mt-1 max-w-md text-xs text-muted-foreground">
+                Visualize all your projects on an interactive Gantt-style timeline.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Available on Advanced plan and above</p>
+              <Button className="mt-4" onClick={() => navigate('/pricing')}>
+                Upgrade to Advanced
+              </Button>
             </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Timeline Overview</h2>
-            <p className="text-muted-foreground mb-2 max-w-md">
-              Visualize all your projects on an interactive Gantt-style timeline.
-            </p>
-            <p className="text-sm text-primary font-medium mb-6">
-              Available on Advanced plan and above
-            </p>
-            <Button
-              className="bg-gradient-to-r from-violet-500 to-blue-500 text-white border-0 hover:opacity-90"
-              onClick={() => navigate('/pricing')}
-            >
-              Upgrade to Advanced
-            </Button>
           </div>
-        </main>
+        </div>
+      </main>
     );
   }
 
@@ -518,84 +509,84 @@ export const TimelineOverview: React.FC = () => {
       <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
 
         {/* ── Top header ── */}
-        <div className="sticky top-0 z-30 border-b border-border/70 bg-card/80 backdrop-blur-xl shadow-sm shadow-black/5 px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="min-w-0">
-              <h1 className="text-xl font-semibold text-foreground tracking-tight truncate">
-                Timeline Overview
-              </h1>
-              <p className="text-xs text-muted-foreground hidden sm:block">
-                Visual project timeline across {projects.length} {projects.length === 1 ? 'project' : 'projects'}
-              </p>
+        <AppHeader
+          left={
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="truncate text-sm font-semibold">Timeline Overview</span>
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                {projects.length} {projects.length === 1 ? 'project' : 'projects'}
+              </span>
+              <span className="hidden md:inline-flex items-center rounded border bg-secondary px-1.5 text-[11px] text-muted-foreground">
+                {timeGranularity === 'day'
+                  ? 'Day view'
+                  : timeGranularity === 'week'
+                  ? 'Week view'
+                  : 'Month view'}
+              </span>
             </div>
-            <span className="hidden md:inline-flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2 py-1 text-[11px] text-muted-foreground">
-              {timeGranularity === 'day'
-                ? 'Day view'
-                : timeGranularity === 'week'
-                ? 'Week view'
-                : 'Month view'}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-primary hover:text-primary/90 hover:bg-primary/10 hidden sm:inline-flex"
-              onClick={() => navigate('/reports')}
-            >
-              <FileBarChart className="w-4 h-4 mr-2" />
-              Build report
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center rounded-md border border-border bg-background p-0.5">
-              {(['day', 'week', 'month'] as const).map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => setTimeGranularity(g)}
-                  className={cn(
-                    'px-2.5 py-1 text-xs rounded-sm transition-colors',
-                    timeGranularity === g
-                      ? 'bg-secondary text-foreground font-medium shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {g === 'day' ? 'Day' : g === 'week' ? 'Week' : 'Month'}
-                </button>
-              ))}
+          }
+          right={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden sm:inline-flex"
+                onClick={() => navigate('/reports')}
+              >
+                <FileBarChart className="w-4 h-4" />
+                Build report
+              </Button>
+              <div className="hidden sm:flex items-center rounded-md border border-border bg-background p-0.5">
+                {(['day', 'week', 'month'] as const).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setTimeGranularity(g)}
+                    className={cn(
+                      'px-2.5 py-1 text-xs rounded transition-colors',
+                      timeGranularity === g
+                        ? 'bg-secondary text-foreground font-medium'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {g === 'day' ? 'Day' : g === 'week' ? 'Week' : 'Month'}
+                  </button>
+                ))}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  document.getElementById('resource-today-marker')?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+                }}
+              >
+                <Calendar className="w-4 h-4" />
+                Today
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Settings className="w-4 h-4" />
+                    Options
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowTimelineSettings(true)}>
+                    <Settings className="w-4 h-4" />
+                    Timeline settings
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                document.getElementById('resource-today-marker')?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
-              }}
-            >
-              <Calendar className="w-4 h-4 mr-2" />
-              Today
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Options
-                  <ChevronDown className="w-4 h-4 ml-1" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setShowTimelineSettings(true)}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Timeline settings
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+          }
+        />
 
         {/* ── Main content area ── */}
         <div className="flex-1 overflow-auto">
           {projectsLoading ? (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="w-10 h-10 animate-spin text-primary" />
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
             <ResourceTimeline

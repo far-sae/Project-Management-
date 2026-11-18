@@ -13,6 +13,15 @@ import { pickMiniMainTile } from '@/services/livekit/callHelpers';
 import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
 import { ParticipantTile } from './CallTiles';
 import { GuestAdmitBanners, type GuestDecision } from './GuestAdmitBanners';
+import {
+  CALL_MUTED_TEXT,
+  CALL_RECORDING_BADGE,
+  CALL_ROUND,
+  CALL_ROUND_DANGER,
+  CALL_ROUND_IDLE,
+  CALL_ROUND_TOGGLED,
+  CALL_STAGE,
+} from './callTheme';
 
 interface MiniCallViewProps {
   participants: CallPeerSnapshot[];
@@ -34,8 +43,8 @@ interface MiniCallViewProps {
   onGuestDecision?: (identity: string, decision: GuestDecision) => void;
 }
 
-const btn =
-  'inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors';
+/** 36px round control. */
+const btn = cn(CALL_ROUND, 'h-9 w-9');
 
 /**
  * Compact call UI rendered into the floating (picture-in-picture) window.
@@ -70,18 +79,23 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
     );
 
   return (
-    <div className="flex h-screen w-screen flex-col gap-1.5 bg-neutral-950 p-1.5 text-white">
+    <div className={cn('flex h-screen w-screen flex-col gap-1.5 p-1.5', CALL_STAGE)}>
       <div data-testid="mini-main-tile" className="relative min-h-0 flex-1">
         {main ? (
           <ParticipantTile snap={main} compact className="h-full w-full" />
         ) : (
-          <div className="flex h-full items-center justify-center text-xs text-white/60">
+          <div className={cn('flex h-full items-center justify-center text-xs', CALL_MUTED_TEXT)}>
             Waiting…
           </div>
         )}
         {isRecording && (
-          <span className="pointer-events-none absolute left-1.5 top-1.5 z-[3] inline-flex items-center gap-1 rounded-full bg-red-600/90 px-1.5 py-0.5 text-[10px] font-medium text-white">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-white" aria-hidden="true" />
+          <span
+            className={cn(
+              CALL_RECORDING_BADGE,
+              'pointer-events-none absolute left-1.5 top-1.5 z-[3] h-5 px-2 text-[11px]',
+            )}
+          >
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
             Recording
           </span>
         )}
@@ -111,10 +125,10 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
         </div>
       )}
 
-      <div className="flex shrink-0 items-center justify-center gap-2 pb-0.5">
+      <div className="flex shrink-0 items-center justify-center gap-2 py-0.5">
         <button
           type="button"
-          className={cn(btn, isMuted && 'bg-rose-600 hover:bg-rose-500')}
+          className={cn(btn, isMuted ? CALL_ROUND_TOGGLED : CALL_ROUND_IDLE)}
           onClick={onToggleMute}
           aria-label={isMuted ? 'Unmute' : 'Mute'}
         >
@@ -123,7 +137,7 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
         {mediaType === 'video' && (
           <button
             type="button"
-            className={cn(btn, isCameraOff && 'bg-rose-600 hover:bg-rose-500')}
+            className={cn(btn, isCameraOff ? CALL_ROUND_TOGGLED : CALL_ROUND_IDLE)}
             onClick={onToggleCamera}
             aria-label={isCameraOff ? 'Turn camera on' : 'Turn camera off'}
           >
@@ -133,7 +147,7 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
         {isScreenSharing && (
           <button
             type="button"
-            className={cn(btn, 'bg-emerald-600 hover:bg-emerald-500')}
+            className={cn(btn, CALL_ROUND_TOGGLED)}
             onClick={onStopSharing}
             aria-label="Stop sharing"
           >
@@ -142,13 +156,18 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
         )}
         <button
           type="button"
-          className={cn(btn, 'bg-red-600 hover:bg-red-500')}
+          className={cn(btn, CALL_ROUND_DANGER)}
           onClick={onHangUp}
           aria-label="Hang up"
         >
           <PhoneOff className="h-4 w-4" />
         </button>
-        <button type="button" className={btn} onClick={onBackToCall} aria-label="Back to call">
+        <button
+          type="button"
+          className={cn(btn, CALL_ROUND_IDLE)}
+          onClick={onBackToCall}
+          aria-label="Back to call"
+        >
           <Maximize2 className="h-4 w-4" />
         </button>
       </div>

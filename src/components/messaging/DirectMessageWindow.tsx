@@ -18,7 +18,7 @@ import {
 } from '@/services/supabase/database';
 import { ATTACHMENTS_BUCKET, deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
 import { ChatAttachmentList } from './ChatAttachmentList';
-import { LinkifiedText } from '@/components/ui/LinkifiedText';
+import { ChatBubble } from '@/components/project/ProjectChatMessage';
 import { format, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
 import { useLastSeen } from '@/hooks/useLastSeen';
@@ -230,18 +230,18 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
       callTarget,
     );
 
-  const avatar = (size: string) => (
+  const avatar = (size: string, text: string) => (
     <span className="relative shrink-0">
       <Avatar className={size}>
         <AvatarImage src={recipient.photoURL} alt="" />
-        <AvatarFallback className="bg-primary-soft text-primary-soft-foreground text-xs">
+        <AvatarFallback className={cn('bg-primary-soft font-semibold text-primary-soft-foreground', text)}>
           {(recipient.displayName || '?').charAt(0).toUpperCase()}
         </AvatarFallback>
       </Avatar>
       <span
         aria-hidden
         className={cn(
-          'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-card',
+          'absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-card',
           recipientStatus.dot,
         )}
       />
@@ -252,8 +252,8 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
     return (
       <div
         className={cn(
-          'pointer-events-auto flex h-11 w-44 shrink-0 items-center overflow-hidden rounded-t-xl border border-b-0 border-border/70 sm:w-56',
-          'bg-card shadow-[0_-6px_24px_rgba(0,0,0,0.18)]',
+          'pointer-events-auto flex h-11 w-44 shrink-0 items-center overflow-hidden rounded-t-xl border border-b-0 border-border bg-card sm:w-52',
+          'shadow-[0_-4px_16px_rgba(0,0,0,0.08)]',
           'animate-in fade-in slide-in-from-bottom-2 duration-200 motion-reduce:animate-none',
         )}
       >
@@ -261,28 +261,27 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
           type="button"
           onClick={onRestore}
           aria-label={`Open chat with ${recipient.displayName}${unread ? ` (${unread} unread)` : ''}`}
-          className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2.5 pr-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2.5 pr-1 text-left transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
-          {avatar('h-7 w-7')}
-          <span className={cn('min-w-0 flex-1 truncate text-sm', unread ? 'font-semibold' : 'font-medium')}>
+          {avatar('h-6 w-6', 'text-[11px]')}
+          <span className={cn('min-w-0 flex-1 truncate text-[13px]', unread ? 'font-semibold' : 'font-medium')}>
             {recipient.displayName}
           </span>
           {unread > 0 && (
-            <span className="shrink-0 rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-destructive-foreground tabular-nums">
+            <span className="min-w-[18px] shrink-0 rounded-full bg-destructive px-[5px] text-center text-[11px] font-semibold leading-[18px] text-destructive-foreground tabular-nums">
               {unread > 99 ? '99+' : unread}
             </span>
           )}
         </button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="mr-1 h-7 w-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+        <button
+          type="button"
+          className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={onClose}
           aria-label={`Close chat with ${recipient.displayName}`}
           title="Close"
         >
           <X className="h-3.5 w-3.5" />
-        </Button>
+        </button>
       </div>
     );
   }
@@ -297,30 +296,30 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
       role="region"
       aria-label={`Chat with ${recipient.displayName}`}
       className={cn(
-        'pointer-events-auto flex shrink-0 flex-col overflow-hidden rounded-t-xl border border-b-0 border-border/70',
-        'bg-card shadow-[0_-10px_40px_rgba(0,0,0,0.22)]',
+        'pointer-events-auto flex shrink-0 flex-col overflow-hidden rounded-t-xl border border-b-0 border-border bg-card',
+        'shadow-[0_-8px_32px_rgba(0,0,0,0.12)]',
         'w-[calc(100vw-1rem)] sm:w-80',
-        'h-[min(30rem,calc(100svh-4rem))]',
+        'h-[min(28.75rem,calc(100svh-4rem))]',
         'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
       )}
     >
-      <div className="flex items-center justify-between gap-1 border-b border-border/70 py-2 pl-2.5 pr-1.5">
+      <div className="flex min-h-[52px] shrink-0 items-center gap-1 border-b border-border pl-3 pr-1.5">
         {/* Clicking the name minimises, like Teams / LinkedIn. */}
         <button
           type="button"
           onClick={onMinimize}
           tabIndex={-1}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-0.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 self-stretch text-left"
         >
-          {avatar('h-8 w-8')}
+          {avatar('h-8 w-8', 'text-[13px]')}
           <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold leading-tight text-foreground">
+            <span className="block truncate text-[13px] font-semibold leading-[18px] text-foreground">
               {recipient.displayName}
             </span>
             <span
               className={cn(
-                'block truncate text-[11px]',
-                recipientStatus.online ? 'text-emerald-600' : 'text-muted-foreground',
+                'block truncate text-xs leading-4',
+                recipientStatus.online ? 'text-success-soft-foreground' : 'text-muted-foreground',
               )}
               title={recipientStatus.title}
             >
@@ -328,50 +327,50 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
             </span>
           </span>
         </button>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center">
           {isMediaSupported() && callState.status === 'idle' && (
             <>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-full text-muted-foreground hover:text-emerald-600"
+                className="text-muted-foreground"
                 aria-label={`Voice call ${recipient.displayName}`}
                 title={`Voice call ${firstName} only`}
                 onClick={() => startCall('audio')}
               >
-                <Phone className="h-4 w-4" />
+                <Phone />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-full text-muted-foreground hover:text-primary"
+                className="text-muted-foreground"
                 aria-label={`Video call ${recipient.displayName}`}
                 title={`Video call ${firstName} only`}
                 onClick={() => startCall('video')}
               >
-                <Video className="h-4 w-4" />
+                <Video />
               </Button>
             </>
           )}
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground"
             onClick={onMinimize}
             aria-label={`Minimise chat with ${recipient.displayName}`}
             title="Minimise"
           >
-            <Minus className="h-4 w-4" />
+            <Minus />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            className="text-muted-foreground"
             onClick={onClose}
             aria-label={`Close chat with ${recipient.displayName}`}
             title="Close"
           >
-            <X className="h-4 w-4" />
+            <X />
           </Button>
         </div>
       </div>
@@ -379,7 +378,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-1"
       >
         {loading ? (
           <div className="flex justify-center py-8">
@@ -387,16 +386,14 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <MessageSquare className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-medium text-foreground">Start the conversation</p>
+            <MessageSquare className="mb-2 h-5 w-5 text-muted-foreground" />
+            <p className="text-[13px] font-medium text-foreground">Start the conversation</p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground">
               Send {firstName} a private message.
             </p>
           </div>
         ) : (
-          <div className="space-y-1.5">
+          <div>
             {rows.map(({ msg, showDay }, i) => {
               const mine = msg.senderId === user?.userId;
               const prev = messages[i - 1];
@@ -406,36 +403,24 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
                 prev?.senderId === msg.senderId &&
                 msg.createdAt.getTime() - prev.createdAt.getTime() < 5 * 60_000;
               return (
-                <div key={msg.messageId} className={cn(!grouped && 'pt-1.5')}>
+                <div key={msg.messageId}>
                   {showDay && (
-                    <div className="flex justify-center py-2">
-                      <span className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    <div className="flex items-center gap-3 pb-1 pt-3" role="separator">
+                      <span aria-hidden className="h-px flex-1 bg-border" />
+                      <span className="text-[11px] font-medium text-muted-foreground">
                         {messageDayLabel(msg.createdAt)}
                       </span>
+                      <span aria-hidden className="h-px flex-1 bg-border" />
                     </div>
                   )}
-                  <div className={cn('flex', mine && 'justify-end')}>
+                  <div className={cn('flex', mine && 'justify-end', grouped ? 'mt-0.5' : 'mt-2.5')}>
                     <div className={cn('min-w-0 max-w-[82%]', mine && 'flex flex-col items-end')}>
                       {!grouped && (
-                        <div className="mb-0.5 px-1 text-[11px] text-muted-foreground tabular-nums">
+                        <div className="mb-0.5 text-[11px] leading-4 text-muted-foreground tabular-nums">
                           {format(msg.createdAt, 'p')}
                         </div>
                       )}
-                      {msg.body && (
-                        <div
-                          className={cn(
-                            'whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[13px] leading-relaxed',
-                            mine
-                              ? 'rounded-br-md bg-primary text-primary-foreground'
-                              : 'rounded-bl-md bg-muted text-foreground',
-                          )}
-                        >
-                          <LinkifiedText
-                            text={msg.body}
-                            linkClassName={mine ? 'text-primary-foreground decoration-primary-foreground/50' : undefined}
-                          />
-                        </div>
-                      )}
+                      {msg.body && <ChatBubble text={msg.body} mine={mine} grouped={grouped} />}
                       <ChatAttachmentList attachments={msg.attachments} mine={mine} />
                     </div>
                   </div>
@@ -446,7 +431,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border/70 p-2">
+      <div className="shrink-0 px-2.5 pb-2.5 pt-1">
         {pendingFiles.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {pendingFiles.map((f, idx) => (
@@ -468,26 +453,26 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-1 rounded-xl border border-border/60 bg-background p-1 transition-shadow focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20">
+        <div className="flex items-end gap-0.5 rounded-[20px] border border-input p-1 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25">
           <input ref={fileInputRef} type="file" multiple hidden onChange={onPickFiles} />
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            className="shrink-0 rounded-full text-muted-foreground"
             onClick={() => fileInputRef.current?.click()}
             disabled={!user || sending}
             aria-label="Attach file"
             title="Attach file"
           >
-            <Paperclip className="h-4 w-4" />
+            <Paperclip />
           </Button>
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={`Message ${firstName}…`}
             rows={1}
-            className="max-h-32 min-h-8 flex-1 resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 text-[13px] leading-snug shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground/70"
+            className="max-h-32 min-h-8 flex-1 self-center resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 leading-5 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             disabled={!user || sending}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -499,13 +484,13 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
           <Button
             type="button"
             size="icon"
-            className="h-8 w-8 shrink-0 rounded-lg active:scale-[0.97]"
+            className="shrink-0 rounded-full"
             disabled={!user || sending || (!input.trim() && pendingFiles.length === 0)}
             onClick={() => void handleSend()}
             aria-label="Send message"
             title="Send (Enter) · Shift+Enter for a new line"
           >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {sending ? <Loader2 className="animate-spin" /> : <Send />}
           </Button>
         </div>
       </div>

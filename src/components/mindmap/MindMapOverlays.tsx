@@ -137,7 +137,7 @@ export const MindMapEmptyState: React.FC<{ onAddIdea: () => void; onOpenAI: () =
   onOpenAI,
 }) => (
   <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center p-4">
-    <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-lg">
+    <div className="pointer-events-auto w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center">
       <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-xl bg-primary-soft text-primary-soft-foreground">
         <Lightbulb className="h-5 w-5" aria-hidden />
       </span>

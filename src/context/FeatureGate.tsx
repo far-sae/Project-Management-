@@ -18,12 +18,11 @@ export const FeatureGate: React.FC<FeatureGateProps> = ({ feature, children, fal
   if (fallback) return <>{fallback}</>;
 
   return (
-    <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-200 rounded-lg text-center">
-      <Lock className="w-8 h-8 text-gray-400 mb-3" />
-      <p className="font-medium text-gray-700 mb-1">Feature Locked</p>
-      <p className="text-sm text-gray-500 mb-4">Upgrade your plan to unlock this feature.</p>
+    <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-border rounded-lg text-center">
+      <Lock className="w-8 h-8 text-muted-foreground mb-3" />
+      <p className="font-medium text-foreground mb-1">Feature Locked</p>
+      <p className="text-sm text-muted-foreground mb-4">Upgrade your plan to unlock this feature.</p>
       <Button
-        className="bg-gradient-to-r from-orange-500 to-red-500"
         onClick={() => navigate('/pricing')}
       >
         Upgrade Plan

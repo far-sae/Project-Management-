@@ -7,7 +7,7 @@ import { cn, formatDistanceSafe } from '@/lib/utils';
 import type { ActivityEvent } from '@/types/activity';
 import type { CommentSummary } from '@/services/ai';
 import type { PresencePeer } from '@/hooks/usePresence';
-import { PRESS } from './styles';
+import { PRESS, PROPERTY_LABEL, PROPERTY_VALUE } from './styles';
 
 /** Re-renders every `intervalMs` while `enabled`, returning the current time. */
 export function useNow(intervalMs: number, enabled = true): Date {
@@ -21,19 +21,18 @@ export function useNow(intervalMs: number, enabled = true): Date {
   return now;
 }
 
-const PROPERTY_LABEL =
-  'flex h-10 md:h-8 items-center gap-1.5 text-[13px] text-muted-foreground select-none';
-
-/** One label → value row in the properties panel. */
+/**
+ * One label → value row in the properties panel. Renders two grid cells, so
+ * it must sit inside a `PROPERTY_GRID` container.
+ */
 export const PropertyRow: React.FC<{
   label: string;
   /** id of the control the label activates (makes the label clickable). */
   htmlFor?: string;
   labelId?: string;
-  className?: string;
   children: React.ReactNode;
-}> = ({ label, htmlFor, labelId, className, children }) => (
-  <div className={cn('grid grid-cols-[96px_minmax(0,1fr)] items-start gap-x-2', className)}>
+}> = ({ label, htmlFor, labelId, children }) => (
+  <>
     {htmlFor ? (
       <label htmlFor={htmlFor} id={labelId} className={cn(PROPERTY_LABEL, 'cursor-pointer')}>
         {label}
@@ -43,8 +42,8 @@ export const PropertyRow: React.FC<{
         {label}
       </span>
     )}
-    <div className="flex min-h-10 md:min-h-8 min-w-0 flex-col justify-center">{children}</div>
-  </div>
+    <div className={PROPERTY_VALUE}>{children}</div>
+  </>
 );
 
 /** Stacked avatars of teammates who currently have this task open. */
@@ -53,7 +52,7 @@ export const PresenceAvatars: React.FC<{ peers: PresencePeer[] }> = ({ peers }) 
   const names = peers.map((p) => p.displayName).join(', ');
   return (
     <div
-      className="hidden sm:flex items-center gap-1.5 pr-1"
+      className="mr-2 hidden items-center gap-1.5 sm:flex"
       title={`${names} viewing this task`}
       aria-label={`${peers.length} ${peers.length === 1 ? 'person' : 'people'} viewing: ${names}`}
       role="img"
@@ -71,7 +70,7 @@ export const PresenceAvatars: React.FC<{ peers: PresencePeer[] }> = ({ peers }) 
           ) : (
             <span
               key={peer.userId}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-soft text-[10px] font-semibold text-primary-soft-foreground ring-2 ring-card"
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-foreground ring-2 ring-card"
             >
               {(peer.displayName || '?').charAt(0).toUpperCase()}
             </span>
@@ -98,7 +97,7 @@ export const TypingIndicator: React.FC<{ peers: PresencePeer[] }> = ({ peers }) 
         ? `${names[0]} and ${names[1]} are typing…`
         : `${names[0]}, ${names[1]} and ${names.length - 2} more are typing…`;
   return (
-    <div className="flex items-center gap-1.5 px-3 pb-2 text-[11px] text-muted-foreground" aria-live="polite">
+    <div className="flex items-center gap-1.5 px-3 pt-1 text-xs text-muted-foreground" aria-live="polite">
       <span className="inline-flex gap-0.5" aria-hidden>
         <span className="h-1 w-1 rounded-full bg-muted-foreground motion-safe:animate-pulse" />
         <span
@@ -120,10 +119,10 @@ export const ListSkeleton: React.FC<{ rows?: number; label: string }> = ({ rows 
   <div className="space-y-4" role="status" aria-label={label}>
     {Array.from({ length: rows }).map((_, i) => (
       <div key={i} className="flex gap-3">
-        <div className="h-8 w-8 shrink-0 rounded-full bg-muted motion-safe:animate-pulse" />
+        <div className="h-7 w-7 shrink-0 rounded-full bg-secondary motion-safe:animate-pulse" />
         <div className="flex-1 space-y-2 pt-1">
-          <div className="h-3 w-1/3 rounded bg-muted motion-safe:animate-pulse" />
-          <div className="h-3 w-2/3 rounded bg-muted motion-safe:animate-pulse" />
+          <div className="h-3 w-1/3 rounded bg-secondary motion-safe:animate-pulse" />
+          <div className="h-3 w-2/3 rounded bg-secondary motion-safe:animate-pulse" />
         </div>
       </div>
     ))}
@@ -138,7 +137,7 @@ export const ActivityList: React.FC<{ events: ActivityEvent[]; loading: boolean 
   if (loading) return <ListSkeleton label="Loading activity" />;
   if (events.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
+      <p className="py-8 text-center text-[13px] text-muted-foreground">
         No activity yet — changes, subtasks and comments will show up here.
       </p>
     );
@@ -146,20 +145,16 @@ export const ActivityList: React.FC<{ events: ActivityEvent[]; loading: boolean 
   return (
     <ol className="space-y-3">
       {events.map((ev) => (
-        <li key={ev.activityId} className="flex items-start gap-3 text-sm">
+        <li key={ev.activityId} className="flex items-start gap-2.5 text-[13px]">
           <span
             aria-hidden
-            className={cn(
-              'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted',
-              ev.type === 'task_created' && 'bg-success-soft',
-              (ev.type === 'subtask_created' || ev.type === 'subtask_done') && 'bg-info-soft',
-            )}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground"
           >
-            {ev.type === 'task_created' && <CheckCircle2 className="h-3 w-3 text-success-soft-foreground" />}
+            {ev.type === 'task_created' && <CheckCircle2 className="h-3.5 w-3.5" />}
             {(ev.type === 'subtask_created' || ev.type === 'subtask_done') && (
-              <ListTree className="h-3 w-3 text-info-soft-foreground" />
+              <ListTree className="h-3.5 w-3.5" />
             )}
-            {ev.type === 'comment_added' && <MessageSquare className="h-3 w-3 text-muted-foreground" />}
+            {ev.type === 'comment_added' && <MessageSquare className="h-3.5 w-3.5" />}
           </span>
           <p className="min-w-0 flex-1 leading-6">
             <span className="font-medium text-foreground">{ev.displayName}</span>
@@ -190,18 +185,13 @@ export const CommentSummaryCard: React.FC<{
   onToggle: () => void;
   onSummarize: () => void;
 }> = ({ count, summary, loading, error, open, onToggle, onSummarize }) => (
-  <section className="rounded-lg border border-border bg-muted/40" aria-label="AI thread summary">
-    <div className="flex items-center justify-between gap-2 px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          aria-hidden
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary-soft text-primary-soft-foreground"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-        </span>
+  <section className="rounded-lg border border-border" aria-label="AI thread summary">
+    <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 px-3 py-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Sparkles className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0">
-          <p className="text-xs font-semibold leading-tight text-foreground">AI thread summary</p>
-          <p className="truncate text-[11px] leading-tight text-muted-foreground">
+          <p className="text-[13px] font-semibold leading-tight text-foreground">AI thread summary</p>
+          <p className="truncate text-xs leading-tight text-muted-foreground">
             <span className="tabular-nums">{count}</span> comments · TL;DR with decisions and action items
           </p>
         </div>
@@ -213,7 +203,7 @@ export const CommentSummaryCard: React.FC<{
             size="sm"
             variant="ghost"
             aria-expanded={open}
-            className={cn('h-8 min-h-0 px-2 text-xs', PRESS)}
+            className={PRESS}
             onClick={onToggle}
           >
             {open ? 'Hide' : 'Show'}
@@ -223,7 +213,7 @@ export const CommentSummaryCard: React.FC<{
           type="button"
           size="sm"
           variant="outline"
-          className={cn('h-8 min-h-0 px-2 text-xs', PRESS)}
+          className={PRESS}
           disabled={loading}
           onClick={onSummarize}
         >
@@ -248,22 +238,22 @@ export const CommentSummaryCard: React.FC<{
         {error && <p className="text-xs text-destructive">{error}</p>}
         {loading && !summary && (
           <div className="space-y-2" role="status" aria-label="Summarizing">
-            <div className="h-3 w-2/3 rounded bg-muted motion-safe:animate-pulse" />
-            <div className="h-3 w-1/2 rounded bg-muted motion-safe:animate-pulse" />
+            <div className="h-3 w-2/3 rounded bg-secondary motion-safe:animate-pulse" />
+            <div className="h-3 w-1/2 rounded bg-secondary motion-safe:animate-pulse" />
           </div>
         )}
         {summary && (
           <>
             {summary.tldr && (
-              <p className="text-xs leading-relaxed">
-                <span className="mr-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">TL;DR</span>
+              <p className="text-[13px] leading-relaxed">
+                <span className="mr-1.5 text-xs font-medium text-muted-foreground">TL;DR</span>
                 {summary.tldr}
               </p>
             )}
             {summary.decisions.length > 0 && (
               <div>
-                <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">Decisions</p>
-                <ul className="space-y-1 text-xs leading-relaxed">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">Decisions</p>
+                <ul className="space-y-1 text-[13px] leading-relaxed">
                   {summary.decisions.map((d, i) => (
                     <li key={i} className="flex gap-1.5">
                       <Check className="mt-0.5 h-3 w-3 shrink-0 text-success" aria-hidden />
@@ -275,8 +265,8 @@ export const CommentSummaryCard: React.FC<{
             )}
             {summary.openQuestions.length > 0 && (
               <div>
-                <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">Open questions</p>
-                <ul className="space-y-1 text-xs leading-relaxed">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">Open questions</p>
+                <ul className="space-y-1 text-[13px] leading-relaxed">
                   {summary.openQuestions.map((q, i) => (
                     <li key={i} className="flex gap-1.5">
                       <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden />
@@ -288,11 +278,11 @@ export const CommentSummaryCard: React.FC<{
             )}
             {summary.actionItems.length > 0 && (
               <div>
-                <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">Action items</p>
-                <ul className="space-y-1 text-xs leading-relaxed">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">Action items</p>
+                <ul className="space-y-1 text-[13px] leading-relaxed">
                   {summary.actionItems.map((a, i) => (
                     <li key={i} className="flex gap-1.5">
-                      <span className="shrink-0 text-primary" aria-hidden>→</span>
+                      <span className="shrink-0 text-muted-foreground" aria-hidden>→</span>
                       <span>
                         <span className="font-medium">{a.owner}:</span> {a.what}
                       </span>

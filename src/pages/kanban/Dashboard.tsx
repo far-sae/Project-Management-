@@ -20,9 +20,24 @@ import { Project } from '@/types';
 import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { WorkspacesModal } from '@/components/workspace/WorkspacesModal';
 import { MoveProjectDialog } from '@/components/workspace/MoveProjectDialog';
+import { ProjectCard } from '@/components/workspace/ProjectCard';
+import {
+  projectLockState,
+  taskDotClass,
+  welcomeTitle,
+} from '@/components/workspace/projectCardModel';
+import {
+  ColorSwatchRow,
+  DIALOG_FOOTER,
+  FIELD_LABEL,
+  FormError,
+  PROJECT_COLORS,
+  TemplatePicker,
+} from '@/components/workspace/ProjectFormParts';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatStrip } from '@/components/common/StatStrip';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -48,10 +63,8 @@ import {
   ArrowRight,
   ListTree,
   CheckCircle2,
-  TrendingUp,
   Pencil,
   Files,
-  Users,
   ArrowRightLeft,
 } from 'lucide-react';
 import {
@@ -84,7 +97,7 @@ import LimitReachedModal from '@/components/ui/LimitReachedModal';
 import { fetchProjectTemplates } from '@/services/supabase/templates';
 import type { ProjectTemplate } from '@/types/projectTemplate';
 import { createTask, verifyProjectLockPin } from '@/services/supabase/database';
-import { LayoutTemplate, Lock, LockOpen, KeyRound } from 'lucide-react';
+import { Lock, KeyRound } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { getPageDef, type PageKey } from '@/lib/pageCatalog';
 import { QUICK_MENU_PAGE_KEYS, menuPagesForSave } from '@/lib/workspaceScope';
@@ -96,14 +109,70 @@ import {
 } from '@/lib/projectLockPin';
 import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist';
 
-const PROJECT_COLORS = [
-  '#f97316', '#ef4444', '#22c55e', '#3b82f6',
-  '#a855f7', '#ec4899', '#14b8a6', '#f59e0b',
-];
-
 function projectPinLocked(project: Project) {
   return Boolean(project.isLocked && project.hasLockPin);
 }
+
+const PROJECT_GRID = 'grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))]';
+
+/** A clickable row inside a list card. */
+const LIST_ROW =
+  'flex min-h-11 w-full items-center gap-3 border-b border-border/60 px-4 text-left transition-colors last:border-0 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring';
+
+const MENU_ITEM_DANGER = 'text-destructive focus:text-destructive';
+
+/** Bordered box with a title row and a list (or empty state) underneath. */
+const ListCard: React.FC<{ title: string; meta?: React.ReactNode; children: React.ReactNode }> = ({
+  title,
+  meta,
+  children,
+}) => (
+  <section className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-b border-border px-4 py-2">
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {meta && <div className="text-xs text-muted-foreground">{meta}</div>}
+    </div>
+    {children}
+  </section>
+);
+
+const EmptyState: React.FC<{
+  icon: React.ElementType;
+  title: string;
+  hint?: string;
+  className?: string;
+  children?: React.ReactNode;
+}> = ({ icon: Icon, title, hint, className, children }) => (
+  <div className={cn('flex flex-col items-center justify-center px-4 py-8 text-center', className)}>
+    <Icon className="mb-2 h-5 w-5 text-muted-foreground" aria-hidden />
+    <p className="text-[13px] font-medium text-foreground">{title}</p>
+    {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+    {children && <div className="mt-4">{children}</div>}
+  </div>
+);
+
+const SectionSpinner: React.FC = () => (
+  <div className="flex justify-center py-8">
+    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+  </div>
+);
+
+const ActivityAvatar: React.FC<{ ev: Pick<ActivityEvent, 'photoURL' | 'displayName'>; className?: string }> = ({
+  ev,
+  className,
+}) =>
+  ev.photoURL ? (
+    <img src={ev.photoURL} alt={ev.displayName} className={cn('shrink-0 rounded-full object-cover', className)} />
+  ) : (
+    <span
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full bg-foreground/10 font-semibold text-foreground',
+        className,
+      )}
+    >
+      {ev.displayName?.charAt(0)?.toUpperCase() ?? '?'}
+    </span>
+  );
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -205,6 +274,9 @@ export const Dashboard: React.FC = () => {
   const [lockSessionNonce, setLockSessionNonce] = useState(0);
 
   const [showWorkspacesModal, setShowWorkspacesModal] = useState(false);
+
+  // Overview / Activity; controlled so "View all" in Latest Activity can switch.
+  const [homeTab, setHomeTab] = useState('overview');
 
   const {
     selectedId: selectedWorkspaceId,
@@ -662,33 +734,98 @@ export const Dashboard: React.FC = () => {
     return list;
   }, [workspaces]);
 
+  const isRealWorkspaceSelected =
+    selectedWorkspaceId !== ALL_WORKSPACES_ID && selectedWorkspaceId !== UNASSIGNED_WORKSPACE_ID;
+
+  const openCreateProject = () => {
+    setShowCreateModal(true);
+    setCreateError(null);
+  };
+
+  /** One project card with its lock control and options menu. */
+  const renderProjectCard = (project: Project, note?: string) => {
+    void lockSessionNonce;
+    const isOwner = project.ownerId === user?.userId;
+    const lockState = projectLockState({
+      pinLocked: projectPinLocked(project),
+      unlockedInSession: isProjectLockUnlockedInSession(
+        project.projectId,
+        project.lockPinVersion ?? 0,
+      ),
+      isOwner,
+    });
+    const openProject = () => navigate(`/project/${project.projectId}`);
+
+    return (
+      <ProjectCard
+        key={project.projectId}
+        project={project}
+        onOpen={openProject}
+        note={note}
+        lock={
+          lockState && {
+            state: lockState,
+            onClick: (e) => {
+              if (lockState === 'unlocked') {
+                handleRelockSessionOnCard(project, e);
+              } else if (lockState === 'locked') {
+                setLockDialogProject(project);
+                setLockDialogPin('');
+                setLockDialogError(false);
+              } else {
+                openEditProject(project);
+              }
+            },
+          }
+        }
+        menu={
+          <>
+            <DropdownMenuItem onClick={openProject}>
+              <Files className="w-4 h-4 mr-2" />
+              Open
+            </DropdownMenuItem>
+            {isOwner && (
+              <DropdownMenuItem onClick={() => openEditProject(project)}>
+                <Pencil className="w-4 h-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
+            )}
+            {(isOwner || canEditWorkspaceMenu) && workspaces.length > 0 && (
+              <DropdownMenuItem onClick={() => setMoveProject(project)}>
+                <ArrowRightLeft className="w-4 h-4 mr-2" />
+                Move to workspace
+              </DropdownMenuItem>
+            )}
+            {isOwner && (
+              <DropdownMenuItem
+                className={MENU_ITEM_DANGER}
+                onClick={() => openDeleteProjectDialog(project.projectId, project.name)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            )}
+          </>
+        }
+      />
+    );
+  };
+
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-[linear-gradient(180deg,hsl(var(--background)),hsl(var(--surface-2))_34rem,hsl(var(--background)))]">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-background">
         {showTrialBanner && (
           <TrialBanner variant="full" onDismiss={() => setShowTrialBanner(false)} />
         )}
 
-        <div className="animate-fade-in p-4 sm:p-6 lg:p-8">
-          <div className="mb-6 sm:mb-8 rounded-lg border border-border/70 bg-card/80 p-4 sm:p-6 shadow-sm shadow-black/5 backdrop-blur-xl lg:p-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3 leading-none">
-              <div className="min-w-0 pt-0.5">
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-                  Welcome back, {user?.displayName?.split(' ')[0]}!
-                </h1>
-                <p className="mt-1 text-muted-foreground">
-                  Your command center – tasks, activity, and projects
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full sm:w-auto">
-              {/* Workspace selector */}
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <span className="text-sm font-medium text-foreground hidden sm:inline">Workspace</span>
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+          <PageHeader
+            title={welcomeTitle(user?.displayName)}
+            description="Tasks, activity and projects across your workspace."
+            actions={
+              <>
                 <Select value={selectedWorkspaceId} onValueChange={handleWorkspaceChange}>
-                  <SelectTrigger className="w-full sm:w-[200px] rounded-lg bg-background/80">
+                  <SelectTrigger aria-label="Workspace" className="w-[200px] max-w-full">
                     <SelectValue placeholder="Select workspace" />
                   </SelectTrigger>
 
@@ -703,681 +840,384 @@ export const Dashboard: React.FC = () => {
 
                 <Button
                   variant="outline"
-                  size="sm"
                   onClick={() => {
                     setShowWorkspacesModal(true);
                     void refreshWorkspaces({ silent: true });
                   }}
                 >
-                  <ListTree className="w-4 h-4 mr-2" />
+                  <ListTree className="w-4 h-4" />
                   View All
                 </Button>
 
-                {selectedWorkspaceId !== ALL_WORKSPACES_ID &&
-                  selectedWorkspaceId !== UNASSIGNED_WORKSPACE_ID && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem onClick={() => openEditWorkspace(selectedWorkspaceId)}>
-                          <Edit className="w-4 h-4 mr-2" />
-                          Edit workspace
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-600"
-                          onClick={() => {
-                            const ws = workspaces.find(w => w.workspaceId === selectedWorkspaceId);
-                            openDeleteWorkspaceDialog(selectedWorkspaceId, ws?.name || 'this workspace');
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete workspace
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-              </div>
+                {isRealWorkspaceSelected && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Workspace options">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem onClick={() => openEditWorkspace(selectedWorkspaceId)}>
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit workspace
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className={MENU_ITEM_DANGER}
+                        onClick={() => {
+                          const ws = workspaces.find(w => w.workspaceId === selectedWorkspaceId);
+                          openDeleteWorkspaceDialog(selectedWorkspaceId, ws?.name || 'this workspace');
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete workspace
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
 
-              {/* Action buttons */}
-              <Button
-                onClick={() => setShowCreateWorkspaceModal(true)}
-                variant="outline"
-                size="sm"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                New Workspace
-              </Button>
-              <Button
-                onClick={() => { setShowCreateModal(true); setCreateError(null); }}
-                  className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                New Project
-              </Button>
-            </div>
-          </div>
-          </div>
+                <Button onClick={() => setShowCreateWorkspaceModal(true)} variant="outline">
+                  <Plus className="w-4 h-4" />
+                  New Workspace
+                </Button>
+                <Button onClick={openCreateProject}>
+                  <Plus className="w-4 h-4" />
+                  New Project
+                </Button>
+              </>
+            }
+          />
 
-          <div className="mb-6">
-            <OnboardingChecklist />
-          </div>
+          <OnboardingChecklist />
 
-          <Tabs defaultValue="overview" className="space-y-6">
-            <TabsList className="grid w-full max-w-md grid-cols-2">
+          <Tabs value={homeTab} onValueChange={setHomeTab}>
+            <TabsList className="w-full">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
 
             {/* OVERVIEW TAB */}
-            <TabsContent value="overview" className="space-y-6">
-              {/* Quick stats */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Tasks for Today</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-orange-600">
-                      {todayTasksInWorkspace.length}
-                    </div>
-                    <p className="text-xs text-muted-foreground">Due today in this workspace</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">My Tasks</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {tasksAssignedToMeInWorkspace.length}
-                    </div>
-                    <p className="text-xs text-muted-foreground">Assigned to you</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Upcoming</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-blue-600">
-                      {upcomingTasksInWorkspace.length}
-                    </div>
-                    <p className="text-xs text-muted-foreground">Next deadlines</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Overdue</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-red-600">
-                      {overdueTasksInWorkspace.length}
-                    </div>
-                    <p className="text-xs text-muted-foreground">Needs attention</p>
-                  </CardContent>
-                </Card>
-              </div>
+            <TabsContent value="overview" className="mt-6">
+              <div className="flex flex-col gap-6">
+                <StatStrip
+                  items={[
+                    {
+                      label: 'Tasks for Today',
+                      value: todayTasksInWorkspace.length,
+                      note: 'Due today in this workspace',
+                    },
+                    {
+                      label: 'My Tasks',
+                      value: tasksAssignedToMeInWorkspace.length,
+                      note: 'Assigned to you',
+                    },
+                    {
+                      label: 'Upcoming',
+                      value: upcomingTasksInWorkspace.length,
+                      note: 'Next deadlines',
+                    },
+                    {
+                      label: 'Overdue',
+                      value: overdueTasksInWorkspace.length,
+                      note: 'Needs attention',
+                      tone: 'danger',
+                    },
+                  ]}
+                />
 
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                <Card className="xl:col-span-2 overflow-hidden border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-emerald-500" />
-                      Workspace Pulse
-                    </CardTitle>
-                    <CardDescription>
-                      A quick health check across the selected workspace.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
-                        <p className="text-xs font-medium text-muted-foreground">Completion</p>
-                        <p className="mt-2 text-2xl font-bold text-foreground">{completionRate}%</p>
-                        <div className="mt-3 h-2 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-500"
-                            style={{ width: `${completionRate}%` }}
-                          />
+                <div className="flex flex-wrap items-start gap-6">
+                  {/* Main column */}
+                  <div className="flex min-w-0 flex-[2_1_480px] flex-col gap-6">
+                    {/* Projects */}
+                    <section className="flex flex-col gap-3">
+                      <div className="flex min-h-8 items-center justify-between gap-3">
+                        <h2 className="text-base font-semibold text-foreground">Projects</h2>
+                        {!projectsLoading && (
+                          <span className="text-[13px] tabular-nums text-muted-foreground">
+                            {filteredProjects.length}{' '}
+                            {filteredProjects.length === 1 ? 'project' : 'projects'}
+                          </span>
+                        )}
+                      </div>
+                      {projectsLoading ? (
+                        <SectionSpinner />
+                      ) : filteredProjects.length === 0 ? (
+                        <EmptyState
+                          icon={FolderKanban}
+                          title="No projects yet"
+                          hint="Create your first project to get started"
+                          className="rounded-lg border border-dashed border-foreground/15 py-12"
+                        >
+                          <Button onClick={() => setShowCreateModal(true)}>
+                            <Plus className="w-4 h-4" />
+                            Create Project
+                          </Button>
+                        </EmptyState>
+                      ) : (
+                        <div className={PROJECT_GRID}>
+                          {filteredProjects.map((project) => renderProjectCard(project))}
+
+                          <button
+                            type="button"
+                            onClick={() => setShowCreateModal(true)}
+                            className="flex min-h-32 items-center justify-center gap-1.5 rounded-lg border border-dashed border-foreground/20 bg-background text-[13px] font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Plus className="h-4 w-4" aria-hidden />
+                            New project
+                          </button>
                         </div>
-                      </div>
-                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
-                        <p className="text-xs font-medium text-muted-foreground">Total tasks</p>
-                        <p className="mt-2 text-2xl font-bold text-foreground">{allTasksInWorkspace.length}</p>
-                        <p className="mt-2 text-xs text-muted-foreground">{completedTasksInWorkspace} completed</p>
-                      </div>
-                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
-                        <p className="text-xs font-medium text-muted-foreground">Active projects</p>
-                        <p className="mt-2 text-2xl font-bold text-foreground">{activeProjectsInWorkspace}</p>
-                        <p className="mt-2 text-xs text-muted-foreground">{filteredProjects.length} visible</p>
-                      </div>
-                      <div className="rounded-lg border border-border/70 bg-background/70 p-4">
-                        <p className="text-xs font-medium text-muted-foreground">Protected</p>
-                        <p className="mt-2 text-2xl font-bold text-foreground">{lockedProjectsInWorkspace}</p>
-                        <p className="mt-2 text-xs text-muted-foreground">PIN locked projects</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                      )}
+                    </section>
 
-                <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2">
-                      <Activity className="w-5 h-5 text-primary" />
-                      Latest Activity
-                    </CardTitle>
-                    <CardDescription>Recent changes in this workspace.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {activityLoading ? (
-                      <div className="flex justify-center py-6">
-                        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                    {/* Upcoming deadlines */}
+                    <ListCard title="Upcoming Deadlines" meta="Next 10 tasks by due date">
+                      {tasksLoading ? (
+                        <SectionSpinner />
+                      ) : upcomingTasksInWorkspace.length === 0 ? (
+                        <EmptyState icon={CheckSquare} title="No upcoming tasks in this workspace" />
+                      ) : (
+                        upcomingTasksInWorkspace.slice(0, 10).map((task) => (
+                          <button
+                            key={task.taskId}
+                            type="button"
+                            onClick={() => navigate(`/project/${task.projectId}`)}
+                            className={cn(LIST_ROW, 'flex-wrap gap-y-0.5 py-2 sm:flex-nowrap')}
+                          >
+                            <span className="min-w-0 basis-full truncate text-[13px] font-medium text-foreground sm:flex-1 sm:basis-0">
+                              {task.title}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground sm:max-w-[40%] sm:flex-none">
+                              {getProjectName(task.projectId)}
+                            </span>
+                            <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground sm:w-20">
+                              {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : ''}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </ListCard>
+
+                    {/* Shared with me */}
+                    {sharedProjects.length > 0 && (
+                      <section className="flex flex-col gap-3">
+                        <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3">
+                          <h2 className="text-base font-semibold text-foreground">Shared with me</h2>
+                          <span className="text-[13px] text-muted-foreground">
+                            Projects you've been invited to
+                          </span>
+                        </div>
+                        <div className={PROJECT_GRID}>
+                          {sharedProjects.map((project) =>
+                            renderProjectCard(project, 'Owned by project owner'),
+                          )}
+                        </div>
+                      </section>
+                    )}
+                  </div>
+
+                  {/* Side column */}
+                  <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">
+                    {/* Tasks for Today */}
+                    <ListCard
+                      title="Tasks for Today"
+                      meta={
+                        !tasksLoading && (
+                          <span className="tabular-nums">
+                            {todayTasksInWorkspace.length}{' '}
+                            {todayTasksInWorkspace.length === 1 ? 'task' : 'tasks'}
+                          </span>
+                        )
+                      }
+                    >
+                      {tasksLoading ? (
+                        <SectionSpinner />
+                      ) : todayTasksInWorkspace.length === 0 ? (
+                        <EmptyState
+                          icon={Clock}
+                          title="No tasks due today"
+                          hint="You’re all caught up in this workspace."
+                        />
+                      ) : (
+                        todayTasksInWorkspace.map((task) => (
+                          <button
+                            key={task.taskId}
+                            type="button"
+                            onClick={() => navigate(`/project/${task.projectId}`)}
+                            className={cn(LIST_ROW, 'gap-2.5 py-2')}
+                          >
+                            <span
+                              aria-hidden
+                              className={cn('h-1.5 w-1.5 shrink-0 rounded-full', taskDotClass(task))}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-medium text-foreground">
+                                {task.title}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {getProjectName(task.projectId)}
+                              </span>
+                            </span>
+                            <span className="max-w-[40%] shrink-0 truncate rounded border border-border px-1.5 text-[11px] capitalize leading-[18px] text-muted-foreground">
+                              {task.status}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </ListCard>
+
+                    {/* Workspace Pulse */}
+                    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <h2 className="text-sm font-semibold text-foreground">Workspace Pulse</h2>
+                        <span className="text-[13px] font-semibold tabular-nums text-foreground">
+                          {completionRate}% complete
+                        </span>
                       </div>
-                    ) : recentActivityInWorkspace.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-4">No recent activity yet.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {recentActivityInWorkspace.map((ev) => (
+                      <div
+                        className="h-1 overflow-hidden rounded-full bg-foreground/10"
+                        role="progressbar"
+                        aria-valuenow={completionRate}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label="Workspace completion"
+                      >
+                        <div
+                          className="h-full rounded-full bg-foreground/70"
+                          style={{ width: `${completionRate}%` }}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
+                        <span>
+                          <strong className="font-semibold text-foreground">{allTasksInWorkspace.length}</strong>{' '}
+                          total tasks
+                        </span>
+                        <span>
+                          <strong className="font-semibold text-foreground">{completedTasksInWorkspace}</strong>{' '}
+                          completed
+                        </span>
+                        <span>
+                          <strong className="font-semibold text-foreground">{activeProjectsInWorkspace}</strong>{' '}
+                          active projects
+                        </span>
+                        <span>
+                          <strong className="font-semibold text-foreground">{lockedProjectsInWorkspace}</strong>{' '}
+                          PIN locked projects
+                        </span>
+                      </div>
+                    </section>
+
+                    {/* Latest Activity */}
+                    <ListCard
+                      title="Latest Activity"
+                      meta={
+                        <button
+                          type="button"
+                          onClick={() => setHomeTab('activity')}
+                          className="rounded-sm font-medium text-foreground underline underline-offset-[3px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          View all
+                        </button>
+                      }
+                    >
+                      {activityLoading ? (
+                        <SectionSpinner />
+                      ) : recentActivityInWorkspace.length === 0 ? (
+                        <EmptyState icon={Activity} title="No recent activity yet." />
+                      ) : (
+                        recentActivityInWorkspace.map((ev) => (
                           <button
                             key={ev.activityId}
                             type="button"
                             onClick={() => navigate(`/project/${ev.projectId}`)}
-                            className="w-full text-left rounded-lg border border-border bg-background/60 p-3 hover:bg-secondary/50 transition-colors"
+                            className={cn(LIST_ROW, 'items-start gap-2.5 py-2.5')}
                           >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-sm font-medium text-foreground truncate">
+                            <ActivityAvatar ev={ev} className="h-6 w-6 text-[11px]" />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-medium leading-[18px] text-foreground">
                                 {ev.taskTitle || ev.projectName || 'Project activity'}
-                              </p>
-                              <ArrowRight className="w-4 h-4 shrink-0 text-muted-foreground" />
-                            </div>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {ev.displayName} · {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Tasks for Today */}
-              <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <CheckSquare className="w-5 h-5 text-orange-500" />
-                    Tasks for Today
-                  </CardTitle>
-                  <CardDescription>
-                    Tasks due today – stay on top of your deadlines
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {tasksLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-                    </div>
-                  ) : todayTasksInWorkspace.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Clock className="w-12 h-12 mx-auto mb-2 text-muted-foreground/60" />
-                      <p className="font-medium">No tasks due today</p>
-                      <p className="text-sm mb-4">You’re all caught up in this workspace.</p>
-                      {/* <Button size="sm" variant="outline" onClick={() => setShowCreateModal(true)}>
-                        Create Project
-                      </Button> */}
-                    </div>
-
-                  ) : (
-                    <div className="space-y-2">
-                      {todayTasksInWorkspace.map((task) => (
-                        <div
-                          key={task.taskId}
-                          onClick={() => navigate(`/project/${task.projectId}`)}
-                          className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/60 cursor-pointer group"
-                        >
-                          <div>
-                            <p className="font-medium">{task.title}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {getProjectName(task.projectId)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs px-2 py-0.5 rounded bg-muted capitalize">
-                              {task.status}
+                              </span>
+                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                                {ev.displayName} · {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
+                              </span>
                             </span>
-                            <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Upcoming deadlines */}
-              <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-blue-500" />
-                    Upcoming Deadlines
-                  </CardTitle>
-                  <CardDescription>Next 10 tasks by due date</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {tasksLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-                    </div>
-                  ) : upcomingTasksInWorkspace.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <CheckSquare className="w-12 h-12 mx-auto mb-2 text-muted-foreground/60" />
-                      <p>No upcoming tasks in this workspace</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {upcomingTasksInWorkspace.slice(0, 10).map((task) => (
-                        <div
-                          key={task.taskId}
-                          onClick={() => navigate(`/project/${task.projectId}`)}
-                          className="flex items-center justify-between p-3 rounded-lg hover:bg-secondary/60 cursor-pointer group"
-                        >
-                          <div>
-                            <p className="font-medium">{task.title}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {getProjectName(task.projectId)} •{' '}
-                              {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : ''}
-                            </p>
-                          </div>
-                          <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Projects */}
-              <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FolderKanban className="w-5 h-5 text-orange-500" />
-                    Projects
-                  </CardTitle>
-                  <CardDescription>Your workspace projects</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {projectsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-                    </div>
-                  ) : filteredProjects.length === 0 ? (
-                    <Card className="border-dashed">
-                      <CardContent className="flex flex-col items-center justify-center py-16">
-                        <FolderKanban className="w-16 h-16 text-muted-foreground/60 mb-4" />
-                        <h3 className="text-lg font-medium text-foreground mb-2">No projects yet</h3>
-                        <p className="text-muted-foreground mb-4">
-                          Create your first project to get started
-                        </p>
-                        <Button
-                          onClick={() => setShowCreateModal(true)}
-                          className="bg-gradient-to-r from-orange-500 to-red-500"
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Create Project
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredProjects.map((project) => {
-                        void lockSessionNonce;
-                        return (
-                        <Card
-                          key={project.projectId}
-                          className="cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-200 group"
-                        >
-                          <div
-                            className="h-2 rounded-t-lg"
-                            style={{ backgroundColor: project.coverColor }}
-                          />
-                          <CardHeader className="flex flex-row items-start justify-between gap-2">
-                            <div
-                              className="flex-1 min-w-0 group-hover:text-orange-600 transition-colors"
-                              onClick={() => navigate(`/project/${project.projectId}`)}
-                            >
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <CardTitle className="text-lg">{project.name}</CardTitle>
-                              </div>
-                              <CardDescription className="line-clamp-2">
-                                {project.description || 'No description'}
-                              </CardDescription>
-                            </div>
-                            <div className="flex items-start gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                              {projectPinLocked(project) && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className={cn(
-                                    'h-8 gap-1.5 rounded-full px-2.5 font-medium shadow-sm transition-colors',
-                                    isProjectLockUnlockedInSession(
-                                      project.projectId,
-                                      project.lockPinVersion ?? 0,
-                                    )
-                                      ? 'border border-sky-500/35 bg-sky-500/10 text-sky-800 hover:bg-sky-500/20 dark:text-sky-300'
-                                      : 'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
-                                  )}
-                                  title={
-                                    isProjectLockUnlockedInSession(
-                                      project.projectId,
-                                      project.lockPinVersion ?? 0,
-                                    )
-                                      ? 'Unlocked for this session — click to require PIN again'
-                                      : 'Enter your PIN to unlock for this session'
-                                  }
-                                  aria-label={
-                                    isProjectLockUnlockedInSession(
-                                      project.projectId,
-                                      project.lockPinVersion ?? 0,
-                                    )
-                                      ? 'Lock session, require PIN again'
-                                      : 'Enter PIN to unlock project for this session'
-                                  }
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (
-                                      isProjectLockUnlockedInSession(
-                                        project.projectId,
-                                        project.lockPinVersion ?? 0,
-                                      )
-                                    ) {
-                                      handleRelockSessionOnCard(project, e);
-                                    } else {
-                                      setLockDialogProject(project);
-                                      setLockDialogPin('');
-                                      setLockDialogError(false);
-                                    }
-                                  }}
-                                >
-                                  {isProjectLockUnlockedInSession(
-                                    project.projectId,
-                                    project.lockPinVersion ?? 0,
-                                  ) ? (
-                                    <>
-                                      <LockOpen className="h-3.5 w-3.5" strokeWidth={2.25} />
-                                      <span className="hidden sm:inline text-xs">Unlocked</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Lock className="h-3.5 w-3.5" strokeWidth={2.25} />
-                                      <span className="hidden sm:inline text-xs">Locked</span>
-                                    </>
-                                  )}
-                                </Button>
-                              )}
-                              {project.ownerId === user?.userId && !projectPinLocked(project) && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/5 px-2.5 font-medium text-emerald-700 shadow-sm transition-colors hover:bg-emerald-500/15 dark:text-emerald-400"
-                                  title="Set a PIN in project settings to lock the project"
-                                  aria-label="Open project settings to set lock and PIN"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEditProject(project);
-                                  }}
-                                >
-                                  <LockOpen className="h-3.5 w-3.5" strokeWidth={2.25} />
-                                  <span className="hidden sm:inline text-xs">Set PIN</span>
-                                </Button>
-                              )}
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    <MoreHorizontal className="w-4 h-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={() => navigate(`/project/${project.projectId}`)}
-                                  >
-                                    <Files className="w-4 h-4 mr-2" />
-                                    Open
-                                  </DropdownMenuItem>
-                                  {project.ownerId === user?.userId && (
-                                    <DropdownMenuItem
-                                      onClick={() => openEditProject(project)}
-                                    >
-                                      <Pencil className="w-4 h-4 mr-2" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                  )}
-                                  {(project.ownerId === user?.userId || canEditWorkspaceMenu) &&
-                                    workspaces.length > 0 && (
-                                    <DropdownMenuItem onClick={() => setMoveProject(project)}>
-                                      <ArrowRightLeft className="w-4 h-4 mr-2" />
-                                      Move to workspace
-                                    </DropdownMenuItem>
-                                  )}
-                                  {project.ownerId === user?.userId && (
-                                    <DropdownMenuItem
-                                      className="text-red-600"
-                                      onClick={() => openDeleteProjectDialog(project.projectId, project.name)}
-                                    >
-                                      <Trash2 className="w-4 h-4 mr-2" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </CardHeader>
-                          <CardContent onClick={() => navigate(`/project/${project.projectId}`)}>
-                            <div className="flex items-center justify-between text-sm text-muted-foreground">
-                              <span>{project.stats.totalTasks} tasks</span>
-                              <span>{project.stats.completedTasks} completed</span>
-                            </div>
-                            <div className="mt-2">
-                              <div
-                                className="h-1.5 rounded-full overflow-hidden bg-muted-foreground/20 ring-1 ring-inset ring-border/60 dark:bg-white/10"
-                                role="progressbar"
-                                aria-valuenow={project.stats.totalTasks > 0
-                                  ? Math.round((project.stats.completedTasks / project.stats.totalTasks) * 100)
-                                  : 0}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                aria-label="Task completion"
-                              >
-                                <div
-                                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-500 shadow-[0_0_8px_rgba(34,197,94,0.35)] transition-all duration-500 ease-out"
-                                  style={{
-                                    width: project.stats.totalTasks > 0
-                                      ? `${(project.stats.completedTasks / project.stats.totalTasks) * 100}%`
-                                      : '0%',
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                        );
-                      })}
-
-                      <Card
-                        className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                        onClick={() => setShowCreateModal(true)}
-                      >
-                        <CardContent className="flex flex-col items-center justify-center h-full min-h-[180px]">
-                          <Plus className="w-8 h-8 text-muted-foreground mb-2" />
-                          <p className="text-muted-foreground">Add new project</p>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {sharedProjects.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="w-5 h-5 text-blue-500" />
-                      Shared with me
-                    </CardTitle>
-                    <CardDescription>Projects you've been invited to</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {sharedProjects.map((project) => (
-                        <Card
-                          key={project.projectId}
-                          className="cursor-pointer hover:shadow-lg transition-shadow group"
-                          onClick={() => navigate(`/project/${project.projectId}`)}
-                        >
-                          <div
-                            className="h-2 rounded-t-lg"
-                            style={{ backgroundColor: project.coverColor }}
-                          />
-                          <CardHeader>
-                            <CardTitle className="text-lg">{project.name}</CardTitle>
-                            <CardDescription className="line-clamp-2">
-                              {project.description || 'No description'}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
-                              <span>{project.stats.totalTasks} tasks</span>
-                              <span>{project.stats.completedTasks} completed</span>
-                            </div>
-                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-blue-500 rounded-full"
-                                style={{
-                                  width: project.stats.totalTasks > 0
-                                    ? `${(project.stats.completedTasks / project.stats.totalTasks) * 100}%`
-                                    : '0%',
-                                }}
-                              />
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Owned by project owner
-                            </p>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                          </button>
+                        ))
+                      )}
+                    </ListCard>
+                  </div>
+                </div>
+              </div>
             </TabsContent>
 
             {/* ACTIVITY TAB */}
-            <TabsContent value="activity" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-orange-500" />
-                    All Activity
-                  </CardTitle>
-                  <CardDescription>
-                    Task created, subtasks, comments and updates – chronological order
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {activityLoading ? (
-                    <div className="flex justify-center py-12">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {Array.from({ length: 6 }).map((_, i) => (
-                          <div key={i} className="animate-pulse bg-card p-6 rounded-xl shadow border border-border">
-                            <div className="h-3 bg-muted rounded mb-4 w-1/2" />
-                            <div className="h-2 bg-muted rounded mb-2 w-full" />
-                            <div className="h-2 bg-muted rounded w-3/4" />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : activityInWorkspace.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <Activity className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
-                      <p className="text-lg font-medium">No activity yet</p>
-                      <p className="text-sm">
-                        Creating tasks, adding subtasks and commenting will show here
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {activityInWorkspace.map((ev: ActivityEvent) => (
-                        <div
-                          key={ev.activityId}
-                          onClick={() => navigate(`/project/${ev.projectId}`)}
-                          className="p-4 bg-secondary/40 rounded-lg hover:bg-muted transition-colors cursor-pointer group"
-                        >
-                          <div className="flex items-start gap-3">
-                            {ev.photoURL ? (
-                              <img
-                                src={ev.photoURL}
-                                alt={ev.displayName}
-                                className="w-10 h-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center text-primary font-medium">
-                                {ev.displayName?.charAt(0)?.toUpperCase() ?? '?'}
-                              </div>
+            <TabsContent value="activity" className="mt-6">
+              <ListCard
+                title="All Activity"
+                meta="Task created, subtasks, comments and updates – chronological order"
+              >
+                {activityLoading ? (
+                  <SectionSpinner />
+                ) : activityInWorkspace.length === 0 ? (
+                  <EmptyState
+                    icon={Activity}
+                    title="No activity yet"
+                    hint="Creating tasks, adding subtasks and commenting will show here"
+                    className="py-12"
+                  />
+                ) : (
+                  activityInWorkspace.map((ev: ActivityEvent) => (
+                    <button
+                      key={ev.activityId}
+                      type="button"
+                      onClick={() => navigate(`/project/${ev.projectId}`)}
+                      className={cn(LIST_ROW, 'group items-start py-3')}
+                    >
+                      <ActivityAvatar ev={ev} className="h-8 w-8 text-xs" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap gap-x-1.5 text-[13px] leading-5">
+                          <span className="font-medium text-foreground">{ev.displayName}</span>
+                          <span className="text-muted-foreground">
+                            {ev.type === 'task_created' && 'created task'}
+                            {ev.type === 'subtask_created' && 'added subtask'}
+                            {ev.type === 'subtask_done' && 'completed subtask'}
+                            {ev.type === 'comment_added' && 'commented on'}
+                            {ev.type === 'task_updated' && 'updated task'}
+                          </span>
+                          <span className="min-w-0 truncate font-medium text-foreground">
+                            {ev.taskTitle}
+                          </span>
+                          {(ev.type === 'subtask_created' || ev.type === 'subtask_done') &&
+                            ev.payload?.subtaskTitle && (
+                              <span className="min-w-0 truncate text-muted-foreground">
+                                "{ev.payload.subtaskTitle}"
+                              </span>
                             )}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap gap-2 mb-1">
-                                <span className="font-medium text-foreground">{ev.displayName}</span>
-                                <span className="text-muted-foreground">
-                                  {ev.type === 'task_created' && ' created task '}
-                                  {ev.type === 'subtask_created' && ' added subtask '}
-                                  {ev.type === 'subtask_done' && ' completed subtask '}
-                                  {ev.type === 'comment_added' && ' commented on '}
-                                  {ev.type === 'task_updated' && ' updated task '}
-                                </span>
-                                <span className="text-sm font-medium text-blue-600 truncate">
-                                  {ev.taskTitle}
-                                </span>
-                                {(ev.type === 'subtask_created' || ev.type === 'subtask_done') &&
-                                  ev.payload?.subtaskTitle && (
-                                    <span className="text-sm text-muted-foreground truncate">
-                                      "{ev.payload.subtaskTitle}"
-                                    </span>
-                                  )}
-                              </div>
-                              {ev.projectName && (
-                                <div className="text-xs text-muted-foreground mb-1">
-                                  in {ev.projectName}
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                {ev.type === 'task_created' && (
-                                  <CheckCircle2 className="w-3 h-3 text-green-600" />
-                                )}
-                                {(ev.type === 'subtask_created' || ev.type === 'subtask_done') && (
-                                  <ListTree className="w-3 h-3 text-blue-600" />
-                                )}
-                                {ev.type === 'comment_added' && (
-                                  <MessageSquare className="w-3 h-3 text-muted-foreground" />
-                                )}
-                                {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
-                                <ArrowRight className="w-4 h-4 ml-auto opacity-0 group-hover:opacity-100" />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                        </span>
+                        {ev.projectName && (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            in {ev.projectName}
+                          </span>
+                        )}
+                        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          {ev.type === 'task_created' && (
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          )}
+                          {(ev.type === 'subtask_created' || ev.type === 'subtask_done') && (
+                            <ListTree className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          )}
+                          {ev.type === 'comment_added' && (
+                            <MessageSquare className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          )}
+                          {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
+                        </span>
+                      </span>
+                      <ArrowRight
+                        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                        aria-hidden
+                      />
+                    </button>
+                  ))
+                )}
+              </ListCard>
             </TabsContent>
           </Tabs>
         </div>
@@ -1385,83 +1225,36 @@ export const Dashboard: React.FC = () => {
 
       {/* Create Project Dialog */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-        <DialogContent aria-describedby={undefined} className="max-w-2xl">
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Create New Project</DialogTitle>
           </DialogHeader>
 
           <Tabs value={createTab} onValueChange={(v) => setCreateTab(v as 'blank' | 'template')}>
-            <TabsList className="grid grid-cols-2 w-full">
+            <TabsList className="w-full">
               <TabsTrigger value="blank">Blank project</TabsTrigger>
               <TabsTrigger value="template">From template</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="template" className="pt-3">
-              {templatesLoading ? (
-                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Loading templates...
-                </div>
-              ) : templates.length === 0 ? (
-                <div className="text-sm text-muted-foreground text-center py-8">
-                  No templates available yet.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-                  {templates.map((tpl) => {
-                    const isSelected = selectedTemplate?.id === tpl.id;
-                    return (
-                      <button
-                        key={tpl.id}
-                        type="button"
-                        onClick={() => setSelectedTemplate(tpl)}
-                        className={cn(
-                          'text-left rounded-lg border p-3 transition-colors hover:border-primary/40 hover:bg-primary/5',
-                          isSelected ? 'border-primary bg-primary/10' : 'border-border bg-card',
-                        )}
-                      >
-                        <div className="flex items-start gap-2">
-                          <div className="rounded-md bg-primary/10 text-primary p-1.5">
-                            <LayoutTemplate className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-foreground truncate">{tpl.name}</p>
-                              {tpl.isBuiltin && (
-                                <span className="text-[10px] uppercase tracking-wide bg-muted text-muted-foreground rounded px-1.5 py-0.5">
-                                  Built-in
-                                </span>
-                              )}
-                            </div>
-                            {tpl.description && (
-                              <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                                {tpl.description}
-                              </p>
-                            )}
-                            <p className="text-[11px] text-muted-foreground mt-1">
-                              {tpl.columns.length} columns · {tpl.tasks.length} starter tasks
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+            <TabsContent value="template" className="mt-3">
+              <TemplatePicker
+                templates={templates}
+                loading={templatesLoading}
+                selectedId={selectedTemplate?.id}
+                onSelect={setSelectedTemplate}
+              />
             </TabsContent>
           </Tabs>
 
-          <form onSubmit={handleCreateProject} className="space-y-4 mt-3">
-            {createError && (
-              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{createError}</p>
-            )}
+          <form onSubmit={handleCreateProject} className="space-y-4">
+            {createError && <FormError>{createError}</FormError>}
             <div className="space-y-2">
-              <Label>Workspace</Label>
+              <Label className={FIELD_LABEL}>Workspace</Label>
               <Select
                 value={selectedProjectWorkspaceId}
                 onValueChange={setSelectedProjectWorkspaceId}
               >
-                <SelectTrigger className="w-[200px] shadow-sm">
+                <SelectTrigger className="sm:w-[240px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1476,7 +1269,7 @@ export const Dashboard: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="projectName">Project Name</Label>
+              <Label htmlFor="projectName" className={FIELD_LABEL}>Project Name</Label>
               <Input
                 id="projectName"
                 value={newProjectName}
@@ -1487,7 +1280,7 @@ export const Dashboard: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="projectDescription">Description</Label>
+              <Label htmlFor="projectDescription" className={FIELD_LABEL}>Description</Label>
               <Input
                 id="projectDescription"
                 value={newProjectDescription}
@@ -1497,27 +1290,14 @@ export const Dashboard: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <Label>Color</Label>
-              <div className="flex gap-2">
-                {PROJECT_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setSelectedColor(color)}
-                    className={cn(
-                      'w-8 h-8 rounded-full transition-transform',
-                      selectedColor === color && 'ring-2 ring-offset-2 ring-border scale-110'
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
+              <Label className={FIELD_LABEL}>Color</Label>
+              <ColorSwatchRow value={selectedColor} onChange={setSelectedColor} />
             </div>
 
             {/* Start & End Date */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="newStartDate">Start Date</Label>
+                <Label htmlFor="newStartDate" className={FIELD_LABEL}>Start Date</Label>
                 <Input
                   id="newStartDate"
                   type="date"
@@ -1526,7 +1306,7 @@ export const Dashboard: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="newEndDate">End Date</Label>
+                <Label htmlFor="newEndDate" className={FIELD_LABEL}>End Date</Label>
                 <Input
                   id="newEndDate"
                   type="date"
@@ -1536,7 +1316,7 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className={DIALOG_FOOTER}>
               <Button
                 type="button"
                 variant="outline"
@@ -1553,7 +1333,6 @@ export const Dashboard: React.FC = () => {
               </Button>
               <Button
                 type="submit"
-                className="bg-gradient-to-r from-orange-500 to-red-500"
                 disabled={
                   creating ||
                   !newProjectName.trim() ||
@@ -1562,7 +1341,7 @@ export const Dashboard: React.FC = () => {
               >
                 {creating ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Creating...
                   </>
                 ) : (
@@ -1582,7 +1361,7 @@ export const Dashboard: React.FC = () => {
           </DialogHeader>
           <form onSubmit={handleCreateWorkspace} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="workspaceName">Workspace Name</Label>
+              <Label htmlFor="workspaceName" className={FIELD_LABEL}>Workspace Name</Label>
               <Input
                 id="workspaceName"
                 value={newWorkspaceName}
@@ -1591,7 +1370,7 @@ export const Dashboard: React.FC = () => {
                 required
               />
             </div>
-            <DialogFooter>
+            <DialogFooter className={DIALOG_FOOTER}>
               <Button
                 type="button"
                 variant="outline"
@@ -1602,11 +1381,10 @@ export const Dashboard: React.FC = () => {
               </Button>
               <Button
                 type="submit"
-                className="bg-gradient-to-r from-orange-500 to-red-500"
                 disabled={creatingWorkspace || !newWorkspaceName.trim()}
               >
                 {creatingWorkspace && (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 )}
                 Create Workspace
               </Button>
@@ -1631,7 +1409,7 @@ export const Dashboard: React.FC = () => {
           </DialogHeader>
           <form onSubmit={handleEditWorkspace} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="editWorkspaceName">Workspace Name</Label>
+              <Label htmlFor="editWorkspaceName" className={FIELD_LABEL}>Workspace Name</Label>
               <Input
                 id="editWorkspaceName"
                 value={editingWorkspaceName}
@@ -1642,26 +1420,26 @@ export const Dashboard: React.FC = () => {
             </div>
             {canEditWorkspaceMenu && (
               <div className="space-y-2">
-                <Label>Menu items in this workspace</Label>
+                <Label className={FIELD_LABEL}>Menu items in this workspace</Label>
                 <p className="text-xs text-muted-foreground">
                   Hidden items disappear from the sidebar for everyone in this
                   workspace. Role permissions still apply on top.
                 </p>
-                <div className="rounded-md border divide-y">
+                <div className="overflow-hidden rounded-lg border border-border">
                   {QUICK_MENU_PAGE_KEYS.map((key) => {
                     const def = getPageDef(key);
                     const on = editingMenuPages.includes(key);
                     return (
                       <div
                         key={key}
-                        className="flex items-center justify-between px-3 py-2"
+                        className="flex min-h-11 items-center justify-between gap-3 border-b border-border/60 px-3 py-1.5 last:border-0"
                       >
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">
+                          <p className="truncate text-[13px] font-medium text-foreground">
                             {def?.label ?? key}
                           </p>
                           {def?.group && (
-                            <p className="text-xs text-muted-foreground">{def.group}</p>
+                            <p className="truncate text-xs text-muted-foreground">{def.group}</p>
                           )}
                         </div>
                         <Switch
@@ -1683,7 +1461,7 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
             )}
-            <DialogFooter>
+            <DialogFooter className={DIALOG_FOOTER}>
               <Button
                 type="button"
                 variant="outline"
@@ -1693,7 +1471,6 @@ export const Dashboard: React.FC = () => {
               </Button>
               <Button
                 type="submit"
-                className="bg-gradient-to-r from-orange-500 to-red-500"
                 disabled={!editingWorkspaceName.trim()}
               >
                 Save
@@ -1713,7 +1490,7 @@ export const Dashboard: React.FC = () => {
         }}
       >
         <DialogContent onClick={(e) => e.stopPropagation()}>
-          <form onSubmit={handleSubmitProjectLockPin}>
+          <form onSubmit={handleSubmitProjectLockPin} className="space-y-4">
             <DialogHeader>
               <DialogTitle>Enter project PIN</DialogTitle>
               <DialogDescription>
@@ -1722,8 +1499,8 @@ export const Dashboard: React.FC = () => {
                   : 'Enter your project PIN to unlock this project for your current browser session.'}
               </DialogDescription>
             </DialogHeader>
-            <div className="mt-4 space-y-2">
-              <Label htmlFor="dashboard-project-lock-pin">PIN</Label>
+            <div className="space-y-2">
+              <Label htmlFor="dashboard-project-lock-pin" className={FIELD_LABEL}>PIN</Label>
               <Input
                 id="dashboard-project-lock-pin"
                 type="password"
@@ -1737,7 +1514,7 @@ export const Dashboard: React.FC = () => {
                 placeholder="••••"
               />
             </div>
-            <DialogFooter className="mt-6">
+            <DialogFooter className={DIALOG_FOOTER}>
               <Button
                 type="button"
                 variant="outline"
@@ -1745,7 +1522,7 @@ export const Dashboard: React.FC = () => {
               >
                 Cancel
               </Button>
-              <Button type="submit" className="gap-2" disabled={lockDialogSubmitting}>
+              <Button type="submit" disabled={lockDialogSubmitting}>
                 {lockDialogSubmitting && (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
@@ -1769,7 +1546,7 @@ export const Dashboard: React.FC = () => {
           </DialogHeader>
           <form onSubmit={handleEditProject} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="editProjectName">Project Name</Label>
+              <Label htmlFor="editProjectName" className={FIELD_LABEL}>Project Name</Label>
               <Input
                 id="editProjectName"
                 value={editName}
@@ -1779,7 +1556,7 @@ export const Dashboard: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editProjectDescription">Description</Label>
+              <Label htmlFor="editProjectDescription" className={FIELD_LABEL}>Description</Label>
               <Input
                 id="editProjectDescription"
                 value={editDescription}
@@ -1788,9 +1565,9 @@ export const Dashboard: React.FC = () => {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="editStartDate">Start Date</Label>
+                <Label htmlFor="editStartDate" className={FIELD_LABEL}>Start Date</Label>
                 <Input
                   id="editStartDate"
                   type="date"
@@ -1799,7 +1576,7 @@ export const Dashboard: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editEndDate">End Date</Label>
+                <Label htmlFor="editEndDate" className={FIELD_LABEL}>End Date</Label>
                 <Input
                   id="editEndDate"
                   type="date"
@@ -1809,11 +1586,11 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="rounded-lg border border-border p-4 space-y-3">
+            <div className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Lock className="w-4 h-4" aria-hidden />
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                     Lock with PIN
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -1833,9 +1610,9 @@ export const Dashboard: React.FC = () => {
                 />
               </div>
               {editProjectLocked && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="editProjectLockPin">PIN {editingProject?.hasLockPin ? '(change)' : ''}</Label>
+                    <Label htmlFor="editProjectLockPin" className={FIELD_LABEL}>PIN {editingProject?.hasLockPin ? '(change)' : ''}</Label>
                     <Input
                       id="editProjectLockPin"
                       type="password"
@@ -1846,7 +1623,7 @@ export const Dashboard: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="editProjectLockPinConfirm">Confirm PIN</Label>
+                    <Label htmlFor="editProjectLockPinConfirm" className={FIELD_LABEL}>Confirm PIN</Label>
                     <Input
                       id="editProjectLockPinConfirm"
                       type="password"
@@ -1860,7 +1637,7 @@ export const Dashboard: React.FC = () => {
               )}
             </div>
 
-            <DialogFooter>
+            <DialogFooter className={DIALOG_FOOTER}>
               <Button
                 type="button"
                 variant="outline"
@@ -1915,10 +1692,9 @@ export const Dashboard: React.FC = () => {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialog.open} onOpenChange={(open) => !open && setDeleteDialog({ open: false, type: null, id: null, name: '' })}>
-        <AlertDialogContent className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2"
-        >
+        <AlertDialogContent className="w-[calc(100%-2rem)] max-w-md rounded-xl border-border bg-card">
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle className="text-base tracking-tight">
               Delete {deleteDialog.type === 'workspace' ? 'Workspace' : 'Project'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -1939,7 +1715,10 @@ export const Dashboard: React.FC = () => {
             <AlertDialogCancel onClick={() => setDeleteDialog({ open: false, type: null, id: null, name: '' })}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} className="bg-red-500 hover:bg-red-600">
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className={buttonVariants({ variant: 'destructive' })}
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

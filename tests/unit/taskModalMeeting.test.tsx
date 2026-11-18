@@ -294,3 +294,47 @@ describe('TaskModal description links while editing', () => {
     expect(box).toBeTruthy();
   });
 });
+
+describe('TaskModal top bar and labels', () => {
+  it('toggles done from the top bar, keeping the title clear of it', async () => {
+    render(<TaskModal open onClose={vi.fn()} task={task} projectId="p1" onSave={vi.fn()} />);
+    const toggle = await screen.findByRole('button', { name: 'Mark as done' });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.textContent).toContain('Mark complete');
+    // The toggle is no longer a sibling of the title, so it can't push it sideways.
+    expect(toggle.closest('header')?.contains(screen.getByLabelText('Task title'))).toBe(false);
+
+    fireEvent.click(toggle);
+    const pressed = screen.getByRole('button', { name: 'Mark as not done' });
+    expect(pressed.getAttribute('aria-pressed')).toBe('true');
+    expect(pressed.textContent).toContain('Completed');
+  });
+
+  it('does not put keyboard focus on the done toggle when a task opens', async () => {
+    render(<TaskModal open onClose={vi.fn()} task={task} projectId="p1" onSave={vi.fn()} />);
+    await screen.findByLabelText('Task title');
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Copy link to task' })),
+    );
+  });
+
+  it('shows the urgent badge above the title as soon as Urgent is switched on', async () => {
+    render(<TaskModal open onClose={vi.fn()} task={task} projectId="p1" onSave={vi.fn()} />);
+    await screen.findByLabelText('Task title');
+    // Only the property label says "Urgent" to begin with.
+    expect(screen.getAllByText('Urgent')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('switch', { name: 'Urgent' }));
+    expect(screen.getAllByText('Urgent')).toHaveLength(2);
+    expect(screen.getByText('On')).toBeTruthy();
+  });
+
+  it('shows the PIN fields under the Lock switch for an admin', async () => {
+    render(<TaskModal open onClose={vi.fn()} task={task} projectId="p1" onSave={vi.fn()} />);
+    await screen.findByLabelText('Task title');
+    expect(screen.queryByLabelText('New PIN')).toBeNull();
+    fireEvent.click(screen.getByRole('switch', { name: 'Lock' }));
+    expect(screen.getByLabelText('New PIN')).toBeTruthy();
+    expect(screen.getByLabelText('Confirm PIN')).toBeTruthy();
+    expect(screen.getByText('Sensitive')).toBeTruthy();
+  });
+});

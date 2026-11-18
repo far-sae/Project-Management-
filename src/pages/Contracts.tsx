@@ -234,19 +234,19 @@ export const Contracts: React.FC = () => {
   const getStatusBadge = (status: string, respondedByName?: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge>;
+        return <Badge className="border-success/30 bg-success-soft text-success-soft-foreground"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge>;
       case 'pending':
-        return <Badge className="bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-500/30"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
+        return <Badge className="border-warning/30 bg-warning-soft text-warning-soft-foreground"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
       case 'accepted':
         return (
-          <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">
+          <Badge className="border-info/30 bg-info-soft text-info-soft-foreground">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             Accepted {respondedByName ? `by ${respondedByName}` : ''}
           </Badge>
         );
       case 'rejected':
         return (
-          <Badge className="bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30">
+          <Badge className="border-destructive/30 bg-destructive-soft text-destructive-soft-foreground">
             <XCircle className="w-3 h-3 mr-1" />
             Rejected {respondedByName ? `by ${respondedByName}` : ''}
           </Badge>
@@ -263,22 +263,21 @@ export const Contracts: React.FC = () => {
     return (
       <main className="flex-1 overflow-y-auto p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground">Contracts</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Contracts</h1>
             <p className="text-muted-foreground">Manage your contracts and agreements</p>
           </div>
           <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-border rounded-xl text-center">
-            <div className="w-16 h-16 bg-orange-500/15 rounded-full flex items-center justify-center mb-4">
-              <Lock className="w-8 h-8 text-orange-500" />
+            <div className="w-16 h-16 bg-primary-soft rounded-full flex items-center justify-center mb-4">
+              <Lock className="w-8 h-8 text-primary" />
             </div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Contracts</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-2">Contracts</h2>
             <p className="text-muted-foreground mb-2 max-w-md">
               Create and manage contracts and client agreements with status tracking, multi-currency values, and date ranges.
             </p>
-            <p className="text-sm text-orange-500 font-medium mb-6">
+            <p className="text-sm text-primary font-medium mb-6">
               Available on Advanced plan and above
             </p>
             <Button
-              className="bg-gradient-to-r from-orange-500 to-red-500"
               onClick={() => navigate('/pricing')}
             >
               Upgrade to Advanced
@@ -292,11 +291,10 @@ export const Contracts: React.FC = () => {
     <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 md:mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Contracts</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Contracts</h1>
             <p className="text-muted-foreground">Manage your contracts and agreements</p>
           </div>
           <Button
-            className="bg-gradient-to-r from-orange-500 to-red-500"
             onClick={() => setShowCreateModal(true)}
           >
             <Plus className="w-4 h-4 mr-2" />New Contract
@@ -309,14 +307,14 @@ export const Contracts: React.FC = () => {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total</CardTitle>
             </CardHeader>
-            <CardContent><div className="text-2xl font-bold text-foreground">{contracts.length}</div></CardContent>
+            <CardContent><div className="text-2xl font-semibold text-foreground">{contracts.length}</div></CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Draft</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-muted-foreground">
+              <div className="text-2xl font-semibold text-muted-foreground">
                 {contracts.filter((c) => c.status === 'draft').length}
               </div>
             </CardContent>
@@ -326,7 +324,7 @@ export const Contracts: React.FC = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Pending</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-500 dark:text-yellow-400">
+              <div className="text-2xl font-semibold text-warning-soft-foreground">
                 {contracts.filter((c) => c.status === 'pending').length}
               </div>
             </CardContent>
@@ -336,7 +334,7 @@ export const Contracts: React.FC = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Accepted</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-emerald-500 dark:text-emerald-400">
+              <div className="text-2xl font-semibold text-success">
                 {contracts.filter((c) => c.status === 'accepted').length}
               </div>
             </CardContent>
@@ -346,7 +344,7 @@ export const Contracts: React.FC = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Rejected</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-500 dark:text-red-400">
+              <div className="text-2xl font-semibold text-destructive">
                 {contracts.filter((c) => c.status === 'rejected').length}
               </div>
             </CardContent>
@@ -369,7 +367,7 @@ export const Contracts: React.FC = () => {
                     <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
                     <p className="text-lg font-medium text-foreground">No contracts yet</p>
                     <p className="text-sm">Create your first contract to get started</p>
-                    <Button className="mt-4 bg-gradient-to-r from-orange-500 to-red-500" onClick={() => setShowCreateModal(true)}>
+                    <Button className="mt-4" onClick={() => setShowCreateModal(true)}>
                       <Plus className="w-4 h-4 mr-2" />Create Contract
                     </Button>
                   </div>
@@ -383,7 +381,7 @@ export const Contracts: React.FC = () => {
                       return (
                         <div key={contract.contractId} className="flex items-center justify-between p-4 bg-secondary/40 border border-border rounded-lg hover:bg-secondary/70 group">
                           <div className="flex items-center gap-4 flex-1">
-                            <FileText className="w-10 h-10 text-blue-500 shrink-0" />
+                            <FileText className="w-10 h-10 text-info shrink-0" />
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium text-foreground">{contract.title}</p>
@@ -427,7 +425,7 @@ export const Contracts: React.FC = () => {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => toast.info(`Rejection reason: ${contract.rejectionReason}`)}
-                                className="text-red-600"
+                                className="text-destructive"
                               >
                                 <AlertCircle className="w-4 h-4" />
                               </Button>
@@ -443,7 +441,7 @@ export const Contracts: React.FC = () => {
                                 <DropdownMenuItem onClick={() => openEdit(contract)}>
                                   <Edit className="w-4 h-4 mr-2" />Edit
                                 </DropdownMenuItem>
-                                <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(contract.contractId)}>
+                                <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(contract.contractId)}>
                                   <Trash2 className="w-4 h-4 mr-2" />Delete
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
@@ -469,8 +467,8 @@ export const Contracts: React.FC = () => {
             </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
               {createError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-700">{createError}</p>
+                <div className="p-3 bg-destructive-soft border border-destructive/30 rounded-md">
+                  <p className="text-sm text-destructive-soft-foreground">{createError}</p>
                 </div>
               )}
 
@@ -548,7 +546,6 @@ export const Contracts: React.FC = () => {
                 </Button>
                 <Button
                   type="submit"
-                  className="bg-gradient-to-r from-orange-500 to-red-500"
                   disabled={creating || !form.title.trim() || !form.client.trim()}
                 >
                   {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
@@ -565,8 +562,8 @@ export const Contracts: React.FC = () => {
             <DialogHeader><DialogTitle>Edit Contract</DialogTitle></DialogHeader>
             <form onSubmit={handleUpdate} className="space-y-4">
               {createError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-700">{createError}</p>
+                <div className="p-3 bg-destructive-soft border border-destructive/30 rounded-md">
+                  <p className="text-sm text-destructive-soft-foreground">{createError}</p>
                 </div>
               )}
 
@@ -644,7 +641,6 @@ export const Contracts: React.FC = () => {
                 </Button>
                 <Button
                   type="submit"
-                  className="bg-gradient-to-r from-orange-500 to-red-500"
                   disabled={updating || !form.title.trim() || !form.client.trim()}
                 >
                   {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Edit className="w-4 h-4 mr-2" />}

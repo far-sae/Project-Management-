@@ -42,14 +42,14 @@ export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ fallbackPath = '/'
             : 'Something Went Wrong';
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="max-w-md w-full text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 text-red-600 mb-6">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-destructive-soft text-destructive mb-6">
           <AlertCircle className="w-8 h-8" />
         </div>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">{title}</h1>
-        <p className="text-gray-600 mb-6 break-words">{message}</p>
+        <h1 className="text-2xl font-semibold text-foreground mb-2">{title}</h1>
+        <p className="text-muted-foreground mb-6 break-words">{message}</p>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           {/* Soft retry via React Router revalidator */}
@@ -75,7 +75,7 @@ export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ fallbackPath = '/'
           {/* Navigate to fallback path */}
           <Button
             onClick={() => navigate(fallbackPath, { replace: true })}
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+            className="inline-flex items-center gap-2"
           >
             <Home className="w-4 h-4" />
             Go Home

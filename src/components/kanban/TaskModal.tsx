@@ -33,9 +33,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  Trash2, Loader2, Sparkles, Wand2, MessageSquare, ListTree, Paperclip, X, Check,
-  Activity, Clock, Lock, MoreHorizontal, Bell, Mail, Link2, AlertTriangle, KeyRound,
-  Video, FolderInput, ChevronRight, Plus, Receipt, ExternalLink,
+  Trash2, Loader2, Sparkles, Wand2, ListTree, Paperclip, X, Check,
+  Clock, Lock, MoreHorizontal, Bell, Mail, Link2, AlertTriangle, KeyRound,
+  Video, FolderInput, Plus, ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -88,14 +88,19 @@ import {
 import AttachmentPreview from '../ui/AttachmentPreview';
 import { TaskExpensesPanel } from '@/components/expenses/TaskExpensesPanel';
 import { Switch } from '@/components/ui/switch';
+import { PriorityPill, UrgentBadge } from '@/components/common/TaskBadges';
 import { toast } from 'sonner';
 import type { PresencePeer } from '@/hooks/usePresence';
+import { AttachmentChips } from './task-modal/AttachmentChips';
 import { MeetingProperty } from './task-modal/MeetingProperty';
 import {
   ActivityList, CommentSummaryCard, ListSkeleton, PresenceAvatars, PropertyRow, TypingIndicator, useNow,
 } from './task-modal/parts';
 import { DEFAULT_MEETING_DURATION, getJoinDisabledReason, toMeetingDate } from './task-modal/meeting';
-import { FOCUS_RING, GHOST_FIELD, PRESS, SECTION_LABEL } from './task-modal/styles';
+import {
+  FOCUS_RING, GHOST_FIELD, ICON_BUTTON_SM, PRESS, PROPERTY_GRID, PROPERTY_VALUE,
+  SECTION_LABEL, SECTION_META, TEXT_LINK,
+} from './task-modal/styles';
 
 interface Subtask {
   id: string;
@@ -1225,6 +1230,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   // ── Keyboard ───────────────────────────────────────────────
   const contentRef = useRef<HTMLDivElement>(null);
+  const copyLinkButtonRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * Opening a saved task puts focus on "Copy link", as it always has. Left to
+   * the dialog's default (first control in the bar) it would land on the Done
+   * toggle, where a stray Enter completes the task. New tasks and the PIN
+   * gate focus their own field (`autoFocus`), so there is nothing to do.
+   */
+  const handleOpenAutoFocus = (e: Event) => {
+    const target = copyLinkButtonRef.current;
+    if (!target) return;
+    e.preventDefault();
+    target.focus();
+  };
 
   /** Cmd/Ctrl+Enter: post the comment when typing in the composer, otherwise save. */
   const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -1248,7 +1267,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
-  // ── Footer hint ────────────────────────────────────────────
+  // ── Footer status ──────────────────────────────────────────
   const footerHint = (() => {
     if (readOnlyTask) {
       return <span>View only — you can read this task but not change it.</span>;
@@ -1260,7 +1279,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       if (autoSaveStatus === 'saving') {
         return (
           <span className="inline-flex items-center gap-1.5">
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
             Saving…
           </span>
         );
@@ -1272,7 +1291,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         const ago = now.getTime() - lastSavedAt.getTime();
         return (
           <span className="inline-flex items-center gap-1.5 tabular-nums" title={lastSavedAt.toLocaleString()}>
-            <Check className="h-3 w-3 text-success" aria-hidden />
+            <Check className="h-3.5 w-3.5" aria-hidden />
             {ago < 45_000 ? 'Saved just now' : `Saved ${formatDistanceSafe(lastSavedAt)}`}
           </span>
         );
@@ -1281,18 +1300,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
     return (
       <span>
-        <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-sans text-[10px] font-medium">{modKey}</kbd>
+        <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-sans text-[11px] font-medium">{modKey}</kbd>
         <span className="mx-0.5">+</span>
-        <kbd className="rounded border border-border bg-muted px-1 py-0.5 font-sans text-[10px] font-medium">Enter</kbd>{' '}
+        <kbd className="rounded border border-border bg-secondary px-1 py-0.5 font-sans text-[11px] font-medium">Enter</kbd>{' '}
         to create
       </span>
     );
   })();
 
-  const headerIconButton = cn(
-    'h-10 w-10 min-h-0 min-w-0 md:h-8 md:w-8 md:min-h-0 md:min-w-0 text-muted-foreground hover:text-foreground',
-    PRESS,
+  const headerIconButton = cn('shrink-0 text-muted-foreground hover:text-foreground', PRESS);
+  /** Quiet 28px text button used next to section headings and in the composer. */
+  const inlineGhostButton = cn('text-muted-foreground hover:text-foreground', PRESS);
+  const doneToggleLabel = isDoneStatus ? 'Mark as not done' : 'Mark as done';
+  /** Read view (plain text, clickable links) instead of the textarea. */
+  const showDescriptionReadView = Boolean(
+    readOnlyTask || (isEditing && description.trim() && !editingDescription),
   );
+  /** The colour saved with the task only describes its saved priority. */
+  const priorityPillColor = task && task.priority === priority ? task.priorityColor : undefined;
+  const showAiSuggest = aiEnabled && !readOnlyTask;
+  const showDates = Boolean(isEditing && task && (task.createdAt != null || task.updatedAt != null));
+
   const uid = useId();
   const ids = {
     title: `${uid}-title`,
@@ -1321,10 +1349,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       <DialogContent
         ref={contentRef}
         aria-describedby={undefined}
+        onOpenAutoFocus={handleOpenAutoFocus}
         onEscapeKeyDown={handleEscapeKeyDown}
         onKeyDown={handleDialogKeyDown}
         className={cn(
-          'flex flex-col gap-0 overflow-hidden p-0 pt-0 pb-0 sm:p-0 sm:pt-0 sm:pb-0 sm:max-w-5xl [&>button]:hidden',
+          'flex flex-col gap-0 overflow-hidden border border-border bg-card p-0 pt-0 pb-0 focus-visible:outline-none sm:rounded-xl sm:p-0 sm:pt-0 sm:pb-0 [&>button]:hidden',
+          mustUnlockToView ? 'sm:max-w-md' : 'sm:max-w-[1040px]',
           isEditing && !mustUnlockToView ? 'h-[calc(100dvh-3rem)] sm:h-[90vh]' : 'sm:max-h-[90vh]',
         )}
       >
@@ -1339,13 +1369,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         </DialogTitle>
 
         {mustUnlockToView ? (
-          <div className="flex min-h-[min(420px,70vh)] flex-col items-center justify-center gap-6 px-6 py-12 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-muted" aria-hidden>
-              <KeyRound className="h-6 w-6 text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center gap-5 px-6 py-10 text-center">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary" aria-hidden>
+              <KeyRound className="h-5 w-5 text-muted-foreground" />
             </span>
-            <div className="max-w-sm space-y-2">
-              <h2 className="text-lg font-semibold text-foreground">This task is locked</h2>
-              <p className="text-sm text-muted-foreground">
+            <div className="max-w-sm space-y-1.5">
+              <h2 className="text-base font-semibold text-foreground">This task is locked</h2>
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
                 Enter the PIN to view details, comments, and activity. When you close this task or
                 save changes, you will need the PIN again to view or edit it.
               </p>
@@ -1372,18 +1402,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 placeholder="Enter PIN"
                 value={unlockAttempt}
                 onChange={(e) => setUnlockAttempt(e.target.value)}
-                className="text-center tracking-widest transition-colors"
+                className="text-center tracking-widest"
               />
               <div className="flex items-center justify-center gap-2">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   className={PRESS}
                   onClick={() => { onClose(); setUnlockAttempt(''); }}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={!unlockAttempt.trim()} className={cn('gap-2', PRESS)}>
+                <Button type="submit" disabled={!unlockAttempt.trim()} className={PRESS}>
                   <KeyRound aria-hidden />
                   Unlock
                 </Button>
@@ -1392,341 +1422,353 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
         ) : (
         <>
-        {/* ── Header: breadcrumb + actions, then the title ─────────── */}
-        <header className="shrink-0 border-b border-border">
-          <div className="flex h-12 items-center gap-1 pl-4 pr-2 sm:pl-6">
-            <nav
-              aria-label="Task location"
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground"
-            >
-              <span className="min-w-0 max-w-[50%] truncate" title={projectName || 'Project'}>
-                {projectName || 'Project'}
-              </span>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
-              <span className="inline-flex min-w-0 items-center gap-1.5">
-                <span
-                  aria-hidden
-                  className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40"
-                  style={currentColumn?.color ? { backgroundColor: currentColumn.color } : undefined}
-                />
-                <span className="truncate" title={columnTitle}>{columnTitle}</span>
-              </span>
-              {!isEditing && (
-                <span className="hidden shrink-0 sm:inline">
-                  <span aria-hidden className="mx-1 opacity-60">·</span>New task
-                </span>
-              )}
-            </nav>
-
-            <PresenceAvatars peers={peersOnTask} />
-
-            {isEditing && task && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className={headerIconButton}
-                onClick={copyTaskUrl}
-                aria-label="Copy link to task"
-                title="Copy link to task"
-              >
-                <Link2 aria-hidden />
-              </Button>
-            )}
-
-            {isEditing && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className={headerIconButton}
-                    aria-label="More task actions"
-                    title="More actions"
-                  >
-                    <MoreHorizontal aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60">
-                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                    Task actions
-                  </DropdownMenuLabel>
-                  {task && user && (
-                    <DropdownMenuItem onClick={() => setShowNotifyModal(true)}>
-                      <Bell className="mr-2 h-4 w-4" aria-hidden />
-                      Notify teammates…
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={() => toast.info('Reply by email — coming soon')}>
-                    <Mail className="mr-2 h-4 w-4" aria-hidden />
-                    Reply by email
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowMoveTask(true)} disabled={readOnlyTask}>
-                    <FolderInput className="mr-2 h-4 w-4" aria-hidden />
-                    Move to project…
-                  </DropdownMenuItem>
-                  {aiEnabled && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                        AI
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem onClick={handleGetSmartSuggestions} disabled={readOnlyTask}>
-                        <Sparkles className="mr-2 h-4 w-4 text-primary" aria-hidden />
-                        Suggest priority &amp; due date
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={handleGenerateTitleFromDescription}
-                        disabled={readOnlyTask || description.trim().length < 10 || aiLoading.description}
-                      >
-                        <Sparkles className="mr-2 h-4 w-4 text-primary" aria-hidden />
-                        Title from description
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={handleExpandDescription}
-                        disabled={readOnlyTask || !title.trim()}
-                      >
-                        <Wand2 className="mr-2 h-4 w-4 text-primary" aria-hidden />
-                        Write description
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setShowDecomposition(true)}
-                        disabled={readOnlyTask || !title.trim()}
-                      >
-                        <ListTree className="mr-2 h-4 w-4 text-primary" aria-hidden />
-                        Break into subtasks
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  {onDelete && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => setShowDeleteConfirm(true)}
-                        disabled={readOnlyTask}
-                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" aria-hidden />
-                        Delete task
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-
-            <DialogClose asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className={headerIconButton}
-                aria-label="Close"
-                title="Close (Esc)"
-              >
-                <X aria-hidden />
-              </Button>
-            </DialogClose>
-          </div>
-
-          <div className="flex items-start gap-2 px-4 pb-4 sm:px-6">
-            <button
-              type="button"
-              onClick={() =>
-                setStatus(
-                  isDoneStatus
-                    ? task && !isCompletedTaskStatus(task.status, columns)
-                      ? task.status
-                      : resolveReopenColumnId(columns)
-                    : resolveDoneColumnId(columns),
-                )
-              }
-              disabled={readOnlyTask}
-              aria-pressed={isDoneStatus}
-              aria-label={isDoneStatus ? 'Mark as not done' : 'Mark as done'}
-              title={isDoneStatus ? 'Mark as not done' : 'Mark as done'}
-              className={cn(
-                'group -ml-1.5 mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed md:h-9 md:w-9',
-                FOCUS_RING,
-                PRESS,
-              )}
-            >
+        {/* ── Top bar: where the task lives + task-level actions ───── */}
+        <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-b border-border py-1 pl-4 pr-2 sm:pl-6 sm:pr-3 md:py-2">
+          <nav
+            aria-label="Task location"
+            className="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-muted-foreground"
+          >
+            <span className="min-w-0 truncate" title={projectName || 'Project'}>
+              {projectName || 'Project'}
+            </span>
+            <span aria-hidden className="shrink-0 text-muted-foreground/50">/</span>
+            <span className="inline-flex min-w-0 max-w-[65%] shrink-0 items-center gap-1.5 font-medium text-foreground">
               <span
-                className={cn(
-                  'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors',
-                  isDoneStatus
-                    ? 'border-success bg-success text-success-foreground'
-                    : 'border-muted-foreground/40 group-hover:border-foreground/60',
-                )}
-              >
-                {isDoneStatus && <Check className="h-3 w-3" strokeWidth={3} aria-hidden />}
+                aria-hidden
+                className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40"
+                style={currentColumn?.color ? { backgroundColor: currentColumn.color } : undefined}
+              />
+              <span className="truncate" title={columnTitle}>{columnTitle}</span>
+            </span>
+            {!isEditing && (
+              <span className="hidden shrink-0 sm:inline">
+                <span aria-hidden className="mx-1 opacity-60">·</span>New task
               </span>
-            </button>
-            <label htmlFor={ids.title} className="sr-only">
-              Task title
-            </label>
-            <input
-              id={ids.title}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                // Plain Enter moves on to the description; Cmd/Ctrl+Enter saves (dialog-level).
-                if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  if (descriptionTextareaRef.current) descriptionTextareaRef.current.focus();
-                  else if (!readOnlyTask) setEditingDescription(true);
-                }
-              }}
-              placeholder="Task title"
-              autoFocus={!isEditing}
-              readOnly={readOnlyTask}
-              aria-readonly={readOnlyTask || undefined}
-              aria-invalid={!title.trim() ? true : undefined}
-              autoComplete="off"
-              className="h-10 min-w-0 flex-1 rounded-md bg-transparent px-1 text-xl font-semibold tracking-tight text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring/40 md:h-9 md:text-2xl"
-            />
-          </div>
+            )}
+          </nav>
 
-          {(saveError || lockReadOnly || permissionReadOnly) && (
-            <div className="space-y-2 px-4 pb-4 sm:px-6">
-              {saveError && (
-                <div
-                  role="alert"
-                  className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive-soft-foreground"
-                >
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                  <span className="min-w-0 break-words">{saveError}</span>
-                </div>
-              )}
-              {lockReadOnly && (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground">
-                  <Lock className="h-4 w-4 shrink-0 text-warning" aria-hidden />
-                  {hasLockPin ? (
-                    <>
-                      <span className="min-w-[200px] flex-1">
-                        Locked with a PIN. Enter it to edit (this device only until you clear browser data).
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className={cn('shrink-0 gap-1.5', PRESS)}
-                        onClick={() => setShowUnlockGate(true)}
-                      >
-                        <KeyRound aria-hidden />
-                        Enter PIN
-                      </Button>
-                    </>
-                  ) : (
-                    <span className="flex-1">
-                      This task is locked. Only the project owner or a workspace admin can make changes.
-                    </span>
-                  )}
-                </div>
-              )}
-              {permissionReadOnly && !lockReadOnly && (
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground">
-                  <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                  <span>
-                    {isViewer
-                      ? 'You have view-only access to this workspace — you cannot edit tasks.'
-                      : 'You have view-only access to this project — ask the project owner to make you a member to edit tasks.'}
-                  </span>
-                </div>
-              )}
-            </div>
+          <PresenceAvatars peers={peersOnTask} />
+
+          {/* Done toggle: lives here so the title lines up with the content below it. */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              setStatus(
+                isDoneStatus
+                  ? task && !isCompletedTaskStatus(task.status, columns)
+                    ? task.status
+                    : resolveReopenColumnId(columns)
+                  : resolveDoneColumnId(columns),
+              )
+            }
+            disabled={readOnlyTask}
+            aria-pressed={isDoneStatus}
+            aria-label={doneToggleLabel}
+            title={doneToggleLabel}
+            className={cn(
+              'mr-1 shrink-0',
+              isDoneStatus &&
+                'border-success/30 bg-success-soft text-success-soft-foreground hover:bg-success-soft hover:text-success-soft-foreground',
+              PRESS,
+            )}
+          >
+            <Check aria-hidden />
+            <span className="hidden sm:inline">{isDoneStatus ? 'Completed' : 'Mark complete'}</span>
+          </Button>
+
+          {isEditing && task && (
+            <Button
+              ref={copyLinkButtonRef}
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={headerIconButton}
+              onClick={copyTaskUrl}
+              aria-label="Copy link to task"
+              title="Copy link to task"
+            >
+              <Link2 aria-hidden />
+            </Button>
           )}
+
+          {isEditing && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={headerIconButton}
+                  aria-label="More task actions"
+                  title="More actions"
+                >
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                  Task actions
+                </DropdownMenuLabel>
+                {task && user && (
+                  <DropdownMenuItem onClick={() => setShowNotifyModal(true)}>
+                    <Bell className="mr-2 h-4 w-4" aria-hidden />
+                    Notify teammates…
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => toast.info('Reply by email — coming soon')}>
+                  <Mail className="mr-2 h-4 w-4" aria-hidden />
+                  Reply by email
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowMoveTask(true)} disabled={readOnlyTask}>
+                  <FolderInput className="mr-2 h-4 w-4" aria-hidden />
+                  Move to project…
+                </DropdownMenuItem>
+                {aiEnabled && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                      AI
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem onClick={handleGetSmartSuggestions} disabled={readOnlyTask}>
+                      <Sparkles className="mr-2 h-4 w-4" aria-hidden />
+                      Suggest priority &amp; due date
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleGenerateTitleFromDescription}
+                      disabled={readOnlyTask || description.trim().length < 10 || aiLoading.description}
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" aria-hidden />
+                      Title from description
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleExpandDescription}
+                      disabled={readOnlyTask || !title.trim()}
+                    >
+                      <Wand2 className="mr-2 h-4 w-4" aria-hidden />
+                      Write description
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setShowDecomposition(true)}
+                      disabled={readOnlyTask || !title.trim()}
+                    >
+                      <ListTree className="mr-2 h-4 w-4" aria-hidden />
+                      Break into subtasks
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {onDelete && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={readOnlyTask}
+                      className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" aria-hidden />
+                      Delete task
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          <DialogClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={headerIconButton}
+              aria-label="Close"
+              title="Close (Esc)"
+            >
+              <X aria-hidden />
+            </Button>
+          </DialogClose>
         </header>
 
-        {/* ── Body: one scroll region on mobile, two on md+ ─────── */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain md:grid md:grid-cols-[minmax(0,1fr)_280px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
-          {/* Main column */}
-          <div className="order-2 min-w-0 space-y-6 px-4 py-6 sm:px-6 md:order-1 md:min-h-0 md:overflow-y-auto md:overscroll-contain">
-            {/* Description */}
-            <section className="space-y-2">
-              <div className="flex min-h-8 items-center justify-between gap-3">
-                <label htmlFor={ids.description} className={SECTION_LABEL}>
-                  Description
-                </label>
-                {aiEnabled && title.trim().length >= 3 && !readOnlyTask && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={description ? handleRefineDescription : handleExpandDescription}
-                    disabled={aiLoading.description}
-                    className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs text-primary hover:text-primary', PRESS)}
-                  >
-                    {aiLoading.description ? (
-                      <Loader2 className="animate-spin" aria-hidden />
-                    ) : (
-                      <Wand2 aria-hidden />
-                    )}
-                    {description ? 'Improve with AI' : 'Suggest with AI'}
-                  </Button>
+        {/* ── Notices: save error, lock, view-only ─────────────────── */}
+        {(saveError || lockReadOnly || permissionReadOnly) && (
+          <div className="shrink-0 space-y-2 border-b border-border px-4 py-3 sm:px-6">
+            {saveError && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-[13px] text-destructive-soft-foreground"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span className="min-w-0 break-words">{saveError}</span>
+              </div>
+            )}
+            {lockReadOnly && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-[13px] text-warning-soft-foreground">
+                <Lock className="h-4 w-4 shrink-0" aria-hidden />
+                {hasLockPin ? (
+                  <>
+                    <span className="min-w-[200px] flex-1">
+                      Locked with a PIN. Enter it to edit (this device only until you clear browser data).
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={cn('shrink-0 text-foreground', PRESS)}
+                      onClick={() => setShowUnlockGate(true)}
+                    >
+                      <KeyRound aria-hidden />
+                      Enter PIN
+                    </Button>
+                  </>
+                ) : (
+                  <span className="flex-1">
+                    This task is locked. Only the project owner or a workspace admin can make changes.
+                  </span>
                 )}
               </div>
-              {(readOnlyTask || (isEditing && description.trim() && !editingDescription)) ? (
-                // Read view: links are clickable; click anywhere else to edit.
-                <div
-                  id={ids.description}
-                  role={readOnlyTask ? undefined : 'button'}
-                  tabIndex={readOnlyTask ? undefined : 0}
-                  aria-label={readOnlyTask ? undefined : 'Description. Press Enter to edit.'}
-                  onClick={
-                    readOnlyTask
-                      ? undefined
-                      : (e) => {
-                          // Selecting text to copy it shouldn't switch to editing.
-                          const sel = window.getSelection();
-                          if (sel && !sel.isCollapsed && sel.toString().trim()) return;
-                          descriptionCaretRef.current = textOffsetFromPoint(
-                            e.currentTarget,
-                            e.clientX,
-                            e.clientY,
-                          );
-                          setEditingDescription(true);
-                        }
-                  }
-                  onKeyDown={
-                    readOnlyTask
-                      ? undefined
-                      : (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
+            )}
+            {permissionReadOnly && !lockReadOnly && (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-[13px] text-foreground">
+                <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span>
+                  {isViewer
+                    ? 'You have view-only access to this workspace — you cannot edit tasks.'
+                    : 'You have view-only access to this project — ask the project owner to make you a member to edit tasks.'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Body: one scroll region on mobile, two on md+ ─────── */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain md:grid md:grid-cols-[minmax(0,1fr)_300px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden lg:grid-cols-[minmax(0,1fr)_320px]">
+          {/*
+            Main column. On mobile it dissolves (`contents`) so the order is
+            task → properties → discussion: the properties never end up
+            below a long comment thread.
+          */}
+          <div className="contents md:block md:min-h-0 md:min-w-0 md:space-y-6 md:overflow-y-auto md:overscroll-contain md:p-6">
+            <div className="order-1 min-w-0 space-y-6 px-4 py-5 sm:px-6 md:p-0">
+              {/* Labels + title */}
+              <div className="space-y-2">
+                <div className="flex min-h-5 flex-wrap items-center gap-1">
+                  {urgent && <UrgentBadge muted={isDoneStatus} />}
+                  <PriorityPill priority={priority} color={priorityPillColor} muted={isDoneStatus} />
+                </div>
+                <label htmlFor={ids.title} className="sr-only">
+                  Task title
+                </label>
+                {/* The 8px hover/focus inset hangs outside the column, so the text itself starts on the column edge. */}
+                <div className="-mx-2">
+                  <input
+                    id={ids.title}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Plain Enter moves on to the description; Cmd/Ctrl+Enter saves (dialog-level).
+                      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        if (descriptionTextareaRef.current) descriptionTextareaRef.current.focus();
+                        else if (!readOnlyTask) setEditingDescription(true);
+                      }
+                    }}
+                    placeholder="Task title"
+                    autoFocus={!isEditing}
+                    readOnly={readOnlyTask}
+                    aria-readonly={readOnlyTask || undefined}
+                    aria-invalid={!title.trim() ? true : undefined}
+                    autoComplete="off"
+                    className="h-10 w-full rounded-md bg-transparent px-2 text-[22px] font-semibold leading-7 tracking-tight text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring/40 md:h-9"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <section className="space-y-2">
+                <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <label htmlFor={ids.description} className={SECTION_LABEL}>
+                    Description
+                  </label>
+                  {aiEnabled && title.trim().length >= 3 && !readOnlyTask && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={description ? handleRefineDescription : handleExpandDescription}
+                      disabled={aiLoading.description}
+                      className={inlineGhostButton}
+                    >
+                      {aiLoading.description ? (
+                        <Loader2 className="!size-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <Wand2 className="!size-3.5" aria-hidden />
+                      )}
+                      {description ? 'Improve with AI' : 'Suggest with AI'}
+                    </Button>
+                  )}
+                </div>
+                {showDescriptionReadView ? (
+                  // Read view: links are clickable; click anywhere else to edit.
+                  <div
+                    id={ids.description}
+                    role={readOnlyTask ? undefined : 'button'}
+                    tabIndex={readOnlyTask ? undefined : 0}
+                    aria-label={readOnlyTask ? undefined : 'Description. Press Enter to edit.'}
+                    onClick={
+                      readOnlyTask
+                        ? undefined
+                        : (e) => {
+                            // Selecting text to copy it shouldn't switch to editing.
+                            const sel = window.getSelection();
+                            if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+                            descriptionCaretRef.current = textOffsetFromPoint(
+                              e.currentTarget,
+                              e.clientX,
+                              e.clientY,
+                            );
                             setEditingDescription(true);
                           }
-                        }
-                  }
-                  className={cn(
-                    'min-h-24 whitespace-pre-wrap break-words rounded-lg border border-border bg-background px-3 py-2 text-base leading-relaxed md:text-sm',
-                    readOnlyTask
-                      ? 'cursor-default'
-                      : 'cursor-text transition-colors hover:border-ring/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    !description.trim() && 'text-muted-foreground',
-                  )}
-                >
-                  {description.trim() ? <LinkifiedText text={description} /> : 'No description'}
-                </div>
-              ) : (
-                <Textarea
-                  id={ids.description}
-                  ref={descriptionTextareaRef}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onBlur={() => setEditingDescription(false)}
-                  placeholder="Add a description, link, or note…"
-                  rows={3}
-                  className="min-h-24 resize-none overflow-hidden rounded-lg border-border bg-background px-3 py-2 text-base leading-relaxed transition-colors md:text-sm"
-                />
-              )}
-              {descriptionLinks.length > 0 &&
-                !(readOnlyTask || (isEditing && description.trim() && !editingDescription)) && (
+                    }
+                    onKeyDown={
+                      readOnlyTask
+                        ? undefined
+                        : (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setEditingDescription(true);
+                            }
+                          }
+                    }
+                    className={cn(
+                      'whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground',
+                      readOnlyTask
+                        ? 'cursor-default'
+                        : 'cursor-text rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-card',
+                      !description.trim() && 'text-muted-foreground',
+                    )}
+                  >
+                    {description.trim() ? (
+                      <LinkifiedText text={description} linkClassName={TEXT_LINK} />
+                    ) : (
+                      'No description'
+                    )}
+                  </div>
+                ) : (
+                  <Textarea
+                    id={ids.description}
+                    ref={descriptionTextareaRef}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    onBlur={() => setEditingDescription(false)}
+                    placeholder="Add a description, link, or note…"
+                    rows={3}
+                    className="min-h-24 resize-none overflow-hidden rounded-md px-3 py-2 text-base leading-relaxed md:text-sm"
+                  />
+                )}
+                {descriptionLinks.length > 0 && !showDescriptionReadView && (
                   // While editing, links in the text stay one click away.
                   // mousedown is cancelled so the box keeps focus — otherwise
                   // the blur swaps views and the click lands on nothing.
-                  <div className="flex flex-wrap items-center gap-1.5" aria-label="Links in description">
+                  <div className="flex flex-wrap items-center gap-1" aria-label="Links in description">
                     {descriptionLinks.map((l, i) => (
                       <a
                         key={`${l.href}-${i}`}
@@ -1735,227 +1777,235 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         onMouseDown={(e) => e.preventDefault()}
                         title={l.href}
                         className={cn(
-                          'inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/60 px-2 py-1 text-xs text-primary',
-                          'transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'inline-flex h-6 max-w-full items-center gap-1 rounded border border-border bg-background px-2 text-xs text-foreground',
+                          'transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           PRESS,
                         )}
                       >
                         {l.href.startsWith('mailto:') ? (
-                          <Mail className="h-3 w-3 shrink-0" aria-hidden />
+                          <Mail className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
                         ) : (
-                          <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
+                          <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
                         )}
                         <span className="truncate">{l.value}</span>
                       </a>
                     ))}
                   </div>
                 )}
-              {aiError && (
-                <p role="alert" className="text-xs text-destructive">{aiError}</p>
-              )}
-            </section>
-
-            {/* Subtasks */}
-            <section className="space-y-2" aria-labelledby={ids.subtasksHeading}>
-              <div className="flex min-h-8 items-center justify-between gap-3">
-                <h3 id={ids.subtasksHeading} className={cn(SECTION_LABEL, 'flex items-center gap-2')}>
-                  Subtasks
-                  {subtaskProgress && (
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-foreground/80 tabular-nums">
-                      {subtaskProgress.done}/{subtaskProgress.total}
-                    </span>
-                  )}
-                </h3>
-                {aiEnabled && title.trim().length >= 3 && !readOnlyTask && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowDecomposition(true)}
-                    className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs text-primary hover:text-primary', PRESS)}
-                  >
-                    <ListTree aria-hidden />
-                    Break down with AI
-                  </Button>
+                {aiError && (
+                  <p role="alert" className="text-xs text-destructive">{aiError}</p>
                 )}
-              </div>
-              {subtaskProgress && (
-                <div
-                  role="progressbar"
-                  aria-label="Subtasks completed"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={subtaskProgress.pct}
-                  className="h-1 overflow-hidden rounded-full bg-muted"
-                >
-                  <div
-                    className="h-full w-full origin-left bg-primary motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]"
-                    style={{ transform: `scaleX(${subtaskProgress.pct / 100})` }}
-                  />
-                </div>
-              )}
-              {subtasks.length > 0 ? (
-                <ul className="space-y-0.5">
-                  {subtasks.map((subtask) => (
-                    <li
-                      key={subtask.id}
-                      className="group flex min-h-10 items-center gap-1 rounded-md pr-1 hover:bg-muted/60 md:min-h-9"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleSubtask(subtask.id)}
-                        disabled={readOnlyTask}
-                        aria-pressed={subtask.completed}
-                        aria-label={`Mark "${subtask.title}" as ${subtask.completed ? 'not done' : 'done'}`}
-                        className={cn(
-                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-md disabled:cursor-not-allowed md:h-9 md:w-9',
-                          FOCUS_RING,
-                          PRESS,
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            'flex h-4 w-4 items-center justify-center rounded-full border transition-colors',
-                            subtask.completed ? 'border-success bg-success' : 'border-muted-foreground/50',
-                          )}
-                        >
-                          {subtask.completed && (
-                            <Check className="h-3 w-3 text-success-foreground" strokeWidth={3} aria-hidden />
-                          )}
-                        </span>
-                      </button>
-                      <span
-                        className={cn(
-                          'min-w-0 flex-1 truncate text-sm',
-                          subtask.completed ? 'text-muted-foreground line-through' : 'text-foreground',
-                        )}
-                        title={subtask.title}
-                      >
-                        <LinkifiedText text={subtask.title} />
-                      </span>
-                      {!readOnlyTask && (
-                        <button
-                          type="button"
-                          onClick={() => removeSubtask(subtask.id)}
-                          aria-label={`Remove subtask "${subtask.title}"`}
-                          className={cn(
-                            'flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 md:h-8 md:w-8',
-                            FOCUS_RING,
-                          )}
-                        >
-                          <X className="h-3.5 w-3.5" aria-hidden />
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No subtasks yet{readOnlyTask ? '.' : ' — add steps below to break the work down.'}
-                </p>
-              )}
-              {!readOnlyTask && (
-                <div className="flex items-center gap-1 rounded-md pr-1 focus-within:bg-muted/60">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center md:h-9 md:w-9" aria-hidden>
-                    <Plus className="h-4 w-4 text-muted-foreground" />
-                  </span>
-                  <label htmlFor={ids.subtaskInput} className="sr-only">
-                    Add a subtask
-                  </label>
-                  <input
-                    id={ids.subtaskInput}
-                    type="text"
-                    value={newSubtaskTitle}
-                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                    placeholder="Add a subtask…"
-                    autoComplete="off"
-                    enterKeyHint="done"
-                    className="h-10 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:h-9 md:text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
-                        e.preventDefault();
-                        addSubtask();
-                      }
-                    }}
-                  />
-                  {newSubtaskTitle.trim() && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={addSubtask}
-                      className={cn('h-8 min-h-0 px-2 text-xs', PRESS)}
-                    >
-                      Add
-                    </Button>
-                  )}
-                </div>
-              )}
-            </section>
+              </section>
 
-            {/* Attachments (everything uploaded on this task's comments) */}
-            {isEditing && task && (
-              <section className="space-y-2" aria-labelledby={ids.attachmentsHeading}>
-                <div className="flex min-h-8 items-center justify-between gap-3">
-                  <h3 id={ids.attachmentsHeading} className={cn(SECTION_LABEL, 'flex items-center gap-2')}>
-                    Attachments
-                    {allAttachments.length > 0 && (
-                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-foreground/80 tabular-nums">
-                        {allAttachments.length}
-                      </span>
-                    )}
+              {/* Subtasks */}
+              <section className="space-y-2" aria-labelledby={ids.subtasksHeading}>
+                <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1">
+                  <h3 id={ids.subtasksHeading} className={SECTION_LABEL}>
+                    Subtasks
                   </h3>
-                  {!readOnlyTask && (
+                  {subtaskProgress ? (
+                    <>
+                      <span className={SECTION_META}>
+                        {subtaskProgress.done} of {subtaskProgress.total}
+                      </span>
+                      <div
+                        role="progressbar"
+                        aria-label="Subtasks completed"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={subtaskProgress.pct}
+                        className="h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-foreground/10"
+                      >
+                        <div
+                          className="h-full w-full origin-left bg-foreground/70 motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]"
+                          style={{ transform: `scaleX(${subtaskProgress.pct / 100})` }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <span className="flex-1" aria-hidden />
+                  )}
+                  {aiEnabled && title.trim().length >= 3 && !readOnlyTask && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        setActiveTab('comments');
-                        commentFileInputRef.current?.click();
-                      }}
-                      className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs', PRESS)}
+                      onClick={() => setShowDecomposition(true)}
+                      className={inlineGhostButton}
                     >
-                      <Paperclip aria-hidden />
-                      Attach
+                      <ListTree className="!size-3.5" aria-hidden />
+                      Break down with AI
                     </Button>
                   )}
                 </div>
-                {!commentsLoaded ? (
-                  <div className="h-10 rounded-lg bg-muted motion-safe:animate-pulse" role="status" aria-label="Loading attachments" />
-                ) : allAttachments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No files yet{readOnlyTask ? '.' : ' — attach them to a comment.'}
-                  </p>
-                ) : (
-                  <AttachmentPreview attachments={allAttachments} />
-                )}
+                <div>
+                  {subtasks.length > 0 ? (
+                    <ul>
+                      {subtasks.map((subtask) => (
+                        <li
+                          key={subtask.id}
+                          className="group -mx-2 flex min-h-10 items-center gap-0.5 rounded-md px-2 transition-colors hover:bg-secondary md:min-h-8"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleSubtask(subtask.id)}
+                            disabled={readOnlyTask}
+                            aria-pressed={subtask.completed}
+                            aria-label={`Mark "${subtask.title}" as ${subtask.completed ? 'not done' : 'done'}`}
+                            className={cn(
+                              '-ml-2 flex h-10 w-8 shrink-0 items-center justify-center rounded-md disabled:cursor-not-allowed md:h-8',
+                              FOCUS_RING,
+                              PRESS,
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'flex h-4 w-4 items-center justify-center rounded-full border-[1.5px] transition-colors',
+                                subtask.completed
+                                  ? 'border-foreground bg-foreground text-background'
+                                  : 'border-muted-foreground/50 bg-background',
+                              )}
+                            >
+                              {subtask.completed && <Check className="h-2.5 w-2.5" strokeWidth={3} aria-hidden />}
+                            </span>
+                          </button>
+                          <span
+                            className={cn(
+                              'min-w-0 flex-1 truncate text-sm',
+                              subtask.completed ? 'text-muted-foreground line-through' : 'text-foreground',
+                            )}
+                            title={subtask.title}
+                          >
+                            <LinkifiedText text={subtask.title} linkClassName={TEXT_LINK} />
+                          </span>
+                          {!readOnlyTask && (
+                            <button
+                              type="button"
+                              onClick={() => removeSubtask(subtask.id)}
+                              aria-label={`Remove subtask "${subtask.title}"`}
+                              className={cn(
+                                ICON_BUTTON_SM,
+                                '-mr-1.5 opacity-0 transition-opacity hover:bg-transparent hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
+                                FOCUS_RING,
+                              )}
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden />
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="flex min-h-8 items-center text-sm text-muted-foreground">
+                      No subtasks yet{readOnlyTask ? '.' : ' — add steps below to break the work down.'}
+                    </p>
+                  )}
+                  {!readOnlyTask && (
+                    <div className="flex min-h-10 items-center gap-0.5 md:min-h-8">
+                      <span className="-ml-2 flex h-10 w-8 shrink-0 items-center justify-center md:h-8" aria-hidden>
+                        <Plus className="h-4 w-4 text-muted-foreground" />
+                      </span>
+                      <label htmlFor={ids.subtaskInput} className="sr-only">
+                        Add a subtask
+                      </label>
+                      <input
+                        id={ids.subtaskInput}
+                        type="text"
+                        value={newSubtaskTitle}
+                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        placeholder="Add a subtask…"
+                        autoComplete="off"
+                        enterKeyHint="done"
+                        className="h-10 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:h-8 md:text-sm"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            addSubtask();
+                          }
+                        }}
+                      />
+                      {newSubtaskTitle.trim() && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={addSubtask}
+                          className={PRESS}
+                        >
+                          Add
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </section>
-            )}
 
-            {/* First comment (create only) */}
-            {!isEditing && (
-              <section className="space-y-2">
-                <label htmlFor={ids.firstComment} className={cn(SECTION_LABEL, 'flex min-h-8 items-center gap-1.5')}>
-                  First comment
-                  <span className="font-normal normal-case tracking-normal">(optional)</span>
-                </label>
-                <MentionTextarea
-                  id={ids.firstComment}
-                  value={initialComment}
-                  onChange={setInitialComment}
-                  members={projectAssignableMembers}
-                  excludeUserId={user?.userId}
-                  placeholder="Add context for your team (@ to mention)"
-                  rows={2}
-                  className="min-h-[72px] resize-none rounded-lg border-border bg-background px-3 py-2 text-base transition-colors md:text-sm"
-                />
-              </section>
-            )}
+              {/* Attachments (everything uploaded on this task's comments) */}
+              {isEditing && task && (
+                <section className="space-y-2" aria-labelledby={ids.attachmentsHeading}>
+                  <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1">
+                    <h3 id={ids.attachmentsHeading} className={SECTION_LABEL}>
+                      Attachments
+                    </h3>
+                    {allAttachments.length > 0 && (
+                      <span className={SECTION_META}>{allAttachments.length}</span>
+                    )}
+                    <span className="flex-1" aria-hidden />
+                    {!readOnlyTask && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setActiveTab('comments');
+                          commentFileInputRef.current?.click();
+                        }}
+                        className={inlineGhostButton}
+                      >
+                        <Paperclip className="!size-3.5" aria-hidden />
+                        Attach
+                      </Button>
+                    )}
+                  </div>
+                  {!commentsLoaded ? (
+                    <div className="h-8 w-40 rounded-md bg-secondary motion-safe:animate-pulse" role="status" aria-label="Loading attachments" />
+                  ) : allAttachments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No files yet{readOnlyTask ? '.' : ' — attach them to a comment.'}
+                    </p>
+                  ) : (
+                    <AttachmentChips attachments={allAttachments} />
+                  )}
+                </section>
+              )}
+
+              {/* First comment (create only) */}
+              {!isEditing && (
+                <section className="space-y-2">
+                  <label htmlFor={ids.firstComment} className={cn(SECTION_LABEL, 'flex min-h-7 items-center gap-1.5')}>
+                    First comment
+                    <span className="font-normal">(optional)</span>
+                  </label>
+                  <MentionTextarea
+                    id={ids.firstComment}
+                    value={initialComment}
+                    onChange={setInitialComment}
+                    members={projectAssignableMembers}
+                    excludeUserId={user?.userId}
+                    placeholder="Add context for your team (@ to mention)"
+                    rows={2}
+                    className="min-h-[72px] resize-none rounded-md px-3 py-2 text-base md:text-sm"
+                  />
+                </section>
+              )}
+            </div>
 
             {/* Comments / Activity / Expenses (edit only) */}
             {isEditing && task && (
-              <section aria-label="Discussion and history">
+              <section
+                aria-label="Discussion and history"
+                className="order-3 min-w-0 border-t border-border px-4 pb-5 pt-2 sm:px-6 md:border-t-0 md:p-0"
+              >
                 {/* Lives outside the tabs so "Attach" works from any tab. */}
                 <input
                   ref={commentFileInputRef}
@@ -1986,33 +2036,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   value={activeTab}
                   onValueChange={(v) => setActiveTab(v as 'comments' | 'activity' | 'expenses')}
                 >
-                  <TabsList className="h-auto w-full justify-start gap-1 rounded-none border-b border-border bg-transparent p-0">
+                  <TabsList className="flex w-full justify-start">
                     {([
-                      { value: 'comments', label: 'Comments', Icon: MessageSquare, count: commentsLoaded ? commentCount : null },
-                      { value: 'activity', label: 'Activity', Icon: Activity, count: null },
-                      { value: 'expenses', label: 'Expenses', Icon: Receipt, count: null },
-                    ] as const).map(({ value, label, Icon, count }) => (
-                      <TabsTrigger
-                        key={value}
-                        value={value}
-                        className="-mb-px h-10 gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 text-sm text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:ring-offset-0 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                      >
-                        <Icon className="h-4 w-4" aria-hidden />
+                      { value: 'comments', label: 'Comments', count: commentsLoaded ? commentCount : null },
+                      { value: 'activity', label: 'Activity', count: null },
+                      { value: 'expenses', label: 'Expenses', count: null },
+                    ] as const).map(({ value, label, count }) => (
+                      <TabsTrigger key={value} value={value}>
                         {label}
                         {count !== null && count > 0 && (
-                          <span className="rounded-full bg-muted px-1.5 text-[11px] font-medium tabular-nums">
-                            {count}
-                          </span>
+                          <span className="font-normal text-muted-foreground tabular-nums">{count}</span>
                         )}
                       </TabsTrigger>
                     ))}
                   </TabsList>
 
-                  <TabsContent value="comments" className="mt-4 space-y-4 focus-visible:ring-offset-0">
+                  <TabsContent value="comments" className="space-y-4">
                     {!readOnlyTask && (
                       <div
                         ref={commentComposerRef}
-                        className="overflow-hidden rounded-lg border border-border bg-background transition-colors focus-within:border-ring"
+                        className="rounded-lg border border-input bg-background transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25"
                       >
                         <MentionTextarea
                           value={newComment}
@@ -2027,25 +2070,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                           placeholder="Write a comment… (@ to mention)"
                           aria-label="Write a comment"
                           rows={2}
-                          className="min-h-[72px] resize-none border-0 bg-transparent px-3 py-2 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
+                          className="min-h-14 resize-none rounded-lg border-0 bg-transparent px-3 pb-0 pt-2.5 text-base focus-visible:ring-0 focus-visible:ring-offset-0 md:text-sm"
                         />
                         {task?.taskId && typingPeers && <TypingIndicator peers={typingPeers(task.taskId)} />}
 
                         {commentAttachmentFiles.length > 0 && (
-                          <ul className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2" aria-label="Files to attach">
+                          <ul className="flex flex-wrap gap-1 px-3 pt-2" aria-label="Files to attach">
                             {commentAttachmentFiles.map((f, i) => (
                               <li
                                 key={`${f.name}-${i}`}
-                                className="inline-flex h-7 items-center gap-1 rounded-md bg-muted pl-2 text-xs"
+                                className="inline-flex h-6 max-w-full items-center gap-1 rounded border border-border bg-background pl-2 text-xs"
                                 title={f.name}
                               >
-                                <Paperclip className="h-3 w-3 text-muted-foreground" aria-hidden />
+                                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
                                 <span className="max-w-[150px] truncate">{truncateFileName(f.name, 20)}</span>
                                 <button
                                   type="button"
                                   onClick={() => setCommentAttachmentFiles((p) => p.filter((_, idx) => idx !== i))}
                                   aria-label={`Remove ${f.name}`}
-                                  className={cn('flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-destructive', FOCUS_RING)}
+                                  className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-destructive', FOCUS_RING)}
                                 >
                                   <X className="h-3 w-3" aria-hidden />
                                 </button>
@@ -2055,7 +2098,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         )}
 
                         {showTimeSpent && (
-                          <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
                             <label htmlFor={ids.timeSpent} className="text-xs text-muted-foreground">
                               Time spent
                             </label>
@@ -2070,7 +2113,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 const v = e.target.value;
                                 setCommentTimeSpentMinutes(v === '' ? '' : Math.max(0, parseInt(v, 10) || 0));
                               }}
-                              className="h-10 w-20 rounded-md px-2 text-center text-base tabular-nums transition-colors md:h-8 md:text-sm"
+                              className="w-20 px-2 text-center tabular-nums"
                             />
                             <span className="text-xs text-muted-foreground">minutes</span>
                             <button
@@ -2080,64 +2123,62 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                 setCommentTimeSpentMinutes('');
                               }}
                               aria-label="Remove time spent"
-                              className={cn('ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground', FOCUS_RING)}
+                              className={cn(ICON_BUTTON_SM, 'ml-auto', FOCUS_RING)}
                             >
-                              <X className="h-4 w-4" aria-hidden />
+                              <X className="h-3.5 w-3.5" aria-hidden />
                             </button>
                           </div>
                         )}
 
-                        <div className="flex items-center justify-between gap-2 border-t border-border bg-muted/40 px-2 py-1.5">
-                          <div className="flex items-center gap-0.5">
-                            <EmojiPickerButton value={newComment} onChange={setNewComment} />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => commentFileInputRef.current?.click()}
-                              className={cn('h-8 min-h-0 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground', PRESS)}
-                            >
-                              <Paperclip aria-hidden />
-                              Attach
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              aria-pressed={showTimeSpent}
-                              onClick={() => setShowTimeSpent(!showTimeSpent)}
-                              className={cn(
-                                'h-8 min-h-0 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground',
-                                showTimeSpent && 'bg-muted text-foreground',
-                                PRESS,
-                              )}
-                            >
-                              <Clock aria-hidden />
-                              Time
-                            </Button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="hidden text-[11px] text-muted-foreground lg:inline">
-                              {modKey}+Enter
-                            </span>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => void handleAddComment()}
-                              disabled={(!newComment.trim() && commentAttachmentFiles.length === 0) || commentLoading}
-                              aria-keyshortcuts="Meta+Enter Control+Enter"
-                              className={cn('h-8 min-h-0 min-w-[5.5rem] gap-1.5 px-3', PRESS)}
-                            >
-                              {commentLoading ? (
-                                <>
-                                  <Loader2 className="animate-spin" aria-hidden />
-                                  Posting
-                                </>
-                              ) : (
-                                'Comment'
-                              )}
-                            </Button>
-                          </div>
+                        <div className="flex flex-wrap items-center gap-1 p-1.5">
+                          <EmojiPickerButton
+                            value={newComment}
+                            onChange={setNewComment}
+                            // 28px to match the row (the shared button is 32px by default).
+                            className="min-h-10 min-w-10 hover:bg-secondary md:h-7 md:min-h-7 md:w-7 md:min-w-7"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => commentFileInputRef.current?.click()}
+                            className={inlineGhostButton}
+                          >
+                            <Paperclip className="!size-3.5" aria-hidden />
+                            Attach
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            aria-pressed={showTimeSpent}
+                            onClick={() => setShowTimeSpent(!showTimeSpent)}
+                            className={cn(inlineGhostButton, showTimeSpent && 'bg-secondary text-foreground')}
+                          >
+                            <Clock className="!size-3.5" aria-hidden />
+                            Time
+                          </Button>
+                          <span className="flex-1" aria-hidden />
+                          <span className="hidden px-1 text-xs text-muted-foreground lg:inline">
+                            {modKey}+Enter
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void handleAddComment()}
+                            disabled={(!newComment.trim() && commentAttachmentFiles.length === 0) || commentLoading}
+                            aria-keyshortcuts="Meta+Enter Control+Enter"
+                            className={cn('min-w-[5.5rem] px-3', PRESS)}
+                          >
+                            {commentLoading ? (
+                              <>
+                                <Loader2 className="!size-3.5 animate-spin" aria-hidden />
+                                Posting
+                              </>
+                            ) : (
+                              'Comment'
+                            )}
+                          </Button>
                         </div>
                       </div>
                     )}
@@ -2157,23 +2198,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     {!commentsLoaded ? (
                       <ListSkeleton label="Loading comments" rows={2} />
                     ) : commentCount === 0 ? (
-                      <p className="py-6 text-center text-sm text-muted-foreground">
+                      <p className="py-6 text-center text-[13px] text-muted-foreground">
                         No comments yet{readOnlyTask ? '.' : ' — start the conversation above.'}
                       </p>
                     ) : (
                       <ul className="space-y-4">
                         {taskComments.map((comment) => (
-                          <li key={comment.commentId} className="group flex gap-3">
-                            <Avatar className="h-8 w-8 shrink-0">
+                          <li key={comment.commentId} className="group flex items-start gap-2.5">
+                            <Avatar className="h-7 w-7 shrink-0">
                               <AvatarImage src={comment.photoURL} alt="" />
-                              <AvatarFallback className="bg-primary-soft text-xs text-primary-soft-foreground">
+                              <AvatarFallback className="bg-secondary text-xs font-semibold text-foreground">
                                 {comment.displayName?.charAt(0).toUpperCase() || '?'}
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0 flex-1">
-                              <div className="flex min-h-8 items-center justify-between gap-2">
+                              <div className="flex min-h-7 items-center justify-between gap-2">
                                 <div className="flex min-w-0 items-baseline gap-2">
-                                  <span className="truncate text-sm font-medium text-foreground" title={comment.displayName}>
+                                  <span className="truncate text-[13px] font-semibold text-foreground" title={comment.displayName}>
                                     {comment.displayName}
                                   </span>
                                   <time
@@ -2185,12 +2226,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                   </time>
                                 </div>
                                 {(comment.userId === user?.userId || isAdmin) && !readOnlyTask && (
-                                  <Button
+                                  <button
                                     type="button"
-                                    variant="ghost"
-                                    size="icon"
                                     className={cn(
-                                      'h-8 w-8 min-h-0 min-w-0 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 md:min-h-0 md:min-w-0',
+                                      ICON_BUTTON_SM,
+                                      'opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
+                                      FOCUS_RING,
                                       deletingCommentId === comment.commentId && 'opacity-100',
                                     )}
                                     disabled={deletingCommentId === comment.commentId}
@@ -2199,22 +2240,22 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                                     onClick={() => void handleDeleteComment(comment.commentId)}
                                   >
                                     {deletingCommentId === comment.commentId ? (
-                                      <Loader2 className="animate-spin" aria-hidden />
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
                                     ) : (
-                                      <Trash2 aria-hidden />
+                                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
                                     )}
-                                  </Button>
+                                  </button>
                                 )}
                               </div>
                               {comment.timeSpentMinutes != null && comment.timeSpentMinutes > 0 && (
-                                <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-soft-foreground tabular-nums">
+                                <span className="mb-1 inline-flex h-5 items-center gap-1 rounded-full border border-success/30 bg-success-soft px-1.5 text-[11px] font-medium text-success-soft-foreground tabular-nums">
                                   <Clock className="h-3 w-3" aria-hidden />
                                   {formatTimeLogged(comment.timeSpentMinutes)} logged
                                 </span>
                               )}
                               {comment.text?.trim() && (
                                 <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
-                                  <LinkifiedText text={comment.text} />
+                                  <LinkifiedText text={comment.text} linkClassName={TEXT_LINK} />
                                 </p>
                               )}
                               {comment.attachments && comment.attachments.length > 0 && (
@@ -2227,11 +2268,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     )}
                   </TabsContent>
 
-                  <TabsContent value="activity" className="mt-4 focus-visible:ring-offset-0">
+                  <TabsContent value="activity">
                     <ActivityList events={taskActivityEvents} loading={taskActivityLoading} />
                   </TabsContent>
 
-                  <TabsContent value="expenses" className="mt-4 focus-visible:ring-offset-0">
+                  <TabsContent value="expenses">
                     {/* Visible to creator/assignee + owner/admin via RLS */}
                     <TaskExpensesPanel
                       taskId={task.taskId}
@@ -2246,12 +2287,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             )}
           </div>
 
-          {/* Properties panel (first on mobile) */}
+          {/* Properties panel (between the task and its discussion on mobile) */}
           <aside
             aria-label="Task properties"
-            className="order-1 space-y-4 border-b border-border bg-surface-2 px-4 py-4 sm:px-6 md:order-2 md:min-h-0 md:overflow-y-auto md:overscroll-contain md:border-b-0 md:border-l md:px-4"
+            className="order-2 flex min-w-0 flex-col gap-4 border-t border-border bg-surface-2 p-4 sm:px-6 md:order-none md:min-h-0 md:overflow-y-auto md:overscroll-contain md:border-l md:border-t-0 md:px-4"
           >
-            <div className="space-y-1">
+            {/* One grid for every row: labels share one edge, values another. */}
+            <div className={PROPERTY_GRID}>
               <PropertyRow label="Status" htmlFor={ids.status}>
                 <Select value={status} onValueChange={setStatus} disabled={readOnlyTask}>
                   <SelectTrigger id={ids.status} className={GHOST_FIELD}>
@@ -2285,15 +2327,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   disabled={readOnlyTask}
                 >
                   <SelectTrigger id={ids.priority} className={GHOST_FIELD}>
-                    <SelectValue />
+                    <SelectValue>
+                      <PriorityPill priority={priority} color={priorityPillColor} />
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(PRIORITY_COLORS).map(([key, color]) => (
+                    {(Object.keys(PRIORITY_COLORS) as TaskPriority[]).map((key) => (
                       <SelectItem key={key} value={key}>
-                        <span className="flex items-center gap-2">
-                          <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-                          {key.charAt(0).toUpperCase() + key.slice(1)}
-                        </span>
+                        <PriorityPill priority={key} />
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2322,19 +2363,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </PropertyRow>
 
               <PropertyRow label="Tags" htmlFor={ids.tags}>
-                <div className="flex flex-wrap items-center gap-1.5 px-2 py-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-1 px-2 py-1">
                   {tags.map((tag) => (
                     <span
                       key={tag}
-                      className="inline-flex h-6 max-w-full items-center gap-0.5 rounded-full bg-info-soft pl-2 text-xs text-info-soft-foreground"
+                      className="inline-flex h-6 max-w-full items-center rounded border border-border bg-background pl-2 text-xs text-foreground"
                       title={tag}
                     >
                       <span className="truncate">{tag}</span>
-                      {!readOnlyTask && (
+                      {readOnlyTask ? (
+                        <span className="w-2 shrink-0" aria-hidden />
+                      ) : (
                         <button
                           type="button"
                           onClick={() => setTags(tags.filter((t) => t !== tag))}
-                          className={cn('flex h-6 w-6 items-center justify-center rounded-full hover:text-destructive', FOCUS_RING)}
+                          className={cn(
+                            'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive',
+                            FOCUS_RING,
+                          )}
                           aria-label={`Remove tag ${tag}`}
                         >
                           <X className="h-3 w-3" aria-hidden />
@@ -2343,7 +2389,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     </span>
                   ))}
                   {readOnlyTask ? (
-                    tags.length === 0 && <span className="text-sm text-muted-foreground">None</span>
+                    tags.length === 0 && <span className="text-[13px] text-muted-foreground">None</span>
                   ) : (
                     <input
                       id={ids.tags}
@@ -2351,7 +2397,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                       onChange={(e) => setTagInput(e.target.value)}
                       placeholder={tags.length ? 'Add…' : 'Add tag…'}
                       autoComplete="off"
-                      className="h-8 min-w-[72px] flex-1 rounded-md bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring md:h-7 md:text-sm"
+                      className="h-8 min-w-[64px] flex-1 rounded bg-transparent text-base outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-2 md:h-6 md:text-[13px]"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ',') {
                           if (e.metaKey || e.ctrlKey) return;
@@ -2367,7 +2413,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </PropertyRow>
 
               <PropertyRow label="Urgent" htmlFor={ids.urgent}>
-                <div className="flex h-10 items-center gap-2 px-2 md:h-8">
+                <div className="flex items-center gap-2 px-2">
                   <Switch
                     id={ids.urgent}
                     checked={urgent}
@@ -2375,34 +2421,36 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     disabled={readOnlyTask}
                     className="data-[state=checked]:bg-destructive"
                   />
-                  {urgent && (
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
-                      <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-                      Urgent
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      'text-[13px]',
+                      urgent ? 'font-medium text-destructive' : 'text-muted-foreground',
+                    )}
+                  >
+                    {urgent ? 'On' : 'Off'}
+                  </span>
                 </div>
               </PropertyRow>
 
-              <div className="pt-1">
-                <MeetingProperty
-                  startsAt={meetingStartsAt}
-                  durationMinutes={meetingDurationMinutes}
-                  onChange={handleMeetingChange}
-                  readOnly={readOnlyTask}
-                  isSaved={Boolean(isEditing && task?.taskId)}
-                  joinDisabledReason={joinDisabledReason}
-                  onJoin={handleJoinMeeting}
-                  now={now}
-                />
-                {task?.googleMeetLink && (
+              <MeetingProperty
+                startsAt={meetingStartsAt}
+                durationMinutes={meetingDurationMinutes}
+                onChange={handleMeetingChange}
+                readOnly={readOnlyTask}
+                isSaved={Boolean(isEditing && task?.taskId)}
+                joinDisabledReason={joinDisabledReason}
+                onJoin={handleJoinMeeting}
+                now={now}
+              />
+              {task?.googleMeetLink && (
+                <div className={cn(PROPERTY_VALUE, 'col-start-2')}>
                   <a
                     href={task.googleMeetLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     title={task.googleMeetLink}
                     className={cn(
-                      'mt-1 inline-flex h-8 max-w-full items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline',
+                      'inline-flex h-8 max-w-full items-center gap-1.5 self-start rounded-md px-2 text-[13px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline',
                       FOCUS_RING,
                     )}
                   >
@@ -2410,12 +2458,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     <span className="truncate">Google Meet (old)</span>
                     <ExternalLink className="h-3 w-3 shrink-0" aria-hidden />
                   </a>
-                )}
-              </div>
+                </div>
+              )}
 
-              <PropertyRow label="Lock" htmlFor={ids.lock} className="pt-1">
+              <PropertyRow label="Lock" htmlFor={ids.lock}>
                 <div
-                  className="flex h-10 items-center gap-2 px-2 md:h-8"
+                  className="flex items-center gap-2 px-2"
                   title={
                     !canManageLockAndPin
                       ? 'Only the organization owner or an admin can lock or unlock a task'
@@ -2430,18 +2478,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     aria-describedby={ids.lockHint}
                     className="data-[state=checked]:bg-warning"
                   />
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span
+                    className={cn(
+                      'truncate text-[13px]',
+                      isLocked ? 'font-medium text-warning-soft-foreground' : 'text-muted-foreground',
+                    )}
+                  >
                     {isLocked ? 'Sensitive' : 'Off'}
                   </span>
                 </div>
+                <p id={ids.lockHint} className="sr-only">
+                  Locked tasks are only visible to the creator, assignees, and project owner.
+                </p>
               </PropertyRow>
-              <p id={ids.lockHint} className="sr-only">
-                Locked tasks are only visible to the creator, assignees, and project owner.
-              </p>
 
               {isLocked && canManageLockAndPin && (
-                <div className="ml-2 space-y-2 border-l-2 border-border py-1 pl-3">
-                  <p className="text-[11px] leading-snug text-muted-foreground">
+                <div className="col-start-2 min-w-0 space-y-1.5 pb-1">
+                  <p className="px-2 text-xs leading-snug text-muted-foreground">
                     {isEditing
                       ? 'Optional PIN so assignees can unlock and edit. Leave blank to keep the current PIN.'
                       : 'Add a PIN to require collaborators to unlock before editing, or leave blank for owner/assignee-only visibility.'}
@@ -2458,7 +2511,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     placeholder="New PIN"
                     value={lockPinNew}
                     onChange={(e) => setLockPinNew(e.target.value)}
-                    className="h-10 rounded-md px-3 text-base transition-colors md:h-8 md:text-sm"
+                    className="px-2"
                   />
                   <label htmlFor={ids.pinConfirm} className="sr-only">Confirm PIN</label>
                   <Input
@@ -2472,94 +2525,96 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                     placeholder="Confirm PIN"
                     value={lockPinConfirm}
                     onChange={(e) => setLockPinConfirm(e.target.value)}
-                    className="h-10 rounded-md px-3 text-base transition-colors md:h-8 md:text-sm"
+                    className="px-2"
                   />
                   {isEditing && task?.hasLockPin && (
-                    <p className="text-[11px] leading-snug text-muted-foreground">
+                    <p className="px-2 text-xs leading-snug text-muted-foreground">
                       A PIN is already set. Save with blank fields to keep it, or enter a new one to replace it.
                     </p>
                   )}
                 </div>
               )}
               {isLocked && isEditing && !canManageLockAndPin && task?.hasLockPin && (
-                <p className="ml-2 border-l-2 border-border pl-3 text-[11px] leading-snug text-muted-foreground">
+                <p className="col-start-2 px-2 pb-1 text-xs leading-snug text-muted-foreground">
                   Only the organization owner or an admin can change the lock or PIN on this task.
                 </p>
               )}
             </div>
 
-            {aiEnabled && !readOnlyTask && (
-              <div className="space-y-2 border-t border-border pt-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(GHOST_FIELD, 'text-muted-foreground hover:text-foreground', PRESS)}
-                  onClick={handleGetSmartSuggestions}
-                  disabled={!title.trim() || aiLoading.suggestions}
-                >
-                  {aiLoading.suggestions ? (
-                    <Loader2 className="animate-spin" aria-hidden />
-                  ) : (
-                    <Sparkles className="text-primary" aria-hidden />
-                  )}
-                  Suggest priority &amp; due date
-                </Button>
-                {aiSuggestion && showAISuggestion && (
-                  <div className="space-y-2 rounded-lg bg-primary-soft p-3 text-xs text-primary-soft-foreground" aria-live="polite">
-                    <p className="leading-snug">{aiSuggestion.reasoning}</p>
-                    <div className="flex gap-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className={cn('h-8 min-h-0 px-3 text-xs', PRESS)}
-                        onClick={handleApplySuggestions}
+            {(showAiSuggest || showDates) && (
+              <div className="space-y-3 border-t border-border pt-4">
+                {showAiSuggest && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={cn('w-full', PRESS)}
+                      onClick={handleGetSmartSuggestions}
+                      disabled={!title.trim() || aiLoading.suggestions}
+                    >
+                      {aiLoading.suggestions ? (
+                        <Loader2 className="animate-spin" aria-hidden />
+                      ) : (
+                        <Sparkles aria-hidden />
+                      )}
+                      Suggest priority &amp; due date
+                    </Button>
+                    {aiSuggestion && showAISuggestion && (
+                      <div
+                        className="space-y-2 rounded-md border border-border bg-background p-3 text-xs text-foreground"
+                        aria-live="polite"
                       >
-                        Apply
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className={cn('h-8 min-h-0 px-3 text-xs', PRESS)}
-                        onClick={() => setShowAISuggestion(false)}
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
+                        <p className="leading-snug">{aiSuggestion.reasoning}</p>
+                        <div className="flex flex-wrap gap-1">
+                          <Button type="button" size="sm" className={PRESS} onClick={handleApplySuggestions}>
+                            Apply
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className={PRESS}
+                            onClick={() => setShowAISuggestion(false)}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {showDates && task && (
+                  <dl className={cn(PROPERTY_GRID, 'gap-y-0 text-xs text-muted-foreground tabular-nums')}>
+                    {task.createdAt != null && (
+                      <>
+                        <dt className="flex min-h-6 items-center">Created</dt>
+                        <dd className="flex min-h-6 min-w-0 items-center px-2">{formatDistanceSafe(task.createdAt)}</dd>
+                      </>
+                    )}
+                    {task.updatedAt != null && (
+                      <>
+                        <dt className="flex min-h-6 items-center">Updated</dt>
+                        <dd className="flex min-h-6 min-w-0 items-center px-2">{formatDistanceSafe(task.updatedAt)}</dd>
+                      </>
+                    )}
+                  </dl>
                 )}
               </div>
-            )}
-
-            {isEditing && task && (task.createdAt != null || task.updatedAt != null) && (
-              <dl className="space-y-1 border-t border-border pt-4 text-[11px] text-muted-foreground tabular-nums">
-                {task.createdAt != null && (
-                  <div className="flex gap-1">
-                    <dt>Created</dt>
-                    <dd>{formatDistanceSafe(task.createdAt)}</dd>
-                  </div>
-                )}
-                {task.updatedAt != null && (
-                  <div className="flex gap-1">
-                    <dt>Updated</dt>
-                    <dd>{formatDistanceSafe(task.updatedAt)}</dd>
-                  </div>
-                )}
-              </dl>
             )}
           </aside>
         </div>
 
-        {/* ── Footer ──────────────────────────────────────── */}
-        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-4 pt-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:px-6 sm:pb-3">
-          <p className="min-w-0 truncate text-xs text-muted-foreground" aria-live="polite">
+        {/* ── Footer: save status + the two actions ───────────────── */}
+        <footer className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-border px-4 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] sm:px-6 sm:pb-2">
+          {/* Own row on phones so it never squeezes against the buttons. */}
+          <p className="min-w-0 basis-full text-[13px] text-muted-foreground sm:flex-1 sm:basis-0" aria-live="polite">
             {footerHint}
           </p>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               onClick={onClose}
               disabled={loading}
               className={PRESS}
@@ -2572,7 +2627,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               disabled={loading || !title.trim() || readOnlyTask}
               aria-keyshortcuts="Meta+Enter Control+Enter"
               title={`${isEditing ? 'Save changes' : 'Create task'} (${modKey}+Enter)`}
-              className={cn('min-w-[8.5rem] gap-2', PRESS)}
+              className={cn('min-w-[7.5rem]', PRESS)}
             >
               {loading ? (
                 <>
@@ -2663,7 +2718,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
-                <KeyRound className="h-5 w-5" aria-hidden />
+                <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 Unlock task
               </AlertDialogTitle>
               <AlertDialogDescription>
@@ -2685,7 +2740,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void verifyUnlockPin();
               }}
-              className="mt-2 transition-colors"
+              className="mt-2"
             />
             <AlertDialogFooter className="mt-4">
               <AlertDialogCancel onClick={() => { setShowUnlockGate(false); setUnlockAttempt(''); }}>

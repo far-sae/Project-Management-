@@ -16,8 +16,8 @@ export const PresenceStatusInline: React.FC<{
       className={cn('inline-flex items-center gap-1.5', className)}
       title={title}
     >
-      <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', dot)} aria-hidden />
-      <span className="text-[10px] text-muted-foreground leading-none">{label}</span>
+      <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', dot)} aria-hidden />
+      <span className="text-[11px] leading-none text-muted-foreground">{label}</span>
     </span>
   );
 };

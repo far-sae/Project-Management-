@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { StatusPill } from '@/components/common/StatusPill';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,7 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
-  Clock, PlayCircle, StopCircle, Loader2, Edit, Trash2, Lock, ShieldAlert,
+  PlayCircle, StopCircle, Loader2, Edit, Trash2, Lock, ShieldAlert,
   Timer,
 } from 'lucide-react';
 import { useTimeTracking } from '@/hooks/useTimeTracking';
@@ -179,12 +181,12 @@ export const TimeTracking: React.FC = () => {
     const userIsSelf = e.userId === user?.userId;
     const canEdit = isOwner;
     return (
-      <tr key={e.entryId} className="border-b border-border last:border-0">
-        <td className="py-2 pr-4">
+      <tr key={e.entryId} className="min-h-12 border-b border-border/60 last:border-0 text-[13px] hover:bg-surface-2">
+        <td className="px-4 py-2">
           <div className="flex items-center gap-2 min-w-0">
             <Avatar className="w-7 h-7 shrink-0">
               <AvatarImage src={memberPhoto(e.userId)} alt={e.userName ?? ''} />
-              <AvatarFallback className="text-[10px]">
+              <AvatarFallback className="text-[11px]">
                 {(e.userName ?? '?').charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -200,26 +202,26 @@ export const TimeTracking: React.FC = () => {
             </div>
           </div>
         </td>
-        <td className="py-2 pr-4 text-sm">
+        <td className="px-4 py-2">
           {format(e.clockedInAt, 'MMM d, p')}
         </td>
-        <td className="py-2 pr-4 text-sm">
+        <td className="px-4 py-2">
           {e.clockedOutAt ? format(e.clockedOutAt, 'MMM d, p') : (
-            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-              <Timer className="w-3 h-3 mr-1" /> on the clock
-            </Badge>
+            <StatusPill tone="success" dot={false}>
+              <Timer className="h-3 w-3" /> on the clock
+            </StatusPill>
           )}
         </td>
-        <td className="py-2 pr-4 text-sm font-mono">
+        <td className="px-4 py-2 font-mono tabular-nums">
           {e.clockedOutAt
             ? formatDurationSeconds(e.durationSeconds)
             : <LiveDuration start={e.clockedInAt} />}
         </td>
-        <td className="py-2 text-right">
+        <td className="px-4 py-2 text-right">
           {canEdit ? (
             <div className="inline-flex gap-1">
               <Button
-                size="icon" variant="ghost" className="h-8 w-8"
+                size="icon" variant="ghost"
                 onClick={() => openEdit(e)}
                 aria-label="Edit time entry"
               >
@@ -227,7 +229,7 @@ export const TimeTracking: React.FC = () => {
               </Button>
               <Button
                 size="icon" variant="ghost"
-                className="h-8 w-8 text-destructive hover:text-destructive"
+                className="text-destructive hover:text-destructive"
                 onClick={() => setDeleting(e)}
                 aria-label="Delete time entry"
               >
@@ -246,40 +248,39 @@ export const TimeTracking: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 md:p-8">
-        <div className="max-w-6xl mx-auto space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-                <Clock className="w-6 h-6 text-primary" /> Time Tracking
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <AppHeader left={<span className="text-sm font-semibold">Time Tracking</span>} />
+        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+          <PageHeader
+            title="Time Tracking"
+            description={
+              <>
                 Clock in / clock out, see your hours.
                 {canViewAll && ' Owner + admin can view the whole team.'}
                 {!isOwner && ' Only the owner can edit time entries.'}
-              </p>
-            </div>
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
-          </div>
+              </>
+            }
+            actions={<DateRangeFilter value={dateRange} onChange={setDateRange} />}
+          />
 
           {/* Clock in/out card */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold flex items-center justify-between">
                 <span>Your status</span>
                 {openEntry ? (
-                  <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-                    <Timer className="w-3 h-3 mr-1" /> On the clock
-                  </Badge>
+                  <StatusPill tone="success" dot={false}>
+                    <Timer className="h-3 w-3" /> On the clock
+                  </StatusPill>
                 ) : (
-                  <Badge variant="outline">Off the clock</Badge>
+                  <StatusPill tone="muted">Off the clock</StatusPill>
                 )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {openEntry && (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">
+                <div className="rounded-lg border border-success/30 bg-success-soft p-3 text-[13px]">
                   Started {format(openEntry.clockedInAt, 'MMM d, p')} — running for{' '}
                   <span className="font-mono font-semibold">
                     <LiveDuration start={openEntry.clockedInAt} />
@@ -299,9 +300,9 @@ export const TimeTracking: React.FC = () => {
                 {!openEntry ? (
                   <Button onClick={handleClockIn} disabled={busy}>
                     {busy ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <PlayCircle className="w-4 h-4 mr-2" />
+                      <PlayCircle className="w-4 h-4" />
                     )}
                     Clock in
                   </Button>
@@ -312,9 +313,9 @@ export const TimeTracking: React.FC = () => {
                     variant="destructive"
                   >
                     {busy ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <StopCircle className="w-4 h-4 mr-2" />
+                      <StopCircle className="w-4 h-4" />
                     )}
                     Clock out
                   </Button>
@@ -333,9 +334,9 @@ export const TimeTracking: React.FC = () => {
             <TabsContent value="me" className="mt-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Your time entries</CardTitle>
+                  <CardTitle className="text-sm font-semibold">Your time entries</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-0">
                   {loading ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -349,13 +350,13 @@ export const TimeTracking: React.FC = () => {
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
-                        <thead className="text-xs uppercase text-muted-foreground border-b border-border">
+                        <thead className="h-10 bg-surface-2 text-xs font-medium text-muted-foreground border-b border-border">
                           <tr>
-                            <th className="py-2 pr-4">Member</th>
-                            <th className="py-2 pr-4">Clock in</th>
-                            <th className="py-2 pr-4">Clock out</th>
-                            <th className="py-2 pr-4">Duration</th>
-                            <th className="py-2 text-right">Actions</th>
+                            <th className="px-4 py-2 font-medium">Member</th>
+                            <th className="px-4 py-2 font-medium">Clock in</th>
+                            <th className="px-4 py-2 font-medium">Clock out</th>
+                            <th className="px-4 py-2 font-medium">Duration</th>
+                            <th className="px-4 py-2 text-right font-medium">Actions</th>
                           </tr>
                         </thead>
                         <tbody>{filteredOwnEntries.map(renderEntryRow)}</tbody>
@@ -370,7 +371,7 @@ export const TimeTracking: React.FC = () => {
               <TabsContent value="team" className="mt-4 space-y-4">
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Totals by member</CardTitle>
+                    <CardTitle className="text-sm font-semibold">Totals by member</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {memberTotals.length === 0 ? (
@@ -392,7 +393,7 @@ export const TimeTracking: React.FC = () => {
                                 {m.userName}
                               </p>
                               {m.openCount > 0 && (
-                                <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                                <p className="text-xs text-success">
                                   Currently on the clock
                                 </p>
                               )}
@@ -409,7 +410,7 @@ export const TimeTracking: React.FC = () => {
 
                 <Card>
                   <CardHeader className="pb-2 flex-row items-center justify-between">
-                    <CardTitle className="text-base">All time entries</CardTitle>
+                    <CardTitle className="text-sm font-semibold">All time entries</CardTitle>
                     {!isOwner && (
                       <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
                         <ShieldAlert className="w-3.5 h-3.5" />
@@ -417,7 +418,7 @@ export const TimeTracking: React.FC = () => {
                       </span>
                     )}
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="p-0">
                     {filteredEntries.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-6">
                         {entries.length === 0
@@ -427,13 +428,13 @@ export const TimeTracking: React.FC = () => {
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                          <thead className="text-xs uppercase text-muted-foreground border-b border-border">
+                          <thead className="h-10 bg-surface-2 text-xs font-medium text-muted-foreground border-b border-border">
                             <tr>
-                              <th className="py-2 pr-4">Member</th>
-                              <th className="py-2 pr-4">Clock in</th>
-                              <th className="py-2 pr-4">Clock out</th>
-                              <th className="py-2 pr-4">Duration</th>
-                              <th className="py-2 text-right">Actions</th>
+                              <th className="px-4 py-2 font-medium">Member</th>
+                              <th className="px-4 py-2 font-medium">Clock in</th>
+                              <th className="px-4 py-2 font-medium">Clock out</th>
+                              <th className="px-4 py-2 font-medium">Duration</th>
+                              <th className="px-4 py-2 text-right font-medium">Actions</th>
                             </tr>
                           </thead>
                           <tbody>{filteredEntries.map(renderEntryRow)}</tbody>
@@ -445,6 +446,7 @@ export const TimeTracking: React.FC = () => {
               </TabsContent>
             )}
           </Tabs>
+        </div>
         </div>
       </main>
 
@@ -503,7 +505,7 @@ export const TimeTracking: React.FC = () => {
               Cancel
             </Button>
             <Button onClick={saveEdit} disabled={editBusy}>
-              {editBusy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {editBusy && <Loader2 className="w-4 h-4 animate-spin" />}
               Save
             </Button>
           </DialogFooter>
@@ -539,7 +541,7 @@ export const TimeTracking: React.FC = () => {
               disabled={deleteBusy || !isOwner}
               aria-busy={deleteBusy}
             >
-              {deleteBusy && <Loader2 className="w-4 h-4 mr-2 animate-spin" aria-hidden />}
+              {deleteBusy && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}
               Delete
             </Button>
           </DialogFooter>

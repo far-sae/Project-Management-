@@ -199,17 +199,17 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
   return (
     <section
       aria-label="AI Daily Brief"
-      className="rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-500/[0.06] via-card to-blue-500/[0.05] p-4 shadow-sm"
+      className="rounded-lg border border-border bg-card p-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-violet-500/10 ring-1 ring-violet-500/30 text-violet-500 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-lg bg-primary-soft text-primary flex items-center justify-center shrink-0">
             <Sunrise className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm font-semibold text-foreground">Your AI brief</h2>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-500/80 bg-violet-500/10 ring-1 ring-violet-500/20 rounded-full px-1.5 py-0.5">
+              <span className="text-[11px] font-medium text-primary bg-primary-soft rounded-full px-1.5 py-0.5">
                 Beta
               </span>
               {brief && (
@@ -229,11 +229,6 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
             variant={brief ? 'outline' : 'default'}
             disabled={!aiAvailable || loading || tasks.length === 0}
             onClick={handleGenerate}
-            className={
-              brief
-                ? ''
-                : 'bg-gradient-to-r from-violet-500 to-blue-500 text-white border-0 hover:opacity-90'
-            }
           >
             {loading ? (
               <>
@@ -270,7 +265,7 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
       </div>
 
       {!aiAvailable && (
-        <div className="mt-3 flex items-start gap-2 text-xs rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-3 py-2">
+        <div className="mt-3 flex items-start gap-2 text-xs rounded-md border border-warning/30 bg-warning-soft text-warning-soft-foreground px-3 py-2">
           <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>
             AI isn&apos;t configured yet. Deploy the <code>ai-chat</code> Supabase function and
@@ -340,7 +335,7 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
 
           {brief.focus.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">
                 Today&apos;s focus
               </p>
               <ol className="space-y-1.5">
@@ -353,7 +348,7 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
                         onClick={() => f.taskId && onOpenTask?.(f.taskId)}
                         className="w-full text-left rounded-md border border-border/60 bg-card hover:bg-muted/40 transition-colors p-2.5 flex gap-2.5"
                       >
-                        <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-500/15 text-violet-600 dark:text-violet-300 text-[11px] font-semibold shrink-0">
+                        <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary-soft text-primary-soft-foreground text-[11px] font-semibold shrink-0">
                           {idx + 1}
                         </span>
                         <span className="min-w-0 flex-1">
@@ -373,15 +368,15 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
           )}
 
           {brief.blockers.length > 0 && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/[0.06] p-3">
-              <p className="text-[11px] uppercase tracking-wider text-red-600 dark:text-red-400 mb-1.5 flex items-center gap-1">
+            <div className="rounded-lg border border-destructive/30 bg-destructive-soft p-3">
+              <p className="text-xs font-medium text-destructive-soft-foreground mb-1.5 flex items-center gap-1">
                 <ShieldAlert className="w-3 h-3" />
                 Watch out
               </p>
               <ul className="space-y-1 text-sm leading-relaxed">
                 {brief.blockers.map((b, idx) => (
                   <li key={idx} className="flex gap-2">
-                    <span className="text-red-500/70 mt-1 inline-block w-1 h-1 rounded-full shrink-0" />
+                    <span className="text-destructive mt-1 inline-block w-1 h-1 rounded-full shrink-0" />
                     <span>{b}</span>
                   </li>
                 ))}
@@ -390,15 +385,15 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
           )}
 
           {brief.wins.length > 0 && (
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-3">
-              <p className="text-[11px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
+            <div className="rounded-lg border border-success/30 bg-success-soft p-3">
+              <p className="text-xs font-medium text-success-soft-foreground mb-1.5 flex items-center gap-1">
                 <Trophy className="w-3 h-3" />
                 Recent wins
               </p>
               <ul className="space-y-1 text-sm leading-relaxed">
                 {brief.wins.map((w, idx) => (
                   <li key={idx} className="flex gap-2">
-                    <span className="text-emerald-500/70 mt-1 inline-block w-1 h-1 rounded-full shrink-0" />
+                    <span className="text-success mt-1 inline-block w-1 h-1 rounded-full shrink-0" />
                     <span>{w}</span>
                   </li>
                 ))}

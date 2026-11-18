@@ -1,9 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Avatar, AvatarFallback, AvatarImage,
@@ -17,8 +15,14 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import {
   Users, Edit, Loader2, ShieldAlert, Lock, Trash2,
 } from 'lucide-react';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatusPill } from '@/components/common/StatusPill';
 import { TimeTracking } from '@/pages/TimeTracking';
 import { TeamAttendance } from '@/components/hr/TeamAttendance';
 import { Payroll } from '@/pages/Payroll';
@@ -43,6 +47,7 @@ import {
 } from '@/services/supabase/employees';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   DateRangeFilter,
   DateRangeValue,
@@ -52,31 +57,21 @@ import {
 
 const CURRENCIES = ['USD', 'GBP', 'EUR', 'INR', 'AED'];
 
-const employmentBadge = (t: EmploymentType) =>
-  t === 'contractor' ? (
-    <Badge variant="outline">Contractor</Badge>
-  ) : (
-    <Badge variant="outline">Employee</Badge>
-  );
+/** Small square tag (4px corners) for roles and employment type. */
+const TAG =
+  'inline-flex h-5 shrink-0 items-center rounded border border-border px-1.5 text-[11px] text-muted-foreground';
+
+/** 28px square icon button in a table row (touch-sized on phones). */
+const ROW_ICON_BUTTON = 'w-10 px-0 text-muted-foreground md:w-7';
+
+const employmentBadge = (t: EmploymentType) => (
+  <span className={TAG}>{t === 'contractor' ? 'Contractor' : 'Employee'}</span>
+);
 
 const statusBadge = (s: EmployeeStatus) => {
-  if (s === 'active') {
-    return (
-      <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-        Active
-      </Badge>
-    );
-  }
-  if (s === 'onboarding') {
-    return (
-      <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30">
-        Onboarding
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="bg-muted text-muted-foreground">Terminated</Badge>
-  );
+  if (s === 'active') return <StatusPill tone="success">Active</StatusPill>;
+  if (s === 'onboarding') return <StatusPill tone="warning">Onboarding</StatusPill>;
+  return <StatusPill tone="muted">Terminated</StatusPill>;
 };
 
 interface FormState {
@@ -265,12 +260,24 @@ export const HR: React.FC = () => {
   // Flip SHOW_FULL_HR to bring back People / Time Tracking / Payroll / Expenses.
   if (!SHOW_FULL_HR) {
     return (
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-        <div className="px-4 pb-10 pt-4 md:px-8 md:pt-8">
-          <h1 className="mx-auto mb-5 flex max-w-5xl items-center gap-2 text-2xl font-bold md:text-3xl">
-            <Users className="h-6 w-6 text-primary" aria-hidden /> HR
-          </h1>
-          <TeamAttendance />
+      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <AppHeader
+          left={
+            <Breadcrumb className="min-w-0">
+              <BreadcrumbList className="flex-nowrap">
+                <BreadcrumbItem>HR</BreadcrumbItem>
+                <BreadcrumbSeparator>/</BreadcrumbSeparator>
+                <BreadcrumbItem>
+                  <BreadcrumbPage className="font-semibold">Attendance</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6">
+            <TeamAttendance />
+          </div>
         </div>
       </main>
     );
@@ -278,13 +285,11 @@ export const HR: React.FC = () => {
 
   return (
     <>
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-        <Tabs defaultValue="people" className="flex flex-col h-full">
-          <div className="px-4 md:px-8 pt-4 md:pt-8 border-b border-border shrink-0">
-            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2 mb-4">
-              <Users className="w-6 h-6 text-primary" /> HR
-            </h1>
-            <TabsList className="mb-0">
+      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <AppHeader left={<span className="text-sm font-semibold">HR</span>} />
+        <Tabs defaultValue="people" className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 border-b border-border px-4 lg:px-6">
+            <TabsList className="border-b-0">
               <TabsTrigger value="people">People</TabsTrigger>
               <TabsTrigger value="time-tracking">Time Tracking</TabsTrigger>
               <TabsTrigger value="payroll">Payroll</TabsTrigger>
@@ -292,152 +297,162 @@ export const HR: React.FC = () => {
             </TabsList>
           </div>
 
-          <TabsContent value="people" className="flex-1 min-h-0 mt-0">
-            <div className="p-4 md:p-8">
-              <div className="max-w-5xl mx-auto space-y-6">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <h2 className="text-xl font-semibold flex items-center gap-2">
-                      HR Directory
-                    </h2>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Job titles, employment, and pay rates.
-                      {!canManage && (
-                        <span className="inline-flex items-center gap-1 ml-1 text-amber-600 dark:text-amber-400">
-                          <ShieldAlert className="w-3.5 h-3.5" /> Owner-only edits.
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <DateRangeFilter value={dateRange} onChange={setDateRange} />
-                </div>
+          <TabsContent value="people" className="mt-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+              <PageHeader
+                title="HR Directory"
+                description={
+                  <>
+                    Job titles, employment, and pay rates.
+                    {!canManage && (
+                      <span className="ml-1 inline-flex items-center gap-1 text-warning-soft-foreground">
+                        <ShieldAlert className="h-3.5 w-3.5" aria-hidden /> Owner-only edits.
+                      </span>
+                    )}
+                  </>
+                }
+                actions={<DateRangeFilter value={dateRange} onChange={setDateRange} />}
+              />
 
+              <div className="overflow-hidden rounded-lg border border-border">
                 {loading ? (
-                  <div className="flex items-center justify-center py-10">
-                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading directory" />
                   </div>
                 ) : visibleDirectory.length === 0 ? (
-                  <Card>
-                    <CardContent className="text-center py-10 text-sm text-muted-foreground">
+                  <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
+                    <Users className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                    <p className="text-[13px] font-medium">
                       {directory.length === 0
                         ? 'No team members yet.'
                         : 'No employees with a hire date in this range.'}
-                    </CardContent>
-                  </Card>
+                    </p>
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {visibleDirectory.map((entry) => {
-                      const p = entry.profile;
-                      return (
-                        <Card key={entry.userId}>
-                          <CardContent className="pt-4 space-y-3">
-                            <div className="flex items-start gap-3">
-                              <Avatar className="w-12 h-12">
-                                <AvatarImage src={entry.photoURL} alt={entry.displayName} />
-                                <AvatarFallback>
-                                  {entry.displayName.charAt(0).toUpperCase() || '?'}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h3 className="font-semibold truncate">
-                                    {entry.displayName}
-                                  </h3>
-                                  {p && employmentBadge(p.employmentType)}
-                                  {p && statusBadge(p.status)}
-                                  {entry.role === 'owner' && (
-                                    <Badge variant="outline" className="border-primary/40 text-primary">
-                                      Owner
-                                    </Badge>
-                                  )}
-                                  {entry.role === 'admin' && (
-                                    <Badge variant="outline">Admin</Badge>
-                                  )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left text-[13px]">
+                      <thead>
+                        <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
+                          <th scope="col" className="px-4 font-medium">Member</th>
+                          <th scope="col" className="px-4 font-medium">Status</th>
+                          <th scope="col" className="px-4 font-medium">Pay</th>
+                          <th scope="col" className="px-4 font-medium">Hire date</th>
+                          <th scope="col" className="px-4 text-right font-medium">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleDirectory.map((entry) => {
+                          const p = entry.profile;
+                          return (
+                            <tr
+                              key={entry.userId}
+                              className="border-b border-border/60 transition-colors last:border-0 hover:bg-surface-2"
+                            >
+                              <td className="px-4 py-2">
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <Avatar className="h-7 w-7 shrink-0">
+                                    <AvatarImage src={entry.photoURL} alt={entry.displayName} />
+                                    <AvatarFallback className="text-[11px] font-semibold">
+                                      {entry.displayName.charAt(0).toUpperCase() || '?'}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <h3 className="max-w-[16rem] truncate font-medium text-foreground">
+                                        {entry.displayName}
+                                      </h3>
+                                      {entry.role === 'owner' && <span className={TAG}>Owner</span>}
+                                      {entry.role === 'admin' && <span className={TAG}>Admin</span>}
+                                    </div>
+                                    <p className="max-w-[20rem] truncate text-xs text-muted-foreground">
+                                      {entry.email}
+                                    </p>
+                                    {p?.jobTitle && (
+                                      <p className="max-w-[20rem] truncate text-xs text-foreground/80">
+                                        {p.jobTitle}
+                                        {p.department ? ` · ${p.department}` : ''}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {entry.email}
-                                </p>
-                                {p?.jobTitle && (
-                                  <p className="text-sm mt-1">
-                                    {p.jobTitle}
-                                    {p.department ? ` · ${p.department}` : ''}
-                                  </p>
+                              </td>
+                              <td className="px-4 py-2">
+                                {p ? (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {statusBadge(p.status)}
+                                    {employmentBadge(p.employmentType)}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
                                 )}
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openEdit(entry)}
-                                  disabled={!canManage}
-                                  title={canManage ? 'Edit profile' : 'Owner only'}
-                                >
-                                  {canManage ? (
-                                    <Edit className="w-4 h-4" />
-                                  ) : (
-                                    <Lock className="w-4 h-4" />
-                                  )}
-                                </Button>
-                                {canManage && p && (
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-2 tabular-nums">
+                                {p &&
+                                typeof p.payRate === 'number' &&
+                                Number.isFinite(p.payRate)
+                                  ? `${fmt(p.payRate, p.currency)} ${p.payType === 'hourly' ? '/hr' : `/${p.payPeriod}`}`
+                                  : '—'}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-2 tabular-nums">
+                                {p?.hireDate ? format(p.hireDate, 'MMM d, yyyy') : '—'}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-2 text-right">
+                                <div className="inline-flex items-center gap-1">
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="text-destructive hover:text-destructive"
-                                    onClick={() =>
-                                      setDeletingMember({
-                                        userId: entry.userId,
-                                        displayName: entry.displayName,
-                                      })
-                                    }
-                                    title="Remove HR profile"
+                                    className={ROW_ICON_BUTTON}
+                                    onClick={() => openEdit(entry)}
+                                    disabled={!canManage}
+                                    title={canManage ? 'Edit profile' : 'Owner only'}
+                                    aria-label={canManage ? `Edit ${entry.displayName}'s profile` : 'Owner only'}
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    {canManage ? <Edit aria-hidden /> : <Lock aria-hidden />}
                                   </Button>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                              <div className="rounded border border-border p-2">
-                                <div className="text-muted-foreground uppercase tracking-wide">
-                                  Pay
+                                  {canManage && p && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className={cn(
+                                        ROW_ICON_BUTTON,
+                                        'text-destructive hover:bg-destructive-soft hover:text-destructive',
+                                      )}
+                                      onClick={() =>
+                                        setDeletingMember({
+                                          userId: entry.userId,
+                                          displayName: entry.displayName,
+                                        })
+                                      }
+                                      title="Remove HR profile"
+                                      aria-label={`Remove ${entry.displayName}'s HR profile`}
+                                    >
+                                      <Trash2 aria-hidden />
+                                    </Button>
+                                  )}
                                 </div>
-                                <div className="font-mono mt-0.5">
-                                  {p &&
-                                  typeof p.payRate === 'number' &&
-                                  Number.isFinite(p.payRate)
-                                    ? `${fmt(p.payRate, p.currency)} ${p.payType === 'hourly' ? '/hr' : `/${p.payPeriod}`}`
-                                    : '—'}
-                                </div>
-                              </div>
-                              <div className="rounded border border-border p-2">
-                                <div className="text-muted-foreground uppercase tracking-wide">
-                                  Hire date
-                                </div>
-                                <div className="mt-0.5">
-                                  {p?.hireDate ? format(p.hireDate, 'MMM d, yyyy') : '—'}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
             </div>
           </TabsContent>
 
-          <TabsContent value="time-tracking" className="flex-1 min-h-0 mt-0">
+          <TabsContent value="time-tracking" className="mt-0 min-h-0 flex-1 overflow-y-auto">
             <TimeTracking />
           </TabsContent>
 
-          <TabsContent value="payroll" className="flex-1 min-h-0 mt-0">
-            <Payroll />
+          <TabsContent value="payroll" className="mt-0 min-h-0 flex-1 overflow-y-auto">
+            <Payroll embedded />
           </TabsContent>
 
-          <TabsContent value="expenses" className="flex-1 min-h-0 mt-0">
+          <TabsContent value="expenses" className="mt-0 min-h-0 flex-1 overflow-y-auto">
             <Expenses />
           </TabsContent>
         </Tabs>
@@ -659,7 +674,7 @@ export const HR: React.FC = () => {
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {saving && <Loader2 className="animate-spin" aria-hidden />}
               Save
             </Button>
           </DialogFooter>
@@ -689,7 +704,7 @@ export const HR: React.FC = () => {
               onClick={handleDelete}
               disabled={deleting}
             >
-              {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {deleting && <Loader2 className="animate-spin" aria-hidden />}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

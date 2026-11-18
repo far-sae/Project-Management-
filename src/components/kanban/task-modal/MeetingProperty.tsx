@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { cn } from '@/lib/utils';
 import { DayPickerPopover } from '../DayPickerPopover';
 import {
@@ -19,7 +20,9 @@ import {
   withTime,
   type MeetingStatusKind,
 } from './meeting';
-import { GHOST_FIELD, PRESS } from './styles';
+import {
+  GHOST_FIELD, PRESS, PROPERTY_GRID, PROPERTY_LABEL, PROPERTY_TEXT, PROPERTY_VALUE,
+} from './styles';
 
 export interface MeetingPropertyProps {
   startsAt: Date | null;
@@ -37,14 +40,20 @@ export interface MeetingPropertyProps {
   now: Date;
 }
 
-const CHIP_STYLES: Record<MeetingStatusKind, string> = {
-  upcoming: 'bg-muted text-muted-foreground',
-  soon: 'bg-warning-soft text-warning-soft-foreground',
-  live: 'bg-success-soft text-success-soft-foreground',
-  ended: 'bg-muted text-muted-foreground',
+const STATUS_TONES: Record<MeetingStatusKind, StatusTone> = {
+  upcoming: 'muted',
+  soon: 'warning',
+  live: 'success',
+  ended: 'muted',
 };
 
-/** "Meeting" property: schedule / edit / remove a TaskCalendar meeting and join it. */
+/**
+ * "Meeting" property: schedule / edit / remove a TaskCalendar meeting and join it.
+ *
+ * Renders rows for the properties panel grid, so it must sit inside a
+ * `PROPERTY_GRID` container: every label and value lines up with the other
+ * properties.
+ */
 export const MeetingProperty: React.FC<MeetingPropertyProps> = ({
   startsAt,
   durationMinutes,
@@ -98,29 +107,34 @@ export const MeetingProperty: React.FC<MeetingPropertyProps> = ({
   // ── No meeting ───────────────────────────────────────────────
   if (!startsAt) {
     return (
-      <div className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-2">
-        <span id={labelId} className="flex h-10 md:h-8 items-center text-[13px] text-muted-foreground">
+      <>
+        <span id={labelId} className={PROPERTY_LABEL}>
           Meeting
         </span>
-        {readOnly ? (
-          <span className="px-2 text-sm text-muted-foreground">None</span>
-        ) : (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-describedby={hintId}
-            onClick={schedule}
-            className={cn(GHOST_FIELD, PRESS, 'text-muted-foreground hover:text-foreground')}
-          >
-            <CalendarPlus aria-hidden />
-            Schedule meeting
-          </Button>
-        )}
-        <span id={hintId} className="sr-only">
-          Adds a TaskCalendar video call to this task. Assignees are notified and reminded 15 minutes before.
-        </span>
-      </div>
+        <div className={PROPERTY_VALUE}>
+          {readOnly ? (
+            <span className="px-2 text-[13px] text-muted-foreground">None</span>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              aria-describedby={hintId}
+              onClick={schedule}
+              className={cn(
+                GHOST_FIELD,
+                PRESS,
+                'justify-start font-normal text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <CalendarPlus aria-hidden />
+              Schedule meeting
+            </Button>
+          )}
+          <span id={hintId} className="sr-only">
+            Adds a TaskCalendar video call to this task. Assignees are notified and reminded 15 minutes before.
+          </span>
+        </div>
+      </>
     );
   }
 
@@ -129,10 +143,29 @@ export const MeetingProperty: React.FC<MeetingPropertyProps> = ({
   const summary = formatMeetingSummary(startsAt, duration, now);
 
   return (
-    <div role="group" aria-labelledby={labelId} className="space-y-2">
-      <div className="flex h-10 md:h-8 items-center justify-between gap-2">
-        <span id={labelId} className="text-[13px] text-muted-foreground">
-          Meeting
+    <div role="group" aria-labelledby={labelId} className={cn(PROPERTY_GRID, 'col-span-2')}>
+      <span id={labelId} className={PROPERTY_LABEL}>
+        Meeting
+      </span>
+      <div className={PROPERTY_TEXT}>
+        <p
+          className="min-w-0 py-1.5 font-medium text-foreground tabular-nums [text-wrap:balance]"
+          title={startsAt.toString()}
+        >
+          {summary}
+        </p>
+      </div>
+
+      <div className="col-start-2 flex min-h-11 min-w-0 items-center justify-between gap-2 pl-2 md:min-h-8">
+        <span aria-live="polite" className="inline-flex min-w-0">
+          <StatusPill
+            tone={STATUS_TONES[status.kind]}
+            dot={status.kind === 'live'}
+            pulse={status.kind === 'live'}
+            className="tabular-nums"
+          >
+            {status.label}
+          </StatusPill>
         </span>
         {!readOnly && (
           <Button
@@ -141,7 +174,7 @@ export const MeetingProperty: React.FC<MeetingPropertyProps> = ({
             size="sm"
             aria-expanded={editing}
             onClick={() => setEditing((v) => !v)}
-            className={cn('h-10 md:h-8 min-h-0 px-2 text-xs text-muted-foreground hover:text-foreground', PRESS)}
+            className={cn('shrink-0 text-muted-foreground hover:text-foreground', PRESS)}
           >
             <Pencil aria-hidden className="!size-3.5" />
             {editing ? 'Done' : 'Edit'}
@@ -149,124 +182,99 @@ export const MeetingProperty: React.FC<MeetingPropertyProps> = ({
         )}
       </div>
 
-      <div className="space-y-3 rounded-lg border border-border bg-background p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 text-sm font-medium text-foreground tabular-nums" title={startsAt.toString()}>
-            {summary}
-          </p>
-          <span
-            className={cn(
-              'inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium tabular-nums',
-              CHIP_STYLES[status.kind],
-            )}
-            aria-live="polite"
+      {editing && !readOnly && (
+        <>
+          <label htmlFor={dayId} className={cn(PROPERTY_LABEL, 'cursor-pointer')}>
+            Day
+          </label>
+          <DayPickerPopover
+            id={dayId}
+            value={startsAt}
+            placeholder="Pick a day"
+            onChange={(d) => {
+              // Clearing the day (popover "Clear" / ×) removes the meeting.
+              if (!d) onChange(null, null);
+              else onChange(withDay(startsAt, d), duration);
+            }}
+            className="w-full tabular-nums"
+          />
+          <label htmlFor={timeId} className={cn(PROPERTY_LABEL, 'cursor-pointer')}>
+            Start
+          </label>
+          <Input
+            id={timeId}
+            type="time"
+            step={300}
+            value={timeDraft}
+            onChange={(e) => setTimeDraft(e.target.value)}
+            onBlur={commitTime}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitTime();
+              }
+            }}
+            className="px-2 tabular-nums"
+          />
+          <label htmlFor={durationId} className={cn(PROPERTY_LABEL, 'cursor-pointer')}>
+            Duration
+          </label>
+          <Select
+            value={String(duration)}
+            onValueChange={(v) => onChange(startsAt, Number(v))}
           >
-            {status.kind === 'live' && (
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current motion-safe:animate-pulse" />
+            <SelectTrigger id={durationId} className="px-2 tabular-nums">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {durationOptions.map((m) => (
+                <SelectItem key={m} value={String(m)} className="tabular-nums">
+                  {formatMeetingDuration(m)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => onChange(null, null)}
+            className={cn(
+              'col-start-2 justify-start px-2 text-destructive hover:bg-destructive/10 hover:text-destructive',
+              PRESS,
             )}
-            {status.label}
-          </span>
-        </div>
+          >
+            <Trash2 aria-hidden />
+            Remove meeting
+          </Button>
+        </>
+      )}
 
-        {editing && !readOnly && (
-          <div className="space-y-2 border-t border-border pt-3">
-            <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-x-2 gap-y-2">
-              <label htmlFor={dayId} className="text-xs text-muted-foreground">
-                Day
-              </label>
-              <DayPickerPopover
-                id={dayId}
-                value={startsAt}
-                placeholder="Pick a day"
-                onChange={(d) => {
-                  // Clearing the day (popover "Clear" / ×) removes the meeting.
-                  if (!d) onChange(null, null);
-                  else onChange(withDay(startsAt, d), duration);
-                }}
-                className={cn(GHOST_FIELD, 'border-border bg-background')}
-              />
-              <label htmlFor={timeId} className="text-xs text-muted-foreground">
-                Start
-              </label>
-              <Input
-                id={timeId}
-                type="time"
-                step={300}
-                value={timeDraft}
-                onChange={(e) => setTimeDraft(e.target.value)}
-                onBlur={commitTime}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commitTime();
-                  }
-                }}
-                className="h-10 md:h-8 rounded-md px-2 text-base md:text-sm tabular-nums transition-colors"
-              />
-              <label htmlFor={durationId} className="text-xs text-muted-foreground">
-                Duration
-              </label>
-              <Select
-                value={String(duration)}
-                onValueChange={(v) => onChange(startsAt, Number(v))}
-              >
-                <SelectTrigger
-                  id={durationId}
-                  className="h-10 md:h-8 rounded-md px-2 text-base md:text-sm tabular-nums transition-colors"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {durationOptions.map((m) => (
-                    <SelectItem key={m} value={String(m)} className="tabular-nums">
-                      {formatMeetingDuration(m)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <div className="col-start-2 min-w-0 space-y-1.5">
+        {isSaved && (
+          // Disabled buttons swallow pointer events, so the tooltip lives on a wrapper.
+          <span className="block" title={joinDisabledReason ?? undefined}>
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => onChange(null, null)}
-              className={cn(
-                'h-10 md:h-8 min-h-0 w-full justify-start px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive',
-                PRESS,
-              )}
+              onClick={onJoin}
+              disabled={joinDisabledReason !== null}
+              aria-describedby={hintId}
+              className={cn('w-full', PRESS)}
             >
-              <Trash2 aria-hidden className="!size-3.5" />
-              Remove meeting
+              <Video aria-hidden />
+              Join meeting
             </Button>
-          </div>
+          </span>
         )}
-
-        {isSaved ? (
-          <div className="space-y-1.5">
-            {/* Disabled buttons swallow pointer events, so the tooltip lives on a wrapper. */}
-            <span className="block" title={joinDisabledReason ?? undefined}>
-              <Button
-                type="button"
-                size="sm"
-                onClick={onJoin}
-                disabled={joinDisabledReason !== null}
-                aria-describedby={hintId}
-                className={cn('w-full gap-2', PRESS)}
-              >
-                <Video aria-hidden />
-                Join meeting
-              </Button>
-            </span>
-            <p id={hintId} className="text-xs leading-snug text-muted-foreground">
+        <p id={hintId} className="px-2 pb-1 text-xs leading-snug text-muted-foreground">
+          {isSaved ? (
+            <>
               {joinDisabledReason ? `${joinDisabledReason} ` : ''}
               Opens a TaskCalendar video call for this task. Invite people outside your team from inside the call.
-            </p>
-          </div>
-        ) : (
-          <p id={hintId} className="text-xs leading-snug text-muted-foreground">
-            You can join the video call once the task is created. Assignees get a reminder 15 min before.
-          </p>
-        )}
+            </>
+          ) : (
+            'You can join the video call once the task is created. Assignees get a reminder 15 min before.'
+          )}
+        </p>
       </div>
     </div>
   );

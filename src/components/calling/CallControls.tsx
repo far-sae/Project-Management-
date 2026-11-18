@@ -12,11 +12,16 @@ import {
   Disc,
   Square,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isScreenShareSupported } from '@/services/webrtc/mediaUtils';
 import { isBackgroundEffectSupported } from '@/services/webrtc/BackgroundProcessor';
 import type { CallVideoEffect } from '@/services/webrtc/types';
+import {
+  CALL_ROUND,
+  CALL_ROUND_DANGER,
+  CALL_ROUND_IDLE,
+  CALL_ROUND_TOGGLED,
+} from './callTheme';
 
 interface CallControlsProps {
   isMuted: boolean;
@@ -30,12 +35,11 @@ interface CallControlsProps {
   onToggleScreenShare: () => void;
   onToggleBackgroundEffect: () => void;
   onHangUp: () => void;
-  /** Compact layout for the small/PiP window — drops blur + screen share and
-   *  keeps the end-call button visually dominant, matching how Google Meet's
-   *  picture-in-picture surfaces the hang-up. */
+  /** Compact layout for the small floating call — drops blur, screen share
+   *  and record, and uses 36px buttons with a round end-call button. */
   compact?: boolean;
   /** When provided, shows a record/stop toggle that captures audio for AI
-   *  notes. Hidden in compact mode (PiP) to keep the end-call dominant. */
+   *  notes. Hidden in compact mode. */
   isRecording?: boolean;
   onToggleRecording?: () => void;
   /** Set false to hide the screen-share button (e.g. guests). Default true. */
@@ -67,83 +71,54 @@ export const CallControls: React.FC<CallControlsProps> = ({
   onToggleRecording,
   allowScreenShare = true,
 }) => {
-  const btnSize = compact ? 'h-9 w-9' : 'h-11 w-11';
+  // 48px round buttons on the call screen, 36px in the small floating call.
+  const round = cn(CALL_ROUND, compact ? 'h-9 w-9' : 'h-12 w-12');
   const iconSize = compact ? 'h-4 w-4' : 'h-5 w-5';
-  // In compact (PiP) mode we elongate the end-call button so it's the obvious
-  // dominant action — matches Meet/Zoom PiP, where the red hang-up sits wider
-  // than the round mute/camera toggles.
-  const hangUpClasses = compact
-    ? 'h-9 w-14 rounded-full shadow-lg'
-    : 'h-11 w-11 rounded-full shadow-lg';
+  const blurOn = videoEffect === 'blur';
 
   return (
     <div
       className={cn(
-        'flex items-center justify-center',
-        compact ? 'gap-1.5 p-2' : 'gap-2 p-3',
+        'flex flex-wrap items-center justify-center',
+        compact ? 'gap-1.5' : 'gap-3 px-4 pb-4 pt-3',
       )}
       role="toolbar"
       aria-label="Call controls"
     >
       {/* Mute */}
-      <Button
-        variant="ghost"
-        size="icon"
+      <button
+        type="button"
         onClick={onToggleMute}
         aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-        className={cn(
-          btnSize,
-          'rounded-full transition-colors',
-          isMuted
-            ? 'bg-destructive/15 text-destructive hover:bg-destructive/25'
-            : 'bg-muted hover:bg-muted/80 text-foreground',
-        )}
+        className={cn(round, isMuted ? CALL_ROUND_TOGGLED : CALL_ROUND_IDLE)}
       >
         {isMuted ? <MicOff className={iconSize} /> : <Mic className={iconSize} />}
-      </Button>
+      </button>
 
       {/* Camera (only for video calls) */}
       {mediaType === 'video' && (
-        <Button
-          variant="ghost"
-          size="icon"
+        <button
+          type="button"
           onClick={onToggleCamera}
           aria-label={isCameraOff ? 'Turn camera on' : 'Turn camera off'}
-          className={cn(
-            btnSize,
-            'rounded-full transition-colors',
-            isCameraOff
-              ? 'bg-destructive/15 text-destructive hover:bg-destructive/25'
-              : 'bg-muted hover:bg-muted/80 text-foreground',
-          )}
+          className={cn(round, isCameraOff ? CALL_ROUND_TOGGLED : CALL_ROUND_IDLE)}
         >
-          {isCameraOff ? (
-            <VideoOff className={iconSize} />
-          ) : (
-            <Video className={iconSize} />
-          )}
-        </Button>
+          {isCameraOff ? <VideoOff className={iconSize} /> : <Video className={iconSize} />}
+        </button>
       )}
 
-      {/* Background blur — hidden in compact (PiP) mode so the end-call button stays prominent */}
+      {/* Background blur — not in the small floating call */}
       {!compact && mediaType === 'video' && backgroundEffectAvailable && (
-        <Button
-          variant="ghost"
-          size="icon"
+        <button
+          type="button"
           onClick={onToggleBackgroundEffect}
           disabled={isApplyingEffect}
-          aria-label={
-            videoEffect === 'blur'
-              ? 'Turn off background blur'
-              : 'Blur background'
-          }
-          aria-pressed={videoEffect === 'blur'}
+          aria-label={blurOn ? 'Turn off background blur' : 'Blur background'}
+          aria-pressed={blurOn}
           className={cn(
-            'h-11 w-11 rounded-full transition-colors',
-            videoEffect === 'blur'
-              ? 'bg-primary/15 text-primary hover:bg-primary/25'
-              : 'bg-muted hover:bg-muted/80 text-foreground',
-            isApplyingEffect && 'opacity-70 cursor-progress',
+            round,
+            blurOn ? CALL_ROUND_TOGGLED : CALL_ROUND_IDLE,
+            isApplyingEffect && 'cursor-progress',
           )}
         >
           {isApplyingEffect ? (
@@ -151,45 +126,33 @@ export const CallControls: React.FC<CallControlsProps> = ({
           ) : (
             <Sparkles className="h-5 w-5" />
           )}
-        </Button>
+        </button>
       )}
 
-      {/* Screen share — hidden in compact (PiP) mode for the same reason */}
+      {/* Screen share — not in the small floating call */}
       {!compact && allowScreenShare && screenShareAvailable && (
-        <Button
-          variant="ghost"
-          size="icon"
+        <button
+          type="button"
           onClick={onToggleScreenShare}
           aria-label={isScreenSharing ? 'Stop screen sharing' : 'Share screen'}
-          className={cn(
-            'h-11 w-11 rounded-full transition-colors',
-            isScreenSharing
-              ? 'bg-primary/15 text-primary hover:bg-primary/25'
-              : 'bg-muted hover:bg-muted/80 text-foreground',
-          )}
+          className={cn(round, isScreenSharing ? CALL_ROUND_TOGGLED : CALL_ROUND_IDLE)}
         >
           {isScreenSharing ? (
             <MonitorOff className="h-5 w-5" />
           ) : (
             <MonitorUp className="h-5 w-5" />
           )}
-        </Button>
+        </button>
       )}
 
-      {/* Record (AI notes) — full-screen overlay only */}
+      {/* Record (AI notes) — call screen only */}
       {!compact && onToggleRecording && (
-        <Button
-          variant="ghost"
-          size="icon"
+        <button
+          type="button"
           onClick={onToggleRecording}
           aria-label={isRecording ? 'Stop recording' : 'Record meeting'}
           aria-pressed={isRecording}
-          className={cn(
-            'h-11 w-11 rounded-full transition-colors',
-            isRecording
-              ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30'
-              : 'bg-muted hover:bg-muted/80 text-foreground',
-          )}
+          className={cn(round, isRecording ? CALL_ROUND_DANGER : CALL_ROUND_IDLE)}
           title={isRecording ? 'Stop recording' : 'Record meeting (AI notes)'}
         >
           {isRecording ? (
@@ -197,19 +160,23 @@ export const CallControls: React.FC<CallControlsProps> = ({
           ) : (
             <Disc className="h-5 w-5" />
           )}
-        </Button>
+        </button>
       )}
 
-      {/* Hang up — wider pill in compact mode so users can't miss it */}
-      <Button
-        variant="destructive"
-        size="icon"
+      {/* End call — a labelled pill on the call screen, round when compact */}
+      <button
+        type="button"
         onClick={onHangUp}
         aria-label="End call"
-        className={hangUpClasses}
+        className={cn(
+          CALL_ROUND,
+          CALL_ROUND_DANGER,
+          compact ? 'h-9 w-9' : 'h-12 gap-2 px-5 text-sm font-semibold',
+        )}
       >
         <PhoneOff className={iconSize} />
-      </Button>
+        {!compact && <span>End call</span>}
+      </button>
     </div>
   );
 };

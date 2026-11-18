@@ -160,21 +160,21 @@ export const OnboardingChecklist: React.FC = () => {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-      <div className="flex items-start justify-between gap-3 px-4 pt-4">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="flex items-start justify-between gap-3 px-4 pt-3">
+        <div className="min-w-0 pt-1">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Sparkles className="h-4 w-4 text-muted-foreground" aria-hidden />
             Get started
           </h3>
-          <p className="text-xs text-muted-foreground/90 mt-0.5">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Finish these {total} steps to unlock the full product.
           </p>
         </div>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="shrink-0 text-muted-foreground"
           onClick={handleDismiss}
           aria-label="Dismiss onboarding checklist"
         >
@@ -184,47 +184,54 @@ export const OnboardingChecklist: React.FC = () => {
 
       <div className="px-4 pt-3">
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
+          <div
+            className="h-1 flex-1 overflow-hidden rounded-full bg-foreground/10"
+            role="progressbar"
+            aria-valuenow={percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Onboarding progress"
+          >
             <div
-              className="h-full bg-primary transition-[width]"
+              className="h-full rounded-full bg-foreground/70 transition-[width]"
               style={{ width: `${percent}%` }}
             />
           </div>
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-xs tabular-nums text-muted-foreground">
             {completed}/{total}
           </span>
         </div>
       </div>
 
-      <ul className="mt-3 divide-y divide-border">
+      <ul className="mt-3 border-t border-border">
         {steps.map((step) => {
           const Icon = step.icon;
           return (
             <li
               key={step.id}
               className={cn(
-                'flex items-center gap-3 px-4 py-3 transition-colors',
+                'flex min-h-12 items-center gap-3 border-b border-border/60 px-4 py-2 last:border-0',
                 step.done && 'opacity-70',
               )}
             >
               {step.done ? (
-                <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
               ) : (
-                <Circle className="w-5 h-5 text-muted-foreground shrink-0" />
+                <Circle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               )}
-              <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary/10 text-primary shrink-0">
-                <Icon className="w-3.5 h-3.5" />
+              <div className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground/[0.05] text-muted-foreground sm:flex">
+                <Icon className="h-3.5 w-3.5" aria-hidden />
               </div>
               <div className="min-w-0 flex-1">
                 <p
                   className={cn(
-                    'text-sm font-medium text-foreground',
-                    step.done && 'line-through text-muted-foreground',
+                    'text-[13px] font-medium text-foreground',
+                    step.done && 'text-muted-foreground line-through',
                   )}
                 >
                   {step.title}
                 </p>
-                <p className="text-xs text-muted-foreground/90 truncate">
+                <p className="truncate text-xs text-muted-foreground">
                   {step.description}
                 </p>
               </div>

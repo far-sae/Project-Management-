@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  GripVertical,
   Maximize2,
-  Minimize2,
+  Minus,
   PhoneOff,
   PictureInPicture2,
   UserPlus,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { CallControls } from './CallControls';
 import { IncomingCallModal } from './IncomingCallModal';
 import { MeetingNotesReviewModal } from './MeetingNotesReviewModal';
@@ -26,6 +24,18 @@ import { ParticipantTile, RemoteAudioSink } from './CallTiles';
 import { MiniCallView } from './MiniCallView';
 import { bestGridLayout } from './gridLayout';
 import { GuestAdmitBanners, type GuestDecision } from './GuestAdmitBanners';
+import {
+  CALL_BAR_BUTTON,
+  CALL_BORDER,
+  CALL_HAIRLINE,
+  CALL_MUTED_TEXT,
+  CALL_RECORDING_BADGE,
+  CALL_ROUND,
+  CALL_ROUND_DANGER,
+  CALL_ROUND_IDLE,
+  CALL_STAGE,
+  CALL_SURFACE,
+} from './callTheme';
 import { usePipWindow } from '@/hooks/usePipWindow';
 import { requestVideoPipFor } from '@/services/calling/pip';
 import {
@@ -615,17 +625,20 @@ export const CallOverlay: React.FC = () => {
   if (state.status === 'ended') {
     return (
       <>
-        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 text-white">
-          <div className="flex flex-col items-center gap-3 animate-in fade-in duration-200">
-            <p className="text-lg font-semibold">Call ended</p>
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 p-4 text-white">
+          <div
+            className={cn(
+              'flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border p-6 text-center animate-in fade-in duration-200 motion-reduce:animate-none',
+              CALL_BORDER,
+              CALL_STAGE,
+            )}
+          >
+            <p className="text-base font-semibold">Call ended</p>
             {state.error && (
-              <p className="max-w-md px-6 text-center text-sm text-white/70 text-pretty">{state.error}</p>
+              <p className={cn('text-[13px] text-pretty', CALL_MUTED_TEXT)}>{state.error}</p>
             )}
             {state.connectFailed && (
-              <a
-                href="/call-check"
-                className="rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-              >
+              <a href="/call-check" className={cn(CALL_BAR_BUTTON, 'px-3')}>
                 Run a call check
               </a>
             )}
@@ -662,73 +675,74 @@ export const CallOverlay: React.FC = () => {
       : state.remoteParticipant?.displayName || 'Participant';
     return (
       <div
-        className="fixed inset-0 z-[250] flex flex-col items-center justify-center bg-black/95 text-white"
+        className={cn('fixed inset-0 z-[250] flex flex-col items-center justify-center p-4', CALL_STAGE)}
         role="dialog"
         aria-label="Outgoing call"
       >
         {admitBanners(false, 'absolute top-4 inset-x-4 mx-auto max-w-md z-10')}
-        <div className="flex flex-col items-center gap-5 animate-in fade-in duration-200">
-          <div className="relative">
-            <div className="absolute inset-0 rounded-full bg-white/10 animate-ping" />
-            {isMultiParty ? (
-              <div className="relative flex -space-x-3 items-center">
-                {state.remoteParticipants.slice(0, 4).map((p) => (
-                  <Avatar
-                    key={p.userId}
-                    className="h-16 w-16 ring-4 ring-black/95 relative"
-                  >
-                    <AvatarImage src={p.photoURL} alt={p.displayName} />
-                    <AvatarFallback className="text-xl bg-white/10 text-white">
-                      {(p.displayName || '?').charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                ))}
-                {state.remoteParticipants.length > 4 && (
-                  <span className="ml-2 inline-flex items-center justify-center h-16 w-16 rounded-full bg-white/10 text-white text-sm font-medium ring-4 ring-black/95">
-                    +{state.remoteParticipants.length - 4}
-                  </span>
-                )}
-              </div>
-            ) : (
-              <Avatar className="h-24 w-24 ring-4 ring-white/20 relative">
-                <AvatarImage src={state.remoteParticipant?.photoURL} alt={remoteName} />
-                <AvatarFallback className="text-3xl bg-white/10 text-white">
-                  {remoteName.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            )}
-          </div>
-          <div className="text-center">
-            <p className="text-xl font-semibold">{remoteName}</p>
-            <p className="text-sm text-white/50 mt-1">
+        <div
+          className={cn(
+            'flex w-full max-w-xs flex-col items-center gap-4 rounded-xl border p-6 animate-in fade-in duration-200 motion-reduce:animate-none',
+            CALL_BORDER,
+            CALL_SURFACE,
+          )}
+        >
+          {isMultiParty ? (
+            <div className="flex items-center -space-x-2">
+              {state.remoteParticipants.slice(0, 4).map((p) => (
+                <Avatar key={p.userId} className="h-12 w-12 ring-2 ring-[#1c1c1c]">
+                  <AvatarImage src={p.photoURL} alt={p.displayName} />
+                  <AvatarFallback className="bg-[#3a3a3a] text-lg font-semibold text-white">
+                    {(p.displayName || '?').charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+              {state.remoteParticipants.length > 4 && (
+                <span className="relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#3a3a3a] text-[13px] font-medium text-white ring-2 ring-[#1c1c1c] tabular-nums">
+                  +{state.remoteParticipants.length - 4}
+                </span>
+              )}
+            </div>
+          ) : (
+            <Avatar className="h-16 w-16">
+              <AvatarImage src={state.remoteParticipant?.photoURL} alt={remoteName} />
+              <AvatarFallback className="bg-[#3a3a3a] text-2xl font-semibold text-white">
+                {remoteName.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          )}
+          <div className="w-full min-w-0 text-center">
+            <p className="truncate text-base font-semibold">{remoteName}</p>
+            <p className={cn('text-[13px]', CALL_MUTED_TEXT)}>
               {isMultiParty
                 ? `Ringing ${state.remoteParticipants.length} teammates…`
                 : 'Calling…'}{' '}
               {state.mediaType === 'video' ? 'video' : 'audio'} call
             </p>
           </div>
-          <Button
-            variant="destructive"
-            size="lg"
-            className="h-14 w-14 rounded-full shadow-lg mt-4"
-            onClick={actions.hangUp}
-            aria-label="Cancel call"
-          >
-            <PhoneOff className="h-6 w-6" />
-          </Button>
-          {showInviteGuest && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="rounded-full text-white/70 hover:text-white hover:bg-white/10"
-              onClick={() => void handleInviteGuest()}
-              disabled={inviting}
-              title="Copy a guest link that works for 24 hours"
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {showInviteGuest && (
+              <button
+                type="button"
+                className={cn(CALL_BAR_BUTTON, 'px-3 md:h-10')}
+                onClick={() => void handleInviteGuest()}
+                disabled={inviting}
+                title="Copy a guest link that works for 24 hours"
+              >
+                <UserPlus className="h-4 w-4" aria-hidden />
+                Invite guest
+              </button>
+            )}
+            <button
+              type="button"
+              className={cn(CALL_ROUND, CALL_ROUND_DANGER, 'h-10 gap-1.5 px-5 text-[13px] font-semibold')}
+              onClick={actions.hangUp}
+              aria-label="Cancel call"
             >
-              <UserPlus className="h-4 w-4 mr-1.5" />
-              Invite guest
-            </Button>
-          )}
+              <PhoneOff className="h-4 w-4" aria-hidden />
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -772,49 +786,50 @@ export const CallOverlay: React.FC = () => {
         {...pipDrag.handlers}
         className={cn(
           'fixed z-[250] flex flex-col items-stretch select-none touch-none',
-          'rounded-2xl border border-border bg-card/95 shadow-2xl backdrop-blur-xl overflow-hidden',
+          'overflow-hidden rounded-xl border shadow-[0_12px_32px_rgba(0,0,0,0.24)]',
+          CALL_HAIRLINE,
+          CALL_STAGE,
           'cursor-grab active:cursor-grabbing',
         )}
         role="dialog"
         aria-label="Active call (drag to move)"
       >
-        <div className="flex w-full items-center justify-between px-2 py-1 text-muted-foreground/60">
-          <GripVertical className="h-3 w-3 rotate-90" aria-hidden="true" />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
-            onClick={() => setMinimized(false)}
-            aria-label="Expand call"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
         {remoteSnaps.map((p) => (
           <RemoteAudioSink key={p.userId} snap={p} />
         ))}
-        <div className="relative bg-black" style={{ height: PIP_VIDEO_HEIGHT }}>
+        <div className={cn('relative', CALL_SURFACE)} style={{ height: PIP_VIDEO_HEIGHT }}>
           {pipSnap ? (
-            <ParticipantTile snap={pipSnap} compact className="h-full w-full" />
+            <ParticipantTile snap={pipSnap} compact className="h-full w-full rounded-none" />
           ) : (
-            <div className="flex items-center justify-center h-full text-white/60 text-xs">
+            <div className={cn('flex h-full items-center justify-center text-xs', CALL_MUTED_TEXT)}>
               Waiting…
             </div>
           )}
           {remoteSnaps.length > 1 && (
-            <span className="absolute top-1.5 right-1.5 z-[3] inline-flex items-center justify-center rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-sm">
+            <span className="absolute right-2 top-2 z-[3] inline-flex h-5 items-center rounded-md bg-black/70 px-1.5 text-[11px] font-medium text-white tabular-nums">
               +{remoteSnaps.length - 1} more
             </span>
           )}
+          {someoneRecording && (
+            <div
+              className={cn(
+                CALL_RECORDING_BADGE,
+                'pointer-events-none absolute left-2 top-2 z-[3] h-5 px-2 text-[11px]',
+              )}
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+              Recording
+            </div>
+          )}
         </div>
-        <div className="px-3 py-2 border-t border-border/60 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground truncate block">
-            {headlineLabel}
-          </span>
-          <span>{statusLabel}</span>
-        </div>
-        {admitBanners(true, 'px-1.5 pb-1.5')}
-        <div className="w-full px-1 pb-1">
+        {admitBanners(true, 'px-2 pt-2')}
+        <div className="flex items-center gap-1.5 py-2 pl-3 pr-2">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] font-semibold leading-[18px]">{headlineLabel}</p>
+            <p className={cn('truncate text-xs leading-4 tabular-nums', CALL_MUTED_TEXT)}>
+              {statusLabel}
+            </p>
+          </div>
           <CallControls
             isMuted={state.isMuted}
             isCameraOff={state.isCameraOff}
@@ -833,13 +848,16 @@ export const CallOverlay: React.FC = () => {
             onHangUp={actions.hangUp}
             compact
           />
+          <button
+            type="button"
+            className={cn(CALL_ROUND, CALL_ROUND_IDLE, 'h-9 w-9')}
+            onClick={() => setMinimized(false)}
+            aria-label="Expand call"
+            title="Expand call"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
         </div>
-        {someoneRecording && (
-          <div className="pointer-events-none absolute top-1.5 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-medium text-white shadow">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-pulse" aria-hidden="true" />
-            Recording
-          </div>
-        )}
         {reviewModal}
         {floatingPortal}
       </div>
@@ -858,7 +876,7 @@ export const CallOverlay: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-[250] flex flex-col bg-neutral-950 text-white"
+      className={cn('fixed inset-0 z-[250] flex flex-col', CALL_STAGE)}
       role="dialog"
       aria-label="Active call"
     >
@@ -866,66 +884,67 @@ export const CallOverlay: React.FC = () => {
         <RemoteAudioSink key={p.userId} snap={p} />
       ))}
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 bg-black/60">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate">{headlineLabel}</p>
-            <p className="text-xs text-white/60 truncate">
-              {statusLabel}
-              {shownPeers.length > 0 &&
-                ` · ${shownPeers.length} ${shownPeers.length === 1 ? 'person' : 'people'}`}
-              {state.isScreenSharing ? ' · Screen sharing' : ''}
-            </p>
-          </div>
+      {/* Top bar */}
+      <div className="flex min-h-14 flex-wrap items-center gap-2 py-2 pl-4 pr-3">
+        <div className="min-w-0 flex-1 basis-[200px]">
+          <p className="truncate text-sm font-semibold leading-[18px]">{headlineLabel}</p>
+          <p className={cn('truncate text-xs leading-4 tabular-nums', CALL_MUTED_TEXT)}>
+            {statusLabel}
+            {shownPeers.length > 0 &&
+              ` · ${shownPeers.length} ${shownPeers.length === 1 ? 'person' : 'people'}`}
+            {state.isScreenSharing ? ' · Screen sharing' : ''}
+          </p>
         </div>
-        <div className="flex items-center gap-1">
+        {someoneRecording && (
+          <div className={cn(CALL_RECORDING_BADGE, 'h-6 px-2.5 text-xs')}>
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+            Recording
+          </div>
+        )}
         {showInviteGuest && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 rounded-full text-white/70 hover:text-white hover:bg-white/10"
+          <button
+            type="button"
+            className={cn(CALL_BAR_BUTTON, 'px-3')}
             onClick={() => void handleInviteGuest()}
             disabled={inviting}
             aria-label="Invite guest"
             title="Invite guest — copy a link that works for 24 hours"
           >
-            <UserPlus className="h-5 w-5" />
-          </Button>
+            <UserPlus className="h-4 w-4" aria-hidden />
+            Invite guest
+          </button>
         )}
         {floating.support !== 'none' && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 rounded-full text-white/70 hover:text-white hover:bg-white/10"
+          <button
+            type="button"
+            className={cn(CALL_BAR_BUTTON, 'w-10 md:w-8')}
             onClick={() => void handlePopOut()}
             aria-label="Pop out call"
             title="Pop out — keep the call on top of other windows"
           >
-            <PictureInPicture2 className="h-5 w-5" />
-          </Button>
+            <PictureInPicture2 className="h-4 w-4" />
+          </button>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 rounded-full text-white/70 hover:text-white hover:bg-white/10"
+        <button
+          type="button"
+          className={cn(CALL_BAR_BUTTON, 'w-10 md:w-8')}
           onClick={() => setMinimized(true)}
           aria-label="Minimize call"
+          title="Minimize call"
         >
-          <Minimize2 className="h-5 w-5" />
-        </Button>
-        </div>
+          <Minus className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Stage */}
-      <div className="flex-1 relative flex overflow-hidden p-3 gap-3">
+      <div className="relative flex flex-1 gap-3 overflow-hidden px-3 pb-3 pt-1">
         {allTiles.length === 0 ? (
           // After Accept but before LiveKit's first snapshot arrives — usually
           // <500ms but on flaky networks can stretch longer. Show a clear
           // "connecting" affordance instead of an empty black box.
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/80">
-            <div className="h-12 w-12 rounded-full border-2 border-white/20 border-t-white animate-spin" />
-            <p className="text-sm">{statusLabel}</p>
+          <div className={cn('flex flex-1 flex-col items-center justify-center gap-3', CALL_MUTED_TEXT)}>
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#3a3a3a] border-t-white" />
+            <p className="text-[13px]">{statusLabel}</p>
           </div>
         ) : screenSharer ? (
           // Screen-share layout: presenter takes the main stage, others
@@ -960,7 +979,7 @@ export const CallOverlay: React.FC = () => {
         )}
 
         {state.error && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 rounded-lg bg-destructive/90 px-4 py-2 text-sm text-white shadow-lg">
+          <div className="absolute left-1/2 top-3 z-10 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-lg bg-destructive px-3 py-2 text-[13px] text-destructive-foreground">
             {state.error}
           </div>
         )}
@@ -972,7 +991,7 @@ export const CallOverlay: React.FC = () => {
       </div>
 
       {/* Controls */}
-      <div className="bg-black/60 backdrop-blur">
+      <div className={cn('border-t', CALL_HAIRLINE)}>
         <CallControls
           isMuted={state.isMuted}
           isCameraOff={state.isCameraOff}
@@ -993,13 +1012,6 @@ export const CallOverlay: React.FC = () => {
           onToggleRecording={handleToggleRecording}
         />
       </div>
-
-      {someoneRecording && (
-        <div className="pointer-events-none absolute top-16 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 rounded-full bg-red-600/90 px-3 py-1 text-xs font-medium text-white shadow-lg">
-          <span className="inline-block h-2 w-2 rounded-full bg-white animate-pulse" aria-hidden="true" />
-          Recording
-        </div>
-      )}
 
       {reviewModal}
       {floatingPortal}

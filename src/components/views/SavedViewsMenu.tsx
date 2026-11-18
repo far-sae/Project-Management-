@@ -276,9 +276,9 @@ export const SavedViewsMenu: React.FC<SavedViewsMenuProps> = ({
               disabled={!name.trim() || saving}
             >
               {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Save className="w-4 h-4 mr-2" />
+                <Save className="w-4 h-4" />
               )}
               Save view
             </Button>

@@ -106,7 +106,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     <>
       <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
           <DialogPrimitive.Content
             className={cn(
               "fixed left-1/2 top-[14%] z-50 w-full max-w-2xl -translate-x-1/2 px-3",
@@ -121,7 +121,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             </DialogPrimitive.Description>
             <Command
               shouldFilter={true}
-              className="rounded-xl border border-border bg-card shadow-2xl overflow-hidden"
+              className="rounded-xl border border-border bg-popover shadow-lg overflow-hidden"
             >
               <div className="flex items-center gap-2 px-3 border-b border-border">
                 <Search className="w-4 h-4 text-muted-foreground" />
@@ -131,7 +131,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                   placeholder="Type a command, task, or project…"
                   className="flex-1 h-12 bg-transparent text-foreground placeholder:text-muted-foreground outline-none border-0 text-sm"
                 />
-                <kbd className="hidden sm:inline-flex text-[10px] font-medium px-1.5 py-0.5 rounded border border-border bg-background text-muted-foreground">
+                <kbd className="hidden sm:inline-flex text-[11px] font-medium px-1.5 rounded border border-border bg-secondary text-muted-foreground">
                   esc
                 </kbd>
               </div>
@@ -149,7 +149,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                       onSelect={() => handleRun(onCreateTask)}
                       className={itemCls}
                     >
-                      <Plus className="w-4 h-4 mr-2 text-muted-foreground" />
+                      <Plus className="w-4 h-4 text-muted-foreground" />
                       Create new task
                       <Shortcut keys={["c"]} />
                     </Command.Item>
@@ -161,7 +161,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     }
                     className={itemCls}
                   >
-                    <FolderKanban className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <FolderKanban className="w-4 h-4 text-muted-foreground" />
                     New project
                   </Command.Item>
                   <Command.Item
@@ -179,7 +179,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     }
                     className={itemCls}
                   >
-                    <Sparkles className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <Sparkles className="w-4 h-4 text-muted-foreground" />
                     AI: Generate subtasks for current task
                   </Command.Item>
                   <Command.Item
@@ -187,7 +187,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     onSelect={() => handleRun(() => setShortcutsOpen(true))}
                     className={itemCls}
                   >
-                    <Keyboard className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <Keyboard className="w-4 h-4 text-muted-foreground" />
                     Show keyboard shortcuts
                     <Shortcut keys={["?"]} />
                   </Command.Item>
@@ -254,7 +254,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                       }
                       className={itemCls}
                     >
-                      <Boxes className="w-4 h-4 mr-2 text-muted-foreground" />
+                      <Boxes className="w-4 h-4 text-muted-foreground" />
                       All workspaces
                     </Command.Item>
                     {workspaces.slice(0, 8).map((w) => (
@@ -266,7 +266,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         }
                         className={itemCls}
                       >
-                        <Boxes className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <Boxes className="w-4 h-4 text-muted-foreground" />
                         {getWorkspaceDisplayName(w)}
                       </Command.Item>
                     ))}
@@ -288,7 +288,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         className={itemCls}
                       >
                         <span
-                          className="w-2 h-2 rounded-full mr-2 shrink-0"
+                          className="w-2 h-2 rounded-full shrink-0"
                           style={{
                             background:
                               p.coverColor || "hsl(var(--primary))",
@@ -317,9 +317,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         }
                         className={itemCls}
                       >
-                        <CheckSquare className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <CheckSquare className="w-4 h-4 text-muted-foreground" />
                         <span className="truncate">{t.title}</span>
-                        <span className="ml-auto text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <span className="ml-auto text-[11px] text-muted-foreground">
                           {t.status === "undefined" ? "todo" : t.status}
                         </span>
                       </Command.Item>
@@ -334,7 +334,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     onSelect={() => handleRun(() => setMode("system"))}
                     className={itemCls}
                   >
-                    <Monitor className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <Monitor className="w-4 h-4 text-muted-foreground" />
                     Use system theme
                     {mode === "system" && (
                       <span className="ml-auto text-xs text-primary">active</span>
@@ -345,7 +345,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     onSelect={() => handleRun(() => setMode("light"))}
                     className={itemCls}
                   >
-                    <Sun className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <Sun className="w-4 h-4 text-muted-foreground" />
                     Light theme
                     {mode === "light" && (
                       <span className="ml-auto text-xs text-primary">active</span>
@@ -356,7 +356,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     onSelect={() => handleRun(() => setMode("dark"))}
                     className={itemCls}
                   >
-                    <Moon className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <Moon className="w-4 h-4 text-muted-foreground" />
                     Dark theme
                     {mode === "dark" && (
                       <span className="ml-auto text-xs text-primary">active</span>
@@ -371,7 +371,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         className={itemCls}
                       >
                         <span
-                          className="w-3 h-3 rounded-full mr-2"
+                          className="w-3 h-3 rounded-full"
                           style={{
                             background: ({
                               orange: "hsl(24 95% 53%)",
@@ -393,7 +393,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 </Command.Group>
               </Command.List>
 
-              <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-secondary/40 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-surface-2 text-[11px] text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <Hint label="↑↓ navigate" />
                   <Hint label="↵ open" />
@@ -420,17 +420,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 };
 
 const groupCls =
-  "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground";
+  "[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground";
 
 const itemCls =
-  "flex items-center gap-1 px-2 py-2 rounded-md text-sm cursor-pointer aria-selected:bg-secondary aria-selected:text-foreground text-foreground/90 hover:bg-secondary";
+  "flex min-h-9 items-center gap-2 px-2 rounded-md text-[13px] cursor-pointer aria-selected:bg-secondary aria-selected:text-foreground text-foreground hover:bg-secondary";
 
 const Shortcut: React.FC<{ keys: string[] }> = ({ keys }) => (
   <span className="ml-auto flex items-center gap-1">
     {keys.map((k, i) => (
       <kbd
         key={i}
-        className="text-[10px] font-medium px-1.5 py-0.5 rounded border border-border bg-background text-muted-foreground"
+        className="text-[11px] font-medium px-1.5 rounded border border-border bg-secondary text-muted-foreground"
       >
         {k}
       </kbd>
@@ -460,7 +460,7 @@ const NavItem: React.FC<NavItemProps> = ({
     onSelect={onSelect}
     className={itemCls}
   >
-    <Icon className="w-4 h-4 mr-2 text-muted-foreground" />
+    <Icon className="w-4 h-4 text-muted-foreground" />
     {label}
     {keys && <Shortcut keys={keys} />}
   </Command.Item>
@@ -502,9 +502,9 @@ const ShortcutsModal: React.FC<ShortcutsModalProps> = ({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-2xl">
-          <DialogPrimitive.Title className="text-lg font-semibold text-foreground mb-1">
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-popover p-6 shadow-lg">
+          <DialogPrimitive.Title className="text-base font-semibold text-foreground mb-1">
             Keyboard shortcuts
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="text-sm text-muted-foreground mb-4">
@@ -514,7 +514,7 @@ const ShortcutsModal: React.FC<ShortcutsModalProps> = ({
           <div className="space-y-4">
             {groups.map((g) => (
               <div key={g.title}>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                <p className="text-xs font-medium text-muted-foreground mb-2">
                   {g.title}
                 </p>
                 <ul className="space-y-1.5">
@@ -523,12 +523,12 @@ const ShortcutsModal: React.FC<ShortcutsModalProps> = ({
                       key={i}
                       className="flex items-center justify-between text-sm"
                     >
-                      <span className="text-foreground/90">{item.label}</span>
+                      <span className="text-foreground">{item.label}</span>
                       <span className="flex items-center gap-1">
                         {item.keys.map((k, j) => (
                           <kbd
                             key={j}
-                            className="text-[11px] font-medium px-1.5 py-0.5 rounded border border-border bg-background text-foreground"
+                            className="text-[11px] font-medium px-1.5 rounded border border-border bg-secondary text-foreground"
                           >
                             {k}
                           </kbd>
@@ -544,7 +544,7 @@ const ShortcutsModal: React.FC<ShortcutsModalProps> = ({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="mt-6 w-full h-9 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+            className="mt-6 w-full h-8 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             Got it
           </button>

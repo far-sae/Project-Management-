@@ -313,7 +313,7 @@ export const MindMapToolbar: React.FC<MindMapToolbarProps> = (p) => {
     <div
       role="toolbar"
       aria-label="Mind map tools"
-      className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85"
+      className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-0.5 rounded-xl border border-border bg-card p-1 shadow-sm"
     >
       {p.modeSwitch}
       {p.modeSwitch && <Divider />}

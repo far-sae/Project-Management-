@@ -120,14 +120,14 @@ function layoutTree(root: MindMapNode): PositionedNode[] {
 // ─────────────────────────────────────────────────────────────
 
 const BRANCH_PALETTE = [
-  { name: 'orange', stroke: 'rgb(249,115,22)', text: 'text-orange-600 dark:text-orange-300', soft: 'bg-orange-500/10 border-orange-500/30' },
-  { name: 'amber',  stroke: 'rgb(245,158,11)', text: 'text-amber-600 dark:text-amber-300',  soft: 'bg-amber-500/10 border-amber-500/30' },
-  { name: 'rose',   stroke: 'rgb(244,63,94)',  text: 'text-rose-600 dark:text-rose-300',    soft: 'bg-rose-500/10 border-rose-500/30' },
-  { name: 'violet', stroke: 'rgb(139,92,246)', text: 'text-violet-600 dark:text-violet-300', soft: 'bg-violet-500/10 border-violet-500/30' },
-  { name: 'sky',    stroke: 'rgb(14,165,233)', text: 'text-sky-600 dark:text-sky-300',      soft: 'bg-sky-500/10 border-sky-500/30' },
-  { name: 'emerald', stroke: 'rgb(16,185,129)', text: 'text-emerald-600 dark:text-emerald-300', soft: 'bg-emerald-500/10 border-emerald-500/30' },
-  { name: 'teal',   stroke: 'rgb(20,184,166)', text: 'text-teal-600 dark:text-teal-300',    soft: 'bg-teal-500/10 border-teal-500/30' },
-  { name: 'fuchsia', stroke: 'rgb(217,70,239)', text: 'text-fuchsia-600 dark:text-fuchsia-300', soft: 'bg-fuchsia-500/10 border-fuchsia-500/30' },
+  { name: 'orange', stroke: 'rgb(249,115,22)', text: 'text-primary', soft: 'bg-primary/10 border-primary/30' },
+  { name: 'amber',  stroke: 'rgb(245,158,11)', text: 'text-warning-soft-foreground',  soft: 'bg-warning/10 border-warning/30' },
+  { name: 'rose',   stroke: 'rgb(244,63,94)',  text: 'text-destructive',    soft: 'bg-destructive/10 border-destructive/30' },
+  { name: 'violet', stroke: 'rgb(139,92,246)', text: 'text-primary', soft: 'bg-primary/10 border-primary/30' },
+  { name: 'sky',    stroke: 'rgb(14,165,233)', text: 'text-info',      soft: 'bg-info/10 border-info/30' },
+  { name: 'emerald', stroke: 'rgb(16,185,129)', text: 'text-success', soft: 'bg-success/10 border-success/30' },
+  { name: 'teal',   stroke: 'rgb(20,184,166)', text: 'text-success',    soft: 'bg-success/10 border-success/30' },
+  { name: 'fuchsia', stroke: 'rgb(217,70,239)', text: 'text-primary', soft: 'bg-primary/10 border-primary/30' },
 ];
 
 function buildBranchColorMap(tree: MindMapNode): Map<string, number> {
@@ -212,7 +212,7 @@ const AINode: React.FC<{ data: AINodeData; selected?: boolean }> = memo(
     };
 
     const wrapperClass = isRoot
-      ? 'rounded-2xl border-2 border-primary/40 bg-card px-4 py-3 shadow-md min-w-[220px] max-w-[320px]'
+      ? 'rounded-xl border border-primary/40 bg-card px-4 py-3 min-w-[220px] max-w-[320px]'
       : isMainBranch
         ? cn(
             'rounded-full border font-semibold text-sm shadow-sm min-w-[160px] max-w-[260px] px-3 py-1.5',
@@ -226,7 +226,7 @@ const AINode: React.FC<{ data: AINodeData; selected?: boolean }> = memo(
         className={cn(
           'group relative transition-all',
           wrapperClass,
-          selected && 'ring-2 ring-primary/40 shadow-md',
+          selected && 'ring-2 ring-primary/40',
         )}
         onDoubleClick={(e) => {
           e.stopPropagation();
@@ -238,7 +238,7 @@ const AINode: React.FC<{ data: AINodeData; selected?: boolean }> = memo(
         {isRoot && !editing && (
           <div className="flex items-center gap-1.5 mb-0.5">
             <Sparkles className="w-3 h-3 text-primary" />
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-primary/80">
+            <p className="text-[10px] font-semibold text-primary/80">
               Topic
             </p>
           </div>
@@ -680,7 +680,7 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap, hea
   return (
     <div className="h-full flex flex-col gap-3">
       {/* Prompt strip */}
-      <div className="rounded-lg border border-border bg-card/80 p-3 backdrop-blur">
+      <div className="rounded-lg border border-border bg-card p-3">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             {headerSlot}
@@ -867,7 +867,7 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap, hea
           </ReactFlow>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 text-muted-foreground">
-            <Lightbulb className="w-10 h-10 mb-3 text-amber-500/70" />
+            <Lightbulb className="w-10 h-10 mb-3 text-warning-soft-foreground" />
             <p className="text-sm font-medium text-foreground mb-1">
               Your AI-generated mind map will appear here
             </p>
@@ -879,7 +879,7 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap, hea
           </div>
         )}
         {loading && nodes.length > 0 && (
-          <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] flex items-center justify-center">
+          <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
             <div className="flex items-center gap-2 text-sm text-foreground rounded-md border border-border bg-card px-3 py-2 shadow">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
               Regenerating…

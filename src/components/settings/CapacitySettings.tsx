@@ -74,7 +74,7 @@ export const CapacitySettings: React.FC = () => {
       <CardContent className="space-y-4">
         {loading ? (
           <div className="flex items-center text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin" />
             Loading…
           </div>
         ) : (
@@ -100,12 +100,12 @@ export const CapacitySettings: React.FC = () => {
             <Button onClick={handleSave} disabled={!dirty || saving}>
               {saving ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Saving
                 </>
               ) : (
                 <>
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4" />
                   Save capacity
                 </>
               )}

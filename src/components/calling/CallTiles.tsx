@@ -3,6 +3,7 @@ import { MicOff, VideoOff } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
+import { CALL_SURFACE } from './callTheme';
 
 // ── Stream attachment helper ─────────────────────────────────
 
@@ -65,9 +66,8 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
     <div
       style={style}
       className={cn(
-        'relative bg-black/70 rounded-xl overflow-hidden flex items-center justify-center',
-        showSpeakingRing && snap.isSpeaking && !snap.isLocal &&
-          'ring-2 ring-emerald-400/80 shadow-[0_0_0_4px_rgba(16,185,129,0.18)]',
+        'relative flex items-center justify-center overflow-hidden rounded-[10px]',
+        CALL_SURFACE,
         className,
       )}
     >
@@ -88,65 +88,87 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
           )}
         />
       ) : (
-        <div className="flex flex-col items-center justify-center gap-2 text-white/80">
-          <Avatar
+        <Avatar className={compact ? 'h-10 w-10' : 'h-[72px] w-[72px]'}>
+          <AvatarFallback
             className={cn(
-              compact ? 'h-10 w-10' : 'h-20 w-20',
-              'ring-2 ring-white/15',
+              'bg-[#3a3a3a] font-semibold text-white',
+              compact ? 'text-base' : 'text-[28px]',
             )}
           >
-            <AvatarFallback className="bg-white/10 text-white">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-        </div>
+            {initials}
+          </AvatarFallback>
+        </Avatar>
       )}
 
-      {/* Bottom name + mute strip */}
+      {/* Active speaker: a plain green ring drawn over the video, so it is
+          never clipped by the stage or hidden behind the picture. */}
+      {showSpeakingRing && snap.isSpeaking && !snap.isLocal && (
+        <span
+          aria-hidden
+          data-testid="speaking-ring"
+          className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit] ring-2 ring-inset ring-success"
+        />
+      )}
+
+      {/* Name tag, bottom-left, with mic / camera / sharing indicators */}
       <div
         className={cn(
-          'absolute left-2 bottom-2 right-2 z-[2] flex items-center gap-1.5',
+          'absolute bottom-2 left-2 right-2 z-[2] flex items-center gap-1.5 font-medium text-white',
           compact ? 'text-[11px]' : 'text-xs',
         )}
       >
         <span
           className={cn(
-            'inline-flex items-center gap-1 rounded-md bg-black/55 px-1.5 py-0.5 text-white/95 backdrop-blur-sm',
-            'truncate min-w-0 max-w-full',
+            'inline-flex min-w-0 max-w-full items-center rounded-md bg-black/70',
+            compact ? 'h-5 px-1.5' : 'h-6 px-2',
           )}
         >
           <span className="truncate">
             {snap.displayName}
-            {snap.isLocal && (
-              <span className="ml-1 text-white/60">(you)</span>
-            )}
+            {snap.isLocal && <span className="ml-1 font-normal text-[#a3a3a3]">(you)</span>}
           </span>
         </span>
         {snap.role === 'guest' && (
-          <span className="inline-flex shrink-0 items-center rounded-md bg-amber-500/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
+          <span
+            className={cn(
+              'inline-flex shrink-0 items-center rounded bg-warning px-1.5 text-[11px] text-warning-foreground',
+              compact ? 'h-5' : 'h-6',
+            )}
+          >
             Guest
           </span>
         )}
         {snap.isMicMuted && (
           <span
-            className="inline-flex items-center justify-center rounded-md bg-black/55 p-1 text-rose-300 backdrop-blur-sm"
+            className={cn(
+              'inline-flex shrink-0 items-center justify-center rounded-md bg-black/70 text-[#fda29b]',
+              compact ? 'h-5 w-5' : 'h-6 w-6',
+            )}
             aria-label={`${snap.displayName} is muted`}
             title={`${snap.displayName} is muted`}
           >
-            <MicOff className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+            <MicOff className="h-3 w-3" />
           </span>
         )}
         {snap.isCameraOff && !snap.isScreenSharing && (
           <span
-            className="inline-flex items-center justify-center rounded-md bg-black/55 p-1 text-white/70 backdrop-blur-sm"
+            className={cn(
+              'inline-flex shrink-0 items-center justify-center rounded-md bg-black/70 text-[#a3a3a3]',
+              compact ? 'h-5 w-5' : 'h-6 w-6',
+            )}
             aria-label={`${snap.displayName}'s camera is off`}
             title={`${snap.displayName}'s camera is off`}
           >
-            <VideoOff className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+            <VideoOff className="h-3 w-3" />
           </span>
         )}
         {snap.isScreenSharing && (
-          <span className="inline-flex items-center rounded-md bg-emerald-500/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
+          <span
+            className={cn(
+              'inline-flex shrink-0 items-center rounded bg-success px-1.5 text-[11px] text-success-foreground',
+              compact ? 'h-5' : 'h-6',
+            )}
+          >
             Sharing
           </span>
         )}

@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
@@ -187,15 +189,15 @@ export const Files: React.FC = () => {
     const category = getFileTypeCategory(fileType);
     switch (category) {
       case 'image':
-        return <Image className="w-8 h-8 text-green-500" />;
+        return <Image className="w-8 h-8 text-success" />;
       case 'document':
-        return <FileText className="w-8 h-8 text-blue-500" />;
+        return <FileText className="w-8 h-8 text-info" />;
       case 'spreadsheet':
-        return <FileSpreadsheet className="w-8 h-8 text-emerald-500" />;
+        return <FileSpreadsheet className="w-8 h-8 text-success" />;
       case 'video':
-        return <Video className="w-8 h-8 text-purple-500" />;
+        return <Video className="w-8 h-8 text-primary" />;
       case 'audio':
-        return <Music className="w-8 h-8 text-pink-500" />;
+        return <Music className="w-8 h-8 text-primary" />;
       default:
         return <FileIcon className="w-8 h-8 text-muted-foreground" />;
     }
@@ -265,7 +267,7 @@ export const Files: React.FC = () => {
   if (orgLoading) {
     return (
       <main className="flex-1 min-w-0 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </main>
     );
   }
@@ -274,16 +276,15 @@ export const Files: React.FC = () => {
   }
 
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-3 mb-6 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">My Files</h1>
-          <p className="text-sm text-muted-foreground">
-            Your personal storage. Files here are private to you — no one else in your
-            organization can see them.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+    <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <AppHeader left={<span className="text-sm font-semibold">My Files</span>} />
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 lg:px-6 flex flex-col gap-6">
+      <PageHeader
+        title="My Files"
+        description="Your personal storage. Files here are private to you — no one else in your organization can see them."
+        actions={
+        <>
           <Button
             variant="outline"
             onClick={() => handleBulkDownload()}
@@ -297,24 +298,25 @@ export const Files: React.FC = () => {
             }
           >
             {downloadingAll ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4" />
             )}
             {selectedIds.size > 0 ? `Download (${selectedIds.size})` : 'Download all'}
           </Button>
           <Button
-            className="bg-gradient-to-r from-orange-500 to-red-500"
+           
             onClick={() => setShowUploadZone(!showUploadZone)}
           >
-            <Upload className="w-4 h-4 mr-2" />
+            <Upload className="w-4 h-4" />
             Upload File
           </Button>
-        </div>
-      </div>
+        </>
+        }
+      />
 
       {showUploadZone && (
-        <Card className="mb-6">
+        <Card>
           <CardContent className="py-6">
             <FileUploadZone
               onFilesSelected={handleFilesSelected}
@@ -339,16 +341,16 @@ export const Files: React.FC = () => {
         </Card>
       )}
 
-      <Card className="mb-6">
+      <Card>
         <CardContent className="py-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-[200px] flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search files..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-9"
               />
             </div>
             {filteredFiles.length > 0 && (
@@ -365,18 +367,19 @@ export const Files: React.FC = () => {
                 title="Select / deselect all visible files"
               >
                 {filteredFiles.every((f) => selectedIds.has(f.fileId)) ? (
-                  <CheckSquare className="w-4 h-4 mr-1.5" />
+                  <CheckSquare className="w-4 h-4" />
                 ) : (
-                  <Square className="w-4 h-4 mr-1.5" />
+                  <Square className="w-4 h-4" />
                 )}
                 Select all
               </Button>
             )}
-            <div className="flex border rounded-lg overflow-hidden">
+            <div className="flex border rounded-md overflow-hidden">
               <Button
                 variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="rounded-none"
+                aria-label="Grid view"
                 onClick={() => setViewMode('grid')}
               >
                 <Grid className="w-4 h-4" />
@@ -385,6 +388,7 @@ export const Files: React.FC = () => {
                 variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="rounded-none"
+                aria-label="List view"
                 onClick={() => setViewMode('list')}
               >
                 <List className="w-4 h-4" />
@@ -392,7 +396,7 @@ export const Files: React.FC = () => {
             </div>
           </div>
           {selectedIds.size > 0 && (
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border bg-secondary px-3 py-2 text-[13px]">
               <span className="font-medium text-foreground">
                 {selectedIds.size} file{selectedIds.size === 1 ? '' : 's'} selected
               </span>
@@ -403,14 +407,14 @@ export const Files: React.FC = () => {
                   disabled={downloadingAll}
                 >
                   {downloadingAll ? (
-                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
-                    <Download className="w-4 h-4 mr-1.5" />
+                    <Download className="w-4 h-4" />
                   )}
                   Download selected
                 </Button>
                 <Button size="sm" variant="ghost" onClick={clearSelection}>
-                  <X className="w-4 h-4 mr-1" />
+                  <X className="w-4 h-4" />
                   Clear
                 </Button>
               </div>
@@ -424,7 +428,7 @@ export const Files: React.FC = () => {
           <CardTitle>
             All Files
             {files.length > 0 && (
-              <span className="ml-2 text-sm font-normal text-muted-foreground">
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
                 ({filteredFiles.length} files)
               </span>
             )}
@@ -433,19 +437,19 @@ export const Files: React.FC = () => {
         <CardContent>
           {loading ? (
             <div className="text-center py-16 text-muted-foreground">
-              <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/60 animate-spin" />
-              <p>Loading files...</p>
+              <Loader2 className="h-5 w-5 mx-auto mb-3 animate-spin" />
+              <p className="text-[13px]">Loading files...</p>
             </div>
           ) : filteredFiles.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
-              <Folder className="w-16 h-16 mx-auto mb-4 text-muted-foreground/60" />
-              <p className="text-lg font-medium">No files yet</p>
-              <p className="text-sm">Upload files to get started</p>
+              <Folder className="h-5 w-5 mx-auto mb-3 text-muted-foreground" />
+              <p className="text-[13px] font-medium text-foreground">No files yet</p>
+              <p className="text-xs">Upload files to get started</p>
               <Button
-                className="mt-4 bg-gradient-to-r from-orange-500 to-red-500"
+                className="mt-4"
                 onClick={() => setShowUploadZone(true)}
               >
-                <Upload className="w-4 h-4 mr-2" />
+                <Upload className="w-4 h-4" />
                 Upload your first file
               </Button>
             </div>
@@ -457,8 +461,8 @@ export const Files: React.FC = () => {
                   <div
                     key={file.fileId}
                     className={cn(
-                      'p-4 border rounded-lg hover:bg-secondary/60 cursor-pointer text-center group relative',
-                      checked && 'ring-2 ring-primary border-primary bg-primary/5',
+                      'p-4 border rounded-lg hover:bg-surface-2 cursor-pointer text-center group relative',
+                      checked && 'border-primary bg-primary/5',
                     )}
                     onClick={() => toggleSelected(file.fileId)}
                   >
@@ -505,6 +509,7 @@ export const Files: React.FC = () => {
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0"
+                        aria-label={`Download ${file.fileName}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDownload(file);
@@ -515,7 +520,8 @@ export const Files: React.FC = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                        aria-label={`Delete ${file.fileName}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteFile(file.fileId);
@@ -536,8 +542,8 @@ export const Files: React.FC = () => {
                   <div
                     key={file.fileId}
                     className={cn(
-                      'flex items-center gap-4 p-3 border rounded-lg hover:bg-secondary/60 group',
-                      checked && 'ring-2 ring-primary border-primary bg-primary/5',
+                      'flex items-center gap-4 p-3 border rounded-lg hover:bg-surface-2 group',
+                      checked && 'border-primary bg-primary/5',
                     )}
                   >
                     <button
@@ -566,13 +572,14 @@ export const Files: React.FC = () => {
                         size="sm"
                         onClick={() => handleDownload(file)}
                       >
-                        <Download className="w-4 h-4 mr-1" />
+                        <Download className="w-4 h-4" />
                         Download
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-red-500 hover:text-red-700"
+                        className="text-destructive hover:text-destructive"
+                        aria-label={`Delete ${file.fileName}`}
                         onClick={() => handleDeleteFile(file.fileId)}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -585,6 +592,8 @@ export const Files: React.FC = () => {
           )}
         </CardContent>
       </Card>
+      </div>
+      </div>
     </main>
   );
 };

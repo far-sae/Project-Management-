@@ -28,13 +28,13 @@ const ACTION_FILTERS: { value: string; label: string }[] = [
 ];
 
 const ACTION_BADGE: Record<string, string> = {
-  login:                    'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
-  role_changed:             'bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30',
-  mfa_enabled:              'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
-  mfa_disabled:             'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
-  bulk_delete:              'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30',
-  integration_connected:    'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
-  integration_disconnected: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+  login:                    'bg-info/15 text-info-soft-foreground border-info/30',
+  role_changed:             'bg-primary/15 text-primary border-primary/30',
+  mfa_enabled:              'bg-success/15 text-success-soft-foreground border-success/30',
+  mfa_disabled:             'bg-warning/15 text-warning-soft-foreground border-warning/30',
+  bulk_delete:              'bg-destructive/15 text-destructive-soft-foreground border-destructive/30',
+  integration_connected:    'bg-success/15 text-success-soft-foreground border-success/30',
+  integration_disconnected: 'bg-warning/15 text-warning-soft-foreground border-warning/30',
 };
 
 const prettyAction = (a: string) =>
@@ -119,7 +119,7 @@ export const AuditLogSettingsTab: React.FC = () => {
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
           </div>
@@ -133,7 +133,7 @@ export const AuditLogSettingsTab: React.FC = () => {
           <div className={
             'rounded-md border p-3 text-sm flex items-start gap-2 '
             + (loadError.reason === 'permission_denied'
-              ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+              ? 'border-warning/40 bg-warning/10 text-warning-soft-foreground'
               : 'border-destructive/40 bg-destructive/10 text-destructive')
           }>
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -159,7 +159,7 @@ export const AuditLogSettingsTab: React.FC = () => {
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             {grouped.map(([day, items]) => (
               <section key={day}>
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                <h4 className="text-xs font-semibold text-muted-foreground mb-1.5">
                   {format(new Date(day), 'PPPP')}
                 </h4>
                 <div className="rounded-md border divide-y">

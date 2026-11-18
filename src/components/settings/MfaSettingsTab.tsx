@@ -106,15 +106,15 @@ export const MfaSettingsTab: React.FC = () => {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {status?.enabled ? (
-              <ShieldCheck className="w-5 h-5 text-emerald-500" />
+              <ShieldCheck className="w-5 h-5 text-success" />
             ) : (
-              <ShieldOff className="w-5 h-5 text-amber-500" />
+              <ShieldOff className="w-5 h-5 text-warning-soft-foreground" />
             )}
             <div>
               <p className="text-sm font-semibold">
                 Two-factor authentication{' '}
                 {status?.enabled
-                  ? <Badge className="ml-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">On</Badge>
+                  ? <Badge className="ml-1 bg-success/15 text-success-soft-foreground border-success/30">On</Badge>
                   : <Badge variant="outline" className="ml-1">Off</Badge>}
               </p>
               <p className="text-xs text-muted-foreground">
@@ -136,7 +136,7 @@ export const MfaSettingsTab: React.FC = () => {
               verified {status.lastVerifiedAt?.toLocaleString() ?? 'never'}.
             </p>
             <Button variant="outline" onClick={handleDisable} disabled={busy}>
-              <ShieldOff className="w-4 h-4 mr-2" /> Disable two-factor
+              <ShieldOff className="w-4 h-4" /> Disable two-factor
             </Button>
           </div>
         ) : draft ? (
@@ -174,7 +174,7 @@ export const MfaSettingsTab: React.FC = () => {
                   className="mt-2"
                   onClick={handleCopyCodes}
                 >
-                  {copied ? <Check className="w-3.5 h-3.5 mr-1.5" /> : <Copy className="w-3.5 h-3.5 mr-1.5" />}
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   {copied ? 'Copied' : 'Copy all codes'}
                 </Button>
                 <p className="text-[11px] text-muted-foreground mt-1">
@@ -183,7 +183,7 @@ export const MfaSettingsTab: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <Button onClick={handleConfirm} disabled={busy || code.length !== 6}>
-                  {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirm and enable
                 </Button>
                 <Button variant="ghost" onClick={() => { setDraft(null); setCode(''); }} disabled={busy}>
@@ -194,8 +194,8 @@ export const MfaSettingsTab: React.FC = () => {
           </div>
         ) : (
           <Button onClick={handleStart} disabled={busy}>
-            {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            <ShieldCheck className="w-4 h-4 mr-2" /> Set up two-factor
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+            <ShieldCheck className="w-4 h-4" /> Set up two-factor
           </Button>
         )}
       </CardContent>
