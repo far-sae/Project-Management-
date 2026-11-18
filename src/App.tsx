@@ -62,6 +62,7 @@ const TermsPage = React.lazy(() => import('@/pages/legal/TermsPage'));
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Loader2Icon } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
+import { AuthReturnErrorNotice } from '@/components/auth/AuthReturnErrorNotice';
 import CookieBanner from '@/components/landing/CookieBanner';
 import { CallProvider } from '@/components/calling/CallProvider';
 import { ChatDockProvider } from '@/components/messaging/ChatDock';
@@ -416,6 +417,7 @@ export default function App() {
                   <CallOverlay />
                 </Suspense>
                 <Toaster position='bottom-right' />
+                <AuthReturnErrorNotice />
                 <CookieBanner />
               </CallProvider>
             </SubscriptionProvider>
