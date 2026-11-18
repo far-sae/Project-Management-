@@ -14,6 +14,7 @@ import {
   type TimeEntry,
 } from '@/services/supabase/timeEntries';
 import { buildAttendance, summarizeAttendance, type AttendanceStatus } from '@/lib/attendance';
+import { LEAVE_TYPE_LABEL, leaveOnDate, todayYmd, type LeaveLike } from '@/lib/leave';
 
 const STATUS: Record<AttendanceStatus, { label: string; tone: StatusTone }> = {
   on_clock: { label: 'On the clock', tone: 'success' },
@@ -30,7 +31,10 @@ const hours = (s: number) => (s > 0 ? formatDurationSeconds(s) : '—');
 const time = (d: Date | null) => (d ? format(d, 'HH:mm') : '—');
 
 /** Team clock-in / clock-out for one day, with this week's totals. */
-export const TeamAttendance: React.FC = () => {
+export const TeamAttendance: React.FC<{
+  /** Leave requests; someone on approved leave that day shows as "On leave". */
+  leaveRequests?: LeaveLike[];
+}> = ({ leaveRequests }) => {
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? '';
   const [entries, setEntries] = useState<TimeEntry[] | null>(null);
@@ -161,6 +165,8 @@ export const TeamAttendance: React.FC = () => {
               <tbody>
                 {rows.map((r) => {
                   const absent = r.status === 'absent';
+                  const onLeave =
+                    absent && leaveRequests ? leaveOnDate(leaveRequests, r.userId, todayYmd(day)) : undefined;
                   return (
                     <tr
                       key={r.userId}
@@ -189,9 +195,15 @@ export const TeamAttendance: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-4">
-                        <StatusPill tone={STATUS[r.status].tone} pulse={r.status === 'on_clock'}>
-                          {STATUS[r.status].label}
-                        </StatusPill>
+                        {onLeave ? (
+                          <StatusPill tone="info" title={LEAVE_TYPE_LABEL[onLeave.leaveType]}>
+                            On leave
+                          </StatusPill>
+                        ) : (
+                          <StatusPill tone={STATUS[r.status].tone} pulse={r.status === 'on_clock'}>
+                            {STATUS[r.status].label}
+                          </StatusPill>
+                        )}
                       </td>
                       <td className="px-4 tabular-nums">{time(r.firstIn)}</td>
                       <td className="px-4 tabular-nums">

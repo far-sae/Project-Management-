@@ -303,7 +303,7 @@ export const HR: React.FC = () => {
 
           <TabsContent value="attendance" className={TAB_PANEL}>
             <div className={TAB_BODY}>
-              <TeamAttendance />
+              <TeamAttendance leaveRequests={leave.requests} />
             </div>
           </TabsContent>
 

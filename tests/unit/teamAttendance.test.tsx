@@ -65,6 +65,28 @@ describe('TeamAttendance', () => {
     expect(screen.getByText('Not clocked in').getAttribute('data-tone')).toBe('muted');
   });
 
+  it('shows someone on approved leave as "On leave" instead of "Not clocked in"', () => {
+    h.entries = [];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    render(
+      <TeamAttendance
+        leaveRequests={[
+          { id: 'l1', userId: 'ben', leaveType: 'sick', startDate: today, endDate: today, days: 1, status: 'approved' },
+          { id: 'l2', userId: 'ana', leaveType: 'annual', startDate: today, endDate: today, days: 1, status: 'pending' },
+        ]}
+      />,
+    );
+    const rows = screen.getAllByRole('row');
+    const ana = rows.find((r) => within(r).queryByText('Ana'))!;
+    const ben = rows.find((r) => within(r).queryByText('Ben'))!;
+    expect(within(ben).getByText('On leave').getAttribute('data-tone')).toBe('info');
+    expect(within(ben).getByTitle('Sick leave')).toBeTruthy();
+    expect(within(ben).queryByText('Not clocked in')).toBeNull();
+    // A request that is not approved yet changes nothing.
+    expect(within(ana).getByText('Not clocked in')).toBeTruthy();
+  });
+
   it('steps through days with one joined control, and Today only shows on another day', () => {
     h.entries = [];
     render(<TeamAttendance />);

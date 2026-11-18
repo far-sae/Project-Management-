@@ -70,8 +70,21 @@ export function useEmployeeDocuments() {
 
   /** Open the file in a new tab through a short-lived link. */
   const open = useCallback(async (doc: EmployeeDocument) => {
-    const url = await getEmployeeDocumentUrl(doc.filePath);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    // Open the tab straight away, while the click still counts as the user's
+    // action; some browsers block a tab that is opened after waiting.
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const url = await getEmployeeDocumentUrl(doc.filePath);
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (e) {
+      tab?.close();
+      throw e;
+    }
   }, []);
 
   return { documents, loading, setupMissing, error, refresh, upload, remove, open };
