@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buttons, fields and badges</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#171717}
+button{font:inherit;cursor:pointer}
+.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.i14{width:14px;height:14px}
+.ghost:hover{background:#ededed}
+.out:hover{background:#fafafa;border-color:#c9c9c9}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #ea580c;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 900px; box-sizing: border-box; padding: 40px; background: #ffffff; color: #171717; font-family: 'Geist', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 20px; --primary-bg: {{primaryBg}}">
+<div style="max-width: 1360px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); gap: 24px">
+
+<section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid #eaeaea; border-radius: 8px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Buttons</h2>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 12px; color: #666666">Kinds, all 32px tall with 6px corners</span>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<button type="button" style="display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: var(--primary-bg); color: #ffffff; font-size: 13px; font-weight: 500"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</button>
+<button class="out" type="button" style="height: 32px; padding: 0 12px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font-size: 13px; font-weight: 500">Cancel</button>
+<button class="ghost" type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #171717; font-size: 13px; font-weight: 500">Today</button>
+<button type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #d92d20; color: #ffffff; font-size: 13px; font-weight: 500">Delete task</button>
+<button type="button" disabled style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #ededed; color: #8f8f8f; font-size: 13px; font-weight: 500; cursor: not-allowed">Disabled</button>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 12px; color: #666666">Sizes: 28px in tight rows, 32px by default, 40px on login and empty screens</span>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<button type="button" style="height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: var(--primary-bg); color: #ffffff; font-size: 12px; font-weight: 500">Comment</button>
+<button type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: var(--primary-bg); color: #ffffff; font-size: 13px; font-weight: 500">Save changes</button>
+<button type="button" style="height: 40px; padding: 0 16px; border: 0; border-radius: 6px; background: var(--primary-bg); color: #ffffff; font-size: 14px; font-weight: 500">Create project</button>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 12px; color: #666666">Icon buttons are square and match the height of the row they sit in</span>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<button class="ghost" type="button" aria-label="More actions" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+<button class="ghost" type="button" aria-label="Close" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+<button class="out" type="button" aria-label="Export" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid #eaeaea; border-radius: 8px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Fields</h2>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="c-name" style="font-size: 13px; font-weight: 500">Project name</label>
+<input id="c-name" type="text" value="Website relaunch" style="box-sizing: border-box; width: 100%; height: 32px; padding: 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font: inherit; font-size: 13px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="c-ws" style="font-size: 13px; font-weight: 500">Workspace</label>
+<button id="c-ws" class="out" type="button" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font-size: 13px; text-align: left"><span style="flex: 1">All workspaces</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><path d="M6 9l6 6 6-6"/></svg></button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="c-desc" style="font-size: 13px; font-weight: 500">Description</label>
+<textarea id="c-desc" rows="3" placeholder="Add a description, link, or note…" style="box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid #e0e0e0; border-radius: 6px; resize: none; background: #ffffff; color: #171717; font: inherit; font-size: 13px"></textarea>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="c-pin" style="font-size: 13px; font-weight: 500">Project PIN</label>
+<input id="c-pin" type="text" value="12" aria-invalid="true" style="box-sizing: border-box; width: 100%; height: 32px; padding: 0 10px; border: 1px solid #d92d20; border-radius: 6px; background: #ffffff; color: #171717; font: inherit; font-size: 13px">
+<span style="font-size: 12px; color: #b42318">Enter at least 4 digits.</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 24px">
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px"><button type="button" role="switch" aria-checked="true" aria-label="Lock with PIN" style="display: flex; align-items: center; justify-content: flex-end; width: 32px; height: 18px; padding: 2px; border: 0; border-radius: 9px; background: #171717"><span style="width: 14px; height: 14px; border-radius: 7px; background: #ffffff"></span></button>Lock with PIN</label>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px"><button type="button" role="switch" aria-checked="false" aria-label="Urgent" style="display: flex; align-items: center; width: 32px; height: 18px; padding: 2px; border: 0; border-radius: 9px; background: #c9c9c9"><span style="width: 14px; height: 14px; border-radius: 7px; background: #ffffff"></span></button>Urgent</label>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid #eaeaea; border-radius: 8px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Badges and tabs</h2>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 12px; color: #666666">Status: a dot plus a word, one shape everywhere</span>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid #b7e4c7; border-radius: 11px; background: #f0fdf4; color: #166534; font-size: 12px; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 3px; background: #16a34a"></span>On the clock</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 11px; background: #ffffff; color: #4d4d4d; font-size: 12px; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 3px; background: #8f8f8f"></span>Clocked out</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid #f3d488; border-radius: 11px; background: #fffaeb; color: #8a4b0b; font-size: 12px; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 3px; background: #d97706"></span>Auto clocked out (9h)</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid #f5c2bd; border-radius: 11px; background: #fef3f2; color: #b42318; font-size: 12px; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 3px; background: #d92d20"></span>Overdue</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 12px; color: #666666">Priority, tags and counts</span>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12px; font-weight: 500">
+<span style="display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 10px; background: #d92d20; color: #ffffff; font-size: 11px; font-weight: 600"><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="width: 12px; height: 12px; stroke-width: 2.25"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>Urgent</span>
+<span style="display: flex; align-items: center; gap: 5px; height: 20px; box-sizing: border-box; padding: 0 7px; border: 1px solid #f5c2bd; border-radius: 10px; background: #fef3f2; color: #b42318; font-size: 11px; font-weight: 600"><span style="width: 6px; height: 6px; border-radius: 3px; background: #d92d20"></span>High</span>
+<span style="display: flex; align-items: center; gap: 5px; height: 20px; box-sizing: border-box; padding: 0 7px; border: 1px solid #f3d488; border-radius: 10px; background: #fffaeb; color: #8a4b0b; font-size: 11px; font-weight: 600"><span style="width: 6px; height: 6px; border-radius: 3px; background: #d97706"></span>Medium</span>
+<span style="display: flex; align-items: center; gap: 5px; height: 20px; box-sizing: border-box; padding: 0 7px; border: 1px solid #e0e0e0; border-radius: 10px; background: #f5f5f5; color: #4d4d4d; font-size: 11px; font-weight: 600"><span style="width: 6px; height: 6px; border-radius: 3px; background: #8f8f8f"></span>Low</span>
+<span style="padding: 0 6px; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 11px; line-height: 18px; font-weight: 400; color: #666666">Frontend</span>
+<span style="min-width: 18px; padding: 0 5px; border-radius: 9px; background: #171717; color: #ffffff; font-size: 11px; line-height: 18px; text-align: center">3</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 12px; color: #666666">Tabs: one underline style on every page</span>
+<div role="tablist" aria-label="Example tabs" style="display: flex; gap: 4px; height: 40px; border-bottom: 1px solid #eaeaea">
+<button type="button" role="tab" aria-selected="true" style="padding: 0 10px; border: 0; border-bottom: 2px solid #171717; background: transparent; color: #171717; font-size: 13px; font-weight: 500">Overview</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #666666; font-size: 13px; font-weight: 500">Activity</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #666666; font-size: 13px; font-weight: 500">Expenses</button>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid #eaeaea; border-radius: 8px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Colour</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr)); gap: 12px">
+<sc-for list="{{colors}}" as="c" hint-placeholder-count="8">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="height: 48px; border: 1px solid #e0e0e0; border-radius: 6px; background: {{c.hex}}"></div>
+<span style="font-size: 12px; font-weight: 500">{{c.name}}</span>
+<span style="font-size: 12px; color: #666666">{{c.use}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px; padding: 24px; border: 1px solid #eaeaea; border-radius: 8px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Type</h2>
+<div style="display: flex; align-items: baseline; gap: 16px"><span style="flex: none; width: 96px; font-size: 12px; color: #666666">Page title</span><span style="font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em">Attendance</span></div>
+<div style="display: flex; align-items: baseline; gap: 16px"><span style="flex: none; width: 96px; font-size: 12px; color: #666666">Section</span><span style="font-size: 16px; line-height: 24px; font-weight: 600">Projects</span></div>
+<div style="display: flex; align-items: baseline; gap: 16px"><span style="flex: none; width: 96px; font-size: 12px; color: #666666">Body</span><span style="font-size: 14px; line-height: 20px">Replace the old dropdown menu with the new top bar.</span></div>
+<div style="display: flex; align-items: baseline; gap: 16px"><span style="flex: none; width: 96px; font-size: 12px; color: #666666">Controls</span><span style="font-size: 13px; line-height: 20px; font-weight: 500">Save changes</span></div>
+<div style="display: flex; align-items: baseline; gap: 16px"><span style="flex: none; width: 96px; font-size: 12px; color: #666666">Small</span><span style="font-size: 12px; line-height: 16px; color: #666666">Updated 2 hours ago</span></div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid #eaeaea; border-radius: 8px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Corners and spacing</h2>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="width: 72px; height: 48px; border: 1px solid #b3b3b3; border-radius: 4px"></div><span style="font-size: 12px; color: #666666">4px tags</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="width: 72px; height: 48px; border: 1px solid #b3b3b3; border-radius: 6px"></div><span style="font-size: 12px; color: #666666">6px controls</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="width: 72px; height: 48px; border: 1px solid #b3b3b3; border-radius: 8px"></div><span style="font-size: 12px; color: #666666">8px cards</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="width: 72px; height: 48px; border: 1px solid #b3b3b3; border-radius: 12px"></div><span style="font-size: 12px; color: #666666">12px dialogs</span></div>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px">
+<sc-for list="{{spaces}}" as="s" hint-placeholder-count="5">
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="width: {{s.px}}; height: {{s.px}}; background: #171717"></div><span style="font-size: 12px; color: #666666">{{s.label}}</span></div>
+</sc-for>
+</div>
+</section>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"primaryButton":{"editor":"enum","options":["Black","Brand orange"],"default":"Black"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+return {
+primaryBg: this.props.primaryButton === 'Brand orange' ? '#c2410c' : '#171717',
+colors: [
+{ hex: '#ffffff', name: 'Page', use: 'Background, cards' },
+{ hex: '#fafafa', name: 'Subtle', use: 'Sidebar, table head' },
+{ hex: '#eaeaea', name: 'Border', use: 'Lines, dividers' },
+{ hex: '#666666', name: 'Muted text', use: 'Labels, hints' },
+{ hex: '#171717', name: 'Text', use: 'Text, main button' },
+{ hex: '#ea580c', name: 'Accent', use: 'Focus ring, brand' },
+{ hex: '#16a34a', name: 'Success', use: 'Done, on the clock' },
+{ hex: '#d92d20', name: 'Danger', use: 'Delete, overdue' }
+],
+spaces: [
+{ px: '4px', label: '4' },
+{ px: '8px', label: '8' },
+{ px: '12px', label: '12' },
+{ px: '16px', label: '16' },
+{ px: '24px', label: '24' }
+]
+};
+}
+}
+</script>
+</body>
+</html>

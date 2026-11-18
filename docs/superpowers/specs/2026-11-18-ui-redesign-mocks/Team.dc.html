@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Team</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;cursor:pointer}
+.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.i14{width:14px;height:14px}
+.nav:hover,.ghost:hover{background:#ededed}
+.trow:hover{background:#fafafa}
+.out:hover{background:#fafafa;border-color:#c9c9c9}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #ea580c;outline-offset:2px}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 960px; box-sizing: border-box; background: #ffffff; color: #171717; font-family: 'Geist', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 20px; --primary-bg: {{primaryBg}}">
+
+<aside style="flex: 1 0 240px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 12px; background: #fafafa; border-right: 1px solid #eaeaea">
+<button class="ghost" type="button" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #171717; text-align: left">
+<span style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: #171717; color: #ffffff; font-size: 12px; font-weight: 600">T</span>
+<span style="flex: 1; min-width: 0; font-size: 14px; font-weight: 600">TaskCalendar</span>
+<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>
+</button>
+<nav aria-label="Main" style="display: flex; flex-direction: column; gap: 2px">
+<a class="nav" href="#projects" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v11M12 5v6M18 5v14"/></svg>Project Management</a>
+<a class="nav" href="#analytics" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg>Projects analytics</a>
+<a class="nav" href="#tasks" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>My Tasks</a>
+<a class="nav" href="#inbox" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span style="flex: 1">Inbox</span><span style="min-width: 18px; padding: 0 5px; border-radius: 9px; background: #171717; color: #ffffff; font-size: 11px; line-height: 18px; text-align: center">3</span></a>
+<a class="nav" href="#calendar" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Calendar</a>
+<a class="nav" href="#workload" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Workload</a>
+<a class="nav" href="#reports" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>Reports</a>
+<a class="nav" href="#team" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; background: #ededed; color: #171717"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Team</a>
+<a class="nav" href="#hr" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></svg>HR</a>
+</nav>
+<div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto">
+<button class="out" type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font-size: 13px; font-weight: 500"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Clock in</button>
+<a class="nav" href="#account" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px; border-radius: 6px"><span style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 12px; background: #ede9fe; font-size: 11px; font-weight: 600">F</span><span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 500">Account</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/></svg></a>
+</div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 56px; box-sizing: border-box; padding: 8px 24px; border-bottom: 1px solid #eaeaea">
+<div style="flex: 1 1 200px; min-width: 0; font-size: 14px; font-weight: 600">Team</div>
+<button class="out" type="button" style="display: flex; align-items: center; gap: 8px; width: 240px; height: 32px; padding: 0 8px 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #666666; font-size: 13px; text-align: left"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg><span style="flex: 1">Search projects, tasks…</span><kbd style="padding: 0 6px; border: 1px solid #e0e0e0; border-radius: 4px; background: #fafafa; font-family: inherit; font-size: 11px; line-height: 18px">Ctrl K</kbd></button>
+</header>
+
+<div style="width: 100%; max-width: 1120px; box-sizing: border-box; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 24px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px">
+<div style="flex: 1 1 320px; min-width: 0">
+<h1 style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em">Team</h1>
+<p style="margin: 4px 0 0; font-size: 14px; color: #666666">Who can see and work on each project, and what they are allowed to do.</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<button class="out" type="button" aria-label="Project: Website relaunch" style="display: flex; align-items: center; gap: 8px; width: 200px; height: 32px; padding: 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font-size: 13px; text-align: left"><span style="width: 8px; height: 8px; border-radius: 2px; background: #2563eb"></span><span style="flex: 1; min-width: 0">Website relaunch</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><path d="M6 9l6 6 6-6"/></svg></button>
+<button class="out" type="button" style="height: 32px; padding: 0 12px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font-size: 13px; font-weight: 500">Add member</button>
+<button type="button" style="display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: var(--primary-bg); color: #ffffff; font-size: 13px; font-weight: 500"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Invite by email</button>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 1px; border: 1px solid #eaeaea; border-radius: 8px; background: #eaeaea; overflow: hidden">
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 16px; background: #ffffff"><span style="font-size: 13px; color: #666666">Total Members</span><span style="font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">6</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 16px; background: #ffffff"><span style="font-size: 13px; color: #666666">Admins</span><span style="font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">2</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 16px; background: #ffffff"><span style="font-size: 13px; color: #666666">Pending Invites</span><span style="font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">1</span></div>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Team Members</h2>
+<div style="border: 1px solid #eaeaea; border-radius: 8px; overflow-x: auto">
+<div role="table" aria-label="Team members" style="min-width: 720px; font-size: 13px">
+<div role="row" style="display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(200px, 1.6fr) 168px 120px; align-items: center; height: 40px; padding: 0 16px; border-bottom: 1px solid #eaeaea; background: #fafafa; font-size: 12px; font-weight: 500; color: #666666">
+<span role="columnheader">Member</span><span role="columnheader">Email</span><span role="columnheader">Project role</span><span role="columnheader" style="text-align: right">Actions</span>
+</div>
+<sc-for list="{{members}}" as="m" hint-placeholder-count="6">
+<div class="trow" role="row" style="display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(200px, 1.6fr) 168px 120px; align-items: center; min-height: 52px; padding: 0 16px; border-bottom: 1px solid #f2f2f2">
+<span role="cell" style="display: flex; align-items: center; gap: 10px; min-width: 0"><span style="position: relative; flex: none; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 14px; background: {{m.bg}}; font-size: 12px; font-weight: 600">{{m.initial}}<span style="position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px; border: 2px solid #ffffff; border-radius: 6px; background: {{m.dot}}"></span></span><span style="min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.name}}</span><sc-if value="{{m.owner}}" hint-placeholder-val="{{false}}"><span style="flex: none; padding: 0 6px; border: 1px solid #e0e0e0; border-radius: 4px; font-size: 11px; line-height: 18px; color: #666666">Owner</span></sc-if></span>
+<span role="cell" style="min-width: 0; color: #666666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.email}}</span>
+<span role="cell"><button class="out" type="button" style="display: flex; align-items: center; gap: 8px; width: 152px; height: 28px; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font-size: 12px; font-weight: 500; text-align: left"><span style="flex: 1">{{m.role}}</span><svg class="i i14" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><path d="M6 9l6 6 6-6"/></svg></button></span>
+<span role="cell" style="display: flex; justify-content: flex-end; gap: 4px">
+<button class="ghost" type="button" aria-label="Open chat" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #4d4d4d"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+<button class="ghost" type="button" aria-label="Call" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #4d4d4d"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></button>
+<button class="ghost" type="button" aria-label="Remove from project" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #b42318"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+</span>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600">Pending Invitations</h2>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 52px; padding: 8px 16px; border: 1px solid #eaeaea; border-radius: 8px; font-size: 13px">
+<span style="flex: 1 1 200px; min-width: 0; font-weight: 500">[INVITED EMAIL]</span>
+<span style="color: #666666">Project member</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid #f3d488; border-radius: 11px; background: #fffaeb; color: #8a4b0b; font-size: 12px; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 3px; background: #d97706"></span>Pending</span>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"primaryButton":{"editor":"enum","options":["Black","Brand orange"],"default":"Black"},"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+renderVals() {
+function member(name, bg, role, online, owner) {
+var first = name.split(' ')[0].toLowerCase();
+return { name: name, initial: name.charAt(0), bg: bg, role: role, email: first + '@example.com', dot: online ? '#16a34a' : '#b3b3b3', owner: !!owner };
+}
+return {
+primaryBg: this.props.primaryButton === 'Brand orange' ? '#c2410c' : '#171717',
+members: [
+member('Faye Chen', '#ede9fe', 'Project admin', true, true),
+member('Sara Lopez', '#dcfce7', 'Project admin', true),
+member('Mo Ali', '#fef3c7', 'Project member', true),
+member('Aisha Khan', '#dbeafe', 'Project member', false),
+member('Tom Reed', '#fce7f3', 'Project member', false),
+member('Nina Patel', '#e0f2fe', 'Project viewer', false)
+]
+};
+}
+}
+</script>
+</body>
+</html>

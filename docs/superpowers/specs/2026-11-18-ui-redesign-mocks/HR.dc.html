@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HR attendance</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;cursor:pointer}
+.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.i14{width:14px;height:14px}
+.nav:hover,.ghost:hover{background:#ededed}
+.trow:hover{background:#fafafa}
+.out:hover{background:#fafafa;border-color:#c9c9c9}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #ea580c;outline-offset:2px}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 900px; box-sizing: border-box; background: #ffffff; color: #171717; font-family: 'Geist', 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 20px">
+
+<aside style="flex: 1 0 240px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 12px; background: #fafafa; border-right: 1px solid #eaeaea">
+<button class="ghost" type="button" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #171717; text-align: left">
+<span style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: #171717; color: #ffffff; font-size: 12px; font-weight: 600">T</span>
+<span style="flex: 1; min-width: 0; font-size: 14px; font-weight: 600">TaskCalendar</span>
+<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>
+</button>
+<nav aria-label="Main" style="display: flex; flex-direction: column; gap: 2px">
+<a class="nav" href="#projects" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v11M12 5v6M18 5v14"/></svg>Project Management</a>
+<a class="nav" href="#analytics" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg>Projects analytics</a>
+<a class="nav" href="#tasks" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>My Tasks</a>
+<a class="nav" href="#inbox" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span style="flex: 1">Inbox</span><span style="min-width: 18px; padding: 0 5px; border-radius: 9px; background: #171717; color: #ffffff; font-size: 11px; line-height: 18px; text-align: center">3</span></a>
+<a class="nav" href="#calendar" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Calendar</a>
+<a class="nav" href="#workload" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Workload</a>
+<a class="nav" href="#reports" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>Reports</a>
+<a class="nav" href="#team" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Team</a>
+<a class="nav" href="#hr" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; background: #ededed; color: #171717"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></svg>HR</a>
+</nav>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 8px; font-size: 12px; font-weight: 500; color: #666666"><span>Projects</span><button class="ghost" type="button" aria-label="New project" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #666666"><svg class="i i14" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+<a class="nav" href="#p1" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px 0 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><span style="width: 8px; height: 8px; border-radius: 2px; background: #2563eb"></span>Website relaunch</a>
+<a class="nav" href="#p2" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px 0 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><span style="width: 8px; height: 8px; border-radius: 2px; background: #16a34a"></span>Mobile app</a>
+<a class="nav" href="#p3" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px 0 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: #666666"><span style="width: 8px; height: 8px; border-radius: 2px; background: #9333ea"></span>Client onboarding</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto">
+<button class="out" type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #171717; font-size: 13px; font-weight: 500"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Clock in</button>
+<a class="nav" href="#account" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px; border-radius: 6px"><span style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 12px; background: #e5e5e5; font-size: 11px; font-weight: 600">F</span><span style="flex: 1; min-width: 0; font-size: 13px; font-weight: 500">Account</span><svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/></svg></a>
+</div>
+</aside>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 56px; box-sizing: border-box; padding: 8px 24px; border-bottom: 1px solid #eaeaea">
+<div style="flex: 1 1 200px; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 14px"><span style="color: #666666">HR</span><span aria-hidden="true" style="color: #c9c9c9">/</span><span style="font-weight: 600">Attendance</span></div>
+<button class="out" type="button" style="display: flex; align-items: center; gap: 8px; width: 240px; height: 32px; padding: 0 8px 0 10px; border: 1px solid #e0e0e0; border-radius: 6px; background: #ffffff; color: #666666; font-size: 13px; text-align: left"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg><span style="flex: 1">Search projects, tasks…</span><kbd style="padding: 0 6px; border: 1px solid #e0e0e0; border-radius: 4px; background: #fafafa; font-family: inherit; font-size: 11px; line-height: 18px">Ctrl K</kbd></button>
+</header>
+
+<div style="width: 100%; max-width: 1120px; box-sizing: border-box; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 24px">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px">
+<div style="flex: 1 1 360px; min-width: 0">
+<h1 style="margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em">Attendance</h1>
+<p style="margin: 4px 0 0; max-width: 560px; font-size: 14px; color: #666666; text-wrap: pretty">When your team clocked in and out. Anyone still clocked in after 9 hours is clocked out automatically.</p>
+</div>
+<div style="display: flex; align-items: center; gap: 8px">
+<button class="ghost" type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #171717; font-size: 13px; font-weight: 500">Today</button>
+<div style="display: flex; align-items: center; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden">
+<button class="ghost" type="button" aria-label="Previous day" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; border: 0; border-right: 1px solid #e0e0e0; background: #ffffff; color: #171717"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+<button class="ghost" type="button" style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 0; background: #ffffff; color: #171717; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums"><svg class="i i14" viewBox="0 0 24 24" aria-hidden="true" style="color: #666666"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Tue 17 Nov 2026</button>
+<button class="ghost" type="button" aria-label="Next day" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; border: 0; border-left: 1px solid #e0e0e0; background: #ffffff; color: #171717"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button>
+</div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 1px; border: 1px solid #eaeaea; border-radius: 8px; background: #eaeaea; overflow: hidden">
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 16px; background: #ffffff"><span style="font-size: 13px; color: #666666">On the clock now</span><span style="font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; color: #666666">—</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 16px; background: #ffffff"><span style="font-size: 13px; color: #666666">Clocked in on Tue 17 Nov</span><span style="font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">6 <span style="color: #666666; font-weight: 400">/ 8</span></span></div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 16px; background: #ffffff"><span style="font-size: 13px; color: #666666">Team hours</span><span style="font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums">43h 20m</span></div>
+</div>
+
+<div style="border: 1px solid #eaeaea; border-radius: 8px; overflow-x: auto">
+<div role="table" aria-label="Team attendance" style="min-width: 760px; font-size: 13px">
+<div role="row" style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(190px, 1.4fr) 96px 96px 96px 104px; align-items: center; height: 40px; padding: 0 16px; border-bottom: 1px solid #eaeaea; background: #fafafa; font-size: 12px; font-weight: 500; color: #666666">
+<span role="columnheader">Member</span><span role="columnheader">Status</span><span role="columnheader">Clock in</span><span role="columnheader">Clock out</span><span role="columnheader" style="text-align: right">Hours</span><span role="columnheader" style="text-align: right">This week</span>
+</div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<div class="trow" role="row" style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(190px, 1.4fr) 96px 96px 96px 104px; align-items: center; min-height: 48px; padding: 0 16px; border-bottom: 1px solid #f2f2f2; font-variant-numeric: tabular-nums">
+<span role="cell" style="display: flex; align-items: center; gap: 10px; min-width: 0"><span style="flex: none; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 12px; background: #e5e5e5; font-size: 11px; font-weight: 600">{{r.initial}}</span><span style="min-width: 0; font-weight: 500; color: {{r.nameColor}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{r.name}}</span></span>
+<span role="cell"><span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid {{r.badgeBorder}}; border-radius: 11px; background: {{r.badgeBg}}; color: {{r.badgeText}}; font-size: 12px; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 3px; background: {{r.badgeDot}}"></span>{{r.status}}</span></span>
+<span role="cell" style="color: {{r.timeColor}}">{{r.clockIn}}</span>
+<span role="cell" style="color: {{r.timeColor}}">{{r.clockOut}}</span>
+<span role="cell" style="text-align: right; font-weight: 500; color: {{r.timeColor}}">{{r.hours}}</span>
+<span role="cell" style="text-align: right; color: #666666">{{r.week}}</span>
+</div>
+</sc-for>
+</div>
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+var BADGE = {
+out: { status: 'Clocked out', badgeBorder: '#e0e0e0', badgeBg: '#ffffff', badgeText: '#4d4d4d', badgeDot: '#8f8f8f' },
+auto: { status: 'Auto clocked out (9h)', badgeBorder: '#f3d488', badgeBg: '#fffaeb', badgeText: '#8a4b0b', badgeDot: '#d97706' },
+none: { status: 'Not clocked in', badgeBorder: '#eaeaea', badgeBg: '#fafafa', badgeText: '#666666', badgeDot: '#c9c9c9' }
+};
+function row(name, kind, clockIn, clockOut, hours, week) {
+var b = BADGE[kind];
+var absent = kind === 'none';
+return {
+name: name, initial: name.charAt(0),
+nameColor: absent ? '#666666' : '#171717',
+timeColor: absent ? '#8f8f8f' : '#171717',
+status: b.status, badgeBorder: b.badgeBorder, badgeBg: b.badgeBg, badgeText: b.badgeText, badgeDot: b.badgeDot,
+clockIn: clockIn, clockOut: clockOut, hours: hours, week: week
+};
+}
+return {
+rows: [
+row('Aisha Khan', 'out', '08:52', '17:10', '8h 18m', '16h 40m'),
+row('Faye Chen', 'out', '09:05', '17:32', '8h 27m', '16h 02m'),
+row('Lucy Park', 'auto', '08:30', '17:30', '9h 00m', '17h 15m'),
+row('Mo Ali', 'out', '09:40', '16:05', '6h 25m', '14h 10m'),
+row('Nina Patel', 'none', '—', '—', '—', '7h 45m'),
+row('Omar Haddad', 'out', '10:02', '15:12', '5h 10m', '12h 30m'),
+row('Sara Lopez', 'out', '09:00', '15:00', '6h 00m', '13h 20m'),
+row('Tom Reed', 'none', '—', '—', '—', '8h 00m')
+]
+};
+}
+}
+</script>
+</body>
+</html>

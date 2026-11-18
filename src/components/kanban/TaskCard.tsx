@@ -8,13 +8,19 @@ import {
   MessageSquare,
   Paperclip,
   Lock,
-  AlertTriangle,
   CheckSquare,
   Check,
   KeyRound,
   Video,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  PriorityPill,
+  TASK_LEVEL_SURFACE,
+  TASK_PILL,
+  UrgentBadge,
+  taskLevel,
+} from '@/components/common/TaskBadges';
 import { getMeetingStatus, toMeetingDate } from './task-modal/meeting';
 import type { PresencePeer } from '@/hooks/usePresence';
 import { useAuth } from '@/context/AuthContext';
@@ -41,31 +47,6 @@ interface TaskCardProps {
   /** Shows a ✓ circle that marks the task done in one click. */
   onMarkDone?: (task: Task) => void;
 }
-
-const PRIORITY_TONES: Record<
-  string,
-  { dot: string; label: string; chip: string }
-> = {
-  high: {
-    dot: 'bg-destructive',
-    label: 'High',
-    chip: 'border-destructive/30 bg-destructive-soft text-destructive-soft-foreground',
-  },
-  medium: {
-    dot: 'bg-warning',
-    label: 'Medium',
-    chip: 'border-warning/40 bg-warning-soft text-warning-soft-foreground',
-  },
-  low: {
-    dot: 'bg-muted-foreground/60',
-    label: 'Low',
-    chip: 'border-border bg-secondary text-secondary-foreground',
-  },
-};
-
-/** Shared pill shape for the label row (urgent / priority / locked). */
-const PILL =
-  'inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[11px] font-semibold leading-none';
 
 /** Human-friendly relative day label, e.g. "Today", "Tomorrow", "in 3d", "2d ago". */
 const relativeDay = (date: Date): string => {
@@ -171,19 +152,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     ? { start: meetingStart, status: getMeetingStatus(meetingStart, task.meetingDurationMinutes, new Date()) }
     : null;
 
-  const priorityTone =
-    task.priority && PRIORITY_TONES[task.priority]
-      ? PRIORITY_TONES[task.priority]
-      : null;
 
   const isDone = task.status === 'done';
-  const isUrgentActive = Boolean(task.urgent && !isDone);
   // How loud the card is: urgent > high priority > everything else.
-  const level: 'urgent' | 'high' | 'normal' = isUrgentActive
-    ? 'urgent'
-    : task.priority === 'high' && !isDone
-      ? 'high'
-      : 'normal';
+  const level = taskLevel(task);
 
   return (
     <div
@@ -202,10 +174,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       className={cn(
         'group relative mb-2 flex flex-col gap-2 rounded-lg border bg-card p-3 text-card-foreground',
         'transition-[border-color,box-shadow] duration-150 hover:shadow-sm',
-        level === 'urgent' &&
-          'border-destructive/50 bg-destructive-soft hover:border-destructive/70',
-        level === 'high' && 'border-destructive/30 hover:border-destructive/50',
-        level === 'normal' && 'border-border hover:border-foreground/25',
+        TASK_LEVEL_SURFACE[level],
+        level === 'urgent' && 'hover:border-destructive/70',
+        level === 'high' && 'hover:border-destructive/50',
+        level === 'normal' && 'hover:border-foreground/25',
         selectable ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
         selected && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
         swapHighlight && 'ring-2 ring-amber-500 ring-offset-1 ring-offset-background',
@@ -266,41 +238,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       )}
 
       {/* Label row: urgency and priority lead, so the eye lands on them first. */}
-      {(task.urgent || priorityTone || task.isLocked || (!isLockMasked && task.tags && task.tags.length > 0)) && (
+      {(task.urgent || task.priority || task.isLocked || (!isLockMasked && task.tags && task.tags.length > 0)) && (
         <div className={cn('flex flex-wrap items-center gap-1', selectable && 'pr-6')}>
-          {task.urgent && (
-            <span
-              className={cn(
-                PILL,
-                isDone
-                  ? 'border-border bg-secondary text-secondary-foreground'
-                  : 'border-destructive bg-destructive text-destructive-foreground',
-              )}
-            >
-              <AlertTriangle className="h-3 w-3" strokeWidth={2.25} aria-hidden />
-              Urgent
-            </span>
-          )}
+          {task.urgent && <UrgentBadge muted={isDone} />}
 
-          {priorityTone && (
-            <span
-              className={cn(
-                PILL,
-                isDone ? 'border-border bg-secondary text-secondary-foreground' : priorityTone.chip,
-              )}
-              title={`Priority: ${priorityTone.label}`}
-            >
-              <span
-                className={cn('h-1.5 w-1.5 rounded-full', isDone ? 'bg-muted-foreground/60' : priorityTone.dot)}
-                style={!isDone && task.priorityColor ? { backgroundColor: task.priorityColor } : undefined}
-              />
-              {priorityTone.label}
-            </span>
-          )}
+          <PriorityPill priority={task.priority} color={task.priorityColor} muted={isDone} />
 
           {task.isLocked && (
             <span
-              className={cn(PILL, 'border-warning/40 bg-warning-soft text-warning-soft-foreground')}
+              className={cn(TASK_PILL, 'border-warning/40 bg-warning-soft text-warning-soft-foreground')}
               title="Locked - only visible to creator, assignees, and project owner"
             >
               <Lock className="h-3 w-3" aria-hidden />
