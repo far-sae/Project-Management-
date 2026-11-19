@@ -4,7 +4,7 @@
 
 @layer base {
   /* ────────────────────────────────────────────────────────────
-     Base tokens — Light theme (orange brand by default)
+     Base tokens — Light theme (blue brand by default; dark stays orange)
      ──────────────────────────────────────────────────────────── */
   :root {
     --background: 0 0% 100%;
@@ -16,12 +16,15 @@
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 9%;
 
-    /* Primary = brand accent (default orange). Per-workspace accents
-       override these via [data-accent="…"] selectors below. */
-    --primary: 17 88% 40%;
+    /* Primary = brand accent. In light mode the default is Facebook blue
+       (#0866FF, 4.8:1 against white); the dark theme keeps orange.
+       Per-workspace accents override these via [data-accent="…"] below. */
+    --primary: 217 100% 52%;
     --primary-foreground: 0 0% 100%;
-    --primary-soft: 24 95% 95%;
-    --primary-soft-foreground: 17 80% 30%;
+    --primary-soft: 217 100% 96%;
+    --primary-soft-foreground: 217 90% 32%;
+    /* The default accent's own colour, for the swatch in Appearance settings. */
+    --brand-default: 217 100% 52%;
 
     --secondary: 0 0% 96%;
     --secondary-foreground: 0 0% 9%;
@@ -54,20 +57,21 @@
 
     --border: 0 0% 92%;
     --input: 0 0% 88%;
-    --ring: 21 90% 48%;
+    --ring: 217 100% 52%;
 
     --radius: 0.5rem;
 
     --hero-gradient: linear-gradient(
       135deg,
-      hsl(24 95% 53%) 0%,
-      hsl(35 95% 55%) 50%,
-      hsl(20 90% 48%) 100%
+      hsl(217 100% 52%) 0%,
+      hsl(205 95% 52%) 50%,
+      hsl(224 90% 50%) 100%
     );
 
-    --chart-1: 24 95% 53%;
+    /* Blue leads; orange takes the third slot so the two never sit side by side as the same hue. */
+    --chart-1: 217 100% 52%;
     --chart-2: 173 58% 39%;
-    --chart-3: 217 91% 60%;
+    --chart-3: 24 95% 53%;
     --chart-4: 43 74% 66%;
     --chart-5: 262 83% 62%;
 
@@ -100,6 +104,7 @@
     --popover-foreground: 0 0% 93%;
 
     --primary: 24 95% 58%;
+    --brand-default: 24 95% 58%;
     --primary-foreground: 0 0% 7%;
     --primary-soft: 24 70% 18%;
     --primary-soft-foreground: 24 95% 80%;

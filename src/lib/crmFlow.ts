@@ -185,3 +185,12 @@ export function dealBadge(deal: { status: FlowDealStatus; projectId: string | nu
     ? { label: 'Won · in delivery', tone: 'success' }
     : { label: 'Won · needs hand-off', tone: 'warning' };
 }
+
+/** The owner filter on the Leads list: everyone's, mine, or not taken by anyone yet. */
+export type LeadOwnerView = 'all' | 'mine' | 'none';
+
+export function leadOwnerMatches(view: LeadOwnerView, ownerId: string | null, meId: string | null): boolean {
+  if (view === 'mine') return ownerId !== null && ownerId === meId;
+  if (view === 'none') return ownerId === null;
+  return true;
+}

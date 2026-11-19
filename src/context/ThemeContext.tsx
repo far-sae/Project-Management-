@@ -206,7 +206,8 @@ export const useTheme = (): ThemeContextValue => {
 };
 
 export const ACCENT_OPTIONS: { id: ThemeAccent; label: string; swatch: string }[] = [
-  { id: "orange", label: "Sunset", swatch: "hsl(24 95% 53%)" },
+  // The default accent: blue in the light theme, orange in the dark one.
+  { id: "orange", label: "Default", swatch: "hsl(var(--brand-default))" },
   { id: "blue", label: "Ocean", swatch: "hsl(217 91% 60%)" },
   { id: "violet", label: "Violet", swatch: "hsl(262 83% 62%)" },
   { id: "green", label: "Forest", swatch: "hsl(152 70% 42%)" },

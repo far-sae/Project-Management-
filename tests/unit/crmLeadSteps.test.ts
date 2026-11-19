@@ -1,6 +1,6 @@
 // Where a lead is in the flow, in one plain word, and what a deal's badge says.
 import { describe, expect, it } from 'vitest';
-import { LEAD_STEPS, dealBadge, leadStep, leadStepPatch } from '@/lib/crmFlow';
+import { LEAD_STEPS, dealBadge, leadOwnerMatches, leadStep, leadStepPatch } from '@/lib/crmFlow';
 
 const lead = (lifecycleStage: string, leadStatus: string) => ({ lifecycleStage, leadStatus });
 
@@ -67,5 +67,20 @@ describe('dealBadge', () => {
   it('tells a won deal waiting for hand-off apart from one in delivery', () => {
     expect(dealBadge({ status: 'won', projectId: null })).toEqual({ label: 'Won · needs hand-off', tone: 'warning' });
     expect(dealBadge({ status: 'won', projectId: 'p1' })).toEqual({ label: 'Won · in delivery', tone: 'success' });
+  });
+});
+
+describe('leadOwnerMatches', () => {
+  it('shows every lead under All leads, whoever owns it', () => {
+    for (const owner of ['me', 'someone-else', null]) expect(leadOwnerMatches('all', owner, 'me')).toBe(true);
+  });
+  it('shows only my own under My leads', () => {
+    expect(leadOwnerMatches('mine', 'me', 'me')).toBe(true);
+    expect(leadOwnerMatches('mine', 'someone-else', 'me')).toBe(false);
+    expect(leadOwnerMatches('mine', null, 'me')).toBe(false);
+  });
+  it('shows leads nobody has taken under No owner', () => {
+    expect(leadOwnerMatches('none', null, 'me')).toBe(true);
+    expect(leadOwnerMatches('none', 'me', 'me')).toBe(false);
   });
 });

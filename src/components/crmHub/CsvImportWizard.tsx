@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useWorkspaceForCreate } from '@/hooks/useCrmHub';
+import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { supabase } from '@/services/supabase/config';
 import { parseCSV } from '@/lib/csv';
-import { listLeadCategories } from '@/services/supabase/crmHub/contacts';
 import {
-  ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, Upload, Loader2, Tag as TagIcon,
+  CUSTOM, SKIP, autoMapColumns, buildCompanyImport, buildLeadImport, companyKey, importOwners, toCustomKey,
+  type ImportField, type ImportOwnerMode,
+} from '@/lib/crmImport';
+import { listLeadCategories } from '@/services/supabase/crmHub/contacts';
+import { ensureCompaniesByName } from '@/services/supabase/crmHub/companies';
+import {
+  ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, Upload, Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -21,21 +26,18 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-export interface FieldDef {
-  key: string;
-  label: string;
-  required?: boolean;
-}
-
+export type FieldDef = ImportField;
 export type ImportResource = 'contacts' | 'companies';
 
 const FIELDS: Record<ImportResource, FieldDef[]> = {
   contacts: [
-    { key: 'first_name', label: 'First name', required: true },
+    { key: 'full_name', label: 'Full name' },
+    { key: 'first_name', label: 'First name' },
     { key: 'last_name', label: 'Last name' },
     { key: 'email', label: 'Email' },
     { key: 'phone', label: 'Phone' },
     { key: 'job_title', label: 'Job title' },
+    { key: 'company', label: 'Company' },
     { key: 'source', label: 'Source' },
     { key: 'lifecycle_stage', label: 'Lifecycle stage' },
     { key: 'lead_status', label: 'Lead status' },
@@ -55,6 +57,9 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
   ],
 };
 
+/** A lead needs something to be called by: one of these has to be matched. */
+const LEAD_NAME_SOURCES = ['full_name', 'first_name', 'last_name', 'email', 'company'];
+
 const TABLE: Record<ImportResource, string> = {
   contacts: 'crm_contacts',
   companies: 'crm_companies',
@@ -66,50 +71,10 @@ const RESOURCE_LABEL: Record<ImportResource, { singular: string; plural: string 
   companies: { singular: 'company', plural: 'companies' },
 };
 
-// Only these values are valid for the two enum-constrained contact columns —
-// if a CSV cell doesn't match, we drop the field so Postgres doesn't reject
-// the row.
-const LIFECYCLE_STAGES = new Set([
-  'subscriber', 'lead', 'marketing_qualified_lead', 'sales_qualified_lead',
-  'opportunity', 'customer', 'evangelist', 'other',
-]);
-const LEAD_STATUSES = new Set([
-  'new', 'open', 'in_progress', 'open_deal', 'unqualified',
-  'attempted_to_contact', 'connected', 'bad_timing',
-]);
+/** Rows sent to the database per request. */
+const BATCH = 500;
 
-const SKIP = '__skip__';
-const CUSTOM = '__custom__';
-
-// Normalises a header (or user-typed override) into a clean JSONB key.
-// Preserves alphanumerics + underscore, collapses everything else to '_',
-// caps length, and lowercases.
-const toCustomKey = (raw: string): string => {
-  const s = raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
-  return s.slice(0, 40) || 'field';
-};
-
-function autoMatch(header: string, fields: FieldDef[]): string {
-  const h = header.toLowerCase().replace(/[^a-z0-9]/g, '');
-  for (const f of fields) {
-    const k = f.key.replace(/[^a-z0-9]/g, '');
-    if (h === k) return f.key;
-    if (h.includes(k) || k.includes(h)) return f.key;
-  }
-  const has = (k: string) => fields.some((f) => f.key === k);
-  if (h.includes('first') && has('first_name')) return 'first_name';
-  if ((h.includes('last') || h === 'surname') && has('last_name')) return 'last_name';
-  if ((h.includes('title') || h === 'role') && has('job_title')) return 'job_title';
-  if (h.includes('mail') && has('email')) return 'email';
-  if ((h.includes('tel') || h.includes('mobile') || h.includes('phone')) && has('phone')) return 'phone';
-  if ((h.includes('org') || h.includes('businessname') || h.includes('companyname')) && has('name')) return 'name';
-  if (h.includes('size') && has('company_size')) return 'company_size';
-  if (h.includes('revenue') && has('annual_revenue')) return 'annual_revenue';
-  if ((h === 'category' || h === 'segment' || h === 'bucket' || h === 'tier') && has('category')) return 'category';
-  if ((h === 'lifecycle' || h.includes('lifecyclestage')) && has('lifecycle_stage')) return 'lifecycle_stage';
-  if ((h === 'status' || h.includes('leadstatus')) && has('lead_status')) return 'lead_status';
-  return SKIP;
-}
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 interface Props {
   open: boolean;
@@ -120,12 +85,14 @@ interface Props {
 
 export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource, onImported }) => {
   const fields = FIELDS[resource];
-  const totalSteps = resource === 'contacts' ? 4 : 3;
+  const isLeads = resource === 'contacts';
+  const totalSteps = isLeads ? 4 : 3;
   const label = RESOURCE_LABEL[resource];
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
   const workspaceId = useWorkspaceForCreate();
+  const { items: companies } = useCrmCompanies();
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -133,16 +100,15 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
-  // For headers mapped to CUSTOM, the JSONB key the user wants to store under.
-  // Seeded from the header name whenever CUSTOM is picked.
+  // For headers mapped to CUSTOM, the name the value is stored under.
   const [customNames, setCustomNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
-  // Categories — only used when resource === 'contacts'.
+  // Choices for the whole file (leads only).
   const [existingCategories, setExistingCategories] = useState<string[]>([]);
-  const [categoryMode, setCategoryMode] = useState<'none' | 'pick' | 'new'>('none');
-  const [categoryPick, setCategoryPick] = useState<string>('');
-  const [categoryNew, setCategoryNew] = useState<string>('');
+  const [categoryAll, setCategoryAll] = useState('');
+  const [companyAll, setCompanyAll] = useState('');
+  const [ownerMode, setOwnerMode] = useState<ImportOwnerMode>('me');
 
   const reset = () => {
     setStep(1);
@@ -151,108 +117,139 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
     setHeaders([]);
     setMapping({});
     setCustomNames({});
-    setCategoryMode('none');
-    setCategoryPick('');
-    setCategoryNew('');
+    setCategoryAll('');
+    setCompanyAll('');
+    setOwnerMode('me');
   };
 
-  // Load existing categories on open (contacts only)
   useEffect(() => {
-    if (!open || resource !== 'contacts' || !orgId) return;
+    if (!open || !isLeads || !orgId) return;
     listLeadCategories(orgId)
-      .then((rows) => setExistingCategories(rows))
+      .then((found) => setExistingCategories(found))
       .catch(() => setExistingCategories([]));
-  }, [open, resource, orgId]);
+  }, [open, isLeads, orgId]);
+
+  /** People who can be given leads. */
+  const team = useMemo(
+    () => (organization?.members ?? []).filter((m) => m.status === 'active' && m.role !== 'viewer'),
+    [organization],
+  );
 
   const handleFile = async (file: File) => {
+    if (/\.(xlsx?|numbers|ods)$/i.test(file.name)) {
+      toast.error('Save the sheet as CSV first (File → Save as → CSV), then choose that file.');
+      return;
+    }
     try {
-      const text = await file.text();
-      const parsed = parseCSV(text);
-      if (!parsed.length) { toast.error('CSV looks empty'); return; }
-      const hs = Object.keys(parsed[0]);
+      const parsed = parseCSV(await file.text());
+      if (!parsed.length) { toast.error('This file has no rows'); return; }
+      const hs = Object.keys(parsed[0]!);
       setRows(parsed);
       setHeaders(hs);
       setFileName(file.name);
-      const m: Record<string, string> = {};
-      hs.forEach((h) => { m[h] = autoMatch(h, fields); });
-      setMapping(m);
+      setMapping(autoMapColumns(hs, fields));
       setStep(2);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not read CSV');
+      toast.error(err instanceof Error ? err.message : 'Could not read the file');
     }
   };
 
-  const requiredOk = useMemo(() => {
-    const used = new Set(Object.values(mapping));
-    return fields.filter((f) => f.required).every((f) => used.has(f.key));
-  }, [mapping, fields]);
+  const used = useMemo(() => new Set(Object.values(mapping)), [mapping]);
+  const requiredOk = isLeads
+    ? LEAD_NAME_SOURCES.some((key) => used.has(key))
+    : fields.filter((f) => f.required).every((f) => used.has(f.key));
 
   const mappedCount = Object.values(mapping).filter((v) => v && v !== SKIP).length;
   const customCount = Object.values(mapping).filter((v) => v === CUSTOM).length;
+  const categoryFromFile = isLeads && used.has('category');
+  const companyFromFile = isLeads && used.has('company');
 
-  // Is the `category` column mapped to any file column?
-  const categoryMappedFromCsv = useMemo(
-    () => resource === 'contacts' && Object.values(mapping).some((v) => v === 'category'),
-    [mapping, resource],
-  );
+  /** A field belongs to one column: choosing it again moves it. */
+  const mapColumn = (header: string, value: string) => {
+    const next = { ...mapping };
+    if (value !== SKIP && value !== CUSTOM) {
+      for (const other of Object.keys(next)) if (next[other] === value) next[other] = SKIP;
+    }
+    next[header] = value;
+    setMapping(next);
+    if (value === CUSTOM && !customNames[header]) {
+      setCustomNames({ ...customNames, [header]: toCustomKey(header) });
+    }
+  };
 
-  // The final category the user chose in Step 3, resolved to a string or null.
-  const resolvedCategory = useMemo<string | null>(() => {
-    if (resource !== 'contacts') return null;
-    if (categoryMappedFromCsv) return null; // per-row from CSV wins
-    if (categoryMode === 'pick' && categoryPick.trim()) return categoryPick.trim();
-    if (categoryMode === 'new' && categoryNew.trim()) return categoryNew.trim();
-    return null;
-  }, [resource, categoryMappedFromCsv, categoryMode, categoryPick, categoryNew]);
+  const leadImport = useMemo(() => {
+    if (!isLeads || !orgId) return null;
+    return buildLeadImport(rows, mapping, customNames, {
+      organizationId: orgId,
+      workspaceId,
+      category: categoryAll,
+      company: companyAll,
+      owners: importOwners(ownerMode, user?.userId ?? null, team.map((m) => m.userId)),
+    });
+  }, [isLeads, orgId, rows, mapping, customNames, workspaceId, categoryAll, companyAll, ownerMode, user, team]);
+
+  const companyImport = useMemo(() => {
+    if (isLeads || !orgId) return null;
+    return buildCompanyImport(rows, mapping, customNames, {
+      organizationId: orgId, workspaceId, ownerId: user?.userId ?? null,
+    });
+  }, [isLeads, orgId, rows, mapping, customNames, workspaceId, user]);
+
+  const readyCount = leadImport?.leads.length ?? companyImport?.records.length ?? 0;
+  const skippedCount = leadImport?.skipped ?? companyImport?.skipped ?? 0;
+
+  /** How many leads get a company, and how many of those companies are new. */
+  const companyLinks = useMemo(() => {
+    const known = new Set(companies.map((c) => companyKey(c.name)));
+    const wanted = new Set<string>();
+    let linked = 0;
+    for (const lead of leadImport?.leads ?? []) {
+      if (!lead.companyName) continue;
+      linked += 1;
+      wanted.add(companyKey(lead.companyName));
+    }
+    return { linked, total: wanted.size, created: [...wanted].filter((k) => !known.has(k)).length };
+  }, [leadImport, companies]);
+
+  const ownerSummary = (() => {
+    if (ownerMode === 'me') return 'you';
+    if (ownerMode === 'none') return 'nobody yet';
+    if (ownerMode === 'team') return `shared in turn between ${plural(team.length, 'person', 'people')}`;
+    return team.find((m) => m.userId === ownerMode)?.displayName ?? 'one person';
+  })();
+
+  const insertInBatches = async (records: Array<Record<string, unknown>>) => {
+    for (let i = 0; i < records.length; i += BATCH) {
+      const { error } = await supabase.from(TABLE[resource]).insert(records.slice(i, i + BATCH) as never);
+      if (error) throw error;
+    }
+  };
 
   const handleImport = async () => {
     if (!orgId) return;
     setBusy(true);
     try {
-      const payload = rows.map((r) => {
-        const o: Record<string, unknown> = {
-          organization_id: orgId,
-          workspace_id: workspaceId,
-          owner_id: user?.userId ?? null,
-        };
-        const custom: Record<string, string> = {};
-        for (const [header, key] of Object.entries(mapping)) {
-          if (!key || key === SKIP) continue;
-          const v = r[header]?.trim();
-          if (!v) continue;
-          if (key === CUSTOM) {
-            const k = toCustomKey(customNames[header] ?? header);
-            custom[k] = v;
-            continue;
-          }
-          if (key === 'annual_revenue') {
-            const n = Number(v.replace(/[^\d.-]/g, ''));
-            if (Number.isFinite(n)) o[key] = n;
-          } else if (key === 'lifecycle_stage') {
-            const norm = v.toLowerCase().replace(/[\s-]+/g, '_');
-            if (LIFECYCLE_STAGES.has(norm)) o[key] = norm;
-          } else if (key === 'lead_status') {
-            const norm = v.toLowerCase().replace(/[\s-]+/g, '_');
-            if (LEAD_STATUSES.has(norm)) o[key] = norm;
-          } else {
-            o[key] = v;
-          }
-        }
-        if (Object.keys(custom).length) o.custom_fields = custom;
-        // If the user picked an org-wide category in step 3 and didn't map a
-        // per-row category column, apply the picked value.
-        if (resource === 'contacts' && !categoryMappedFromCsv && resolvedCategory) {
-          o.category = resolvedCategory;
-        }
-        return o;
-      }).filter((o) => fields.filter((f) => f.required).every((f) => o[f.key]));
-
-      if (!payload.length) throw new Error('No valid rows after mapping');
-
-      const { error } = await supabase.from(TABLE[resource]).insert(payload as never);
-      if (error) throw error;
-
-      toast.success(`Imported ${payload.length} ${label.plural}`);
+      if (leadImport) {
+        const { leads } = leadImport;
+        if (!leads.length) throw new Error('No rows have a name, email or company to call the lead by');
+        const names = leads.flatMap((l) => (l.companyName ? [l.companyName] : []));
+        const ids = names.length
+          ? await ensureCompaniesByName(orgId, workspaceId, names, user?.userId ?? null)
+          : new Map<string, string>();
+        await insertInBatches(leads.map((l) => ({
+          ...l.record,
+          company_id: l.companyName ? ids.get(companyKey(l.companyName)) ?? null : null,
+        })));
+        toast.success(
+          companyLinks.linked
+            ? `Imported ${plural(leads.length, 'lead', 'leads')}, linked to ${plural(companyLinks.total, 'company', 'companies')}`
+            : `Imported ${plural(leads.length, 'lead', 'leads')}`,
+        );
+      } else if (companyImport) {
+        if (!companyImport.records.length) throw new Error('No rows have a company name');
+        await insertInBatches(companyImport.records);
+        toast.success(`Imported ${plural(companyImport.records.length, 'company', 'companies')}`);
+      }
       await onImported?.();
       onOpenChange(false);
       reset();
@@ -264,21 +261,18 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   };
 
   const stepDescription = (() => {
-    if (step === 1) return 'upload a CSV file';
-    if (step === 2) return 'match your columns to fields';
-    if (step === 3 && resource === 'contacts') return 'choose a category';
+    if (step === 1) return 'choose a file';
+    if (step === 2) return 'check the columns';
+    if (step === 3 && isLeads) return 'company, owner and category';
     return 'review and import';
   })();
 
-  const goNext = () => {
-    if (step === 1 || step === 2) setStep((step + 1) as 1 | 2 | 3 | 4);
-    else if (step === 3 && resource === 'contacts') setStep(4);
-  };
+  const isFinalStep = step === totalSteps;
+  const goNext = () => { if (!isFinalStep) setStep((step + 1) as 1 | 2 | 3 | 4); };
   const goBack = () => {
     if (step === 1) onOpenChange(false);
     else setStep((step - 1) as 1 | 2 | 3 | 4);
   };
-  const isFinalStep = (resource === 'contacts' && step === 4) || (resource === 'companies' && step === 3);
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
@@ -286,7 +280,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
         <DialogHeader>
           <DialogTitle>Import {label.plural}</DialogTitle>
           <DialogDescription>
-            Step {step} of {totalSteps} — {stepDescription}
+            Step {step} of {totalSteps}: {stepDescription}
           </DialogDescription>
         </DialogHeader>
 
@@ -319,25 +313,26 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               <Upload className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
               <p className="text-sm font-medium">Choose a CSV file</p>
               <p className="text-xs text-muted-foreground">
-                Your columns are matched to {label.singular} fields in the next step.
+                The columns can be in any order and have any headings. They are matched to {label.singular} fields for you.
               </p>
             </button>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv"
+              accept=".csv,.tsv,.txt,text/csv"
               className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.currentTarget.value = ''; }}
             />
             <div className="rounded-lg border border-border p-4 text-sm">
-              <p className="font-medium">Expected columns</p>
+              <p className="font-medium">What a file can hold</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {fields.map((f) => f.label + (f.required ? ' *' : '')).join(', ')}
+                {isLeads
+                  ? 'Name (one column, or first and last apart), Email, Phone, Job title, Company, Source, Category.'
+                  : fields.map((f) => f.label + (f.required ? ' *' : '')).join(', ')}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                Anything else in your file (columns not in this list) can be saved as
-                a <span className="font-medium">Custom field</span> during mapping.
-                {resource === 'contacts' && ' If your file has no category column, you can choose one for all the leads in step 3.'}
+                {isLeads && 'Each lead is linked to the company in its row; a company that is not in the CRM yet is added. '}
+                Any other column can be kept as a custom field.
               </p>
             </div>
           </div>
@@ -357,40 +352,36 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                     {customCount} custom
                   </Badge>
                 )}
-                <Badge variant={requiredOk ? 'secondary' : 'destructive'} className="tabular-nums">{mappedCount} mapped</Badge>
+                <Badge variant={requiredOk ? 'secondary' : 'destructive'} className="tabular-nums">
+                  {mappedCount} of {headers.length} matched
+                </Badge>
               </div>
             </div>
             <div className="max-h-[50vh] overflow-auto rounded-lg border border-border">
               <table className="w-full min-w-[36rem] text-left text-sm">
                 <thead>
                   <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
-                    <th scope="col" className="px-3 font-medium">Column from file</th>
-                    <th scope="col" className="px-3 font-medium">Preview</th>
-                    <th scope="col" className="px-3 font-medium">Map to field</th>
+                    <th scope="col" className="px-3 font-medium">Column in your file</th>
+                    <th scope="col" className="px-3 font-medium">Example</th>
+                    <th scope="col" className="px-3 font-medium">Goes into</th>
                   </tr>
                 </thead>
                 <tbody>
                   {headers.map((h) => (
                     <tr key={h} className="border-b border-border/60 last:border-0 hover:bg-muted/40">
                       <td className="px-3 py-2 font-medium">{h}</td>
-                      <td className="max-w-[14rem] truncate px-3 py-2 text-muted-foreground">{rows[0]?.[h] || '—'}</td>
+                      <td className="max-w-[14rem] truncate px-3 py-2 text-muted-foreground">
+                        {rows.find((r) => r[h]?.trim())?.[h] || '—'}
+                      </td>
                       <td className="px-3 py-2">
-                        <Select
-                          value={mapping[h] ?? SKIP}
-                          onValueChange={(v) => {
-                            setMapping({ ...mapping, [h]: v });
-                            if (v === CUSTOM && !customNames[h]) {
-                              setCustomNames({ ...customNames, [h]: toCustomKey(h) });
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="w-56" aria-label={`Field for column ${h}`}><SelectValue /></SelectTrigger>
+                        <Select value={mapping[h] ?? SKIP} onValueChange={(v) => mapColumn(h, v)}>
+                          <SelectTrigger className="w-64" aria-label={`Field for column ${h}`}><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value={SKIP}>Don't import</SelectItem>
                             {fields.map((f) => (
                               <SelectItem key={f.key} value={f.key}>{f.label}{f.required ? ' *' : ''}</SelectItem>
                             ))}
-                            <SelectItem value={CUSTOM}>+ Custom field…</SelectItem>
+                            <SelectItem value={CUSTOM}>Keep as a custom field</SelectItem>
                           </SelectContent>
                         </Select>
                         {mapping[h] === CUSTOM && (
@@ -399,7 +390,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                             <Input
                               value={customNames[h] ?? ''}
                               onChange={(e) => setCustomNames({ ...customNames, [h]: e.target.value })}
-                              placeholder="e.g. company_size_v2"
+                              placeholder="team_size"
                               maxLength={40}
                               className="w-44"
                               aria-label={`Custom field name for column ${h}`}
@@ -412,136 +403,120 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                 </tbody>
               </table>
             </div>
+            {isLeads && used.has('full_name') && (
+              <p className="text-xs text-muted-foreground">
+                A full name is split for you: “Elena Rossi” and “Rossi, Elena” both become first name Elena, last name Rossi.
+              </p>
+            )}
             {!requiredOk && (
               <p className="text-xs text-destructive">
-                Map all required fields ({fields.filter((f) => f.required).map((f) => f.label).join(', ')}) to continue.
+                {isLeads
+                  ? 'Match a column to Full name, First name, Email or Company to continue.'
+                  : `Match a column to ${fields.filter((f) => f.required).map((f) => f.label).join(', ')} to continue.`}
               </p>
             )}
           </div>
         )}
 
-        {step === 3 && resource === 'contacts' && (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-surface-2 p-4">
-              <div className="mb-1 flex items-center gap-2">
-                <TagIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
-                <h3 className="text-sm font-semibold">Give these leads a category</h3>
-              </div>
-              <p className="text-pretty text-sm text-muted-foreground">
-                Put every imported lead in the same category so you can filter them later
-                (for example VIP, Q4 outreach or Warm intro). This is optional: you can skip
-                it and leave them uncategorised.
+        {step === 3 && isLeads && (
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="import-company">Company</Label>
+              <Input
+                id="import-company"
+                list="import-companies"
+                value={companyAll}
+                onChange={(e) => setCompanyAll(e.target.value)}
+                placeholder={companyFromFile ? 'Company for rows that have none (optional)' : 'One company for all these leads (optional)'}
+                maxLength={120}
+              />
+              <datalist id="import-companies">
+                {companies.map((c) => <option key={c.id} value={c.name} />)}
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                {companyFromFile
+                  ? 'Each lead is linked to the company in its row. A company that is not in the CRM yet is added.'
+                  : 'Your file has no company column. Type a company to link every lead to it, or leave this empty.'}
               </p>
             </div>
 
-            {categoryMappedFromCsv ? (
-              <div className="rounded-lg border border-border p-4 text-sm">
-                <p className="font-medium text-foreground">Using your CSV's category column</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  You mapped a Category column in Step 2, so each row will keep its own value.
-                  This step is skipped.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-surface-2">
-                  <input
-                    type="radio"
-                    checked={categoryMode === 'none'}
-                    onChange={() => setCategoryMode('none')}
-                    className="mt-0.5 accent-primary"
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Skip and leave them uncategorised</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      You can categorise leads one by one later.
-                    </p>
-                  </div>
-                </label>
+            <div className="flex flex-col gap-1.5">
+              <Label>Owner</Label>
+              <Select value={ownerMode} onValueChange={(v) => setOwnerMode(v as ImportOwnerMode)}>
+                <SelectTrigger aria-label="Owner of the imported leads"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="me">Me</SelectItem>
+                  {team.length > 1 && <SelectItem value="team">Share between the team, in turn</SelectItem>}
+                  <SelectItem value="none">Nobody yet</SelectItem>
+                  {team.filter((m) => m.userId !== user?.userId).map((m) => (
+                    <SelectItem key={m.userId} value={m.userId}>{m.displayName || m.email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Every lead shows under All leads. A lead also shows under its owner&apos;s My leads.
+              </p>
+            </div>
 
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-surface-2">
-                  <input
-                    type="radio"
-                    checked={categoryMode === 'pick'}
-                    onChange={() => setCategoryMode('pick')}
-                    className="mt-0.5 accent-primary"
-                    disabled={existingCategories.length === 0}
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">
-                      Pick an existing category
-                      {existingCategories.length === 0 && (
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">(none yet)</span>
-                      )}
-                    </p>
-                    {categoryMode === 'pick' && existingCategories.length > 0 && (
-                      <Select value={categoryPick} onValueChange={setCategoryPick}>
-                        <SelectTrigger className="mt-2" aria-label="Existing category"><SelectValue placeholder="Choose category" /></SelectTrigger>
-                        <SelectContent>
-                          {existingCategories.map((c) => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                </label>
-
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-surface-2">
-                  <input
-                    type="radio"
-                    checked={categoryMode === 'new'}
-                    onChange={() => setCategoryMode('new')}
-                    className="mt-0.5 accent-primary"
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Create a new category</p>
-                    {categoryMode === 'new' && (
-                      <div className="mt-2 space-y-1.5">
-                        <Label htmlFor="csv-category-new" className="text-xs">Name</Label>
-                        <Input
-                          id="csv-category-new"
-                          value={categoryNew}
-                          onChange={(e) => setCategoryNew(e.target.value)}
-                          placeholder="VIP leads"
-                          maxLength={64}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Free text. Anything you type becomes a reusable category next time.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </label>
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="import-category">Category</Label>
+              <Input
+                id="import-category"
+                list="import-categories"
+                value={categoryAll}
+                onChange={(e) => setCategoryAll(e.target.value)}
+                placeholder={categoryFromFile ? 'Category for rows that have none (optional)' : 'One category for all these leads (optional)'}
+                maxLength={64}
+              />
+              <datalist id="import-categories">
+                {existingCategories.map((c) => <option key={c} value={c} />)}
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                A label to filter by later, such as Trade show or Warm intro.
+              </p>
+            </div>
           </div>
         )}
 
         {isFinalStep && (
           <div className="space-y-3">
             <div className="rounded-lg border border-border bg-surface-2 p-4">
-              <p className="text-sm font-semibold">Ready to import</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                <span className="tabular-nums">{rows.length}</span> rows from{' '}
-                <span className="font-medium text-foreground">{fileName}</span> will be added to your {label.plural}.
+              <p className="text-sm font-semibold">
+                {plural(readyCount, label.singular, label.plural)} will be added
               </p>
-              {resource === 'contacts' && (
-                <div className="mt-2">
-                  <span className="text-xs text-muted-foreground">Category:</span>
-                  <span className="ml-1 text-xs font-medium">
-                    {categoryMappedFromCsv
-                      ? 'from CSV column (per row)'
-                      : resolvedCategory
-                      ? `all rows → ${resolvedCategory}`
-                      : 'none'}
-                  </span>
-                </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                From <span className="font-medium text-foreground">{fileName}</span>.
+                {skippedCount > 0 && (
+                  <> {plural(skippedCount, 'row is', 'rows are')} left out: {isLeads ? 'no name, email or company' : 'no company name'}.</>
+                )}
+              </p>
+              {isLeads && (
+                <dl className="mt-3 grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
+                  <dt className="text-muted-foreground">Company</dt>
+                  <dd>
+                    {companyLinks.linked === 0
+                      ? 'Not linked to a company'
+                      : `${plural(companyLinks.linked, 'lead', 'leads')} linked to ${plural(companyLinks.total, 'company', 'companies')}`}
+                    {companyLinks.created > 0 && (
+                      <span className="text-muted-foreground">
+                        {' · '}{plural(companyLinks.created, 'new company', 'new companies')} will be created
+                      </span>
+                    )}
+                  </dd>
+                  <dt className="text-muted-foreground">Owner</dt>
+                  <dd className="first-letter:uppercase">{ownerSummary}</dd>
+                  <dt className="text-muted-foreground">Category</dt>
+                  <dd>
+                    {categoryFromFile
+                      ? `From your file${categoryAll.trim() ? `, otherwise ${categoryAll.trim()}` : ''}`
+                      : categoryAll.trim() || 'None'}
+                  </dd>
+                </dl>
               )}
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {Object.entries(mapping).filter(([, v]) => v && v !== SKIP).map(([h, v]) => {
                   const target = v === CUSTOM
-                    ? `custom · ${toCustomKey(customNames[h] ?? h)}`
+                    ? `custom: ${toCustomKey(customNames[h] ?? h)}`
                     : fields.find((f) => f.key === v)?.label ?? v;
                   return (
                     <Badge key={h} variant={v === CUSTOM ? 'outline' : 'secondary'} className="font-normal">
@@ -552,8 +527,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Duplicates are not checked. You will be the owner of the new {label.plural},
-              so they show up under &quot;My {label.plural}&quot;.
+              Duplicates are not checked: a {label.singular} that is already in the CRM is added again.
             </p>
           </div>
         )}
@@ -564,17 +538,14 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
             {step === 1 ? 'Cancel' : 'Back'}
           </Button>
           {!isFinalStep ? (
-            <Button
-              disabled={step === 2 && !requiredOk}
-              onClick={goNext}
-            >
+            <Button disabled={step === 1 || (step === 2 && !requiredOk)} onClick={goNext}>
               Next
               <ArrowRight aria-hidden />
             </Button>
           ) : (
-            <Button disabled={busy} onClick={handleImport}>
+            <Button disabled={busy || readyCount === 0} onClick={handleImport}>
               {busy ? <Loader2 className="animate-spin" aria-hidden /> : null}
-              Import {rows.length} rows
+              Import {plural(readyCount, label.singular, label.plural)}
             </Button>
           )}
         </div>

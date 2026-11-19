@@ -238,7 +238,7 @@ export const AppearanceSettings: React.FC = () => {
             <div>
               <p className="font-medium">Reset appearance</p>
               <p className="text-sm text-muted-foreground">
-                Restore theme defaults (system + Sunset + Comfortable).
+                Restore theme defaults (system + Default + Comfortable).
               </p>
             </div>
             <button

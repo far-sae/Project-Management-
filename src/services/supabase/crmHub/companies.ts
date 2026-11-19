@@ -2,6 +2,7 @@ import { supabase } from '../config';
 import type { CrmCompany, CreateCompanyInput, UpdateCompanyInput } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
 import { applyWorkspaceFilter } from './workspaceFilter';
+import { companyKey } from '@/lib/crmImport';
 
 interface CompanyRow {
   id: string;
@@ -131,4 +132,47 @@ export const updateCompany = async (id: string, input: UpdateCompanyInput): Prom
 export const deleteCompany = async (id: string): Promise<void> => {
   const { error } = await supabase.from('crm_companies').delete().eq('id', id);
   if (error) throw error;
+};
+
+/**
+ * Finds the companies with these names in a workspace and creates the ones
+ * that are missing, so a lead can be linked to its company by name. Names are
+ * compared without regard to capitals or spacing. Returns company ids keyed
+ * by `companyKey(name)`.
+ */
+export const ensureCompaniesByName = async (
+  organizationId: string,
+  workspaceId: string | null,
+  names: string[],
+  ownerId: string | null,
+): Promise<Map<string, string>> => {
+  const wanted = new Map<string, string>();
+  for (const raw of names) {
+    const name = raw.replace(/\s+/g, ' ').trim();
+    if (name && !wanted.has(companyKey(name))) wanted.set(companyKey(name), name);
+  }
+  const ids = new Map<string, string>();
+  if (wanted.size === 0) return ids;
+
+  let q = supabase.from('crm_companies').select('id, name').eq('organization_id', organizationId);
+  q = applyWorkspaceFilter(q, workspaceId);
+  const { data: existing, error } = await q;
+  if (error) throw error;
+  for (const row of (existing ?? []) as Array<{ id: string; name: string }>) {
+    const key = companyKey(row.name);
+    if (wanted.has(key) && !ids.has(key)) ids.set(key, row.id);
+  }
+
+  const missing = [...wanted].filter(([key]) => !ids.has(key)).map(([, name]) => ({
+    organization_id: organizationId,
+    workspace_id: workspaceId,
+    owner_id: ownerId,
+    name,
+  }));
+  if (missing.length) {
+    const { data: created, error: insertError } = await supabase.from('crm_companies').insert(missing).select('id, name');
+    if (insertError) throw insertError;
+    for (const row of (created ?? []) as Array<{ id: string; name: string }>) ids.set(companyKey(row.name), row.id);
+  }
+  return ids;
 };

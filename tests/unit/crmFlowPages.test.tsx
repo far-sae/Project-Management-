@@ -1,7 +1,7 @@
 // The Leads list and the Deals board show where everything is in the flow and offer the next step.
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { CrmCompany, CrmContact, CrmDeal, CrmDealStage } from '@/types/crmHub';
 
@@ -56,6 +56,8 @@ const data = vi.hoisted(() => {
   };
 });
 
+const svc = vi.hoisted(() => ({ createContact: vi.fn(), ensureCompaniesByName: vi.fn() }));
+
 const list = <T,>(items: T[]) => ({ items, loading: false, error: null, refresh: async () => {} });
 
 vi.mock('@/hooks/useCrmHub', () => ({
@@ -80,11 +82,13 @@ vi.mock('@/context/CrmCurrencyContext', () => ({
 vi.mock('@/hooks/useSelectedWorkspace', () => ({ useSelectedWorkspace: () => ({ selected: { workspaceId: 'w', name: 'Studio' } }) }));
 vi.mock('@/hooks/useProjects', () => ({ useProjects: () => ({ projects: [], loading: false }) }));
 vi.mock('@/services/supabase/crmHub/contacts', () => ({
-  createContact: vi.fn(), deleteContact: vi.fn(), updateContact: vi.fn(), getContact: vi.fn(),
+  createContact: svc.createContact, deleteContact: vi.fn(), updateContact: vi.fn(), getContact: vi.fn(),
   listLeadCategories: async () => [],
 }));
 vi.mock('@/services/supabase/crmHub/deals', () => ({ createDeal: vi.fn(), moveDealToStage: vi.fn(), linkDealHandoff: vi.fn() }));
-vi.mock('@/services/supabase/crmHub/companies', () => ({ getCompany: vi.fn(), createCompany: vi.fn() }));
+vi.mock('@/services/supabase/crmHub/companies', () => ({
+  getCompany: vi.fn(), createCompany: vi.fn(), ensureCompaniesByName: svc.ensureCompaniesByName,
+}));
 vi.mock('@/services/supabase/crmHub/flow', () => ({
   convertLeadToDeal: vi.fn(), handoffDealToNewProject: vi.fn(), HandoffLinkError: class extends Error {},
 }));
@@ -127,6 +131,45 @@ describe('Leads list', () => {
     const filters = screen.getByRole('group', { name: 'Filter by step' });
     expect(within(filters).getByRole('button', { name: /^All 6$/ })).toBeTruthy();
     expect(within(filters).getByRole('button', { name: /^Qualified 1$/ })).toBeTruthy();
+  });
+});
+
+describe('New lead', () => {
+  const addLead = async (company: string) => {
+    svc.createContact.mockReset().mockResolvedValue({});
+    svc.ensureCompaniesByName.mockReset().mockResolvedValue(
+      new Map([['brightside labs', 'c-new'], ['harbour dental', 'c2']]),
+    );
+    render(<MemoryRouter><CrmContactsPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'New lead' }));
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Noor' } });
+    fireEvent.change(screen.getByLabelText('Company'), { target: { value: company } });
+    return screen;
+  };
+
+  it('adds a company that is not in the CRM yet and links the lead to it', async () => {
+    await addLead('Brightside Labs');
+    expect(screen.getByText(/new company/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+    expect(svc.ensureCompaniesByName).toHaveBeenCalledWith('o', 'w', ['Brightside Labs'], 'u1');
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ firstName: 'Noor', companyId: 'c-new' });
+  });
+
+  it('links to the company that is already there, however it is typed', async () => {
+    await addLead('harbour dental');
+    expect(screen.getByText(/already in the crm/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ companyId: 'c2' });
+  });
+
+  it('adds a lead without a company when none is typed', async () => {
+    await addLead('');
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+    expect(svc.ensureCompaniesByName).not.toHaveBeenCalled();
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ companyId: null });
   });
 });
 

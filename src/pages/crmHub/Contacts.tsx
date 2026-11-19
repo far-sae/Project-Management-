@@ -10,9 +10,12 @@ import {
 import {
   createContact, deleteContact, listLeadCategories, updateContact,
 } from '@/services/supabase/crmHub/contacts';
+import { ensureCompaniesByName } from '@/services/supabase/crmHub/companies';
 import {
-  LEAD_STEPS, MANUAL_LEAD_STEPS, leadName, leadStep, leadStepPatch, type LeadStep,
+  LEAD_STEPS, MANUAL_LEAD_STEPS, leadName, leadOwnerMatches, leadStep, leadStepPatch,
+  type LeadOwnerView, type LeadStep,
 } from '@/lib/crmFlow';
+import { companyKey } from '@/lib/crmImport';
 import type { CrmContact } from '@/types/crmHub';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -55,7 +58,7 @@ export const CrmContactsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [stepFilter, setStepFilter] = useState<LeadStep | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [view, setView] = useState<'all' | 'mine'>('all');
+  const [view, setView] = useState<LeadOwnerView>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -67,7 +70,7 @@ export const CrmContactsPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [jobTitle, setJobTitle] = useState('');
-  const [companyId, setCompanyId] = useState<string>('');
+  const [companyName, setCompanyName] = useState('');
   const [source, setSource] = useState('');
   const [category, setCategory] = useState('');
   const [existingCategories, setExistingCategories] = useState<string[]>([]);
@@ -80,21 +83,32 @@ export const CrmContactsPage: React.FC = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [existingCategories, contacts]);
 
+  const organizationId = organization?.organizationId ?? null;
   useEffect(() => {
-    if (!organization) return;
-    listLeadCategories(organization.organizationId)
+    if (!organizationId) return;
+    listLeadCategories(organizationId)
       .then(setExistingCategories)
       .catch(() => { /* non-fatal */ });
-  }, [organization, contacts.length]);
+  }, [organizationId, contacts.length]);
 
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
   const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);
+  const memberById = useMemo(
+    () => new Map((organization?.members ?? []).map((m) => [m.userId, m])),
+    [organization],
+  );
+  /** The company typed in the New lead form, and whether it is already in the CRM. */
+  const typedCompany = companyName.trim();
+  const typedCompanyExists = useMemo(
+    () => companies.some((c) => companyKey(c.name) === companyKey(typedCompany)),
+    [companies, typedCompany],
+  );
 
   /** Everything except the step filter, so the step tabs can show their counts. */
   const scoped = useMemo(() => {
     const q = search.trim().toLowerCase();
     return contacts.filter((c) => {
-      if (view === 'mine' && user && c.ownerId !== user.userId) return false;
+      if (!leadOwnerMatches(view, c.ownerId, user?.userId ?? null)) return false;
       if (categoryFilter !== 'all') {
         if (categoryFilter === NONE) {
           if (c.category?.trim()) return false;
@@ -133,6 +147,7 @@ export const CrmContactsPage: React.FC = () => {
       phone: c.phone ?? '',
       job_title: c.jobTitle ?? '',
       company: companyById.get(c.companyId ?? '')?.name ?? '',
+      owner: memberById.get(c.ownerId ?? '')?.displayName ?? '',
       step: LEAD_STEPS[leadStep(c)].label,
       lifecycle_stage: c.lifecycleStage,
       lead_status: c.leadStatus,
@@ -144,7 +159,7 @@ export const CrmContactsPage: React.FC = () => {
 
   const openCreate = () => {
     setFirstName(''); setLastName(''); setEmail(''); setPhone('');
-    setJobTitle(''); setCompanyId(''); setSource(''); setCategory('');
+    setJobTitle(''); setCompanyName(''); setSource(''); setCategory('');
     setShowCreate(true);
   };
 
@@ -152,6 +167,14 @@ export const CrmContactsPage: React.FC = () => {
     if (!organization || !firstName.trim()) return;
     setBusy(true);
     try {
+      // A typed company is linked when it exists and added when it does not.
+      let companyId: string | null = null;
+      if (typedCompany) {
+        const ids = await ensureCompaniesByName(
+          organization.organizationId, workspaceId, [typedCompany], user?.userId ?? null,
+        );
+        companyId = ids.get(companyKey(typedCompany)) ?? null;
+      }
       await createContact(
         {
           organizationId: organization.organizationId,
@@ -161,7 +184,7 @@ export const CrmContactsPage: React.FC = () => {
           email: email.trim() || null,
           phone: phone.trim() || null,
           jobTitle: jobTitle.trim() || null,
-          companyId: companyId || null,
+          companyId,
           lifecycleStage: 'lead',
           leadStatus: 'new',
           source: source.trim() || null,
@@ -262,11 +285,12 @@ export const CrmContactsPage: React.FC = () => {
                 aria-label="Search leads"
               />
             </div>
-            <Select value={view} onValueChange={(v) => setView(v as 'all' | 'mine')}>
+            <Select value={view} onValueChange={(v) => setView(v as LeadOwnerView)}>
               <SelectTrigger className="w-44" aria-label="Owner"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Everyone's leads</SelectItem>
+                <SelectItem value="all">All leads</SelectItem>
                 <SelectItem value="mine">My leads</SelectItem>
+                <SelectItem value="none">No owner</SelectItem>
               </SelectContent>
             </Select>
             {allCategories.length > 0 && (
@@ -308,6 +332,7 @@ export const CrmContactsPage: React.FC = () => {
                   <th className="px-3 py-2 text-left font-medium">Phone</th>
                   <th className="px-3 py-2 text-left font-medium">Step</th>
                   <th className="px-3 py-2 text-left font-medium">Category</th>
+                  <th className="px-3 py-2 text-left font-medium">Owner</th>
                   <th className="px-3 py-2 text-right font-medium"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -353,6 +378,9 @@ export const CrmContactsPage: React.FC = () => {
                         <StatusPill tone={LEAD_STEPS[step].tone} title={LEAD_STEPS[step].hint}>{LEAD_STEPS[step].label}</StatusPill>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{c.category || '—'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {c.ownerId && c.ownerId === user?.userId ? 'You' : memberById.get(c.ownerId ?? '')?.displayName ?? '—'}
+                      </td>
                       <td className="px-3 py-1.5">
                         <div className="flex items-center justify-end gap-1">
                           {CONVERTIBLE.includes(step) && (
@@ -428,18 +456,29 @@ export const CrmContactsPage: React.FC = () => {
                 <Input id="jt" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} disabled={busy} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Company</Label>
-                <Select value={companyId || NONE} onValueChange={(v) => setCompanyId(v === NONE ? '' : v)} disabled={busy}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>No company</SelectItem>
-                    {companies.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="co">Company</Label>
+                <Input
+                  id="co"
+                  list="lead-companies"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Type to pick or add"
+                  maxLength={120}
+                  autoComplete="off"
+                  disabled={busy}
+                />
+                <datalist id="lead-companies">
+                  {companies.map((c) => <option key={c.id} value={c.name} />)}
+                </datalist>
               </div>
             </div>
+            {typedCompany && (
+              <p className="-mt-2 text-xs text-muted-foreground" aria-live="polite">
+                {typedCompanyExists
+                  ? `${typedCompany} is already in the CRM. The lead is linked to it.`
+                  : `New company. ${typedCompany} is added to Companies and the lead is linked to it.`}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="src">Where it came from</Label>
