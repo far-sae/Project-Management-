@@ -14,6 +14,14 @@ const state = vi.hoisted(() => ({
   createTask: vi.fn(async () => ({})),
 }));
 
+vi.mock('@/hooks/useSelectedWorkspace', () => {
+  const same = <T,>(list: T[]) => list;
+  const scope = {
+    selectedId: 'w', selected: { workspaceId: 'w', name: 'Studio' }, select: () => {},
+    filterProjects: same, filterTasks: same, projectIds: null,
+  };
+  return { useSelectedWorkspace: () => scope };
+});
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ user: { userId: 'u1', displayName: 'Sam Carter', email: 'sam@example.com' } }),

@@ -6,6 +6,9 @@ import {
   projectsInWorkspace,
   projectIdsForScope,
   tasksInScope,
+  notificationsInScope,
+  peopleInScope,
+  recordIsElsewhere,
   normalizeMenuPages,
   resolveWorkspaceMenu,
   menuPagesForSave,
@@ -119,5 +122,52 @@ describe("QUICK_MENU_PAGE_KEYS", () => {
       "dashboard", "projects_analytics", "my_tasks", "inbox", "crm",
       "calendar", "workload", "reports", "team", "hr",
     ]);
+  });
+});
+
+describe("notificationsInScope", () => {
+  const list = [
+    { id: "n1", projectId: "p1" },
+    { id: "n2", projectId: "p2" },
+    { id: "n3", projectId: undefined },
+    { id: "n4", projectId: null },
+  ];
+  const ids = (xs: Array<{ id: string }>) => xs.map((x) => x.id);
+
+  it("keeps notifications about this workspace's projects", () => {
+    expect(ids(notificationsInScope(list, new Set(["p1"])))).toContain("n1");
+    expect(ids(notificationsInScope(list, new Set(["p1"])))).not.toContain("n2");
+  });
+  it("always keeps the ones that are not about a project, like invites and billing", () => {
+    expect(ids(notificationsInScope(list, new Set(["p1"])))).toEqual(["n1", "n3", "n4"]);
+  });
+  it("keeps everything under All workspaces", () => {
+    expect(notificationsInScope(list, null)).toHaveLength(4);
+  });
+});
+
+describe("peopleInScope", () => {
+  const withPeople = [
+    { projectId: "p1", ownerId: "u1", members: [{ userId: "u2" }, { userId: "u1" }] },
+    { projectId: "p2", ownerId: "u3", members: [{ userId: "u4" }] },
+    { projectId: "p3", ownerId: "u5" },
+  ];
+  it("is the owners and members of the projects in the workspace", () => {
+    expect([...peopleInScope(withPeople, new Set(["p1", "p3"]))!].sort()).toEqual(["u1", "u2", "u5"]);
+  });
+  it("is everyone under All workspaces", () => {
+    expect(peopleInScope(withPeople, null)).toBeNull();
+  });
+});
+
+describe("recordIsElsewhere", () => {
+  it("is true when a record belongs to another workspace than the one selected", () => {
+    expect(recordIsElsewhere("w2", "w1")).toBe(true);
+  });
+  it("is false for the same workspace, a record with no workspace, or no real selection", () => {
+    expect(recordIsElsewhere("w1", "w1")).toBe(false);
+    expect(recordIsElsewhere(null, "w1")).toBe(false);
+    expect(recordIsElsewhere("w2", ALL_WORKSPACES_ID)).toBe(false);
+    expect(recordIsElsewhere("w2", UNASSIGNED_WORKSPACE_ID)).toBe(false);
   });
 });

@@ -42,6 +42,8 @@ import {
 } from '@/services/supabase/database';
 import type { AppNotification } from '@/types/notification';
 import { cn } from '@/lib/utils';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
+import { notificationsInScope } from '@/lib/workspaceScope';
 
 const SNOOZE_KEY = 'inbox_snooze_v1';
 const MUTED_PROJECTS_KEY = 'inbox_muted_projects_v1';
@@ -138,8 +140,20 @@ export const Inbox: React.FC = () => {
   const [muted, setMuted] = useState<MutedProjectsMap>(() =>
     readJson<MutedProjectsMap>(MUTED_PROJECTS_KEY, {}),
   );
-  const { notifications, loading, unreadCount, markAsRead, markAllAsReadLocally, refresh, removeLocal } =
+  const { notifications: allNotifications, loading, unreadCount: totalUnread, markAsRead, markAllAsReadLocally, refresh, removeLocal } =
     useNotifications(user?.userId ?? null, 200);
+  // The inbox follows the workspace switcher: only this workspace's projects,
+  // plus the notifications that are not about a project at all.
+  const { projectIds } = useSelectedWorkspace();
+  const notifications = useMemo(
+    () => notificationsInScope(allNotifications, projectIds),
+    [allNotifications, projectIds],
+  );
+  // Under "All workspaces" nothing is filtered, so the full count stands.
+  const unreadCount = useMemo(
+    () => (projectIds ? notifications.filter((n) => !n.read).length : totalUnread),
+    [projectIds, notifications, totalUnread],
+  );
 
   // Persist on change
   useEffect(() => writeJson(SNOOZE_KEY, snoozes), [snoozes]);

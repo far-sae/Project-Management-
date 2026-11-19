@@ -147,12 +147,18 @@ export const deleteContact = async (id: string): Promise<void> => {
  * to populate suggestion dropdowns in the create dialog and the CSV import
  * wizard's category step.
  */
-export const listLeadCategories = async (organizationId: string): Promise<string[]> => {
-  const { data, error } = await supabase
+export const listLeadCategories = async (
+  organizationId: string,
+  workspaceId?: string | null,
+): Promise<string[]> => {
+  let q = supabase
     .from('crm_contacts')
     .select('category')
     .eq('organization_id', organizationId)
     .not('category', 'is', null);
+  // Each workspace has its own categories.
+  if (workspaceId) q = q.eq('workspace_id', workspaceId);
+  const { data, error } = await q;
   if (error) throw error;
   const set = new Set<string>();
   for (const row of data ?? []) {

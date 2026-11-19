@@ -654,22 +654,12 @@ export const Dashboard: React.FC = () => {
       ? projects.filter((p) => !p.workspaceId)
       : projects.filter((p) => p.workspaceId === selectedWorkspaceId);
 
-  const sharedProjects = projects.filter(
+  // "Shared with me" follows the workspace like every other list on the page.
+  // (It used to list every workspace's projects, and an empty workspace used to
+  // flip the whole app to "All workspaces" behind the user's back.)
+  const sharedProjects = filteredProjects.filter(
     (p) => p.ownerId !== user?.userId
   );
-
-  // If current workspace filter hides all projects but user has shared projects,
-  // switch to "All Workspaces" so shared projects are visible without sharing workspace.
-  useEffect(() => {
-    if (
-      selectedWorkspaceId !== ALL_WORKSPACES_ID &&
-      sharedProjects.length > 0 &&
-      projects.length > 0 &&
-      filteredProjects.length === 0
-    ) {
-      handleWorkspaceChange(ALL_WORKSPACES_ID);
-    }
-  }, [selectedWorkspaceId, sharedProjects.length, projects.length, filteredProjects.length]);
 
   const workspaceProjectIds = useMemo(
     () => new Set(filteredProjects.map((p) => p.projectId)),
@@ -738,6 +728,8 @@ export const Dashboard: React.FC = () => {
     selectedWorkspaceId !== ALL_WORKSPACES_ID && selectedWorkspaceId !== UNASSIGNED_WORKSPACE_ID;
 
   const openCreateProject = () => {
+    // A new project starts in the workspace being looked at, so it shows up where it was made.
+    setSelectedProjectWorkspaceId(isRealWorkspaceSelected ? selectedWorkspaceId : UNASSIGNED_WORKSPACE_ID);
     setShowCreateModal(true);
     setCreateError(null);
   };

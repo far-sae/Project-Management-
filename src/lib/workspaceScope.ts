@@ -55,6 +55,42 @@ export function tasksInScope<T extends { projectId: string }>(
   return tasks.filter((t) => projectIds.has(t.projectId));
 }
 
+/**
+ * Notifications for the selected workspace. One that is not about a project
+ * (an invite, billing) has no workspace, so it shows everywhere.
+ */
+export function notificationsInScope<N extends { projectId?: string | null }>(
+  notifications: N[],
+  projectIds: Set<string> | null | undefined,
+): N[] {
+  if (!projectIds) return notifications;
+  return notifications.filter((n) => !n.projectId || projectIds.has(n.projectId));
+}
+
+/**
+ * The people who work in the selected workspace: the owners and members of its
+ * projects. `null` means "All workspaces: everyone".
+ */
+export function peopleInScope<
+  P extends { projectId: string; ownerId: string; members?: Array<{ userId: string }> },
+>(projects: P[], projectIds: Set<string> | null | undefined): Set<string> | null {
+  if (!projectIds) return null;
+  const people = new Set<string>();
+  for (const project of projects) {
+    if (!projectIds.has(project.projectId)) continue;
+    people.add(project.ownerId);
+    for (const member of project.members ?? []) people.add(member.userId);
+  }
+  return people;
+}
+
+/** True when an open record belongs to a different workspace than the one now selected. */
+export function recordIsElsewhere(recordWorkspaceId: string | null | undefined, selectedId: string): boolean {
+  if (!recordWorkspaceId) return false;
+  if (selectedId === ALL_WORKSPACES_ID || selectedId === UNASSIGNED_WORKSPACE_ID) return false;
+  return recordWorkspaceId !== selectedId;
+}
+
 const KNOWN_KEYS = new Set<string>(ALL_PAGE_KEYS);
 
 /** Parse the raw `menu_pages` column. Non-arrays → null (all enabled).

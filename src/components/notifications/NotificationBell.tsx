@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, Loader2 } from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -14,12 +14,25 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import type { AppNotification } from "@/types/notification";
+import { useSelectedWorkspace } from "@/hooks/useSelectedWorkspace";
+import { notificationsInScope } from "@/lib/workspaceScope";
 
 export const NotificationBell: React.FC = () => {
   const { user } = useAuth();
-  const { notifications, loading, unreadCount, markAsRead, refresh } = useNotifications(
+  const { notifications: allNotifications, loading, unreadCount: totalUnread, markAsRead, refresh } = useNotifications(
     user?.userId ?? null,
     100,
+  );
+  // Same rule as the inbox: this workspace's projects, plus what is not about a project.
+  const { projectIds } = useSelectedWorkspace();
+  const notifications = useMemo(
+    () => notificationsInScope(allNotifications, projectIds),
+    [allNotifications, projectIds],
+  );
+  // Under "All workspaces" nothing is filtered, so the full count stands.
+  const unreadCount = useMemo(
+    () => (projectIds ? notifications.filter((n) => !n.read).length : totalUnread),
+    [projectIds, notifications, totalUnread],
   );
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);

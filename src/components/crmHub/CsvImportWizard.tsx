@@ -144,10 +144,10 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
 
   useEffect(() => {
     if (!open || !isLeads || !orgId) return;
-    listLeadCategories(orgId)
+    listLeadCategories(orgId, workspaceId)
       .then((found) => setExistingCategories(found))
       .catch(() => setExistingCategories([]));
-  }, [open, isLeads, orgId]);
+  }, [open, isLeads, orgId, workspaceId]);
 
   /** People who can be given leads. */
   const team = useMemo(

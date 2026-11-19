@@ -50,6 +50,7 @@ import {
   getProjectMemberProfiles,
   type ProjectMemberProfile,
 } from '@/services/supabase/projectMemberProfiles';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 
 const INVITATION_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -231,9 +232,10 @@ export const Team: React.FC = () => {
 
   // Organization admins see every project; project owners / project admins
   // only the projects whose people they manage.
+  const { filterProjects } = useSelectedWorkspace();
   const selectableProjects = useMemo(
-    () => (isAdmin ? projects : managedProjects(projects, user?.userId)),
-    [isAdmin, projects, user?.userId],
+    () => filterProjects(isAdmin ? projects : managedProjects(projects, user?.userId)),
+    [isAdmin, projects, user?.userId, filterProjects],
   );
 
   useEffect(() => {

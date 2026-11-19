@@ -22,6 +22,14 @@ const project = {
   members: [{ userId: 'alice', email: 'alice@x.io', displayName: 'Alice', role: 'member' }],
 };
 
+vi.mock('@/hooks/useSelectedWorkspace', () => {
+  const same = <T,>(list: T[]) => list;
+  const scope = {
+    selectedId: 'w', selected: { workspaceId: 'w', name: 'Studio' }, select: () => {},
+    filterProjects: same, filterTasks: same, projectIds: null,
+  };
+  return { useSelectedWorkspace: () => scope };
+});
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() } }));
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({

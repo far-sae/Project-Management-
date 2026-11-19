@@ -37,6 +37,7 @@ import {
 
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import { useDealMoney } from '@/hooks/useDealMoney';
+import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
 
 const when = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -62,6 +63,8 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 export const CrmDealDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [openRecord, setOpenRecord] = useState<{ id: string; workspaceId: string | null } | null>(null);
+  useStayInWorkspace(openRecord?.id, openRecord?.workspaceId, '/crm/deals');
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
@@ -88,6 +91,7 @@ export const CrmDealDetailPage: React.FC = () => {
       const d = await getDeal(id);
       if (!d) { setNotFound(true); return; }
       setDeal(d);
+      setOpenRecord({ id: d.id, workspaceId: d.workspaceId });
       const [stageRows, actRows, noteRows, taskRows] = await Promise.all([
         d.workspaceId ? listDealStages(orgId, d.workspaceId) : Promise.resolve([]),
         listActivities(orgId, { dealId: id, limit: 100 }),

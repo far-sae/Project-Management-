@@ -71,6 +71,14 @@ const list = <T,>(items: T[]) => ({ items, loading: false, error: null, refresh:
 const forCompany = <T extends { companyId: string | null }>(rows: T[], opts?: { companyId?: string }) =>
   rows.filter((r) => r.companyId === opts?.companyId);
 
+vi.mock('@/hooks/useSelectedWorkspace', () => {
+  const same = <T,>(list: T[]) => list;
+  const scope = {
+    selectedId: 'w', selected: { workspaceId: 'w', name: 'Studio' }, select: () => {},
+    filterProjects: same, filterTasks: same, projectIds: null,
+  };
+  return { useSelectedWorkspace: () => scope };
+});
 vi.mock('@/hooks/useCrmHub', () => ({
   useCrmCompanies: () => list(data.companies),
   useCrmContacts: () => list(data.contacts),

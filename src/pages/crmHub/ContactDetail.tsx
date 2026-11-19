@@ -55,6 +55,7 @@ import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { useDealMoney } from '@/hooks/useDealMoney';
 import { useProjects } from '@/hooks/useProjects';
+import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
 
 const PAGE_BODY = 'flex w-full flex-col gap-6 px-4 py-6 lg:px-6';
 const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
@@ -236,6 +237,8 @@ const LeadStepBar: React.FC<{
 export const CrmContactDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [openRecord, setOpenRecord] = useState<{ id: string; workspaceId: string | null } | null>(null);
+  useStayInWorkspace(openRecord?.id, openRecord?.workspaceId, '/crm/contacts');
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
@@ -306,6 +309,7 @@ export const CrmContactDetailPage: React.FC = () => {
       if (!c) { setNotFound(true); return; }
       setNotFound(false);
       setContact(c);
+      setOpenRecord({ id: c.id, workspaceId: c.workspaceId });
       const [notesRows, actRows, taskRows, dealRows] = await Promise.all([
         listNotes(orgId, { contactId: id }),
         listActivities(orgId, { contactId: id, limit: 100 }),

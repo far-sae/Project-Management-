@@ -41,6 +41,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
 
 const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 /** One row of a list inside a card. */
@@ -91,6 +92,8 @@ const NOT_SET = <span className="text-muted-foreground">—</span>;
 export const CrmCompanyDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const [openRecord, setOpenRecord] = useState<{ id: string; workspaceId: string | null } | null>(null);
+  useStayInWorkspace(openRecord?.id, openRecord?.workspaceId, '/crm/companies');
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
@@ -123,6 +126,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
       const c = await getCompany(id);
       if (!c) { setNotFound(true); return; }
       setCompany(c);
+      setOpenRecord({ id: c.id, workspaceId: c.workspaceId });
       const [contactRows, dealRows, actRows, taskRows, noteRows] = await Promise.all([
         listContacts(orgId, { companyId: id }),
         listDeals(orgId, { companyId: id }),

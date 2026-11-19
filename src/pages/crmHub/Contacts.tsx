@@ -86,10 +86,10 @@ export const CrmContactsPage: React.FC = () => {
   const organizationId = organization?.organizationId ?? null;
   useEffect(() => {
     if (!organizationId) return;
-    listLeadCategories(organizationId)
+    listLeadCategories(organizationId, workspaceId)
       .then(setExistingCategories)
       .catch(() => { /* non-fatal */ });
-  }, [organizationId, contacts.length]);
+  }, [organizationId, workspaceId, contacts.length]);
 
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
   const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);

@@ -44,6 +44,8 @@ import {
   DateRangeFilter,
   DateRangeValue,
 } from '@/components/common/DateRangeFilter';
+import { useProjects } from '@/hooks/useProjects';
+import { peopleInScope } from '@/lib/workspaceScope';
 
 interface MemberWorkload extends MemberWorkloadData {
   member: OrganizationMember;
@@ -69,7 +71,10 @@ export const Workload: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin } = useOrganization();
   const { tasks: allTasks, loading: tasksLoading } = useAllTasks();
-  const { filterTasks } = useSelectedWorkspace();
+  const { filterTasks, projectIds } = useSelectedWorkspace();
+  const { projects } = useProjects();
+  /** The people on this workspace's projects. Null under "All workspaces": everyone. */
+  const workspacePeople = useMemo(() => peopleInScope(projects, projectIds), [projects, projectIds]);
   const tasks = useMemo(() => filterTasks(allTasks), [allTasks, filterTasks]);
   const navigate = useNavigate();
   // Owner + admin see the whole team's workload (planning view).
@@ -114,11 +119,13 @@ export const Workload: React.FC = () => {
   const members = useMemo<OrganizationMember[]>(
     () => {
       const all = organization?.members ?? [];
-      if (canSeeAllWorkloads) return all;
+      if (canSeeAllWorkloads) {
+        return workspacePeople ? all.filter((m) => workspacePeople.has(m.userId)) : all;
+      }
       // Member view: just their own row.
       return all.filter((m) => m.userId === user?.userId);
     },
-    [organization?.members, canSeeAllWorkloads, user?.userId],
+    [organization?.members, canSeeAllWorkloads, user?.userId, workspacePeople],
   );
 
   useEffect(() => {
