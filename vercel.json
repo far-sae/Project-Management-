@@ -1,8 +1,13 @@
 {
   "crons": [
-    { "path": "/api/social/publish", "schedule": "*/5 * * * *" }
+    { "path": "/api/social/publish", "schedule": "*/5 * * * *" },
+    { "path": "/api/signroom?path=ops/run", "schedule": "*/5 * * * *" }
   ],
+  "functions": {
+    "api/signroom.ts": { "maxDuration": 300, "includeFiles": "api/_signroom/fonts/**" }
+  },
   "rewrites": [
+    { "source": "/api/signroom/:path*", "destination": "/api/signroom?path=:path*" },
     {
       "source": "/((?!api/|google[a-z0-9]+\\.html$).*)",
       "destination": "/index.html"

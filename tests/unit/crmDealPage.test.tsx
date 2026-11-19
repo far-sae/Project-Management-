@@ -29,6 +29,9 @@ const h = vi.hoisted(() => {
   };
 });
 
+vi.mock('@/components/signroom/agreements/AgreementsPanel', () => ({ AgreementsPanel: () => null }));
+vi.mock('@/components/signroom/billing/InvoicesPanel', () => ({ InvoicesPanel: () => null }));
+vi.mock('@/components/signroom/billing/CompanyAccountPanel', () => ({ CompanyAccountPanel: () => null }));
 vi.mock('@/services/supabase/config', () => ({
   supabase: { channel: () => ({ on() { return this; }, subscribe() { return this; }, unsubscribe() {} }) },
 }));

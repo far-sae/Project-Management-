@@ -38,6 +38,8 @@ import {
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import { useDealMoney } from '@/hooks/useDealMoney';
 import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
+import { AgreementsPanel } from '@/components/signroom/agreements/AgreementsPanel';
+import { InvoicesPanel } from '@/components/signroom/billing/InvoicesPanel';
 
 const when = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -272,6 +274,10 @@ export const CrmDealDetailPage: React.FC = () => {
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="flex min-w-0 flex-col gap-6">
+            {/* What has been agreed and billed for this deal. */}
+            <AgreementsPanel companyId={deal.companyId ?? undefined} dealId={deal.id} />
+            <InvoicesPanel companyId={deal.companyId ?? undefined} dealId={deal.id} />
+
             <Section title="Notes">
               <div className="flex flex-col gap-2">
                 <Textarea rows={3} value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="What was said, what was agreed…" disabled={busy} aria-label="New note" />

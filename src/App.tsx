@@ -48,6 +48,16 @@ const CrmCompanyDetailPage = React.lazy(() => import('@/pages/crmHub/CompanyDeta
 const CrmDealDetailPage = React.lazy(() => import('@/pages/crmHub/DealDetail').then((m) => ({ default: m.CrmDealDetailPage })));
 const CrmDashboardPage = React.lazy(() => import('@/pages/crmHub/Dashboard').then((m) => ({ default: m.CrmDashboardPage })));
 const CrmSettingsPage = React.lazy(() => import('@/pages/crmHub/Settings').then((m) => ({ default: m.CrmSettingsPage })));
+// Agreements with e-signing and invoices, raised from CRM companies and deals.
+const AgreementsPage = React.lazy(() => import('@/pages/signroom/Agreements').then((m) => ({ default: m.AgreementsPage })));
+const AgreementDetailPage = React.lazy(() => import('@/pages/signroom/AgreementDetail').then((m) => ({ default: m.AgreementDetailPage })));
+const AgreementEditorPage = React.lazy(() => import('@/pages/signroom/AgreementEditor').then((m) => ({ default: m.AgreementEditorPage })));
+const InvoicesPage = React.lazy(() => import('@/pages/signroom/Invoices').then((m) => ({ default: m.InvoicesPage })));
+const InvoiceDetailPage = React.lazy(() => import('@/pages/signroom/InvoiceDetail').then((m) => ({ default: m.InvoiceDetailPage })));
+const DocumentSettingsPage = React.lazy(() => import('@/pages/signroom/DocumentSettings').then((m) => ({ default: m.DocumentSettingsPage })));
+// Public pages a customer opens from an emailed link: no sign-in, no sidebar.
+const GuestSignPage = React.lazy(() => import('@/pages/signroom/GuestSign').then((m) => ({ default: m.GuestSignPage })));
+const InvoiceGuestPage = React.lazy(() => import('@/pages/signroom/InvoiceGuest').then((m) => ({ default: m.InvoiceGuestPage })));
 const EmailPage = React.lazy(() => import('@/pages/Email').then((m) => ({ default: m.Email })));
 const SocialMediaPage = React.lazy(() => import('@/pages/SocialMedia').then((m) => ({ default: m.SocialMedia })));
 const Pricing = React.lazy(() => import('@/pages/subscription/Pricing').then((m) => ({ default: m.Pricing })));
@@ -166,6 +176,8 @@ const router = createBrowserRouter(
         { path: '/terms', element: lazyRoute(<TermsPage />) },
         { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
         { path: '/join/:token', element: lazyRoute(<GuestJoin />) },
+        { path: '/sign', element: lazyRoute(<GuestSignPage />) },
+        { path: '/invoice', element: lazyRoute(<InvoiceGuestPage />) },
         { path: '/auth/google', element: lazyRoute(<GoogleCallback />) },
         { path: '/', element: lazyRoute(<LandingPage />) },
         // Dev-only component preview (not in the production bundle).
@@ -335,6 +347,12 @@ const router = createBrowserRouter(
                 { path: 'companies/:id', element: lazyAppRoute(<CrmCompanyDetailPage />) },
                 { path: 'deals',        element: lazyAppRoute(<CrmDealsPage />) },
                 { path: 'deals/:id',    element: lazyAppRoute(<CrmDealDetailPage />) },
+                { path: 'agreements',          element: lazyAppRoute(<AgreementsPage />) },
+                { path: 'agreements/:id',      element: lazyAppRoute(<AgreementDetailPage />) },
+                { path: 'agreements/:id/edit', element: lazyAppRoute(<AgreementEditorPage />) },
+                { path: 'invoices',            element: lazyAppRoute(<InvoicesPage />) },
+                { path: 'invoices/:id',        element: lazyAppRoute(<InvoiceDetailPage />) },
+                { path: 'document-settings',   element: lazyAppRoute(<DocumentSettingsPage />) },
                 { path: 'tasks',        element: lazyAppRoute(<CrmTasksPage />) },
                 { path: 'activity',     element: lazyAppRoute(<CrmActivityPage />) },
                 { path: 'tags',         element: lazyAppRoute(<CrmTagsPage />) },

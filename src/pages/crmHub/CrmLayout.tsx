@@ -5,12 +5,14 @@ import { CrmCurrencyProvider } from '@/context/CrmCurrencyContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { cn } from '@/lib/utils';
 
-/** In the order the work flows: a lead becomes a deal, a won deal becomes a project. */
+/** In the order the work flows: a lead becomes a deal, a deal is agreed and invoiced, a won deal becomes a project. */
 const TABS: Array<{ to: string; label: string }> = [
   { to: '/crm/dashboard', label: 'Overview' },
   { to: '/crm/contacts', label: 'Leads' },
   { to: '/crm/companies', label: 'Companies' },
   { to: '/crm/deals', label: 'Deals' },
+  { to: '/crm/agreements', label: 'Agreements' },
+  { to: '/crm/invoices', label: 'Invoices' },
   { to: '/crm/tasks', label: 'Follow-ups' },
   { to: '/crm/activity', label: 'Activity' },
   { to: '/crm/tags', label: 'Tags' },

@@ -1,0 +1,189 @@
+// Start an invoice: pick the CRM company it is for and, if you like, the deal it bills.
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import type { Invoice } from '../../../../api/_signroom/shared/types';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { useCrmCompanies, useCrmDeals } from '@/hooks/useCrmHub';
+import { useSignroom } from '@/hooks/useSignroom';
+import { formatCurrency } from '@/lib/crmCurrency';
+import { dealCurrency } from '@/lib/crmDealMoney';
+import { dealFirstLine, defaultInvoiceCurrency, errorSentence } from '@/lib/signroom/billing';
+import { clientForCompany } from '@/services/signroom/clients';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { FIELD, Tick } from './shared';
+
+const NONE = '__none__';
+
+export interface NewInvoiceDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** CRM company to start with (the company page passes its own). */
+  companyId?: string;
+  /** CRM deal to start with (the deal page passes its own). */
+  dealId?: string;
+  /** Called with the new draft before the editor opens. */
+  onCreated?: (invoice: Invoice) => void;
+}
+
+/**
+ * Who an invoice is for always comes from the CRM. Creating one makes a draft
+ * on the documents server and opens it at /crm/invoices/:id.
+ */
+export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpenChange, companyId, dealId, onCreated }) => {
+  const id = useId();
+  const navigate = useNavigate();
+  const { client, workspaceId } = useSignroom();
+  const { code: companyCurrency } = useCrmCurrency();
+  const { items: companies, loading: loadingCompanies } = useCrmCompanies();
+  const { items: deals } = useCrmDeals();
+
+  const [company, setCompany] = useState('');
+  const [deal, setDeal] = useState('');
+  const [useDealLine, setUseDealLine] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  // Each time it opens, start from what the page passed in.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setCompany(companyId ?? '');
+      setDeal(dealId ?? '');
+      setUseDealLine(true);
+    }
+    wasOpen.current = open;
+  }, [open, companyId, dealId]);
+
+  // A deal brings its company with it, once the deals have loaded.
+  useEffect(() => {
+    if (!open || company || !dealId) return;
+    const startDeal = deals.find((d) => d.id === dealId);
+    if (startDeal?.companyId) setCompany(startDeal.companyId);
+  }, [open, company, dealId, deals]);
+
+  const sortedCompanies = useMemo(() => [...companies].sort((a, b) => a.name.localeCompare(b.name)), [companies]);
+  const companyDeals = useMemo(() => deals.filter((d) => company && d.companyId === company), [deals, company]);
+  const chosenDeal = deals.find((d) => d.id === deal) ?? null;
+  const dealStart = chosenDeal ? dealFirstLine(chosenDeal, companyCurrency) : null;
+  const dealMoney = (d: { value: number; currency: string | null }) =>
+    formatCurrency(d.value, dealCurrency(d, companyCurrency), { maximumFractionDigits: 2 });
+
+  const chooseCompany = (next: string) => {
+    setCompany(next);
+    if (chosenDeal && chosenDeal.companyId !== next) setDeal('');
+  };
+
+  const create = async () => {
+    if (!workspaceId || !company) return;
+    setBusy(true);
+    try {
+      const customer = await clientForCompany(client, company);
+      let invoice = await client.call<Invoice>('billing', { clientId: customer.id, ...(deal ? { dealId: deal } : {}) });
+      if (dealStart && useDealLine) {
+        try {
+          invoice = await client.call<Invoice>(`billing/${invoice.id}/save`, {
+            revision: invoice.revision,
+            lines: [dealStart.line],
+            currency: dealStart.currency ?? defaultInvoiceCurrency(customer.account?.currency, companyCurrency, invoice.currency),
+            issueDate: invoice.issueDate,
+            dueDate: invoice.dueDate,
+            taxPercent: '0',
+            receiptDraft: null,
+            project: '',
+            notes: '',
+          });
+        } catch (error) {
+          toast.error(`The invoice was created, but its first line could not be added. ${errorSentence(error)}`);
+        }
+      }
+      toast.success(`${invoice.number} created`);
+      onOpenChange(false);
+      onCreated?.(invoice);
+      navigate(`/crm/invoices/${invoice.id}`);
+    } catch (error) {
+      toast.error(errorSentence(error, 'Could not create the invoice'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>New invoice</DialogTitle>
+          <DialogDescription>
+            Pick the company to bill. You add the line items next, and nothing is sent until you send it.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!workspaceId ? (
+          <p className="text-sm text-muted-foreground">Pick a workspace in the sidebar first. An invoice always belongs to one workspace.</p>
+        ) : !loadingCompanies && companies.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            There are no companies yet. <Link to="/crm/companies" className="font-medium text-foreground underline underline-offset-4">Add a company</Link> first, then invoice it.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className={FIELD}>
+              <Label htmlFor={`${id}-company`}>Company</Label>
+              <Select value={company} onValueChange={chooseCompany} disabled={busy}>
+                <SelectTrigger id={`${id}-company`}><SelectValue placeholder="Choose a company" /></SelectTrigger>
+                <SelectContent>
+                  {sortedCompanies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className={FIELD}>
+              <Label htmlFor={`${id}-deal`}>Deal (optional)</Label>
+              <Select value={deal || NONE} onValueChange={(v) => setDeal(v === NONE ? '' : v)} disabled={busy || !company}>
+                <SelectTrigger id={`${id}-deal`}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>No deal</SelectItem>
+                  {companyDeals.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name} · {dealMoney(d)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {company && companyDeals.length === 0 && (
+                <p className="text-xs text-muted-foreground">This company has no deals yet.</p>
+              )}
+            </div>
+
+            {chosenDeal && dealStart && (
+              <div className="flex flex-col gap-1.5 rounded-md border border-border p-3">
+                <Tick checked={useDealLine} onChange={setUseDealLine} disabled={busy}>
+                  Start the first line from this deal
+                </Tick>
+                <p className="pl-6 text-xs text-muted-foreground">
+                  {dealStart.currency
+                    ? <>Adds “{chosenDeal.name}” at <span className="tabular-nums">{dealMoney(chosenDeal)}</span>. The invoice will be in {dealStart.currency}, the deal&apos;s currency. You can change the line afterwards.</>
+                    : <>Adds “{chosenDeal.name}” without a price, because invoices can&apos;t be in {dealCurrency(chosenDeal, companyCurrency)}. You set the price and currency next.</>}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={() => void create()} disabled={busy || !workspaceId || !company}>
+            {busy && <Loader2 className="animate-spin" aria-hidden />}
+            Create invoice
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export default NewInvoiceDialog;

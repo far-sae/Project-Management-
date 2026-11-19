@@ -42,6 +42,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
+import { AgreementsPanel } from '@/components/signroom/agreements/AgreementsPanel';
+import { InvoicesPanel } from '@/components/signroom/billing/InvoicesPanel';
+import { CompanyAccountPanel } from '@/components/signroom/billing/CompanyAccountPanel';
 
 const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 /** One row of a list inside a card. */
@@ -405,6 +408,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="activity">Activity <span className="ml-1.5 tabular-nums text-muted-foreground">{activities.length}</span></TabsTrigger>
               <TabsTrigger value="notes">Notes <span className="ml-1.5 tabular-nums text-muted-foreground">{notes.length}</span></TabsTrigger>
+              <TabsTrigger value="account">Account</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-0 flex flex-col gap-6">
@@ -489,6 +493,11 @@ export const CrmCompanyDetailPage: React.FC = () => {
                 )}
               </Card>
             </TabsContent>
+
+            {/* What they have been invoiced, what they have paid and what is outstanding. */}
+            <TabsContent value="account" className="mt-0">
+              <CompanyAccountPanel companyId={company.id} />
+            </TabsContent>
           </Tabs>
 
           {/* RIGHT: what is linked to the company */}
@@ -571,6 +580,9 @@ export const CrmCompanyDetailPage: React.FC = () => {
                 </div>
               )}
             </Card>
+
+            <AgreementsPanel companyId={company.id} />
+            <InvoicesPanel companyId={company.id} />
 
             <Card title="Follow-ups" count={openTasks.length}>
               <form

@@ -113,6 +113,17 @@ const GeneralSettings: React.FC = () => {
           </p>
         </div>
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Agreements and invoices</p>
+          <p className="text-xs text-muted-foreground">
+            Your company details, logo and colours on documents, who they are sent from, and how long they are kept.
+          </p>
+        </div>
+        <Button variant="outline" asChild>
+          <Link to="/crm/document-settings">Document settings</Link>
+        </Button>
+      </div>
     </SettingsSection>
   );
 };

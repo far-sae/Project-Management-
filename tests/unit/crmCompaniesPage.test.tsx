@@ -71,6 +71,9 @@ const list = <T,>(items: T[]) => ({ items, loading: false, error: null, refresh:
 const forCompany = <T extends { companyId: string | null }>(rows: T[], opts?: { companyId?: string }) =>
   rows.filter((r) => r.companyId === opts?.companyId);
 
+vi.mock('@/components/signroom/agreements/AgreementsPanel', () => ({ AgreementsPanel: () => null }));
+vi.mock('@/components/signroom/billing/InvoicesPanel', () => ({ InvoicesPanel: () => null }));
+vi.mock('@/components/signroom/billing/CompanyAccountPanel', () => ({ CompanyAccountPanel: () => null }));
 vi.mock('@/hooks/useSelectedWorkspace', () => {
   const same = <T,>(list: T[]) => list;
   const scope = {
