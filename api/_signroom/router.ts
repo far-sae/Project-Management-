@@ -1,4 +1,4 @@
-import { AppError } from "./errors.js";
+import { AppError, StoreError } from "./errors.js";
 import type { SignedInUser } from "./context.js";
 import { agreementAction, agreementArtifactUrl, createAgreement, getAgreement, listAgreements, listTemplates } from "./agreements.js";
 import { finishUpload, prepareAgreement, uploadUrl } from "./agreementDocument.js";
@@ -189,6 +189,16 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
 }
 
 /** One request to a result. Never throws: AppError keeps its status and sentence, anything else is a plain 500. */
+export const TABLES_MISSING_MESSAGE =
+  "Documents are not set up yet: the database tables are missing. Run supabase/migrations/184_signroom.sql in the Supabase SQL editor.";
+
+/** The two ways Supabase says one of our own tables or functions is not there. */
+const tablesMissing = (message: string): boolean => {
+  const m = message.toLowerCase();
+  if (!m.includes("sr_")) return false;
+  return m.includes("schema cache") || m.includes("does not exist");
+};
+
 export async function route(deps: RouteDeps, r: RouteRequest): Promise<RouteResult> {
   try {
     if (r.path[0] === "billing-guest") return await guestRoute(deps, r);
@@ -202,6 +212,7 @@ export async function route(deps: RouteDeps, r: RouteRequest): Promise<RouteResu
     return await userRoute(deps, r, r.user);
   } catch (e) {
     if (e instanceof AppError) return { status: e.status, json: { error: e.message } };
+    if (e instanceof StoreError && tablesMissing(e.message)) return { status: 503, json: { error: TABLES_MISSING_MESSAGE } };
     // The error name only: its text can carry addresses, codes or visitor input.
     console.error("[signroom] failed", e instanceof Error ? e.name : "unknown");
     return { status: 500, json: { error: FAILED_MESSAGE } };

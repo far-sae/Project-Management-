@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { adminClient, siteOrigin } from "./_signroom/host/admin.js";
+import { adminClient, setupProblem, siteOrigin } from "./_signroom/host/admin.js";
 import { refuseSignedOut } from "./_signroom/host/auth.js";
 import { runInBackground } from "./_signroom/host/background.js";
 import { refuseOversize } from "./_signroom/host/bodySize.js";
@@ -41,6 +41,8 @@ export type SignroomDeps = {
   build?: () => RouteDeps | null;
   /** CRON_SECRET when omitted (tests pass their own). */
   cronSecret?: () => string | undefined;
+  /** What the owner still has to set up, as a sentence for the page, or null. Nothing is checked when omitted. */
+  setup?: () => string | null;
   /** Keeps the function alive until the promise settles (Vercel's waitUntil when omitted). */
   keepAlive?: (p: Promise<unknown>) => void;
 };
@@ -190,6 +192,12 @@ export function signroomHandler(d: SignroomDeps) {
     // Vercel's cron sends no Origin: the scheduled run is checked by its secret instead.
     if ((req.method === "GET" || req.method === "POST") && path.length === 2 && path[0] === "ops" && path[1] === "run") return cronRun(d, req, res);
     if (refuseForeign(req, res)) return;
+    // Not set up yet: say exactly what is missing, rather than "busy" or a sign-in error.
+    const problem = d.setup ? d.setup() : null;
+    if (problem) {
+      res.status(503).json({ error: problem });
+      return;
+    }
     const isUpload = req.method === "POST" && path.length === 2 && path[0] === "workspaces" && path[1] === "branding-template";
     if (isUpload) {
       if (refuseOversize(req, res, TEMPLATE_MAX_BYTES, TEMPLATE_SIZE_MESSAGE)) return;
@@ -265,4 +273,4 @@ export function signroomHandler(d: SignroomDeps) {
   };
 }
 
-export default signroomHandler({ signedIn: realSignedIn, route: realRoute, build: buildDeps });
+export default signroomHandler({ signedIn: realSignedIn, route: realRoute, build: buildDeps, setup: setupProblem });

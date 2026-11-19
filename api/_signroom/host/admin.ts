@@ -1,21 +1,45 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { serviceClient, siteUrl } from "../../_lib/context";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { siteUrl } from "../../_lib/context";
+
+/**
+ * Where the database is. SUPABASE_URL, or the address the browser side
+ * already has (VITE_SUPABASE_URL): it is the same project and not a secret.
+ */
+const databaseUrl = (): string => (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
+const databaseKey = (): string => (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+/**
+ * What the owner still has to set before the documents server can run, as one
+ * plain sentence, or null when nothing is missing. It names settings, never
+ * their values, so it is safe to show on the page.
+ */
+export function setupProblem(): string | null {
+  if (!databaseKey()) return "Documents are not set up yet: SUPABASE_SERVICE_ROLE_KEY is missing in Vercel's environment variables.";
+  if (!databaseUrl()) return "Documents are not set up yet: SUPABASE_URL is missing in Vercel's environment variables.";
+  return null;
+}
 
 /**
  * The service-role Supabase client for the documents server, made once per
- * warm function. Null when SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not
- * set (the entry then answers 503). Never send this client to a browser.
+ * warm function. Null while the database address or key is not set (the entry
+ * then answers 503 with setupProblem). Never send this client to a browser.
  */
 let cached: SupabaseClient | null = null;
 
 export function adminClient(): SupabaseClient | null {
   if (cached) return cached;
+  if (setupProblem()) return null;
   try {
-    cached = serviceClient();
+    cached = createClient(databaseUrl(), databaseKey(), { auth: { persistSession: false, autoRefreshToken: false } });
   } catch {
     return null;
   }
   return cached;
+}
+
+/** Test hook: forget the cached client so a test can change the environment. */
+export function __resetAdminClientForTests(): void {
+  cached = null;
 }
 
 const webOrigin = (value: string): string | null => {
