@@ -3323,6 +3323,126 @@ export const deleteOldDirectMessages = async (
   if (error) logger.warn("deleteOldDirectMessages:", error.message);
 };
 
+// ── Reactions on direct messages (migration 181) ──────────────────────────────
+
+export interface DirectMessageReaction {
+  reactionId: string;
+  messageId: string;
+  userId: string;
+  emoji: string;
+}
+
+const mapDirectMessageReactionRow = (d: Record<string, unknown>): DirectMessageReaction => ({
+  reactionId: d.reaction_id as string,
+  messageId: d.message_id as string,
+  userId: d.user_id as string,
+  emoji: d.emoji as string,
+});
+
+/** True when the error says the reactions table has not been created on this deployment. */
+const isMissingTable = (error: { code?: string; message: string }): boolean => {
+  const code = (error.code || "").toLowerCase();
+  const lower = error.message.toLowerCase();
+  return code === "42p01" || code === "pgrst205" || lower.includes("does not exist") || lower.includes("relation");
+};
+
+/** Toggle an emoji on a direct message: the same emoji again takes it back. */
+export const toggleDirectMessageReaction = async (params: {
+  messageId: string;
+  userId: string;
+  emoji: string;
+}): Promise<void> => {
+  const emoji = params.emoji.trim();
+  if (!emoji) return;
+
+  const { data: existing, error: selErr } = await supabase
+    .from("direct_message_reactions")
+    .select("reaction_id")
+    .eq("message_id", params.messageId)
+    .eq("user_id", params.userId)
+    .eq("emoji", emoji)
+    .maybeSingle();
+  if (selErr) {
+    logger.error("toggleDirectMessageReaction select:", selErr);
+    throw selErr;
+  }
+
+  if (existing && typeof existing === "object" && "reaction_id" in existing) {
+    const { error: delErr } = await supabase
+      .from("direct_message_reactions")
+      .delete()
+      .eq("reaction_id", (existing as { reaction_id: string }).reaction_id);
+    if (delErr) {
+      logger.error("toggleDirectMessageReaction delete:", delErr);
+      throw delErr;
+    }
+    return;
+  }
+
+  const { error: insErr } = await supabase.from("direct_message_reactions").insert({
+    message_id: params.messageId,
+    user_id: params.userId,
+    emoji,
+  });
+  if (insErr) {
+    logger.error("toggleDirectMessageReaction insert:", insErr);
+    throw insErr;
+  }
+};
+
+/**
+ * Live reactions for one conversation. `onUnavailable` fires when the table is
+ * not there yet, so the chat can leave reactions out instead of failing.
+ * Returns `{ stop, reload }`: call `reload` after your own change so it shows at once.
+ */
+export const subscribeToDirectMessageReactions = (
+  selfUserId: string,
+  otherUserId: string,
+  callback: (rows: DirectMessageReaction[]) => void,
+  onUnavailable?: () => void,
+): { stop: () => void; reload: () => void } => {
+  const threadKey = directMessageThreadKey(selfUserId, otherUserId);
+  if (!threadKey) {
+    callback([]);
+    return { stop: () => {}, reload: () => {} };
+  }
+  const load = () => {
+    void supabase
+      .from("direct_message_reactions")
+      .select("reaction_id, message_id, user_id, emoji")
+      .eq("thread_key", threadKey)
+      .then(({ data, error }) => {
+        if (error) {
+          logger.warn("direct message reactions:", error.message);
+          if (isMissingTable(error as { code?: string; message: string })) onUnavailable?.();
+          callback([]);
+          return;
+        }
+        callback((data || []).map((row) => mapDirectMessageReactionRow(row as Record<string, unknown>)));
+      });
+  };
+
+  load();
+
+  const channel = supabase
+    .channel(`dm-r-${threadKey}-${Math.random().toString(36).slice(2, 9)}`)
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "direct_message_reactions", filter: `thread_key=eq.${threadKey}` },
+      load,
+    )
+    // Realtime cannot filter deletes by column, so any removal reloads this conversation.
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "direct_message_reactions" }, load)
+    .subscribe();
+
+  return {
+    stop: () => {
+      try { channel.unsubscribe(); } catch { /* noop */ }
+    },
+    reload: load,
+  };
+};
+
 export const subscribeToDirectMessages = (
   selfUserId: string,
   otherUserId: string,

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { playChatChime } from '@/lib/notificationSound';
 import { appIsInFront } from '@/services/calling/incomingAlert';
+import { chimeMutedByStatus } from '@/hooks/usePresenceStatusPreference';
 
 /**
  * Desktop notification for a new chat message when TaskCalendar isn't in
@@ -10,7 +11,7 @@ import { appIsInFront } from '@/services/calling/incomingAlert';
  */
 export function showMessageNotification(p: { title: string; body: string; tag: string }): void {
   const N = (window as Window & { Notification?: typeof Notification }).Notification;
-  if (!N || N.permission !== 'granted' || appIsInFront()) return;
+  if (!N || N.permission !== 'granted' || appIsInFront() || chimeMutedByStatus()) return;
   try {
     const n = new N(p.title, { body: p.body, tag: p.tag, icon: '/logo.png' });
     n.onclick = () => {

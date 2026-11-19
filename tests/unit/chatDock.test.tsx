@@ -16,6 +16,7 @@ vi.mock('@/hooks/useCall', () => ({
 }));
 vi.mock('@/services/webrtc/mediaUtils', () => ({ isMediaSupported: () => true }));
 vi.mock('@/hooks/useLastSeen', () => ({ useLastSeen: () => new Map() }));
+vi.mock('@/hooks/useDmTyping', () => ({ useDmTyping: () => ({ otherTyping: false, notifyTyping: () => undefined }) }));
 vi.mock('@/services/supabase/storage', () => ({
   ATTACHMENTS_BUCKET: 'attachments',
   deleteFile: vi.fn(),
@@ -30,6 +31,11 @@ vi.mock('@/services/supabase/database', () => ({
     cb(h.messages);
     return () => undefined;
   },
+  subscribeToDirectMessageReactions: (_me: string, _other: string, cb: (r: unknown[]) => void) => {
+    cb([]);
+    return { stop: () => undefined, reload: () => undefined };
+  },
+  toggleDirectMessageReaction: vi.fn(),
 }));
 
 import { ChatDockProvider, useChatDock } from '@/components/messaging/ChatDock';

@@ -15,7 +15,10 @@ const isValid = (v: string | null): v is PresenceStatusPreference =>
   v === 'dnd' ||
   v === 'holiday';
 
-const read = (): PresenceStatusPreference => {
+/** Do not disturb silences message and notification sounds and pop-ups. Calls still ring. */
+export const chimeMutedByStatus = (): boolean => read() === 'dnd';
+
+function read(): PresenceStatusPreference {
   try {
     const s = window.localStorage.getItem(STORAGE_KEY);
     if (s && isValid(s)) return s;
@@ -23,7 +26,7 @@ const read = (): PresenceStatusPreference => {
     /* ignore */
   }
   return 'auto';
-};
+}
 
 /**
  * How you appear in project presence: Auto (online when active tab, otherwise

@@ -9,7 +9,6 @@ import {
   Send,
   Loader2,
   Minus,
-  Smile,
   Phone,
   Video,
   CalendarPlus,
@@ -24,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MentionTextarea } from '@/components/mentions/MentionTextarea';
 import { EmojiPickerButton } from '@/components/ui/emoji-picker';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ReactionButton, ReactionChips, groupReactions } from '@/components/messaging/ChatReactions';
 import { useChatDock, useChatDockInset } from '@/components/messaging/ChatDock';
 import { useCall } from '@/hooks/useCall';
 import { isMediaSupported } from '@/services/webrtc/mediaUtils';
@@ -75,21 +74,12 @@ interface ProjectRightRailProps {
   presenceByUserId?: Map<string, PresencePeer>;
 }
 
-/** WhatsApp-style quick reactions on project chat bubbles */
-const CHAT_QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
-
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Owner',
   admin: 'Admin',
   member: 'Member',
   viewer: 'Viewer',
 };
-
-/** Reaction count under a message: a 22px bordered pill. */
-const REACTION_CHIP =
-  'inline-flex h-[22px] items-center gap-1 rounded-full border border-border bg-card px-2 text-xs font-medium text-muted-foreground';
-/** …tinted when you are one of the people who reacted. */
-const REACTION_CHIP_MINE = 'border-primary/40 bg-primary-soft text-primary-soft-foreground';
 
 const ACTIVITY_ICONS: Record<string, React.ElementType> = {
   task_created: Plus,
@@ -518,16 +508,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   );
 
   /** messageId → emoji → user ids who reacted */
-  const reactionsByMessageId = useMemo(() => {
-    const out: Record<string, Record<string, string[]>> = {};
-    for (const r of reactionRows) {
-      if (!out[r.messageId]) out[r.messageId] = {};
-      const bucket = out[r.messageId][r.emoji];
-      if (bucket) bucket.push(r.userId);
-      else out[r.messageId][r.emoji] = [r.userId];
-    }
-    return out;
-  }, [reactionRows]);
+  const reactionsByMessageId = useMemo(() => groupReactions(reactionRows), [reactionRows]);
+
 
   const handleChatScroll = useCallback(() => {
     const el = chatScrollRef.current;
@@ -1173,60 +1155,13 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                         }
                         actions={
                           canReact ? (
-                            <Popover
-                              modal={false}
+                            <ReactionButton
+                              mine={mine}
                               open={reactionMenuForId === msg.messageId}
-                              onOpenChange={(next) =>
-                                setReactionMenuForId(next ? msg.messageId : null)
-                              }
-                            >
-                              <PopoverTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                  aria-label="Add reaction"
-                                  title="React"
-                                >
-                                  <Smile className="h-3.5 w-3.5" />
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent
-                                side="top"
-                                align={mine ? 'end' : 'start'}
-                                sideOffset={6}
-                                className="w-auto p-2 flex flex-wrap gap-0.5 max-w-[240px]"
-                                onOpenAutoFocus={(e) => e.preventDefault()}
-                              >
-                                <div className="flex flex-wrap gap-0.5 justify-center">
-                                  {CHAT_QUICK_REACTIONS.map((emoji) => (
-                                    <button
-                                      key={emoji}
-                                      type="button"
-                                      className="min-w-[2.25rem] rounded-md p-1.5 text-[22px] leading-none hover:bg-secondary"
-                                      onPointerDown={(e) => e.preventDefault()}
-                                      onClick={() => {
-                                        void handleToggleReaction(msg.messageId, emoji);
-                                        setReactionMenuForId(null);
-                                      }}
-                                    >
-                                      {emoji}
-                                    </button>
-                                  ))}
-                                </div>
-                                <div className="w-full border-t border-border pt-2 mt-1 flex justify-center">
-                                  <EmojiPickerButton
-                                    value=""
-                                    onChange={() => {}}
-                                    nested
-                                    onPickEmoji={(emoji) => {
-                                      void handleToggleReaction(msg.messageId, emoji);
-                                      setReactionMenuForId(null);
-                                    }}
-                                    disabled={!user || isViewerOrg}
-                                  />
-                                </div>
-                              </PopoverContent>
-                            </Popover>
+                              onOpenChange={(next) => setReactionMenuForId(next ? msg.messageId : null)}
+                              onPick={(emoji) => void handleToggleReaction(msg.messageId, emoji)}
+                              disabled={!user || isViewerOrg}
+                            />
                           ) : undefined
                         }
                         content={
@@ -1239,47 +1174,16 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                         footer={
                           <>
                             <ChatAttachmentList attachments={msg.attachments} mine={mine} />
-                            {reactionsForMsg && Object.keys(reactionsForMsg).length > 0 && (
-                              <div
-                                className={cn(
-                                  'mt-1 flex max-w-full flex-wrap gap-1',
-                                  mine && 'justify-end',
-                                )}
-                              >
-                                {Object.entries(reactionsForMsg).map(([emoji, userIds]) => {
-                                  const chipClass = cn(
-                                    REACTION_CHIP,
-                                    userIds.includes(user?.userId ?? '') && REACTION_CHIP_MINE,
-                                  );
-                                  const chipTitle = `${userIds.length} reaction${userIds.length === 1 ? '' : 's'}`;
-                                  const chipBody = (
-                                    <>
-                                      <span className="text-xs leading-none">{emoji}</span>
-                                      <span className="tabular-nums">{userIds.length}</span>
-                                    </>
-                                  );
-                                  return isViewerOrg ? (
-                                    <span
-                                      key={emoji}
-                                      className={cn(chipClass, 'cursor-default')}
-                                      title={chipTitle}
-                                    >
-                                      {chipBody}
-                                    </span>
-                                  ) : (
-                                    <button
-                                      key={emoji}
-                                      type="button"
-                                      className={cn(chipClass, 'transition-colors hover:bg-secondary')}
-                                      onClick={() => void handleToggleReaction(msg.messageId, emoji)}
-                                      title={chipTitle}
-                                    >
-                                      {chipBody}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
+                            <ReactionChips
+                              reactions={reactionsForMsg}
+                              selfId={user?.userId}
+                              mine={mine}
+                              onToggle={
+                                isViewerOrg
+                                  ? undefined
+                                  : (emoji) => void handleToggleReaction(msg.messageId, emoji)
+                              }
+                            />
                           </>
                         }
                       />

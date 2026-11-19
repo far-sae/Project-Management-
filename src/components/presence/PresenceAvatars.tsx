@@ -43,7 +43,7 @@ const statusClasses = (a?: PresenceAvailability): string => {
     case 'offline':
       return 'bg-muted-foreground/70';
     case 'dnd':
-      return 'bg-warning';
+      return 'bg-destructive';
     case 'holiday':
       return 'bg-info';
     default:

@@ -20,6 +20,7 @@ import {
   type AlertSound,
   type Note,
 } from '@/services/calling/alertAudio';
+import { chimeMutedByStatus } from '@/hooks/usePresenceStatusPreference';
 
 let lastPlayAt = 0;
 const MIN_GAP_MS = 600;
@@ -44,6 +45,8 @@ function playOn(ctx: AudioContext, notes: Note[], volume: number): void {
 
 function playChime(kind: AlertSound, notes: Note[], volume: number): void {
   if (typeof window === 'undefined') return;
+  // "Do not disturb" means what it says. Incoming calls ring through another path.
+  if (chimeMutedByStatus()) return;
 
   // Throttle bursts (several rows in one refetch, bell + chat at once) to a single ping.
   const now = Date.now();

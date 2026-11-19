@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquare, Minus, Paperclip, Phone, Send, Video, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -12,13 +12,19 @@ import {
   markDirectMessagesRead,
   deleteOldDirectMessages,
   subscribeToDirectMessages,
+  subscribeToDirectMessageReactions,
+  toggleDirectMessageReaction,
   directMessageThreadKey,
   type ChatAttachment,
   type DirectMessage,
+  type DirectMessageReaction,
 } from '@/services/supabase/database';
 import { ATTACHMENTS_BUCKET, deleteFile, uploadChatAttachment } from '@/services/supabase/storage';
 import { ChatAttachmentList } from './ChatAttachmentList';
-import { ChatBubble } from '@/components/project/ProjectChatMessage';
+import { ChatBubble, ProjectChatMessage as ChatMessageRow } from '@/components/project/ProjectChatMessage';
+import { ReactionButton, ReactionChips, groupReactions } from './ChatReactions';
+import { EmojiPickerButton } from '@/components/ui/emoji-picker';
+import { useDmTyping } from '@/hooks/useDmTyping';
 import { format, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
 import { useLastSeen } from '@/hooks/useLastSeen';
@@ -58,6 +64,9 @@ const messageDayLabel = (date: Date): string => {
  * Talks to the `direct_messages` table (RLS scoped to the two participants)
  * so the conversation is private to the pair. Minimising shrinks it to a bar
  * that keeps listening, so its unread count stays live.
+ *
+ * It works like the project chat: the same message rows, emoji and reactions,
+ * plus what only a pair needs: "is typing" and "Seen".
  */
 export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
   recipient,
@@ -79,6 +88,12 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const recipientId = recipient.userId;
+  const [reactionRows, setReactionRows] = useState<DirectMessageReaction[]>([]);
+  /** True once we learn this deployment has no reactions table (migration 181 not run). */
+  const [reactionsUnavailable, setReactionsUnavailable] = useState(false);
+  const [reactionMenuForId, setReactionMenuForId] = useState<string | null>(null);
+  const reloadReactionsRef = useRef<() => void>(() => {});
+  const { otherTyping, notifyTyping } = useDmTyping(user?.userId, recipientId);
 
   useEffect(() => {
     if (!user?.userId) return;
@@ -92,6 +107,37 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
     });
     return () => unsub();
   }, [recipientId, user?.userId]);
+
+  useEffect(() => {
+    if (!user?.userId) return;
+    setReactionRows([]);
+    const { stop, reload } = subscribeToDirectMessageReactions(
+      user.userId,
+      recipientId,
+      setReactionRows,
+      () => setReactionsUnavailable(true),
+    );
+    reloadReactionsRef.current = reload;
+    return () => {
+      reloadReactionsRef.current = () => {};
+      stop();
+    };
+  }, [recipientId, user?.userId]);
+
+  const reactionsByMessageId = useMemo(() => groupReactions(reactionRows), [reactionRows]);
+
+  const handleToggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      if (!user?.userId) return;
+      try {
+        await toggleDirectMessageReaction({ messageId, userId: user.userId, emoji });
+        reloadReactionsRef.current();
+      } catch (e) {
+        toast.error(e instanceof Error && e.message ? e.message : 'Could not update the reaction');
+      }
+    },
+    [user?.userId],
+  );
 
   // Mark messages as read while the window is open (not while minimised).
   useEffect(() => {
@@ -110,7 +156,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
     const el = scrollRef.current;
     if (!el || loading) return;
     if (stickToBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, loading, minimized]);
+  }, [messages, reactionRows, otherTyping, loading, minimized]);
 
   const handleSend = useCallback(async () => {
     if (!user?.userId) return;
@@ -298,8 +344,8 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
       className={cn(
         'pointer-events-auto flex shrink-0 flex-col overflow-hidden rounded-t-xl border border-b-0 border-border bg-card',
         'shadow-[0_-8px_32px_rgba(0,0,0,0.12)]',
-        'w-[calc(100vw-1rem)] sm:w-[21rem]',
-        'h-[min(30rem,calc(100svh-4rem))]',
+        'w-[calc(100vw-1rem)] sm:w-[22.5rem]',
+        'h-[min(32rem,calc(100svh-4rem))]',
         'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
       )}
     >
@@ -319,11 +365,11 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
             <span
               className={cn(
                 'block truncate text-xs leading-4',
-                recipientStatus.online ? 'text-success-soft-foreground' : 'text-muted-foreground',
+                otherTyping || recipientStatus.online ? 'text-success-soft-foreground' : 'text-muted-foreground',
               )}
               title={recipientStatus.title}
             >
-              {recipientStatus.label}
+              {otherTyping ? 'typing…' : recipientStatus.label}
             </span>
           </span>
         </button>
@@ -402,6 +448,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
                 !showDay &&
                 prev?.senderId === msg.senderId &&
                 msg.createdAt.getTime() - prev.createdAt.getTime() < 5 * 60_000;
+              const isLast = i === messages.length - 1;
               return (
                 <div key={msg.messageId}>
                   {showDay && (
@@ -413,20 +460,64 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
                       <span aria-hidden className="h-px flex-1 bg-border" />
                     </div>
                   )}
-                  <div className={cn('flex', mine && 'justify-end', grouped ? 'mt-0.5' : 'mt-2.5')}>
-                    <div className={cn('min-w-0 max-w-[82%]', mine && 'flex flex-col items-end')}>
-                      {!grouped && (
-                        <div className="mb-0.5 text-xs leading-4 text-muted-foreground tabular-nums">
-                          {format(msg.createdAt, 'p')}
-                        </div>
-                      )}
-                      {msg.body && <ChatBubble text={msg.body} mine={mine} grouped={grouped} />}
-                      <ChatAttachmentList attachments={msg.attachments} mine={mine} />
-                    </div>
-                  </div>
+                  <ChatMessageRow
+                    mine={mine}
+                    grouped={grouped}
+                    authorLabel={mine ? 'You' : firstName}
+                    photoURL={recipient.photoURL}
+                    createdAt={msg.createdAt}
+                    actions={
+                      reactionsUnavailable ? undefined : (
+                        <ReactionButton
+                          mine={mine}
+                          open={reactionMenuForId === msg.messageId}
+                          onOpenChange={(next) => setReactionMenuForId(next ? msg.messageId : null)}
+                          onPick={(emoji) => void handleToggleReaction(msg.messageId, emoji)}
+                          disabled={!user}
+                        />
+                      )
+                    }
+                    content={msg.body ? <ChatBubble text={msg.body} mine={mine} grouped={grouped} /> : null}
+                    footer={
+                      <>
+                        <ChatAttachmentList attachments={msg.attachments} mine={mine} />
+                        <ReactionChips
+                          reactions={reactionsByMessageId[msg.messageId]}
+                          selfId={user?.userId}
+                          mine={mine}
+                          onToggle={(emoji) => void handleToggleReaction(msg.messageId, emoji)}
+                        />
+                        {mine && isLast && (
+                          <div className="mt-0.5 text-right text-[0.6875rem] leading-4 text-muted-foreground">
+                            {msg.readAt ? 'Seen' : 'Sent'}
+                          </div>
+                        )}
+                      </>
+                    }
+                  />
                 </div>
               );
             })}
+            {otherTyping && (
+              <div className="mt-3 flex items-center gap-2" role="status">
+                <Avatar className="h-7 w-7 shrink-0">
+                  <AvatarImage src={recipient.photoURL} alt="" />
+                  <AvatarFallback className="bg-primary-soft text-xs font-semibold text-primary-soft-foreground">
+                    {(recipient.displayName || '?').charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span aria-hidden className="inline-flex h-7 items-center gap-1 rounded-2xl rounded-tl bg-secondary px-3">
+                  {[0, 1, 2].map((dot) => (
+                    <span
+                      key={dot}
+                      className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground motion-reduce:animate-none"
+                      style={{ animationDelay: `${dot * 200}ms` }}
+                    />
+                  ))}
+                </span>
+                <span className="text-xs text-muted-foreground">{firstName} is typing…</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -455,6 +546,12 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
         )}
         <div className="flex items-end gap-0.5 rounded-[20px] border border-input p-1 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25">
           <input ref={fileInputRef} type="file" multiple hidden onChange={onPickFiles} />
+          <EmojiPickerButton
+            value={input}
+            onChange={setInput}
+            disabled={!user || sending}
+            className="rounded-full"
+          />
           <Button
             type="button"
             variant="ghost"
@@ -469,10 +566,13 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
           </Button>
           <Textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              if (e.target.value.trim()) notifyTyping();
+            }}
             placeholder={`Message ${firstName}…`}
             rows={1}
-            className="max-h-32 min-h-8 flex-1 self-center resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 leading-5 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="max-h-32 min-h-8 flex-1 self-center resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 leading-5 shadow-none [field-sizing:content] focus-visible:ring-0 focus-visible:ring-offset-0"
             disabled={!user || sending}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
