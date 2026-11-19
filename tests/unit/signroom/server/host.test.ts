@@ -140,6 +140,7 @@ describe("the origin allow-list", () => {
     process.env.PUBLIC_SITE_URL = "https://app.example.com/";
     delete process.env.VERCEL_URL;
     delete process.env.VERCEL_BRANCH_URL;
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
   });
   afterEach(() => {
     process.env = { ...saved };
@@ -191,6 +192,21 @@ describe("the origin allow-list", () => {
     expect(siteOrigin()).toBeNull();
     expect(from({ origin: "https://app.example.com" })).toBe(false);
     expect(from({ origin: "http://localhost:3000" })).toBe(true);
+  });
+
+  it("with no PUBLIC_SITE_URL, the project's own production address that Vercel provides is the site", () => {
+    delete process.env.PUBLIC_SITE_URL;
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "app.example.com";
+    expect(siteOrigin()).toBe("https://app.example.com");
+    expect(from({ origin: "https://app.example.com" })).toBe(true);
+    expect(from({ origin: "https://www.app.example.com" })).toBe(true);
+    expect(from({ origin: "https://evil.example" })).toBe(false);
+  });
+
+  it("PUBLIC_SITE_URL wins when both are set", () => {
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "other.example.net";
+    expect(siteOrigin()).toBe("https://app.example.com");
+    expect(from({ origin: "https://other.example.net" })).toBe(false);
   });
 
   it("refuseForeign answers 403 forbidden, and nothing for our own pages", () => {
