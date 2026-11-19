@@ -118,6 +118,16 @@ describe('converting a lead into a deal', () => {
     expect(h.updateContact.mock.calls[0][1]).toMatchObject({ companyId: 'co-new' });
   });
 
+  it('opens the deal in the currency that was chosen', async () => {
+    await convertLeadToDeal({ ...base, lead: lead(), currency: 'USD' });
+    expect(h.createDeal.mock.calls[0][0]).toMatchObject({ value: 5000, currency: 'USD' });
+  });
+
+  it('leaves the deal in the company currency when none is chosen', async () => {
+    await convertLeadToDeal({ ...base, lead: lead() });
+    expect(h.createDeal.mock.calls[0][0].currency ?? null).toBeNull();
+  });
+
   it('still succeeds when only the lead status update fails', async () => {
     h.updateContact.mockRejectedValue(new Error('nope'));
     await expect(convertLeadToDeal({ ...base, lead: lead() })).resolves.toMatchObject({ deal: { id: 'deal-new' } });

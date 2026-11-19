@@ -24,6 +24,8 @@ const LEAD_FIELDS: ImportField[] = [
   { key: 'company_industry', label: 'Company industry' },
   { key: 'company_address', label: 'Company address' },
   { key: 'company_city', label: 'Company city' },
+  { key: 'company_state', label: 'Company county or state' },
+  { key: 'company_postcode', label: 'Company postcode' },
   { key: 'company_country', label: 'Company country' },
   { key: 'company_size', label: 'Company size' },
   { key: 'company_revenue', label: 'Company revenue' },
@@ -81,7 +83,8 @@ describe('a file of companies imported as leads', () => {
   it('reads “name” as the company when the file is about companies', () => {
     expect(mapping).toMatchObject({
       name: 'company', website: 'company_website', industry: 'company_industry',
-      address_line1: 'company_address', city: 'company_city', country: 'company_country',
+      address_line1: 'company_address', city: 'company_city', state: 'company_state',
+      postal_code: 'company_postcode', country: 'company_country',
       employee_count: 'company_size', annual_revenue: 'company_revenue',
       email: 'email', phone: 'phone', source: 'source', type: 'lifecycle_stage',
     });
@@ -104,7 +107,7 @@ describe('a file of companies imported as leads', () => {
     expect(leads[0]!.companyName).toBe('Harbour Cafe');
     expect(leads[0]!.companyDetails).toEqual({
       website: 'harbourcafe.example', industry: 'Hospitality', address: '12 Main St', city: 'Boston',
-      country: 'USA', company_size: '5', annual_revenue: 500000,
+      state: 'MA', postal_code: '02108', country: 'USA', company_size: '5', annual_revenue: 500000,
       email: 'hello@harbourcafe.example', phone: '+15551112222',
     });
   });

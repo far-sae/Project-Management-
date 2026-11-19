@@ -1,77 +1,92 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { format, formatDistanceToNow } from 'date-fns';
 import {
-  ChevronLeft, Globe, Handshake, Mail, MapPin, Pencil, Phone, Trash2,
-  Loader2, User,
+  ChevronLeft, Handshake, Linkedin, Loader2, Mail, MoreHorizontal, Pencil, Phone, Plus, StickyNote, User,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { useCrmDealStages } from '@/hooks/useCrmHub';
+import { useDealMoney } from '@/hooks/useDealMoney';
 import { supabase } from '@/services/supabase/config';
-import {
-  getCompany, updateCompany, deleteCompany,
-} from '@/services/supabase/crmHub/companies';
+import { getCompany, deleteCompany } from '@/services/supabase/crmHub/companies';
 import { listContacts } from '@/services/supabase/crmHub/contacts';
 import { listDeals } from '@/services/supabase/crmHub/deals';
 import { listActivities } from '@/services/supabase/crmHub/activities';
-import { listTasks } from '@/services/supabase/crmHub/tasks';
+import { createTask, listTasks } from '@/services/supabase/crmHub/tasks';
 import { listNotes, createNote } from '@/services/supabase/crmHub/notes';
 import type {
-  CrmCompany, CrmContact, CrmDeal, CrmActivity, CrmTask, CrmNote, TaskStatus,
+  CrmCompany, CrmContact, CrmDeal, CrmActivity, CrmTask, CrmNote,
 } from '@/types/crmHub';
-import { companyDealSummary, dealHandoffState, dealStatusPill } from '@/lib/crmCompany';
-import { PageHeader } from '@/components/common/PageHeader';
-import { StatStrip } from '@/components/common/StatStrip';
-import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
+  companyAddressLines, companyDealSummary, companyDomain, companyRelationship, dealHandoffState,
+  dealStatusPill, websiteHref,
+} from '@/lib/crmCompany';
+import { ACTIVITY_LABEL } from '@/lib/crmActivityLabel';
+import { LEAD_STEPS, leadName, leadStep } from '@/lib/crmFlow';
+import { cn } from '@/lib/utils';
+import { StatStrip } from '@/components/common/StatStrip';
+import { StatusPill } from '@/components/common/StatusPill';
+import { CompanyFormDialog } from '@/components/crmHub/CompanyFormDialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-import { useCrmCurrency } from '@/context/CrmCurrencyContext';
-
-const PAGE_BODY = 'flex w-full flex-col gap-6 px-4 py-6 lg:px-6';
 const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
-/** One row of a list inside a section box. */
+/** One row of a list inside a card. */
 const ROW = 'border-b border-border/60 px-4 py-2.5 last:border-0';
-/** One labelled field in the edit form. */
-const FIELD = 'space-y-1.5';
-/** Two fields side by side; stacked on phones. */
-const FIELD_ROW = 'grid grid-cols-1 gap-3 sm:grid-cols-2';
+/** How many rows a card on the right shows before "Show all". */
+const SHORT_LIST = 5;
 
-const FOLLOW_UP_STATUS: Record<TaskStatus, { label: string; tone: StatusTone }> = {
-  pending: { label: 'Pending', tone: 'neutral' },
-  in_progress: { label: 'In progress', tone: 'info' },
-  completed: { label: 'Completed', tone: 'success' },
+const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+const dateTime = (date: Date): string => format(date, 'd MMM yyyy, HH:mm');
+const startOfToday = (): number => new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+
+/** A bordered card with a title row. */
+const Card: React.FC<{
+  title: string;
+  count?: number;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, count, action, children }) => {
+  const headingId = useId();
+  return (
+    <section className={BOX} aria-labelledby={headingId}>
+      <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border px-4">
+        <h2 id={headingId} className="text-sm font-semibold text-foreground">
+          {title}
+          {count != null && <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">{count}</span>}
+        </h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
 };
 
-const formatDateTime = (date: Date): string =>
-  date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-
-const plural = (count: number, one: string, many: string): string =>
-  `${count} ${count === 1 ? one : many}`;
-
-/** A bordered box with a title row; the page's lists and details live in these. */
-const Section: React.FC<{
-  title: string;
-  meta?: React.ReactNode;
-  children: React.ReactNode;
-}> = ({ title, meta, children }) => (
-  <section className={BOX}>
-    <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border px-4">
-      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-      {meta != null && <span className="text-xs tabular-nums text-muted-foreground">{meta}</span>}
-    </div>
-    {children}
-  </section>
+/** One labelled fact in "About this company". */
+const Fact: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex flex-col gap-0.5">
+    <dt className="text-xs text-muted-foreground">{label}</dt>
+    <dd className="min-w-0 break-words text-sm text-foreground">{children}</dd>
+  </div>
 );
+
+const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="px-4 py-6 text-center text-sm text-muted-foreground">{children}</p>
+);
+
+const NOT_SET = <span className="text-muted-foreground">—</span>;
 
 export const CrmCompanyDetailPage: React.FC = () => {
   const { id = '' } = useParams();
@@ -79,8 +94,10 @@ export const CrmCompanyDetailPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
-  const { format: fmtCurrency } = useCrmCurrency();
-  const dealsHeadingId = useId();
+  const { format: money } = useCrmCurrency();
+  const { formatDeal, formatDealConverted, allInCompany } = useDealMoney();
+  const { items: stages } = useCrmDealStages();
+  const noteRef = useRef<HTMLTextAreaElement>(null);
 
   const [company, setCompany] = useState<CrmCompany | null>(null);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
@@ -90,14 +107,18 @@ export const CrmCompanyDetailPage: React.FC = () => {
   const [notes, setNotes] = useState<CrmNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [tab, setTab] = useState('overview');
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [noteBody, setNoteBody] = useState('');
+  const [followUpTitle, setFollowUpTitle] = useState('');
+  const [followUpDue, setFollowUpDue] = useState('');
+  const [showAllLeads, setShowAllLeads] = useState(false);
+  const [showAllDeals, setShowAllDeals] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const refresh = React.useCallback(async () => {
     if (!id || !orgId) return;
-    setLoading(true);
     try {
       const c = await getCompany(id);
       if (!c) { setNotFound(true); return; }
@@ -115,7 +136,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
       setTasks(taskRows);
       setNotes(noteRows);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load company');
+      toast.error(err instanceof Error ? err.message : 'Could not load the company');
     } finally {
       setLoading(false);
     }
@@ -130,22 +151,63 @@ export const CrmCompanyDetailPage: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_notes', filter: `company_id=eq.${id}` }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_activities', filter: `company_id=eq.${id}` }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_deals', filter: `company_id=eq.${id}` }, () => void refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_tasks', filter: `company_id=eq.${id}` }, () => void refresh())
       .subscribe();
     return () => { channel.unsubscribe(); };
   }, [orgId, id, refresh]);
 
-  const dealSummary = useMemo(() => companyDealSummary(deals), [deals]);
+  /** Totals are in the company currency, whatever currency each deal is in. */
+  const dealSummary = useMemo(() => companyDealSummary(allInCompany(deals)), [deals, allInCompany]);
+  const stageName = useMemo(() => new Map(stages.map((s) => [s.id, s.name])), [stages]);
+
+  const openTasks = useMemo(
+    () => tasks
+      .filter((t) => t.status !== 'completed')
+      .sort((a, b) => (a.dueDate?.getTime() ?? Infinity) - (b.dueDate?.getTime() ?? Infinity)),
+    [tasks],
+  );
 
   const handleAddNote = async () => {
     if (!orgId || !noteBody.trim()) return;
     setBusy(true);
     try {
-      await createNote({ organizationId: orgId, workspaceId: company?.workspaceId ?? null, body: noteBody.trim(), companyId: id }, user?.userId ?? null);
+      await createNote(
+        { organizationId: orgId, workspaceId: company?.workspaceId ?? null, body: noteBody.trim(), companyId: id },
+        user?.userId ?? null,
+      );
       toast.success('Note added');
       setNoteBody('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save note');
+      toast.error(err instanceof Error ? err.message : 'Could not save the note');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddFollowUp = async () => {
+    if (!orgId || !user || !company?.workspaceId || !followUpTitle.trim()) return;
+    setBusy(true);
+    try {
+      await createTask(
+        {
+          organizationId: orgId,
+          workspaceId: company.workspaceId,
+          projectId: null,
+          title: followUpTitle.trim(),
+          dueDate: followUpDue ? new Date(`${followUpDue}T09:00:00`).toISOString() : null,
+          companyId: id,
+          assignedTo: user.userId,
+        },
+        user.userId,
+        { actorId: user.userId },
+      );
+      toast.success('Follow-up added');
+      setFollowUpTitle('');
+      setFollowUpDue('');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add the follow-up');
     } finally {
       setBusy(false);
     }
@@ -158,9 +220,15 @@ export const CrmCompanyDetailPage: React.FC = () => {
       toast.success('Company deleted');
       navigate('/crm/companies');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete');
+      toast.error(err instanceof Error ? err.message : 'Could not delete the company');
       setBusy(false);
     }
+  };
+
+  const writeNote = () => {
+    setTab('notes');
+    // The notes tab mounts on the next frame.
+    requestAnimationFrame(() => noteRef.current?.focus());
   };
 
   if (loading) return (
@@ -178,291 +246,380 @@ export const CrmCompanyDetailPage: React.FC = () => {
     </main>
   );
 
-  const location = [company.city, company.country].filter(Boolean).join(', ');
+  const relationship = companyRelationship(company, { wonDeals: dealSummary.won, openDeals: dealSummary.open });
+  const domain = companyDomain(company.website);
+  const siteHref = websiteHref(company.website);
+  const linkedinHref = websiteHref(company.linkedinUrl);
+  const addressLines = companyAddressLines(company);
   const customFields = Object.entries(company.customFields ?? {});
+  const owner = (organization?.members ?? []).find((m) => m.userId === company.ownerId);
+  const ownerLabel = !company.ownerId
+    ? null
+    : company.ownerId === user?.userId ? 'You' : owner?.displayName ?? 'Former teammate';
+  const lastActivity = activities[0]?.createdAt ?? null;
+  const today = startOfToday();
+  const shownLeads = showAllLeads ? contacts : contacts.slice(0, SHORT_LIST);
+  const shownDeals = showAllDeals ? deals : deals.slice(0, SHORT_LIST);
+
+  const timeline = (rows: CrmActivity[]) => rows.map((a) => (
+    <div key={a.id} className={ROW}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <p className="text-sm font-medium text-foreground">{ACTIVITY_LABEL[a.type] ?? a.type}</p>
+        <time className="text-xs tabular-nums text-muted-foreground" dateTime={a.createdAt.toISOString()}>
+          {dateTime(a.createdAt)}
+        </time>
+      </div>
+      {a.description && <p className="mt-0.5 break-words text-sm text-muted-foreground">{a.description}</p>}
+    </div>
+  ));
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto bg-background">
-      <div className={PAGE_BODY}>
-        <div className="flex flex-col gap-2">
+      <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
+        <div className="flex flex-col gap-3">
           <Button variant="ghost" size="sm" asChild className="-ml-2.5 self-start text-muted-foreground">
             <Link to="/crm/companies"><ChevronLeft aria-hidden />Companies</Link>
           </Button>
-          <PageHeader
-            title={company.name}
-            description={company.industry ?? undefined}
-            actions={
-              <>
-                <Button variant="outline" onClick={() => setShowEdit(true)}>
-                  <Pencil aria-hidden />Edit
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div className="flex min-w-0 flex-1 basis-72 items-center gap-3">
+              <span aria-hidden className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-secondary text-lg font-semibold text-muted-foreground">
+                {company.name.trim().charAt(0).toUpperCase() || '?'}
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">{company.name}</h1>
+                  <StatusPill
+                    tone={relationship.tone}
+                    title={relationship.chosen ? undefined : 'Worked out from this company’s deals'}
+                  >
+                    {relationship.label}
+                  </StatusPill>
+                </div>
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+                  {domain && siteHref && (
+                    <a href={siteHref} target="_blank" rel="noopener noreferrer" className="hover:text-foreground hover:underline">
+                      {domain}
+                    </a>
+                  )}
+                  {[company.industry, [company.city, company.country].filter(Boolean).join(', ')]
+                    .filter(Boolean)
+                    .map((part) => <span key={part}>{domain ? '· ' : ''}{part}</span>)}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={writeNote}><StickyNote aria-hidden />Note</Button>
+              {company.email && (
+                <Button variant="outline" asChild>
+                  <a href={`mailto:${company.email}`}><Mail aria-hidden />Email</a>
                 </Button>
-                <Button
-                  variant="outline"
-                  className="text-destructive hover:bg-destructive-soft hover:text-destructive"
-                  onClick={() => setShowDelete(true)}
-                >
-                  <Trash2 aria-hidden />Delete
+              )}
+              {company.phone && (
+                <Button variant="outline" asChild>
+                  <a href={`tel:${company.phone}`}><Phone aria-hidden />Call</a>
                 </Button>
-              </>
-            }
-          />
+              )}
+              <Button onClick={() => setShowEdit(true)}><Pencil aria-hidden />Edit</Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" variant="outline" aria-label="More actions"><MoreHorizontal /></Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setShowDelete(true)}>
+                    Delete company
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
         </div>
 
-        <div className="grid items-start gap-6 lg:grid-cols-3">
-          {/* LEFT: details */}
-          <div className="min-w-0 lg:col-span-1">
-            <Section title="Details">
-              <div className="space-y-2.5 px-4 py-3 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <Globe className="h-4 w-4 shrink-0" aria-hidden />
-                  {company.website ? (
-                    <a
-                      href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="min-w-0 break-words text-primary hover:underline"
-                    >
-                      {company.website}
-                    </a>
-                  ) : '—'}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 shrink-0" aria-hidden />
-                  <span className="min-w-0 break-words">{company.email ?? '—'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 shrink-0" aria-hidden />
-                  <span className="tabular-nums">{company.phone ?? '—'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 shrink-0" aria-hidden />
-                  <span className="min-w-0 break-words">{location || '—'}</span>
-                </div>
+        <div className="grid items-start gap-6 lg:grid-cols-[19rem_minmax(0,1fr)] 2xl:grid-cols-[19rem_minmax(0,1fr)_23rem]">
+          {/* LEFT: what is known about the company */}
+          <Card title="About this company">
+            <dl className="flex flex-col gap-3.5 px-4 py-4">
+              <Fact label="Website">
+                {domain && siteHref
+                  ? <a href={siteHref} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{domain}</a>
+                  : NOT_SET}
+              </Fact>
+              <Fact label="Industry">{company.industry ?? NOT_SET}</Fact>
+              <Fact label="Type">
+                {relationship.label}
+                {!relationship.chosen && <span className="text-muted-foreground"> (from the deals)</span>}
+              </Fact>
+              <Fact label="Company owner">{ownerLabel ?? NOT_SET}</Fact>
+              <Fact label="Phone">
+                {company.phone
+                  ? <a href={`tel:${company.phone}`} className="tabular-nums hover:underline">{company.phone}</a>
+                  : NOT_SET}
+              </Fact>
+              <Fact label="Email">
+                {company.email
+                  ? <a href={`mailto:${company.email}`} className="hover:underline">{company.email}</a>
+                  : NOT_SET}
+              </Fact>
+              <Fact label="LinkedIn">
+                {linkedinHref ? (
+                  <a href={linkedinHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-primary hover:underline">
+                    <Linkedin className="h-3.5 w-3.5" aria-hidden />Company page
+                  </a>
+                ) : NOT_SET}
+              </Fact>
+              <Fact label="Address">
+                {addressLines.length > 0
+                  ? addressLines.map((line) => <span key={line} className="block">{line}</span>)
+                  : NOT_SET}
+              </Fact>
+              <Fact label="Employees">{company.companySize ?? NOT_SET}</Fact>
+              <Fact label="Annual revenue">
+                {company.annualRevenue != null ? <span className="tabular-nums">{money(company.annualRevenue)}</span> : NOT_SET}
+              </Fact>
+              <Fact label="Added">{format(company.createdAt, 'd MMM yyyy')}</Fact>
+              <Fact label="Last activity">
+                {lastActivity ? formatDistanceToNow(lastActivity, { addSuffix: true }) : NOT_SET}
+              </Fact>
+            </dl>
+            {company.notes && (
+              <div className="border-t border-border px-4 py-3">
+                <p className="mb-1 text-xs text-muted-foreground">About</p>
+                <p className="whitespace-pre-wrap break-words text-sm">{company.notes}</p>
               </div>
-              <dl className="grid grid-cols-2 gap-4 border-t border-border px-4 py-3 text-sm">
-                <div>
-                  <dt className="text-xs text-muted-foreground">Size</dt>
-                  <dd className="font-medium">{company.companySize ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">Revenue</dt>
-                  <dd className="font-medium tabular-nums">
-                    {company.annualRevenue != null ? fmtCurrency(company.annualRevenue) : '—'}
-                  </dd>
-                </div>
+            )}
+            {customFields.length > 0 && (
+              <dl className="flex flex-col gap-3 border-t border-border px-4 py-3">
+                {customFields.map(([key, value]) => (
+                  <Fact key={key} label={key.replace(/_/g, ' ').replace(/^./, (ch) => ch.toUpperCase())}>{value}</Fact>
+                ))}
               </dl>
-              {company.notes && (
-                <div className="border-t border-border px-4 py-3">
-                  <p className="mb-1 text-xs text-muted-foreground">Notes</p>
-                  <p className="whitespace-pre-wrap break-words text-sm">{company.notes}</p>
-                </div>
-              )}
-              {customFields.length > 0 && (
-                <div className="space-y-2 border-t border-border px-4 py-3">
-                  <p className="text-xs text-muted-foreground">Custom fields</p>
-                  {customFields.map(([k, v]) => (
-                    <div key={k} className="flex items-start justify-between gap-3 text-sm">
-                      <span className="capitalize text-muted-foreground">{k.replace(/_/g, ' ')}</span>
-                      <span className="min-w-0 break-words text-right font-medium">{v}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Section>
-          </div>
+            )}
+          </Card>
 
-          {/* RIGHT: deals and projects, leads, notes, timeline, follow-ups */}
-          <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
-            <section className="flex flex-col gap-3" aria-labelledby={dealsHeadingId}>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <h2 id={dealsHeadingId} className="text-base font-semibold text-foreground">Deals and projects</h2>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {plural(deals.length, 'deal', 'deals')}
-                </span>
-              </div>
+          {/* MIDDLE: the story so far */}
+          <Tabs value={tab} onValueChange={setTab} className="flex min-w-0 flex-col gap-4">
+            <TabsList className="self-start">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="activity">Activity <span className="ml-1.5 tabular-nums text-muted-foreground">{activities.length}</span></TabsTrigger>
+              <TabsTrigger value="notes">Notes <span className="ml-1.5 tabular-nums text-muted-foreground">{notes.length}</span></TabsTrigger>
+            </TabsList>
 
-              {deals.length > 0 && (
-                <StatStrip
-                  items={[
-                    {
-                      label: 'Open pipeline',
-                      value: fmtCurrency(dealSummary.openValue),
-                      note: plural(dealSummary.open, 'open deal', 'open deals'),
-                    },
-                    {
-                      label: 'Won',
-                      value: fmtCurrency(dealSummary.wonValue),
-                      note: plural(dealSummary.won, 'won deal', 'won deals'),
-                    },
-                    {
-                      label: 'Projects',
-                      value: dealSummary.projects,
-                      note: dealSummary.awaitingHandoff > 0
-                        ? `${plural(dealSummary.awaitingHandoff, 'won deal', 'won deals')} not handed off yet`
-                        : 'Started from these deals',
-                    },
-                  ]}
-                />
-              )}
+            <TabsContent value="overview" className="mt-0 flex flex-col gap-6">
+              <StatStrip
+                items={[
+                  { label: 'Open pipeline', value: money(dealSummary.openValue), note: plural(dealSummary.open, 'open deal', 'open deals') },
+                  { label: 'Won', value: money(dealSummary.wonValue), note: plural(dealSummary.won, 'won deal', 'won deals') },
+                  { label: 'Leads', value: contacts.length, note: 'People at this company' },
+                  {
+                    label: 'Projects',
+                    value: dealSummary.projects,
+                    note: dealSummary.awaitingHandoff > 0
+                      ? `${plural(dealSummary.awaitingHandoff, 'won deal', 'won deals')} not handed off yet`
+                      : 'Started from these deals',
+                  },
+                ]}
+              />
 
-              <div className={BOX}>
-                {deals.length === 0 ? (
-                  <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
-                    <Handshake className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                    <p className="text-sm font-medium">No deals for this company yet.</p>
-                    <Button asChild variant="outline" className="mt-3">
-                      <Link to="/crm/deals">Open deals</Link>
+              <Card title="Next follow-ups" count={openTasks.length}>
+                {openTasks.length === 0
+                  ? <Empty>Nothing to follow up. Add one on the right.</Empty>
+                  : openTasks.slice(0, 3).map((t) => {
+                    const overdue = t.dueDate != null && t.dueDate.getTime() < today;
+                    return (
+                      <div key={t.id} className={cn(ROW, 'flex min-h-12 items-center justify-between gap-3')}>
+                        <p className="min-w-0 truncate text-sm font-medium">{t.title}</p>
+                        {t.dueDate
+                          ? <StatusPill tone={overdue ? 'danger' : 'neutral'}>{overdue ? 'Overdue · ' : ''}{format(t.dueDate, 'd MMM')}</StatusPill>
+                          : <span className="text-xs text-muted-foreground">No date</span>}
+                      </div>
+                    );
+                  })}
+              </Card>
+
+              <Card
+                title="Latest activity"
+                action={activities.length > 5 && (
+                  <Button variant="ghost" size="sm" onClick={() => setTab('activity')}>See all</Button>
+                )}
+              >
+                {activities.length === 0
+                  ? <Empty>Nothing has happened with this company yet.</Empty>
+                  : timeline(activities.slice(0, 5))}
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="activity" className="mt-0">
+              <Card title="Activity" count={activities.length}>
+                {activities.length === 0
+                  ? <Empty>Nothing has happened with this company yet.</Empty>
+                  : timeline(activities)}
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="notes" className="mt-0">
+              <Card title="Notes" count={notes.length}>
+                <div className="flex flex-col gap-2 px-4 py-3">
+                  <Textarea
+                    ref={noteRef}
+                    rows={3}
+                    value={noteBody}
+                    onChange={(e) => setNoteBody(e.target.value)}
+                    placeholder="What did you learn or agree?"
+                    aria-label="New note"
+                    disabled={busy}
+                  />
+                  <div className="flex justify-end">
+                    <Button onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
+                      {busy && <Loader2 className="animate-spin" aria-hidden />}Save note
                     </Button>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[34rem] text-sm">
-                      <thead>
-                        <tr className="h-10 border-b border-border text-xs text-muted-foreground">
-                          <th className="px-4 text-left font-medium">Deal</th>
-                          <th className="px-4 text-right font-medium">Value</th>
-                          <th className="px-4 text-left font-medium">Status</th>
-                          <th className="px-4 text-left font-medium">Project</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {deals.map((d) => {
-                          const pill = dealStatusPill(d);
-                          const handoff = dealHandoffState(d);
-                          return (
-                            <tr
-                              key={d.id}
-                              className="h-12 border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
-                            >
-                              <td className="px-4 font-medium text-foreground">
-                                <Link to={`/crm/deals/${d.id}`} className="hover:text-primary hover:underline">
-                                  {d.name}
-                                </Link>
-                              </td>
-                              <td className="whitespace-nowrap px-4 text-right tabular-nums">{fmtCurrency(d.value)}</td>
-                              <td className="px-4">
-                                <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
-                              </td>
-                              <td className="whitespace-nowrap px-4">
-                                {handoff === 'project' ? (
-                                  <Link to={`/project/${d.projectId}`} className="text-primary hover:underline">
-                                    Open project
-                                  </Link>
-                                ) : handoff === 'awaiting' ? (
-                                  <StatusPill tone="warning">Not handed off yet</StatusPill>
-                                ) : (
-                                  <span className="text-muted-foreground">—</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                </div>
+                {notes.length > 0 && (
+                  <div className="border-t border-border">
+                    {notes.map((n) => (
+                      <div key={n.id} className={ROW}>
+                        <p className="whitespace-pre-wrap break-words text-sm">{n.body}</p>
+                        <p className="mt-1 text-xs tabular-nums text-muted-foreground">{dateTime(n.createdAt)}</p>
+                      </div>
+                    ))}
                   </div>
                 )}
-              </div>
-            </section>
+              </Card>
+            </TabsContent>
+          </Tabs>
 
-            <Section title="Leads" meta={contacts.length}>
-              {contacts.length === 0 ? (
-                <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
-                  <User className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                  <p className="text-sm font-medium">No leads at this company yet.</p>
-                  <Button asChild variant="outline" className="mt-3">
-                    <Link to="/crm/contacts">Open leads</Link>
-                  </Button>
-                </div>
-              ) : contacts.map((c) => (
-                <Link
-                  key={c.id}
-                  to={`/crm/contacts/${c.id}`}
-                  className={`${ROW} flex min-h-12 items-center gap-3 transition-colors hover:bg-muted/40`}
-                >
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground">
-                    <User className="h-4 w-4" aria-hidden />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{c.firstName} {c.lastName ?? ''}</p>
-                    <p className="truncate text-xs text-muted-foreground">{c.jobTitle ?? c.email ?? '—'}</p>
-                  </div>
-                </Link>
-              ))}
-            </Section>
-
-            <Section title="Notes" meta={notes.length}>
-              <div className="space-y-2 px-4 py-3">
-                <Textarea
-                  rows={3}
-                  value={noteBody}
-                  onChange={(e) => setNoteBody(e.target.value)}
-                  placeholder="Type a note…"
-                  aria-label="Add note"
-                  disabled={busy}
-                />
-                <div className="flex justify-end">
-                  <Button onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
-                    {busy && <Loader2 className="animate-spin" aria-hidden />}Save note
-                  </Button>
-                </div>
-              </div>
-              {notes.length > 0 && (
-                <div className="border-t border-border">
-                  {notes.slice(0, 5).map((n) => (
-                    <div key={n.id} className={ROW}>
-                      <p className="whitespace-pre-wrap break-words text-sm">{n.body}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(n.createdAt)}</p>
+          {/* RIGHT: what is linked to the company */}
+          <div className="flex min-w-0 flex-col gap-6 lg:col-start-2 2xl:col-start-3">
+            <Card
+              title="Leads"
+              count={contacts.length}
+              action={<Button variant="ghost" size="sm" asChild><Link to="/crm/contacts"><Plus aria-hidden />Add</Link></Button>}
+            >
+              {contacts.length === 0 ? <Empty>No leads at this company yet.</Empty> : shownLeads.map((c) => {
+                const step = LEAD_STEPS[leadStep(c)];
+                return (
+                  <Link
+                    key={c.id}
+                    to={`/crm/contacts/${c.id}`}
+                    className={cn(ROW, 'flex min-h-12 items-center gap-3 transition-colors hover:bg-muted/40')}
+                  >
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground">
+                      <User className="h-4 w-4" aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">{leadName(c)}</p>
+                      <p className="truncate text-xs text-muted-foreground">{c.jobTitle ?? c.email ?? '—'}</p>
                     </div>
-                  ))}
+                    <StatusPill tone={step.tone}>{step.label}</StatusPill>
+                  </Link>
+                );
+              })}
+              {contacts.length > SHORT_LIST && (
+                <div className="border-t border-border/60 px-2 py-1.5">
+                  <Button variant="ghost" size="sm" onClick={() => setShowAllLeads((v) => !v)}>
+                    {showAllLeads ? 'Show fewer' : `Show all ${contacts.length} leads`}
+                  </Button>
                 </div>
               )}
-            </Section>
+            </Card>
 
-            <Section title="Timeline">
-              {activities.length === 0 ? (
-                <p className="px-4 py-6 text-center text-sm text-muted-foreground">No activity yet.</p>
-              ) : activities.slice(0, 20).map((a) => (
-                <div key={a.id} className={ROW}>
-                  <p className="break-words text-sm">{a.description ?? a.type}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    <span className="capitalize">{a.type.replace(/_/g, ' ')}</span> · {formatDateTime(a.createdAt)}
-                  </p>
+            <Card
+              title="Deals"
+              count={deals.length}
+              action={<Button variant="ghost" size="sm" asChild><Link to="/crm/deals"><Plus aria-hidden />Add</Link></Button>}
+            >
+              {deals.length === 0 ? (
+                <div className="flex flex-col items-center gap-1 px-4 py-6 text-center">
+                  <Handshake className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                  <p className="text-sm text-muted-foreground">No deals with this company yet.</p>
                 </div>
-              ))}
-            </Section>
-
-            {tasks.length > 0 && (
-              <Section title="Follow-ups" meta={tasks.length}>
-                {tasks.slice(0, 5).map((t) => {
-                  const status = FOLLOW_UP_STATUS[t.status];
-                  return (
-                    <div key={t.id} className={`${ROW} flex min-h-12 items-center justify-between gap-3`}>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{t.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.dueDate ? formatDateTime(t.dueDate) : 'No due date'}
-                        </p>
-                      </div>
-                      <StatusPill tone={status?.tone ?? 'neutral'}>
-                        {status?.label ?? t.status.replace('_', ' ')}
-                      </StatusPill>
+              ) : shownDeals.map((d) => {
+                const pill = dealStatusPill(d);
+                const handoff = dealHandoffState(d);
+                const converted = formatDealConverted(d);
+                return (
+                  <div key={d.id} className={cn(ROW, 'flex flex-col gap-1')}>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <Link to={`/crm/deals/${d.id}`} className="min-w-0 truncate text-sm font-medium text-foreground hover:underline">
+                        {d.name}
+                      </Link>
+                      <span className="shrink-0 text-sm font-medium tabular-nums">{formatDeal(d)}</span>
                     </div>
-                  );
-                })}
-              </Section>
-            )}
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <StatusPill tone={pill.tone}>
+                          {d.status === 'open' ? stageName.get(d.stageId) ?? pill.label : pill.label}
+                        </StatusPill>
+                        {handoff === 'project' && (
+                          <Link to={`/project/${d.projectId}`} className="text-xs text-primary hover:underline">Open project</Link>
+                        )}
+                        {handoff === 'awaiting' && <StatusPill tone="warning">Not handed off yet</StatusPill>}
+                      </span>
+                      {converted && <span className="text-xs tabular-nums text-muted-foreground">{converted}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {deals.length > SHORT_LIST && (
+                <div className="border-t border-border/60 px-2 py-1.5">
+                  <Button variant="ghost" size="sm" onClick={() => setShowAllDeals((v) => !v)}>
+                    {showAllDeals ? 'Show fewer' : `Show all ${deals.length} deals`}
+                  </Button>
+                </div>
+              )}
+            </Card>
+
+            <Card title="Follow-ups" count={openTasks.length}>
+              <form
+                className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-3"
+                onSubmit={(e) => { e.preventDefault(); void handleAddFollowUp(); }}
+              >
+                <Input
+                  value={followUpTitle}
+                  onChange={(e) => setFollowUpTitle(e.target.value)}
+                  placeholder="Call back, send the quote…"
+                  aria-label="New follow-up"
+                  className="min-w-40 flex-1"
+                  disabled={busy}
+                />
+                <Input
+                  type="date"
+                  value={followUpDue}
+                  onChange={(e) => setFollowUpDue(e.target.value)}
+                  aria-label="Due date"
+                  className="w-36"
+                  disabled={busy}
+                />
+                <Button type="submit" variant="outline" disabled={busy || !followUpTitle.trim()}>Add</Button>
+              </form>
+              {openTasks.length === 0 ? <Empty>No open follow-ups.</Empty> : openTasks.slice(0, SHORT_LIST).map((t) => {
+                const overdue = t.dueDate != null && t.dueDate.getTime() < today;
+                return (
+                  <div key={t.id} className={cn(ROW, 'flex min-h-11 items-center justify-between gap-3')}>
+                    <p className="min-w-0 truncate text-sm">{t.title}</p>
+                    <span className={cn('shrink-0 text-xs tabular-nums', overdue ? 'font-medium text-destructive' : 'text-muted-foreground')}>
+                      {t.dueDate ? format(t.dueDate, 'd MMM') : 'No date'}
+                    </span>
+                  </div>
+                );
+              })}
+              {tasks.length > 0 && (
+                <div className="border-t border-border/60 px-2 py-1.5">
+                  <Button variant="ghost" size="sm" asChild><Link to="/crm/tasks">Open follow-ups</Link></Button>
+                </div>
+              )}
+            </Card>
           </div>
         </div>
       </div>
 
-      <EditCompanyDialog company={company} open={showEdit} onOpenChange={setShowEdit} onSaved={refresh} />
+      <CompanyFormDialog open={showEdit} onOpenChange={setShowEdit} company={company} onSaved={refresh} />
 
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this company?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {company.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Leads and deals linked here will lose the reference. This can't be undone.
+              Its leads and deals stay, but lose the link to this company. This can&apos;t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -472,132 +629,6 @@ export const CrmCompanyDetailPage: React.FC = () => {
         </AlertDialogContent>
       </AlertDialog>
     </main>
-  );
-};
-
-const EditCompanyDialog: React.FC<{
-  company: CrmCompany;
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  onSaved: () => void | Promise<void>;
-}> = ({ company, open, onOpenChange, onSaved }) => {
-  const fieldId = useId();
-  const [name, setName] = useState(company.name);
-  const [website, setWebsite] = useState(company.website ?? '');
-  const [industry, setIndustry] = useState(company.industry ?? '');
-  const [phone, setPhone] = useState(company.phone ?? '');
-  const [email, setEmail] = useState(company.email ?? '');
-  const [city, setCity] = useState(company.city ?? '');
-  const [country, setCountry] = useState(company.country ?? '');
-  const [companySize, setCompanySize] = useState(company.companySize ?? '');
-  const [annualRevenue, setAnnualRevenue] = useState<string>(company.annualRevenue?.toString() ?? '');
-  const [notes, setNotes] = useState(company.notes ?? '');
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setName(company.name);
-      setWebsite(company.website ?? '');
-      setIndustry(company.industry ?? '');
-      setPhone(company.phone ?? '');
-      setEmail(company.email ?? '');
-      setCity(company.city ?? '');
-      setCountry(company.country ?? '');
-      setCompanySize(company.companySize ?? '');
-      setAnnualRevenue(company.annualRevenue?.toString() ?? '');
-      setNotes(company.notes ?? '');
-    }
-  }, [open, company]);
-
-  const handleSave = async () => {
-    setBusy(true);
-    try {
-      await updateCompany(company.id, {
-        name: name.trim(),
-        website: website.trim() || null,
-        industry: industry.trim() || null,
-        phone: phone.trim() || null,
-        email: email.trim() || null,
-        city: city.trim() || null,
-        country: country.trim() || null,
-        companySize: companySize.trim() || null,
-        annualRevenue: annualRevenue ? Number(annualRevenue) : null,
-        notes: notes.trim() || null,
-      });
-      toast.success('Company updated');
-      await onSaved();
-      onOpenChange(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Edit company</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className={FIELD}>
-            <Label htmlFor={`${fieldId}-name`}>Name *</Label>
-            <Input id={`${fieldId}-name`} value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
-          </div>
-          <div className={FIELD_ROW}>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-website`}>Website</Label>
-              <Input id={`${fieldId}-website`} value={website} onChange={(e) => setWebsite(e.target.value)} disabled={busy} />
-            </div>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-industry`}>Industry</Label>
-              <Input id={`${fieldId}-industry`} value={industry} onChange={(e) => setIndustry(e.target.value)} disabled={busy} />
-            </div>
-          </div>
-          <div className={FIELD_ROW}>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-phone`}>Phone</Label>
-              <Input id={`${fieldId}-phone`} value={phone} onChange={(e) => setPhone(e.target.value)} disabled={busy} />
-            </div>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-email`}>Email</Label>
-              <Input id={`${fieldId}-email`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
-            </div>
-          </div>
-          <div className={FIELD_ROW}>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-city`}>City</Label>
-              <Input id={`${fieldId}-city`} value={city} onChange={(e) => setCity(e.target.value)} disabled={busy} />
-            </div>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-country`}>Country</Label>
-              <Input id={`${fieldId}-country`} value={country} onChange={(e) => setCountry(e.target.value)} disabled={busy} />
-            </div>
-          </div>
-          <div className={FIELD_ROW}>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-size`}>Size</Label>
-              <Input id={`${fieldId}-size`} value={companySize} onChange={(e) => setCompanySize(e.target.value)} placeholder="1-10, 11-50, 51-200…" disabled={busy} />
-            </div>
-            <div className={FIELD}>
-              <Label htmlFor={`${fieldId}-revenue`}>Annual revenue</Label>
-              <Input id={`${fieldId}-revenue`} type="number" min={0} value={annualRevenue} onChange={(e) => setAnnualRevenue(e.target.value)} disabled={busy} />
-            </div>
-          </div>
-          <div className={FIELD}>
-            <Label htmlFor={`${fieldId}-notes`}>Notes</Label>
-            <Textarea id={`${fieldId}-notes`} rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-          <Button onClick={handleSave} disabled={busy || !name.trim()}>
-            {busy && <Loader2 className="animate-spin" aria-hidden />}Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 };
 

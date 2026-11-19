@@ -12,6 +12,8 @@ import { listDealStages } from '@/services/supabase/crmHub/dealStages';
 import { listActivities } from '@/services/supabase/crmHub/activities';
 import { listNotes, createNote } from '@/services/supabase/crmHub/notes';
 import { listTasks } from '@/services/supabase/crmHub/tasks';
+import { COMMON_CURRENCIES } from '@/lib/countries';
+import { currencyNotSaved, dealCurrency } from '@/lib/crmDealMoney';
 import { dealBadge, dealNeedsHandoff, leadName, weightedDealValue } from '@/lib/crmFlow';
 import type {
   CrmDeal, CrmDealStage, CrmActivity, CrmNote, CrmTask, CrmCompany, CrmContact,
@@ -21,6 +23,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill } from '@/components/common/StatusPill';
 import { useDealMove } from '@/components/crmHub/useDealMove';
 import { Button } from '@/components/ui/button';
+import { CurrencySelect } from '@/components/ui/currency-select';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,6 +36,7 @@ import {
 } from '@/components/ui/alert-dialog';
 
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { useDealMoney } from '@/hooks/useDealMoney';
 
 const when = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -62,6 +66,7 @@ export const CrmDealDetailPage: React.FC = () => {
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
   const { format: fmtCurrency } = useCrmCurrency();
+  const { formatDeal, formatDealConverted, allInCompany } = useDealMoney();
 
   const [deal, setDeal] = useState<CrmDeal | null>(null);
   const [stages, setStages] = useState<CrmDealStage[]>([]);
@@ -164,6 +169,9 @@ export const CrmDealDetailPage: React.FC = () => {
   const wonStage = stages.find((s) => s.status === 'won');
   const lostStage = stages.find((s) => s.status === 'lost');
   const needsHandoff = dealNeedsHandoff(deal);
+  // The deal is shown in its own currency; the forecast is in the company currency, like every total.
+  const converted = formatDealConverted(deal);
+  const forecast = allInCompany([deal]).reduce((sum, d) => sum + weightedDealValue(d, stageById), 0);
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto bg-background">
@@ -181,7 +189,8 @@ export const CrmDealDetailPage: React.FC = () => {
             }
             description={
               <>
-                <span className="font-medium tabular-nums text-foreground">{fmtCurrency(deal.value)}</span>
+                <span className="font-medium tabular-nums text-foreground">{formatDeal(deal)}</span>
+                {converted && <> <span className="tabular-nums">{converted}</span></>}
                 {company && <> · <Link to={`/crm/companies/${company.id}`} className="hover:text-foreground hover:underline">{company.name}</Link></>}
                 {contact && <> · <Link to={`/crm/contacts/${contact.id}`} className="hover:text-foreground hover:underline">{leadName(contact)}</Link></>}
               </>
@@ -322,12 +331,17 @@ export const CrmDealDetailPage: React.FC = () => {
 
           <Section title="Details">
             <dl className="flex flex-col divide-y divide-border">
-              <Field label="Value"><span className="tabular-nums">{fmtCurrency(deal.value)}</span></Field>
+              <Field label="Value">
+                <span className="tabular-nums">{formatDeal(deal)}</span>
+                {converted && (
+                  <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">{converted}</span>
+                )}
+              </Field>
               {deal.status === 'open' && (
                 <>
                   <Field label="Chance of winning"><span className="tabular-nums">{chance}%</span></Field>
                   <Field label="Forecast">
-                    <span className="tabular-nums">{fmtCurrency(weightedDealValue(deal, stageById))}</span>
+                    <span className="tabular-nums">{fmtCurrency(forecast)}</span>
                   </Field>
                 </>
               )}
@@ -384,8 +398,12 @@ const EditDealDialog: React.FC<{
   onOpenChange: (o: boolean) => void;
   onSaved: () => void | Promise<void>;
 }> = ({ deal, open, onOpenChange, onSaved }) => {
+  const { code: companyCurrency } = useCrmCurrency();
+  /** The currency the deal is in now. */
+  const savedCurrency = dealCurrency(deal, companyCurrency);
   const [name, setName] = useState(deal.name);
   const [value, setValue] = useState<string>(deal.value.toString());
+  const [currency, setCurrency] = useState(savedCurrency);
   const [probability, setProbability] = useState<string>(deal.probability.toString());
   const [expectedCloseDate, setExpectedCloseDate] = useState<string>(deal.expectedCloseDate ?? '');
   const [source, setSource] = useState(deal.source ?? '');
@@ -396,6 +414,7 @@ const EditDealDialog: React.FC<{
     if (open) {
       setName(deal.name);
       setValue(deal.value.toString());
+      setCurrency(savedCurrency);
       setProbability(deal.probability.toString());
       setExpectedCloseDate(deal.expectedCloseDate ?? '');
       setSource(deal.source ?? '');
@@ -406,15 +425,21 @@ const EditDealDialog: React.FC<{
   const handleSave = async () => {
     setBusy(true);
     try {
-      await updateDeal(deal.id, {
+      const saved = await updateDeal(deal.id, {
         name: name.trim(),
         value: Number(value) || 0,
+        // Only sent when it was changed, so a deal keeps following the company currency until someone picks one.
+        ...(currency && currency !== savedCurrency ? { currency } : {}),
         probability: Number(probability) || 0,
         expectedCloseDate: expectedCloseDate || null,
         source: source.trim() || null,
         notes: notes.trim() || null,
       });
-      toast.success('Deal updated');
+      if (currency !== savedCurrency && currencyNotSaved(currency, saved, companyCurrency)) {
+        toast.warning(`Saved, but in ${companyCurrency}. This database cannot keep a deal in another currency until migration 182 has been run.`);
+      } else {
+        toast.success('Deal updated');
+      }
       await onSaved();
       onOpenChange(false);
     } catch (err) {
@@ -435,19 +460,32 @@ const EditDealDialog: React.FC<{
             <Label>Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Value</Label>
-              <Input type="number" min={0} step="0.01" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} />
+              <Label htmlFor="edit-deal-value">Value</Label>
+              <Input id="edit-deal-value" type="number" min={0} step="0.01" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} />
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit-deal-currency">Currency</Label>
+              {/* A currency that is not in the list still shows, as the placeholder. */}
+              <CurrencySelect
+                id="edit-deal-currency"
+                value={COMMON_CURRENCIES.includes(currency) ? currency : ''}
+                placeholder={currency}
+                onValueChange={setCurrency}
+                disabled={busy}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>Chance of winning (%)</Label>
               <Input type="number" min={0} max={100} value={probability} onChange={(e) => setProbability(e.target.value)} disabled={busy} />
             </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Expected close</Label>
-            <Input type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} disabled={busy} />
+            <div className="flex flex-col gap-1.5">
+              <Label>Expected close</Label>
+              <Input type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} disabled={busy} />
+            </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Source</Label>

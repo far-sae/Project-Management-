@@ -81,6 +81,11 @@ vi.mock('@/context/CrmCurrencyContext', () => ({
 }));
 vi.mock('@/hooks/useSelectedWorkspace', () => ({ useSelectedWorkspace: () => ({ selected: { workspaceId: 'w', name: 'Studio' } }) }));
 vi.mock('@/hooks/useProjects', () => ({ useProjects: () => ({ projects: [], loading: false }) }));
+// Fixed exchange rates, so the pages never go to the network for them.
+vi.mock('@/lib/fxRates', async (original) => {
+  const fx = { rates: { USD: 1, GBP: 0.8 }, usingFallback: false, fetchedAt: 1 };
+  return { ...(await original<typeof import('@/lib/fxRates')>()), useFxRates: () => fx };
+});
 vi.mock('@/services/supabase/crmHub/contacts', () => ({
   createContact: svc.createContact, deleteContact: vi.fn(), updateContact: vi.fn(), getContact: vi.fn(),
   listLeadCategories: async () => [],

@@ -19,6 +19,8 @@ export interface ConvertLeadInput {
   actorId: string;
   dealName: string;
   value: number;
+  /** ISO code the value is in. Leave out (or null) for the company currency. */
+  currency?: string | null;
   stage: Pick<CrmDealStage, 'id' | 'probability' | 'status'>;
   expectedCloseDate?: string | null;
   /** Existing company to attach, or … */
@@ -49,6 +51,7 @@ export async function convertLeadToDeal(input: ConvertLeadInput): Promise<{ deal
       name: input.dealName.trim(),
       stageId: input.stage.id,
       value: input.value,
+      currency: input.currency ?? null,
       probability: input.stage.probability,
       status: input.stage.status,
       companyId,

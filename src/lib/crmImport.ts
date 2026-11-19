@@ -27,6 +27,8 @@ const EXACT: Record<string, string[]> = {
   company_industry: ['industry', 'sector'],
   company_address: ['address', 'streetaddress', 'addressline1', 'street'],
   company_city: ['city', 'town'],
+  company_state: ['state', 'county', 'region', 'province'],
+  company_postcode: ['postalcode', 'postcode', 'zip', 'zipcode'],
   company_country: ['country'],
   company_size: ['companysize', 'size', 'employees', 'employeecount', 'numberofemployees', 'headcount', 'teamsize'],
   company_revenue: ['annualrevenue', 'revenue', 'turnover'],
@@ -39,7 +41,11 @@ const EXACT: Record<string, string[]> = {
   industry: ['industry', 'sector'],
   address: ['address', 'streetaddress', 'addressline1', 'street'],
   city: ['city', 'town'],
+  state: ['state', 'county', 'region', 'province'],
+  postal_code: ['postalcode', 'postcode', 'zip', 'zipcode'],
   country: ['country'],
+  type: ['type', 'companytype', 'accounttype'],
+  linkedin_url: ['linkedin', 'linkedinurl', 'linkedinpage', 'companylinkedin'],
   annual_revenue: ['annualrevenue', 'revenue', 'turnover'],
   notes: ['notes', 'note', 'description', 'comments', 'comment'],
 };
@@ -213,6 +219,8 @@ const COMPANY_DETAIL_COLUMNS: Array<[field: string, column: string]> = [
   ['company_industry', 'industry'],
   ['company_address', 'address'],
   ['company_city', 'city'],
+  ['company_state', 'state'],
+  ['company_postcode', 'postal_code'],
   ['company_country', 'country'],
   ['company_size', 'company_size'],
 ];
@@ -295,7 +303,10 @@ export function buildLeadImport(
   return { leads, skipped };
 }
 
-const COMPANY_TEXT_COLUMNS = ['website', 'industry', 'phone', 'email', 'address', 'city', 'country', 'company_size', 'notes'] as const;
+const COMPANY_TEXT_COLUMNS = [
+  'website', 'industry', 'type', 'phone', 'email', 'linkedin_url', 'address', 'city', 'state', 'postal_code',
+  'country', 'company_size', 'notes',
+] as const;
 
 export function buildCompanyImport(
   rows: Row[],

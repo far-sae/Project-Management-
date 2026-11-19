@@ -10,7 +10,7 @@ import {
   type ImportField, type ImportOwnerMode,
 } from '@/lib/crmImport';
 import { listLeadCategories } from '@/services/supabase/crmHub/contacts';
-import { ensureCompaniesByName } from '@/services/supabase/crmHub/companies';
+import { ensureCompaniesByName, insertCompanyRows } from '@/services/supabase/crmHub/companies';
 import {
   ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, Upload, Loader2,
 } from 'lucide-react';
@@ -43,6 +43,8 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'company_industry', label: 'Company industry' },
     { key: 'company_address', label: 'Company address' },
     { key: 'company_city', label: 'Company city' },
+    { key: 'company_state', label: 'Company county or state' },
+    { key: 'company_postcode', label: 'Company postcode' },
     { key: 'company_country', label: 'Company country' },
     { key: 'company_size', label: 'Company size' },
     { key: 'company_revenue', label: 'Company revenue' },
@@ -55,10 +57,14 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'name', label: 'Company name', required: true },
     { key: 'website', label: 'Website' },
     { key: 'industry', label: 'Industry' },
+    { key: 'type', label: 'Type' },
     { key: 'phone', label: 'Phone' },
     { key: 'email', label: 'Email' },
-    { key: 'address', label: 'Address' },
+    { key: 'linkedin_url', label: 'LinkedIn page' },
+    { key: 'address', label: 'Street' },
     { key: 'city', label: 'City' },
+    { key: 'state', label: 'County or state' },
+    { key: 'postal_code', label: 'Postcode' },
     { key: 'country', label: 'Country' },
     { key: 'company_size', label: 'Company size' },
     { key: 'annual_revenue', label: 'Annual revenue' },
@@ -277,7 +283,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
         );
       } else if (companyImport) {
         if (!companyImport.records.length) throw new Error('No rows have a company name');
-        await insertInBatches(companyImport.records);
+        for (let i = 0; i < companyImport.records.length; i += BATCH) {
+          await insertCompanyRows(companyImport.records.slice(i, i + BATCH));
+        }
         toast.success(`Imported ${plural(companyImport.records.length, 'company', 'companies')}`);
       }
       await onImported?.();

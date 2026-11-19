@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { useDealMoney } from '@/hooks/useDealMoney';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useProjects } from '@/hooks/useProjects';
 import { getCompany } from '@/services/supabase/crmHub/companies';
@@ -44,7 +44,7 @@ interface TaskRow extends HandoffTaskDraft {
 export const DealHandoffDialog: React.FC<Props> = ({ deal, open, onOpenChange, onLinked }) => {
   const { user } = useAuth();
   const { organization } = useOrganization();
-  const { format: fmtCurrency } = useCrmCurrency();
+  const { formatDeal } = useDealMoney();
   const { selected } = useSelectedWorkspace();
   const { projects } = useProjects();
   const navigate = useNavigate();
@@ -79,7 +79,8 @@ export const DealHandoffDialog: React.FC<Props> = ({ deal, open, onOpenChange, o
       setDescription(
         handoffDescription({
           dealName: deal.name,
-          value: deal.value > 0 ? fmtCurrency(deal.value) : null,
+          // In the deal's own currency: that is what was agreed with the customer.
+          value: deal.value > 0 ? formatDeal(deal) : null,
           companyName,
           contactName,
           contactEmail,

@@ -52,8 +52,8 @@ import {
 import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
-import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
+import { useDealMoney } from '@/hooks/useDealMoney';
 import { useProjects } from '@/hooks/useProjects';
 
 const PAGE_BODY = 'flex w-full flex-col gap-6 px-4 py-6 lg:px-6';
@@ -242,7 +242,7 @@ export const CrmContactDetailPage: React.FC = () => {
   const { projects: allProjects } = useProjects();
   const { items: companies } = useCrmCompanies();
   const selectedWorkspaceId = useWorkspaceForCreate();
-  const { format: fmtCurrency } = useCrmCurrency();
+  const { formatDeal, formatDealConverted } = useDealMoney();
 
   const [contact, setContact] = useState<CrmContact | null>(null);
   const [company, setCompany] = useState<CrmCompany | null>(null);
@@ -600,6 +600,7 @@ export const CrmContactDetailPage: React.FC = () => {
                     <tbody>
                       {deals.map((d) => {
                         const badge = dealBadge(d);
+                        const converted = formatDealConverted(d);
                         return (
                           <tr
                             key={d.id}
@@ -610,7 +611,10 @@ export const CrmContactDetailPage: React.FC = () => {
                                 {d.name}
                               </Link>
                             </td>
-                            <td className="whitespace-nowrap px-4 text-right tabular-nums">{fmtCurrency(d.value)}</td>
+                            <td className="whitespace-nowrap px-4 text-right tabular-nums">
+                              {formatDeal(d)}
+                              {converted && <span className="block text-xs text-muted-foreground">{converted}</span>}
+                            </td>
                             <td className="px-4">
                               <StatusPill tone={badge.tone}>{badge.label}</StatusPill>
                             </td>

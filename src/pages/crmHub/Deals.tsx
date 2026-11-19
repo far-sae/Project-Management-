@@ -11,15 +11,19 @@ import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import {
   useCrmDeals, useCrmDealStages, useCrmContacts, useCrmCompanies, useWorkspaceForCreate,
 } from '@/hooks/useCrmHub';
+import { useDealMoney, type DealMoneyTools } from '@/hooks/useDealMoney';
+import { currencyNotSaved } from '@/lib/crmDealMoney';
 import { createDeal } from '@/services/supabase/crmHub/deals';
 import { dealBadge, dealNeedsHandoff, leadName, weightedDealValue } from '@/lib/crmFlow';
 import type { CrmDeal, CrmDealStage } from '@/types/crmHub';
+import { COMMON_CURRENCIES } from '@/lib/countries';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatStrip } from '@/components/common/StatStrip';
 import { StatusPill } from '@/components/common/StatusPill';
 import { useDealMove } from '@/components/crmHub/useDealMove';
 import { Button } from '@/components/ui/button';
+import { CurrencySelect } from '@/components/ui/currency-select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -36,9 +40,10 @@ const DealCard: React.FC<{
   deal: CrmDeal;
   contactName: string | null;
   companyName: string | null;
+  money: DealMoneyTools;
   onHandoff: (deal: CrmDeal) => void;
-}> = ({ deal, contactName, companyName, onHandoff }) => {
-  const { format: fmtCurrency } = useCrmCurrency();
+}> = ({ deal, contactName, companyName, money, onHandoff }) => {
+  const converted = money.formatDealConverted(deal);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 }
@@ -71,7 +76,10 @@ const DealCard: React.FC<{
           >
             {deal.name}
           </Link>
-          <div className="mt-0.5 text-sm font-semibold tabular-nums">{fmtCurrency(deal.value)}</div>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 tabular-nums">
+            <span className="text-sm font-semibold">{money.formatDeal(deal)}</span>
+            {converted && <span className="text-xs text-muted-foreground">{converted}</span>}
+          </div>
           {(companyName || contactName) && (
             <div className="mt-1 truncate text-xs text-muted-foreground">
               {[companyName, contactName].filter(Boolean).join(' · ')}
@@ -106,11 +114,13 @@ const StageColumn: React.FC<{
   deals: CrmDeal[];
   contactById: Map<string, string>;
   companyById: Map<string, string>;
+  money: DealMoneyTools;
   onHandoff: (deal: CrmDeal) => void;
-}> = ({ stage, deals, contactById, companyById, onHandoff }) => {
+}> = ({ stage, deals, contactById, companyById, money, onHandoff }) => {
   const { format: fmtCurrency } = useCrmCurrency();
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
-  const totalValue = deals.reduce((sum, d) => sum + d.value, 0);
+  // Deals can be in different currencies; the column adds up in the company currency.
+  const totalValue = deals.reduce((sum, d) => sum + money.inCompany(d), 0);
   return (
     <section
       ref={setNodeRef}
@@ -147,6 +157,7 @@ const StageColumn: React.FC<{
             deal={d}
             contactName={d.contactId ? contactById.get(d.contactId) ?? null : null}
             companyName={d.companyId ? companyById.get(d.companyId) ?? null : null}
+            money={money}
             onHandoff={onHandoff}
           />
         ))}
@@ -168,6 +179,9 @@ export const CrmDealsPage: React.FC = () => {
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const { format: fmtCurrency } = useCrmCurrency();
+  // Read once here and handed down, so the board does not look up rates once per card.
+  const money = useDealMoney();
+  const { companyCurrency, allInCompany } = money;
   const workspaceId = useWorkspaceForCreate();
   const { requestMove, openHandoff, dialogs } = useDealMove({ stages, onChanged: refreshDeals });
 
@@ -176,6 +190,7 @@ export const CrmDealsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'won' | 'lost'>('all');
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
+  const [currency, setCurrency] = useState(companyCurrency);
   const [stageId, setStageId] = useState('');
   const [contactId, setContactId] = useState('');
   const [companyId, setCompanyId] = useState('');
@@ -199,8 +214,10 @@ export const CrmDealsPage: React.FC = () => {
   }, [filteredDeals, stages]);
 
   const stats = useMemo(() => {
-    const open = deals.filter((d) => d.status === 'open');
-    const won = deals.filter((d) => d.status === 'won');
+    // Every figure is in the company currency, whatever currency each deal is in.
+    const converted = allInCompany(deals);
+    const open = converted.filter((d) => d.status === 'open');
+    const won = converted.filter((d) => d.status === 'won');
     return {
       openCount: open.length,
       openValue: open.reduce((s, d) => s + d.value, 0),
@@ -209,7 +226,7 @@ export const CrmDealsPage: React.FC = () => {
       wonCount: won.length,
       needHandoff: won.filter(dealNeedsHandoff).length,
     };
-  }, [deals, stageById]);
+  }, [deals, stageById, allInCompany]);
 
   const handleDragEnd = (e: DragEndEvent) => {
     const deal = deals.find((d) => d.id === String(e.active.id));
@@ -218,6 +235,7 @@ export const CrmDealsPage: React.FC = () => {
 
   const openCreate = () => {
     setName(''); setValue(''); setContactId(''); setCompanyId('');
+    setCurrency(companyCurrency);
     setStageId(stages.find((s) => s.status === 'open')?.id ?? '');
     setShowCreate(true);
   };
@@ -234,6 +252,7 @@ export const CrmDealsPage: React.FC = () => {
           name: name.trim(),
           stageId,
           value: Number(value) || 0,
+          currency: currency || companyCurrency,
           probability: stage.probability,
           status: stage.status,
           contactId: contactId || null,
@@ -241,7 +260,11 @@ export const CrmDealsPage: React.FC = () => {
         },
         user?.userId ?? null,
       );
-      toast.success('Deal created');
+      if (currencyNotSaved(currency, deal, companyCurrency)) {
+        toast.warning(`Saved, but in ${companyCurrency}. This database cannot keep a deal in another currency until migration 182 has been run.`);
+      } else {
+        toast.success('Deal created');
+      }
       setShowCreate(false);
       await refreshDeals();
       if (dealNeedsHandoff(deal)) openHandoff(deal);
@@ -321,6 +344,7 @@ export const CrmDealsPage: React.FC = () => {
                       deals={dealsByStage.get(stage.id) ?? []}
                       contactById={contactById}
                       companyById={companyById}
+                      money={money}
                       onHandoff={openHandoff}
                     />
                   ))}
@@ -351,6 +375,7 @@ export const CrmDealsPage: React.FC = () => {
                     <tbody>
                       {filteredDeals.map((d) => {
                         const badge = dealBadge(d);
+                        const converted = money.formatDealConverted(d);
                         return (
                           <tr key={d.id} className="border-b border-border last:border-b-0 hover:bg-muted/40">
                             <td className="px-3 py-2">
@@ -364,7 +389,10 @@ export const CrmDealsPage: React.FC = () => {
                             <td className="px-3 py-2 text-muted-foreground">
                               {d.contactId ? contactById.get(d.contactId) ?? '—' : '—'}
                             </td>
-                            <td className="px-3 py-2 text-right font-medium tabular-nums">{fmtCurrency(d.value)}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                              <span className="font-medium">{money.formatDeal(d)}</span>
+                              {converted && <span className="block text-xs text-muted-foreground">{converted}</span>}
+                            </td>
                             <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                               {d.status === 'open' ? `${d.probability || stageById.get(d.stageId)?.probability || 0}%` : '—'}
                             </td>
@@ -400,22 +428,33 @@ export const CrmDealsPage: React.FC = () => {
               <Label htmlFor="dname">Deal name</Label>
               <Input id="dname" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="dval">Value</Label>
                 <Input id="dval" type="number" min={0} step="0.01" inputMode="decimal" placeholder="0" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Stage</Label>
-                <Select value={stageId} onValueChange={setStageId} disabled={busy}>
-                  <SelectTrigger><SelectValue placeholder="Pick a stage" /></SelectTrigger>
-                  <SelectContent>
-                    {stages.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="dcur">Currency</Label>
+                {/* A currency that is not in the list still shows, as the placeholder. */}
+                <CurrencySelect
+                  id="dcur"
+                  value={COMMON_CURRENCIES.includes(currency) ? currency : ''}
+                  placeholder={currency}
+                  onValueChange={setCurrency}
+                  disabled={busy}
+                />
               </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Stage</Label>
+              <Select value={stageId} onValueChange={setStageId} disabled={busy}>
+                <SelectTrigger><SelectValue placeholder="Pick a stage" /></SelectTrigger>
+                <SelectContent>
+                  {stages.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Company</Label>

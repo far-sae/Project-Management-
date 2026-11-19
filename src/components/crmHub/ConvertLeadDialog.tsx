@@ -2,13 +2,17 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { currencyNotSaved } from '@/lib/crmDealMoney';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { convertLeadToDeal } from '@/services/supabase/crmHub/flow';
+import { COMMON_CURRENCIES } from '@/lib/countries';
 import { conversionDefaults, leadName } from '@/lib/crmFlow';
 import type { CrmCompany, CrmContact, CrmDealStage } from '@/types/crmHub';
 import { Button } from '@/components/ui/button';
+import { CurrencySelect } from '@/components/ui/currency-select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -35,9 +39,11 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
   const { organization } = useOrganization();
   const navigate = useNavigate();
   const { selected } = useSelectedWorkspace();
+  const { code: companyCurrency } = useCrmCurrency();
 
   const [dealName, setDealName] = useState('');
   const [value, setValue] = useState('');
+  const [currency, setCurrency] = useState(companyCurrency);
   const [stageId, setStageId] = useState('');
   const [closeDate, setCloseDate] = useState('');
   const [companyChoice, setCompanyChoice] = useState(NONE);
@@ -57,6 +63,7 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
     setDealName(defaults.dealName);
     setStageId(defaults.stageId ?? '');
     setValue('');
+    setCurrency(companyCurrency);
     setCloseDate('');
     setCompanyChoice(company ? company.id : NONE);
     setNewCompany('');
@@ -82,12 +89,17 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
         actorId: user.userId,
         dealName,
         value: Number(value) || 0,
+        currency: currency || companyCurrency,
         stage,
         expectedCloseDate: closeDate || null,
         companyId: companyChoice === NONE || companyChoice === NEW ? null : companyChoice,
         newCompanyName: companyChoice === NEW ? newCompany : null,
       });
-      toast.success(`Deal opened in ${stage.name}`);
+      if (currencyNotSaved(currency, deal, companyCurrency)) {
+        toast.warning(`Saved, but in ${companyCurrency}. This database cannot keep a deal in another currency until migration 182 has been run.`);
+      } else {
+        toast.success(`Deal opened in ${stage.name}`);
+      }
       await onConverted?.();
       onOpenChange(false);
       navigate(`/crm/deals/${deal.id}`);
@@ -113,7 +125,7 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
             <Label htmlFor="convert-name">Deal name</Label>
             <Input id="convert-name" value={dealName} onChange={(e) => setDealName(e.target.value)} disabled={busy} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="convert-value">Value</Label>
               <Input
@@ -129,9 +141,20 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="convert-close">Expected close</Label>
-              <Input id="convert-close" type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} disabled={busy} />
+              <Label htmlFor="convert-currency">Currency</Label>
+              {/* A currency that is not in the list still shows, as the placeholder. */}
+              <CurrencySelect
+                id="convert-currency"
+                value={COMMON_CURRENCIES.includes(currency) ? currency : ''}
+                placeholder={currency}
+                onValueChange={setCurrency}
+                disabled={busy}
+              />
             </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="convert-close">Expected close</Label>
+            <Input id="convert-close" type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} disabled={busy} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Stage</Label>

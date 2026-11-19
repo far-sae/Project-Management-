@@ -63,11 +63,18 @@ export interface CrmCompany {
   name: string;
   website: string | null;
   industry: string | null;
+  /** Prospect, Customer, Partner… (migration 183). Null: worked out from the deals. */
+  type: string | null;
   phone: string | null;
   email: string | null;
+  /** Street. */
   address: string | null;
   city: string | null;
+  /** County, state or region (migration 183). */
+  state: string | null;
+  postalCode: string | null;
   country: string | null;
+  linkedinUrl: string | null;
   companySize: string | null;
   annualRevenue: number | null;
   notes: string | null;
@@ -141,6 +148,8 @@ export interface CrmDeal {
   contactId: string | null;
   name: string;
   value: number;
+  /** ISO code the value is in (migration 182). Null means the company currency. */
+  currency: string | null;
   probability: number;
   status: DealStatus;
   expectedCloseDate: string | null;
@@ -166,18 +175,25 @@ export interface CreateCompanyInput {
   name: string;
   website?: string | null;
   industry?: string | null;
+  type?: string | null;
   phone?: string | null;
   email?: string | null;
   address?: string | null;
   city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
   country?: string | null;
+  linkedinUrl?: string | null;
   companySize?: string | null;
   annualRevenue?: number | null;
   notes?: string | null;
   customFields?: Record<string, string> | null;
 }
 
-export type UpdateCompanyInput = Partial<Omit<CreateCompanyInput, 'organizationId'>>;
+export type UpdateCompanyInput = Partial<Omit<CreateCompanyInput, 'organizationId'>> & {
+  /** Who looks after this company. */
+  ownerId?: string | null;
+};
 
 export interface CreateContactInput {
   organizationId: string;
@@ -204,6 +220,8 @@ export interface CreateDealInput {
   name: string;
   stageId: string;
   value?: number;
+  /** ISO code the value is in. Leave out (or null) for the company currency. */
+  currency?: string | null;
   probability?: number;
   companyId?: string | null;
   contactId?: string | null;

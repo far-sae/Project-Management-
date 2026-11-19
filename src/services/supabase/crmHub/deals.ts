@@ -13,6 +13,7 @@ interface DealRow {
   contact_id: string | null;
   name: string;
   value: number | string;
+  currency?: string | null;
   probability: number;
   status: DealStatus;
   expected_close_date: string | null;
@@ -40,6 +41,19 @@ const isCloseFieldsMissing = (error: unknown): boolean => {
   );
 };
 
+/**
+ * True when the database does not have the deal currency column yet
+ * (migration 182 not run). The write is then repeated without it.
+ */
+const isCurrencyMissing = (error: unknown): boolean => {
+  const e = error as { code?: string; message?: string } | null;
+  const msg = e?.message ?? '';
+  return (e?.code === 'PGRST204' || e?.code === '42703' || /column/i.test(msg)) && /currency/.test(msg);
+};
+
+/** The currency as it is stored: an upper-case code, or null for the company currency. */
+const storedCurrency = (code: string | null | undefined): string | null => code?.trim().toUpperCase() || null;
+
 const mapDeal = (r: DealRow): CrmDeal => ({
   id: r.id,
   organizationId: r.organization_id,
@@ -49,6 +63,7 @@ const mapDeal = (r: DealRow): CrmDeal => ({
   contactId: r.contact_id,
   name: r.name,
   value: Number(r.value),
+  currency: storedCurrency(r.currency),
   probability: r.probability,
   status: r.status,
   expectedCloseDate: r.expected_close_date,
@@ -92,26 +107,29 @@ export const getDeal = async (id: string): Promise<CrmDeal | null> => {
 };
 
 export const createDeal = async (input: CreateDealInput, ownerId: string | null): Promise<CrmDeal> => {
-  const { data, error } = await supabase
-    .from('crm_deals')
-    .insert({
-      organization_id: input.organizationId,
-      workspace_id: input.workspaceId ?? null,
-      owner_id: ownerId,
-      stage_id: input.stageId,
-      company_id: input.companyId ?? null,
-      contact_id: input.contactId ?? null,
-      name: input.name,
-      value: input.value ?? 0,
-      probability: input.probability ?? 0,
-      // A deal created straight into a Won / Lost stage is closed, not open.
-      status: input.status ?? 'open',
-      expected_close_date: input.expectedCloseDate ?? null,
-      source: input.source ?? null,
-      notes: input.notes ?? null,
-    })
-    .select()
-    .single();
+  const row = {
+    organization_id: input.organizationId,
+    workspace_id: input.workspaceId ?? null,
+    owner_id: ownerId,
+    stage_id: input.stageId,
+    company_id: input.companyId ?? null,
+    contact_id: input.contactId ?? null,
+    name: input.name,
+    value: input.value ?? 0,
+    probability: input.probability ?? 0,
+    // A deal created straight into a Won / Lost stage is closed, not open.
+    status: input.status ?? 'open',
+    expected_close_date: input.expectedCloseDate ?? null,
+    source: input.source ?? null,
+    notes: input.notes ?? null,
+  };
+  // Left out when the deal is in the company currency, which is stored as null.
+  const currency = storedCurrency(input.currency);
+  const insert = (values: Record<string, unknown>) => supabase.from('crm_deals').insert(values).select().single();
+  let { data, error } = await insert(currency ? { ...row, currency } : row);
+  if (error && currency && isCurrencyMissing(error)) {
+    ({ data, error } = await insert(row));
+  }
   if (error) throw error;
   const deal = mapDeal(data);
   tryLogActivity(
@@ -123,7 +141,7 @@ export const createDeal = async (input: CreateDealInput, ownerId: string | null)
       contactId: deal.contactId,
       companyId: deal.companyId,
       description: deal.name,
-      metadata: { value: deal.value },
+      metadata: { value: deal.value, currency: deal.currency },
     },
     ownerId,
   );
@@ -134,6 +152,7 @@ export const updateDeal = async (id: string, input: UpdateDealInput): Promise<Cr
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.value !== undefined) patch.value = input.value;
+  if (input.currency !== undefined) patch.currency = storedCurrency(input.currency);
   if (input.probability !== undefined) patch.probability = input.probability;
   if (input.stageId !== undefined) patch.stage_id = input.stageId;
   if (input.companyId !== undefined) patch.company_id = input.companyId;
@@ -142,12 +161,17 @@ export const updateDeal = async (id: string, input: UpdateDealInput): Promise<Cr
   if (input.source !== undefined) patch.source = input.source;
   if (input.notes !== undefined) patch.notes = input.notes;
 
-  const { data, error } = await supabase
-    .from('crm_deals')
-    .update(patch)
-    .eq('id', id)
-    .select()
-    .single();
+  const update = (values: Record<string, unknown>) =>
+    supabase.from('crm_deals').update(values).eq('id', id).select().single();
+  let { data, error } = await update(patch);
+  if (error && 'currency' in patch && isCurrencyMissing(error)) {
+    const rest = { ...patch };
+    delete rest.currency;
+    // Nothing else to save: hand back the deal as it is.
+    ({ data, error } = Object.keys(rest).length > 0
+      ? await update(rest)
+      : await supabase.from('crm_deals').select('*').eq('id', id).single());
+  }
   if (error) throw error;
   return mapDeal(data);
 };

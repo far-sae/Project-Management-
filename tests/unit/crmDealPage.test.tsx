@@ -22,6 +22,10 @@ const h = vi.hoisted(() => {
       stage('s4', 'Negotiation', 4, 80), stage('s5', 'Won', 5, 100, 'won'), stage('s6', 'Lost', 6, 0, 'lost'),
     ],
     moveDealToStage: vi.fn(),
+    updateDeal: vi.fn(),
+    // The company works in pounds. 1 USD = 0.8 GBP.
+    currency: { code: 'GBP', format: (n: number) => `£${Math.round(n).toLocaleString('en-GB')}` },
+    fx: { rates: { USD: 1, GBP: 0.8 } as Record<string, number>, usingFallback: false, fetchedAt: 1 },
   };
 });
 
@@ -29,7 +33,7 @@ vi.mock('@/services/supabase/config', () => ({
   supabase: { channel: () => ({ on() { return this; }, subscribe() { return this; }, unsubscribe() {} }) },
 }));
 vi.mock('@/services/supabase/crmHub/deals', () => ({
-  getDeal: async () => h.deal, updateDeal: vi.fn(), deleteDeal: vi.fn(), linkDealHandoff: vi.fn(),
+  getDeal: async () => h.deal, updateDeal: h.updateDeal, deleteDeal: vi.fn(), linkDealHandoff: vi.fn(),
   moveDealToStage: h.moveDealToStage,
 }));
 vi.mock('@/services/supabase/crmHub/companies', () => ({ getCompany: async () => ({ id: 'c1', name: 'Northwind Studio' }) }));
@@ -55,9 +59,21 @@ vi.mock('@/services/supabase/crmHub/flow', () => ({
 }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1', email: 'sam@example.com', displayName: 'Sam' } }) }));
 vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: { organizationId: 'o' } }) }));
-vi.mock('@/context/CrmCurrencyContext', () => ({
-  useCrmCurrency: () => ({ format: (n: number) => `£${Math.round(n).toLocaleString('en-GB')}` }),
+vi.mock('@/context/CrmCurrencyContext', () => ({ useCrmCurrency: () => h.currency }));
+vi.mock('@/lib/fxRates', async (original) => ({
+  ...(await original<typeof import('@/lib/fxRates')>()),
+  useFxRates: () => h.fx,
 }));
+// The real picker is a pop-up list; a plain list is enough to choose from here.
+vi.mock('@/components/ui/currency-select', () => ({
+  CurrencySelect: (p: { id?: string; value: string; onValueChange: (v: string) => void; disabled?: boolean; placeholder?: string }) => (
+    <select id={p.id} value={p.value} disabled={p.disabled} onChange={(e) => p.onValueChange(e.target.value)}>
+      <option value="">{p.placeholder}</option>
+      {['USD', 'EUR', 'GBP'].map((c) => <option key={c} value={c}>{c}</option>)}
+    </select>
+  ),
+}));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock('@/hooks/useSelectedWorkspace', () => ({ useSelectedWorkspace: () => ({ selected: { workspaceId: 'w', name: 'Studio' } }) }));
 vi.mock('@/hooks/useProjects', () => ({ useProjects: () => ({ projects: [], loading: false }) }));
 
@@ -73,7 +89,10 @@ const show = async (over: Record<string, unknown> = {}) => {
   await screen.findByRole('heading', { name: /Northwind website/ });
 };
 
-beforeEach(() => h.moveDealToStage.mockReset());
+beforeEach(() => {
+  h.moveDealToStage.mockReset();
+  h.updateDeal.mockReset().mockResolvedValue({});
+});
 afterEach(cleanup);
 
 describe('deal page', () => {
@@ -126,5 +145,74 @@ describe('deal page', () => {
   it('shows why a deal was lost', async () => {
     await show({ status: 'lost', stageId: 's6', closedAt: h.now, lostReason: 'No budget' });
     expect(screen.getByText(/No budget/)).toBeTruthy();
+  });
+});
+
+describe('a deal in another currency', () => {
+  it('shows the value in the deal’s currency with the company amount beside it', async () => {
+    await show({ value: 10000, currency: 'USD' });
+    // Once under the title, once in the details.
+    expect(screen.getAllByText('$10,000')).toHaveLength(2);
+    expect(screen.getAllByText('≈ £8,000')).toHaveLength(2);
+    const details = screen.getByRole('heading', { name: 'Details' }).closest('section') as HTMLElement;
+    expect(within(details).getByText('$10,000')).toBeTruthy();
+    expect(within(details).getByText('≈ £8,000')).toBeTruthy();
+  });
+
+  it('forecasts in the company currency', async () => {
+    await show({ value: 10000, currency: 'USD' });
+    const details = screen.getByRole('heading', { name: 'Details' }).closest('section') as HTMLElement;
+    // $10,000 is £8,000, at the stage's 60%.
+    expect(within(details).getByText('£4,800')).toBeTruthy();
+  });
+
+  it('shows no second amount for a deal in the company currency', async () => {
+    await show();
+    expect(screen.getAllByText('£9,500')).toHaveLength(2);
+    expect(screen.queryByText(/≈/)).toBeNull();
+  });
+
+  it('tells the delivery team the value in the deal’s own currency', async () => {
+    await show({ status: 'won', stageId: 's5', closedAt: h.now, value: 10000, currency: 'USD' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Hand off to project' })[0]);
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() =>
+      expect((within(dialog).getByLabelText('Brief for the team') as HTMLTextAreaElement).value).toContain('Value: $10,000'),
+    );
+  });
+});
+
+describe('editing a deal', () => {
+  const edit = async (over: Record<string, unknown> = {}) => {
+    await show(over);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit deal' }));
+    return screen.findByRole('dialog');
+  };
+
+  it('starts on the deal’s own currency, or the company currency when it has none', async () => {
+    const dialog = await edit();
+    expect((within(dialog).getByLabelText('Currency') as HTMLSelectElement).value).toBe('GBP');
+    cleanup();
+    const dollars = await edit({ currency: 'USD' });
+    expect((within(dollars).getByLabelText('Currency') as HTMLSelectElement).value).toBe('USD');
+  });
+
+  it('saves a new currency', async () => {
+    const dialog = await edit();
+    fireEvent.change(within(dialog).getByLabelText('Value'), { target: { value: '12000' } });
+    fireEvent.change(within(dialog).getByLabelText('Currency'), { target: { value: 'USD' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.updateDeal).toHaveBeenCalledTimes(1));
+    expect(h.updateDeal.mock.calls[0]![0]).toBe('d4');
+    expect(h.updateDeal.mock.calls[0]![1]).toMatchObject({ value: 12000, currency: 'USD' });
+  });
+
+  it('leaves the currency alone when it was not changed', async () => {
+    const dialog = await edit();
+    fireEvent.change(within(dialog).getByLabelText('Value'), { target: { value: '12000' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.updateDeal).toHaveBeenCalledTimes(1));
+    expect(h.updateDeal.mock.calls[0]![1]).toMatchObject({ value: 12000 });
+    expect(h.updateDeal.mock.calls[0]![1]).not.toHaveProperty('currency');
   });
 });

@@ -11,6 +11,7 @@ import { StatStrip, type StatItem } from '@/components/common/StatStrip';
 import { StatusPill } from '@/components/common/StatusPill';
 import { SectionBox, SectionEmpty } from '@/components/hr/overview/SectionBox';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { useDealMoney } from '@/hooks/useDealMoney';
 import { leadName } from '@/lib/crmFlow';
 import {
   flowCounts, followUpsDue, handoffQueue, lostReasonCounts, pipelineStats, stageBreakdown,
@@ -81,6 +82,7 @@ export const CrmDashboardPage: React.FC = () => {
   const tasksList = useCrmTasks();
   const activitiesList = useCrmActivities(LIST_LIMIT);
   const { format: money } = useCrmCurrency();
+  const { formatDeal, formatDealConverted, allInCompany } = useDealMoney();
 
   const contacts = contactsList.items;
   const companies = companiesList.items;
@@ -96,10 +98,13 @@ export const CrmDashboardPage: React.FC = () => {
   const companiesById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
   const dealsById = useMemo(() => new Map(deals.map((d) => [d.id, d])), [deals]);
 
-  const stats = useMemo(() => pipelineStats(deals, stagesById, new Date()), [deals, stagesById]);
+  // Deals can be in different currencies; every figure is added up in the company currency.
+  const dealsInCompany = useMemo(() => allInCompany(deals), [allInCompany, deals]);
+
+  const stats = useMemo(() => pipelineStats(dealsInCompany, stagesById, new Date()), [dealsInCompany, stagesById]);
   const flow = useMemo(() => flowCounts(contacts, deals), [contacts, deals]);
   const waiting = useMemo(() => handoffQueue(deals), [deals]);
-  const stageRows = useMemo(() => stageBreakdown(deals, stages), [deals, stages]);
+  const stageRows = useMemo(() => stageBreakdown(dealsInCompany, stages), [dealsInCompany, stages]);
   const lostReasons = useMemo(() => lostReasonCounts(deals), [deals]);
   const followUps = useMemo(
     () => followUpsDue(tasks, new Date(), FOLLOW_UP_DAYS, LIST_LIMIT),
@@ -252,6 +257,7 @@ export const CrmDashboardPage: React.FC = () => {
                 {waiting.slice(0, LIST_LIMIT).map((deal) => {
                   const who = whoLine(deal.companyId, deal.contactId);
                   const wonOn = format(deal.closedAt ?? deal.updatedAt, 'd MMM yyyy');
+                  const converted = formatDealConverted(deal);
                   return (
                     <li key={deal.id} className={ROW_ITEM}>
                       <Link to={`/crm/deals/${deal.id}`} className={cn(ROW_LINK, 'flex-wrap gap-y-1')}>
@@ -261,7 +267,10 @@ export const CrmDashboardPage: React.FC = () => {
                             {who ? `${who} · ` : ''}Won {wonOn}
                           </span>
                         </span>
-                        <span className="tabular-nums text-foreground">{money(deal.value)}</span>
+                        <span className="text-right tabular-nums text-foreground">
+                          {formatDeal(deal)}
+                          {converted && <span className="block text-xs text-muted-foreground">{converted}</span>}
+                        </span>
                         <StatusPill tone="warning">Needs a project</StatusPill>
                       </Link>
                     </li>

@@ -57,6 +57,8 @@ export const CurrencySelect: React.FC<CurrencySelectProps> = ({
       <SelectValue placeholder={placeholder} />
     </SelectTrigger>
     <SelectContent>
+      {/* A currency already in use stays selectable even when it is not one of the usual ones. */}
+      {value && !COMMON_CURRENCIES.includes(value) && <SelectItem value={value}>{value}</SelectItem>}
       {COMMON_CURRENCIES.map((c) => (
         <SelectItem key={c} value={c}>
           {showLabels && CURRENCY_LABELS[c]

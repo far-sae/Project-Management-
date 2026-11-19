@@ -26,9 +26,16 @@ vi.mock('@/context/OrganizationContext', () => ({
     },
   }),
 }));
-vi.mock('@/context/CrmCurrencyContext', () => ({
-  useCrmCurrency: () => ({ format: (n: number) => `£${n}` }),
-}));
+vi.mock('@/context/CrmCurrencyContext', () => {
+  // The company works in pounds.
+  const currency = { code: 'GBP', format: (n: number) => `£${n}` };
+  return { useCrmCurrency: () => currency };
+});
+vi.mock('@/lib/fxRates', async (original) => {
+  // 1 USD = 0.8 GBP
+  const fx = { rates: { USD: 1, GBP: 0.8 }, usingFallback: false, fetchedAt: 1 };
+  return { ...(await original<typeof import('@/lib/fxRates')>()), useFxRates: () => fx };
+});
 vi.mock('@/services/supabase/config', () => {
   const channel = { on: () => channel, subscribe: () => channel, unsubscribe: () => undefined };
   return { supabase: { channel: () => channel } };
@@ -170,6 +177,21 @@ describe('lead page', () => {
 
     expect(screen.queryByRole('button', { name: 'Convert to deal' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Open another deal' })).toBeTruthy();
+  });
+
+  it('shows a deal in its own currency, with the company amount beside a foreign one', async () => {
+    state.lead = makeLead('opportunity', 'open_deal');
+    state.deals = [
+      { id: 'd1', name: 'Northwind retainer', value: 3000, currency: 'USD', status: 'open', projectId: null },
+      { id: 'd2', name: 'Northwind audit', value: 1500, currency: null, status: 'open', projectId: null },
+    ];
+    await renderPage();
+    const dollars = screen.getByRole('link', { name: 'Northwind retainer' }).closest('tr')!;
+    expect(within(dollars).getByText('$3,000')).toBeTruthy();
+    expect(within(dollars).getByText('≈ £2400')).toBeTruthy();
+    const pounds = screen.getByRole('link', { name: 'Northwind audit' }).closest('tr')!;
+    expect(within(pounds).getByText('£1500')).toBeTruthy();
+    expect(within(pounds).queryByText(/≈/)).toBeNull();
   });
 
   it('asks before stepping a customer back', async () => {
