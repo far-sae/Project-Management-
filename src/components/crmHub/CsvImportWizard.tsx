@@ -60,9 +60,10 @@ const TABLE: Record<ImportResource, string> = {
   companies: 'crm_companies',
 };
 
-const RESOURCE_LABEL: Record<ImportResource, { singular: string; plural: string; titleCase: string }> = {
-  contacts: { singular: 'contact', plural: 'contacts', titleCase: 'Contacts' },
-  companies: { singular: 'company', plural: 'companies', titleCase: 'Companies' },
+// People are called leads everywhere in the CRM (the table is still crm_contacts).
+const RESOURCE_LABEL: Record<ImportResource, { singular: string; plural: string }> = {
+  contacts: { singular: 'lead', plural: 'leads' },
+  companies: { singular: 'company', plural: 'companies' },
 };
 
 // Only these values are valid for the two enum-constrained contact columns —
@@ -265,8 +266,8 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   const stepDescription = (() => {
     if (step === 1) return 'upload a CSV file';
     if (step === 2) return 'match your columns to fields';
-    if (step === 3 && resource === 'contacts') return 'assign a category';
-    return 'review & import';
+    if (step === 3 && resource === 'contacts') return 'choose a category';
+    return 'review and import';
   })();
 
   const goNext = () => {
@@ -281,28 +282,28 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
-      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Import {label.titleCase}</DialogTitle>
+          <DialogTitle>Import {label.plural}</DialogTitle>
           <DialogDescription>
             Step {step} of {totalSteps} — {stepDescription}
           </DialogDescription>
         </DialogHeader>
 
         {/* Progress */}
-        <div className="flex items-center gap-2 pb-2">
+        <div className="flex items-center gap-2" aria-hidden>
           {Array.from({ length: totalSteps }, (_, i) => i + 1).map((n) => (
-            <div key={n} className="flex flex-1 items-center gap-2">
+            <div key={n} className={cn('flex items-center gap-2', n < totalSteps && 'flex-1')}>
               <div className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
-                step === n ? 'bg-primary text-primary-foreground'
-                : step > n ? 'bg-primary/20 text-primary'
-                : 'bg-muted text-muted-foreground',
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium tabular-nums',
+                step === n ? 'border-foreground bg-foreground text-background'
+                : step > n ? 'border-border bg-secondary text-foreground'
+                : 'border-border text-muted-foreground',
               )}>
-                {step > n ? <CheckCircle2 className="h-4 w-4" /> : n}
+                {step > n ? <CheckCircle2 className="h-3.5 w-3.5" /> : n}
               </div>
               {n < totalSteps && (
-                <div className={cn('h-1 flex-1 rounded-full', step > n ? 'bg-primary' : 'bg-muted')} />
+                <div className={cn('h-1 flex-1 rounded-full', step > n ? 'bg-foreground/70' : 'bg-foreground/10')} />
               )}
             </div>
           ))}
@@ -313,17 +314,13 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/30 p-10 text-center transition-colors hover:border-primary hover:bg-muted"
+              className="flex w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-input bg-surface-2 px-4 py-10 text-center transition-colors hover:bg-secondary"
             >
-              <div className="grid h-14 w-14 place-items-center rounded-full bg-primary/10 text-primary">
-                <Upload className="h-7 w-7" />
-              </div>
-              <div>
-                <p className="text-base font-semibold">Drop a CSV file or click to browse</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  We'll auto-match your columns to {label.singular} fields in the next step.
-                </p>
-              </div>
+              <Upload className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+              <p className="text-sm font-medium">Choose a CSV file</p>
+              <p className="text-xs text-muted-foreground">
+                Your columns are matched to {label.singular} fields in the next step.
+              </p>
             </button>
             <input
               ref={fileRef}
@@ -332,7 +329,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.currentTarget.value = ''; }}
             />
-            <div className="rounded-lg border border-border bg-card p-4 text-sm">
+            <div className="rounded-lg border border-border p-4 text-sm">
               <p className="font-medium">Expected columns</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {fields.map((f) => f.label + (f.required ? ' *' : '')).join(', ')}
@@ -340,7 +337,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               <p className="mt-2 text-xs text-muted-foreground">
                 Anything else in your file (columns not in this list) can be saved as
                 a <span className="font-medium">Custom field</span> during mapping.
-                {resource === 'contacts' && ' Optional — if your CSV doesn’t have a category column, you’ll assign one in step 3.'}
+                {resource === 'contacts' && ' If your file has no category column, you can choose one for all the leads in step 3.'}
               </p>
             </div>
           </div>
@@ -348,35 +345,35 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
 
         {step === 2 && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4 text-primary" />
-                <span className="font-medium">{fileName}</span>
-                <Badge variant="secondary">{rows.length} rows</Badge>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm">
+              <div className="flex min-w-0 items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="truncate font-medium">{fileName}</span>
+                <Badge variant="secondary" className="shrink-0 tabular-nums">{rows.length} rows</Badge>
               </div>
               <div className="flex items-center gap-2">
                 {customCount > 0 && (
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="tabular-nums">
                     {customCount} custom
                   </Badge>
                 )}
-                <Badge variant={requiredOk ? 'secondary' : 'destructive'}>{mappedCount} mapped</Badge>
+                <Badge variant={requiredOk ? 'secondary' : 'destructive'} className="tabular-nums">{mappedCount} mapped</Badge>
               </div>
             </div>
-            <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/60 text-xs uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Column from file</th>
-                    <th className="px-3 py-2 text-left">Preview</th>
-                    <th className="px-3 py-2 text-left">Map to field</th>
+            <div className="max-h-[50vh] overflow-auto rounded-lg border border-border">
+              <table className="w-full min-w-[36rem] text-left text-sm">
+                <thead>
+                  <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
+                    <th scope="col" className="px-3 font-medium">Column from file</th>
+                    <th scope="col" className="px-3 font-medium">Preview</th>
+                    <th scope="col" className="px-3 font-medium">Map to field</th>
                   </tr>
                 </thead>
                 <tbody>
                   {headers.map((h) => (
-                    <tr key={h} className="border-t border-border">
+                    <tr key={h} className="border-b border-border/60 last:border-0 hover:bg-muted/40">
                       <td className="px-3 py-2 font-medium">{h}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{rows[0]?.[h] || '—'}</td>
+                      <td className="max-w-[14rem] truncate px-3 py-2 text-muted-foreground">{rows[0]?.[h] || '—'}</td>
                       <td className="px-3 py-2">
                         <Select
                           value={mapping[h] ?? SKIP}
@@ -387,9 +384,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                             }
                           }}
                         >
-                          <SelectTrigger className="h-9 w-56"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="w-56" aria-label={`Field for column ${h}`}><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={SKIP}>— Don't import —</SelectItem>
+                            <SelectItem value={SKIP}>Don't import</SelectItem>
                             {fields.map((f) => (
                               <SelectItem key={f.key} value={f.key}>{f.label}{f.required ? ' *' : ''}</SelectItem>
                             ))}
@@ -398,13 +395,14 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                         </Select>
                         {mapping[h] === CUSTOM && (
                           <div className="mt-1.5 flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">Save as</span>
+                            <span className="whitespace-nowrap text-xs text-muted-foreground">Save as</span>
                             <Input
                               value={customNames[h] ?? ''}
                               onChange={(e) => setCustomNames({ ...customNames, [h]: e.target.value })}
                               placeholder="e.g. company_size_v2"
                               maxLength={40}
-                              className="h-7 text-xs w-44"
+                              className="w-44"
+                              aria-label={`Custom field name for column ${h}`}
                             />
                           </div>
                         )}
@@ -424,20 +422,20 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
 
         {step === 3 && resource === 'contacts' && (
           <div className="space-y-4">
-            <div className="rounded-xl border border-border bg-muted/30 p-5">
-              <div className="flex items-center gap-2 mb-2">
-                <TagIcon className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Assign a category to these leads</h3>
+            <div className="rounded-lg border border-border bg-surface-2 p-4">
+              <div className="mb-1 flex items-center gap-2">
+                <TagIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <h3 className="text-sm font-semibold">Give these leads a category</h3>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Tag every imported lead with the same category so you can filter them later
-                (e.g. <em>VIP</em>, <em>Q4 outreach</em>, <em>Warm intro</em>). Optional —
-                you can skip this and leave them uncategorised.
+              <p className="text-pretty text-sm text-muted-foreground">
+                Put every imported lead in the same category so you can filter them later
+                (for example VIP, Q4 outreach or Warm intro). This is optional: you can skip
+                it and leave them uncategorised.
               </p>
             </div>
 
             {categoryMappedFromCsv ? (
-              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 text-sm">
+              <div className="rounded-lg border border-border p-4 text-sm">
                 <p className="font-medium text-foreground">Using your CSV's category column</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   You mapped a Category column in Step 2, so each row will keep its own value.
@@ -446,39 +444,39 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               </div>
             ) : (
               <div className="space-y-3">
-                <label className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer hover:border-primary/40">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-surface-2">
                   <input
                     type="radio"
                     checked={categoryMode === 'none'}
                     onChange={() => setCategoryMode('none')}
-                    className="mt-0.5"
+                    className="mt-0.5 accent-primary"
                   />
                   <div className="flex-1">
-                    <p className="text-sm font-medium">Skip — leave them uncategorised</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-sm font-medium">Skip and leave them uncategorised</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       You can categorise leads one by one later.
                     </p>
                   </div>
                 </label>
 
-                <label className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer hover:border-primary/40">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-surface-2">
                   <input
                     type="radio"
                     checked={categoryMode === 'pick'}
                     onChange={() => setCategoryMode('pick')}
-                    className="mt-0.5"
+                    className="mt-0.5 accent-primary"
                     disabled={existingCategories.length === 0}
                   />
                   <div className="flex-1">
                     <p className="text-sm font-medium">
                       Pick an existing category
                       {existingCategories.length === 0 && (
-                        <span className="text-xs text-muted-foreground font-normal ml-2">(none yet)</span>
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">(none yet)</span>
                       )}
                     </p>
                     {categoryMode === 'pick' && existingCategories.length > 0 && (
                       <Select value={categoryPick} onValueChange={setCategoryPick}>
-                        <SelectTrigger className="mt-2 h-9"><SelectValue placeholder="Choose category" /></SelectTrigger>
+                        <SelectTrigger className="mt-2" aria-label="Existing category"><SelectValue placeholder="Choose category" /></SelectTrigger>
                         <SelectContent>
                           {existingCategories.map((c) => (
                             <SelectItem key={c} value={c}>{c}</SelectItem>
@@ -489,22 +487,23 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                   </div>
                 </label>
 
-                <label className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer hover:border-primary/40">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-surface-2">
                   <input
                     type="radio"
                     checked={categoryMode === 'new'}
                     onChange={() => setCategoryMode('new')}
-                    className="mt-0.5"
+                    className="mt-0.5 accent-primary"
                   />
                   <div className="flex-1">
                     <p className="text-sm font-medium">Create a new category</p>
                     {categoryMode === 'new' && (
                       <div className="mt-2 space-y-1.5">
-                        <Label className="text-xs">Name</Label>
+                        <Label htmlFor="csv-category-new" className="text-xs">Name</Label>
                         <Input
+                          id="csv-category-new"
                           value={categoryNew}
                           onChange={(e) => setCategoryNew(e.target.value)}
-                          placeholder="e.g. VIP customers"
+                          placeholder="VIP leads"
                           maxLength={64}
                         />
                         <p className="text-xs text-muted-foreground">
@@ -521,10 +520,11 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
 
         {isFinalStep && (
           <div className="space-y-3">
-            <div className="rounded-xl border border-border bg-muted/40 p-5">
+            <div className="rounded-lg border border-border bg-surface-2 p-4">
               <p className="text-sm font-semibold">Ready to import</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {rows.length} rows from <span className="font-medium">{fileName}</span> will be added to {label.plural}.
+                <span className="tabular-nums">{rows.length}</span> rows from{' '}
+                <span className="font-medium text-foreground">{fileName}</span> will be added to your {label.plural}.
               </p>
               {resource === 'contacts' && (
                 <div className="mt-2">
@@ -552,27 +552,28 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Duplicates are not checked. Records will be created with you as the owner
-              (so they'll show up under &quot;My {label.plural}&quot;).
+              Duplicates are not checked. You will be the owner of the new {label.plural},
+              so they show up under &quot;My {label.plural}&quot;.
             </p>
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          <Button variant="ghost" size="sm" onClick={goBack} disabled={busy}>
-            <ArrowLeft className="mr-1 h-4 w-4" />{step === 1 ? 'Cancel' : 'Back'}
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <Button variant="ghost" onClick={goBack} disabled={busy}>
+            <ArrowLeft aria-hidden />
+            {step === 1 ? 'Cancel' : 'Back'}
           </Button>
           {!isFinalStep ? (
             <Button
-              size="sm"
               disabled={step === 2 && !requiredOk}
               onClick={goNext}
             >
-              Next <ArrowRight className="ml-1 h-4 w-4" />
+              Next
+              <ArrowRight aria-hidden />
             </Button>
           ) : (
-            <Button size="sm" disabled={busy} onClick={handleImport}>
-              {busy ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+            <Button disabled={busy} onClick={handleImport}>
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : null}
               Import {rows.length} rows
             </Button>
           )}

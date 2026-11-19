@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 const now = new Date();
+// Two hours ago, but never before today's midnight: the page only counts
+// today's entries, so a plain "2 hours ago" failed between 00:00 and 02:00.
+const clockedInToday = () => {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return new Date(Math.max(now.getTime() - 2 * 3600_000, midnight));
+};
 const h = vi.hoisted(() => ({ entries: [] as unknown[] }));
 vi.mock('@/context/OrganizationContext', () => ({
   useOrganization: () => ({
@@ -32,7 +38,7 @@ afterEach(cleanup);
 
 describe('TeamAttendance', () => {
   it("shows who is on the clock and who hasn't clocked in today", () => {
-    const start = new Date(now.getTime() - 2 * 3600_000);
+    const start = clockedInToday();
     h.entries = [
       {
         entryId: 'e1', organizationId: 'o1', userId: 'ana',
@@ -51,7 +57,7 @@ describe('TeamAttendance', () => {
   });
 
   it('shows each status as a pill in its own tone', () => {
-    const start = new Date(now.getTime() - 2 * 3600_000);
+    const start = clockedInToday();
     h.entries = [
       {
         entryId: 'e1', organizationId: 'o1', userId: 'ana',

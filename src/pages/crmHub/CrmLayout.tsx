@@ -1,30 +1,20 @@
 import React, { useEffect } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
-import {
-  Contact, Building2, Handshake, ListChecks, Waypoints, Tag,
-  LayoutDashboard, Settings as SettingsIcon, Loader2,
-  Layers,
-} from 'lucide-react';
+import { NavLink, Outlet } from 'react-router-dom';
+import { Loader2, Layers } from 'lucide-react';
 import { CrmCurrencyProvider } from '@/context/CrmCurrencyContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
-import { useProjects } from '@/hooks/useProjects';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
-interface Tab {
-  to: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}
-
-const TABS: Tab[] = [
-  { to: '/crm/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/crm/contacts', label: 'Contacts', icon: Contact },
-  { to: '/crm/companies', label: 'Companies', icon: Building2 },
-  { to: '/crm/deals', label: 'Deals', icon: Handshake },
-  { to: '/crm/tasks', label: 'Follow-ups', icon: ListChecks },
-  { to: '/crm/activity', label: 'Activity', icon: Waypoints },
-  { to: '/crm/tags', label: 'Tags', icon: Tag },
-  { to: '/crm/settings', label: 'Settings', icon: SettingsIcon },
+/** In the order the work flows: a lead becomes a deal, a won deal becomes a project. */
+const TABS: Array<{ to: string; label: string }> = [
+  { to: '/crm/dashboard', label: 'Overview' },
+  { to: '/crm/contacts', label: 'Leads' },
+  { to: '/crm/companies', label: 'Companies' },
+  { to: '/crm/deals', label: 'Deals' },
+  { to: '/crm/tasks', label: 'Follow-ups' },
+  { to: '/crm/activity', label: 'Activity' },
+  { to: '/crm/tags', label: 'Tags' },
+  { to: '/crm/settings', label: 'Settings' },
 ];
 
 export const CrmLayout: React.FC = () => (
@@ -35,8 +25,9 @@ export const CrmLayout: React.FC = () => (
 
 const CrmLayoutInner: React.FC = () => {
   const { selected, isAll, isUnassigned, select, DEFAULT_WORKSPACE_ID, workspaces, loading } = useSelectedWorkspace();
-  const { projects, loading: projectsLoading } = useProjects();
 
+  // The CRM always works inside one workspace: leads, deals and the projects
+  // they turn into belong together.
   useEffect(() => {
     if (loading || (!isAll && !isUnassigned)) return;
     const target = workspaces.find((workspace) => workspace.workspaceId === DEFAULT_WORKSPACE_ID)
@@ -46,64 +37,51 @@ const CrmLayoutInner: React.FC = () => {
 
   if (loading || !selected) {
     return (
-      <div className="flex-1 grid place-items-center bg-background">
-        <div className="text-center text-muted-foreground">
-          <Loader2 className="w-7 h-7 animate-spin mx-auto mb-2" />
-          {workspaces.length === 0 && !loading ? 'Create a workspace to open CRM.' : 'Opening workspace CRM...'}
+      <div className="grid flex-1 place-items-center bg-background">
+        <div className="text-center text-sm text-muted-foreground">
+          {workspaces.length === 0 && !loading ? (
+            'Create a workspace to use the CRM.'
+          ) : (
+            <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+          )}
         </div>
       </div>
     );
   }
-  const hasProject = projects.some((project) => project.workspaceId === selected.workspaceId);
-  if (!projectsLoading && !hasProject) {
-    return <div className="flex-1 grid place-items-center p-6"><div className="max-w-md text-center"><Layers className="mx-auto mb-3 h-10 w-10 text-muted-foreground" /><h2 className="text-xl font-semibold">Create this workspace’s first project</h2><p className="mt-2 text-sm text-muted-foreground">CRM becomes available after the workspace has a delivery project, keeping contacts, deals and work in one flow.</p><Button asChild className="mt-4"><Link to="/dashboard">Open Project Management</Link></Button></div></div>;
-  }
-  const scopeLabel = isAll
-    ? 'All workspaces'
-    : isUnassigned
-    ? 'Unassigned'
-    : selected?.name ?? '—';
+
   return (
-  <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-    <div className="border-b border-border bg-card/60 backdrop-blur-sm">
-      <div className="px-4 sm:px-6 lg:px-8 pt-3">
-        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-primary/15 text-primary flex items-center justify-center">
-              <Handshake className="w-3.5 h-3.5" />
-            </div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">CRM</h2>
-          </div>
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground" title="Change workspace from the sidebar workspace switcher">
-            <Layers className="w-3 h-3" />
-            <span>Scope:</span>
-            <span className="font-medium text-foreground truncate max-w-[16rem]">{scopeLabel}</span>
-          </div>
-        </div>
-        <nav className="flex items-center gap-1 overflow-x-auto -mx-1 px-1">
-          {TABS.map(({ to, label, icon: Icon }) => (
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex items-end justify-between gap-3 border-b border-border px-4 lg:px-6">
+        <nav aria-label="CRM sections" className="-mb-px flex min-w-0 items-stretch gap-1 overflow-x-auto">
+          {TABS.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                cn(
+                  'inline-flex h-10 items-center whitespace-nowrap border-b-2 px-2.5 text-sm font-medium transition-colors',
                   isActive
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-                }`
+                    ? 'border-foreground text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )
               }
             >
-              <Icon className="w-4 h-4" />
               {label}
             </NavLink>
           ))}
         </nav>
+        <div
+          className="mb-2 hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex"
+          title="Change workspace from the switcher in the sidebar"
+        >
+          <Layers className="h-3.5 w-3.5" />
+          <span className="max-w-[14rem] truncate font-medium text-foreground">{selected.name}</span>
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <Outlet />
       </div>
     </div>
-    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <Outlet />
-    </div>
-  </div>
   );
 };
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, Save, GripVertical } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Loader2, Plus, Trash2, Save, ChevronUp, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
@@ -10,11 +11,12 @@ import {
   createDealStage, updateDealStage, deleteDealStage,
 } from '@/services/supabase/crmHub/dealStages';
 import type { CrmDealStage, DealStatus } from '@/types/crmHub';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatusPill } from '@/components/common/StatusPill';
+import type { StatusTone } from '@/components/common/StatusPill';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -24,28 +26,48 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+/** One settings box: a titled, bordered section. The column is capped, not centred. */
+const SettingsSection: React.FC<{
+  title: string;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, description, children }) => (
+  <section className="max-w-3xl overflow-hidden rounded-lg border border-border bg-background">
+    <div className="flex min-h-11 flex-col justify-center border-b border-border px-4 py-2.5">
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {description && <p className="mt-1 text-pretty text-xs text-muted-foreground">{description}</p>}
+    </div>
+    {children}
+  </section>
+);
+
 export const CrmSettingsPage: React.FC = () => {
   const { selected } = useSelectedWorkspace();
 
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-background">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold">CRM Settings</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure the pipeline and CRM defaults for <strong>{selected?.name ?? 'this workspace'}</strong>.
-          </p>
-        </div>
+    <main className="min-w-0 flex-1 overflow-y-auto bg-background">
+      <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
+        <PageHeader
+          title="CRM settings"
+          description={
+            <>
+              Pipeline stages and CRM defaults for{' '}
+              <span className="font-medium text-foreground">{selected?.name ?? 'this workspace'}</span>.
+            </>
+          }
+        />
 
         <Tabs defaultValue="general">
-          <TabsList>
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
-            <TabsTrigger value="workspace">Workspace</TabsTrigger>
-          </TabsList>
-          <TabsContent value="general" className="mt-4"><GeneralSettings /></TabsContent>
-          <TabsContent value="pipeline" className="mt-4"><PipelineSettings /></TabsContent>
-          <TabsContent value="workspace" className="mt-4"><WorkspaceSettings /></TabsContent>
+          <div className="overflow-x-auto overflow-y-hidden">
+            <TabsList className="flex w-max min-w-full">
+              <TabsTrigger value="general">General</TabsTrigger>
+              <TabsTrigger value="pipeline">Pipeline stages</TabsTrigger>
+              <TabsTrigger value="workspace">Workspace</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="general"><GeneralSettings /></TabsContent>
+          <TabsContent value="pipeline"><PipelineSettings /></TabsContent>
+          <TabsContent value="workspace"><WorkspaceSettings /></TabsContent>
         </Tabs>
       </div>
     </main>
@@ -53,6 +75,9 @@ export const CrmSettingsPage: React.FC = () => {
 };
 
 const STATUS_OPTIONS: DealStatus[] = ['open', 'won', 'lost'];
+
+const STAGE_STATUS_LABEL: Record<DealStatus, string> = { open: 'Open', won: 'Won', lost: 'Lost' };
+const STAGE_STATUS_TONE: Record<DealStatus, StatusTone> = { open: 'neutral', won: 'success', lost: 'danger' };
 
 const GeneralSettings: React.FC = () => {
   const { code, loading, setCurrency, format } = useCrmCurrency();
@@ -71,15 +96,12 @@ const GeneralSettings: React.FC = () => {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">General</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-1.5 max-w-md">
-          <Label>Currency</Label>
+    <SettingsSection title="General">
+      <div className="p-4">
+        <div className="grid max-w-md gap-1.5">
+          <Label htmlFor="crm-currency">Currency</Label>
           <Select value={code} onValueChange={(v) => void handleChange(v as CurrencyCode)} disabled={loading || busy}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger id="crm-currency"><SelectValue /></SelectTrigger>
             <SelectContent>
               {CURRENCIES.map((c) => (
                 <SelectItem key={c.code} value={c.code}>
@@ -88,13 +110,13 @@ const GeneralSettings: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground mt-1">
-            Applies to every money amount in the CRM (deals, dashboards, reports, company revenue).
-            Preview: {format(1234567)}
+          <p className="text-xs text-muted-foreground">
+            Used for every money amount in the CRM (deals, dashboards, reports, company revenue).
+            Preview: <span className="tabular-nums">{format(1234567)}</span>
           </p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsSection>
   );
 };
 
@@ -180,98 +202,125 @@ const PipelineSettings: React.FC = () => {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Pipeline stages</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {loading ? (
-          <div className="py-8 text-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" /></div>
-        ) : (
-          <>
-            {stages.map((s, i) => {
-              const d = drafts[s.id] ?? { name: s.name, probability: s.probability, status: s.status };
-              const changed = d.name !== s.name || d.probability !== s.probability || d.status !== s.status;
-              return (
-                <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border p-3">
-                  <div className="flex flex-col gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => void handleReorder(s, -1)}
-                      disabled={busy || i === 0}
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-30 text-xs"
-                      title="Move up"
-                    >▲</button>
-                    <span className="text-muted-foreground"><GripVertical className="w-3 h-3" /></span>
-                    <button
-                      type="button"
-                      onClick={() => void handleReorder(s, 1)}
-                      disabled={busy || i === stages.length - 1}
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-30 text-xs"
-                      title="Move down"
-                    >▼</button>
-                  </div>
+    <SettingsSection
+      title="Pipeline stages"
+      description="Each stage has a chance of winning (%), which is used for the forecast. A stage marked Won or Lost closes the deal."
+    >
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Loading stages…
+        </div>
+      ) : (
+        <>
+          {stages.map((s, i) => {
+            const d = drafts[s.id] ?? { name: s.name, probability: s.probability, status: s.status };
+            const changed = d.name !== s.name || d.probability !== s.probability || d.status !== s.status;
+            return (
+              <div
+                key={s.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5"
+              >
+                <div className="flex items-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground"
+                    onClick={() => void handleReorder(s, -1)}
+                    disabled={busy || i === 0}
+                    title="Move up"
+                    aria-label={`Move ${s.name} up`}
+                  >
+                    <ChevronUp aria-hidden />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground"
+                    onClick={() => void handleReorder(s, 1)}
+                    disabled={busy || i === stages.length - 1}
+                    title="Move down"
+                    aria-label={`Move ${s.name} down`}
+                  >
+                    <ChevronDown aria-hidden />
+                  </Button>
+                </div>
+                <Input
+                  className="w-56 max-w-full"
+                  value={d.name}
+                  onChange={(e) => setDrafts({ ...drafts, [s.id]: { ...d, name: e.target.value } })}
+                  disabled={busy}
+                  aria-label="Stage name"
+                />
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={`stage-chance-${s.id}`} className="text-xs font-normal text-muted-foreground">
+                    Chance of winning
+                  </Label>
                   <Input
-                    className="w-56"
-                    value={d.name}
-                    onChange={(e) => setDrafts({ ...drafts, [s.id]: { ...d, name: e.target.value } })}
+                    id={`stage-chance-${s.id}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="w-20 tabular-nums"
+                    value={d.probability}
+                    onChange={(e) => setDrafts({ ...drafts, [s.id]: { ...d, probability: Number(e.target.value) || 0 } })}
                     disabled={busy}
                   />
-                  <div className="flex items-center gap-1">
-                    <Label className="text-xs text-muted-foreground">Prob.</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      className="w-20"
-                      value={d.probability}
-                      onChange={(e) => setDrafts({ ...drafts, [s.id]: { ...d, probability: Number(e.target.value) || 0 } })}
-                      disabled={busy}
-                    />
-                    <span className="text-xs text-muted-foreground">%</span>
-                  </div>
-                  <Select value={d.status} onValueChange={(v) => setDrafts({ ...drafts, [s.id]: { ...d, status: v as DealStatus } })} disabled={busy}>
-                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {STATUS_OPTIONS.map((st) => (
-                        <SelectItem key={st} value={st} className="capitalize">{st}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Badge variant="outline" className="capitalize">{s.status}</Badge>
-                  <div className="ml-auto flex items-center gap-1">
-                    {changed && (
-                      <Button size="sm" onClick={() => void handleSave(s)} disabled={busy || !d.name.trim()}>
-                        <Save className="w-4 h-4 mr-1" />Save
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="icon" className="text-destructive" onClick={() => setConfirmDelete(s)} disabled={busy}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <span className="text-xs text-muted-foreground">%</span>
                 </div>
-              );
-            })}
-            {stages.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                No pipeline stages yet. Add your first one below.
-              </p>
-            )}
-            <div className="flex gap-2 pt-2 border-t border-border">
-              <Input
-                placeholder="New stage name…"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                disabled={busy}
-              />
-              <Button onClick={handleAdd} disabled={busy || !newName.trim()}>
-                {busy ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
-                Add stage
-              </Button>
+                <Select value={d.status} onValueChange={(v) => setDrafts({ ...drafts, [s.id]: { ...d, status: v as DealStatus } })} disabled={busy}>
+                  <SelectTrigger className="w-28" aria-label={`What ${s.name} means for a deal`}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((st) => (
+                      <SelectItem key={st} value={st}>{STAGE_STATUS_LABEL[st]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <StatusPill tone={STAGE_STATUS_TONE[s.status]}>{STAGE_STATUS_LABEL[s.status]}</StatusPill>
+                <div className="ml-auto flex items-center gap-1">
+                  {changed && (
+                    <Button onClick={() => void handleSave(s)} disabled={busy || !d.name.trim()}>
+                      <Save aria-hidden />
+                      Save
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                    onClick={() => setConfirmDelete(s)}
+                    disabled={busy}
+                    title="Delete stage"
+                    aria-label={`Delete stage ${s.name}`}
+                  >
+                    <Trash2 aria-hidden />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+          {stages.length === 0 && (
+            <div className="border-b border-border/60 px-4 py-8 text-center">
+              <p className="text-sm font-medium">No pipeline stages yet.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Add your first one below.</p>
             </div>
-          </>
-        )}
-      </CardContent>
+          )}
+          <div className="flex flex-wrap gap-2 bg-surface-2 px-4 py-3">
+            <Input
+              className="min-w-0 flex-1 basis-48"
+              placeholder="New stage name…"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              disabled={busy}
+              aria-label="New stage name"
+            />
+            <Button onClick={handleAdd} disabled={busy || !newName.trim()}>
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Plus aria-hidden />}
+              Add stage
+            </Button>
+          </div>
+        </>
+      )}
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
@@ -291,7 +340,7 @@ const PipelineSettings: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </SettingsSection>
   );
 };
 
@@ -299,22 +348,21 @@ const WorkspaceSettings: React.FC = () => {
   const { organization, canManageSettings } = useOrganization();
   const { selected } = useSelectedWorkspace();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Workspace</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
+    <SettingsSection title="Workspace">
+      <div className="space-y-3 p-4">
         <div>
-          <Label>Workspace name</Label>
-          <p className="text-sm mt-1">{selected?.name ?? 'Not selected'}</p>
+          <p className="text-xs text-muted-foreground">Workspace name</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{selected?.name ?? 'Not selected'}</p>
         </div>
-        <div className="text-xs text-muted-foreground">
-          This CRM, its pipeline, currency, contacts, companies, deals and follow-ups belong to <strong>{selected?.name}</strong>.
-          Organization settings for <strong>{organization?.name}</strong> live under <a href="/settings" className="text-primary hover:underline">Settings</a>
-          {canManageSettings ? '' : ' — owner/admin only.'}
-        </div>
-      </CardContent>
-    </Card>
+        <p className="text-pretty text-xs text-muted-foreground">
+          This CRM, its pipeline stages, currency, leads, companies, deals and follow-ups belong to{' '}
+          <span className="font-medium text-foreground">{selected?.name}</span>. Organization settings for{' '}
+          <span className="font-medium text-foreground">{organization?.name}</span> live under{' '}
+          <Link to="/settings" className="text-primary hover:underline">Settings</Link>
+          {canManageSettings ? '.' : ' (owner and admins only).'}
+        </p>
+      </div>
+    </SettingsSection>
   );
 };
 

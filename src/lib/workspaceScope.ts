@@ -22,6 +22,7 @@ export const QUICK_MENU_PAGE_KEYS: PageKey[] = [
   "projects_analytics",
   "my_tasks",
   "inbox",
+  "crm",
   "calendar",
   "workload",
   "reports",

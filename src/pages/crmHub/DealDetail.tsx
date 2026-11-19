@@ -1,28 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  ChevronLeft, Pencil, Trash2, Loader2, StickyNote, ArrowRightCircle, Briefcase, Trophy, ExternalLink,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { supabase } from '@/services/supabase/config';
-import {
-  getDeal, updateDeal, deleteDeal, moveDealToStage,
-} from '@/services/supabase/crmHub/deals';
+import { getDeal, updateDeal, deleteDeal } from '@/services/supabase/crmHub/deals';
 import { getCompany } from '@/services/supabase/crmHub/companies';
 import { getContact } from '@/services/supabase/crmHub/contacts';
 import { listDealStages } from '@/services/supabase/crmHub/dealStages';
 import { listActivities } from '@/services/supabase/crmHub/activities';
 import { listNotes, createNote } from '@/services/supabase/crmHub/notes';
 import { listTasks } from '@/services/supabase/crmHub/tasks';
+import { dealBadge, dealNeedsHandoff, leadName, weightedDealValue } from '@/lib/crmFlow';
 import type {
   CrmDeal, CrmDealStage, CrmActivity, CrmNote, CrmTask, CrmCompany, CrmContact,
 } from '@/types/crmHub';
-import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatusPill } from '@/components/common/StatusPill';
+import { useDealMove } from '@/components/crmHub/useDealMove';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,15 +28,32 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { DealHandoffDialog } from '@/components/crmHub/DealHandoffDialog';
 
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+
+const when = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+const Section: React.FC<{ title: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }> = ({
+  title, action, children,
+}) => (
+  <section className="rounded-lg border border-border bg-card">
+    <header className="flex min-h-11 items-center justify-between gap-2 border-b border-border px-4 py-2">
+      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+      {action}
+    </header>
+    <div className="p-4">{children}</div>
+  </section>
+);
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex items-baseline justify-between gap-3 py-1.5 text-sm">
+    <dt className="shrink-0 text-muted-foreground">{label}</dt>
+    <dd className="min-w-0 truncate text-right font-medium text-foreground">{children}</dd>
+  </div>
+);
 
 export const CrmDealDetailPage: React.FC = () => {
   const { id = '' } = useParams();
@@ -59,13 +74,11 @@ export const CrmDealDetailPage: React.FC = () => {
   const [notFound, setNotFound] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
-  const [showHandoff, setShowHandoff] = useState(false);
   const [noteBody, setNoteBody] = useState('');
   const [busy, setBusy] = useState(false);
 
   const refresh = React.useCallback(async () => {
     if (!id || !orgId) return;
-    setLoading(true);
     try {
       const d = await getDeal(id);
       if (!d) { setNotFound(true); return; }
@@ -102,6 +115,8 @@ export const CrmDealDetailPage: React.FC = () => {
     return () => { channel.unsubscribe(); };
   }, [orgId, id, refresh]);
 
+  const { requestMove, openHandoff, busy: moving, dialogs } = useDealMove({ stages, onChanged: refresh });
+
   const handleAddNote = async () => {
     if (!orgId || !noteBody.trim()) return;
     setBusy(true);
@@ -112,21 +127,6 @@ export const CrmDealDetailPage: React.FC = () => {
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not save note');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleMoveStage = async (stageId: string) => {
-    const stage = stages.find((s) => s.id === stageId);
-    if (!stage || !deal) return;
-    setBusy(true);
-    try {
-      await moveDealToStage(deal.id, stageId, stage.status, stage.name);
-      toast.success(`Moved to ${stage.name}`);
-      await refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not move');
     } finally {
       setBusy(false);
     }
@@ -145,221 +145,218 @@ export const CrmDealDetailPage: React.FC = () => {
   };
 
   if (loading) return (
-    <main className="flex-1 flex items-center justify-center">
-      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+    <main className="flex flex-1 items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
     </main>
   );
 
   if (notFound || !deal) return (
-    <main className="flex-1 p-8 text-center">
-      <p className="text-muted-foreground mb-4">Deal not found.</p>
-      <Button asChild variant="outline"><Link to="/crm/deals"><ChevronLeft className="w-4 h-4 mr-1" /> Back to pipeline</Link></Button>
+    <main className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <p className="text-sm text-muted-foreground">This deal no longer exists.</p>
+      <Button asChild variant="outline"><Link to="/crm/deals"><ChevronLeft /> Back to deals</Link></Button>
     </main>
   );
 
-  const currentStage = stages.find((s) => s.id === deal.stageId);
+  const stageById = new Map(stages.map((s) => [s.id, s]));
+  const currentStage = stageById.get(deal.stageId);
+  const badge = dealBadge(deal);
+  const chance = deal.probability || currentStage?.probability || 0;
+  const wonStage = stages.find((s) => s.status === 'won');
+  const lostStage = stages.find((s) => s.status === 'lost');
+  const needsHandoff = dealNeedsHandoff(deal);
 
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto bg-background">
-      <div className="flex items-center justify-between border-b border-border bg-card/40 px-4 py-2 sm:px-6">
-        <Button variant="ghost" size="sm" asChild className="gap-1">
-          <Link to="/crm/deals"><ChevronLeft className="h-4 w-4" />Pipeline</Link>
-        </Button>
-        <div className="flex items-center gap-2">
-          {deal.status === 'won' && !deal.projectId && (
-            <Button
-              size="sm"
-              onClick={() => setShowHandoff(true)}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white"
-            >
-              <Trophy className="mr-1.5 h-4 w-4" />Hand off to PM
-            </Button>
-          )}
-          {deal.projectId && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigate(`/project/${deal.projectId}`)}
-            >
-              <Briefcase className="mr-1.5 h-4 w-4" />Open project
-            </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
-            <Pencil className="mr-1.5 h-4 w-4" />Edit
-          </Button>
-          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setShowDelete(true)}>
-            <Trash2 className="mr-1.5 h-4 w-4" />Delete
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 p-4 lg:grid-cols-3 lg:gap-6 lg:p-6">
-        <Card className="lg:col-span-1">
-          <CardContent className="space-y-4 p-6">
-            <div>
-              <h2 className="text-xl font-bold break-words">{deal.name}</h2>
-              <p className="text-3xl font-black text-primary mt-1">{fmtCurrency(deal.value)}</p>
-            </div>
-            <Separator />
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">Stage</p>
-                <p className="font-semibold">{currentStage?.name ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Status</p>
-                <Badge variant={deal.status === 'won' ? 'default' : deal.status === 'lost' ? 'destructive' : 'secondary'} className="capitalize">{deal.status}</Badge>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Probability</p>
-                <p className="font-semibold">{deal.probability}%</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Expected close</p>
-                <p className="font-semibold">{deal.expectedCloseDate ? new Date(deal.expectedCloseDate).toLocaleDateString() : '—'}</p>
-              </div>
-            </div>
-            <Separator />
-            <div className="space-y-1 text-sm">
-              <p className="text-xs text-muted-foreground">Company</p>
-              <p className="font-semibold">{company ? (
-                <Link to={`/crm/companies/${company.id}`} className="hover:text-primary">{company.name}</Link>
-              ) : '—'}</p>
-              <p className="mt-2 text-xs text-muted-foreground">Contact</p>
-              <p className="font-semibold">{contact ? (
-                <Link to={`/crm/contacts/${contact.id}`} className="hover:text-primary">{contact.firstName} {contact.lastName ?? ''}</Link>
-              ) : '—'}</p>
-            </div>
-            <Separator />
-            <div>
-              <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                <ArrowRightCircle className="w-3 h-3" /> Move to stage
-              </p>
-              <Select value={deal.stageId} onValueChange={handleMoveStage} disabled={busy}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {stages.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {deal.status === 'won' && (
+    <main className="min-w-0 flex-1 overflow-y-auto bg-background">
+      <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
+        <div className="flex flex-col gap-3">
+          <Link to="/crm/deals" className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ChevronLeft className="h-4 w-4" /> Deals
+          </Link>
+          <PageHeader
+            title={
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="break-words">{deal.name}</span>
+                <StatusPill tone={badge.tone}>{badge.label}</StatusPill>
+              </span>
+            }
+            description={
               <>
-                <Separator />
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                    <Briefcase className="w-3 h-3" /> Delivery
-                  </p>
-                  {deal.projectId ? (
-                    <div className="space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/project/${deal.projectId}`)}
-                        className="w-full text-left rounded-md border border-border p-2 hover:border-primary transition-colors"
-                      >
-                        <p className="text-sm font-medium flex items-center gap-1">
-                          <Briefcase className="w-3.5 h-3.5 text-primary" />
-                          Linked project
-                          <ExternalLink className="w-3 h-3 opacity-60" />
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Click to open the project board
-                        </p>
-                      </button>
-                    </div>
-                  ) : (
-                    <Button
-                      size="sm"
-                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-white"
-                      onClick={() => setShowHandoff(true)}
-                    >
-                      <Trophy className="mr-1.5 h-4 w-4" />Hand off to PM
-                    </Button>
-                  )}
-                </div>
+                <span className="font-medium tabular-nums text-foreground">{fmtCurrency(deal.value)}</span>
+                {company && <> · <Link to={`/crm/companies/${company.id}`} className="hover:text-foreground hover:underline">{company.name}</Link></>}
+                {contact && <> · <Link to={`/crm/contacts/${contact.id}`} className="hover:text-foreground hover:underline">{leadName(contact)}</Link></>}
               </>
-            )}
-          </CardContent>
-        </Card>
+            }
+            actions={
+              <>
+                {deal.status === 'open' && lostStage && (
+                  <Button variant="outline" onClick={() => requestMove(deal, lostStage.id)} disabled={moving}>Lost</Button>
+                )}
+                {deal.status === 'open' && wonStage && (
+                  <Button onClick={() => requestMove(deal, wonStage.id)} disabled={moving}>Won</Button>
+                )}
+                {deal.projectId && (
+                  <Button onClick={() => navigate(`/project/${deal.projectId}`)}>Open project <ChevronRight /></Button>
+                )}
+                <Button variant="outline" size="icon" aria-label="Edit deal" onClick={() => setShowEdit(true)}><Pencil /></Button>
+                <Button variant="outline" size="icon" aria-label="Delete deal" onClick={() => setShowDelete(true)}><Trash2 /></Button>
+              </>
+            }
+          />
+        </div>
 
-        <div className="space-y-4 lg:col-span-2 min-w-0">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-base">Add note</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Textarea rows={3} value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Type a note…" disabled={busy} />
-              <div className="flex justify-end">
-                <Button size="sm" onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
-                  {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Save note
-                </Button>
+        {/* Pipeline: where the deal is, and one click to move it. */}
+        {stages.length > 0 && (
+          <nav aria-label="Pipeline stage" className="overflow-x-auto">
+            <ol className="flex min-w-max overflow-hidden rounded-lg border border-border">
+              {stages.map((s, index) => {
+                const current = s.id === deal.stageId;
+                const done = deal.status === 'open' && s.status === 'open' && currentStage != null && s.sortOrder < currentStage.sortOrder;
+                return (
+                  <li key={s.id} className={cn('flex-1', index > 0 && 'border-l border-border')}>
+                    <button
+                      type="button"
+                      disabled={moving || current}
+                      aria-current={current ? 'step' : undefined}
+                      onClick={() => requestMove(deal, s.id)}
+                      className={cn(
+                        'flex h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap px-3 text-sm font-medium transition-colors',
+                        current
+                          ? s.status === 'lost'
+                            ? 'bg-destructive text-destructive-foreground'
+                            : s.status === 'won'
+                              ? 'bg-success text-success-foreground'
+                              : 'bg-foreground text-background'
+                          : done
+                            ? 'bg-secondary text-foreground hover:bg-foreground/[0.08]'
+                            : 'text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground',
+                      )}
+                    >
+                      {s.name}
+                      {s.status === 'open' && <span className="text-xs tabular-nums opacity-70">{s.probability}%</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+        )}
+
+        {needsHandoff && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-warning-soft-foreground">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Won, but not handed off yet</p>
+              <p className="text-sm opacity-90">Turn this deal into a project so the team can start the work.</p>
+            </div>
+            <Button onClick={() => openHandoff(deal)}>Hand off to project</Button>
+          </div>
+        )}
+        {deal.status === 'lost' && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive-soft px-4 py-3 text-destructive-soft-foreground">
+            <p className="text-sm font-medium">Lost{deal.closedAt ? ` on ${deal.closedAt.toLocaleDateString()}` : ''}</p>
+            <p className="text-sm opacity-90">{deal.lostReason || 'No reason was given.'} Pick an open stage above to re-open it.</p>
+          </div>
+        )}
+
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="flex min-w-0 flex-col gap-6">
+            <Section title="Notes">
+              <div className="flex flex-col gap-2">
+                <Textarea rows={3} value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="What was said, what was agreed…" disabled={busy} aria-label="New note" />
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
+                    {busy && <Loader2 className="animate-spin" />}Save note
+                  </Button>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+              {notes.length > 0 && (
+                <ul className="mt-3 flex flex-col divide-y divide-border border-t border-border">
+                  {notes.slice(0, 5).map((n) => (
+                    <li key={n.id} className="py-3">
+                      <p className="whitespace-pre-wrap break-words text-sm">{n.body}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{when(n.createdAt)}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
 
-          {notes.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <StickyNote className="w-4 h-4 text-primary" />Notes ({notes.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {notes.slice(0, 5).map((n) => (
-                  <div key={n.id} className="rounded-lg border border-border p-3">
-                    <p className="text-sm whitespace-pre-wrap break-words">{n.body}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{n.createdAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-base">Tasks ({tasks.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
+            <Section
+              title={`Follow-ups (${tasks.length})`}
+              action={<Button asChild size="sm" variant="outline"><Link to="/crm/tasks">All follow-ups</Link></Button>}
+            >
               {tasks.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No tasks yet.</p>
-              ) : tasks.map((t) => (
-                <div key={t.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <p className="text-sm font-medium">{t.title}</p>
-                    <p className="text-xs text-muted-foreground">{t.dueDate ? t.dueDate.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'No due date'}</p>
-                  </div>
-                  <Badge variant="secondary" className="capitalize">{t.status.replace('_', ' ')}</Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                <p className="text-sm text-muted-foreground">No follow-ups on this deal.</p>
+              ) : (
+                <ul className="flex flex-col divide-y divide-border">
+                  {tasks.map((t) => (
+                    <li key={t.id} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{t.title}</p>
+                        <p className="text-xs text-muted-foreground">{t.dueDate ? when(t.dueDate) : 'No due date'}</p>
+                      </div>
+                      <StatusPill tone={t.status === 'completed' ? 'success' : 'neutral'}>
+                        <span className="capitalize">{t.status === 'completed' ? 'Done' : t.status.replace(/_/g, ' ')}</span>
+                      </StatusPill>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Timeline</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+            <Section title="Timeline">
               {activities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No activity yet.</p>
-              ) : activities.slice(0, 20).map((a) => (
-                <div key={a.id} className="border-l-2 border-primary/40 pl-3">
-                  <p className="text-sm">{a.description ?? a.type}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{a.type.replace(/_/g, ' ')} · {a.createdAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                <p className="text-sm text-muted-foreground">Nothing has happened on this deal yet.</p>
+              ) : (
+                <ol className="flex flex-col gap-3 border-l border-border pl-4">
+                  {activities.slice(0, 20).map((a) => (
+                    <li key={a.id} className="relative">
+                      <span aria-hidden className="absolute -left-[1.3125rem] top-1.5 h-2 w-2 rounded-full border border-border bg-background" />
+                      <p className="text-sm">{a.description ?? a.type.replace(/_/g, ' ')}</p>
+                      <p className="text-xs capitalize text-muted-foreground">{a.type.replace(/_/g, ' ')} · {when(a.createdAt)}</p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </Section>
+          </div>
+
+          <Section title="Details">
+            <dl className="flex flex-col divide-y divide-border">
+              <Field label="Value"><span className="tabular-nums">{fmtCurrency(deal.value)}</span></Field>
+              {deal.status === 'open' && (
+                <>
+                  <Field label="Chance of winning"><span className="tabular-nums">{chance}%</span></Field>
+                  <Field label="Forecast">
+                    <span className="tabular-nums">{fmtCurrency(weightedDealValue(deal, stageById))}</span>
+                  </Field>
+                </>
+              )}
+              <Field label="Stage">{currentStage?.name ?? '—'}</Field>
+              <Field label="Expected close">
+                {deal.expectedCloseDate ? new Date(deal.expectedCloseDate).toLocaleDateString() : '—'}
+              </Field>
+              {deal.closedAt && <Field label={deal.status === 'won' ? 'Won on' : 'Closed on'}>{deal.closedAt.toLocaleDateString()}</Field>}
+              <Field label="Company">
+                {company ? <Link to={`/crm/companies/${company.id}`} className="hover:underline">{company.name}</Link> : '—'}
+              </Field>
+              <Field label="Lead">
+                {contact ? <Link to={`/crm/contacts/${contact.id}`} className="hover:underline">{leadName(contact)}</Link> : '—'}
+              </Field>
+              <Field label="Source">{deal.source || '—'}</Field>
+              <Field label="Project">
+                {deal.projectId
+                  ? <Link to={`/project/${deal.projectId}`} className="hover:underline">Open project</Link>
+                  : deal.status === 'won' ? 'Not handed off' : '—'}
+              </Field>
+            </dl>
+            {deal.notes && (
+              <p className="mt-3 whitespace-pre-wrap break-words border-t border-border pt-3 text-sm text-muted-foreground">{deal.notes}</p>
+            )}
+          </Section>
         </div>
       </div>
 
-      <DealHandoffDialog
-        deal={deal}
-        open={showHandoff}
-        onOpenChange={setShowHandoff}
-        onLinked={refresh}
-      />
+      {dialogs}
 
       <EditDealDialog deal={deal} open={showEdit} onOpenChange={setShowEdit} onSaved={refresh} />
 
@@ -368,7 +365,7 @@ export const CrmDealDetailPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this deal?</AlertDialogTitle>
             <AlertDialogDescription>
-              Tasks and notes on this deal will be removed. This can't be undone.
+              Follow-ups and notes on this deal will be removed. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -429,34 +426,34 @@ const EditDealDialog: React.FC<{
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit deal</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label>Name *</Label>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label>Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
+            <div className="flex flex-col gap-1.5">
               <Label>Value</Label>
               <Input type="number" min={0} step="0.01" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} />
             </div>
-            <div>
-              <Label>Probability (%)</Label>
+            <div className="flex flex-col gap-1.5">
+              <Label>Chance of winning (%)</Label>
               <Input type="number" min={0} max={100} value={probability} onChange={(e) => setProbability(e.target.value)} disabled={busy} />
             </div>
           </div>
-          <div>
+          <div className="flex flex-col gap-1.5">
             <Label>Expected close</Label>
             <Input type="date" value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} disabled={busy} />
           </div>
-          <div>
+          <div className="flex flex-col gap-1.5">
             <Label>Source</Label>
             <Input value={source} onChange={(e) => setSource(e.target.value)} disabled={busy} />
           </div>
-          <div>
+          <div className="flex flex-col gap-1.5">
             <Label>Notes</Label>
             <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} />
           </div>
@@ -464,7 +461,7 @@ const EditDealDialog: React.FC<{
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
           <Button onClick={handleSave} disabled={busy || !name.trim()}>
-            {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Save
+            {busy && <Loader2 className="animate-spin" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>

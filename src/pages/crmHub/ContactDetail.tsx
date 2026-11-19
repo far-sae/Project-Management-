@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ChevronLeft, Copy, StickyNote, Mail, Phone, Calendar as CalendarIcon,
-  Video, Loader2, Pencil, Trash2, Plus, Building2, MoreHorizontal, Settings as SettingsIcon,
+  CalendarPlus, Check, ChevronLeft, Copy, Handshake, History, Loader2, Mail,
+  MoreHorizontal, Pencil, Phone, Plus, StickyNote, Trash2, Video,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -13,26 +13,34 @@ import {
 } from '@/services/supabase/crmHub/contacts';
 import { listActivities, logActivity } from '@/services/supabase/crmHub/activities';
 import { listNotes, createNote } from '@/services/supabase/crmHub/notes';
-import { listTasks } from '@/services/supabase/crmHub/tasks';
+import { listTasks, createTask } from '@/services/supabase/crmHub/tasks';
 import { listDeals } from '@/services/supabase/crmHub/deals';
+import { listDealStages, seedDefaultDealStages } from '@/services/supabase/crmHub/dealStages';
 import { getCompany } from '@/services/supabase/crmHub/companies';
 import {
-  LIFECYCLE_STAGES, LEAD_STATUSES,
+  LIFECYCLE_STAGES, LEAD_STATUSES, TASK_PRIORITIES,
 } from '@/types/crmHub';
 import type {
-  CrmContact, CrmActivity, CrmNote, CrmTask, CrmDeal, CrmCompany,
-  ActivityType, LifecycleStage, LeadStatus,
+  CrmContact, CrmActivity, CrmNote, CrmTask, CrmDeal, CrmCompany, CrmDealStage,
+  ActivityType, LifecycleStage, LeadStatus, TaskPriority, TaskStatus,
 } from '@/types/crmHub';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import type { Project } from '@/types';
+import type { TaskAssignee } from '@/types/task';
+import {
+  LEAD_STEPS, dealBadge, leadName, leadStep, leadStepPatch, type LeadStep,
+} from '@/lib/crmFlow';
+import { followUpBucket, localYmd } from '@/lib/crmFollowUps';
+import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
+import { PriorityPill, UrgentBadge } from '@/components/common/TaskBadges';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -42,31 +50,71 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
-import { useCrmCurrency } from '@/context/CrmCurrencyContext';
-import { useCrmCompanies } from '@/hooks/useCrmHub';
-import { createTask } from '@/services/supabase/crmHub/tasks';
-import { TASK_PRIORITIES } from '@/types/crmHub';
-import type { TaskPriority } from '@/types/crmHub';
-import { useProjects } from '@/hooks/useProjects';
-import type { TaskAssignee } from '@/types/task';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
+import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
+import { useProjects } from '@/hooks/useProjects';
 
-const initials = (name: string) => {
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
+const PAGE_BODY = 'flex w-full flex-col gap-6 px-4 py-6 lg:px-6';
+const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
+/** One row of a list inside a section box. */
+const ROW = 'border-b border-border/60 px-4 py-2.5 last:border-0';
+/** One labelled field in a dialog form. */
+const FIELD = 'flex flex-col gap-1.5';
+/** Two fields side by side; stacked on phones. */
+const FIELD_ROW = 'grid grid-cols-1 gap-3 sm:grid-cols-2';
+const NONE = '__none__';
+/** How many notes / follow-ups show before "Show all". */
+const SHORT_LIST = 5;
+
+type ManualStep = 'new' | 'contacted' | 'qualified' | 'unqualified';
+
+/** The steps drawn in the bar, in order. "Unqualified" sits beside the bar. */
+const BAR_STEPS: LeadStep[] = ['new', 'contacted', 'qualified', 'deal', 'customer'];
+/** Leads that can still be turned into their first deal. */
+const CONVERTIBLE: LeadStep[] = ['new', 'contacted', 'qualified'];
+/** Why a step in the bar cannot be clicked. */
+const AUTOMATIC_STEP_TITLE: Partial<Record<LeadStep, string>> = {
+  deal: 'Set for you when you convert this lead to a deal.',
+  customer: 'Set for you when one of this lead’s deals is won.',
 };
+
+const isManualStep = (step: LeadStep): step is ManualStep =>
+  step === 'new' || step === 'contacted' || step === 'qualified' || step === 'unqualified';
 
 const humanize = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-type ContactTab = 'all' | 'note' | 'call' | 'email' | 'meeting' | 'accounts';
-const ACTIVITY_TABS: { key: ContactTab; label: string }[] = [
-  { key: 'accounts', label: 'Accounts' },
-  { key: 'all', label: 'All activities' },
+const formatDateTime = (date: Date): string =>
+  date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+const formatDate = (date: Date): string => date.toLocaleDateString(undefined, { dateStyle: 'medium' });
+
+type LeadTab = 'all' | 'note' | 'call' | 'email' | 'meeting' | 'accounts';
+const LEAD_TABS: { key: LeadTab; label: string }[] = [
+  { key: 'all', label: 'Timeline' },
   { key: 'note', label: 'Notes' },
   { key: 'call', label: 'Calls' },
   { key: 'email', label: 'Emails' },
   { key: 'meeting', label: 'Meetings' },
+  { key: 'accounts', label: 'Accounts' },
 ];
+
+/** What the timeline calls each kind of activity; anything else is shown as typed. */
+const ACTIVITY_LABEL: Partial<Record<ActivityType, string>> = {
+  note: 'Note',
+  call: 'Call',
+  email: 'Email',
+  meeting: 'Meeting',
+  task_completed: 'Follow-up completed',
+  contact_created: 'Lead created',
+  company_created: 'Company created',
+  deal_created: 'Deal created',
+  deal_updated: 'Deal updated',
+  deal_stage_changed: 'Deal moved',
+  deal_won: 'Deal won',
+  deal_lost: 'Deal lost',
+};
 
 const activityIcon = (t: ActivityType) => {
   if (t === 'note') return StickyNote;
@@ -76,12 +124,113 @@ const activityIcon = (t: ActivityType) => {
   return MoreHorizontal;
 };
 
-const activityTint = (t: ActivityType) => {
-  if (t === 'note') return 'bg-amber-500/15 text-amber-500';
-  if (t === 'call') return 'bg-blue-500/15 text-blue-500';
-  if (t === 'email') return 'bg-violet-500/15 text-violet-500';
-  if (t === 'meeting') return 'bg-emerald-500/15 text-emerald-500';
-  return 'bg-muted text-muted-foreground';
+const FOLLOW_UP_STATUS: Record<TaskStatus, { label: string; tone: StatusTone }> = {
+  pending: { label: 'Pending', tone: 'neutral' },
+  in_progress: { label: 'In progress', tone: 'info' },
+  completed: { label: 'Completed', tone: 'success' },
+};
+
+const PRIORITY_LABEL: Record<TaskPriority, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  urgent: 'Urgent',
+};
+
+/** A bordered box with a title row; the page's lists and details live in these. */
+const Section: React.FC<{
+  title: string;
+  meta?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, meta, action, children }) => (
+  <section className={BOX}>
+    <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-1.5">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {meta != null && <span className="text-xs tabular-nums text-muted-foreground">{meta}</span>}
+      </div>
+      {action}
+    </div>
+    {children}
+  </section>
+);
+
+/** One labelled value in the details list; an empty value shows a dash. */
+const Detail: React.FC<{ label: string; wide?: boolean; children?: React.ReactNode }> = ({ label, wide, children }) => (
+  <div className={cn('min-w-0', wide && 'col-span-2')}>
+    <dt className="text-xs text-muted-foreground">{label}</dt>
+    <dd className="mt-0.5 break-words text-sm text-foreground">
+      {children == null || children === '' || children === false
+        ? <span className="text-muted-foreground">—</span>
+        : children}
+    </dd>
+  </div>
+);
+
+/**
+ * Where the lead is: New → Contacted → Qualified → Deal open → Customer.
+ * The first three are set by hand; the last two happen by converting the
+ * lead and winning a deal, so they cannot be clicked.
+ */
+const LeadStepBar: React.FC<{
+  step: LeadStep;
+  busy: boolean;
+  onPick: (step: ManualStep) => void;
+}> = ({ step, busy, onPick }) => {
+  const current = BAR_STEPS.indexOf(step); // -1 when the lead is unqualified
+  return (
+    <ol
+      aria-label="Lead steps"
+      className="flex min-w-0 max-w-3xl flex-1 basis-80 overflow-x-auto rounded-lg border border-border bg-card text-xs sm:text-sm"
+    >
+      {BAR_STEPS.map((s, i) => {
+        const state = i === current ? 'current' : i < current ? 'done' : 'todo';
+        const cell = cn(
+          'flex min-h-11 w-full items-center justify-center gap-1.5 whitespace-nowrap px-2 font-medium transition-colors sm:px-3 md:min-h-9',
+          state === 'current' && 'bg-foreground text-background',
+          state === 'done' && 'bg-secondary text-foreground',
+          state === 'todo' && 'text-muted-foreground',
+        );
+        const content = (
+          <>
+            {state === 'done' && <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+            {LEAD_STEPS[s].label}
+            {state === 'done' && <span className="sr-only">(done)</span>}
+          </>
+        );
+        return (
+          <li
+            key={s}
+            data-state={state}
+            aria-current={state === 'current' ? 'step' : undefined}
+            className={cn('flex flex-1', i > 0 && 'border-l border-border')}
+          >
+            {isManualStep(s) ? (
+              <button
+                type="button"
+                className={cn(
+                  cell,
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none',
+                  state === 'done' && 'hover:bg-foreground/10',
+                  state === 'todo' && 'hover:bg-secondary hover:text-foreground',
+                )}
+                title={LEAD_STEPS[s].hint}
+                disabled={busy || state === 'current'}
+                onClick={() => onPick(s)}
+              >
+                {content}
+              </button>
+            ) : (
+              <span className={cn(cell, 'cursor-default')} title={AUTOMATIC_STEP_TITLE[s]}>
+                {content}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
 };
 
 export const CrmContactDetailPage: React.FC = () => {
@@ -91,6 +240,9 @@ export const CrmContactDetailPage: React.FC = () => {
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
   const { projects: allProjects } = useProjects();
+  const { items: companies } = useCrmCompanies();
+  const selectedWorkspaceId = useWorkspaceForCreate();
+  const { format: fmtCurrency } = useCrmCurrency();
 
   const [contact, setContact] = useState<CrmContact | null>(null);
   const [company, setCompany] = useState<CrmCompany | null>(null);
@@ -98,26 +250,37 @@ export const CrmContactDetailPage: React.FC = () => {
   const [activities, setActivities] = useState<CrmActivity[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [deals, setDeals] = useState<CrmDeal[]>([]);
+  const [stages, setStages] = useState<CrmDealStage[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   const [noteBody, setNoteBody] = useState('');
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<ContactTab>('all');
+  const [stepBusy, setStepBusy] = useState(false);
+  const [tab, setTab] = useState<LeadTab>('all');
+  const [showAllNotes, setShowAllNotes] = useState(false);
+  const [showAllFollowUps, setShowAllFollowUps] = useState(false);
 
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showConvert, setShowConvert] = useState(false);
   const [showLog, setShowLog] = useState(false);
-  const [showNewTask, setShowNewTask] = useState(false);
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskDueDate, setTaskDueDate] = useState('');
-  const [taskPriority, setTaskPriority] = useState<TaskPriority>('medium');
-  const [taskProjectId, setTaskProjectId] = useState('');
-  const [taskAssigneeId, setTaskAssigneeId] = useState('');
-  const { format: fmtCurrency } = useCrmCurrency();
+  const [showNewFollowUp, setShowNewFollowUp] = useState(false);
+  /** A step picked for a lead that already has a deal: asked about first. */
+  const [stepBack, setStepBack] = useState<ManualStep>('contacted');
+  const [confirmStepBack, setConfirmStepBack] = useState(false);
   const [logType, setLogType] = useState<ActivityType>('call');
   const [logBody, setLogBody] = useState('');
+  const logFieldId = useId();
+
+  // The lead's own workspace decides which pipeline and projects apply; an
+  // old lead without one falls back to the workspace picked in the sidebar.
+  const leadWorkspaceId = contact?.workspaceId ?? null;
+  const followUpWorkspaceId = leadWorkspaceId ?? selectedWorkspaceId;
   const workspaceProjects = allProjects.filter((project) => project.workspaceId === contact?.workspaceId);
+  const followUpProjects = leadWorkspaceId
+    ? workspaceProjects
+    : allProjects.filter((project) => project.workspaceId === followUpWorkspaceId);
   const taskAssignees: TaskAssignee[] = (organization?.members ?? [])
     .filter((member) => member.status === 'active')
     .map((member) => ({
@@ -141,6 +304,7 @@ export const CrmContactDetailPage: React.FC = () => {
     try {
       const c = await getContact(id);
       if (!c) { setNotFound(true); return; }
+      setNotFound(false);
       setContact(c);
       const [notesRows, actRows, taskRows, dealRows] = await Promise.all([
         listNotes(orgId, { contactId: id }),
@@ -159,7 +323,7 @@ export const CrmContactDetailPage: React.FC = () => {
         setCompany(null);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load contact');
+      toast.error(err instanceof Error ? err.message : 'Could not load the lead');
     } finally {
       setLoading(false);
     }
@@ -174,9 +338,29 @@ export const CrmContactDetailPage: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_notes', filter: `contact_id=eq.${id}` }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_activities', filter: `contact_id=eq.${id}` }, () => void refresh())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_tasks', filter: `contact_id=eq.${id}` }, () => void refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crm_deals', filter: `contact_id=eq.${id}` }, () => void refresh())
       .subscribe();
     return () => { channel.unsubscribe(); };
   }, [orgId, id, refresh]);
+
+  // Pipeline stages of the lead's own workspace, for "Convert to deal".
+  useEffect(() => {
+    if (!orgId || !leadWorkspaceId) { setStages([]); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        let rows = await listDealStages(orgId, leadWorkspaceId);
+        if (rows.length === 0) {
+          await seedDefaultDealStages(orgId, leadWorkspaceId);
+          rows = await listDealStages(orgId, leadWorkspaceId);
+        }
+        if (!cancelled) setStages(rows);
+      } catch {
+        if (!cancelled) setStages([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [orgId, leadWorkspaceId]);
 
   const handleAddNote = async () => {
     if (!orgId || !noteBody.trim()) return;
@@ -191,6 +375,12 @@ export const CrmContactDetailPage: React.FC = () => {
     } finally {
       setBusy(false);
     }
+  };
+
+  const openLog = (type: ActivityType) => {
+    setLogType(type);
+    setLogBody('');
+    setShowLog(true);
   };
 
   const handleLog = async () => {
@@ -219,10 +409,10 @@ export const CrmContactDetailPage: React.FC = () => {
     setBusy(true);
     try {
       await deleteContact(id);
-      toast.success('Contact deleted');
+      toast.success('Lead deleted');
       navigate('/crm/contacts');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete contact');
+      toast.error(err instanceof Error ? err.message : 'Could not delete the lead');
       setBusy(false);
     }
   };
@@ -233,312 +423,525 @@ export const CrmContactDetailPage: React.FC = () => {
     toast.success('Email copied');
   };
 
-  if (loading) {
+  const saveStep = async (next: ManualStep, done?: string) => {
+    if (!contact) return;
+    setStepBusy(true);
+    try {
+      await updateContact(contact.id, leadStepPatch(next));
+      toast.success(done ?? `${leadName(contact)} marked ${LEAD_STEPS[next].label.toLowerCase()}`);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update the lead');
+    } finally {
+      setStepBusy(false);
+    }
+  };
+
+  if (loading && contact?.id !== id) {
     return (
-      <main className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <main className="flex flex-1 items-center justify-center bg-background">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading lead" />
       </main>
     );
   }
 
-  if (notFound || !contact) {
+  if (notFound || !contact || contact.id !== id) {
     return (
-      <main className="flex-1 p-8 text-center">
-        <p className="text-muted-foreground mb-4">Contact not found.</p>
-        <Button asChild variant="outline"><Link to="/crm/contacts"><ChevronLeft className="w-4 h-4 mr-1" /> Back to contacts</Link></Button>
+      <main className="flex flex-1 flex-col items-center justify-center gap-3 bg-background px-4 py-12 text-center">
+        <p className="text-sm font-medium">Lead not found.</p>
+        <Button asChild variant="outline">
+          <Link to="/crm/contacts"><ChevronLeft aria-hidden />Back to leads</Link>
+        </Button>
       </main>
     );
   }
 
-  const fullName = `${contact.firstName} ${contact.lastName ?? ''}`.trim();
+  const fullName = leadName(contact);
+  const step = leadStep(contact);
+  const stepInfo = LEAD_STEPS[step];
+  const hasDeal = step === 'deal' || step === 'customer';
+  const canConvert = CONVERTIBLE.includes(step);
+  const owner = (organization?.members ?? []).find((member) => member.userId === contact.ownerId);
+  const customFields = Object.entries(contact.customFields ?? {});
+  const projectNameById = new Map(allProjects.map((project) => [project.projectId, project.name]));
+  const today = localYmd(new Date());
+
+  // Stepping a lead back from "Deal open" or "Customer" cannot be undone
+  // from the bar, so it is confirmed first.
+  const pickStep = (next: ManualStep) => {
+    if (hasDeal) {
+      setStepBack(next);
+      setConfirmStepBack(true);
+    } else {
+      void saveStep(next);
+    }
+  };
+
+  // The lead's own company stays selectable even when it is outside the
+  // workspace shown in the sidebar.
+  const companyOptions = company && !companies.some((c) => c.id === company.id)
+    ? [company, ...companies]
+    : companies;
 
   const filteredActivities = activities.filter((a) => {
     if (tab === 'all') return true;
     return a.type === tab;
   });
+  const visibleNotes = showAllNotes ? notes : notes.slice(0, SHORT_LIST);
+  const visibleFollowUps = showAllFollowUps ? tasks : tasks.slice(0, SHORT_LIST);
+  const logLabel = tab === 'all' || tab === 'accounts' ? 'activity' : tab;
 
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto bg-background">
-      <div className="flex items-center justify-between border-b border-border bg-card/40 px-4 py-2 sm:px-6">
-        <Button variant="ghost" size="sm" asChild className="gap-1">
-          <Link to="/crm/contacts"><ChevronLeft className="h-4 w-4" />Contacts</Link>
-        </Button>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
-            <Pencil className="mr-1.5 h-4 w-4" />Edit
+    <main className="min-w-0 flex-1 overflow-y-auto bg-background">
+      <div className={PAGE_BODY}>
+        <div className="flex flex-col gap-2">
+          <Button variant="ghost" size="sm" asChild className="-ml-2.5 self-start text-muted-foreground">
+            <Link to="/crm/contacts"><ChevronLeft aria-hidden />Leads</Link>
           </Button>
-          <Button variant="outline" size="sm" className="text-destructive" onClick={() => setShowDelete(true)}>
-            <Trash2 className="mr-1.5 h-4 w-4" />Delete
-          </Button>
+          <PageHeader
+            title={fullName}
+            description={
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {contact.jobTitle && <span>{contact.jobTitle}</span>}
+                {contact.jobTitle && company && <span aria-hidden>·</span>}
+                {company && (
+                  <Link to={`/crm/companies/${company.id}`} className="text-foreground hover:underline">
+                    {company.name}
+                  </Link>
+                )}
+                <StatusPill tone={stepInfo.tone} title={stepInfo.hint}>{stepInfo.label}</StatusPill>
+              </span>
+            }
+            actions={
+              <>
+                {canConvert && (
+                  <Button onClick={() => setShowConvert(true)}>
+                    <Handshake aria-hidden />Convert to deal
+                  </Button>
+                )}
+                {hasDeal && (
+                  <Button variant="outline" onClick={() => setShowConvert(true)}>
+                    <Plus aria-hidden />Open another deal
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setShowEdit(true)}>
+                  <Pencil aria-hidden />Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+                  onClick={() => setShowDelete(true)}
+                >
+                  <Trash2 aria-hidden />Delete
+                </Button>
+              </>
+            }
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <LeadStepBar step={step} busy={stepBusy} onPick={pickStep} />
+          {step === 'unqualified' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill tone="muted" title={LEAD_STEPS.unqualified.hint}>{LEAD_STEPS.unqualified.label}</StatusPill>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={stepBusy}
+                onClick={() => void saveStep('contacted', `${fullName} re-opened`)}
+              >
+                Re-open lead
+              </Button>
+            </div>
+          ) : step !== 'customer' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              title={LEAD_STEPS.unqualified.hint}
+              disabled={stepBusy}
+              onClick={() => pickStep('unqualified')}
+            >
+              Mark unqualified
+            </Button>
+          )}
+        </div>
+
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          {/* MAIN: deals, follow-ups, notes, timeline */}
+          <div className="flex min-w-0 flex-col gap-6">
+            <Section title="Deals" meta={deals.length}>
+              {deals.length === 0 ? (
+                <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
+                  <Handshake className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                  <p className="text-sm font-medium">No deals yet.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {step === 'unqualified'
+                      ? 'Re-open the lead to convert it to a deal.'
+                      : 'Once the lead is worth pursuing, convert it to a deal in the pipeline.'}
+                  </p>
+                  {step !== 'unqualified' && (
+                    <Button variant="outline" className="mt-3" onClick={() => setShowConvert(true)}>
+                      Convert to deal
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[34rem] text-sm">
+                    <thead>
+                      <tr className="h-10 border-b border-border text-xs text-muted-foreground">
+                        <th className="px-4 text-left font-medium">Deal</th>
+                        <th className="px-4 text-right font-medium">Value</th>
+                        <th className="px-4 text-left font-medium">Status</th>
+                        <th className="px-4 text-left font-medium">Project</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deals.map((d) => {
+                        const badge = dealBadge(d);
+                        return (
+                          <tr
+                            key={d.id}
+                            className="h-12 border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
+                          >
+                            <td className="px-4 font-medium text-foreground">
+                              <Link to={`/crm/deals/${d.id}`} className="hover:text-primary hover:underline">
+                                {d.name}
+                              </Link>
+                            </td>
+                            <td className="whitespace-nowrap px-4 text-right tabular-nums">{fmtCurrency(d.value)}</td>
+                            <td className="px-4">
+                              <StatusPill tone={badge.tone}>{badge.label}</StatusPill>
+                            </td>
+                            <td className="whitespace-nowrap px-4">
+                              {d.projectId ? (
+                                <Link to={`/project/${d.projectId}`} className="text-primary hover:underline">
+                                  Open project
+                                </Link>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+
+            <Section
+              title="Follow-ups"
+              meta={tasks.length}
+              action={
+                <Button variant="outline" size="sm" onClick={() => setShowNewFollowUp(true)}>
+                  <Plus aria-hidden />New follow-up
+                </Button>
+              }
+            >
+              {tasks.length === 0 ? (
+                <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  No follow-ups yet. Add one so the next step with this lead is not forgotten.
+                </p>
+              ) : (
+                <>
+                  <div>
+                    {visibleFollowUps.map((t) => {
+                      const status = FOLLOW_UP_STATUS[t.status];
+                      const done = t.status === 'completed';
+                      const overdue = followUpBucket(t, today) === 'overdue';
+                      return (
+                        <div key={t.id} className={`${ROW} flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1`}>
+                          <div className="min-w-0">
+                            <p className={cn('truncate text-sm font-medium', done && 'text-muted-foreground')}>{t.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {t.dueDate ? (
+                                <span className={overdue ? 'text-destructive' : undefined}>
+                                  {overdue ? 'Overdue · ' : 'Due '}{formatDate(t.dueDate)}
+                                </span>
+                              ) : 'No due date'}
+                              {t.projectId && (
+                                <>
+                                  {' · '}
+                                  <Link to={`/project/${t.projectId}`} className="hover:text-foreground hover:underline">
+                                    {projectNameById.get(t.projectId) ?? 'Open project'}
+                                  </Link>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {t.priority === 'urgent' && <UrgentBadge muted={done} />}
+                            {t.priority === 'high' && <PriorityPill priority="high" muted={done} />}
+                            <StatusPill tone={status?.tone ?? 'neutral'}>
+                              {status?.label ?? humanize(t.status)}
+                            </StatusPill>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {tasks.length > SHORT_LIST && (
+                    <div className="border-t border-border/60 px-2 py-1.5">
+                      <Button variant="ghost" size="sm" onClick={() => setShowAllFollowUps((v) => !v)}>
+                        {showAllFollowUps ? 'Show fewer' : `Show all ${tasks.length} follow-ups`}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </Section>
+
+            <Section title="Notes" meta={notes.length}>
+              <div className="flex flex-col gap-2 px-4 py-3">
+                <Textarea
+                  id="contact-note-composer"
+                  rows={3}
+                  placeholder="Add a note about this lead…"
+                  aria-label="Add note"
+                  value={noteBody}
+                  onChange={(e) => setNoteBody(e.target.value)}
+                  disabled={busy}
+                />
+                <div className="flex justify-end">
+                  <Button onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
+                    {busy && <Loader2 className="animate-spin" aria-hidden />}Save note
+                  </Button>
+                </div>
+              </div>
+              {notes.length > 0 && (
+                <div className="border-t border-border">
+                  <div>
+                    {visibleNotes.map((n) => (
+                      <div key={n.id} className={ROW}>
+                        <p className="whitespace-pre-wrap break-words text-sm">{n.body}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(n.createdAt)}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {notes.length > SHORT_LIST && (
+                    <div className="border-t border-border/60 px-2 py-1.5">
+                      <Button variant="ghost" size="sm" onClick={() => setShowAllNotes((v) => !v)}>
+                        {showAllNotes ? 'Show fewer' : `Show all ${notes.length} notes`}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Section>
+
+            <Tabs value={tab} onValueChange={(v) => setTab(v as LeadTab)} className="flex min-w-0 flex-col gap-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <div className="min-w-0 max-w-full overflow-x-auto">
+                  <TabsList>
+                    {LEAD_TABS.map((t) => (
+                      <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+                {tab !== 'accounts' && (
+                  <Button
+                    variant="outline"
+                    className="mb-1.5"
+                    onClick={() => openLog(tab === 'all' ? 'call' : tab)}
+                  >
+                    <Plus aria-hidden />Log {logLabel}
+                  </Button>
+                )}
+              </div>
+
+              <TabsContent value={tab} className="mt-0">
+                {tab === 'accounts' ? (
+                  contact.workspaceId && orgId ? (
+                    <ClientAccountsTab
+                      organizationId={orgId}
+                      workspaceId={contact.workspaceId}
+                      contactId={contact.id}
+                      projects={workspaceProjects}
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                      Assign this lead to a workspace before adding account records.
+                    </div>
+                  )
+                ) : (
+                  <div className={BOX}>
+                    {filteredActivities.length === 0 ? (
+                      <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
+                        <History className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                        <p className="text-sm font-medium">No {tab === 'all' ? 'activity' : `${tab}s`} yet.</p>
+                        <Button
+                          variant="outline"
+                          className="mt-3"
+                          onClick={() => openLog(tab === 'all' ? 'call' : (tab as ActivityType))}
+                        >
+                          <Plus aria-hidden />{tab === 'all' ? 'Log activity' : `Log first ${tab}`}
+                        </Button>
+                      </div>
+                    ) : filteredActivities.map((a) => {
+                      const Icon = activityIcon(a.type);
+                      return (
+                        <div key={a.id} className={`${ROW} flex items-start gap-3`}>
+                          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground">
+                            <Icon className="h-3.5 w-3.5" aria-hidden />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                              <p className="text-sm font-medium">{ACTIVITY_LABEL[a.type] ?? humanize(a.type)}</p>
+                              <span className="text-xs tabular-nums text-muted-foreground">{formatDateTime(a.createdAt)}</span>
+                            </div>
+                            {a.description && (
+                              <p className="mt-0.5 break-words text-sm text-muted-foreground">{a.description}</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {/* SIDE: details and tags. First on phones, so the lead can be called or emailed at once. */}
+          <aside className="order-first flex min-w-0 flex-col gap-6 lg:order-none">
+            <Section
+              title="Details"
+              action={
+                <Button variant="ghost" size="sm" onClick={() => setShowEdit(true)}>
+                  <Pencil aria-hidden />Edit
+                </Button>
+              }
+            >
+              <div className="flex flex-wrap gap-1.5 border-b border-border px-4 py-3">
+                <Button variant="outline" size="sm" onClick={() => openLog('note')}>
+                  <StickyNote aria-hidden />Note
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (contact.email) window.location.href = `mailto:${contact.email}`;
+                    else openLog('email');
+                  }}
+                >
+                  <Mail aria-hidden />Email
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (contact.phone) window.location.href = `tel:${contact.phone}`;
+                    else openLog('call');
+                  }}
+                >
+                  <Phone aria-hidden />Call
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setShowNewFollowUp(true)}>
+                  <CalendarPlus aria-hidden />Follow-up
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openLog('meeting')}>
+                  <Video aria-hidden />Meeting
+                </Button>
+              </div>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3">
+                <Detail label="Email" wide>
+                  {contact.email && (
+                    <span className="flex items-center gap-1">
+                      <a href={`mailto:${contact.email}`} className="min-w-0 break-all text-primary hover:underline">
+                        {contact.email}
+                      </a>
+                      <Button variant="ghost" size="icon" aria-label="Copy email" onClick={copyEmail}>
+                        <Copy aria-hidden />
+                      </Button>
+                    </span>
+                  )}
+                </Detail>
+                <Detail label="Phone">
+                  {contact.phone && (
+                    <a href={`tel:${contact.phone}`} className="tabular-nums hover:underline">{contact.phone}</a>
+                  )}
+                </Detail>
+                <Detail label="Job title">{contact.jobTitle}</Detail>
+                <Detail label="Company">
+                  {company && (
+                    <Link to={`/crm/companies/${company.id}`} className="text-primary hover:underline">{company.name}</Link>
+                  )}
+                </Detail>
+                <Detail label="Owner">{owner ? owner.displayName || owner.email : null}</Detail>
+                <Detail label="Source">{contact.source}</Detail>
+                <Detail label="Category">{contact.category}</Detail>
+                <Detail label="Step">
+                  <StatusPill tone={stepInfo.tone} title={stepInfo.hint}>{stepInfo.label}</StatusPill>
+                </Detail>
+                <Detail label="Added">{formatDate(contact.createdAt)}</Detail>
+              </dl>
+              {customFields.length > 0 && (
+                <div className="flex flex-col gap-2 border-t border-border px-4 py-3">
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Custom fields</p>
+                    <p className="text-xs text-muted-foreground">Captured from CSV import.</p>
+                  </div>
+                  {customFields.map(([k, v]) => (
+                    <div key={k} className="flex items-start justify-between gap-3 text-sm">
+                      <span className="text-muted-foreground">{humanize(k)}</span>
+                      <span className="min-w-0 break-words text-right font-medium">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Section>
+
+            <Section title="Tags">
+              <div className="px-4 py-3">
+                <ContactTagPicker contactId={contact.id} />
+              </div>
+            </Section>
+          </aside>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-[320px_minmax(0,1fr)_320px] lg:gap-6 lg:p-6">
-        {/* LEFT */}
-        <aside className="space-y-3">
-          <Card>
-            <CardContent className="space-y-4 p-5">
-              <div className="flex flex-col items-center text-center">
-                <Avatar className="h-16 w-16">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-lg">{initials(fullName)}</AvatarFallback>
-                </Avatar>
-                <h2 className="mt-3 text-lg font-bold">{fullName}</h2>
-                {contact.jobTitle && <p className="text-xs text-muted-foreground">{contact.jobTitle}</p>}
-                {contact.email && (
-                  <button onClick={copyEmail} className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
-                    {contact.email} <Copy className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+      <ConvertLeadDialog
+        lead={contact}
+        stages={stages}
+        companies={companyOptions}
+        open={showConvert}
+        onOpenChange={setShowConvert}
+        onConverted={refresh}
+      />
 
-              <div className="grid grid-cols-5 gap-1">
-                <QuickAction icon={StickyNote} label="Note" onClick={() => { setLogType('note'); setLogBody(''); setShowLog(true); }} />
-                <QuickAction icon={Mail} label="Email" onClick={() => {
-                  if (contact.email) window.location.href = `mailto:${contact.email}`;
-                  else { setLogType('email'); setLogBody(''); setShowLog(true); }
-                }} />
-                <QuickAction icon={Phone} label="Call" onClick={() => {
-                  if (contact.phone) window.location.href = `tel:${contact.phone}`;
-                  else { setLogType('call'); setLogBody(''); setShowLog(true); }
-                }} />
-                <QuickAction icon={CalendarIcon} label="Task" onClick={() => setShowNewTask(true)} />
-                <QuickAction icon={Video} label="Meet" onClick={() => { setLogType('meeting'); setLogBody(''); setShowLog(true); }} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="space-y-3 p-5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Key information</h3>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowEdit(true)}>
-                  <SettingsIcon className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <KV label="Email" value={contact.email} />
-              <KV label="Phone number" value={contact.phone} />
-              <KV label="Company" value={
-                company ? <Link to={`/crm/companies/${company.id}`} className="text-primary hover:underline">{company.name}</Link> : null
-              } />
-              <KV label="Job title" value={contact.jobTitle} />
-              <KV label="Lead status" value={<Badge variant="outline" className="capitalize">{humanize(contact.leadStatus)}</Badge>} />
-              <KV label="Lifecycle stage" value={<Badge className="capitalize bg-primary/15 text-primary hover:bg-primary/20">{humanize(contact.lifecycleStage)}</Badge>} />
-              <KV label="Source" value={contact.source} />
-            </CardContent>
-          </Card>
-
-          {Object.keys(contact.customFields ?? {}).length > 0 && (
-            <Card>
-              <CardContent className="space-y-3 p-5">
-                <h3 className="text-sm font-semibold">Custom fields</h3>
-                <p className="text-xs text-muted-foreground -mt-2">
-                  Captured from CSV import.
-                </p>
-                {Object.entries(contact.customFields).map(([k, v]) => (
-                  <KV key={k} label={humanize(k)} value={v} />
-                ))}
-              </CardContent>
-            </Card>
-          )}
-        </aside>
-
-        {/* CENTER */}
-        <section className="space-y-4 min-w-0">
-          <Card>
-            <CardContent className="space-y-2 p-4">
-              <Textarea
-                id="contact-note-composer"
-                rows={3}
-                placeholder="Add a note about this contact…"
-                value={noteBody}
-                onChange={(e) => setNoteBody(e.target.value)}
-                disabled={busy}
-              />
-              <div className="flex items-center justify-between">
-                <Button variant="ghost" size="sm" onClick={() => { setLogType('call'); setLogBody(''); setShowLog(true); }}>
-                  <Plus className="mr-1 h-4 w-4" />Log activity
-                </Button>
-                <Button size="sm" onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
-                  {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Save note
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="flex items-center justify-between gap-2 border-b border-border">
-            <div className="flex items-center gap-2 overflow-x-auto">
-              {ACTIVITY_TABS.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setTab(t.key)}
-                  className={`px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-                    tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            {tab !== 'all' && tab !== 'accounts' && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="mb-1 whitespace-nowrap"
-                onClick={() => { setLogType(tab as ActivityType); setLogBody(''); setShowLog(true); }}
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                Log {tab}
-              </Button>
-            )}
-          </div>
-
-          {tab === 'accounts' ? (
-            contact.workspaceId && orgId
-              ? <ClientAccountsTab organizationId={orgId} workspaceId={contact.workspaceId} contactId={contact.id} projects={workspaceProjects} />
-              : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">Assign this legacy contact to a workspace before adding account records.</div>
-          ) : <div className="space-y-3">
-            {filteredActivities.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-10 text-center space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  No {tab === 'all' ? 'activity' : `${tab}s`} yet.
-                </p>
-                {tab !== 'all' && (
-                  <Button
-                    size="sm"
-                    onClick={() => { setLogType(tab as ActivityType); setLogBody(''); setShowLog(true); }}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    Log first {tab}
-                  </Button>
-                )}
-                {tab === 'all' && (
-                  <Button
-                    size="sm"
-                    onClick={() => { setLogType('call'); setLogBody(''); setShowLog(true); }}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    Log activity
-                  </Button>
-                )}
-              </div>
-            ) : filteredActivities.map((a) => {
-              const Icon = activityIcon(a.type);
-              return (
-                <Card key={a.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full ${activityTint(a.type)}`}>
-                          <Icon className="h-4 w-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold capitalize">{humanize(a.type)}</p>
-                          {a.description && <p className="mt-0.5 text-sm text-muted-foreground break-words">{a.description}</p>}
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-xs text-muted-foreground">{a.createdAt.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>}
-        </section>
-
-        {/* RIGHT — Associations */}
-        <aside className="space-y-3">
-          <AssocPanel
-            title="Companies"
-            count={company ? 1 : 0}
-            onAdd={() => setShowEdit(true)}
-            addLabel={company ? 'Change' : 'Add'}
-          >
-            {company ? (
-              <Link to={`/crm/companies/${company.id}`} className="flex items-center gap-2 rounded-lg border border-border p-3 hover:border-primary transition-colors">
-                <span className="grid h-9 w-9 place-items-center rounded-md bg-primary/10 text-primary"><Building2 className="h-4 w-4" /></span>
-                <span className="text-sm font-medium truncate">{company.name}</span>
-              </Link>
-            ) : <EmptyAssoc label="company" />}
-          </AssocPanel>
-
-          <AssocPanel
-            title="Deals"
-            count={deals.length}
-            onAdd={() => navigate('/crm/deals')}
-          >
-            {deals.length === 0 ? <EmptyAssoc label="deal" /> : deals.map((d) => (
-              <Link key={d.id} to={`/crm/deals/${d.id}`} className="block rounded-lg border border-border p-3 hover:border-primary transition-colors">
-                <p className="text-sm font-semibold text-primary hover:underline">{d.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{fmtCurrency(d.value)}</p>
-                <Badge variant="secondary" className="mt-2 capitalize">{d.status}</Badge>
-              </Link>
-            ))}
-          </AssocPanel>
-
-          <AssocPanel
-            title="Tasks"
-            count={tasks.length}
-            onAdd={() => setShowNewTask(true)}
-          >
-            {tasks.length === 0 ? <EmptyAssoc label="task" /> : tasks.slice(0, 5).map((t) => (
-              <div key={t.id} className="rounded-lg border border-border p-3">
-                <p className="text-sm font-medium">{t.title}</p>
-                <div className="mt-1 flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">{t.dueDate ? t.dueDate.toLocaleDateString() : 'No due date'}</p>
-                  <Badge variant="secondary" className="capitalize">{humanize(t.status)}</Badge>
-                </div>
-              </div>
-            ))}
-          </AssocPanel>
-
-          <AssocPanel
-            title="Notes"
-            count={notes.length}
-            onAdd={() => {
-              document.getElementById('contact-note-composer')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              (document.getElementById('contact-note-composer') as HTMLTextAreaElement | null)?.focus();
-            }}
-          >
-            {notes.length === 0 ? <EmptyAssoc label="note" /> : notes.slice(0, 3).map((n) => (
-              <div key={n.id} className="rounded-lg border border-border p-3">
-                <p className="text-sm whitespace-pre-wrap break-words line-clamp-3">{n.body}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{n.createdAt.toLocaleDateString()}</p>
-              </div>
-            ))}
-          </AssocPanel>
-
-          <Card>
-            <CardContent className="space-y-2 p-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Tags</h3>
-              </div>
-              <Separator />
-              <div className="pt-1">
-                <ContactTagPicker contactId={contact.id} />
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-      </div>
-
-      <EditContactDialog
+      <EditLeadDialog
         contact={contact}
+        companies={companyOptions}
         open={showEdit}
         onOpenChange={setShowEdit}
         onSaved={refresh}
       />
 
+      <NewFollowUpDialog
+        lead={contact}
+        organizationId={orgId}
+        workspaceId={followUpWorkspaceId}
+        projects={followUpProjects}
+        assignees={taskAssignees}
+        open={showNewFollowUp}
+        onOpenChange={setShowNewFollowUp}
+        onCreated={refresh}
+      />
+
       <Dialog open={showLog} onOpenChange={setShowLog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Log {humanize(logType).toLowerCase()}</DialogTitle>
+            <DialogTitle>Log {(ACTIVITY_LABEL[logType] ?? humanize(logType)).toLowerCase()}</DialogTitle>
+            <DialogDescription>Adds it to {fullName}’s timeline.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Type</Label>
+          <div className="flex flex-col gap-4">
+            <div className={FIELD}>
+              <Label htmlFor={`${logFieldId}-type`}>Type</Label>
               <Select value={logType} onValueChange={(v) => setLogType(v as ActivityType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id={`${logFieldId}-type`}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="note">Note</SelectItem>
                   <SelectItem value="call">Call</SelectItem>
@@ -547,123 +950,57 @@ export const CrmContactDetailPage: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Description</Label>
-              <Textarea rows={3} value={logBody} onChange={(e) => setLogBody(e.target.value)} disabled={busy} />
+            <div className={FIELD}>
+              <Label htmlFor={`${logFieldId}-body`}>What happened</Label>
+              <Textarea
+                id={`${logFieldId}-body`}
+                rows={3}
+                value={logBody}
+                onChange={(e) => setLogBody(e.target.value)}
+                disabled={busy}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowLog(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleLog} disabled={busy || !logBody.trim()}>
-              {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Log
+              {busy && <Loader2 className="animate-spin" aria-hidden />}Log
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewTask} onOpenChange={(o) => { setShowNewTask(o); if (!o) { setTaskTitle(''); setTaskDueDate(''); setTaskPriority('medium'); setTaskProjectId(''); setTaskAssigneeId(''); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>New follow-up for {contact.firstName}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>Title *</Label>
-              <Input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} disabled={busy} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Project *</Label>
-                <Select value={taskProjectId} onValueChange={setTaskProjectId} disabled={busy}>
-                  <SelectTrigger><SelectValue placeholder="Choose project" /></SelectTrigger>
-                  <SelectContent>
-                    {workspaceProjects.map((project) => (
-                      <SelectItem key={project.projectId} value={project.projectId}>{project.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Assignee</Label>
-                <Select value={taskAssigneeId || '__none__'} onValueChange={(value) => setTaskAssigneeId(value === '__none__' ? '' : value)} disabled={busy}>
-                  <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Unassigned</SelectItem>
-                    {taskAssignees.map((assignee) => (
-                      <SelectItem key={assignee.userId} value={assignee.userId}>{assignee.displayName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Due date</Label>
-                <Input type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} disabled={busy} />
-              </div>
-              <div>
-                <Label>Priority</Label>
-                <Select value={taskPriority} onValueChange={(v) => setTaskPriority(v as TaskPriority)} disabled={busy}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TASK_PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewTask(false)} disabled={busy}>Cancel</Button>
-            <Button
-              onClick={async () => {
-                if (!orgId || !user || !contact.workspaceId || !taskTitle.trim() || !taskProjectId) return;
-                const project = workspaceProjects.find((item) => item.projectId === taskProjectId);
-                if (!project) { toast.error('Choose a project in this workspace'); return; }
-                const assignee = taskAssignees.find((item) => item.userId === taskAssigneeId) ?? null;
-                setBusy(true);
-                try {
-                  await createTask({
-                    organizationId: orgId,
-                    workspaceId: contact.workspaceId,
-                    projectId: project.projectId,
-                    title: taskTitle.trim(),
-                    dueDate: taskDueDate || null,
-                    priority: taskPriority,
-                    contactId: id,
-                    companyId: contact.companyId,
-                    assignedTo: taskAssigneeId || null,
-                  }, user.userId, {
-                    actorId: user.userId,
-                    assignee,
-                    projectName: project.name,
-                    sharedStatus: [...(project.columns ?? [])].sort((a, b) => a.order - b.order)[0]?.id,
-                  });
-                  toast.success('Follow-up created in CRM, Kanban and Calendar');
-                  setShowNewTask(false);
-                  setTaskTitle(''); setTaskDueDate(''); setTaskPriority('medium');
-                  await refresh();
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Could not create task');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              disabled={busy || !taskTitle.trim() || !taskProjectId}
-            >
-              {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={confirmStepBack} onOpenChange={setConfirmStepBack}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {stepBack === 'unqualified'
+                ? `Mark ${fullName} unqualified?`
+                : `Move ${fullName} back to ${LEAD_STEPS[stepBack].label}?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {step === 'customer'
+                ? 'This lead is a customer because a deal was won.'
+                : 'This lead has a deal open.'}
+              {' '}“Deal open” and “Customer” are set by converting the lead and winning a deal, so you
+              cannot put the lead back on that step by hand. The lead’s deals are not changed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={stepBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={stepBusy} onClick={() => void saveStep(stepBack)}>
+              {stepBack === 'unqualified' ? 'Mark unqualified' : 'Move back'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this contact?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
             <AlertDialogDescription>
-              This can't be undone. Linked deals and tasks will lose the reference.
+              This can't be undone. Deals and follow-ups linked to this lead stay, but lose the link to it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -680,73 +1017,168 @@ export const CrmContactDetailPage: React.FC = () => {
   );
 };
 
-// ─── Small helpers ───────────────────────────────────────────────
+// ─── New follow-up ───────────────────────────────────────────────
 
-const QuickAction: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  onClick: () => void;
-}> = ({ icon: Icon, label, onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className="flex flex-col items-center gap-1 rounded-lg p-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-  >
-    <span className="grid h-9 w-9 place-items-center rounded-md bg-primary/10 text-primary">
-      <Icon className="h-4 w-4" />
-    </span>
-    {label}
-  </button>
-);
+/**
+ * A follow-up on the lead. Without a project it is a sales follow-up kept
+ * in the CRM; with one it also appears on that project's board.
+ */
+const NewFollowUpDialog: React.FC<{
+  lead: CrmContact;
+  organizationId: string | null;
+  /** The workspace the follow-up is filed under. */
+  workspaceId: string | null;
+  projects: Project[];
+  assignees: TaskAssignee[];
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: () => void | Promise<void>;
+}> = ({ lead, organizationId, workspaceId, projects, assignees, open, onOpenChange, onCreated }) => {
+  const { user } = useAuth();
+  const fieldId = useId();
+  const [title, setTitle] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [priority, setPriority] = useState<TaskPriority>('medium');
+  const [projectId, setProjectId] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [busy, setBusy] = useState(false);
 
-const KV: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
-  <div>
-    <p className="text-xs text-muted-foreground">{label}</p>
-    <div className="text-sm">{value ?? <span className="text-muted-foreground">—</span>}</div>
-  </div>
-);
+  useEffect(() => {
+    if (open) return;
+    setTitle('');
+    setDueDate('');
+    setPriority('medium');
+    setProjectId('');
+    setAssigneeId('');
+  }, [open]);
 
-const AssocPanel: React.FC<{
-  title: string;
-  count: number;
-  onAdd?: () => void;
-  addLabel?: string;
-  children: React.ReactNode;
-}> = ({ title, count, onAdd, addLabel = 'Add', children }) => (
-  <Card>
-    <CardContent className="space-y-2 p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">{title} ({count})</h3>
-        {onAdd && (
-          <button
-            type="button"
-            onClick={onAdd}
-            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {addLabel}
-          </button>
-        )}
-      </div>
-      <Separator />
-      <div className="space-y-2 pt-1">{children}</div>
-    </CardContent>
-  </Card>
-);
+  const canSave = Boolean(organizationId && user && workspaceId && title.trim());
 
-const EmptyAssoc: React.FC<{ label: string }> = ({ label }) => (
-  <p className="text-xs text-muted-foreground italic px-1">No {label} associated yet.</p>
-);
+  const handleCreate = async () => {
+    if (!organizationId || !user || !workspaceId || !title.trim()) return;
+    // No project = a sales follow-up kept in the CRM only.
+    const project = projectId ? projects.find((item) => item.projectId === projectId) : null;
+    if (projectId && !project) { toast.error('Choose a project in this workspace'); return; }
+    const assignee = assignees.find((item) => item.userId === assigneeId) ?? null;
+    setBusy(true);
+    try {
+      await createTask({
+        organizationId,
+        workspaceId,
+        projectId: project ? project.projectId : null,
+        title: title.trim(),
+        dueDate: dueDate || null,
+        priority,
+        contactId: lead.id,
+        companyId: lead.companyId,
+        assignedTo: assigneeId || null,
+      }, user.userId, {
+        actorId: user.userId,
+        assignee,
+        projectName: project?.name,
+        sharedStatus: project
+          ? [...(project.columns ?? [])].sort((a, b) => a.order - b.order)[0]?.id
+          : undefined,
+      });
+      toast.success(project ? `Follow-up created. It is also on the ${project.name} board.` : 'Follow-up created');
+      onOpenChange(false);
+      await onCreated();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not create follow-up');
+    } finally {
+      setBusy(false);
+    }
+  };
 
-// ─── Edit dialog inline (uses updateContact) ────────────────────
+  return (
+    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New follow-up for {lead.firstName || leadName(lead)}</DialogTitle>
+          <DialogDescription>A reminder of the next step with this lead.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className={FIELD}>
+            <Label htmlFor={`${fieldId}-title`}>Title</Label>
+            <Input
+              id={`${fieldId}-title`}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Call back about the proposal"
+              disabled={busy}
+            />
+          </div>
+          <div className={FIELD}>
+            <Label htmlFor={`${fieldId}-project`}>Project (optional)</Label>
+            <Select value={projectId || NONE} onValueChange={(v) => setProjectId(v === NONE ? '' : v)} disabled={busy}>
+              <SelectTrigger id={`${fieldId}-project`}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>No project (sales follow-up)</SelectItem>
+                {projects.map((project) => (
+                  <SelectItem key={project.projectId} value={project.projectId}>{project.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {projectId ? 'Also appears on this project’s board' : 'Stays in the CRM only'}
+            </p>
+          </div>
+          <div className={FIELD}>
+            <Label htmlFor={`${fieldId}-assignee`}>Assignee</Label>
+            <Select value={assigneeId || NONE} onValueChange={(v) => setAssigneeId(v === NONE ? '' : v)} disabled={busy}>
+              <SelectTrigger id={`${fieldId}-assignee`}><SelectValue placeholder="Unassigned" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>Unassigned</SelectItem>
+                {assignees.map((assignee) => (
+                  <SelectItem key={assignee.userId} value={assignee.userId}>{assignee.displayName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className={FIELD_ROW}>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-due`}>Due date</Label>
+              <Input id={`${fieldId}-due`} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} disabled={busy} />
+            </div>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-priority`}>Priority</Label>
+              <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)} disabled={busy}>
+                <SelectTrigger id={`${fieldId}-priority`}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TASK_PRIORITIES.map((p) => (
+                    <SelectItem key={p} value={p}>{PRIORITY_LABEL[p]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {!workspaceId && (
+            <p className="text-xs text-destructive">
+              This lead is not in a workspace. Pick a workspace in the sidebar, then add the follow-up.
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={busy || !canSave}>
+            {busy && <Loader2 className="animate-spin" aria-hidden />}Create follow-up
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
-const EditContactDialog: React.FC<{
+// ─── Edit lead ───────────────────────────────────────────────────
+
+const EditLeadDialog: React.FC<{
   contact: CrmContact;
+  companies: CrmCompany[];
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void | Promise<void>;
-}> = ({ contact, open, onOpenChange, onSaved }) => {
-  const { items: companies } = useCrmCompanies();
+}> = ({ contact, companies, open, onOpenChange, onSaved }) => {
+  const fieldId = useId();
   const [firstName, setFirstName] = useState(contact.firstName);
   const [lastName, setLastName] = useState(contact.lastName ?? '');
   const [email, setEmail] = useState(contact.email ?? '');
@@ -754,6 +1186,7 @@ const EditContactDialog: React.FC<{
   const [jobTitle, setJobTitle] = useState(contact.jobTitle ?? '');
   const [companyId, setCompanyId] = useState(contact.companyId ?? '');
   const [source, setSource] = useState(contact.source ?? '');
+  const [category, setCategory] = useState(contact.category ?? '');
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>(contact.lifecycleStage);
   const [leadStatus, setLeadStatus] = useState<LeadStatus>(contact.leadStatus);
   const [busy, setBusy] = useState(false);
@@ -767,6 +1200,7 @@ const EditContactDialog: React.FC<{
       setJobTitle(contact.jobTitle ?? '');
       setCompanyId(contact.companyId ?? '');
       setSource(contact.source ?? '');
+      setCategory(contact.category ?? '');
       setLifecycleStage(contact.lifecycleStage);
       setLeadStatus(contact.leadStatus);
     }
@@ -783,10 +1217,12 @@ const EditContactDialog: React.FC<{
         jobTitle: jobTitle.trim() || null,
         companyId: companyId || null,
         source: source.trim() || null,
-        lifecycleStage,
-        leadStatus,
+        category: category.trim() || null,
+        // Sent only when changed here, so a save never undoes the step bar.
+        ...(lifecycleStage !== contact.lifecycleStage ? { lifecycleStage } : {}),
+        ...(leadStatus !== contact.leadStatus ? { leadStatus } : {}),
       });
-      toast.success('Contact updated');
+      toast.success('Lead updated');
       await onSaved();
       onOpenChange(false);
     } catch (err) {
@@ -798,80 +1234,99 @@ const EditContactDialog: React.FC<{
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit contact</DialogTitle>
+          <DialogTitle>Edit lead</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>First name *</Label>
-              <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} disabled={busy} />
+        <div className="flex flex-col gap-4">
+          <div className={FIELD_ROW}>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-first`}>First name</Label>
+              <Input id={`${fieldId}-first`} value={firstName} onChange={(e) => setFirstName(e.target.value)} disabled={busy} />
             </div>
-            <div>
-              <Label>Last name</Label>
-              <Input value={lastName} onChange={(e) => setLastName(e.target.value)} disabled={busy} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Email</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
-            </div>
-            <div>
-              <Label>Phone</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} disabled={busy} />
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-last`}>Last name</Label>
+              <Input id={`${fieldId}-last`} value={lastName} onChange={(e) => setLastName(e.target.value)} disabled={busy} />
             </div>
           </div>
-          <div>
-            <Label>Job title</Label>
-            <Input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} disabled={busy} />
+          <div className={FIELD_ROW}>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-email`}>Email</Label>
+              <Input id={`${fieldId}-email`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
+            </div>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-phone`}>Phone</Label>
+              <Input id={`${fieldId}-phone`} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={busy} />
+            </div>
           </div>
-          <div>
-            <Label>Company</Label>
-            <Select value={companyId || '__none__'} onValueChange={(v) => setCompanyId(v === '__none__' ? '' : v)} disabled={busy}>
-              <SelectTrigger><SelectValue placeholder="No company" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">— None —</SelectItem>
-                {companies.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Source</Label>
-            <Input value={source} onChange={(e) => setSource(e.target.value)} disabled={busy} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Lifecycle stage</Label>
-              <Select value={lifecycleStage} onValueChange={(v) => setLifecycleStage(v as LifecycleStage)} disabled={busy}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+          <div className={FIELD_ROW}>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-job`}>Job title</Label>
+              <Input id={`${fieldId}-job`} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} disabled={busy} />
+            </div>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-company`}>Company</Label>
+              <Select value={companyId || NONE} onValueChange={(v) => setCompanyId(v === NONE ? '' : v)} disabled={busy}>
+                <SelectTrigger id={`${fieldId}-company`}><SelectValue placeholder="No company" /></SelectTrigger>
                 <SelectContent>
-                  {LIFECYCLE_STAGES.map((s) => (
-                    <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Lead status</Label>
-              <Select value={leadStatus} onValueChange={(v) => setLeadStatus(v as LeadStatus)} disabled={busy}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {LEAD_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
+                  <SelectItem value={NONE}>No company</SelectItem>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
+          <div className={FIELD_ROW}>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-source`}>Where it came from</Label>
+              <Input id={`${fieldId}-source`} value={source} onChange={(e) => setSource(e.target.value)} placeholder="Website, referral…" disabled={busy} />
+            </div>
+            <div className={FIELD}>
+              <Label htmlFor={`${fieldId}-category`}>Category</Label>
+              <Input id={`${fieldId}-category`} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Optional" maxLength={64} disabled={busy} />
+            </div>
+          </div>
+          <details className="rounded-md border border-border">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-foreground">
+              Advanced
+              <span className="ml-2 text-xs font-normal text-muted-foreground">HubSpot-style fields</span>
+            </summary>
+            <div className="flex flex-col gap-3 border-t border-border px-3 py-3">
+              <p className="text-xs text-muted-foreground">
+                The step bar on the lead’s page sets these two for you. Change them here only if you need the exact value.
+              </p>
+              <div className={FIELD_ROW}>
+                <div className={FIELD}>
+                  <Label htmlFor={`${fieldId}-lifecycle`}>Lifecycle stage</Label>
+                  <Select value={lifecycleStage} onValueChange={(v) => setLifecycleStage(v as LifecycleStage)} disabled={busy}>
+                    <SelectTrigger id={`${fieldId}-lifecycle`}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {LIFECYCLE_STAGES.map((s) => (
+                        <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className={FIELD}>
+                  <Label htmlFor={`${fieldId}-status`}>Lead status</Label>
+                  <Select value={leadStatus} onValueChange={(v) => setLeadStatus(v as LeadStatus)} disabled={busy}>
+                    <SelectTrigger id={`${fieldId}-status`}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {LEAD_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
           <Button onClick={handleSave} disabled={busy || !firstName.trim()}>
-            {busy && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Save
+            {busy && <Loader2 className="animate-spin" aria-hidden />}Save
           </Button>
         </DialogFooter>
       </DialogContent>

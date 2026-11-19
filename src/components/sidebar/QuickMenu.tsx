@@ -23,7 +23,9 @@ export const QuickMenu: React.FC<QuickMenuProps> = ({ items }) => {
       <nav className="space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
-          const isActive = location.pathname === item.href;
+          // A section with sub-pages (the CRM) stays lit on all of them.
+          const isActive =
+            location.pathname === item.href || (item.href === '/crm' && location.pathname.startsWith('/crm/'));
 
           return (
             <Link

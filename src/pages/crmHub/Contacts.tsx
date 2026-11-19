@@ -1,17 +1,27 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Trash2, Loader2, Download, Upload, Tag as TagIcon } from 'lucide-react';
+import { Plus, Search, Loader2, Download, Upload, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { useCrmContacts, useCrmCompanies, useContactTagsMap, useCrmTags, useWorkspaceForCreate } from '@/hooks/useCrmHub';
-import { createContact, deleteContact, listLeadCategories } from '@/services/supabase/crmHub/contacts';
-import { LIFECYCLE_STAGES, LEAD_STATUSES } from '@/types/crmHub';
-import type { LifecycleStage, LeadStatus } from '@/types/crmHub';
+import {
+  useCrmContacts, useCrmCompanies, useContactTagsMap, useCrmTags, useCrmDealStages, useWorkspaceForCreate,
+} from '@/hooks/useCrmHub';
+import {
+  createContact, deleteContact, listLeadCategories, updateContact,
+} from '@/services/supabase/crmHub/contacts';
+import {
+  LEAD_STEPS, MANUAL_LEAD_STEPS, leadName, leadStep, leadStepPatch, type LeadStep,
+} from '@/lib/crmFlow';
+import type { CrmContact } from '@/types/crmHub';
+import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatusPill } from '@/components/common/StatusPill';
+import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
+import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -19,31 +29,37 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toCSV, downloadCSV } from '@/lib/csv';
-import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
 
-const humanize = (s: string) =>
-  s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+const NONE = '__none__';
+const STEP_ORDER: LeadStep[] = ['new', 'contacted', 'qualified', 'deal', 'customer', 'unqualified'];
+/** Leads that can still be turned into their first deal. */
+const CONVERTIBLE: LeadStep[] = ['new', 'contacted', 'qualified'];
 
 export const CrmContactsPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const { items: contacts, loading, refresh } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
+  const { items: stages } = useCrmDealStages();
   const { items: allTags } = useCrmTags();
   const { map: contactTagsMap } = useContactTagsMap();
   const workspaceId = useWorkspaceForCreate();
 
   const [search, setSearch] = useState('');
-  const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleStage | 'all'>('all');
+  const [stepFilter, setStepFilter] = useState<LeadStep | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [view, setView] = useState<'all' | 'mine'>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [converting, setConverting] = useState<CrmContact | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [firstName, setFirstName] = useState('');
@@ -52,15 +68,12 @@ export const CrmContactsPage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [companyId, setCompanyId] = useState<string>('');
-  const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>('lead');
-  const [leadStatus, setLeadStatus] = useState<LeadStatus>('new');
-  const [categoryMode, setCategoryMode] = useState<'none' | 'pick' | 'new'>('none');
-  const [categoryPick, setCategoryPick] = useState<string>('');
-  const [categoryNew, setCategoryNew] = useState<string>('');
+  const [source, setSource] = useState('');
+  const [category, setCategory] = useState('');
   const [existingCategories, setExistingCategories] = useState<string[]>([]);
 
-  // Merge server-known categories with values already on loaded contacts so
-  // filters and picklists don't miss anything.
+  // Merge server-known categories with values already on loaded leads so
+  // filters and suggestions don't miss anything.
   const allCategories = useMemo(() => {
     const set = new Set<string>(existingCategories);
     for (const c of contacts) if (c.category?.trim()) set.add(c.category.trim());
@@ -77,28 +90,39 @@ export const CrmContactsPage: React.FC = () => {
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
   const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);
 
-  const filtered = useMemo(() => {
+  /** Everything except the step filter, so the step tabs can show their counts. */
+  const scoped = useMemo(() => {
     const q = search.trim().toLowerCase();
     return contacts.filter((c) => {
       if (view === 'mine' && user && c.ownerId !== user.userId) return false;
-      if (lifecycleFilter !== 'all' && c.lifecycleStage !== lifecycleFilter) return false;
       if (categoryFilter !== 'all') {
-        if (categoryFilter === '__none__') {
+        if (categoryFilter === NONE) {
           if (c.category?.trim()) return false;
         } else if ((c.category ?? '') !== categoryFilter) {
           return false;
         }
       }
       if (!q) return true;
-      const name = `${c.firstName} ${c.lastName ?? ''}`.toLowerCase();
       return (
-        name.includes(q) ||
+        leadName(c).toLowerCase().includes(q) ||
         (c.email?.toLowerCase().includes(q) ?? false) ||
         (c.phone?.includes(q) ?? false) ||
-        (c.jobTitle?.toLowerCase().includes(q) ?? false)
+        (c.jobTitle?.toLowerCase().includes(q) ?? false) ||
+        (companyById.get(c.companyId ?? '')?.name.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [contacts, search, lifecycleFilter, categoryFilter, view, user]);
+  }, [contacts, search, categoryFilter, view, user, companyById]);
+
+  const stepCounts = useMemo(() => {
+    const counts = new Map<LeadStep, number>();
+    for (const c of scoped) counts.set(leadStep(c), (counts.get(leadStep(c)) ?? 0) + 1);
+    return counts;
+  }, [scoped]);
+
+  const filtered = useMemo(
+    () => (stepFilter === 'all' ? scoped : scoped.filter((c) => leadStep(c) === stepFilter)),
+    [scoped, stepFilter],
+  );
 
   const handleExportCsv = () => {
     if (!filtered.length) { toast.error('Nothing to export'); return; }
@@ -109,28 +133,23 @@ export const CrmContactsPage: React.FC = () => {
       phone: c.phone ?? '',
       job_title: c.jobTitle ?? '',
       company: companyById.get(c.companyId ?? '')?.name ?? '',
+      step: LEAD_STEPS[leadStep(c)].label,
       lifecycle_stage: c.lifecycleStage,
       lead_status: c.leadStatus,
       category: c.category ?? '',
     })));
-    downloadCSV('contacts.csv', csv);
-    toast.success(`Exported ${filtered.length} leads`);
+    downloadCSV('leads.csv', csv);
+    toast.success(`Exported ${filtered.length} lead${filtered.length === 1 ? '' : 's'}`);
   };
 
-  const resetForm = () => {
+  const openCreate = () => {
     setFirstName(''); setLastName(''); setEmail(''); setPhone('');
-    setJobTitle(''); setCompanyId(''); setLifecycleStage('lead'); setLeadStatus('new');
-    setCategoryMode('none'); setCategoryPick(''); setCategoryNew('');
+    setJobTitle(''); setCompanyId(''); setSource(''); setCategory('');
+    setShowCreate(true);
   };
-
-  const resolvedCreateCategory =
-    categoryMode === 'pick' ? categoryPick.trim() || null
-    : categoryMode === 'new' ? categoryNew.trim() || null
-    : null;
 
   const handleCreate = async () => {
-    if (!organization) return;
-    if (!firstName.trim()) { toast.error('First name is required'); return; }
+    if (!organization || !firstName.trim()) return;
     setBusy(true);
     try {
       await createContact(
@@ -143,20 +162,30 @@ export const CrmContactsPage: React.FC = () => {
           phone: phone.trim() || null,
           jobTitle: jobTitle.trim() || null,
           companyId: companyId || null,
-          lifecycleStage,
-          leadStatus,
-          category: resolvedCreateCategory,
+          lifecycleStage: 'lead',
+          leadStatus: 'new',
+          source: source.trim() || null,
+          category: category.trim() || null,
         },
         user?.userId ?? null,
       );
-      toast.success('Contact created');
-      resetForm();
+      toast.success('Lead added');
       setShowCreate(false);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create lead');
+      toast.error(err instanceof Error ? err.message : 'Could not add the lead');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleSetStep = async (lead: CrmContact, step: 'new' | 'contacted' | 'qualified' | 'unqualified') => {
+    try {
+      await updateContact(lead.id, leadStepPatch(step));
+      toast.success(`${leadName(lead)} marked ${LEAD_STEPS[step].label.toLowerCase()}`);
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update the lead');
     }
   };
 
@@ -164,320 +193,292 @@ export const CrmContactsPage: React.FC = () => {
     setBusy(true);
     try {
       await deleteContact(id);
-      toast.success('Contact deleted');
+      toast.success('Lead deleted');
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete lead');
+      toast.error(err instanceof Error ? err.message : 'Could not delete the lead');
     } finally {
       setBusy(false);
     }
   };
 
+  const chip = (active: boolean) =>
+    cn(
+      'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors',
+      active
+        ? 'border-foreground bg-foreground text-background'
+        : 'border-border text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground',
+    );
+
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-background">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Contacts</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Every person in your pipeline — sorted by first name.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
-              <Upload className="w-4 h-4 mr-2" /> Import CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleExportCsv}>
-              <Download className="w-4 h-4 mr-2" /> Export CSV
-            </Button>
-            <Button onClick={() => setShowCreate(true)}>
-              <Plus className="w-4 h-4 mr-2" /> New lead
-            </Button>
-          </div>
-        </div>
+    <main className="min-w-0 flex-1 overflow-y-auto bg-background">
+      <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
+        <PageHeader
+          title="Leads"
+          description="People you might do business with. Qualify a lead, then convert it to a deal."
+          actions={
+            <>
+              <Button variant="outline" onClick={() => setShowImport(true)}>
+                <Upload /> Import
+              </Button>
+              <Button variant="outline" onClick={handleExportCsv}>
+                <Download /> Export
+              </Button>
+              <Button onClick={openCreate}>
+                <Plus /> New lead
+              </Button>
+            </>
+          }
+        />
 
-        <div className="flex items-center gap-2 border-b border-border">
-          <button
-            type="button"
-            onClick={() => setView('all')}
-            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-              view === 'all' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            All leads
-          </button>
-          <button
-            type="button"
-            onClick={() => setView('mine')}
-            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-              view === 'mine' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            My leads
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-60 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, email, phone…"
-              className="pl-9"
-            />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by step">
+            <button type="button" className={chip(stepFilter === 'all')} aria-pressed={stepFilter === 'all'} onClick={() => setStepFilter('all')}>
+              All <span className="tabular-nums opacity-70">{scoped.length}</span>
+            </button>
+            {STEP_ORDER.map((step) => (
+              <button
+                key={step}
+                type="button"
+                className={chip(stepFilter === step)}
+                aria-pressed={stepFilter === step}
+                onClick={() => setStepFilter(step)}
+                title={LEAD_STEPS[step].hint}
+              >
+                {LEAD_STEPS[step].label} <span className="tabular-nums opacity-70">{stepCounts.get(step) ?? 0}</span>
+              </button>
+            ))}
           </div>
-          <Select value={lifecycleFilter} onValueChange={(v) => setLifecycleFilter(v as LifecycleStage | 'all')}>
-            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All lifecycle stages</SelectItem>
-              {LIFECYCLE_STAGES.map((s) => (
-                <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              <SelectItem value="__none__">— Uncategorised —</SelectItem>
-              {allCategories.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{filtered.length} lead{filtered.length === 1 ? '' : 's'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="py-12 text-center">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto" />
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                {search ? 'No leads match your search.' : 'No leads yet. Create your first one.'}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
-                      <th className="text-left py-2 pr-4 font-medium">Name</th>
-                      <th className="text-left py-2 pr-4 font-medium">Email</th>
-                      <th className="text-left py-2 pr-4 font-medium">Phone</th>
-                      <th className="text-left py-2 pr-4 font-medium">Company</th>
-                      <th className="text-left py-2 pr-4 font-medium">Lifecycle</th>
-                      <th className="text-left py-2 pr-4 font-medium">Category</th>
-                      <th className="text-left py-2 pr-4 font-medium">Status</th>
-                      <th className="text-right py-2 pl-4 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((c) => (
-                      <tr
-                        key={c.id}
-                        className="border-b border-border/60 hover:bg-muted/40"
-                      >
-                        <td className="py-2 pr-4 font-medium text-foreground">
-                          <Link to={`/crm/contacts/${c.id}`} className="hover:text-primary">
-                            {c.firstName} {c.lastName ?? ''}
-                          </Link>
-                          {c.jobTitle && (
-                            <div className="text-xs text-muted-foreground font-normal">{c.jobTitle}</div>
-                          )}
-                          {(() => {
-                            const tagIds = contactTagsMap.get(c.id) ?? [];
-                            if (tagIds.length === 0) return null;
-                            return (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {tagIds.map((tid) => {
-                                  const t = tagById.get(tid);
-                                  if (!t) return null;
-                                  return (
-                                    <span
-                                      key={tid}
-                                      className="inline-block text-[0.6875rem] font-medium px-1.5 py-0.5 rounded-full"
-                                      style={{ backgroundColor: `${t.color}22`, color: t.color, border: `1px solid ${t.color}44` }}
-                                    >
-                                      {t.name}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-                        </td>
-                        <td className="py-2 pr-4 text-muted-foreground">{c.email ?? '—'}</td>
-                        <td className="py-2 pr-4 text-muted-foreground">{c.phone ?? '—'}</td>
-                        <td className="py-2 pr-4 text-muted-foreground">
-                          {c.companyId ? companyById.get(c.companyId)?.name ?? '—' : '—'}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                            {humanize(c.lifecycleStage)}
-                          </span>
-                          {view === 'all' && user && c.ownerId === user.userId && (
-                            <span className="ml-1 inline-block text-[0.6875rem] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                              Mine
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-4">
-                          {c.category ? (
-                            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                              <TagIcon className="w-3 h-3" />
-                              {c.category}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-4 text-xs text-muted-foreground">{humanize(c.leadStatus)}</td>
-                        <td className="py-2 pl-4 text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setConfirmDelete(c.id)}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-60 max-w-md flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, company, email, phone"
+                className="pl-8"
+                aria-label="Search leads"
+              />
+            </div>
+            <Select value={view} onValueChange={(v) => setView(v as 'all' | 'mine')}>
+              <SelectTrigger className="w-44" aria-label="Owner"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Everyone's leads</SelectItem>
+                <SelectItem value="mine">My leads</SelectItem>
+              </SelectContent>
+            </Select>
+            {allCategories.length > 0 && (
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-44" aria-label="Category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  <SelectItem value={NONE}>No category</SelectItem>
+                  {allCategories.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+
+        {loading && contacts.length === 0 ? (
+          <div className="py-16 text-center">
+            <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
+            <p className="text-sm text-muted-foreground">
+              {contacts.length === 0 ? 'No leads yet. Add the first person you want to win as a customer.' : 'No leads match these filters.'}
+            </p>
+            {contacts.length === 0 && (
+              <Button onClick={openCreate}><Plus /> New lead</Button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground">
+                  <th className="px-3 py-2 text-left font-medium">Name</th>
+                  <th className="px-3 py-2 text-left font-medium">Company</th>
+                  <th className="px-3 py-2 text-left font-medium">Email</th>
+                  <th className="px-3 py-2 text-left font-medium">Phone</th>
+                  <th className="px-3 py-2 text-left font-medium">Step</th>
+                  <th className="px-3 py-2 text-left font-medium">Category</th>
+                  <th className="px-3 py-2 text-right font-medium"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((c) => {
+                  const step = leadStep(c);
+                  const tagIds = contactTagsMap.get(c.id) ?? [];
+                  return (
+                    <tr key={c.id} className="border-b border-border last:border-b-0 hover:bg-muted/40">
+                      <td className="px-3 py-2">
+                        <Link to={`/crm/contacts/${c.id}`} className="font-medium text-foreground hover:underline">
+                          {leadName(c)}
+                        </Link>
+                        {c.jobTitle && <div className="text-xs text-muted-foreground">{c.jobTitle}</div>}
+                        {tagIds.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {tagIds.map((tid) => {
+                              const t = tagById.get(tid);
+                              if (!t) return null;
+                              return (
+                                <span
+                                  key={tid}
+                                  className="inline-block rounded-full px-1.5 py-0.5 text-[0.6875rem] font-medium"
+                                  style={{ backgroundColor: `${t.color}22`, color: t.color, border: `1px solid ${t.color}44` }}
+                                >
+                                  {t.name}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {c.companyId && companyById.get(c.companyId) ? (
+                          <Link to={`/crm/companies/${c.companyId}`} className="hover:text-foreground hover:underline">
+                            {companyById.get(c.companyId)?.name}
+                          </Link>
+                        ) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{c.email ?? '—'}</td>
+                      <td className="px-3 py-2 tabular-nums text-muted-foreground">{c.phone ?? '—'}</td>
+                      <td className="px-3 py-2">
+                        <StatusPill tone={LEAD_STEPS[step].tone} title={LEAD_STEPS[step].hint}>{LEAD_STEPS[step].label}</StatusPill>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{c.category || '—'}</td>
+                      <td className="px-3 py-1.5">
+                        <div className="flex items-center justify-end gap-1">
+                          {CONVERTIBLE.includes(step) && (
+                            <Button size="sm" variant={step === 'qualified' ? 'default' : 'outline'} onClick={() => setConverting(c)}>
+                              Convert to deal
+                            </Button>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="icon" variant="ghost" aria-label={`More actions for ${leadName(c)}`}>
+                                <MoreHorizontal />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {MANUAL_LEAD_STEPS.filter((s) => s !== step).map((s) => (
+                                <DropdownMenuItem
+                                  key={s}
+                                  onClick={() => void handleSetStep(c, s as 'new' | 'contacted' | 'qualified' | 'unqualified')}
+                                >
+                                  Mark as {LEAD_STEPS[s].label.toLowerCase()}
+                                </DropdownMenuItem>
+                              ))}
+                              {!CONVERTIBLE.includes(step) && (
+                                <DropdownMenuItem onClick={() => setConverting(c)}>Open another deal</DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setConfirmDelete(c.id)}>
+                                Delete lead
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={showCreate} onOpenChange={(o) => !busy && setShowCreate(o)}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>New lead</DialogTitle>
-            <DialogDescription>Add a person to your pipeline.</DialogDescription>
+            <DialogDescription>Starts as “New”. Move it on as you speak with them.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="fn">First name *</Label>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="fn">First name</Label>
                 <Input id="fn" value={firstName} onChange={(e) => setFirstName(e.target.value)} disabled={busy} />
               </div>
-              <div>
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ln">Last name</Label>
                 <Input id="ln" value={lastName} onChange={(e) => setLastName(e.target.value)} disabled={busy} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="em">Email</Label>
                 <Input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
               </div>
-              <div>
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ph">Phone</Label>
-                <Input id="ph" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={busy} />
+                <Input id="ph" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={busy} />
               </div>
-            </div>
-            <div>
-              <Label htmlFor="jt">Job title</Label>
-              <Input id="jt" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} disabled={busy} />
-            </div>
-            <div>
-              <Label>Company</Label>
-              <Select value={companyId || '__none__'} onValueChange={(v) => setCompanyId(v === '__none__' ? '' : v)} disabled={busy}>
-                <SelectTrigger><SelectValue placeholder="No company" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— None —</SelectItem>
-                  {companies.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Lifecycle stage</Label>
-                <Select value={lifecycleStage} onValueChange={(v) => setLifecycleStage(v as LifecycleStage)} disabled={busy}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {LIFECYCLE_STAGES.map((s) => (
-                      <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="jt">Job title</Label>
+                <Input id="jt" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} disabled={busy} />
               </div>
-              <div>
-                <Label>Lead status</Label>
-                <Select value={leadStatus} onValueChange={(v) => setLeadStatus(v as LeadStatus)} disabled={busy}>
+              <div className="flex flex-col gap-1.5">
+                <Label>Company</Label>
+                <Select value={companyId || NONE} onValueChange={(v) => setCompanyId(v === NONE ? '' : v)} disabled={busy}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {LEAD_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
+                    <SelectItem value={NONE}>No company</SelectItem>
+                    {companies.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
-              <div className="flex items-center gap-1.5">
-                <TagIcon className="w-3.5 h-3.5 text-primary" />
-                <Label className="mb-0">Category (optional)</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="src">Where it came from</Label>
+                <Input id="src" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Website, referral…" disabled={busy} />
               </div>
-              <div className="flex items-center gap-3 text-xs">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" checked={categoryMode === 'none'} onChange={() => setCategoryMode('none')} />
-                  None
-                </label>
-                <label className={`flex items-center gap-1.5 ${allCategories.length === 0 ? 'text-muted-foreground cursor-not-allowed' : 'cursor-pointer'}`}>
-                  <input
-                    type="radio"
-                    checked={categoryMode === 'pick'}
-                    onChange={() => setCategoryMode('pick')}
-                    disabled={allCategories.length === 0}
-                  />
-                  Pick existing
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="radio" checked={categoryMode === 'new'} onChange={() => setCategoryMode('new')} />
-                  New
-                </label>
-              </div>
-              {categoryMode === 'pick' && allCategories.length > 0 && (
-                <Select value={categoryPick} onValueChange={setCategoryPick} disabled={busy}>
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Choose category" /></SelectTrigger>
-                  <SelectContent>
-                    {allCategories.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {categoryMode === 'new' && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="cat">Category</Label>
                 <Input
-                  value={categoryNew}
-                  onChange={(e) => setCategoryNew(e.target.value)}
-                  placeholder="e.g. VIP customers"
+                  id="cat"
+                  list="lead-categories"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Optional"
                   maxLength={64}
                   disabled={busy}
                 />
-              )}
+                <datalist id="lead-categories">
+                  {allCategories.map((c) => <option key={c} value={c} />)}
+                </datalist>
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleCreate} disabled={busy || !firstName.trim()}>
-              {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Create
+              {busy && <Loader2 className="animate-spin" />} Add lead
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConvertLeadDialog
+        lead={converting}
+        stages={stages}
+        companies={companies}
+        open={converting !== null}
+        onOpenChange={(o) => !o && setConverting(null)}
+        onConverted={refresh}
+      />
 
       <CsvImportWizard
         open={showImport}
@@ -491,7 +492,7 @@ export const CrmContactsPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
             <AlertDialogDescription>
-              This can't be undone. Any deals or activities linked to this contact will lose the reference.
+              This can't be undone. Deals and activity linked to this lead stay, but lose the link to it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

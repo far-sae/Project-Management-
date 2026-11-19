@@ -93,7 +93,9 @@ export const createTask = async (
   ownerId: string | null,
   options: LinkedTaskOptions,
 ): Promise<CrmTask> => {
-  const sharedTask = await createProjectTask(options.actorId, {
+  // A follow-up on a lead or an open deal has no project yet: it lives in
+  // the CRM only. With a project it is mirrored onto that project's board.
+  const sharedTask = !input.projectId ? null : await createProjectTask(options.actorId, {
     projectId: input.projectId,
     projectName: options.projectName,
     title: input.title,
@@ -112,8 +114,8 @@ export const createTask = async (
     .insert({
       organization_id: input.organizationId,
       workspace_id: input.workspaceId,
-      project_id: input.projectId,
-      shared_task_id: sharedTask.taskId,
+      project_id: input.projectId ?? null,
+      shared_task_id: sharedTask?.taskId ?? null,
       owner_id: ownerId,
       assigned_to: input.assignedTo ?? ownerId,
       contact_id: input.contactId ?? null,
@@ -128,7 +130,7 @@ export const createTask = async (
     .select()
     .single();
   if (error) {
-    await deleteProjectTask(sharedTask.taskId, input.organizationId).catch(() => undefined);
+    if (sharedTask) await deleteProjectTask(sharedTask.taskId, input.organizationId).catch(() => undefined);
     throw error;
   }
   return mapTask(data);

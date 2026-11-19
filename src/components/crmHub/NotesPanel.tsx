@@ -10,6 +10,10 @@ import {
 import type { CrmNote } from '@/types/crmHub';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
+
+/** 28px square icon button on a note (touch-sized on phones). */
+const NOTE_ICON_BUTTON = 'w-10 px-0 text-muted-foreground md:w-7';
 
 type ScopedTo =
   | { contactId: string }
@@ -126,11 +130,11 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <StickyNote className="w-4 h-4 text-primary" />
+        <StickyNote className="h-4 w-4 text-muted-foreground" aria-hidden />
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <span className="text-xs text-muted-foreground">({notes.length})</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{notes.length}</span>
       </div>
 
       <div className="space-y-2">
@@ -138,25 +142,27 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="Add a note…"
+          aria-label="Add a note"
           rows={3}
           disabled={busy}
         />
         <div className="flex justify-end">
           <Button size="sm" onClick={handleAdd} disabled={busy || !body.trim()}>
-            {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Save aria-hidden />}
             Save note
           </Button>
         </div>
       </div>
 
       {loading ? (
-        <div className="py-6 text-center">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" />
+        <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Loading notes…
         </div>
       ) : notes.length === 0 ? (
-        <div className="py-6 text-center text-xs text-muted-foreground">No notes yet.</div>
+        <p className="py-6 text-center text-xs text-muted-foreground">No notes yet.</p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {notes.map((n) => (
             <div key={n.id} className="rounded-lg border border-border bg-card p-3">
               {editingId === n.id ? (
@@ -164,6 +170,7 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
                   <Textarea
                     value={editingBody}
                     onChange={(e) => setEditingBody(e.target.value)}
+                    aria-label="Edit note"
                     rows={3}
                     disabled={busy}
                   />
@@ -174,38 +181,42 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
                       onClick={() => { setEditingId(null); setEditingBody(''); }}
                       disabled={busy}
                     >
-                      <X className="w-4 h-4 mr-1" /> Cancel
+                      <X aria-hidden />
+                      Cancel
                     </Button>
                     <Button size="sm" onClick={() => void handleSaveEdit(n.id)} disabled={busy || !editingBody.trim()}>
-                      <Save className="w-4 h-4 mr-1" /> Save
+                      <Save aria-hidden />
+                      Save
                     </Button>
                   </div>
                 </div>
               ) : (
                 <>
-                  <p className="text-sm text-foreground whitespace-pre-wrap break-words">{n.body}</p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">{formatWhen(n.createdAt)}</span>
+                  <p className="whitespace-pre-wrap break-words text-sm text-foreground">{n.body}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs tabular-nums text-muted-foreground">{formatWhen(n.createdAt)}</span>
                     <div className="flex items-center gap-1">
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0 text-muted-foreground"
+                        className={NOTE_ICON_BUTTON}
                         onClick={() => { setEditingId(n.id); setEditingBody(n.body); }}
                         disabled={busy}
                         title="Edit"
+                        aria-label="Edit note"
                       >
-                        <Pencil className="w-3.5 h-3.5" />
+                        <Pencil aria-hidden />
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        className={cn(NOTE_ICON_BUTTON, 'hover:bg-destructive-soft hover:text-destructive')}
                         onClick={() => void handleDelete(n.id)}
                         disabled={busy}
                         title="Delete"
+                        aria-label="Delete note"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 aria-hidden />
                       </Button>
                     </div>
                   </div>

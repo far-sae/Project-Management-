@@ -21,9 +21,24 @@ interface DealRow {
   sort_order: number;
   workspace_id: string | null;
   project_id: string | null;
+  closed_at?: string | null;
+  lost_reason?: string | null;
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * True when the database does not have the close-date / lost-reason columns
+ * yet (migration 180 not run). The write is then repeated without them.
+ */
+const isCloseFieldsMissing = (error: unknown): boolean => {
+  const e = error as { code?: string; message?: string } | null;
+  const msg = e?.message ?? '';
+  return (
+    (e?.code === 'PGRST204' || e?.code === '42703' || /column/i.test(msg)) &&
+    /closed_at|lost_reason/.test(msg)
+  );
+};
 
 const mapDeal = (r: DealRow): CrmDeal => ({
   id: r.id,
@@ -42,6 +57,8 @@ const mapDeal = (r: DealRow): CrmDeal => ({
   sortOrder: r.sort_order,
   workspaceId: r.workspace_id ?? null,
   projectId: r.project_id ?? null,
+  closedAt: r.closed_at ? new Date(r.closed_at) : null,
+  lostReason: r.lost_reason ?? null,
   createdAt: new Date(r.created_at),
   updatedAt: new Date(r.updated_at),
 });
@@ -87,6 +104,8 @@ export const createDeal = async (input: CreateDealInput, ownerId: string | null)
       name: input.name,
       value: input.value ?? 0,
       probability: input.probability ?? 0,
+      // A deal created straight into a Won / Lost stage is closed, not open.
+      status: input.status ?? 'open',
       expected_close_date: input.expectedCloseDate ?? null,
       source: input.source ?? null,
       notes: input.notes ?? null,
@@ -133,19 +152,41 @@ export const updateDeal = async (id: string, input: UpdateDealInput): Promise<Cr
   return mapDeal(data);
 };
 
-/** Move a deal to a new stage; also updates status if the target stage is won/lost. */
+export interface MoveDealExtras {
+  /** New chance of winning (see `probabilityAfterMove`). */
+  probability?: number;
+  /** Why it was lost; only kept when the target stage is a lost stage. */
+  lostReason?: string | null;
+  /** Who moved it, for the activity log. Defaults to the deal owner. */
+  actorId?: string | null;
+}
+
+/**
+ * Move a deal to a new stage. The status follows the stage (open / won /
+ * lost); closing a deal stamps the close date and, when lost, the reason.
+ */
 export const moveDealToStage = async (
   id: string,
   stageId: string,
   stageStatus: DealStatus,
   stageName?: string,
+  extras: MoveDealExtras = {},
 ): Promise<CrmDeal> => {
-  const { data, error } = await supabase
+  const base: Record<string, unknown> = { stage_id: stageId, status: stageStatus };
+  if (extras.probability !== undefined) base.probability = extras.probability;
+  const closeFields = {
+    closed_at: stageStatus === 'open' ? null : new Date().toISOString(),
+    lost_reason: stageStatus === 'lost' ? extras.lostReason?.trim() || null : null,
+  };
+  let { data, error } = await supabase
     .from('crm_deals')
-    .update({ stage_id: stageId, status: stageStatus })
+    .update({ ...base, ...closeFields })
     .eq('id', id)
     .select()
     .single();
+  if (error && isCloseFieldsMissing(error)) {
+    ({ data, error } = await supabase.from('crm_deals').update(base).eq('id', id).select().single());
+  }
   if (error) throw error;
   const deal = mapDeal(data);
   const activityType =
@@ -160,12 +201,29 @@ export const moveDealToStage = async (
       dealId: deal.id,
       contactId: deal.contactId,
       companyId: deal.companyId,
-      description: stageName ? `Moved to ${stageName}` : null,
+      description:
+        stageStatus === 'lost' && extras.lostReason?.trim()
+          ? `Lost: ${extras.lostReason.trim()}`
+          : stageName
+            ? `Moved to ${stageName}`
+            : null,
       metadata: { stageId, stageStatus },
     },
-    deal.ownerId,
+    extras.actorId ?? deal.ownerId,
   );
   return deal;
+};
+
+/** The deal (if any) that was handed off into this project. */
+export const getDealForProject = async (projectId: string): Promise<CrmDeal | null> => {
+  const { data, error } = await supabase
+    .from('crm_deals')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return data && data.length > 0 ? mapDeal(data[0]) : null;
 };
 
 export const deleteDeal = async (id: string): Promise<void> => {

@@ -23,6 +23,7 @@ import {
   X,
   TrendingUp,
   FolderKanban,
+  Handshake,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -59,6 +60,7 @@ const QUICK_ITEMS_FULL = [
   { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects', page: 'projects_analytics' as PageKey },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
   { icon: Inbox, label: 'Inbox', href: '/inbox', page: 'inbox' as PageKey },
+  { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
   { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
@@ -138,6 +140,7 @@ export const Sidebar: React.FC = () => {
       ? QUICK_ITEMS_FULL.filter(
           (i) =>
             (i.href !== '/team' || hasFeature('team_collaboration')) &&
+            (i.href !== '/crm' || hasFeature('crm')) &&
             (i.href !== '/hr' || canSeeHr),
         )
       : isViewer
@@ -146,10 +149,12 @@ export const Sidebar: React.FC = () => {
           // Project owners / project admins manage their projects' people.
           ? [...QUICK_ITEMS_MEMBER, teamItem]
           : QUICK_ITEMS_MEMBER;
+    // The CRM comes before projects (a won deal becomes one), so it does not
+    // wait for the workspace to have a project.
     const workspaceReady = isAll ? projects.length > 0 : !isUnassigned && visibleProjects.length > 0;
     const flowItems = workspaceReady
       ? roleItems
-      : roleItems.filter((item) => !['crm', 'email', 'social'].includes(item.page));
+      : roleItems.filter((item) => !['email', 'social'].includes(item.page));
     return resolveWorkspaceMenu(flowItems, menuPages);
   }, [canSeePeopleOps, canSeeHr, isViewer, managesProjects, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
 

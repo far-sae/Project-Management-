@@ -42,6 +42,7 @@ import {
 } from '@/lib/projectLockPin';
 import { cn } from '@/lib/utils';
 import { StatusPill } from '@/components/common/StatusPill';
+import { ProjectDealChip } from '@/components/crmHub/ProjectDealChip';
 import { PriorityPill, UrgentBadge } from '@/components/common/TaskBadges';
 import {
   Breadcrumb,
@@ -777,6 +778,7 @@ export const ProjectView: React.FC = () => {
           }
           right={
             <div className="flex items-center gap-2 flex-shrink-0">
+              <ProjectDealChip projectId={project.projectId} />
               <PresenceStatusAvatarMenu
                 preference={presencePreference}
                 onChange={setPresencePreference}

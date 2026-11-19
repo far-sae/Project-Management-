@@ -116,7 +116,7 @@ describe("menuPagesForSave", () => {
 describe("QUICK_MENU_PAGE_KEYS", () => {
   it("matches the items the sidebar can show", () => {
     expect(QUICK_MENU_PAGE_KEYS).toEqual([
-      "dashboard", "projects_analytics", "my_tasks", "inbox",
+      "dashboard", "projects_analytics", "my_tasks", "inbox", "crm",
       "calendar", "workload", "reports", "team", "hr",
     ]);
   });

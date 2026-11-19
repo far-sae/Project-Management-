@@ -6,10 +6,10 @@ import { useCrmTags } from '@/hooks/useCrmHub';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { createTag, updateTag, deleteTag } from '@/services/supabase/crmHub/tags';
 import type { CrmTag } from '@/types/crmHub';
+import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -17,7 +17,9 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { cn } from '@/lib/utils';
 
+// Tag colours are data: they are saved on the tag and shown as they are.
 const PRESETS = [
   '#f97316', // orange
   '#ef4444', // red
@@ -28,6 +30,26 @@ const PRESETS = [
   '#ec4899', // pink
   '#64748b', // slate
 ];
+
+/** The row of colour dots in the New tag and Edit tag dialogs. */
+const ColourChoice: React.FC<{ value: string; onChange: (colour: string) => void }> = ({ value, onChange }) => (
+  <div className="flex flex-wrap gap-2">
+    {PRESETS.map((c) => (
+      <button
+        key={c}
+        type="button"
+        onClick={() => onChange(c)}
+        className={cn(
+          'h-6 w-6 rounded-full',
+          value === c && 'ring-2 ring-foreground ring-offset-2 ring-offset-card',
+        )}
+        style={{ backgroundColor: c }}
+        aria-label={c}
+        aria-pressed={value === c}
+      />
+    ))}
+  </div>
+);
 
 export const CrmTagsPage: React.FC = () => {
   const { organization } = useOrganization();
@@ -103,134 +125,122 @@ export const CrmTagsPage: React.FC = () => {
   };
 
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-background">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Tags</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Colour-coded labels you can apply to contacts.
-            </p>
-          </div>
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4 mr-2" /> New tag
-          </Button>
-        </div>
+    <main className="min-w-0 flex-1 overflow-y-auto bg-background">
+      <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
+        <PageHeader
+          title="Tags"
+          description="Colour-coded labels you can put on leads."
+          actions={
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus aria-hidden />
+              New tag
+            </Button>
+          }
+        />
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{tags.length} tag{tags.length === 1 ? '' : 's'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="py-12 text-center">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto" />
-              </div>
-            ) : tags.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                No tags yet. Add one to start labelling contacts.
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {tags.map((t) => (
-                  <div
-                    key={t.id}
-                    className="inline-flex items-center gap-2 rounded-full pl-2 pr-1 py-1 text-xs font-medium"
-                    style={{ backgroundColor: `${t.color}22`, color: t.color, border: `1px solid ${t.color}44` }}
+        <section className="overflow-hidden rounded-lg border border-border bg-background">
+          <div className="flex min-h-11 items-center border-b border-border px-4">
+            <h2 className="text-sm font-semibold text-foreground">
+              <span className="tabular-nums">{tags.length}</span> tag{tags.length === 1 ? '' : 's'}
+            </h2>
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Loading tags…
+            </div>
+          ) : tags.length === 0 ? (
+            <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
+              <TagIcon className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+              <p className="text-sm font-medium">No tags yet.</p>
+              <p className="text-xs text-muted-foreground">Add one to start labelling leads.</p>
+              <Button className="mt-3" onClick={() => setShowCreate(true)}>
+                <Plus aria-hidden />
+                New tag
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 p-4">
+              {tags.map((t) => (
+                <div
+                  key={t.id}
+                  className="inline-flex max-w-full items-center gap-2 rounded-full py-1 pl-2 pr-1 text-xs font-medium"
+                  style={{ backgroundColor: `${t.color}22`, color: t.color, border: `1px solid ${t.color}44` }}
+                >
+                  <TagIcon className="h-3 w-3 shrink-0" style={{ color: t.color }} aria-hidden />
+                  <span className="truncate text-foreground">{t.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(t)}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                    title="Edit"
+                    aria-label={`Edit tag ${t.name}`}
                   >
-                    <TagIcon className="w-3 h-3" style={{ color: t.color }} />
-                    <span className="text-foreground">{t.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => openEdit(t)}
-                      className="h-5 w-5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 flex items-center justify-center"
-                      title="Edit"
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(t)}
-                      className="h-5 w-5 rounded-full hover:bg-destructive/20 flex items-center justify-center text-destructive"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    <Pencil className="h-3 w-3" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(t)}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                    title="Delete"
+                    aria-label={`Delete tag ${t.name}`}
+                  >
+                    <Trash2 className="h-3 w-3" aria-hidden />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>New tag</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div>
+            <div className="space-y-1.5">
               <Label htmlFor="tname">Name</Label>
               <Input id="tname" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Colour</Label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {PRESETS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setColor(c)}
-                    className={`w-6 h-6 rounded-full transition-transform ${color === c ? 'ring-2 ring-offset-2 ring-foreground scale-110' : ''}`}
-                    style={{ backgroundColor: c }}
-                    aria-label={c}
-                  />
-                ))}
-              </div>
+              <ColourChoice value={color} onChange={setColor} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleCreate} disabled={busy || !name.trim()}>
-              {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Create
+              {busy && <Loader2 className="animate-spin" aria-hidden />}
+              Create
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Edit tag</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div>
-              <Label>Name</Label>
-              <Input value={editName} onChange={(e) => setEditName(e.target.value)} disabled={busy} />
+            <div className="space-y-1.5">
+              <Label htmlFor="tname-edit">Name</Label>
+              <Input id="tname-edit" value={editName} onChange={(e) => setEditName(e.target.value)} disabled={busy} />
             </div>
-            <div>
+            <div className="space-y-1.5">
               <Label>Colour</Label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {PRESETS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setEditColor(c)}
-                    className={`w-6 h-6 rounded-full transition-transform ${editColor === c ? 'ring-2 ring-offset-2 ring-foreground scale-110' : ''}`}
-                    style={{ backgroundColor: c }}
-                    aria-label={c}
-                  />
-                ))}
-              </div>
+              <ColourChoice value={editColor} onChange={setEditColor} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)} disabled={busy}>
-              <X className="w-4 h-4 mr-1" /> Cancel
+              <X aria-hidden />
+              Cancel
             </Button>
             <Button onClick={handleSaveEdit} disabled={busy || !editName.trim()}>
-              {busy ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Save aria-hidden />}
               Save
             </Button>
           </DialogFooter>
@@ -242,7 +252,7 @@ export const CrmTagsPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete "{confirmDelete?.name}"?</AlertDialogTitle>
             <AlertDialogDescription>
-              It will be removed from every contact currently tagged. This can't be undone.
+              It will be removed from every lead that has it. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

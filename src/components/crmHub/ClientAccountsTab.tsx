@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { CreditCard, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -7,16 +7,19 @@ import type { Project } from '@/types';
 import type { ClientBillingType, CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 import { summarizeClientAccount } from '@/lib/crmAccounts';
 import { addAccountPayment, createClientAccount, listAccountPayments, listClientAccounts } from '@/services/supabase/crmHub/accounts';
-import { Badge } from '@/components/ui/badge';
+import { StatStrip } from '@/components/common/StatStrip';
+import { StatusPill } from '@/components/common/StatusPill';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 
 interface Props {
   organizationId: string;
@@ -86,7 +89,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
       });
       setShowAccount(false);
       setServiceName(''); setProjectId(''); setAgreedAmount(''); setOpeningPaid('0'); setNotes('');
-      toast.success('Client account added');
+      toast.success('Account added');
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not add account');
@@ -108,69 +111,197 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="font-semibold">Client accounts</h3>
-          <p className="text-sm text-muted-foreground">Services, billing and payment history for this contact.</p>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-foreground">Accounts</h3>
+          <p className="text-sm text-muted-foreground">Services, billing and payment history for this lead.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={String(year)} onValueChange={(value) => setYear(Number(value))}>
             <SelectTrigger className="w-28" aria-label="Account year"><SelectValue /></SelectTrigger>
-            <SelectContent>{[-2, -1, 0, 1].map((offset) => { const value = new Date().getFullYear() + offset; return <SelectItem key={value} value={String(value)}>{value}</SelectItem>; })}</SelectContent>
+            <SelectContent>
+              {[-2, -1, 0, 1].map((offset) => {
+                const value = new Date().getFullYear() + offset;
+                return <SelectItem key={value} value={String(value)}>{value}</SelectItem>;
+              })}
+            </SelectContent>
           </Select>
-          <Button size="sm" onClick={() => setShowAccount(true)}><Plus className="mr-1 h-4 w-4" />Add service</Button>
+          <Button onClick={() => setShowAccount(true)}><Plus aria-hidden />Add service</Button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="Workspace agreed" value={money(workspaceTotals.due)} />
-        <Metric label="Workspace paid" value={money(workspaceTotals.paid)} />
-        <Metric label="Workspace outstanding" value={money(workspaceTotals.outstanding)} danger={workspaceTotals.outstanding > 0} />
-      </div>
+      <StatStrip
+        items={[
+          { label: 'Workspace agreed', value: money(workspaceTotals.due) },
+          { label: 'Workspace paid', value: money(workspaceTotals.paid) },
+          {
+            label: 'Workspace outstanding',
+            value: money(workspaceTotals.outstanding),
+            tone: workspaceTotals.outstanding > 0 ? 'danger' : 'default',
+          },
+        ]}
+      />
 
-      {loading ? <div className="py-10 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></div> : accounts.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
-          <CreditCard className="mx-auto mb-3 h-8 w-8" /><p>No services or billing records yet.</p>
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading accounts" />
+        </div>
+      ) : accounts.length === 0 ? (
+        <div className={BOX}>
+          <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
+            <CreditCard className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+            <p className="text-sm font-medium">No services or billing records yet.</p>
+            <Button variant="outline" className="mt-3" onClick={() => setShowAccount(true)}>Add service</Button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           {accounts.map((account) => {
             const summary = summaries.get(account.id)!;
             const project = projects.find((item) => item.projectId === account.projectId);
-            return <Card key={account.id}><CardContent className="p-4 space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><p className="font-semibold">{account.serviceName}</p><p className="text-xs text-muted-foreground">{project?.name ?? 'No linked project'}</p></div>
-                <div className="flex items-center gap-2"><Badge variant="outline">{account.billingType === 'monthly' ? `${money(account.agreedAmount)}/month` : 'One-time'}</Badge><Button size="sm" variant="outline" onClick={() => setPaying(account)}>Add payment</Button></div>
+            return (
+              <div key={account.id} className={BOX}>
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">{account.serviceName}</p>
+                    <p className="truncate text-xs text-muted-foreground">{project?.name ?? 'No linked project'}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill tone="neutral" dot={false} className="tabular-nums">
+                      {account.billingType === 'monthly' ? `${money(account.agreedAmount)}/month` : 'One-time'}
+                    </StatusPill>
+                    <Button size="sm" variant="outline" onClick={() => setPaying(account)}>Add payment</Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 px-4 py-3 sm:grid-cols-6 xl:grid-cols-12">
+                  {MONTHS.map((month, index) => (
+                    <div key={month} className="min-w-0 rounded-md bg-secondary px-1 py-2 text-center">
+                      <p className="text-[0.6875rem] text-muted-foreground">{month}</p>
+                      <p className="truncate text-xs font-medium tabular-nums" title={money(summary.monthlyPaid[index])}>
+                        {money(summary.monthlyPaid[index])}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border px-4 py-3 text-sm sm:grid-cols-4">
+                  <Figure label="Opening" value={money(account.openingPaid)} />
+                  <Figure label="Agreed" value={money(summary.due)} />
+                  <Figure label="Paid" value={money(summary.paid)} />
+                  <Figure
+                    label="Outstanding"
+                    value={money(summary.outstanding)}
+                    className={summary.outstanding > 0 ? 'text-destructive' : 'text-success'}
+                  />
+                </dl>
+                {account.notes && (
+                  <p className="whitespace-pre-wrap break-words border-t border-border px-4 py-3 text-sm text-muted-foreground">
+                    {account.notes}
+                  </p>
+                )}
               </div>
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-12">
-                {MONTHS.map((month, index) => <div key={month} className="rounded-md bg-muted/50 p-2 text-center"><p className="text-[0.6875rem] text-muted-foreground">{month}</p><p className="text-xs font-medium">{money(summary.monthlyPaid[index])}</p></div>)}
-              </div>
-              <div className="grid gap-2 text-sm sm:grid-cols-4">
-                <span>Opening: <b>{money(account.openingPaid)}</b></span><span>Agreed: <b>{money(summary.due)}</b></span><span>Paid: <b>{money(summary.paid)}</b></span><span>Outstanding: <b className={summary.outstanding > 0 ? 'text-destructive' : 'text-emerald-600'}>{money(summary.outstanding)}</b></span>
-              </div>
-              {account.notes && <p className="text-sm text-muted-foreground">{account.notes}</p>}
-            </CardContent></Card>;
+            );
           })}
         </div>
       )}
 
-      <Dialog open={showAccount} onOpenChange={setShowAccount}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Add linked service</DialogTitle></DialogHeader>
-        <div className="space-y-3"><Field label="Service"><Input value={serviceName} onChange={(e) => setServiceName(e.target.value)} /></Field>
-          <Field label="Linked project"><Select value={projectId || '__none__'} onValueChange={(v) => setProjectId(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">No project</SelectItem>{projects.map((p) => <SelectItem key={p.projectId} value={p.projectId}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
-          <div className="grid grid-cols-2 gap-3"><Field label="Billing"><Select value={billingType} onValueChange={(v) => setBillingType(v as ClientBillingType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly</SelectItem><SelectItem value="one_time">One-time</SelectItem></SelectContent></Select></Field><Field label={billingType === 'monthly' ? 'Monthly amount' : 'Agreed amount'}><Input type="number" min="0" step="0.01" value={agreedAmount} onChange={(e) => setAgreedAmount(e.target.value)} /></Field></div>
-          <div className="grid grid-cols-3 gap-3"><Field label="Opening paid"><Input type="number" min="0" step="0.01" value={openingPaid} onChange={(e) => setOpeningPaid(e.target.value)} /></Field><Field label="Starts"><Input type="date" value={serviceStart} onChange={(e) => setServiceStart(e.target.value)} /></Field><Field label="Ends"><Input type="date" value={serviceEnd} onChange={(e) => setServiceEnd(e.target.value)} /></Field></div>
-          <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field></div>
-        <DialogFooter><Button variant="outline" onClick={() => setShowAccount(false)}>Cancel</Button><Button disabled={busy || !serviceName.trim() || agreedAmount === ''} onClick={saveAccount}>{busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Save</Button></DialogFooter>
-      </DialogContent></Dialog>
+      <Dialog open={showAccount} onOpenChange={setShowAccount}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Add linked service</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Field label="Service">
+              {(id) => <Input id={id} value={serviceName} onChange={(e) => setServiceName(e.target.value)} />}
+            </Field>
+            <Field label="Linked project">
+              {(id) => (
+                <Select value={projectId || '__none__'} onValueChange={(v) => setProjectId(v === '__none__' ? '' : v)}>
+                  <SelectTrigger id={id}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No project</SelectItem>
+                    {projects.map((p) => <SelectItem key={p.projectId} value={p.projectId}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Billing">
+                {(id) => (
+                  <Select value={billingType} onValueChange={(v) => setBillingType(v as ClientBillingType)}>
+                    <SelectTrigger id={id}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="one_time">One-time</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+              <Field label={billingType === 'monthly' ? 'Monthly amount' : 'Agreed amount'}>
+                {(id) => <Input id={id} type="number" min="0" step="0.01" value={agreedAmount} onChange={(e) => setAgreedAmount(e.target.value)} />}
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Opening paid">
+                {(id) => <Input id={id} type="number" min="0" step="0.01" value={openingPaid} onChange={(e) => setOpeningPaid(e.target.value)} />}
+              </Field>
+              <Field label="Starts">
+                {(id) => <Input id={id} type="date" value={serviceStart} onChange={(e) => setServiceStart(e.target.value)} />}
+              </Field>
+              <Field label="Ends">
+                {(id) => <Input id={id} type="date" value={serviceEnd} onChange={(e) => setServiceEnd(e.target.value)} />}
+              </Field>
+            </div>
+            <Field label="Notes">
+              {(id) => <Textarea id={id} value={notes} onChange={(e) => setNotes(e.target.value)} />}
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAccount(false)}>Cancel</Button>
+            <Button disabled={busy || !serviceName.trim() || agreedAmount === ''} onClick={saveAccount}>
+              {busy && <Loader2 className="animate-spin" aria-hidden />}Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Dialog open={Boolean(paying)} onOpenChange={(open) => { if (!open) setPaying(null); }}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Record payment</DialogTitle></DialogHeader>
-        <div className="space-y-3"><Field label="Amount"><Input type="number" min="0.01" step="0.01" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /></Field><Field label="Payment date"><Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></Field><Field label="Notes"><Textarea value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} /></Field></div>
-        <DialogFooter><Button variant="outline" onClick={() => setPaying(null)}>Cancel</Button><Button disabled={busy || Number(paymentAmount) <= 0} onClick={savePayment}>Save payment</Button></DialogFooter>
-      </DialogContent></Dialog>
+      <Dialog open={Boolean(paying)} onOpenChange={(open) => { if (!open) setPaying(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Record payment</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Field label="Amount">
+              {(id) => <Input id={id} type="number" min="0.01" step="0.01" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />}
+            </Field>
+            <Field label="Payment date">
+              {(id) => <Input id={id} type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />}
+            </Field>
+            <Field label="Notes">
+              {(id) => <Textarea id={id} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} />}
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaying(null)}>Cancel</Button>
+            <Button disabled={busy || Number(paymentAmount) <= 0} onClick={savePayment}>Save payment</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-const Metric: React.FC<{ label: string; value: string; danger?: boolean }> = ({ label, value, danger }) => <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className={`text-xl font-bold ${danger ? 'text-destructive' : ''}`}>{value}</p></CardContent></Card>;
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => <div className="space-y-1"><Label>{label}</Label>{children}</div>;
+/** One labelled amount in an account's totals row. */
+const Figure: React.FC<{ label: string; value: string; className?: string }> = ({ label, value, className }) => (
+  <div className="min-w-0">
+    <dt className="text-xs text-muted-foreground">{label}</dt>
+    <dd className={cn('truncate font-medium tabular-nums', className)}>{value}</dd>
+  </div>
+);
+
+/** A form field; hands its control the id the label points at. */
+const Field: React.FC<{ label: string; children: (id: string) => React.ReactNode }> = ({ label, children }) => {
+  const id = useId();
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      {children(id)}
+    </div>
+  );
+};

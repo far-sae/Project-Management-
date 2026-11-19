@@ -152,6 +152,10 @@ export interface CrmDeal {
   workspaceId: string | null;
   /** Set when the deal has been handed off to a specific project. */
   projectId: string | null;
+  /** When the deal was marked won or lost (migration 180). */
+  closedAt: Date | null;
+  /** Why the deal was lost (migration 180). */
+  lostReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -206,6 +210,8 @@ export interface CreateDealInput {
   expectedCloseDate?: string | null;
   source?: string | null;
   notes?: string | null;
+  /** Follows the stage the deal is created in (open / won / lost). */
+  status?: DealStatus;
 }
 
 export type UpdateDealInput = Partial<Omit<CreateDealInput, 'organizationId'>>;
@@ -240,7 +246,11 @@ export interface CrmTask {
 export interface CreateTaskInput {
   organizationId: string;
   workspaceId: string;
-  projectId: string;
+  /**
+   * The delivery project the follow-up also shows up in. Null for a sales
+   * follow-up on a lead or deal that has no project yet.
+   */
+  projectId: string | null;
   title: string;
   description?: string | null;
   dueDate?: string | null;

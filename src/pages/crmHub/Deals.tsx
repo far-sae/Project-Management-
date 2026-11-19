@@ -1,65 +1,98 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Loader2, GripVertical, LayoutGrid, List } from 'lucide-react';
+import { Plus, Loader2, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  DndContext, DragEndEvent, PointerSensor, useSensor, useSensors,
+  DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDraggable, useDroppable,
 } from '@dnd-kit/core';
-import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import {
   useCrmDeals, useCrmDealStages, useCrmContacts, useCrmCompanies, useWorkspaceForCreate,
 } from '@/hooks/useCrmHub';
-import { createDeal, moveDealToStage } from '@/services/supabase/crmHub/deals';
+import { createDeal } from '@/services/supabase/crmHub/deals';
+import { dealBadge, dealNeedsHandoff, leadName, weightedDealValue } from '@/lib/crmFlow';
 import type { CrmDeal, CrmDealStage } from '@/types/crmHub';
+import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/common/PageHeader';
+import { StatStrip } from '@/components/common/StatStrip';
+import { StatusPill } from '@/components/common/StatusPill';
+import { useDealMove } from '@/components/crmHub/useDealMove';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 
-import { useCrmCurrency } from '@/context/CrmCurrencyContext';
+const NONE = '__none__';
 
 const DealCard: React.FC<{
   deal: CrmDeal;
   contactName: string | null;
   companyName: string | null;
-}> = ({ deal, contactName, companyName }) => {
+  onHandoff: (deal: CrmDeal) => void;
+}> = ({ deal, contactName, companyName, onHandoff }) => {
   const { format: fmtCurrency } = useCrmCurrency();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10, opacity: isDragging ? 0.5 : 1 }
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 10 }
     : {};
+  const needsHandoff = dealNeedsHandoff(deal);
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="rounded-lg border border-border bg-card p-3 shadow-sm hover:border-primary/40 transition-colors"
+      data-handoff={needsHandoff || undefined}
+      className={cn(
+        'rounded-lg border bg-card p-2.5 transition-colors',
+        needsHandoff ? 'border-warning/50' : 'border-border hover:border-foreground/25',
+        isDragging && 'opacity-60',
+      )}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-1.5">
         <button
           {...listeners}
           {...attributes}
-          className="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing mt-0.5"
-          aria-label="Drag deal"
+          className="-ml-1 mt-0.5 cursor-grab rounded text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
+          aria-label={`Drag ${deal.name}`}
         >
-          <GripVertical className="w-4 h-4" />
+          <GripVertical className="h-4 w-4" />
         </button>
         <div className="min-w-0 flex-1">
-          <Link to={`/crm/deals/${deal.id}`} className="block">
-            <div className="font-medium text-sm text-foreground truncate hover:text-primary">{deal.name}</div>
+          <Link
+            to={`/crm/deals/${deal.id}`}
+            className="block truncate text-sm font-medium text-foreground hover:underline"
+          >
+            {deal.name}
           </Link>
-          <div className="text-xs text-primary font-semibold mt-1">{fmtCurrency(deal.value)}</div>
+          <div className="mt-0.5 text-sm font-semibold tabular-nums">{fmtCurrency(deal.value)}</div>
           {(companyName || contactName) && (
-            <div className="text-xs text-muted-foreground mt-1 truncate">
+            <div className="mt-1 truncate text-xs text-muted-foreground">
               {[companyName, contactName].filter(Boolean).join(' · ')}
+            </div>
+          )}
+          {deal.status === 'lost' && deal.lostReason && (
+            <div className="mt-1 truncate text-xs text-muted-foreground" title={deal.lostReason}>
+              Lost: {deal.lostReason}
+            </div>
+          )}
+          {deal.status === 'won' && (
+            <div className="mt-2 flex items-center justify-between gap-2">
+              {deal.projectId ? (
+                <Link to={`/project/${deal.projectId}`} className="text-xs font-medium text-foreground hover:underline">
+                  Open project
+                </Link>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => onHandoff(deal)}>
+                  Hand off to project
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -73,34 +106,57 @@ const StageColumn: React.FC<{
   deals: CrmDeal[];
   contactById: Map<string, string>;
   companyById: Map<string, string>;
-}> = ({ stage, deals, contactById, companyById }) => {
+  onHandoff: (deal: CrmDeal) => void;
+}> = ({ stage, deals, contactById, companyById, onHandoff }) => {
   const { format: fmtCurrency } = useCrmCurrency();
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const totalValue = deals.reduce((sum, d) => sum + d.value, 0);
   return (
-    <div
+    <section
       ref={setNodeRef}
-      className={`flex-shrink-0 w-72 rounded-lg border ${isOver ? 'border-primary bg-primary/5' : 'border-border bg-muted/30'} p-3 flex flex-col gap-3`}
+      aria-label={stage.name}
+      data-stage-status={stage.status}
+      className={cn(
+        'flex min-w-56 max-w-80 flex-1 flex-col rounded-lg border bg-secondary/40',
+        isOver ? 'border-foreground/40 bg-secondary' : 'border-border',
+      )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground truncate">{stage.name}</h3>
-        <span className="text-xs text-muted-foreground shrink-0">{deals.length}</span>
-      </div>
-      <div className="text-xs text-muted-foreground">{fmtCurrency(totalValue)} total</div>
-      <div className="flex-1 flex flex-col gap-2 overflow-y-auto min-h-24">
+      <header className="flex flex-col gap-0.5 border-b border-border px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
+            <span
+              aria-hidden
+              className={cn(
+                'h-2 w-2 shrink-0 rounded-full',
+                stage.status === 'won' ? 'bg-success' : stage.status === 'lost' ? 'bg-destructive' : 'bg-muted-foreground/50',
+              )}
+            />
+            <span className="truncate">{stage.name}</span>
+          </h3>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{deals.length}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-xs tabular-nums text-muted-foreground">
+          <span>{fmtCurrency(totalValue)}</span>
+          {stage.status === 'open' && <span>{stage.probability}% chance</span>}
+        </div>
+      </header>
+      <div className="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {deals.map((d) => (
           <DealCard
             key={d.id}
             deal={d}
             contactName={d.contactId ? contactById.get(d.contactId) ?? null : null}
             companyName={d.companyId ? companyById.get(d.companyId) ?? null : null}
+            onHandoff={onHandoff}
           />
         ))}
         {deals.length === 0 && (
-          <div className="text-xs text-muted-foreground text-center py-6">No deals</div>
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            {stage.status === 'won' ? 'Drop a deal here when it is won' : stage.status === 'lost' ? 'Drop a deal here when it is lost' : 'No deals'}
+          </div>
         )}
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -113,22 +169,20 @@ export const CrmDealsPage: React.FC = () => {
   const { items: companies } = useCrmCompanies();
   const { format: fmtCurrency } = useCrmCurrency();
   const workspaceId = useWorkspaceForCreate();
+  const { requestMove, openHandoff, dialogs } = useDealMove({ stages, onChanged: refreshDeals });
 
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'won' | 'lost'>('all');
   const [name, setName] = useState('');
-  const [value, setValue] = useState('0');
+  const [value, setValue] = useState('');
   const [stageId, setStageId] = useState('');
   const [contactId, setContactId] = useState('');
   const [companyId, setCompanyId] = useState('');
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const contactById = useMemo(
-    () => new Map(contacts.map((c) => [c.id, `${c.firstName} ${c.lastName ?? ''}`.trim()])),
-    [contacts],
-  );
+  const contactById = useMemo(() => new Map(contacts.map((c) => [c.id, leadName(c)])), [contacts]);
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c.name])), [companies]);
   const stageById = useMemo(() => new Map(stages.map((s) => [s.id, s])), [stages]);
 
@@ -144,52 +198,55 @@ export const CrmDealsPage: React.FC = () => {
     return map;
   }, [filteredDeals, stages]);
 
-  const totalOpenValue = filteredDeals.filter((d) => d.status === 'open').reduce((s, d) => s + d.value, 0);
-  const forecast = filteredDeals.filter((d) => d.status === 'open').reduce((s, d) => s + (d.value * d.probability) / 100, 0);
+  const stats = useMemo(() => {
+    const open = deals.filter((d) => d.status === 'open');
+    const won = deals.filter((d) => d.status === 'won');
+    return {
+      openCount: open.length,
+      openValue: open.reduce((s, d) => s + d.value, 0),
+      forecast: open.reduce((s, d) => s + weightedDealValue(d, stageById), 0),
+      wonValue: won.reduce((s, d) => s + d.value, 0),
+      wonCount: won.length,
+      needHandoff: won.filter(dealNeedsHandoff).length,
+    };
+  }, [deals, stageById]);
 
-  const handleDragEnd = async (e: DragEndEvent) => {
-    const dealId = String(e.active.id);
-    const targetStageId = e.over ? String(e.over.id) : null;
-    if (!targetStageId) return;
-    const deal = deals.find((d) => d.id === dealId);
-    const targetStage = stageById.get(targetStageId);
-    if (!deal || !targetStage || deal.stageId === targetStageId) return;
-    try {
-      await moveDealToStage(dealId, targetStageId, targetStage.status, targetStage.name);
-      await refreshDeals();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not move deal');
-    }
+  const handleDragEnd = (e: DragEndEvent) => {
+    const deal = deals.find((d) => d.id === String(e.active.id));
+    if (deal && e.over) requestMove(deal, String(e.over.id));
   };
 
-  const resetForm = () => {
-    setName(''); setValue('0'); setStageId(''); setContactId(''); setCompanyId('');
+  const openCreate = () => {
+    setName(''); setValue(''); setContactId(''); setCompanyId('');
+    setStageId(stages.find((s) => s.status === 'open')?.id ?? '');
+    setShowCreate(true);
   };
 
   const handleCreate = async () => {
-    if (!organization) return;
-    if (!name.trim()) { toast.error('Deal name is required'); return; }
-    if (!stageId) { toast.error('Pick a stage'); return; }
+    const stage = stageById.get(stageId);
+    if (!organization || !name.trim() || !stage) return;
     setBusy(true);
     try {
-      await createDeal(
+      const deal = await createDeal(
         {
           organizationId: organization.organizationId,
           workspaceId,
           name: name.trim(),
           stageId,
           value: Number(value) || 0,
+          probability: stage.probability,
+          status: stage.status,
           contactId: contactId || null,
           companyId: companyId || null,
         },
         user?.userId ?? null,
       );
       toast.success('Deal created');
-      resetForm();
       setShowCreate(false);
       await refreshDeals();
+      if (dealNeedsHandoff(deal)) openHandoff(deal);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create contract');
+      toast.error(err instanceof Error ? err.message : 'Could not create the deal');
     } finally {
       setBusy(false);
     }
@@ -198,41 +255,54 @@ export const CrmDealsPage: React.FC = () => {
   const loading = dealsLoading || stagesLoading;
 
   return (
-    <main className="flex-1 min-w-0 overflow-hidden flex flex-col bg-background">
-      <div className="p-4 sm:p-6 flex items-center justify-between gap-4 flex-wrap border-b border-border">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Deals</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Pipeline {fmtCurrency(totalOpenValue)} · Forecast {fmtCurrency(forecast)}
-          </p>
-        </div>
-        <Button onClick={() => setShowCreate(true)} disabled={stages.length === 0}>
-          <Plus className="w-4 h-4 mr-2" /> New contract
-        </Button>
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <div className="flex flex-col gap-6 px-4 pt-6 lg:px-6">
+        <PageHeader
+          title="Deals"
+          description="Drag a deal from stage to stage. Dropping it on Won starts the hand-off to a project; Lost asks why."
+          actions={
+            <Button onClick={openCreate} disabled={stages.length === 0}>
+              <Plus /> New deal
+            </Button>
+          }
+        />
+        <StatStrip
+          items={[
+            { label: 'Open pipeline', value: fmtCurrency(stats.openValue), note: `${stats.openCount} open deal${stats.openCount === 1 ? '' : 's'}` },
+            { label: 'Forecast', value: fmtCurrency(stats.forecast), note: 'Value × chance of winning' },
+            { label: 'Won', value: fmtCurrency(stats.wonValue), note: `${stats.wonCount} deal${stats.wonCount === 1 ? '' : 's'}`, tone: 'success' },
+            {
+              label: 'Waiting for hand-off',
+              value: stats.needHandoff,
+              note: stats.needHandoff === 0 ? 'Every won deal has a project' : 'Won, but no project yet',
+              tone: stats.needHandoff > 0 ? 'danger' : 'muted',
+            },
+          ]}
+        />
       </div>
 
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      {loading && deals.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : stages.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
-          <p>No pipeline stages yet.</p>
-          <Button asChild variant="outline" size="sm">
-            <Link to="/crm/settings">Set up pipeline</Link>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+          <p>This pipeline has no stages yet.</p>
+          <Button asChild variant="outline">
+            <Link to="/crm/settings">Set up the pipeline</Link>
           </Button>
         </div>
       ) : (
-        <Tabs defaultValue="board" className="flex-1 flex flex-col min-h-0">
-          <div className="px-4 sm:px-6 pt-3 pb-2 flex items-center justify-between gap-2 flex-wrap border-b border-border">
+        <Tabs defaultValue="board" className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="flex flex-wrap items-end justify-between gap-2 px-4 lg:px-6">
             <TabsList>
-              <TabsTrigger value="board"><LayoutGrid className="w-4 h-4 mr-1.5" />Board</TabsTrigger>
-              <TabsTrigger value="list"><List className="w-4 h-4 mr-1.5" />List</TabsTrigger>
+              <TabsTrigger value="board">Board</TabsTrigger>
+              <TabsTrigger value="list">List</TabsTrigger>
             </TabsList>
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="mb-1.5 w-36" aria-label="Filter by status"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="all">All deals</SelectItem>
                 <SelectItem value="open">Open</SelectItem>
                 <SelectItem value="won">Won</SelectItem>
                 <SelectItem value="lost">Lost</SelectItem>
@@ -240,10 +310,10 @@ export const CrmDealsPage: React.FC = () => {
             </Select>
           </div>
 
-          <TabsContent value="board" className="flex-1 min-h-0 m-0">
-            <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 sm:p-6 h-full">
+          <TabsContent value="board" className="m-0 min-h-0 flex-1">
+            <div className="h-full overflow-x-auto overflow-y-hidden px-4 py-4 lg:px-6">
               <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-                <div className="flex gap-3 min-h-full">
+                <div className="flex h-full min-h-full gap-3">
                   {stages.map((stage) => (
                     <StageColumn
                       key={stage.id}
@@ -251,6 +321,7 @@ export const CrmDealsPage: React.FC = () => {
                       deals={dealsByStage.get(stage.id) ?? []}
                       contactById={contactById}
                       companyById={companyById}
+                      onHandoff={openHandoff}
                     />
                   ))}
                 </div>
@@ -258,55 +329,55 @@ export const CrmDealsPage: React.FC = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="list" className="flex-1 min-h-0 m-0 overflow-y-auto">
-            <div className="p-4 sm:p-6">
+          <TabsContent value="list" className="m-0 min-h-0 flex-1 overflow-y-auto">
+            <div className="px-4 py-4 lg:px-6">
               {filteredDeals.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-12">No deals match the filter.</p>
+                <p className="py-12 text-center text-sm text-muted-foreground">No deals match this filter.</p>
               ) : (
-                <div className="rounded-lg border border-border overflow-x-auto">
+                <div className="overflow-x-auto rounded-lg border border-border">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-xs uppercase tracking-wide text-muted-foreground border-b border-border bg-muted/40">
-                        <th className="text-left py-2 px-3 font-medium">Deal</th>
-                        <th className="text-left py-2 px-3 font-medium">Company</th>
-                        <th className="text-left py-2 px-3 font-medium">Contact</th>
-                        <th className="text-right py-2 px-3 font-medium">Value</th>
-                        <th className="text-right py-2 px-3 font-medium">Prob.</th>
-                        <th className="text-left py-2 px-3 font-medium">Stage</th>
-                        <th className="text-left py-2 px-3 font-medium">Close</th>
-                        <th className="text-left py-2 px-3 font-medium">Status</th>
+                      <tr className="border-b border-border text-xs text-muted-foreground">
+                        <th className="px-3 py-2 text-left font-medium">Deal</th>
+                        <th className="px-3 py-2 text-left font-medium">Company</th>
+                        <th className="px-3 py-2 text-left font-medium">Lead</th>
+                        <th className="px-3 py-2 text-right font-medium">Value</th>
+                        <th className="px-3 py-2 text-right font-medium">Chance</th>
+                        <th className="px-3 py-2 text-left font-medium">Stage</th>
+                        <th className="px-3 py-2 text-left font-medium">Expected close</th>
+                        <th className="px-3 py-2 text-left font-medium">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDeals.map((d) => (
-                        <tr key={d.id} className="border-b border-border/60 hover:bg-muted/40">
-                          <td className="py-2 px-3">
-                            <Link to={`/crm/deals/${d.id}`} className="font-medium text-foreground hover:text-primary">
-                              {d.name}
-                            </Link>
-                          </td>
-                          <td className="py-2 px-3 text-muted-foreground">
-                            {d.companyId ? companyById.get(d.companyId) ?? '—' : '—'}
-                          </td>
-                          <td className="py-2 px-3 text-muted-foreground">
-                            {d.contactId ? contactById.get(d.contactId) ?? '—' : '—'}
-                          </td>
-                          <td className="py-2 px-3 text-right font-semibold">{fmtCurrency(d.value)}</td>
-                          <td className="py-2 px-3 text-right text-muted-foreground">{d.probability}%</td>
-                          <td className="py-2 px-3 text-muted-foreground">
-                            {stageById.get(d.stageId)?.name ?? '—'}
-                          </td>
-                          <td className="py-2 px-3 text-muted-foreground">
-                            {d.expectedCloseDate ? new Date(d.expectedCloseDate).toLocaleDateString() : '—'}
-                          </td>
-                          <td className="py-2 px-3">
-                            <Badge
-                              variant={d.status === 'won' ? 'default' : d.status === 'lost' ? 'destructive' : 'secondary'}
-                              className="capitalize"
-                            >{d.status}</Badge>
-                          </td>
-                        </tr>
-                      ))}
+                      {filteredDeals.map((d) => {
+                        const badge = dealBadge(d);
+                        return (
+                          <tr key={d.id} className="border-b border-border last:border-b-0 hover:bg-muted/40">
+                            <td className="px-3 py-2">
+                              <Link to={`/crm/deals/${d.id}`} className="font-medium text-foreground hover:underline">
+                                {d.name}
+                              </Link>
+                            </td>
+                            <td className="px-3 py-2 text-muted-foreground">
+                              {d.companyId ? companyById.get(d.companyId) ?? '—' : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-muted-foreground">
+                              {d.contactId ? contactById.get(d.contactId) ?? '—' : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium tabular-nums">{fmtCurrency(d.value)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                              {d.status === 'open' ? `${d.probability || stageById.get(d.stageId)?.probability || 0}%` : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-muted-foreground">{stageById.get(d.stageId)?.name ?? '—'}</td>
+                            <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                              {d.expectedCloseDate ? new Date(d.expectedCloseDate).toLocaleDateString() : '—'}
+                            </td>
+                            <td className="px-3 py-2">
+                              <StatusPill tone={badge.tone}>{badge.label}</StatusPill>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -316,23 +387,26 @@ export const CrmDealsPage: React.FC = () => {
         </Tabs>
       )}
 
-      <Dialog open={showCreate} onOpenChange={(o) => { setShowCreate(o); if (!o) resetForm(); }}>
-        <DialogContent className="max-w-md">
+      <Dialog open={showCreate} onOpenChange={(o) => !busy && setShowCreate(o)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>New contract</DialogTitle>
+            <DialogTitle>New deal</DialogTitle>
+            <DialogDescription>
+              Usually a deal starts from a lead: open the lead and choose “Convert to deal”. Use this for a deal with no lead yet.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="dname">Deal name *</Label>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="dname">Deal name</Label>
               <Input id="dname" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="dval">Value</Label>
-                <Input id="dval" type="number" min={0} step="0.01" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} />
+                <Input id="dval" type="number" min={0} step="0.01" inputMode="decimal" placeholder="0" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy} />
               </div>
-              <div>
-                <Label>Stage *</Label>
+              <div className="flex flex-col gap-1.5">
+                <Label>Stage</Label>
                 <Select value={stageId} onValueChange={setStageId} disabled={busy}>
                   <SelectTrigger><SelectValue placeholder="Pick a stage" /></SelectTrigger>
                   <SelectContent>
@@ -343,26 +417,26 @@ export const CrmDealsPage: React.FC = () => {
                 </Select>
               </div>
             </div>
-            <div>
+            <div className="flex flex-col gap-1.5">
               <Label>Company</Label>
-              <Select value={companyId || '__none__'} onValueChange={(v) => setCompanyId(v === '__none__' ? '' : v)} disabled={busy}>
-                <SelectTrigger><SelectValue placeholder="No company" /></SelectTrigger>
+              <Select value={companyId || NONE} onValueChange={(v) => setCompanyId(v === NONE ? '' : v)} disabled={busy}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">— None —</SelectItem>
+                  <SelectItem value={NONE}>No company</SelectItem>
                   {companies.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label>Primary contact</Label>
-              <Select value={contactId || '__none__'} onValueChange={(v) => setContactId(v === '__none__' ? '' : v)} disabled={busy}>
-                <SelectTrigger><SelectValue placeholder="No contact" /></SelectTrigger>
+            <div className="flex flex-col gap-1.5">
+              <Label>Lead</Label>
+              <Select value={contactId || NONE} onValueChange={(v) => setContactId(v === NONE ? '' : v)} disabled={busy}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">— None —</SelectItem>
+                  <SelectItem value={NONE}>No lead</SelectItem>
                   {contacts.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.firstName} {c.lastName ?? ''}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{leadName(c)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -371,11 +445,13 @@ export const CrmDealsPage: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleCreate} disabled={busy || !name.trim() || !stageId}>
-              {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Create
+              {busy && <Loader2 className="animate-spin" />} Create deal
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {dialogs}
     </main>
   );
 };

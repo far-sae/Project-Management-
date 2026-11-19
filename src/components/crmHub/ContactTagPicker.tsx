@@ -107,7 +107,7 @@ export const ContactTagPicker: React.FC<Props> = ({ contactId, variant = 'panel'
         {(loading || tagsLoading) ? (
           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
         ) : attachedTags.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic px-1">No tags attached yet.</p>
+          <p className="text-xs text-muted-foreground">No tags on this lead yet.</p>
         ) : attachedTags.map((t) => (
           <TagPill key={t.id} name={t.name} color={t.color} onRemove={() => void toggleTag(t.id)} busy={busy} />
         ))}
@@ -131,18 +131,19 @@ const TagPill: React.FC<{
   busy: boolean;
 }> = ({ name, color, onRemove, busy }) => (
   <span
-    className="inline-flex items-center gap-1 rounded-full pl-2 pr-1 py-0.5 text-xs"
+    className="inline-flex max-w-full items-center gap-1 rounded-full py-0.5 pl-2 pr-1 text-xs font-medium"
     style={{ backgroundColor: `${color}22`, color, border: `1px solid ${color}44` }}
   >
-    <span className="text-foreground">{name}</span>
+    <span className="truncate text-foreground">{name}</span>
     <button
       type="button"
       onClick={onRemove}
       disabled={busy}
-      className="h-4 w-4 rounded-full hover:bg-black/10 dark:hover:bg-white/10 flex items-center justify-center disabled:opacity-50"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10 hover:text-foreground disabled:opacity-50"
       title="Remove tag"
+      aria-label={`Remove tag ${name}`}
     >
-      <X className="w-3 h-3" />
+      <X className="h-3 w-3" aria-hidden />
     </button>
   </span>
 );
@@ -159,7 +160,7 @@ const AddTagButton: React.FC<{
     return (
       <Button asChild size="sm" variant="outline" className="w-full">
         <Link to="/crm/tags">
-          <Settings className="w-3.5 h-3.5 mr-1.5" />
+          <Settings aria-hidden />
           Create tags first
         </Link>
       </Button>
@@ -169,8 +170,8 @@ const AddTagButton: React.FC<{
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button size="sm" variant="outline" className="w-full" disabled={busy}>
-          <Plus className="w-3.5 h-3.5 mr-1.5" />
-          Add / remove tags
+          <Plus aria-hidden />
+          Add or remove tags
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2">
@@ -181,10 +182,10 @@ const AddTagButton: React.FC<{
             busy={busy}
           />
         </div>
-        <div className="border-t border-border mt-2 pt-2">
-          <Button asChild size="sm" variant="ghost" className="w-full justify-start text-xs">
+        <div className="mt-2 border-t border-border pt-2">
+          <Button asChild size="sm" variant="ghost" className="w-full justify-start">
             <Link to="/crm/tags">
-              <Settings className="w-3 h-3 mr-1.5" />
+              <Settings aria-hidden />
               Manage tags
             </Link>
           </Button>
@@ -211,20 +212,23 @@ const TagCheckboxList: React.FC<{
             type="button"
             onClick={() => void onToggle(t.id)}
             disabled={busy}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted text-left text-sm disabled:opacity-50"
+            role="checkbox"
+            aria-checked={isOn}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-secondary disabled:opacity-50"
           >
             <span
-              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                isOn ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                isOn ? 'border-primary bg-primary text-primary-foreground' : 'border-input'
               }`}
             >
-              {isOn && <Check className="w-3 h-3" />}
+              {isOn && <Check className="h-3 w-3" aria-hidden />}
             </span>
             <span
-              className="w-3 h-3 rounded-full shrink-0"
+              className="h-3 w-3 shrink-0 rounded-full"
               style={{ backgroundColor: t.color }}
+              aria-hidden
             />
-            <span className="text-foreground truncate">{t.name}</span>
+            <span className="truncate text-foreground">{t.name}</span>
           </button>
         );
       })}
