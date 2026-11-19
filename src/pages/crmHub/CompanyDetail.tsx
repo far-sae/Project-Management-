@@ -45,6 +45,7 @@ import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
 import { AgreementsPanel } from '@/components/signroom/agreements/AgreementsPanel';
 import { InvoicesPanel } from '@/components/signroom/billing/InvoicesPanel';
 import { CompanyAccountPanel } from '@/components/signroom/billing/CompanyAccountPanel';
+import { BillingPlansPanel } from '@/components/signroom/billing/BillingPlansPanel';
 
 const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 /** One row of a list inside a card. */
@@ -496,7 +497,11 @@ export const CrmCompanyDetailPage: React.FC = () => {
 
             {/* What they have been invoiced, what they have paid and what is outstanding. */}
             <TabsContent value="account" className="mt-0">
-              <CompanyAccountPanel companyId={company.id} />
+              <div className="flex flex-col gap-4">
+                <CompanyAccountPanel companyId={company.id} />
+                {/* Retainers and one-off fees agreed with this company, month by month. */}
+                <BillingPlansPanel companyId={company.id} companyName={company.name} />
+              </div>
             </TabsContent>
           </Tabs>
 

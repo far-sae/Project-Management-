@@ -163,6 +163,13 @@ describe('Invoices list', () => {
     expect(within(screen.getByRole('dialog')).getByText('Company')).toBeTruthy();
   });
 
+  it('links to the accounts overview from its header', async () => {
+    serve();
+    open();
+    expect(screen.getByRole('link', { name: 'Accounts overview' }).getAttribute('href')).toBe('/crm/accounts-overview');
+    await waitFor(() => row('INV-0002'));
+  });
+
   it('shows the server sentence when the list cannot be loaded', async () => {
     sr.call.mockRejectedValue(new Error('You do not have access to this workspace.'));
     open();

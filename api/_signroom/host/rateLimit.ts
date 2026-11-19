@@ -26,6 +26,9 @@ const UNAVAILABLE: SpendResult = { ok: false, minutesLeft: 1, unavailable: true 
 /** The workspace's own bucket in sr_attempts. */
 export const workspaceLimitKey = (workspaceId: string) => `workspace:${workspaceId}`;
 
+/** A signed-in account's own bucket in sr_attempts, for limits that follow the person and not the workspace. */
+export const userLimitKey = (userId: string) => `user:${userId}`;
+
 /** Pure: given this key's attempt times (including the one just made), may it proceed? */
 export function limitVerdict(
   attemptTimes: string[],

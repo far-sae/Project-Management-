@@ -1,5 +1,8 @@
 import React, { useId, useRef } from 'react';
-import { ArrowRight, Download, FilePlus, FileUp, Heading1, List, Loader2, ShieldCheck, Table } from 'lucide-react';
+import {
+  ArrowRight, Download, FilePlus, FileUp, Heading1, List, Loader2, PenLine, ShieldCheck, Table, TriangleAlert,
+} from 'lucide-react';
+import { AI_REVIEW_SENTENCE } from '@/lib/signroom/aiDraft';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,11 +30,15 @@ interface EditorDocumentStepProps {
   onWriteInstead: () => void;
   onPrepare: () => void;
   onDownloadSource: () => void;
+  /** Opens Draft with AI. Offered only while the text is written here, never for an uploaded PDF. */
+  onDraftWithAi?: () => void;
+  /** The text came from an AI draft and the person has not saved since: keep the reminder to check it in view. */
+  aiWritten?: boolean;
 }
 
 /** Step 1: the document itself, written here or uploaded as a PDF, and the exact PDF signers will see. */
 export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
-  draft, busy, uploaded, onTitle, onText, onUpload, onWriteInstead, onPrepare, onDownloadSource,
+  draft, busy, uploaded, onTitle, onText, onUpload, onWriteInstead, onPrepare, onDownloadSource, onDraftWithAi, aiWritten = false,
 }) => {
   const id = useId();
   const file = useRef<HTMLInputElement>(null);
@@ -49,7 +56,12 @@ export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
       title="Start with the document"
       note="Write your terms, or upload a PDF. Every signer reviews the same frozen PDF."
       action={(
-        <>
+        <div className="flex flex-wrap items-center gap-2">
+          {!uploaded && onDraftWithAi && (
+            <Button type="button" variant="outline" disabled={busy} onClick={onDraftWithAi}>
+              <PenLine aria-hidden /> Draft with AI
+            </Button>
+          )}
           <input
             ref={file}
             type="file"
@@ -67,7 +79,7 @@ export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
           <Button type="button" variant="outline" disabled={busy} onClick={() => file.current?.click()}>
             <FileUp aria-hidden /> Upload PDF
           </Button>
-        </>
+        </div>
       )}
     >
       <div className="flex flex-col gap-4 p-4">
@@ -91,6 +103,12 @@ export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
           </div>
         ) : (
           <div className="flex flex-col gap-2">
+            {aiWritten && (
+              <Notice icon={<TriangleAlert />} className="text-foreground">
+                <span className="font-medium">This text was written by AI.</span>{' '}
+                <span>{AI_REVIEW_SENTENCE}</span>
+              </Notice>
+            )}
             <div className="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="Document formatting">
               {INSERTS.map((item) => (
                 <Button key={item.label} type="button" variant="outline" size="sm" onClick={() => insert(item.text)}>

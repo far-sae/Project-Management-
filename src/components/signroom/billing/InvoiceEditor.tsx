@@ -3,7 +3,7 @@ import React, { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, Plus, Send, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Invoice } from '../../../../api/_signroom/shared/types';
+import type { Invoice, ProjectList } from '../../../../api/_signroom/shared/types';
 import { useSignroom } from '@/hooks/useSignroom';
 import {
   BILLING_TYPES, INVOICE_CURRENCIES, billingToday, emptyLine, errorSentence, formatMinor, lineDrafts,
@@ -23,7 +23,10 @@ import {
 import { PdfFrame } from './PdfFrame';
 import { Card, FIELD, HEAD_ROW, ROW, TH, TH_RIGHT, Tick } from './shared';
 import { UnsavedGuard } from './UnsavedGuard';
-import type { DeliveryInfo } from './useBilling';
+import { useServerData, type DeliveryInfo } from './useBilling';
+
+/** The plan picker's value for "not linked to a plan". */
+const NO_PLAN = '__none__';
 
 interface Props {
   invoice: Invoice;
@@ -68,6 +71,15 @@ export const InvoiceEditor: React.FC<Props> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [confirm, setConfirm] = useState<null | 'issue' | 'send'>(null);
 
+  // The company's billing plans. A draft can count towards one that is active and in the invoice's currency.
+  // The server calls a plan a "client project", so the link travels as `projectId`.
+  const plans = useServerData<ProjectList>(`client-projects/${invoice.clientId}`);
+  const [planId, setPlanId] = useState(invoice.projectId ?? '');
+  const [planNote, setPlanNote] = useState('');
+  const allPlans = plans.data?.projects ?? [];
+  const planChoices = allPlans.filter((p) => p.id === planId || (!p.archived && p.currency === currency));
+  const otherCurrencies = Array.from(new Set(allPlans.filter((p) => !p.archived).map((p) => p.currency))).sort();
+
   const live = liveTotals(lines, taxMode, invoiceTax);
   const totalMinor = live.totals?.totalMinor || invoice.totalMinor;
   const money = (minor: number) => formatMinor(minor, currency);
@@ -85,6 +97,27 @@ export const InvoiceEditor: React.FC<Props> = ({
     setTaxMode(next);
     setDirty(true);
   };
+  const changeCurrency = (next: string) => {
+    setCurrency(next);
+    setDirty(true);
+    // A plan is in one currency, and only an invoice in that currency can count towards it.
+    const linked = allPlans.find((p) => p.id === planId);
+    if (linked && linked.currency !== next) {
+      setPlanId('');
+      setPlanNote(`${linked.name} is billed in ${linked.currency}, so it is no longer linked to this invoice.`);
+    } else {
+      setPlanNote('');
+    }
+  };
+  const choosePlan = (value: string) => {
+    const next = value === NO_PLAN ? '' : value;
+    setPlanId(next);
+    setPlanNote('');
+    setDirty(true);
+    // An empty reference takes the plan's name, so the invoice says what it is for.
+    const chosen = allPlans.find((p) => p.id === next);
+    if (chosen && !project.trim()) setProject(chosen.name.slice(0, 200));
+  };
 
   const post = (action: string, body: unknown) => client.call<Invoice>(`billing/${invoice.id}/${action}`, body);
   const fail = (error: unknown, before = '') => {
@@ -99,6 +132,9 @@ export const InvoiceEditor: React.FC<Props> = ({
     taxPercent: invoiceTax || '0',
     receiptDraft: withPayment ? { enabled: true, amount, paidOn, method, reference } : null,
     project,
+    // The plan this draft counts towards, or "" for none. Left out while the plans could not be read,
+    // so the server keeps whatever link the draft already has.
+    projectId: plans.data ? planId : undefined,
     notes,
   });
   const issueBody = (revision: number) => ({
@@ -171,7 +207,7 @@ export const InvoiceEditor: React.FC<Props> = ({
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className={FIELD}>
             <Label htmlFor={`${id}-currency`}>Currency</Label>
-            <Select value={currency} onValueChange={touch(setCurrency)} disabled={busy}>
+            <Select value={currency} onValueChange={changeCurrency} disabled={busy}>
               <SelectTrigger id={`${id}-currency`}><SelectValue /></SelectTrigger>
               <SelectContent>
                 {INVOICE_CURRENCIES.map((code) => <SelectItem key={code} value={code}>{code}</SelectItem>)}
@@ -199,6 +235,30 @@ export const InvoiceEditor: React.FC<Props> = ({
               value={project} onChange={(e) => touch(setProject)(e.target.value)}
             />
           </div>
+          {plans.data && planChoices.length > 0 && (
+            <div className={`${FIELD} sm:col-span-2`}>
+              <Label htmlFor={`${id}-plan`}>Billing plan (optional)</Label>
+              <Select value={planId || NO_PLAN} onValueChange={choosePlan} disabled={busy}>
+                <SelectTrigger id={`${id}-plan`} aria-describedby={`${id}-plan-hint`}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_PLAN}>No plan</SelectItem>
+                  {planChoices.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.archived ? `${p.name} (archived)` : p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p id={`${id}-plan-hint`} className="text-xs text-muted-foreground">
+                Payments on this invoice count towards the plan. Only this company&apos;s plans in {currency} are listed.
+              </p>
+            </div>
+          )}
+          {(planNote || plans.error || (plans.data && planChoices.length === 0 && otherCurrencies.length > 0)) && (
+            <p role="status" className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">
+              {planNote
+                || (plans.error && `Billing plans: ${plans.error}`)
+                || `This company's billing plans are in ${otherCurrencies.join(' and ')}, so a ${currency} invoice cannot be linked to one.`}
+            </p>
+          )}
         </div>
       </Card>
 

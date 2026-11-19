@@ -9,6 +9,7 @@ import type {
   BillingToken,
   Client,
   ClientAccountSettings,
+  ClientProject,
   Delivery,
   GuestSession,
   Invoice,
@@ -23,6 +24,7 @@ import type {
   Workspace,
 } from "./shared/types.js";
 import { orgRoleOf, type OrgRole } from "./context.js";
+import { deleteMailbox, loadMailbox, markMailbox, upsertMailbox, type MailboxRow } from "./mailbox/store.js";
 
 /** An agreement plus the server-only compare-and-set counter (never sent to the browser). */
 export type StoredAgreement = Agreement & { rowVersion: number };
@@ -52,6 +54,71 @@ export type CrmCompany = {
 
 /** Narrows a list to one client and/or one CRM deal. */
 export type ListFilter = { clientId?: string; dealId?: string };
+
+export type EmailOAuthStatus = "configured" | "authenticated" | "verified" | "reconnect";
+
+/**
+ * A workspace's Google or Microsoft email connection (sr_email_oauth, one row
+ * per workspace). `secretsEnc` is v1 ciphertext bound to the workspace id;
+ * `expires` is epoch ms.
+ */
+export type EmailOAuth = {
+  workspaceId: string;
+  id: string;
+  revision: number;
+  provider: "google" | "microsoft";
+  email: string;
+  clientId: string;
+  tenant: string;
+  secretsEnc: string;
+  status: EmailOAuthStatus;
+  verifiedAt?: string;
+  lastTestAt?: string;
+  lastError?: string;
+  challenge?: { digest: string; expires: number; attempts: number };
+};
+
+/** `null` clears a field; a cleared challenge writes digest and expiry null and attempts 0. */
+export type EmailOAuthPatch = {
+  secretsEnc?: string;
+  status?: EmailOAuthStatus;
+  verifiedAt?: string | null;
+  lastTestAt?: string | null;
+  lastError?: string | null;
+  challenge?: EmailOAuth["challenge"] | null;
+};
+
+/**
+ * A pending sign-in (sr_email_oauth_states). Digests are sha256 hex; `expires`
+ * is epoch ms. `userId` is the owner or admin who started it: the provider's
+ * redirect carries no sign-in, so the callback checks that person again.
+ */
+export type OAuthState = {
+  digest: string;
+  browserDigest: string;
+  workspaceId: string;
+  userId: string;
+  connectionId: string;
+  revision: number;
+  verifierEnc: string;
+  redirectUri: string;
+  expires: number;
+};
+
+/** What an edit of a billing plan (sr_projects) may change. */
+export type ProjectPatch = Partial<Omit<ClientProject, "id" | "workspaceId" | "clientId" | "createdBy" | "created" | "revision" | "updated">>;
+
+/** One sr_ai_usage row: the token counts of one Claude reply, for the workspace's own records. */
+export type AiUsage = {
+  workspaceId: string;
+  userId: string;
+  feature: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+};
 
 export interface Store {
   /**
@@ -121,6 +188,8 @@ export interface Store {
   /** Marks the job's delivery rows failed with `error`. False when the job has none. */
   holdJobDelivery(jobId: string, error: string): Promise<boolean>;
   listDeliveries(workspaceId: string, limit: number): Promise<Delivery[]>;
+  /** One invoice's or one agreement's delivery rows inside the workspace, newest first, at most `limit`. */
+  listDocumentDeliveries(workspaceId: string, doc: { invoiceId: string } | { agreementId: string }, limit: number): Promise<Delivery[]>;
   /** Returns the sha256 hex; stored at <workspaceId>/<hash> in the private "signroom" bucket. */
   putBlob(workspaceId: string, bytes: Uint8Array): Promise<string>;
   getBlob(workspaceId: string, hash: string): Promise<Uint8Array>;
@@ -221,6 +290,52 @@ export interface Store {
   removeQuarantine(path: string): Promise<void>;
   /** Removes the objects of, and deletes, the workspace's tickets created before `before` (ISO time). */
   sweepUploads(workspaceId: string, before: string): Promise<void>;
+
+  // ---- added by migration 186 (each throws a StoreError naming its table until that file is run) ----
+
+  /** Appends one row to sr_ai_usage. */
+  insertAiUsage(u: AiUsage): Promise<void>;
+  /** The workspace's billing plans (sr_projects), oldest first; narrowed to one client when given. */
+  listProjects(workspaceId: string, clientId?: string): Promise<ClientProject[]>;
+  getProject(workspaceId: string, id: string): Promise<ClientProject | null>;
+  insertProject(p: Omit<ClientProject, "id" | "revision" | "created" | "updated">): Promise<ClientProject>;
+  /** null = the revision moved (or the plan is not in the workspace). */
+  updateProject(workspaceId: string, id: string, revision: number, patch: ProjectPatch): Promise<ClientProject | null>;
+  /**
+   * Gives every version of the workspace's template called `from` the name `to`.
+   * A name another template took in the meantime is a 409 AppError. Before 186
+   * the database refuses it ("Templates cannot change.").
+   */
+  renameAgreementTemplate(workspaceId: string, from: string, to: string): Promise<void>;
+  /** Deletes one template version of the workspace. Before 186 the database refuses it ("Templates cannot change."). */
+  deleteAgreementTemplate(workspaceId: string, id: string): Promise<void>;
+
+  /** The workspace's own SMTP mailbox (sr_mailboxes), or null. */
+  getMailbox(workspaceId: string): Promise<MailboxRow | null>;
+  /** Inserts or replaces the workspace's one mailbox row. */
+  upsertMailbox(row: MailboxRow & { updated_at: string }): Promise<void>;
+  /** Records a login result on the row exactly as it was checked. False when it has changed or gone since. */
+  markMailbox(checked: MailboxRow, patch: { verified_at: string | null; last_error: string | null }): Promise<boolean>;
+  deleteMailbox(workspaceId: string): Promise<void>;
+
+  /** The workspace's Google or Microsoft connection (sr_email_oauth), or null. */
+  getEmailOAuth(workspaceId: string): Promise<EmailOAuth | null>;
+  /** Upserts on the workspace, then deletes the workspace's pending sign-ins. Never touches the SMTP mailbox. */
+  replaceEmailOAuth(c: EmailOAuth): Promise<void>;
+  /** One conditional update on workspace, id, revision and (when given) challenge attempts and status. False when no row matched. */
+  updateEmailOAuth(
+    workspaceId: string,
+    at: { id: string; revision: number; attempts?: number; status?: EmailOAuthStatus },
+    patch: EmailOAuthPatch,
+  ): Promise<boolean>;
+  /** The row and the workspace's pending sign-ins. */
+  deleteEmailOAuth(workspaceId: string): Promise<void>;
+  /** Deletes the workspace's other pending sign-ins first. */
+  insertOAuthState(s: OAuthState): Promise<void>;
+  /** Single use: one delete matching digest, browser digest and expiry (after now), returning the row. */
+  takeOAuthState(digest: string, browserDigest: string, now: number): Promise<OAuthState | null>;
+  /** Deletes pending sign-ins that expired before `before` (epoch ms). */
+  purgeOAuthStates(before: number): Promise<void>;
 }
 
 /** An upload ticket is good for this long. */
@@ -348,6 +463,8 @@ function invoiceFrom(r: Row): Invoice {
     totalMinor: num(r.total_minor),
     notes: r.notes ?? "",
     ...(r.project ? { project: r.project } : {}),
+    // The billing plan link: a column migration 186 adds (absent, and so never set, before it is run).
+    ...(r.project_id ? { projectId: r.project_id } : {}),
     dealId: r.crm_deal_id ?? null,
     ...(r.receipt_draft ? { receiptDraft: r.receipt_draft } : {}),
     ...(r.branding ? { branding: r.branding } : {}),
@@ -384,6 +501,8 @@ function invoiceRow(i: Partial<Invoice>): Row {
   set("total_minor", i.totalMinor);
   set("notes", i.notes);
   set("project", i.project);
+  // Only when the caller names it, so drafts save as before while migration 186 (which adds the column) is not run.
+  set("project_id", blank(i.projectId));
   set("receipt_draft", i.receiptDraft);
   set("branding", i.branding);
   set("customer", i.customer);
@@ -648,6 +767,103 @@ function uploadFrom(r: Row): UploadTicket {
     created: r.created_at,
     ...(r.used_at ? { used: r.used_at } : {}),
   };
+}
+
+function oauthFrom(r: Row): EmailOAuth {
+  return {
+    workspaceId: r.workspace_id,
+    id: r.id,
+    revision: num(r.revision),
+    provider: r.provider,
+    email: r.email,
+    clientId: r.client_id,
+    tenant: r.tenant ?? "",
+    secretsEnc: r.secrets_enc,
+    status: r.status,
+    ...(r.verified_at ? { verifiedAt: r.verified_at } : {}),
+    ...(r.last_test_at ? { lastTestAt: r.last_test_at } : {}),
+    ...(r.last_error ? { lastError: r.last_error } : {}),
+    ...(r.challenge_digest ? { challenge: { digest: r.challenge_digest, expires: ms(r.challenge_expires) ?? 0, attempts: num(r.challenge_attempts) } } : {}),
+  };
+}
+
+function oauthPatchRow(p: EmailOAuthPatch): Row {
+  const out: Row = {};
+  if (p.secretsEnc !== undefined) out.secrets_enc = p.secretsEnc;
+  if (p.status !== undefined) out.status = p.status;
+  if (p.verifiedAt !== undefined) out.verified_at = p.verifiedAt;
+  if (p.lastTestAt !== undefined) out.last_test_at = p.lastTestAt;
+  if (p.lastError !== undefined) out.last_error = p.lastError;
+  if (p.challenge !== undefined) {
+    out.challenge_digest = p.challenge ? p.challenge.digest : null;
+    out.challenge_expires = p.challenge ? iso(p.challenge.expires) : null;
+    out.challenge_attempts = p.challenge ? p.challenge.attempts : 0;
+  }
+  return out;
+}
+
+function oauthStateFrom(r: Row): OAuthState {
+  return {
+    digest: r.digest,
+    browserDigest: r.browser_digest,
+    workspaceId: r.workspace_id,
+    userId: r.user_id,
+    connectionId: r.connection_id,
+    revision: num(r.revision),
+    verifierEnc: r.verifier_enc,
+    redirectUri: r.redirect_uri,
+    expires: ms(r.expires_at) ?? 0,
+  };
+}
+
+function projectFrom(r: Row): ClientProject {
+  return {
+    id: r.id,
+    workspaceId: r.workspace_id,
+    clientId: r.client_id,
+    createdBy: r.created_by ?? "",
+    name: r.name,
+    billingType: r.billing_type,
+    billingLabel: r.billing_label ?? "",
+    currency: r.currency,
+    monthlyFeeMinor: num(r.monthly_fee_minor),
+    contractValueMinor: num(r.contract_value_minor),
+    annualTargetMinor: num(r.annual_target_minor),
+    startMonth: r.start_month,
+    endMonth: r.end_month ?? "",
+    status: r.status,
+    notes: r.notes ?? "",
+    monthlyEntries: r.monthly_entries ?? {},
+    archived: !!r.archived,
+    revision: num(r.revision),
+    created: r.created_at,
+    updated: r.updated_at,
+  };
+}
+
+/** Billing plan fields -> sr_projects columns. Only keys that are present are mapped. */
+function projectRow(p: ProjectPatch & { workspaceId?: string; clientId?: string; createdBy?: string }): Row {
+  const o: Row = {};
+  const set = (col: string, v: unknown) => {
+    if (v !== undefined) o[col] = v;
+  };
+  set("workspace_id", p.workspaceId);
+  set("client_id", p.clientId);
+  set("created_by", p.createdBy === "" ? null : p.createdBy);
+  set("name", p.name);
+  set("billing_type", p.billingType);
+  set("billing_label", p.billingLabel);
+  set("currency", p.currency);
+  set("monthly_fee_minor", p.monthlyFeeMinor);
+  set("contract_value_minor", p.contractValueMinor);
+  set("annual_target_minor", p.annualTargetMinor);
+  set("start_month", p.startMonth);
+  set("end_month", p.endMonth);
+  set("status", p.status);
+  set("notes", p.notes);
+  set("monthly_entries", p.monthlyEntries);
+  set("archived", p.archived);
+  return o;
 }
 
 const INVOICE_SELECT = "*, sr_payments(*), sr_invoice_events(*)";
@@ -1017,6 +1233,18 @@ export function supabaseStore(sb: SupabaseClient): Store {
         .from("sr_deliveries")
         .select("*")
         .eq("workspace_id", workspaceId)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      return ((must(r) as Row[] | null) ?? []).map(deliveryFrom);
+    },
+
+    async listDocumentDeliveries(workspaceId, doc, limit) {
+      const [column, id] = "invoiceId" in doc ? ["invoice_id", doc.invoiceId] : ["agreement_id", doc.agreementId];
+      const r = await sb
+        .from("sr_deliveries")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .eq(column, id)
         .order("created_at", { ascending: false })
         .limit(limit);
       return ((must(r) as Row[] | null) ?? []).map(deliveryFrom);
@@ -1395,6 +1623,154 @@ export function supabaseStore(sb: SupabaseClient): Store {
       const data = must(r) as Row | null;
       if (!data) throw new StoreError(`Evidence key ${keyId} could not be recorded.`);
       if (data.public_key !== publicKeyPem) throw new StoreError(`Evidence key ${keyId} does not match its recorded public key.`);
+    },
+
+    async insertAiUsage(u) {
+      const r = await sb.from("sr_ai_usage").insert({
+        workspace_id: u.workspaceId,
+        user_id: u.userId,
+        feature: u.feature,
+        model: u.model,
+        input_tokens: u.inputTokens,
+        output_tokens: u.outputTokens,
+        cache_read_input_tokens: u.cacheReadInputTokens,
+        cache_creation_input_tokens: u.cacheCreationInputTokens,
+      });
+      if (r.error) throw new StoreError(r.error.message);
+    },
+
+    async listProjects(workspaceId, clientId) {
+      let q = sb.from("sr_projects").select("*").eq("workspace_id", workspaceId);
+      if (clientId) q = q.eq("client_id", clientId);
+      const data = must(await q.order("created_at", { ascending: true })) as Row[] | null;
+      return (data ?? []).map(projectFrom);
+    },
+
+    async getProject(workspaceId, id) {
+      const r = await sb.from("sr_projects").select("*").eq("workspace_id", workspaceId).eq("id", id).maybeSingle();
+      const data = must(r) as Row | null;
+      return data ? projectFrom(data) : null;
+    },
+
+    async insertProject(p) {
+      const r = await sb.from("sr_projects").insert(projectRow(p)).select("*").single();
+      return projectFrom(must(r) as Row);
+    },
+
+    async updateProject(workspaceId, id, revision, patch) {
+      const r = await sb
+        .from("sr_projects")
+        .update({ ...projectRow(patch), revision: revision + 1, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("workspace_id", workspaceId)
+        .eq("revision", revision)
+        .select("*")
+        .maybeSingle();
+      const data = must(r) as Row | null;
+      return data ? projectFrom(data) : null;
+    },
+
+    async renameAgreementTemplate(workspaceId, from, to) {
+      const r = await sb.from("sr_agreement_templates").update({ name: to }).eq("workspace_id", workspaceId).eq("name", from);
+      if (!r.error) return;
+      // (workspace, name, version) is unique: another template took the name between the check and this write.
+      if ((r.error as { code?: string }).code === "23505") throw new AppError("A template with that name already exists.", 409);
+      throw new StoreError(r.error.message);
+    },
+
+    async deleteAgreementTemplate(workspaceId, id) {
+      const r = await sb.from("sr_agreement_templates").delete().eq("workspace_id", workspaceId).eq("id", id);
+      if (r.error) throw new StoreError(r.error.message);
+    },
+
+    getMailbox: (workspaceId) => loadMailbox(sb, workspaceId),
+    upsertMailbox: (row) => upsertMailbox(sb, row),
+    markMailbox: (checked, patch) => markMailbox(sb, checked, patch),
+    deleteMailbox: (workspaceId) => deleteMailbox(sb, workspaceId),
+
+    async getEmailOAuth(workspaceId) {
+      const r = await sb.from("sr_email_oauth").select("*").eq("workspace_id", workspaceId).maybeSingle();
+      const row = must(r) as Row | null;
+      return row ? oauthFrom(row) : null;
+    },
+
+    async replaceEmailOAuth(c) {
+      const row = {
+        workspace_id: c.workspaceId,
+        id: c.id,
+        revision: c.revision,
+        provider: c.provider,
+        email: c.email,
+        client_id: c.clientId,
+        tenant: c.tenant,
+        secrets_enc: c.secretsEnc,
+        status: c.status,
+        verified_at: c.verifiedAt ?? null,
+        last_test_at: c.lastTestAt ?? null,
+        last_error: c.lastError ?? null,
+        challenge_digest: c.challenge?.digest ?? null,
+        challenge_expires: c.challenge ? iso(c.challenge.expires) : null,
+        challenge_attempts: c.challenge?.attempts ?? 0,
+        updated_at: new Date().toISOString(),
+      };
+      const up = await sb.from("sr_email_oauth").upsert(row, { onConflict: "workspace_id" });
+      if (up.error) throw new StoreError(up.error.message);
+      const del = await sb.from("sr_email_oauth_states").delete().eq("workspace_id", c.workspaceId);
+      if (del.error) throw new StoreError(del.error.message);
+    },
+
+    async updateEmailOAuth(workspaceId, at, patch) {
+      let q = sb
+        .from("sr_email_oauth")
+        .update({ ...oauthPatchRow(patch), updated_at: new Date().toISOString() })
+        .eq("workspace_id", workspaceId)
+        .eq("id", at.id)
+        .eq("revision", at.revision);
+      if (at.attempts !== undefined) q = q.eq("challenge_attempts", at.attempts);
+      if (at.status !== undefined) q = q.eq("status", at.status);
+      const r = await q.select("workspace_id");
+      return ((must(r) as Row[] | null) ?? []).length > 0;
+    },
+
+    async deleteEmailOAuth(workspaceId) {
+      const a = await sb.from("sr_email_oauth").delete().eq("workspace_id", workspaceId);
+      if (a.error) throw new StoreError(a.error.message);
+      const b = await sb.from("sr_email_oauth_states").delete().eq("workspace_id", workspaceId);
+      if (b.error) throw new StoreError(b.error.message);
+    },
+
+    async insertOAuthState(st) {
+      const del = await sb.from("sr_email_oauth_states").delete().eq("workspace_id", st.workspaceId);
+      if (del.error) throw new StoreError(del.error.message);
+      const r = await sb.from("sr_email_oauth_states").insert({
+        digest: st.digest,
+        browser_digest: st.browserDigest,
+        workspace_id: st.workspaceId,
+        user_id: st.userId,
+        connection_id: st.connectionId,
+        revision: st.revision,
+        verifier_enc: st.verifierEnc,
+        redirect_uri: st.redirectUri,
+        expires_at: iso(st.expires),
+      });
+      if (r.error) throw new StoreError(r.error.message);
+    },
+
+    async takeOAuthState(digest, browserDigest, now) {
+      const r = await sb
+        .from("sr_email_oauth_states")
+        .delete()
+        .eq("digest", digest)
+        .eq("browser_digest", browserDigest)
+        .gt("expires_at", new Date(now).toISOString())
+        .select("*");
+      const rows = (must(r) as Row[] | null) ?? [];
+      return rows.length ? oauthStateFrom(rows[0]) : null;
+    },
+
+    async purgeOAuthStates(before) {
+      const r = await sb.from("sr_email_oauth_states").delete().lt("expires_at", new Date(before).toISOString());
+      if (r.error) throw new StoreError(r.error.message);
     },
 
     async listSignTokens(agreementId) {

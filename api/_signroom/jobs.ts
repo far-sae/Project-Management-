@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { AppError } from "./errors.js";
 import { withEvent } from "./agreements.js";
-import { canSend, type MailDeps } from "./mail.js";
+import { canSend, deliveryAddress, type MailDeps } from "./mail.js";
 import type { Store } from "./store.js";
 import type { Job, NewJob } from "./shared/types.js";
 import { UNAVAILABLE_MESSAGE } from "./host/rateLimit.js";
@@ -136,4 +136,14 @@ export async function appendEvent(
  */
 export function mailReady(d: MailDeps): boolean {
   return !!d.jobKey && !!d.evidenceKey && canSend(d);
+}
+
+/**
+ * The same for one workspace, which may also send from its own mailbox: the
+ * job key, the evidence key, and either the platform route or the workspace's
+ * own verified connection.
+ */
+export async function workspaceMailReady(d: MailDeps, workspaceId: string): Promise<boolean> {
+  if (!d.jobKey || !d.evidenceKey) return false;
+  return canSend(d) || (await deliveryAddress(d, workspaceId)) !== null;
 }

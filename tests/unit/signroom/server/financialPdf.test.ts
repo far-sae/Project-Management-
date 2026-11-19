@@ -111,7 +111,8 @@ describe("financialPdf", () => {
     }));
     const bytes = await financialPdf(invoice({ lines }));
     expect((await PDFDocument.load(bytes)).getPageCount()).toBeGreaterThan(1);
-  });
+    // A hundred long lines take about 2 seconds alone and more when the whole suite runs at once.
+  }, 30_000);
 
   it("renders a moved invoice whose branding snapshot is partial", async () => {
     const old = { companyName: "Old Co" } as unknown as Branding;

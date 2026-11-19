@@ -459,7 +459,7 @@ describe("signroom router: agreements", () => {
   it("unknown actions and methods are 404 Not found., including 3B's", async () => {
     for (const [m, p] of [
       ["GET", `agreements/${ID}/ai-draft`],
-      ["POST", `agreements/${ID}/ai-draft`],
+      ["POST", `agreements/${ID}/deliveries`],
       ["GET", `agreements/${ID}/export`],
       ["GET", `agreements/${ID}/delete`],
       ["POST", `agreements/${ID}/export/x`],

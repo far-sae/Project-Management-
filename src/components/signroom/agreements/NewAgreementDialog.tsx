@@ -28,6 +28,11 @@ export interface NewAgreementDialogProps {
   companyId?: string;
   /** The CRM deal this agreement closes, when started from a deal page. */
   dealId?: string;
+  /**
+   * A template to start from, when opened from the templates page: its type and
+   * the template itself are already chosen (any version, not only the newest).
+   */
+  template?: Pick<AgreementTemplateSummary, 'id' | 'name' | 'type' | 'version'>;
   /** Called with the new draft. When left out, the draft opens in the editor. */
   onCreated?: (agreement: Agreement) => void;
 }
@@ -49,11 +54,11 @@ export const NewAgreementDialog: React.FC<NewAgreementDialogProps> = ({ open, on
   );
 };
 
-const StartForm: React.FC<Pick<NewAgreementDialogProps, 'companyId' | 'dealId' | 'onCreated'> & {
+const StartForm: React.FC<Pick<NewAgreementDialogProps, 'companyId' | 'dealId' | 'template' | 'onCreated'> & {
   busy: boolean;
   setBusy: (busy: boolean) => void;
   close: () => void;
-}> = ({ companyId: givenCompanyId, dealId: givenDealId, onCreated, busy, setBusy, close }) => {
+}> = ({ companyId: givenCompanyId, dealId: givenDealId, template: givenTemplate, onCreated, busy, setBusy, close }) => {
   const id = useId();
   const navigate = useNavigate();
   const { client, workspaceId } = useSignroom();
@@ -62,9 +67,11 @@ const StartForm: React.FC<Pick<NewAgreementDialogProps, 'companyId' | 'dealId' |
 
   const [companyId, setCompanyId] = useState(givenCompanyId ?? '');
   const [dealId, setDealId] = useState(givenDealId ?? '');
-  const [type, setType] = useState<string>(TYPES[0]);
+  // The form is mounted afresh each time the dialog opens, so a given template only sets where it starts.
+  const [given] = useState(givenTemplate);
+  const [type, setType] = useState<string>(given?.type ?? TYPES[0]);
   const [title, setTitle] = useState('');
-  const [templateId, setTemplateId] = useState('');
+  const [templateId, setTemplateId] = useState(given?.id ?? '');
   const [templates, setTemplates] = useState<AgreementTemplateSummary[]>([]);
   const [error, setError] = useState('');
 
@@ -86,7 +93,11 @@ const StartForm: React.FC<Pick<NewAgreementDialogProps, 'companyId' | 'dealId' |
   }, [client, workspaceId]);
 
   const companyDeals = useMemo(() => deals.filter((d) => d.companyId === companyId), [deals, companyId]);
-  const typeTemplates = useMemo(() => newestTemplates(templates, type), [templates, type]);
+  const typeTemplates = useMemo(() => {
+    const newest = newestTemplates(templates, type);
+    // The list offers the newest version of each name; a template chosen on the templates page is offered whichever it is.
+    return given && given.type === type && !newest.some((t) => t.id === given.id) ? [given, ...newest] : newest;
+  }, [templates, type, given]);
   const company = companies.find((c) => c.id === companyId);
 
   const create = async () => {

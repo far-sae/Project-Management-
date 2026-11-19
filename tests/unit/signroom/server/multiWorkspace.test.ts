@@ -192,22 +192,14 @@ describe("a user in two workspaces", () => {
     }
   });
 
-  it("the routes that were left out are gone", async () => {
+  it("the routes that stay left out are gone: typed-in clients and Signroom's own teams", async () => {
     const t = await setup();
     const gone: [string, string, Record<string, unknown>?][] = [
       ["POST", "clients", { name: "Typed in" }],
-      ["GET", `client-projects/${t.client.id}`],
-      ["POST", `client-projects/${t.client.id}`, { name: "Retainer" }],
-      ["GET", "accounts-overview"],
-      ["GET", "email-connection"],
-      ["POST", "email-connection/save", {}],
-      ["POST", "email-connection/authorize", {}],
-      ["GET", "email-connection/callback"],
       ["POST", "workspaces/members", {}],
       ["POST", "workspaces/invite", { email: "x@example.com" }],
       ["POST", "workspaces/accept-invite", { token: "t" }],
       ["POST", "workspaces/remove-member", {}],
-      ["POST", `agreements/${t.agreement.id}/ai-draft`, { requirements: "x" }],
     ];
     for (const [method, path, body] of gone) {
       const out = await t.call(u1, method, path, body ?? {});

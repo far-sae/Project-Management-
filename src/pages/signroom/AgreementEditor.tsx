@@ -8,6 +8,7 @@ import type { SignroomClient } from '@/services/signroom/client';
 import { sendBlockers } from '@/lib/signroom/agreementFields';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { AiDraftDialog } from '@/components/signroom/agreements/AiDraftDialog';
 import { EditorDocumentStep } from '@/components/signroom/agreements/EditorDocumentStep';
 import { EditorRecipientsStep, newId } from '@/components/signroom/agreements/EditorRecipientsStep';
 import { EditorFieldsStep } from '@/components/signroom/agreements/EditorFieldsStep';
@@ -96,7 +97,7 @@ const DraftEditor: React.FC<{
 }> = ({ initial, forClient, client, me }) => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { draft, saveState, update, save, adopt, latest, clearApproved } = useAgreementDraft(initial, client);
+  const { draft, saveState, update, save: saveDraft, adopt, latest, clearApproved } = useAgreementDraft(initial, client);
   const { ask, dialog: confirmDialog } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [eligible, setEligible] = useState(false);
@@ -104,6 +105,8 @@ const DraftEditor: React.FC<{
   const [writeInstead, setWriteInstead] = useState(false);
   const [sendError, setSendError] = useState('');
   const [namingTemplate, setNamingTemplate] = useState(false);
+  const [draftingWithAi, setDraftingWithAi] = useState(false);
+  const [aiWritten, setAiWritten] = useState(false);
   const sendKey = useRef(newId());
   const top = useRef<HTMLElement>(null);
 
@@ -117,6 +120,16 @@ const DraftEditor: React.FC<{
     top.current?.scrollTo?.({ top: 0 });
   };
   const goToKey = (key: StepKey) => goTo(STEPS.findIndex((s) => s.key === key));
+
+  /**
+   * A save the person asked for (Save draft, a step, preparing the PDF, sending). The reminder that the text was
+   * written by AI stays through the editor's own background saves and goes once the person has saved themselves.
+   */
+  const save = async (): Promise<Agreement | null> => {
+    const saved = await saveDraft();
+    if (saved) setAiWritten(false);
+    return saved;
+  };
 
   const blockers = sendBlockers(draft, me);
 
@@ -138,6 +151,13 @@ const DraftEditor: React.FC<{
       return;
     }
     applyText(content);
+  };
+
+  /** Puts an AI draft the person chose to use into the document. The dialog has already asked before replacing anything. */
+  const applyAiDraft = (content: string) => {
+    clearApproved.current = true;
+    applyText(content);
+    setAiWritten(true);
   };
 
   const prepare = async () => {
@@ -351,6 +371,8 @@ const DraftEditor: React.FC<{
             onWriteInstead={() => void switchToWriting()}
             onPrepare={() => void prepare()}
             onDownloadSource={() => void downloadSource()}
+            onDraftWithAi={() => setDraftingWithAi(true)}
+            aiWritten={aiWritten}
           />
         ) : step === 1 ? (
           <EditorRecipientsStep draft={draft} me={me} update={update} />
@@ -398,6 +420,16 @@ const DraftEditor: React.FC<{
       </div>
 
       {confirmDialog}
+      <AiDraftDialog
+        open={draftingWithAi}
+        onOpenChange={setDraftingWithAi}
+        agreement={draft}
+        clientName={forClient?.name}
+        wouldReplace={() => Boolean(latest().content.trim() || latest().fields.length)}
+        // Anything just typed is saved first: a background save landing mid-draft would make the server refuse it as changed.
+        beforeDraft={async () => Boolean(await saveDraft())}
+        onUse={applyAiDraft}
+      />
       <TextPromptDialog
         open={namingTemplate}
         onOpenChange={setNamingTemplate}

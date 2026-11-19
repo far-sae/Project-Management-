@@ -1,4 +1,5 @@
-import { AppError } from "./errors.js";
+import { AppError, StoreError } from "./errors.js";
+import { setupSentence } from "./setupMessages.js";
 import { expireIfDue, withEvent } from "./agreements.js";
 import { invite, linkOriginOf } from "./agreementSend.js";
 import { finalise } from "./finishing.js";
@@ -331,6 +332,15 @@ export async function maintain(d: MailDeps): Promise<void> {
     await d.store.purgeJobs(new Date(Date.now() - 30 * DAY_MS).toISOString());
   } catch (e) {
     console.error("[signroom] maintenance failed", errorTag(e));
+  }
+  // Pending Google and Microsoft sign-ins past their ten minutes. Only where own mailboxes are
+  // switched on (the mail key), and quietly while migration 186, which adds the table, is not run.
+  if (d.key) {
+    try {
+      await d.store.purgeOAuthStates(Date.now());
+    } catch (e) {
+      if (!(e instanceof StoreError && setupSentence(e.message))) console.error("[signroom] maintenance failed", errorTag(e));
+    }
   }
 }
 

@@ -92,7 +92,14 @@ describe('AgreementsPage', () => {
     renderPage();
     expect(screen.getByText(/Pick a workspace in the sidebar/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /New agreement/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Templates/ })).toBeNull();
     expect(sr.call).not.toHaveBeenCalled();
+  });
+
+  it('links to the workspace’s templates from the header', async () => {
+    renderPage();
+    await screen.findByRole('link', { name: 'NDA for Northwind Studio' });
+    expect(screen.getByRole('link', { name: /Templates/ }).getAttribute('href')).toBe('/crm/templates');
   });
 
   it('lists active agreements with status, company, deal and progress', async () => {

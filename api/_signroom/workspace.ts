@@ -6,7 +6,7 @@ import { sampleFinancial } from "./financialPdf.js";
 import { AGREEMENT_SAMPLE, authoredPdf } from "./agreementPdf.js";
 import { LETTERHEAD_UNREADABLE } from "./pdf.js";
 import type { Branding, Workspace, WorkspaceChoice } from "./shared/types.js";
-import { canSend, type MailDeps } from "./mail.js";
+import { canSend, deliveryAddress, type MailDeps } from "./mail.js";
 import { email, text } from "./validate.js";
 
 type Body = Record<string, unknown>;
@@ -58,13 +58,17 @@ export async function brandingPreview(store: Store, user: SignedInUser, body: Bo
   }
 }
 
-/** Owner-only workspace changes. `mail` says how email goes out (for the email-settings answer). */
+/**
+ * Owner-only workspace changes. `mail` says how email goes out (for the
+ * email-settings answer): the platform's keys, and the mail key with which a
+ * workspace's own verified mailbox is looked up.
+ */
 export async function workspaceAction(
   store: Store,
   user: SignedInUser,
   action: "settings" | "email-settings" | "branding",
   body: Body,
-  mail?: Pick<MailDeps, "resendKey" | "from">,
+  mail?: Pick<MailDeps, "resendKey" | "from" | "key">,
 ): Promise<unknown> {
   const { workspace } = await currentWorkspace(store, user, { owner: true });
   if (action === "email-settings") {
@@ -74,8 +78,10 @@ export async function workspaceAction(
     const senderEmail = email(body.senderEmail);
     const replyTo = email(body.replyTo);
     await store.updateWorkspace(workspace.id, { senderName, senderEmail, replyTo });
-    // One route: the platform's own address. senderEmail is kept for the screens; mail never goes from it.
-    return { ok: true, mode: "securovix", ready: !!mail && canSend(mail), senderName, senderEmail, replyTo };
+    // "live": mail goes from the workspace's own verified mailbox. Otherwise it goes from the platform's
+    // address ("securovix" is that route's name in the delivery log); senderEmail is kept for the screens.
+    const live = (await deliveryAddress({ store, key: mail?.key }, workspace.id)) !== null;
+    return { ok: true, mode: live ? "live" : "securovix", ready: live || (!!mail && canSend(mail)), senderName, senderEmail, replyTo };
   }
   if (action === "branding") {
     const brand = await brandingFromBody(store, workspace, body);

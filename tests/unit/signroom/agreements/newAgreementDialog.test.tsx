@@ -149,6 +149,36 @@ describe('NewAgreementDialog', () => {
     expect(posted('agreements')[0]).toMatchObject({ templateId: 't2', dealId: undefined });
   });
 
+  it('starts from a given template: its type and the template are already chosen', async () => {
+    renderDialog({ companyId: 'c1', template: templates[2] });
+    expect(screen.getByRole('radio', { name: /^Service agreement/ }).getAttribute('aria-checked')).toBe('true');
+    // Chosen at once, before the templates list has loaded.
+    expect(screen.getByRole('combobox', { name: 'Starting point' }).textContent).toContain('Retainer · v1');
+    fireEvent.click(screen.getByRole('button', { name: 'Create Service agreement' }));
+    await screen.findByText('editor for new1');
+    expect(posted('agreements')[0]).toMatchObject({ type: 'Service agreement', templateId: 't3' });
+  });
+
+  it('offers a given older version next to the newest one, once', async () => {
+    renderDialog({ companyId: 'c1', template: templates[0] });
+    await waitFor(() => expect(sr.call).toHaveBeenCalledWith('templates'));
+    const starting = screen.getByRole('combobox', { name: 'Starting point' });
+    expect(starting.textContent).toContain('Standard NDA · v1');
+    fireEvent.click(starting);
+    await waitFor(() => expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Blank document · write my own terms', 'Standard NDA · v1', 'Standard NDA · v2',
+    ]));
+  });
+
+  it('drops the given template when another type is picked', async () => {
+    renderDialog({ companyId: 'c1', template: templates[2] });
+    fireEvent.click(screen.getByRole('radio', { name: /^NDA/ }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Starting point' }).textContent).toContain('Blank document'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create NDA' }));
+    await screen.findByText('editor for new1');
+    expect(posted('agreements')[0]).toMatchObject({ type: 'NDA', templateId: undefined });
+  });
+
   it('hides the starting point for a type with no template', async () => {
     renderDialog({ companyId: 'c1' });
     await screen.findByRole('combobox', { name: 'Starting point' });

@@ -51,6 +51,29 @@ export function allowedOrigin(req: VercelRequest): boolean {
   return host === "localhost" || siteHosts().includes(host) || previewHosts().includes(host);
 }
 
+/**
+ * True when `origin` is exactly one of our own web origins: https on the
+ * site's host (or its www / bare twin) or on this deployment's own Vercel
+ * hosts, with no port, path or credentials; or http on localhost (any port).
+ * Look-alikes such as "localhost.evil.com" are other hosts and are refused.
+ * Used where an origin becomes part of a stored or registered address (the
+ * OAuth redirect URI), so it must be ours to the letter.
+ */
+export function isOwnOrigin(origin: string): boolean {
+  if (typeof origin !== "string" || !origin) return false;
+  let u: URL;
+  try {
+    u = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (u.origin !== origin || u.username || u.password) return false;
+  if (u.protocol === "http:") return u.hostname === "localhost";
+  if (u.protocol !== "https:" || u.port) return false;
+  const host = u.hostname.toLowerCase();
+  return host !== "localhost" && (siteHosts().includes(host) || previewHosts().includes(host));
+}
+
 /** Answers 403 { error: "forbidden" } to other sites. True when it has answered. */
 export function refuseForeign(req: VercelRequest, res: VercelResponse): boolean {
   if (allowedOrigin(req)) return false;

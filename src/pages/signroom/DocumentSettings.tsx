@@ -1,33 +1,46 @@
-// How invoices, receipts and agreements look, who the emails come from, and how long records are kept.
+// How invoices, receipts and agreements look, the letterhead, who the emails come from, and how long records are kept.
 import React, { useEffect, useId, useState } from 'react';
-import { Eye, Loader2, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Workspace } from '../../../api/_signroom/shared/types';
+import type { LetterheadDesign, TemplateFile, Workspace } from '../../../api/_signroom/shared/types';
 import { useSignroom } from '@/hooks/useSignroom';
 import { errorSentence } from '@/lib/signroom/billing';
 import {
-  DOCUMENT_FONTS, DOCUMENT_LAYOUTS, FONT_SIZES, brandingBody, brandingFormOf, logoProblem, retentionBody, senderBody,
-  type BrandingForm, type DocumentFont, type DocumentLayout, type PreviewKind,
+  brandOf, brandingBody, brandingFormOf, letterheadProblem, logoProblem, withBrandColour, withDesign, withLogo,
+  type BrandingForm,
 } from '@/lib/signroom/branding';
 import { readAsDataUrl, trimLogo } from '@/lib/signroom/brandingLogo';
+import { applyDesign } from '@/lib/signroom/letterhead';
+import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { brandingPreviewPdf } from '@/components/signroom/billing/brandingPreviewRequest';
-import { PdfFrame } from '@/components/signroom/billing/PdfFrame';
-import { Card, EmptyState, FIELD, PickWorkspace } from '@/components/signroom/billing/shared';
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from '@/components/ui/tabs';
+import { Card, EmptyState, PickWorkspace } from '@/components/signroom/billing/shared';
 import { UnsavedGuard } from '@/components/signroom/billing/UnsavedGuard';
+import { ColourField } from '@/components/signroom/branding/ColourField';
+import { LetterheadDesigner } from '@/components/signroom/branding/LetterheadDesigner';
+import { LetterheadUploadCard } from '@/components/signroom/branding/LetterheadUploadCard';
+import { LookCard } from '@/components/signroom/branding/LookCard';
+import { PreviewCard } from '@/components/signroom/branding/PreviewCard';
+import { RetentionCard } from '@/components/signroom/branding/RetentionCard';
+import { SenderCard } from '@/components/signroom/branding/SenderCard';
+import { EmailConnectionPanel } from '@/components/signroom/email/EmailConnectionPanel';
+import { useDesignHistory } from '@/components/signroom/branding/useDesignHistory';
+import { useLetterheadImage } from '@/components/signroom/branding/useLetterheadImage';
 
 /** What the documents server says about the workspace in use and the person's role in it. */
 interface SessionView { workspace: Workspace; role: 'Owner' | 'Member' }
 
-const GROUP_TITLE = 'text-xs font-medium text-muted-foreground';
-const PAIR = 'grid grid-cols-1 gap-3 sm:grid-cols-2';
+/** The sections of the page. The first two change the document look and share one save. */
+type Section = 'look' | 'letterhead' | 'emails' | 'records';
+const SECTIONS: Array<{ id: Section; label: string }> = [
+  { id: 'look', label: 'Company & look' },
+  { id: 'letterhead', label: 'Letterhead' },
+  { id: 'emails', label: 'Emails' },
+  { id: 'records', label: 'Records' },
+];
 
 export const DocumentSettingsPage: React.FC = () => {
   const { client, workspaceId } = useSignroom();
@@ -82,44 +95,84 @@ const Settings: React.FC<{
 }> = ({ workspaceId, workspace, readOnly, onSaved }) => {
   const id = useId();
   const { client } = useSignroom();
+  const [section, setSection] = useState<Section>('look');
   const [form, setForm] = useState<BrandingForm>(() => brandingFormOf(workspace));
   const [savedForm, setSavedForm] = useState(() => JSON.stringify(brandingFormOf(workspace)));
-  const [senderName, setSenderName] = useState(workspace.senderName || workspace.name);
-  const [replyTo, setReplyTo] = useState(workspace.replyTo);
-  const [days, setDays] = useState(String(workspace.retentionDays));
-  const [busy, setBusy] = useState<null | 'look' | 'sender' | 'retention'>(null);
-  const [previewKind, setPreviewKind] = useState<PreviewKind>('invoice');
-  /** Counts previews asked for: zero means none is shown, and each new one is fetched afresh. */
-  const [previewRun, setPreviewRun] = useState(0);
+  const [busy, setBusy] = useState<null | 'look' | 'upload'>(null);
   /** The server's refusal, kept on the page as well as in a toast. */
   const [refused, setRefused] = useState('');
+  /** Set once the letterhead section has been opened: the stored PDF is not fetched before then. */
+  const [letterheadSeen, setLetterheadSeen] = useState(false);
 
   const dirty = JSON.stringify(form) !== savedForm;
   const locked = readOnly || busy !== null;
+  const lookSection = section === 'look' || section === 'letterhead';
+  const template = form.backgroundTemplate;
+  /** Their own PDF, printed as it is: none of the designer's items are drawn over it. */
+  const artworkOnly = !!template && !form.templateOverlay;
+
   const set = <K extends keyof BrandingForm>(key: K, value: BrandingForm[K]) => {
     setForm((old) => ({ ...old, [key]: value }));
   };
-  const fail = (err: unknown, fallback: string) => {
-    const sentence = errorSentence(err, fallback);
+  const history = useDesignHistory(form.design, (design: LetterheadDesign) => set('design', design));
+  // Only an owner may read the stored PDF, so a member is shown the page without it.
+  const picture = useLetterheadImage(client, template?.hash ?? null, letterheadSeen && !readOnly);
+
+  /** Says why something was refused, on the page and in a toast. Called with nothing, it clears the page. */
+  const refuse = (err?: unknown, fallback?: string) => {
+    const sentence = err === undefined ? '' : typeof err === 'string' ? err : errorSentence(err, fallback);
     setRefused(sentence);
-    toast.error(sentence);
+    if (sentence) toast.error(sentence);
   };
 
-  const chooseLogo = async (file: File | undefined) => {
+  const open = (next: string) => {
+    setSection(next as Section);
+    if (next === 'letterhead') setLetterheadSeen(true);
+  };
+
+  const chooseLogo = async (file: File | undefined | 'remove') => {
+    if (file === 'remove') { setForm((old) => withLogo(old, '')); return; }
     if (!file) return;
     const problem = logoProblem(file);
-    if (problem) { toast.error(problem); return; }
+    if (problem) { refuse(problem); return; }
+    refuse();
     try {
       // Without the empty margin around it, so it fills its place and lines up with the name.
-      set('logo', await trimLogo(await readAsDataUrl(file)));
+      const logo = await trimLogo(await readAsDataUrl(file));
+      setForm((old) => withLogo(old, logo));
     } catch (err) {
-      toast.error(errorSentence(err, 'The logo could not be read.'));
+      refuse(err, 'The logo could not be read.');
+    }
+  };
+
+  const chooseDesign = (name: string) => {
+    setForm((old) => ({ ...old, layout: withDesign(old, name).layout }));
+    history.commit(applyDesign(name, brandOf(form), form.design));
+  };
+
+  const uploadLetterhead = async (file: File | undefined) => {
+    if (!file) return;
+    const problem = letterheadProblem(file);
+    if (problem) { refuse(problem); return; }
+    setBusy('upload');
+    refuse();
+    try {
+      const stored = await client.upload<TemplateFile>('workspaces/branding-template', file);
+      // A plain header to start from: their own page already carries the artwork.
+      history.commit(applyDesign('minimal', brandOf(form), form.design));
+      setForm((old) => ({ ...old, backgroundTemplate: stored, templateOverlay: false }));
+      toast.success('Letterhead PDF checked and uploaded. Save the document look to start using it.');
+    } catch (err) {
+      refuse(err, 'Could not upload the letterhead PDF');
+    } finally {
+      setBusy(null);
     }
   };
 
   const saveLook = async () => {
+    if (!form.companyName.trim()) { refuse('Enter the company name for your documents.'); return; }
     setBusy('look');
-    setRefused('');
+    refuse();
     try {
       const saved = await client.call<Workspace>('workspaces/branding', brandingBody(form, workspace.branding));
       const next = brandingFormOf(saved);
@@ -128,254 +181,131 @@ const Settings: React.FC<{
       onSaved(saved);
       toast.success('Document look saved. Documents already issued keep the look they had.');
     } catch (err) {
-      fail(err, 'Could not save the document look');
+      refuse(err, 'Could not save the document look');
     } finally {
       setBusy(null);
     }
   };
 
-  const saveSender = async () => {
-    setBusy('sender');
-    setRefused('');
-    try {
-      const saved = await client.call<{ senderName: string; senderEmail: string; replyTo: string }>(
-        'workspaces/email-settings', senderBody({ senderName, replyTo }, workspace),
-      );
-      onSaved({ ...workspace, senderName: saved.senderName, senderEmail: saved.senderEmail, replyTo: saved.replyTo });
-      toast.success('Sender details saved. They apply to emails sent from now on.');
-    } catch (err) {
-      fail(err, 'Could not save the sender details');
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const saveRetention = async () => {
-    setBusy('retention');
-    setRefused('');
-    try {
-      onSaved(await client.call<Workspace>('workspaces/settings', retentionBody(workspace, Number(days))));
-      toast.success('Retention period saved.');
-    } catch (err) {
-      fail(err, 'Could not save the retention period');
-    } finally {
-      setBusy(null);
-    }
-  };
+  const unsavedMark = dirty && <span className="h-1.5 w-1.5 rounded-full bg-warning" aria-label="has unsaved changes" role="img" />;
+  const panelProps = (value: Section) => ({
+    value,
+    forceMount: true as const,
+    // Every section stays on the page so nothing typed is lost; only the open one is shown.
+    hidden: section !== value,
+    className: 'mt-0 flex min-w-0 flex-col gap-4 data-[state=inactive]:hidden',
+  });
 
   return (
-    <div className="grid min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-2">
+    <div className="flex min-w-0 flex-col gap-4">
       <UnsavedGuard when={dirty} what="Your changes to how documents look" />
-      <div className="flex min-w-0 flex-col gap-4">
-        {readOnly && (
-          <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-            Only a workspace owner or admin can change these settings.
-          </p>
-        )}
-        {refused && <p role="alert" className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">{refused}</p>}
+      {readOnly && (
+        <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          Only a workspace owner or admin can change these settings.
+        </p>
+      )}
+      {refused && <p role="alert" className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-destructive">{refused}</p>}
 
-        <Card title="How documents look">
-          <form className="flex flex-col gap-6 p-4" onSubmit={(event) => { event.preventDefault(); void saveLook(); }}>
-            <section className="flex flex-col gap-3" aria-labelledby={`${id}-g-company`}>
-              <h3 id={`${id}-g-company`} className={GROUP_TITLE}>Your company</h3>
-              <div className={FIELD}>
-                <Label htmlFor={`${id}-company-name`}>Company name on documents</Label>
-                <Input id={`${id}-company-name`} required maxLength={1000} disabled={locked} value={form.companyName} onChange={(e) => set('companyName', e.target.value)} />
-              </div>
-              <div className={FIELD}>
-                <Label htmlFor={`${id}-address`}>Company address</Label>
-                <Textarea id={`${id}-address`} rows={3} maxLength={1000} disabled={locked} value={form.address} onChange={(e) => set('address', e.target.value)} />
-              </div>
-              <div className={PAIR}>
-                <div className={FIELD}>
-                  <Label htmlFor={`${id}-company-number`}>Company registration number</Label>
-                  <Input id={`${id}-company-number`} maxLength={1000} disabled={locked} value={form.companyNumber} onChange={(e) => set('companyNumber', e.target.value)} />
-                </div>
-                <div className={FIELD}>
-                  <Label htmlFor={`${id}-tax-number`}>Tax or VAT number</Label>
-                  <Input id={`${id}-tax-number`} maxLength={1000} disabled={locked} value={form.taxNumber} onChange={(e) => set('taxNumber', e.target.value)} />
-                </div>
-              </div>
-            </section>
+      <Tabs value={section} onValueChange={open} className="flex min-w-0 flex-col gap-4">
+        <TabsList aria-label="Document settings sections" className="flex h-auto w-full flex-wrap justify-start">
+          {SECTIONS.map((each) => (
+            <TabsTrigger key={each.id} value={each.id} className="h-10">
+              {each.label}
+              {(each.id === 'look' || each.id === 'letterhead') && unsavedMark}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-            <section className="flex flex-col gap-3" aria-labelledby={`${id}-g-logo`}>
-              <h3 id={`${id}-g-logo`} className={GROUP_TITLE}>Logo</h3>
-              <div className={FIELD}>
-                <Label htmlFor={`${id}-logo`}>Company logo (PNG or JPEG, up to 300 KB)</Label>
-                <Input
-                  id={`${id}-logo`} type="file" accept="image/png,image/jpeg" disabled={locked}
-                  onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void chooseLogo(file); }}
-                />
-                <p className="text-xs text-muted-foreground">Without a logo, your company name is written in its place.</p>
-              </div>
-              {form.logo && (
-                <div className="flex flex-wrap items-center gap-3">
-                  <img src={form.logo} alt="Company logo" className="max-h-20 max-w-44 rounded-md border border-border bg-background object-contain p-2" />
-                  <Button type="button" variant="ghost" size="sm" disabled={locked} onClick={() => set('logo', '')}>
-                    <Trash2 aria-hidden /> Remove logo
-                  </Button>
-                </div>
-              )}
-            </section>
+        <div className={cn('grid min-w-0 grid-cols-1 items-start gap-4', section === 'look' && 'xl:grid-cols-2')}>
+          <div className="min-w-0">
+            <TabsContent {...panelProps('look')}>
+              <LookCard form={form} set={set} onLogo={(file) => void chooseLogo(file)} locked={locked} />
+            </TabsContent>
 
-            <section className="flex flex-col gap-3" aria-labelledby={`${id}-g-style`}>
-              <h3 id={`${id}-g-style`} className={GROUP_TITLE}>Style</h3>
-              <div className={PAIR}>
-                <div className={FIELD}>
-                  <Label htmlFor={`${id}-layout`}>Layout</Label>
-                  <Select value={form.layout} onValueChange={(v) => set('layout', v as DocumentLayout)} disabled={locked}>
-                    <SelectTrigger id={`${id}-layout`}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {DOCUMENT_LAYOUTS.map((l) => <SelectItem key={l.id} value={l.id}>{l.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">{DOCUMENT_LAYOUTS.find((l) => l.id === form.layout)?.hint}</p>
-                </div>
-                <div className={FIELD}>
-                  <Label htmlFor={`${id}-color`}>Brand colour</Label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id={`${id}-color`} type="color" disabled={locked}
-                      className="h-11 w-14 shrink-0 cursor-pointer rounded-md border border-input bg-background p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50 md:h-8"
-                      value={form.color} onChange={(e) => set('color', e.target.value)}
-                    />
-                    <span className="text-sm tabular-nums text-muted-foreground">{form.color}</span>
-                  </div>
-                </div>
-              </div>
-              <div className={PAIR}>
-                <div className={FIELD}>
-                  <Label htmlFor={`${id}-font`}>Font</Label>
-                  <Select value={form.fontFamily} onValueChange={(v) => set('fontFamily', v as DocumentFont)} disabled={locked}>
-                    <SelectTrigger id={`${id}-font`}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {DOCUMENT_FONTS.map((f) => <SelectItem key={f.id} value={f.id}>{f.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className={FIELD}>
-                  <Label htmlFor={`${id}-font-size`}>Text size</Label>
-                  <Select value={String(form.fontSize)} onValueChange={(v) => set('fontSize', Number(v))} disabled={locked}>
-                    <SelectTrigger id={`${id}-font-size`}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {FONT_SIZES.map((n) => <SelectItem key={n} value={String(n)}>{n} pt</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {workspace.branding?.design && (
-                <p className="text-xs text-muted-foreground">
-                  This workspace has a custom letterhead made earlier. It stays as it is unless you pick a different layout, which replaces it.
-                </p>
-              )}
-            </section>
-
-            <section className="flex flex-col gap-3" aria-labelledby={`${id}-g-text`}>
-              <h3 id={`${id}-g-text`} className={GROUP_TITLE}>Text on every document</h3>
-              <div className={FIELD}>
-                <Label htmlFor={`${id}-footer`}>Footer</Label>
-                <Input id={`${id}-footer`} maxLength={1000} disabled={locked} placeholder="Your website or a short line" value={form.footer} onChange={(e) => set('footer', e.target.value)} />
-              </div>
-              <div className={FIELD}>
-                <Label htmlFor={`${id}-payment`}>How to pay (shown on invoices)</Label>
-                <Textarea
-                  id={`${id}-payment`} rows={4} maxLength={3000} disabled={locked}
-                  placeholder="Bank details, the reference to quote, or who to contact"
-                  value={form.paymentInstructions} onChange={(e) => set('paymentInstructions', e.target.value)}
-                />
-              </div>
-            </section>
-
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="submit" disabled={locked || !dirty}>
-                  {busy === 'look' && <Loader2 className="animate-spin" aria-hidden />}
-                  Save document look
-                </Button>
-                <span role="status" className="text-xs text-muted-foreground">{dirty ? 'Unsaved changes' : 'All changes saved'}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Changes apply to new documents. Invoices and receipts already issued, and agreements already sent, keep the look they had.
-              </p>
-            </div>
-          </form>
-        </Card>
-
-        <Card title="Emails">
-          <form className="flex flex-col gap-3 p-4" onSubmit={(event) => { event.preventDefault(); void saveSender(); }}>
-            <p className="text-sm text-muted-foreground">The name customers see on invoice and receipt emails, and where their replies go.</p>
-            <div className={PAIR}>
-              <div className={FIELD}>
-                <Label htmlFor={`${id}-sender-name`}>Sender name</Label>
-                <Input id={`${id}-sender-name`} required maxLength={100} disabled={locked} placeholder="Your name or company" value={senderName} onChange={(e) => setSenderName(e.target.value)} />
-              </div>
-              <div className={FIELD}>
-                <Label htmlFor={`${id}-reply-to`}>Reply-to email address</Label>
-                <Input id={`${id}-reply-to`} type="email" required maxLength={254} disabled={locked} value={replyTo} onChange={(e) => setReplyTo(e.target.value)} />
-              </div>
-            </div>
-            <div>
-              <Button type="submit" variant="outline" disabled={locked}>
-                {busy === 'sender' && <Loader2 className="animate-spin" aria-hidden />}
-                Save sender details
-              </Button>
-            </div>
-          </form>
-        </Card>
-
-        <Card title="Keeping records">
-          <form className="flex flex-col gap-3 p-4" onSubmit={(event) => { event.preventDefault(); void saveRetention(); }}>
-            <div className={FIELD}>
-              <Label htmlFor={`${id}-retention`}>Days to keep a completed agreement</Label>
-              <Input
-                id={`${id}-retention`} type="number" required min={1} max={3650} disabled={locked}
-                className="w-32 tabular-nums" value={days} onChange={(e) => setDays(e.target.value)}
+            <TabsContent {...panelProps('letterhead')}>
+              <LetterheadUploadCard
+                template={template}
+                saved={!!template && template.hash === workspace.branding?.backgroundTemplate?.hash}
+                overlay={form.templateOverlay}
+                onOverlay={(overlay) => set('templateOverlay', overlay)}
+                onFile={(file) => void uploadLetterhead(file)}
+                onRemove={() => set('backgroundTemplate', null)}
+                uploading={busy === 'upload'}
+                locked={locked}
+                pictureFailed={picture.failed}
               />
-              <p className="text-xs text-muted-foreground">
-                From 1 to 3650 days. An agreement is only deleted after this period, and never while it is on legal hold.
-              </p>
-            </div>
-            <div>
-              <Button type="submit" variant="outline" disabled={locked}>
-                {busy === 'retention' && <Loader2 className="animate-spin" aria-hidden />}
-                Save retention period
-              </Button>
-            </div>
-          </form>
-        </Card>
-      </div>
+              <Card title="Letterhead designer">
+                <div className="flex flex-col gap-4 p-4">
+                  {/* Their own PDF, printed as it is, keeps its own colours. */}
+                  {!artworkOnly && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:max-w-3xl">
+                      <ColourField
+                        id={`${id}-color`} label="Brand colour" value={form.color} disabled={locked}
+                        onValue={(hex) => setForm((old) => withBrandColour(old, hex))}
+                        hint="The colour strip, the dividing line and the ready-made designs use it."
+                      />
+                      <ColourField
+                        id={`${id}-second-color`} label="Second colour" value={form.secondaryColor} disabled={locked}
+                        onValue={(hex) => set('secondaryColor', hex)}
+                        hint="The ready-made designs use it for their bands and corners."
+                      />
+                    </div>
+                  )}
+                  <LetterheadDesigner
+                    brand={brandOf(form)}
+                    design={form.design}
+                    history={history}
+                    disabled={locked}
+                    backgroundUrl={template ? picture.url : null}
+                    artworkOnly={artworkOnly}
+                    onText={(key, value) => set(key, value)}
+                    onChooseDesign={chooseDesign}
+                    onChooseLogo={(file) => void chooseLogo(file)}
+                  />
+                </div>
+              </Card>
+            </TabsContent>
 
-      <Card title="Preview" className="xl:sticky xl:top-0">
-        <div className="flex flex-col gap-3 p-4">
-          <p className="text-sm text-muted-foreground">
-            A sample document in the look on this page, including changes you have not saved yet.
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <div className={FIELD}>
-              <Label htmlFor={`${id}-preview-kind`}>Document to preview</Label>
-              <Select value={previewKind} onValueChange={(v) => { setPreviewKind(v as PreviewKind); setPreviewRun(0); }}>
-                <SelectTrigger id={`${id}-preview-kind`} className="w-44"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="invoice">Invoice</SelectItem>
-                  <SelectItem value="receipt">Receipt</SelectItem>
-                  <SelectItem value="agreement">Agreement</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="button" variant="outline" onClick={() => setPreviewRun((n) => n + 1)}>
-              <Eye aria-hidden /> {previewRun ? 'Refresh preview' : 'Preview PDF'}
-            </Button>
+            <TabsContent {...panelProps('emails')}>
+              <div className="flex max-w-3xl flex-col gap-4">
+                <SenderCard workspace={workspace} readOnly={readOnly} onSaved={onSaved} onRefused={refuse} />
+                {/* Sending from the workspace's own mailbox instead of from TaskCalendar. */}
+                <EmailConnectionPanel readOnly={readOnly} />
+              </div>
+            </TabsContent>
+
+            <TabsContent {...panelProps('records')}>
+              <div className="flex max-w-3xl flex-col gap-4">
+                <RetentionCard workspace={workspace} readOnly={readOnly} onSaved={onSaved} onRefused={refuse} />
+              </div>
+            </TabsContent>
           </div>
-          {previewRun > 0 && (
-            <PdfFrame
-              load={() => brandingPreviewPdf(workspaceId, { ...brandingBody(form, workspace.branding), previewKind })}
-              sourceKey={`${previewKind}-${previewRun}`}
-              title={`Sample ${previewKind}`}
-              filename={`sample-${previewKind}.pdf`}
+
+          {lookSection && (
+            <PreviewCard
+              workspaceId={workspaceId}
+              body={() => brandingBody(form, workspace.branding)}
+              className={section === 'look' ? 'xl:sticky xl:top-0' : undefined}
             />
           )}
         </div>
-      </Card>
+      </Tabs>
+
+      {lookSection && (
+        <div className="sticky bottom-0 -mb-6 flex flex-col gap-1 border-t border-border bg-background py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" disabled={locked || !dirty} onClick={() => void saveLook()}>
+              {busy === 'look' && <Loader2 className="animate-spin" aria-hidden />}
+              Save document look
+            </Button>
+            <span role="status" className="text-xs text-muted-foreground">{dirty ? 'Unsaved changes' : 'All changes saved'}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            One save covers the company details, the look and the letterhead. It applies to new documents: invoices and receipts already
+            issued, and agreements already sent, keep the look they had.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

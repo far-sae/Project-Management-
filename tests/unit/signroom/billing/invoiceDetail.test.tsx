@@ -42,6 +42,11 @@ function serve(start: Invoice, on: Record<string, (body: Body) => Invoice> = {})
     if (path === 'clients/from-company') return server.latest ?? server.customers[0];
     if (path === 'billing/delivery') return server.delivery;
     if (path === 'billing/i1') return server.invoice;
+    // Billing plans and the email log have their own tests (invoicePlanAndEmails.test.tsx). Here the
+    // server has neither set up yet, which must leave everything else on the page working.
+    if (path === 'billing/i1/deliveries' || path.startsWith('client-projects/')) {
+      throw Object.assign(new Error('Run the latest database update to use this.'), { status: 503 });
+    }
     const action = path.replace('billing/i1/', '');
     if (server.on[action]) {
       server.invoice = server.on[action]!(body ?? {});

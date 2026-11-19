@@ -52,7 +52,9 @@ const CrmSettingsPage = React.lazy(() => import('@/pages/crmHub/Settings').then(
 const AgreementsPage = React.lazy(() => import('@/pages/signroom/Agreements').then((m) => ({ default: m.AgreementsPage })));
 const AgreementDetailPage = React.lazy(() => import('@/pages/signroom/AgreementDetail').then((m) => ({ default: m.AgreementDetailPage })));
 const AgreementEditorPage = React.lazy(() => import('@/pages/signroom/AgreementEditor').then((m) => ({ default: m.AgreementEditorPage })));
+const TemplatesPage = React.lazy(() => import('@/pages/signroom/Templates').then((m) => ({ default: m.TemplatesPage })));
 const InvoicesPage = React.lazy(() => import('@/pages/signroom/Invoices').then((m) => ({ default: m.InvoicesPage })));
+const AccountsOverviewPage = React.lazy(() => import('@/pages/signroom/AccountsOverview').then((m) => ({ default: m.AccountsOverviewPage })));
 const InvoiceDetailPage = React.lazy(() => import('@/pages/signroom/InvoiceDetail').then((m) => ({ default: m.InvoiceDetailPage })));
 const DocumentSettingsPage = React.lazy(() => import('@/pages/signroom/DocumentSettings').then((m) => ({ default: m.DocumentSettingsPage })));
 // Public pages a customer opens from an emailed link: no sign-in, no sidebar.
@@ -350,8 +352,10 @@ const router = createBrowserRouter(
                 { path: 'agreements',          element: lazyAppRoute(<AgreementsPage />) },
                 { path: 'agreements/:id',      element: lazyAppRoute(<AgreementDetailPage />) },
                 { path: 'agreements/:id/edit', element: lazyAppRoute(<AgreementEditorPage />) },
+                { path: 'templates',           element: lazyAppRoute(<TemplatesPage />) },
                 { path: 'invoices',            element: lazyAppRoute(<InvoicesPage />) },
                 { path: 'invoices/:id',        element: lazyAppRoute(<InvoiceDetailPage />) },
+                { path: 'accounts-overview',   element: lazyAppRoute(<AccountsOverviewPage />) },
                 { path: 'document-settings',   element: lazyAppRoute(<DocumentSettingsPage />) },
                 { path: 'tasks',        element: lazyAppRoute(<CrmTasksPage />) },
                 { path: 'activity',     element: lazyAppRoute(<CrmActivityPage />) },

@@ -49,6 +49,12 @@ export const billingToday = (): string => londonToday(new Date());
 export const errorSentence = (error: unknown, fallback = 'Something went wrong. Please try again.'): string =>
   error instanceof Error && error.message ? error.message : fallback;
 
+/** The HTTP status of a failed call to the server, when it has one. */
+export const errorStatus = (error: unknown): number | null => {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === 'number' ? status : null;
+};
+
 // ---------------------------------------------------------------- lines and totals
 
 export const emptyLine = (): LineDraft => ({

@@ -170,6 +170,7 @@ export const InvoiceDetailPage: React.FC = () => {
           invoice={invoice}
           delivery={delivery}
           startWithPayment={startWithPayment}
+          companyHref={companyHref}
           onChange={setInvoice}
           onReload={() => void load()}
         />

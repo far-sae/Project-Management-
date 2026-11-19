@@ -6,6 +6,7 @@
  *   node scripts/signroom-secrets.mjs        both secrets (first set-up)
  *   node scripts/signroom-secrets.mjs 2      only SIGNROOM_EVIDENCE_KEY_V2 (a key rotation)
  *   node scripts/signroom-secrets.mjs cron   a CRON_SECRET, only if Vercel has none yet
+ *   node scripts/signroom-secrets.mjs mail   only SIGNROOM_MAIL_KEY (to let workspaces send from their own mailbox)
  *
  * SIGNROOM_JOB_KEY           32 random bytes (base64): encrypts queued emails at rest.
  * SIGNROOM_EVIDENCE_KEY_V<n> an Ed25519 private key (base64 PKCS#8): signs the
@@ -13,6 +14,10 @@
  *                            taskcalendar-ed25519-v<n>.
  * CRON_SECRET                Vercel sends it with every scheduled call; the
  *                            scheduled Signroom run accepts nothing else.
+ * SIGNROOM_MAIL_KEY          32 random bytes (base64): encrypts each workspace's
+ *                            own mailbox password and its Google or Microsoft
+ *                            secrets at rest. Optional: without it every email
+ *                            goes out from the platform's address.
  */
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 
@@ -24,6 +29,11 @@ if (arg === "cron") {
   // The guidance goes to stderr, so standard output is only the NAME=value line.
   console.error(
     "Add CRON_SECRET in Vercel (Production) only if the project has none yet: the other scheduled jobs use the same one, so do not replace a value that is already there.",
+  );
+} else if (arg === "mail") {
+  console.log(`SIGNROOM_MAIL_KEY=${randomBytes(32).toString("base64")}`);
+  console.error(
+    "Add SIGNROOM_MAIL_KEY in Vercel (Production and Preview) with the value above. Keep it: if it is replaced, every workspace has to enter its mailbox password, or sign in to Google or Microsoft, again.",
   );
 } else if (arg !== undefined) {
   if (!/^[1-9]\d*$/.test(arg)) {
@@ -39,6 +49,6 @@ if (arg === "cron") {
   console.log(`SIGNROOM_EVIDENCE_KEY_V1=${evidenceKey()}`);
   console.log("");
   console.log(
-    "Copy each line into Vercel as its own variable (the name before the first =, the value after it), for both Production and Preview. Never delete or replace an evidence key: add a new version instead. The scheduled run also needs CRON_SECRET in Vercel; if the project has none yet, run this script again with the word cron.",
+    "Copy each line into Vercel as its own variable (the name before the first =, the value after it), for both Production and Preview. Never delete or replace an evidence key: add a new version instead. The scheduled run also needs CRON_SECRET in Vercel; if the project has none yet, run this script again with the word cron. To let workspaces send from their own mailbox, run it again with the word mail.",
   );
 }

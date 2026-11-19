@@ -27,9 +27,9 @@ const store = readFileSync(resolve(process.cwd(), "api/_signroom/store.ts"), "ut
 const rateLimit = readFileSync(resolve(process.cwd(), "api/_signroom/host/rateLimit.ts"), "utf8");
 
 describe("migration 184", () => {
-  it("is the only Signroom migration, numbered after the last one", () => {
+  it("is the first of the two Signroom migrations (186 adds to it and is run after it)", () => {
     const files = readdirSync(resolve(process.cwd(), "supabase/migrations"));
-    expect(files.filter((f) => /signroom/i.test(f))).toEqual(["184_signroom.sql"]);
+    expect(files.filter((f) => /signroom/i.test(f)).sort()).toEqual(["184_signroom.sql", "186_signroom_more.sql"]);
     const highest = Math.max(...files.map((f) => Number(/^(\d+)_/.exec(f)?.[1] ?? 0)));
     expect(highest).toBeGreaterThanOrEqual(184);
   });
@@ -154,9 +154,11 @@ describe("migration 184", () => {
     expect(code.match(/create or replace function/g)!.length).toBe(code.match(/set search_path = public, pg_temp/g)!.length);
   });
 
-  it("every Signroom table the store reads or writes exists in the migration", () => {
+  it("every Signroom table the store reads or writes exists in this migration or in 186", () => {
     const used = new Set([...store.matchAll(/\.from\("(sr_\w+)"\)/g)].map((m) => m[1]));
-    for (const t of used) expect(TABLES, t).toContain(t);
+    // What 186_signroom_more.sql adds (checked in migration186.test.ts).
+    const LATER = ["sr_projects", "sr_ai_usage", "sr_email_oauth", "sr_email_oauth_states"];
+    for (const t of used) expect([...TABLES, ...LATER], t).toContain(t);
     // TaskCalendar's own tables, read only.
     const foreign = new Set([...store.matchAll(/\.from\("((?!sr_)\w+)"\)/g)].map((m) => m[1]));
     expect(foreign).toEqual(new Set(["workspaces", "organizations", "crm_companies", "crm_contacts", "crm_deals"]));

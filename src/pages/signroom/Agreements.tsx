@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FileText, Loader2, Plus, Search } from 'lucide-react';
+import { Copy, FileText, Loader2, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSignroom } from '@/hooks/useSignroom';
 import { useCrmDeals } from '@/hooks/useCrmHub';
@@ -137,9 +137,14 @@ export const AgreementsPage: React.FC = () => {
           title="Agreements"
           description="Documents you send to companies for signature, with the next step to keep each one moving."
           actions={workspaceId && (
-            <Button onClick={() => setShowNew(true)}>
-              <Plus aria-hidden /> New agreement
-            </Button>
+            <>
+              <Button asChild variant="outline">
+                <Link to="/crm/templates"><Copy aria-hidden /> Templates</Link>
+              </Button>
+              <Button onClick={() => setShowNew(true)}>
+                <Plus aria-hidden /> New agreement
+              </Button>
+            </>
           )}
         />
 

@@ -5,7 +5,7 @@ import { openAgreement, parseFields, publicAgreement, withEvent, writeAgreement 
 import { finalPdf, validateDrawing } from "./agreementPdf.js";
 import { newSecret, sha } from "./billing.js";
 import { brandingOf } from "./branding.js";
-import { mailReady, queueMail } from "./jobs.js";
+import { queueMail, workspaceMailReady } from "./jobs.js";
 import type { MailDeps } from "./mail.js";
 import { acceptSignature } from "./signing.js";
 import type { StoredAgreement } from "./store.js";
@@ -212,7 +212,7 @@ export async function sendAgreement(d: MailDeps, user: SignedInUser, id: string,
   const { store } = d;
   const { ctx, a } = await openAgreement(store, user, id, "send");
   // Rulings A5 and B18: with no way to send email or to finish, refuse before anything is frozen.
-  if (!mailReady(d)) throw new AppError(UNAVAILABLE_MESSAGE, 503);
+  if (!(await workspaceMailReady(d, ctx.workspace.id))) throw new AppError(UNAVAILABLE_MESSAGE, 503);
 
   if (a.sendKey && a.sendKey === b.idempotencyKey) return publicAgreement(a);
   if (a.status !== "Draft") throw new AppError("This agreement has already been sent.", 409);
@@ -356,7 +356,7 @@ export async function resendInvitations(d: MailDeps, user: SignedInUser, id: str
     throw new AppError("Use the sign-first workflow and explicitly release the document before sending invitations.", 409);
   if (a.status !== AWAITING) throw new AppError("This agreement is not awaiting signatures.", 409);
   // As for send (Rulings A5 and B18): refuse before any live link is revoked.
-  if (!mailReady(d)) throw new AppError(UNAVAILABLE_MESSAGE, 503);
+  if (!(await workspaceMailReady(d, ctx.workspace.id))) throw new AppError(UNAVAILABLE_MESSAGE, 503);
   refuseVerdict(
     await (d.spend ?? realSpend)(d.sb, RESEND_TOOL, "agreement:" + a.id, 5, 60),
     (m) => `Invitations for this agreement have been resent 5 times this hour. Try again in ${minutes(m)}.`,
@@ -413,7 +413,7 @@ export async function releaseFirst(d: MailDeps, user: SignedInUser, id: string, 
   if (a.senderId !== user.id || !a.senderFirst || !a.senderReleasePending || !a.senderSignedHash || a.status !== AWAITING)
     throw new AppError("Sign the document first before sending it to the other company.", 409);
   // As for send and resend (Rulings A5 and B18): refuse before anything is released.
-  if (!mailReady(d)) throw new AppError(UNAVAILABLE_MESSAGE, 503);
+  if (!(await workspaceMailReady(d, ctx.workspace.id))) throw new AppError(UNAVAILABLE_MESSAGE, 503);
   const sentAt = nowOf(d).toISOString();
   const out = await writeAgreement(d.store, a, {
     senderReleasePending: false,

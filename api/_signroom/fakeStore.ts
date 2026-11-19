@@ -1,12 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AppError, StoreError } from "./errors.js";
 import { orgRoleOf, type OrgRole } from "./context.js";
-import { TEMPLATE_FILE_LIMIT, UPLOAD_TICKET_MS, type CrmCompany, type StoredAgreement, type Store } from "./store.js";
+import { TEMPLATE_FILE_LIMIT, UPLOAD_TICKET_MS, type AiUsage, type CrmCompany, type EmailOAuth, type OAuthState, type StoredAgreement, type Store } from "./store.js";
+import type { MailboxRow } from "./mailbox/store.js";
 import type {
   Agreement,
   AgreementTemplate,
   BillingToken,
   Client,
+  ClientProject,
   Delivery,
   GuestSession,
   Invoice,
@@ -38,6 +40,13 @@ export function fakeStore(): Store & {
   signSessions(): SignSession[];
   blobPaths(): string[];
   evidenceKeys(): Map<string, string>;
+  /** Test helper: the sr_ai_usage rows, oldest first. */
+  aiUsage(): AiUsage[];
+  /** Test helpers: what sr_mailboxes, sr_email_oauth and sr_email_oauth_states hold. */
+  mailboxRows(): MailboxRow[];
+  seedMailbox(row: MailboxRow): void;
+  oauthRows(): EmailOAuth[];
+  oauthStates(): OAuthState[];
   /** Test helper: a TaskCalendar workspace inside an organisation (made if new). `ownerId` is the organisation's owner_id. */
   seedWorkspace(w: { id: string; organizationId: string; name?: string; ownerId?: string }): void;
   /** Test helper: sets (or replaces) a person's entry in the members list of the organisation that owns the workspace. */
@@ -79,6 +88,47 @@ export function fakeStore(): Store & {
   const evidenceKeys = new Map<string, string>();
   const uploads = new Map<string, UploadTicket>();
   const quarantine = new Map<string, Uint8Array>();
+  const aiUsage: AiUsage[] = [];
+  const projects = new Map<string, ClientProject>();
+  const mailboxes = new Map<string, MailboxRow>();
+  const oauth = new Map<string, EmailOAuth>();
+  const oauthPending = new Map<string, OAuthState>();
+  const HEX64 = /^[0-9a-f]{64}$/;
+  /** The checks sr_mailboxes, sr_email_oauth and sr_email_oauth_states make, so a value the database would refuse fails here too. */
+  const checkMailbox = (r: MailboxRow) => {
+    const bad = (why: string) => new StoreError(`sr_mailboxes check failed: ${why}`);
+    if (!["gmail", "outlook", "ionos", "yahoo", "zoho", "godaddy", "hostinger", "custom"].includes(r.provider)) throw bad("provider");
+    if (r.host.length < 1 || r.host.length > 253 || !/^[a-z0-9.-]+$/.test(r.host)) throw bad("host");
+    if (![465, 587, 2525].includes(r.port)) throw bad("port");
+    if (r.security !== "tls" && r.security !== "starttls") throw bad("security");
+    if (r.username.length < 1 || r.username.length > 254) throw bad("username");
+    if (r.from_email.length > 254 || !/^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$/.test(r.from_email)) throw bad("from_email");
+    if (!/^v1:[A-Za-z0-9+/]+={0,2}:[A-Za-z0-9+/]+={0,2}$/.test(r.password_enc)) throw bad("password_enc");
+    if (r.last_error !== null && r.last_error.length > 300) throw bad("last_error");
+  };
+  const checkOAuth = (c: EmailOAuth) => {
+    const bad = (why: string) => new StoreError(`sr_email_oauth check failed: ${why}`);
+    if (c.revision <= 0) throw bad("revision");
+    if (c.provider !== "google" && c.provider !== "microsoft") throw bad("provider");
+    if (c.email !== c.email.toLowerCase() || c.email.length < 3 || c.email.length > 254) throw bad("email");
+    if (c.clientId.length < 1 || c.clientId.length > 300) throw bad("client_id");
+    if (c.provider === "google" ? c.tenant !== "" : !/^[A-Za-z0-9.-]{1,100}$/.test(c.tenant)) throw bad("tenant");
+    if (!c.secretsEnc.startsWith("v1:")) throw bad("secrets_enc");
+    if (!["configured", "authenticated", "verified", "reconnect"].includes(c.status)) throw bad("status");
+    if (c.lastError !== undefined && c.lastError.length > 300) throw bad("last_error");
+    if (c.challenge && (!HEX64.test(c.challenge.digest) || c.challenge.attempts < 0 || c.challenge.attempts > 5)) throw bad("challenge");
+  };
+  const checkState = (st: OAuthState) => {
+    const bad = (why: string) => new StoreError(`sr_email_oauth_states check failed: ${why}`);
+    if (!HEX64.test(st.digest)) throw bad("digest");
+    if (!HEX64.test(st.browserDigest)) throw bad("browser_digest");
+    if (!st.verifierEnc.startsWith("v1:")) throw bad("verifier_enc");
+    const u = st.redirectUri;
+    if (u.length > 300 || !(u.startsWith("https://") || u.startsWith("http://localhost:") || u.startsWith("http://localhost/"))) throw bad("redirect_uri");
+  };
+  const dropPending = (workspaceId: string) => {
+    for (const [k, v] of oauthPending) if (v.workspaceId === workspaceId) oauthPending.delete(k);
+  };
   const now = () => new Date().toISOString();
   const clone = <T>(v: T): T => structuredClone(v);
   const DAY_MS = 86_400_000;
@@ -110,6 +160,8 @@ export function fakeStore(): Store & {
       }
     }
     Object.assign(inv, Object.fromEntries(changes));
+    // An empty billing plan id clears the link, as the store writes NULL.
+    if (inv.projectId === "") delete inv.projectId;
   }
 
   function addPayment(inv: { id: string; workspaceId: string }, p: Payment) {
@@ -657,6 +709,124 @@ export function fakeStore(): Store & {
     signSessions: () => [...signSessions.values()].map(clone),
     blobPaths: () => [...blobs.keys()],
     evidenceKeys: () => new Map(evidenceKeys),
+    aiUsage: () => aiUsage.map(clone),
+    async insertAiUsage(u) {
+      aiUsage.push(clone(u));
+    },
+    async getMailbox(workspaceId) {
+      const r = mailboxes.get(workspaceId);
+      return r ? clone(r) : null;
+    },
+    async upsertMailbox(row) {
+      const { updated_at: _updated, ...r } = row;
+      checkMailbox(r);
+      mailboxes.set(r.workspace_id, clone(r));
+    },
+    async markMailbox(checked, patch) {
+      const r = mailboxes.get(checked.workspace_id);
+      const keys = ["provider", "host", "port", "security", "username", "from_email", "password_enc"] as const;
+      if (!r || keys.some((k) => r[k] !== checked[k])) return false;
+      const next = { ...r, ...patch };
+      checkMailbox(next);
+      mailboxes.set(r.workspace_id, next);
+      return true;
+    },
+    async deleteMailbox(workspaceId) {
+      mailboxes.delete(workspaceId);
+    },
+    mailboxRows: () => [...mailboxes.values()].map((r) => clone(r)),
+    seedMailbox(row) {
+      checkMailbox(row);
+      mailboxes.set(row.workspace_id, clone(row));
+    },
+    async getEmailOAuth(workspaceId) {
+      const c = oauth.get(workspaceId);
+      return c ? clone(c) : null;
+    },
+    async replaceEmailOAuth(c) {
+      checkOAuth(c);
+      oauth.set(c.workspaceId, clone(c));
+      dropPending(c.workspaceId);
+    },
+    async updateEmailOAuth(workspaceId, at, patch) {
+      const c = oauth.get(workspaceId);
+      if (!c || c.id !== at.id || c.revision !== at.revision) return false;
+      if (at.attempts !== undefined && (c.challenge?.attempts ?? 0) !== at.attempts) return false;
+      if (at.status !== undefined && c.status !== at.status) return false;
+      const next: EmailOAuth = { ...c };
+      if (patch.secretsEnc !== undefined) next.secretsEnc = patch.secretsEnc;
+      if (patch.status !== undefined) next.status = patch.status;
+      for (const k of ["verifiedAt", "lastTestAt", "lastError"] as const) {
+        const v = patch[k];
+        if (v === undefined) continue;
+        if (v === null) delete next[k];
+        else next[k] = v;
+      }
+      if (patch.challenge !== undefined) {
+        if (patch.challenge === null) delete next.challenge;
+        else next.challenge = { ...patch.challenge };
+      }
+      checkOAuth(next);
+      oauth.set(workspaceId, next);
+      return true;
+    },
+    async deleteEmailOAuth(workspaceId) {
+      oauth.delete(workspaceId);
+      dropPending(workspaceId);
+    },
+    async insertOAuthState(st) {
+      checkState(st);
+      dropPending(st.workspaceId);
+      oauthPending.set(st.digest, clone(st));
+    },
+    async takeOAuthState(digest, browserDigest, now) {
+      const st = oauthPending.get(digest);
+      if (!st || st.browserDigest !== browserDigest || !(st.expires > now)) return null;
+      oauthPending.delete(digest);
+      return clone(st);
+    },
+    async purgeOAuthStates(before) {
+      for (const [k, v] of oauthPending) if (v.expires < before) oauthPending.delete(k);
+    },
+    oauthRows: () => [...oauth.values()].map((c) => clone(c)),
+    oauthStates: () => [...oauthPending.values()].map((c) => clone(c)),
+    async listDocumentDeliveries(workspaceId, doc, limit) {
+      const mine = (d: Delivery) => ("invoiceId" in doc ? d.invoiceId === doc.invoiceId : d.agreementId === doc.agreementId);
+      // The map keeps insertion order, so reversed is newest first even inside one millisecond.
+      return [...deliveries.values()].filter((d) => d.workspaceId === workspaceId && mine(d)).reverse().slice(0, limit).map(clone);
+    },
+    async renameAgreementTemplate(workspaceId, from, to) {
+      const mine = agreementTemplates.filter((t) => t.workspaceId === workspaceId && t.name === from);
+      // As the database: (workspace, name, version) is unique.
+      if (agreementTemplates.some((t) => t.workspaceId === workspaceId && t.name === to && mine.some((m) => m.version === t.version)))
+        throw new AppError("A template with that name already exists.", 409);
+      for (const t of mine) t.name = to;
+    },
+    async deleteAgreementTemplate(workspaceId, id) {
+      const at = agreementTemplates.findIndex((t) => t.workspaceId === workspaceId && t.id === id);
+      if (at >= 0) agreementTemplates.splice(at, 1);
+    },
+    async listProjects(workspaceId, clientId) {
+      return [...projects.values()].filter((p) => p.workspaceId === workspaceId && (!clientId || p.clientId === clientId)).map(clone);
+    },
+    async getProject(workspaceId, id) {
+      const p = projects.get(id.toLowerCase());
+      return p && p.workspaceId === workspaceId ? clone(p) : null;
+    },
+    async insertProject(p) {
+      const t = now();
+      const out: ClientProject = { ...clone(p), monthlyEntries: clone(p.monthlyEntries ?? {}), id: randomUUID(), revision: 1, created: t, updated: t };
+      projects.set(out.id, out);
+      return clone(out);
+    },
+    async updateProject(workspaceId, id, revision, patch) {
+      const p = projects.get(id);
+      if (!p || p.workspaceId !== workspaceId || p.revision !== revision) return null;
+      Object.assign(p, Object.fromEntries(Object.entries(clone(patch)).filter(([, v]) => v !== undefined)));
+      p.revision = revision + 1;
+      p.updated = now();
+      return clone(p);
+    },
     async listSignTokens(agreementId) {
       return [...signTokens.values()].filter((t) => t.agreementId === agreementId).map(clone);
     },

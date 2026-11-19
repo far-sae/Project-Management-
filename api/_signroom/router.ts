@@ -2,10 +2,16 @@ import { AppError, StoreError } from "./errors.js";
 import type { SignedInUser } from "./context.js";
 import { agreementAction, agreementArtifactUrl, createAgreement, getAgreement, listAgreements, listTemplates } from "./agreements.js";
 import { finishUpload, prepareAgreement, uploadUrl } from "./agreementDocument.js";
+import { deleteTemplate, getTemplate, renameTemplate } from "./agreementTemplates.js";
+import { draftAgreement, type DraftDeps } from "./aiDraft.js";
 import { cancelAgreement, releaseFirst, resendInvitations, sendAgreement, signFirst } from "./agreementSend.js";
 import { billingAction, billingArtifact, billingDelivery, billingPreview, billingSend } from "./billing.js";
 import { clientAction, clientFromCompany } from "./clients.js";
 import { clientAccount } from "./clientAccounts.js";
+import { agreementDeliveries, invoiceDeliveries } from "./deliveries.js";
+import { emailConnectionAction } from "./emailConnection.js";
+import { finishAuthorization } from "./oauthConnection.js";
+import { accountsOverview, projectAction } from "./projects.js";
 import { billingGuestAction, billingGuestArtifact } from "./guest.js";
 import { exportEvidence, scheduleDeletion } from "./retention.js";
 import type { MailDeps } from "./mail.js";
@@ -15,9 +21,13 @@ import { templateBytes, uploadTemplate, TEMPLATE_SIZE_MESSAGE } from "./template
 import { brandingPreview, sessionView, workspaceAction } from "./workspace.js";
 import { runOps } from "./worker.js";
 import { SIGN_IN_MESSAGE } from "./host/auth.js";
+import { setupSentence, TABLES_MISSING_MESSAGE } from "./setupMessages.js";
 
-/** Everything a request needs from outside: the mail deps, which carry the store. */
-export type RouteDeps = { mail: MailDeps };
+/**
+ * Everything a request needs from outside: the mail deps (which carry the
+ * store) and Draft with AI's Claude (none when omitted).
+ */
+export type RouteDeps = { mail: MailDeps; draft?: DraftDeps };
 
 export type RouteRequest = {
   method: string;
@@ -35,6 +45,8 @@ export type RouteRequest = {
   raw?: { bytes: Uint8Array; name: string };
   /** Set only by the entry, after the cron secret check: the scheduled run. */
   cron?: boolean;
+  /** The sr_mail_oauth cookie: the browser that started an email sign-in (callback only). */
+  oauthBrowser?: string;
 };
 
 export type RouteResult = {
@@ -43,6 +55,11 @@ export type RouteResult = {
   pdf?: { bytes: Uint8Array; filename: string; inline: boolean };
   setGuestSession?: { raw: string; expires: number };
   setSignSession?: { raw: string; expires: number };
+  /** A relative Location for a 303. */
+  redirect?: string;
+  /** The sign-in browser secret, for the Set-Cookie header only. */
+  setOAuthBrowser?: string;
+  clearOAuthBrowser?: true;
 };
 
 export const NOT_FOUND_MESSAGE = "Not found.";
@@ -53,6 +70,7 @@ const ok = (json: unknown): RouteResult => ({ status: 200, json });
 
 const BILLING_ACTIONS = ["save", "issue", "payment", "void"];
 const WORKSPACE_ACTIONS = ["settings", "email-settings", "branding"] as const;
+const EMAIL_ACTIONS = ["save", "test", "disconnect", "verify", "authorize", "confirm"] as const;
 const GUEST_ACTIONS = ["intro", "code", "verify"] as const;
 const SIGN_GUEST_ACTIONS: readonly SignGuestAction[] = ["intro", "code", "verify", "recover", "document", "sign", "decline"];
 const AGREEMENT_ACTIONS = ["save", "archive", "unarchive", "trash", "restore", "duplicate", "template", "hold"] as const;
@@ -112,6 +130,14 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     return notFound();
   }
 
+  // Billing plans (the source's client "projects": the paths and JSON fields keep that name).
+  if (head === "client-projects" && (n === 2 || n === 3)) return ok(await projectAction(store, user, second, third, method, body, r.query.year ?? ""));
+
+  if (head === "accounts-overview" && n === 1) {
+    if (method !== "GET") throw new AppError("Method not allowed.", 405);
+    return ok(await accountsOverview(store, user, r.query.year ?? ""));
+  }
+
   if (head === "client-accounts" && n === 2) return ok(await clientAccount(store, user, second, method, body, r.query.from ?? "", r.query.to ?? ""));
 
   if (head === "workspaces" && second === "branding-template" && n === 2) {
@@ -138,7 +164,26 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     return ok(await workspaceAction(store, user, action, body, deps.mail));
   }
 
+  // The workspace's own mailbox (SMTP, Google or Microsoft): owners and admins only.
+  if (head === "email-connection") {
+    if (n === 1 && method === "GET") return ok(await emailConnectionAction(deps.mail, user, "view", {}, r.origin));
+    const action = EMAIL_ACTIONS.find((a) => a === second);
+    if (n === 2 && method === "POST" && action) {
+      const out = await emailConnectionAction(deps.mail, user, action, body, r.origin);
+      // The browser secret goes to the Set-Cookie header only; the page gets the provider's address.
+      if (action === "authorize") {
+        const { url, browser } = out as { url: string; browser: string };
+        return { status: 200, json: { url }, setOAuthBrowser: browser };
+      }
+      return ok(out);
+    }
+    return notFound();
+  }
+
   if (head === "templates" && n === 1 && method === "GET") return ok(await listTemplates(store, user));
+  if (head === "templates" && n === 2 && method === "GET") return ok(await getTemplate(store, user, second));
+  if (head === "templates" && n === 2 && method === "DELETE") return ok(await deleteTemplate(store, user, second));
+  if (head === "templates" && n === 3 && method === "POST" && third === "rename") return ok(await renameTemplate(store, user, second, body));
 
   if (head === "agreements") {
     if (n === 1 && method === "GET") return ok(await listAgreements(store, user, listQuery(r.query)));
@@ -147,6 +192,7 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     if (n === 3 && method === "GET" && third === "artifact-url") {
       return ok(await agreementArtifactUrl(store, user, second, r.query.kind || "source", r.query.download === "1"));
     }
+    if (n === 3 && method === "GET" && third === "deliveries") return ok(await agreementDeliveries(store, user, second));
     if (n === 3 && method === "POST" && third === "prepare") return ok(await prepareAgreement(store, user, second, body));
     if (n === 3 && method === "POST" && third === "upload-url") return ok(await uploadUrl(deps.mail, user, second, body));
     if (n === 3 && method === "POST" && third === "upload") return ok(await finishUpload(deps.mail, user, second, body));
@@ -157,6 +203,7 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     if (n === 3 && method === "POST" && third === "release-first") return ok(await releaseFirst(deps.mail, user, second, r.origin));
     if (n === 3 && method === "POST" && third === "export") return ok(await exportEvidence(store, user, second));
     if (n === 3 && method === "POST" && third === "delete") return ok(await scheduleDeletion(store, user, second));
+    if (n === 3 && method === "POST" && third === "ai-draft") return ok(await draftAgreement(deps.mail, deps.draft ?? { claude: null }, user, second, body));
     const action = AGREEMENT_ACTIONS.find((a) => a === third);
     if (n === 3 && method === "POST" && action) return ok(await agreementAction(store, user, second, action, body));
     return notFound();
@@ -169,6 +216,7 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     }
     if (n === 2 && second === "delivery" && method === "GET") return ok(await billingDelivery(deps.mail, user));
     if (n === 2 && method === "GET") return ok(await billingAction(store, user, "GET", second, undefined, body));
+    if (n === 3 && method === "GET" && third === "deliveries") return ok(await invoiceDeliveries(store, user, second));
     if (n === 3 && method === "GET" && third === "preview") {
       return { status: 200, pdf: { bytes: await billingPreview(store, user, second), filename: "invoice-preview.pdf", inline: true } };
     }
@@ -188,17 +236,32 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
   return notFound();
 }
 
-/** One request to a result. Never throws: AppError keeps its status and sentence, anything else is a plain 500. */
-export const TABLES_MISSING_MESSAGE =
-  "Documents are not set up yet: the database tables are missing. Run supabase/migrations/184_signroom.sql in the Supabase SQL editor.";
+/** Where the browser lands after the provider's redirect: the document settings page, told how it went. */
+export const OAUTH_CONNECTED_PATH = "/crm/document-settings?emailConnection=connected";
+export const OAUTH_FAILED_PATH = "/crm/document-settings?emailConnection=error";
 
-/** The two ways Supabase says one of our own tables or functions is not there. */
-const tablesMissing = (message: string): boolean => {
-  const m = message.toLowerCase();
-  if (!m.includes("sr_")) return false;
-  return m.includes("schema cache") || m.includes("does not exist");
-};
+/**
+ * The provider's redirect (GET email-connection/callback): no sign-in, the
+ * cookie is the proof. It always answers a 303 and never says why it failed;
+ * a failure logs only the error's name or status.
+ */
+async function oauthCallback(deps: RouteDeps, r: RouteRequest): Promise<RouteResult> {
+  try {
+    await finishAuthorization(deps.mail, { state: r.query.state, code: r.query.code, browser: r.oauthBrowser, error: r.query.error });
+    return { status: 303, redirect: OAUTH_CONNECTED_PATH, clearOAuthBrowser: true };
+  } catch (e) {
+    console.error("[signroom] email sign-in failed", e instanceof AppError ? e.status : e instanceof Error ? e.name : "unknown");
+    return { status: 303, redirect: OAUTH_FAILED_PATH, clearOAuthBrowser: true };
+  }
+}
 
+export { TABLES_MISSING_MESSAGE };
+
+/**
+ * One request to a result. Never throws: AppError keeps its status and
+ * sentence; a database error that means a migration has not been run is a 503
+ * naming the file to run (setupMessages.ts); anything else is a plain 500.
+ */
 export async function route(deps: RouteDeps, r: RouteRequest): Promise<RouteResult> {
   try {
     if (r.path[0] === "billing-guest") return await guestRoute(deps, r);
@@ -208,11 +271,13 @@ export async function route(deps: RouteDeps, r: RouteRequest): Promise<RouteResu
       if (r.cron === true && r.method === "POST" && r.path.length === 2 && r.path[1] === "run") return ok(await runOps(deps.mail));
       return notFound();
     }
+    if (r.method === "GET" && r.path.length === 2 && r.path[0] === "email-connection" && r.path[1] === "callback") return await oauthCallback(deps, r);
     if (!r.user) return { status: 401, json: { error: SIGN_IN_MESSAGE } };
     return await userRoute(deps, r, r.user);
   } catch (e) {
     if (e instanceof AppError) return { status: e.status, json: { error: e.message } };
-    if (e instanceof StoreError && tablesMissing(e.message)) return { status: 503, json: { error: TABLES_MISSING_MESSAGE } };
+    const setup = e instanceof StoreError ? setupSentence(e.message) : null;
+    if (setup) return { status: 503, json: { error: setup } };
     // The error name only: its text can carry addresses, codes or visitor input.
     console.error("[signroom] failed", e instanceof Error ? e.name : "unknown");
     return { status: 500, json: { error: FAILED_MESSAGE } };

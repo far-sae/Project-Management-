@@ -6,8 +6,12 @@ import { runInBackground } from "./_signroom/host/background.js";
 import { refuseOversize } from "./_signroom/host/bodySize.js";
 import { refuseForeign } from "./_signroom/host/origin.js";
 import { UNAVAILABLE_MESSAGE } from "./_signroom/host/rateLimit.js";
-import { FAILED_MESSAGE, route as realRoute, type RouteDeps, type RouteRequest, type RouteResult } from "./_signroom/router.js";
+import { readKey } from "./_signroom/mailbox/crypto.js";
+import { systemLookup } from "./_signroom/mailbox/ssrf.js";
+import { nodemailerTransport } from "./_signroom/mailbox/transport.js";
+import { FAILED_MESSAGE, OAUTH_FAILED_PATH, route as realRoute, type RouteDeps, type RouteRequest, type RouteResult } from "./_signroom/router.js";
 import { TEMPLATE_MAX_BYTES, TEMPLATE_SIZE_MESSAGE } from "./_signroom/templates.js";
+import { claudeClient } from "./_signroom/aiDraft.js";
 import { readEvidenceKey } from "./_signroom/evidence.js";
 import { readJobKey } from "./_signroom/jobs.js";
 import { mailFrom, type MailDeps } from "./_signroom/mail.js";
@@ -20,9 +24,11 @@ import { supabaseStore } from "./_signroom/store.js";
  * signed-in account (billing-guest and guest paths are for invited visitors and
  * need none; they use the sr_billing and sr_sign cookies) with the workspace it
  * is working in from X-Signroom-Workspace (never read on guest or cron paths),
- * then the router. Paths and rules: _signroom/router.ts. The one exception is
+ * then the router. Paths and rules: _signroom/router.ts. Two exceptions:
  * ops/run, Vercel's cron call every 5 minutes, which is checked by its
- * "Authorization: Bearer <CRON_SECRET>" header instead (cronRun).
+ * "Authorization: Bearer <CRON_SECRET>" header instead (cronRun); and
+ * email-connection/callback, the redirect back from Google or Microsoft, which
+ * is checked by its sr_mail_oauth cookie instead (oauthCallback).
  */
 export const config = { maxDuration: 300 };
 
@@ -31,6 +37,10 @@ export const BODY_TOO_LARGE_MESSAGE = "That request is too large.";
 export const GUEST_COOKIE = "sr_billing";
 /** An agreement guest's session: never the billing cookie, and never accepted for billing. */
 export const SIGN_COOKIE = "sr_sign";
+/** The browser that started a Google or Microsoft sign-in: HttpOnly, only sent to the callback. */
+export const OAUTH_COOKIE = "sr_mail_oauth";
+const OAUTH_COOKIE_ATTRS = "HttpOnly; Secure; SameSite=Lax; Path=/api/signroom/email-connection/callback";
+const OAUTH_MAX_AGE = 600;
 const GUEST_MAX_AGE = 1800;
 
 export type SignroomDeps = {
@@ -95,6 +105,45 @@ async function cronRun(d: SignroomDeps, req: VercelRequest, res: VercelResponse)
   }
   res.setHeader("Cache-Control", "private, no-store");
   res.status(out.status).json(out.json ?? {});
+}
+
+/**
+ * GET email-connection/callback: the provider's redirect carries no sign-in and
+ * no Origin, so it skips both. The sr_mail_oauth cookie is its proof; the route
+ * answers a relative 303 and says nothing of why a sign-in failed.
+ */
+async function oauthCallback(d: SignroomDeps, req: VercelRequest, res: VercelResponse, path: string[]): Promise<void> {
+  const q = req.query ?? {};
+  // Short values only: the route refuses overlong ones; nothing here is logged or echoed.
+  const query: Record<string, string> = {};
+  for (const k of ["state", "code", "error"]) {
+    const v = q[k];
+    if (v !== undefined) query[k] = String(Array.isArray(v) ? v[0] : v);
+  }
+  let location = OAUTH_FAILED_PATH;
+  try {
+    const deps = d.build ? d.build() : null;
+    if (!d.build || deps) {
+      const out = await d.route(deps as RouteDeps, {
+        method: "GET",
+        path,
+        query,
+        body: {},
+        user: null,
+        oauthBrowser: cookieOf(req, OAUTH_COOKIE),
+        // The redirect URI was stored when the sign-in began; nothing is built from this origin.
+        origin: siteOrigin() ?? "",
+      });
+      if (out.status === 303 && typeof out.redirect === "string") location = out.redirect;
+    }
+  } catch (e) {
+    console.error("[signroom] email sign-in failed", e instanceof Error ? e.name : "unknown");
+  }
+  res.setHeader("Set-Cookie", `${OAUTH_COOKIE}=; ${OAUTH_COOKIE_ATTRS}; Max-Age=0`);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Location", location);
+  res.status(303).json({});
 }
 
 /** ?path=billing/abc/artifact (or the array form) as segments. */
@@ -172,11 +221,15 @@ function buildDeps(): RouteDeps | null {
     fetch,
     resendKey: process.env.RESEND_API_KEY || undefined,
     from: mailFrom(process.env.SIGNROOM_MAIL_FROM, siteOrigin()) ?? undefined,
+    // The workspace's own mailbox: without this key every email goes out through Resend.
+    key: readKey(process.env.SIGNROOM_MAIL_KEY),
+    transport: nodemailerTransport,
+    lookup: systemLookup,
     scan: { fetch, apiKey: process.env.CLOUDMERSIVE_API_KEY || undefined },
     jobKey: readJobKey(process.env.SIGNROOM_JOB_KEY),
     evidenceKey: readEvidenceKey(process.env),
   };
-  return { mail };
+  return { mail, draft: { claude: claudeClient(process.env.ANTHROPIC_API_KEY || undefined) } };
 }
 
 /** refuseSignedOut already read the account with its token: its id and email go straight to the router. */
@@ -191,6 +244,8 @@ export function signroomHandler(d: SignroomDeps) {
     const path = splitPath(q.path);
     // Vercel's cron sends no Origin: the scheduled run is checked by its secret instead.
     if ((req.method === "GET" || req.method === "POST") && path.length === 2 && path[0] === "ops" && path[1] === "run") return cronRun(d, req, res);
+    // The provider's redirect has no Origin and no sign-in: its sr_mail_oauth cookie is checked by the route.
+    if (req.method === "GET" && path.length === 2 && path[0] === "email-connection" && path[1] === "callback") return oauthCallback(d, req, res, path);
     if (refuseForeign(req, res)) return;
     // Not set up yet: say exactly what is missing, rather than "busy" or a sign-in error.
     const problem = d.setup ? d.setup() : null;
@@ -260,6 +315,9 @@ export function signroomHandler(d: SignroomDeps) {
         "Set-Cookie",
         `${SIGN_COOKIE}=${out.setSignSession.raw}; HttpOnly; Secure; SameSite=Strict; Path=/api/signroom; Max-Age=${GUEST_MAX_AGE}`,
       );
+    }
+    if (out.setOAuthBrowser) {
+      res.setHeader("Set-Cookie", `${OAUTH_COOKIE}=${out.setOAuthBrowser}; ${OAUTH_COOKIE_ATTRS}; Max-Age=${OAUTH_MAX_AGE}`);
     }
     res.setHeader("Cache-Control", "private, no-store");
     if (out.pdf) {

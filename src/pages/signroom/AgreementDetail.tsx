@@ -16,6 +16,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import PdfViewer from '@/components/signroom/PdfViewer';
+import { DeliveryLog } from '@/components/signroom/DeliveryLog';
 import { AgreementStatusPill, RecipientPill } from '@/components/signroom/agreements/AgreementStatus';
 import { Card, Notice } from '@/components/signroom/agreements/Card';
 import { SenderFirstSigning } from '@/components/signroom/agreements/SenderFirstSigning';
@@ -359,6 +360,9 @@ export const AgreementDetailPage: React.FC = () => {
               </Card>
             )}
           </div>
+
+          {/* Every email sent for this agreement; re-read whenever something happens to it. */}
+          {a.status !== 'Draft' && <DeliveryLog key={a.events.length} path={`agreements/${a.id}/deliveries`} title="Emails" />}
 
           <Card title="Activity" note="An append-only account of this agreement.">
             {a.events.length === 0 ? (

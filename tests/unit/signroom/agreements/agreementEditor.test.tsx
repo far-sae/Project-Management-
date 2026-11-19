@@ -92,8 +92,9 @@ describe('opening the editor', () => {
     expect((await screen.findByRole('link', { name: 'Northwind Studio' })).getAttribute('href')).toBe('/crm/companies/c1');
     expect(currentStep()).toContain('Document');
     expect(screen.getByRole('status').textContent).toContain('All changes saved');
-    // Draft with AI is not part of this version.
-    expect(screen.queryByText(/Draft with AI/)).toBeNull();
+    // Draft with AI is offered, and nothing is asked of it until the person opens it (see aiDraft.test.tsx).
+    expect(screen.getByRole('button', { name: /Draft with AI/ })).toBeTruthy();
+    expect(sr.call.mock.calls.some((c) => String(c[0]).endsWith('/ai-draft'))).toBe(false);
   });
 
   it('sends a sent agreement to its own page instead', async () => {

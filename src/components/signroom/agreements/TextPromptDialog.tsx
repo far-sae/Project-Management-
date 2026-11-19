@@ -23,6 +23,8 @@ interface TextPromptDialogProps {
   cancelLabel?: string;
   destructive?: boolean;
   busy?: boolean;
+  /** Why the last try was refused, in the server's sentence. Shown under the input while the dialog stays open. */
+  error?: string;
   /** Called with the trimmed text; it is never empty. */
   onConfirm: (value: string) => void;
 }
@@ -30,7 +32,7 @@ interface TextPromptDialogProps {
 /** Asks for one piece of text before an action goes ahead: a reason, or a name. */
 export const TextPromptDialog: React.FC<TextPromptDialogProps> = ({
   open, onOpenChange, title, description, label, initialValue = '', multiline = false, maxLength,
-  confirmLabel, cancelLabel = 'Cancel', destructive = false, busy = false, onConfirm,
+  confirmLabel, cancelLabel = 'Cancel', destructive = false, busy = false, error = '', onConfirm,
 }) => {
   const id = useId();
   const [value, setValue] = useState(initialValue);
@@ -66,6 +68,7 @@ export const TextPromptDialog: React.FC<TextPromptDialogProps> = ({
                 onChange={(e) => setValue(e.target.value)}
               />
             )}
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{cancelLabel}</Button>

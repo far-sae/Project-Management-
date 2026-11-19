@@ -3,6 +3,7 @@ import { AppError } from "./errors.js";
 import { currentWorkspace, type SignedInUser } from "./context.js";
 import { brandingOf } from "./branding.js";
 import { dealOf, listFilter } from "./crmLinks.js";
+import { visibleProject } from "./projects.js";
 import { financialPdf } from "./financialPdf.js";
 import type { BlobLoader } from "./pdf.js";
 import type { Store } from "./store.js";
@@ -10,7 +11,7 @@ import type { Client, Invoice, InvoiceEvent, Payment, Workspace } from "./shared
 import { londonToday } from "./shared/accounts.js";
 import { balance, CURRENCIES, decimal, money, totals } from "./shared/invoiceMath.js";
 import { email, isUuid, text } from "./validate.js";
-import { canSend, sendMail, type MailDeps } from "./mail.js";
+import { canSend, deliveryAddress, sendMail, type MailDeps } from "./mail.js";
 import { minutes, spend as realSpend, UNAVAILABLE_MESSAGE } from "./host/rateLimit.js";
 
 type Body = Record<string, unknown>;
@@ -137,6 +138,17 @@ export async function billingAction(
       notes: text(body.notes, 5000),
       project: text(body.project ?? i.project ?? "", 200),
     };
+    // A Draft save sets, keeps or clears the billing plan link (the source's "project"; the field stays projectId).
+    // An empty value on an invoice with no link changes nothing, so it writes nothing: the column arrives with migration 186.
+    if (body.projectId || i.projectId) {
+      const selected = body.projectId === undefined ? i.projectId : body.projectId;
+      if (selected) {
+        const project = await visibleProject(store, ctx, i.clientId, String(selected));
+        if (project.archived) throw new AppError("Restore the billing plan before linking invoices.", 409);
+        if (project.currency !== currency) throw new AppError("Invoice currency must match the linked billing plan.");
+        patch.projectId = project.id;
+      } else patch.projectId = "";
+    }
     if (body.receiptDraft !== undefined) {
       if (body.receiptDraft === null) patch.receiptDraft = null;
       else {
@@ -396,15 +408,18 @@ export async function billingSend(
 }
 
 /**
- * GET billing/delivery: how this workspace's email goes out. There is one
- * route, the platform's own address (mode "securovix" is that route's name in
- * the delivery log); `ready` is false until the Resend key and a from address
- * are configured.
+ * GET billing/delivery: how this workspace's email goes out, and the address
+ * it will really go from. "live" is the workspace's own verified mailbox (SMTP,
+ * Google or Microsoft); "securovix" (that route's name in the delivery log) is
+ * the platform's own address, and there `ready` is false until the Resend key
+ * and a from address are configured.
  */
 export async function billingDelivery(
   deps: MailDeps,
   user: SignedInUser,
-): Promise<{ mode: "securovix"; sender: string; ready: boolean }> {
-  await currentWorkspace(deps.store, user);
+): Promise<{ mode: "live" | "securovix"; sender: string; ready: boolean }> {
+  const { workspace } = await currentWorkspace(deps.store, user);
+  const own = await deliveryAddress(deps, workspace.id);
+  if (own) return { mode: "live", sender: own, ready: true };
   return { mode: "securovix", sender: deps.from ?? "", ready: canSend(deps) };
 }

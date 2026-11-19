@@ -1,7 +1,7 @@
 // Invoices: every invoice in the workspace, what is owed, and the receipts for what was paid.
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Download, FileText, Loader2, MoreHorizontal, Plus, Search } from 'lucide-react';
+import { CalendarRange, Download, FileText, Loader2, MoreHorizontal, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { balance } from '../../../api/_signroom/shared/invoiceMath';
 import type { Invoice } from '../../../api/_signroom/shared/types';
@@ -138,6 +138,9 @@ export const InvoicesPage: React.FC = () => {
           description="Bill a company, record what it pays and send receipts. Recording a payment does not move money."
           actions={
             <>
+              <Button asChild variant="outline">
+                <Link to="/crm/accounts-overview"><CalendarRange aria-hidden /> Accounts overview</Link>
+              </Button>
               <Button variant="outline" onClick={exportCsv} disabled={!workspaceId}>
                 <Download aria-hidden /> Export
               </Button>

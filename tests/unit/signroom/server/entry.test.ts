@@ -326,20 +326,108 @@ describe("realSignedIn", () => {
   });
 });
 
-describe("api/signroom: what is left out", () => {
-  it("the email sign-in callback is an ordinary path now: no way round the origin check or the sign-in", async () => {
-    const d = deps({ status: 200, json: {} });
-    const foreign = res();
-    await signroomHandler(d)(
-      req({ headers: { referer: "https://accounts.google.com/", cookie: "sr_mail_oauth=brw123" }, query: { path: "email-connection/callback", state: "S", code: "C" } }),
-      foreign as never,
-    );
-    expect(foreign.statusCode).toBe(403);
-    expect(d.route).not.toHaveBeenCalled();
-    expect(foreign.headers["set-cookie"]).toBeUndefined();
-    expect(foreign.headers.location).toBeUndefined();
+describe("api/signroom: the email sign-in callback and its cookie", () => {
+  const COOKIE_ATTRS = "HttpOnly; Secure; SameSite=Lax; Path=/api/signroom/email-connection/callback";
+  const CONNECTED = "/crm/document-settings?emailConnection=connected";
+  const FAILED = "/crm/document-settings?emailConnection=error";
+  const cb = (over: Record<string, unknown> = {}) =>
+    req({
+      headers: { origin: "https://evil.example", referer: "https://accounts.google.com/", cookie: "a=1; sr_mail_oauth=brw123" },
+      query: { path: "email-connection/callback", state: "STATE-1", code: "CODE-1" },
+      ...over,
+    });
+
+  it("reaches route with no sign-in and no origin check, then 303s with every header", async () => {
+    const seen: any[] = [];
+    const d = deps({ status: 303, redirect: CONNECTED, clearOAuthBrowser: true }, seen);
+    const r = res();
+    await signroomHandler(d)(cb(), r as never);
+    expect(d.signedIn).not.toHaveBeenCalled();
+    expect(seen[0].user).toBeNull();
+    expect(seen[0].oauthBrowser).toBe("brw123");
+    expect(seen[0].query).toEqual({ state: "STATE-1", code: "CODE-1" });
+    expect(seen[0].path).toEqual(["email-connection", "callback"]);
+    // Nothing is built from the provider's referer: the route gets the site's own origin.
+    expect(seen[0].origin).toBe("https://app.example.com");
+    expect(r.statusCode).toBe(303);
+    expect(r.headers.location).toBe(CONNECTED);
+    expect(r.headers["set-cookie"]).toBe(`sr_mail_oauth=; ${COOKIE_ATTRS}; Max-Age=0`);
+    expect(r.headers["referrer-policy"]).toBe("no-referrer");
+    expect(r.headers["cache-control"]).toBe("private, no-store");
   });
 
+  it("is let through before the set-up check too, so a half-configured server still answers a 303", async () => {
+    const d: SignroomDeps = { ...deps({ status: 303, redirect: FAILED, clearOAuthBrowser: true }), setup: () => "Documents are not set up yet." };
+    const r = res();
+    await signroomHandler(d)(cb(), r as never);
+    expect(r.statusCode).toBe(303);
+    expect(r.headers.location).toBe(FAILED);
+  });
+
+  it("a route that throws, or no deps, is 303 error with neither code nor state anywhere", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const d: SignroomDeps = {
+      signedIn: vi.fn() as never,
+      build: () => ({}) as never,
+      route: vi.fn(async () => {
+        throw new Error("STATE-1 CODE-1");
+      }) as never,
+    };
+    const r = res();
+    await signroomHandler(d)(cb(), r as never);
+    expect(r.statusCode).toBe(303);
+    expect(r.headers.location).toBe(FAILED);
+    expect(r.headers.location).not.toMatch(/STATE-1|CODE-1/);
+    expect(r.headers["set-cookie"]).toBe(`sr_mail_oauth=; ${COOKIE_ATTRS}; Max-Age=0`);
+    expect(JSON.stringify(spy.mock.calls)).not.toMatch(/STATE-1|CODE-1|brw123/);
+    const none: SignroomDeps = { signedIn: vi.fn() as never, build: () => null, route: vi.fn() as never };
+    const r2 = res();
+    await signroomHandler(none)(cb(), r2 as never);
+    expect(r2.statusCode).toBe(303);
+    expect(r2.headers.location).toBe(FAILED);
+    spy.mockRestore();
+  });
+
+  it("a route answer that is not a 303 with a redirect never becomes the Location", async () => {
+    const r = res();
+    await signroomHandler(deps({ status: 200, json: { redirect: "https://evil.example" }, redirect: undefined }))(cb(), r as never);
+    expect([r.statusCode, r.headers.location]).toEqual([303, FAILED]);
+  });
+
+  it("authorize sets the cookie with every attribute and no browser in the body", async () => {
+    const r = res();
+    await signroomHandler(deps({ status: 200, json: { url: "https://accounts.google.com/x" }, setOAuthBrowser: "b1" }))(
+      req({ method: "POST", query: { path: "email-connection/authorize" } }),
+      r as never,
+    );
+    expect(r.headers["set-cookie"]).toBe(`sr_mail_oauth=b1; ${COOKIE_ATTRS}; Max-Age=600`);
+    expect(r.body).toEqual({ url: "https://accounts.google.com/x" });
+  });
+
+  it("a foreign POST authorize is still 403 and a foreign POST callback is not exempt", async () => {
+    const d = deps({ status: 200, json: {} });
+    const r = res();
+    await signroomHandler(d)(req({ method: "POST", headers: { origin: "https://evil.example" }, query: { path: "email-connection/authorize" } }), r as never);
+    expect(r.statusCode).toBe(403);
+    const r2 = res();
+    await signroomHandler(d)(req({ method: "POST", headers: { origin: "https://evil.example" }, query: { path: "email-connection/callback" } }), r2 as never);
+    expect(r2.statusCode).toBe(403);
+    expect(d.route).not.toHaveBeenCalled();
+  });
+
+  it("every other email-connection path still needs the site's own origin and a sign-in", async () => {
+    const d = deps({ status: 200, json: {} });
+    const foreign = res();
+    await signroomHandler(d)(req({ headers: { referer: "https://accounts.google.com/" }, query: { path: "email-connection" } }), foreign as never);
+    expect(foreign.statusCode).toBe(403);
+    const longer = res();
+    await signroomHandler(d)(req({ headers: { referer: "https://accounts.google.com/" }, query: { path: "email-connection/callback/x" } }), longer as never);
+    expect(longer.statusCode).toBe(403);
+    expect(d.route).not.toHaveBeenCalled();
+  });
+});
+
+describe("api/signroom: limits", () => {
   it("the config gives the function 300 seconds, and the limits are the documented ones", () => {
     expect(config).toEqual({ maxDuration: 300 });
     expect(MAX_BODY_BYTES).toBe(1_000_000);

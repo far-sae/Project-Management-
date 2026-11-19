@@ -1,9 +1,10 @@
 // An issued invoice: read-only, with its payments, receipts, emails and history.
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Ban, Download, Eye, EyeOff, Loader2, MoreHorizontal, Send, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { balance } from '../../../../api/_signroom/shared/invoiceMath';
-import type { Invoice, Payment } from '../../../../api/_signroom/shared/types';
+import type { Invoice, Payment, ProjectList } from '../../../../api/_signroom/shared/types';
 import { useSignroom } from '@/hooks/useSignroom';
 import {
   billingToday, errorSentence, formatMinor, isOverdue, paidMinor, shortDate, shortDateTime,
@@ -17,23 +18,26 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { DeliveryLog } from '../DeliveryLog';
 import { PdfDialog, PdfFrame } from './PdfFrame';
 import { RecordPaymentDialog, type PaymentInput } from './RecordPaymentDialog';
 import { Card, HEAD_ROW, ROW, TD, TD_DATE, TD_MONEY, TH, TH_RIGHT, savePdf } from './shared';
-import type { DeliveryInfo } from './useBilling';
+import { useServerData, type DeliveryInfo } from './useBilling';
 
 interface Props {
   invoice: Invoice;
   delivery: DeliveryInfo | null;
   /** Open the payment dialog straight away (the list's "Record a payment"). */
   startWithPayment?: boolean;
+  /** The CRM company page, where the invoice's billing plan lives. */
+  companyHref?: string | null;
   onChange: (invoice: Invoice) => void;
   onReload: () => void;
 }
 
 const isStale = (error: unknown): boolean => (error as { status?: number } | null)?.status === 409;
 
-export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPayment, onChange, onReload }) => {
+export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPayment, companyHref, onChange, onReload }) => {
   const { client } = useSignroom();
   const [busy, setBusy] = useState(false);
   const [showPdf, setShowPdf] = useState(false);
@@ -49,6 +53,10 @@ export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPay
   const email = invoice.customer?.email ?? '';
   const money = (minor: number) => formatMinor(minor, invoice.currency);
   const perLineTax = invoice.lines.some((l) => l.taxBps !== undefined);
+
+  // The billing plan this invoice counts towards, when it has one (the server calls a plan a "client project").
+  const plans = useServerData<ProjectList>(invoice.projectId ? `client-projects/${invoice.clientId}` : null);
+  const planName = plans.data?.projects.find((p) => p.id === invoice.projectId)?.name;
 
   useEffect(() => {
     if (startWithPayment && canPay) setPaying(true);
@@ -204,6 +212,16 @@ export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPay
             {invoice.project && (
               <p><span className="text-muted-foreground">Reference: </span>{invoice.project}</p>
             )}
+            {invoice.projectId && (planName ? (
+              <p>
+                <span className="text-muted-foreground">Billing plan: </span>
+                {companyHref
+                  ? <Link to={companyHref} className="font-medium text-foreground underline-offset-4 hover:underline">{planName}</Link>
+                  : <span className="font-medium text-foreground">{planName}</span>}
+              </p>
+            ) : !plans.loading && (
+              <p className="text-muted-foreground">Linked to a billing plan.</p>
+            ))}
             {invoice.notes && <p className="whitespace-pre-wrap break-words text-muted-foreground">{invoice.notes}</p>}
           </div>
           <dl className="ml-auto grid w-full max-w-xs grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-sm" aria-label="Invoice totals">
@@ -271,6 +289,9 @@ export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPay
           </div>
         )}
       </Card>
+
+      {/* Sending adds to the invoice's history, which is the cue to read the list of emails again. */}
+      <DeliveryLog key={`${invoice.sentAt ?? ''}:${invoice.events.length}`} path={`billing/${invoice.id}/deliveries`} />
 
       <Card title="Activity" count={invoice.events.length}>
         {invoice.events.length === 0 ? (
