@@ -134,22 +134,32 @@ export const deleteCompany = async (id: string): Promise<void> => {
   if (error) throw error;
 };
 
+const COMPANY_SEED_COLUMNS = [
+  'website', 'industry', 'phone', 'email', 'address', 'city', 'country', 'company_size', 'annual_revenue',
+] as const;
+
+/** A company to find or create by name, with whatever else is known about it. */
+export type CompanySeed = { name: string } & Partial<Record<(typeof COMPANY_SEED_COLUMNS)[number], unknown>>;
+
 /**
  * Finds the companies with these names in a workspace and creates the ones
  * that are missing, so a lead can be linked to its company by name. Names are
- * compared without regard to capitals or spacing. Returns company ids keyed
- * by `companyKey(name)`.
+ * compared without regard to capitals or spacing. A company that already
+ * exists is left as it is; a new one gets the details passed with its name.
+ * Returns company ids keyed by `companyKey(name)`.
  */
 export const ensureCompaniesByName = async (
   organizationId: string,
   workspaceId: string | null,
-  names: string[],
+  companies: Array<string | CompanySeed>,
   ownerId: string | null,
 ): Promise<Map<string, string>> => {
-  const wanted = new Map<string, string>();
-  for (const raw of names) {
-    const name = raw.replace(/\s+/g, ' ').trim();
-    if (name && !wanted.has(companyKey(name))) wanted.set(companyKey(name), name);
+  // The first mention of a company decides its spelling and its details.
+  const wanted = new Map<string, CompanySeed>();
+  for (const entry of companies) {
+    const seed = typeof entry === 'string' ? { name: entry } : entry;
+    const name = seed.name.replace(/\s+/g, ' ').trim();
+    if (name && !wanted.has(companyKey(name))) wanted.set(companyKey(name), { ...seed, name });
   }
   const ids = new Map<string, string>();
   if (wanted.size === 0) return ids;
@@ -163,12 +173,17 @@ export const ensureCompaniesByName = async (
     if (wanted.has(key) && !ids.has(key)) ids.set(key, row.id);
   }
 
-  const missing = [...wanted].filter(([key]) => !ids.has(key)).map(([, name]) => ({
-    organization_id: organizationId,
-    workspace_id: workspaceId,
-    owner_id: ownerId,
-    name,
-  }));
+  // Every row carries every column, so one company's details never blank another's defaults.
+  const missing = [...wanted].filter(([key]) => !ids.has(key)).map(([, seed]) => {
+    const row: Record<string, unknown> = {
+      organization_id: organizationId,
+      workspace_id: workspaceId,
+      owner_id: ownerId,
+      name: seed.name,
+    };
+    for (const column of COMPANY_SEED_COLUMNS) row[column] = seed[column] ?? null;
+    return row;
+  });
   if (missing.length) {
     const { data: created, error: insertError } = await supabase.from('crm_companies').insert(missing).select('id, name');
     if (insertError) throw insertError;

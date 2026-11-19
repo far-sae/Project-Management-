@@ -92,13 +92,44 @@ describe('Lead import', () => {
     fireEvent.click(screen.getByRole('button', { name: /import 2 leads/i }));
 
     await waitFor(() => expect(h.onImported).toHaveBeenCalled());
-    expect(h.ensure).toHaveBeenCalledWith('o', 'w', ['northwind studio', 'Harbour Dental'], 'u1');
+    expect(h.ensure).toHaveBeenCalledWith('o', 'w', [{ name: 'northwind studio' }, { name: 'Harbour Dental' }], 'u1');
     expect(h.inserted).toHaveLength(1);
     expect(h.inserted[0]!.table).toBe('crm_contacts');
     expect(h.inserted[0]!.rows).toMatchObject([
       { first_name: 'Elena', last_name: 'Rossi', company_id: 'c1', owner_id: 'u1', workspace_id: 'w' },
       { first_name: 'Tom', last_name: 'Okafor', company_id: 'c-new', owner_id: 'u1', workspace_id: 'w' },
     ]);
+  });
+
+  it('lines up a file from the old Clients export and imports each company with its lead', async () => {
+    h.ensure.mockResolvedValue(new Map([['harbour cafe', 'c-cafe']]));
+    render(<CsvImportWizard open onOpenChange={() => {}} resource="contacts" onImported={h.onImported} />);
+    upload([
+      'name,legal_name,industry,category,type,status,website,email,phone,city,tags,account_owner_name,tax_id,notes',
+      'Harbour Cafe,,Hospitality,customer,active,harbourcafe.example,hello@harbourcafe.example,+15551112222,Boston,vip;hot,Sam Example',
+    ].join('\n'));
+
+    await screen.findByText('leads.csv');
+    expect(screen.getByText(/one column out of line/i)).toBeTruthy();
+    expect(screen.getByLabelText('Field for column name').textContent).toContain('Company');
+    expect(screen.getByLabelText('Field for column email').textContent).toContain('Email');
+    expect(screen.getByLabelText('Field for column tags').textContent).toContain('custom field');
+    expect(screen.queryByLabelText('Field for column tax_id')).toBeNull();
+    expect(screen.queryByLabelText('Field for column category')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    fireEvent.click(screen.getByRole('button', { name: /import 1 lead/i }));
+
+    await waitFor(() => expect(h.onImported).toHaveBeenCalled());
+    expect(h.ensure.mock.calls[0]![2]).toEqual([{
+      name: 'Harbour Cafe', website: 'harbourcafe.example', industry: 'Hospitality', city: 'Boston',
+      email: 'hello@harbourcafe.example', phone: '+15551112222',
+    }]);
+    expect(h.inserted[0]!.rows).toMatchObject([{
+      first_name: 'Harbour Cafe', email: 'hello@harbourcafe.example', phone: '+15551112222', company_id: 'c-cafe',
+      lifecycle_stage: 'customer', custom_fields: { tags: 'vip;hot', account_owner_name: 'Sam Example' },
+    }]);
   });
 
   it('asks for a name column when the file has none', async () => {

@@ -42,12 +42,18 @@ function detectDelimiter(text: string): string {
 /** Spreadsheets put this invisible mark at the start of the files they save. */
 const BYTE_ORDER_MARK = 0xfeff;
 
+export interface CsvTable {
+  headers: string[];
+  /** One array of cells per data row, in file order. Rows may be shorter than the headings. */
+  rows: string[][];
+}
+
 /**
- * Reads a spreadsheet export into one object per row, keyed by heading.
+ * Reads a spreadsheet export into its heading row and data rows.
  * Handles what real files contain: a byte-order mark, Windows line ends,
  * semicolon or tab separators, and commas or line breaks inside quotes.
  */
-export function parseCSV(text: string): Record<string, string>[] {
+export function parseCSVTable(text: string): CsvTable {
   const unmarked = text.charCodeAt(0) === BYTE_ORDER_MARK ? text.slice(1) : text;
   const src = unmarked.replace(/\r\n?/g, '\n');
   const delimiter = detectDelimiter(src);
@@ -78,13 +84,22 @@ export function parseCSV(text: string): Record<string, string>[] {
   table.push(record);
 
   const filled = table.filter((cells) => cells.some((c) => c.trim()));
-  if (!filled.length) return [];
-  const headers = filled[0]!.map((h) => h.trim());
-  return filled.slice(1).map((cells) => {
+  if (!filled.length) return { headers: [], rows: [] };
+  return { headers: filled[0]!.map((h) => h.trim()), rows: filled.slice(1) };
+}
+
+/** One object per row, keyed by heading. Cells under an empty heading are dropped. */
+export function tableToRecords(headers: string[], rows: string[][]): Record<string, string>[] {
+  return rows.map((cells) => {
     const obj: Record<string, string> = {};
     headers.forEach((h, i) => {
       if (h) obj[h] = cells[i] ?? '';
     });
     return obj;
   });
+}
+
+export function parseCSV(text: string): Record<string, string>[] {
+  const { headers, rows } = parseCSVTable(text);
+  return tableToRecords(headers, rows);
 }

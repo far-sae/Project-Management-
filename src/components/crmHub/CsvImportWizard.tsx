@@ -3,9 +3,10 @@ import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { supabase } from '@/services/supabase/config';
-import { parseCSV } from '@/lib/csv';
+import { parseCSVTable, tableToRecords } from '@/lib/csv';
 import {
-  CUSTOM, SKIP, autoMapColumns, buildCompanyImport, buildLeadImport, companyKey, importOwners, toCustomKey,
+  CUSTOM, SKIP, autoMapColumns, buildCompanyImport, buildLeadImport, companyKey, importOwners,
+  realignShiftedColumns, toCustomKey,
   type ImportField, type ImportOwnerMode,
 } from '@/lib/crmImport';
 import { listLeadCategories } from '@/services/supabase/crmHub/contacts';
@@ -38,6 +39,13 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'phone', label: 'Phone' },
     { key: 'job_title', label: 'Job title' },
     { key: 'company', label: 'Company' },
+    { key: 'company_website', label: 'Company website' },
+    { key: 'company_industry', label: 'Company industry' },
+    { key: 'company_address', label: 'Company address' },
+    { key: 'company_city', label: 'Company city' },
+    { key: 'company_country', label: 'Company country' },
+    { key: 'company_size', label: 'Company size' },
+    { key: 'company_revenue', label: 'Company revenue' },
     { key: 'source', label: 'Source' },
     { key: 'lifecycle_stage', label: 'Lifecycle stage' },
     { key: 'lead_status', label: 'Lead status' },
@@ -54,11 +62,14 @@ const FIELDS: Record<ImportResource, FieldDef[]> = {
     { key: 'country', label: 'Country' },
     { key: 'company_size', label: 'Company size' },
     { key: 'annual_revenue', label: 'Annual revenue' },
+    { key: 'notes', label: 'Notes' },
   ],
 };
 
 /** A lead needs something to be called by: one of these has to be matched. */
 const LEAD_NAME_SOURCES = ['full_name', 'first_name', 'last_name', 'email', 'company'];
+/** Columns that name a person. Without any, a row is about its company. */
+const LEAD_PERSON_SOURCES = ['full_name', 'first_name', 'last_name'];
 
 const TABLE: Record<ImportResource, string> = {
   contacts: 'crm_contacts',
@@ -102,6 +113,8 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   const [mapping, setMapping] = useState<Record<string, string>>({});
   // For headers mapped to CUSTOM, the name the value is stored under.
   const [customNames, setCustomNames] = useState<Record<string, string>>({});
+  /** What was put right in the file before matching, so the user can check it. */
+  const [repair, setRepair] = useState<{ dropped: string | null; emptyColumns: number }>({ dropped: null, emptyColumns: 0 });
   const [busy, setBusy] = useState(false);
 
   // Choices for the whole file (leads only).
@@ -117,6 +130,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
     setHeaders([]);
     setMapping({});
     setCustomNames({});
+    setRepair({ dropped: null, emptyColumns: 0 });
     setCategoryAll('');
     setCompanyAll('');
     setOwnerMode('me');
@@ -141,13 +155,29 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
       return;
     }
     try {
-      const parsed = parseCSV(await file.text());
-      if (!parsed.length) { toast.error('This file has no rows'); return; }
-      const hs = Object.keys(parsed[0]!);
+      const table = parseCSVTable(await file.text());
+      if (!table.rows.length) { toast.error('This file has no rows'); return; }
+      // Some exports have a heading with no values under it, which pushes
+      // every later value under the wrong heading. Line them up first.
+      const aligned = realignShiftedColumns(table.headers, table.rows);
+      const parsed = tableToRecords(aligned.headers, table.rows);
+      const named = Object.keys(parsed[0]!);
+      // Columns with nothing in them have nothing to import.
+      const hs = named.filter((h) => parsed.some((r) => r[h]?.trim()));
+      // Whatever is not recognised is kept as a custom field, so nothing in the file is lost.
+      const matched = autoMapColumns(hs, fields);
+      const custom: Record<string, string> = {};
+      for (const h of hs) {
+        if (matched[h] !== SKIP) continue;
+        matched[h] = CUSTOM;
+        custom[h] = toCustomKey(h);
+      }
       setRows(parsed);
       setHeaders(hs);
       setFileName(file.name);
-      setMapping(autoMapColumns(hs, fields));
+      setMapping(matched);
+      setCustomNames(custom);
+      setRepair({ dropped: aligned.dropped, emptyColumns: named.length - hs.length });
       setStep(2);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not read the file');
@@ -232,9 +262,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
       if (leadImport) {
         const { leads } = leadImport;
         if (!leads.length) throw new Error('No rows have a name, email or company to call the lead by');
-        const names = leads.flatMap((l) => (l.companyName ? [l.companyName] : []));
-        const ids = names.length
-          ? await ensureCompaniesByName(orgId, workspaceId, names, user?.userId ?? null)
+        const wanted = leads.flatMap((l) => (l.companyName ? [{ name: l.companyName, ...l.companyDetails }] : []));
+        const ids = wanted.length
+          ? await ensureCompaniesByName(orgId, workspaceId, wanted, user?.userId ?? null)
           : new Map<string, string>();
         await insertInBatches(leads.map((l) => ({
           ...l.record,
@@ -327,12 +357,12 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               <p className="font-medium">What a file can hold</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {isLeads
-                  ? 'Name (one column, or first and last apart), Email, Phone, Job title, Company, Source, Category.'
+                  ? 'Name (one column, or first and last apart), Email, Phone, Job title, Company and its details, Source, Category.'
                   : fields.map((f) => f.label + (f.required ? ' *' : '')).join(', ')}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
                 {isLeads && 'Each lead is linked to the company in its row; a company that is not in the CRM yet is added. '}
-                Any other column can be kept as a custom field.
+                Any other column is kept as a custom field.
               </p>
             </div>
           </div>
@@ -357,6 +387,12 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                 </Badge>
               </div>
             </div>
+            {repair.dropped && (
+              <p className="rounded-lg border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-soft-foreground" role="status">
+                This file&apos;s values were one column out of line with their headings: the heading
+                “{repair.dropped}” had no values under it. It was removed and the rest lined up. Check the examples below.
+              </p>
+            )}
             <div className="max-h-[50vh] overflow-auto rounded-lg border border-border">
               <table className="w-full min-w-[36rem] text-left text-sm">
                 <thead>
@@ -403,6 +439,16 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                 </tbody>
               </table>
             </div>
+            {repair.emptyColumns > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {plural(repair.emptyColumns, 'column with nothing in it is', 'columns with nothing in them are')} not shown.
+              </p>
+            )}
+            {isLeads && used.has('company') && !LEAD_PERSON_SOURCES.some((key) => used.has(key)) && (
+              <p className="text-xs text-muted-foreground">
+                This looks like a list of companies. Each row becomes a company and a lead named after it, linked together.
+              </p>
+            )}
             {isLeads && used.has('full_name') && (
               <p className="text-xs text-muted-foreground">
                 A full name is split for you: “Elena Rossi” and “Rossi, Elena” both become first name Elena, last name Rossi.

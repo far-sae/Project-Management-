@@ -16,25 +16,32 @@ const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** Headings that mean exactly this field. */
 const EXACT: Record<string, string[]> = {
-  full_name: ['name', 'fullname', 'contactname', 'leadname', 'customername', 'clientname', 'contact', 'contactperson', 'person'],
+  full_name: ['name', 'fullname', 'contactname', 'leadname', 'customername', 'clientname', 'contact', 'contactperson', 'person', 'primarycontactname', 'primarycontact'],
   first_name: ['firstname', 'first', 'givenname', 'forename', 'fname'],
   last_name: ['lastname', 'last', 'surname', 'familyname', 'lname'],
   email: ['email', 'emailaddress', 'mail', 'emailid'],
   phone: ['phone', 'phonenumber', 'phoneno', 'mobile', 'mobilenumber', 'mobileno', 'tel', 'telephone', 'cell', 'cellphone', 'contactnumber', 'whatsapp'],
-  job_title: ['jobtitle', 'title', 'role', 'position', 'designation'],
+  job_title: ['jobtitle', 'title', 'role', 'position', 'designation', 'primarycontacttitle'],
   company: ['company', 'companyname', 'organisation', 'organization', 'business', 'businessname', 'account', 'accountname', 'employer', 'firm'],
+  company_website: ['website', 'url', 'site', 'web', 'domain'],
+  company_industry: ['industry', 'sector'],
+  company_address: ['address', 'streetaddress', 'addressline1', 'street'],
+  company_city: ['city', 'town'],
+  company_country: ['country'],
+  company_size: ['companysize', 'size', 'employees', 'employeecount', 'numberofemployees', 'headcount', 'teamsize'],
+  company_revenue: ['annualrevenue', 'revenue', 'turnover'],
   source: ['source', 'leadsource', 'origin', 'channel'],
   category: ['category', 'segment', 'bucket', 'tier', 'group'],
-  lifecycle_stage: ['lifecyclestage', 'lifecycle', 'stage'],
+  lifecycle_stage: ['lifecyclestage', 'lifecycle', 'stage', 'type', 'clienttype', 'customertype'],
   lead_status: ['leadstatus', 'status'],
   name: ['name', 'company', 'companyname', 'organisation', 'organization', 'business', 'businessname', 'account', 'accountname'],
   website: ['website', 'url', 'site', 'web', 'domain'],
   industry: ['industry', 'sector'],
-  address: ['address', 'streetaddress'],
+  address: ['address', 'streetaddress', 'addressline1', 'street'],
   city: ['city', 'town'],
   country: ['country'],
-  company_size: ['companysize', 'size', 'employees', 'headcount', 'teamsize'],
   annual_revenue: ['annualrevenue', 'revenue', 'turnover'],
+  notes: ['notes', 'note', 'description', 'comments', 'comment'],
 };
 
 /** Words that suggest a field when no heading matched exactly. */
@@ -46,6 +53,12 @@ const LOOSE: Record<string, string[]> = {
   phone: ['phone', 'mobile', 'telephone', 'whatsapp'],
   job_title: ['jobtitle', 'title', 'position', 'designation'],
   company: ['company', 'organisation', 'organization', 'business', 'employer'],
+  company_website: ['website', 'url'],
+  company_industry: ['industry', 'sector'],
+  company_address: ['address'],
+  company_city: ['city', 'town'],
+  company_country: ['country'],
+  company_revenue: ['revenue', 'turnover'],
   source: ['source'],
   category: ['category', 'segment'],
   lifecycle_stage: ['lifecycle'],
@@ -56,12 +69,18 @@ const LOOSE: Record<string, string[]> = {
   address: ['address'],
   city: ['city', 'town'],
   country: ['country'],
-  company_size: ['size', 'employees', 'headcount'],
+  company_size: ['size', 'employee', 'headcount'],
   annual_revenue: ['revenue', 'turnover'],
 };
 
 /** "Company website" is about the company, but it is not the company's name. */
 const NOT_A_NAME = ['website', 'url', 'email', 'mail', 'phone', 'tel', 'size', 'revenue', 'address', 'city', 'country', 'industry'];
+
+/** Headings that only a list of companies has. Two of them make "name" the company's name. */
+const COMPANY_FILE_SIGNS = [
+  'legalname', 'industry', 'website', 'annualrevenue', 'employeecount', 'companysize', 'taxid',
+  'accountnumber', 'primarycontactname',
+];
 
 /**
  * Picks a field for every column heading. Exact headings win over loose ones
@@ -84,6 +103,19 @@ export function autoMapColumns(headers: string[], fields: ImportField[]): Record
       }
     }
   };
+
+  // In a list of companies imported as leads, "name" is the company, not a person.
+  const has = (key: string) => fields.some((f) => f.key === key);
+  if (has('company') && has('full_name')) {
+    const headings = headers.map(norm);
+    const nameAt = headings.indexOf('name');
+    const companyColumn = headings.some((h) => EXACT.company!.includes(h));
+    const signs = headings.filter((h) => COMPANY_FILE_SIGNS.includes(h)).length;
+    if (nameAt !== -1 && !companyColumn && signs >= 2) {
+      mapping[headers[nameAt]!] = 'company';
+      taken.add('company');
+    }
+  }
 
   claim((heading, f) => heading === norm(f.key) || heading === norm(f.label) || (EXACT[f.key] ?? []).includes(heading));
   claim((heading, f) => {
@@ -171,7 +203,26 @@ export interface LeadImportRow {
   /** Ready to insert, except `company_id`, which is filled once the company exists. */
   record: Record<string, unknown>;
   companyName: string | null;
+  /** What the file says about the company, by company column. Used when the company is created. */
+  companyDetails: Record<string, unknown>;
 }
+
+/** Lead-import fields that describe the lead's company, and the company column each fills. */
+const COMPANY_DETAIL_COLUMNS: Array<[field: string, column: string]> = [
+  ['company_website', 'website'],
+  ['company_industry', 'industry'],
+  ['company_address', 'address'],
+  ['company_city', 'city'],
+  ['company_country', 'country'],
+  ['company_size', 'company_size'],
+];
+
+/** "£1,200,000" → 1200000. Null when there is no number in it. */
+const parseAmount = (raw: string | undefined): number | null => {
+  if (!raw) return null;
+  const n = Number(raw.replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) && /\d/.test(raw) ? n : null;
+};
 
 /**
  * Turns file rows into leads. Every record has the same columns: a batch with
@@ -202,13 +253,27 @@ export function buildLeadImport(
       lastName = null;
     }
     const companyName = values.company || opts.company?.trim() || null;
-    if (!firstName) firstName = values.email?.split('@')[0] || companyName || '';
+    // A row with no person in it is about the company itself: the lead takes
+    // the company's name, and its email and phone are the company's too.
+    const aboutTheCompany = !firstName && companyName !== null;
+    if (!firstName) firstName = companyName || values.email?.split('@')[0] || '';
     if (!firstName) {
       skipped += 1;
       continue;
     }
+    const companyDetails: Record<string, unknown> = {};
+    for (const [field, column] of COMPANY_DETAIL_COLUMNS) {
+      if (values[field]) companyDetails[column] = values[field];
+    }
+    const revenue = parseAmount(values.company_revenue);
+    if (revenue !== null) companyDetails.annual_revenue = revenue;
+    if (aboutTheCompany) {
+      if (values.email) companyDetails.email = values.email;
+      if (values.phone) companyDetails.phone = values.phone;
+    }
     leads.push({
       companyName,
+      companyDetails,
       record: {
         organization_id: opts.organizationId,
         workspace_id: opts.workspaceId,
@@ -230,7 +295,7 @@ export function buildLeadImport(
   return { leads, skipped };
 }
 
-const COMPANY_TEXT_COLUMNS = ['website', 'industry', 'phone', 'email', 'address', 'city', 'country', 'company_size'] as const;
+const COMPANY_TEXT_COLUMNS = ['website', 'industry', 'phone', 'email', 'address', 'city', 'country', 'company_size', 'notes'] as const;
 
 export function buildCompanyImport(
   rows: Row[],
@@ -246,17 +311,88 @@ export function buildCompanyImport(
       skipped += 1;
       continue;
     }
-    const revenue = values.annual_revenue ? Number(values.annual_revenue.replace(/[^\d.-]/g, '')) : NaN;
     const record: Record<string, unknown> = {
       organization_id: opts.organizationId,
       workspace_id: opts.workspaceId,
       owner_id: opts.ownerId,
       name: values.name,
-      annual_revenue: Number.isFinite(revenue) ? revenue : null,
+      annual_revenue: parseAmount(values.annual_revenue),
       custom_fields: custom,
     };
     for (const column of COMPANY_TEXT_COLUMNS) record[column] = values[column] ?? null;
     records.push(record);
   }
   return { records, skipped };
+}
+
+// ── Files whose values are out of line with their headings ──────────────────
+
+const STATUS_WORDS = new Set(['active', 'inactive', 'archived', 'paused', 'churned', 'closed', 'open', 'new']);
+const TYPE_WORDS = new Set(['customer', 'client', 'prospect', 'lead', 'partner', 'vendor', 'supplier', 'reseller', 'competitor', 'other']);
+
+/** Values that can be recognised on sight. A strong check is enough to prove a column is misplaced. */
+const VALUE_CHECKS: Array<{ strong: boolean; applies: (heading: string) => boolean; ok: (value: string) => boolean }> = [
+  { strong: true, applies: (h) => h.endsWith('email'), ok: (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) },
+  {
+    strong: true,
+    applies: (h) => h.endsWith('website') || h.endsWith('url'),
+    ok: (v) => !v.includes('@') && /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(v),
+  },
+  { strong: true, applies: (h) => h.endsWith('phone') || h === 'mobile', ok: (v) => /^[+(]?\d[\d\s().-]{5,}$/.test(v) },
+  { strong: false, applies: (h) => h === 'status', ok: (v) => STATUS_WORDS.has(v.toLowerCase()) },
+  { strong: false, applies: (h) => h === 'type', ok: (v) => TYPE_WORDS.has(v.toLowerCase()) },
+];
+
+function fitOf(headers: string[], rows: string[][]) {
+  let strongOk = 0;
+  let strongBad = 0;
+  let weakOk = 0;
+  headers.forEach((header, i) => {
+    const check = VALUE_CHECKS.find((c) => c.applies(norm(header)));
+    if (!check) return;
+    for (const cells of rows) {
+      const value = cells[i]?.trim();
+      if (!value) continue;
+      const ok = check.ok(value);
+      if (check.strong) {
+        if (ok) strongOk += 1;
+        else strongBad += 1;
+      } else if (ok) weakOk += 1;
+    }
+  });
+  return { strongOk, strongBad, weakOk };
+}
+
+/**
+ * Repairs a file whose heading row has one heading more than its rows have
+ * values, so that every value after it sits one column to the left of its
+ * heading (emails under "website", phone numbers under "email"). The export of
+ * the old Clients module wrote files like that. The heading with no values is
+ * dropped and the rest line up again.
+ *
+ * It only acts when emails, websites and phone numbers are plainly under the
+ * wrong headings and dropping one heading puts every one of them right.
+ */
+export function realignShiftedColumns(
+  headers: string[],
+  rows: string[][],
+): { headers: string[]; dropped: string | null } {
+  const unchanged = { headers, dropped: null };
+  if (!rows.length || rows.some((cells) => cells.length >= headers.length)) return unchanged;
+  const before = fitOf(headers, rows);
+  if (before.strongBad === 0 || before.strongBad <= before.strongOk) return unchanged;
+
+  let best: { at: number; strongOk: number; weakOk: number } | null = null;
+  for (let at = 0; at < headers.length; at++) {
+    const candidate = headers.filter((_, i) => i !== at);
+    const fit = fitOf(candidate, rows);
+    if (fit.strongBad > 0 || fit.strongOk <= before.strongOk) continue;
+    // On a tie the later heading wins: it leaves the most columns where they were.
+    if (!best || fit.strongOk > best.strongOk || (fit.strongOk === best.strongOk && fit.weakOk >= best.weakOk)) {
+      best = { at, strongOk: fit.strongOk, weakOk: fit.weakOk };
+    }
+  }
+  if (!best) return unchanged;
+  const at = best.at;
+  return { headers: headers.filter((_, i) => i !== at), dropped: headers[at]! };
 }
