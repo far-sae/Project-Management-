@@ -93,6 +93,36 @@ describe('TeamAttendance', () => {
     expect(within(ana).getByText('Not clocked in')).toBeTruthy();
   });
 
+  it('lists and counts only the people in the selected workspace', () => {
+    const start = clockedInToday();
+    h.entries = [
+      {
+        entryId: 'e1', organizationId: 'o1', userId: 'ana',
+        clockedInAt: start, clockedOutAt: null, durationSeconds: null,
+        createdAt: start, updatedAt: start,
+      },
+      {
+        entryId: 'e2', organizationId: 'o1', userId: 'ben',
+        clockedInAt: start, clockedOutAt: null, durationSeconds: null,
+        createdAt: start, updatedAt: start,
+      },
+    ];
+    // Only Ben is in the workspace: Ana's clock-in is not shown or counted.
+    render(<TeamAttendance inScope={(userId) => userId === 'ben'} />);
+    expect(screen.getByText('Ben')).toBeTruthy();
+    expect(screen.queryByText('Ana')).toBeNull();
+    expect(screen.getByText('1 / 1')).toBeTruthy();
+    expect(screen.getByText('On the clock now').nextElementSibling?.textContent).toBe('1');
+  });
+
+  it('says when the selected workspace has nobody in it', () => {
+    h.entries = [];
+    render(<TeamAttendance inScope={() => false} emptyTitle="Nobody is in Studio yet." />);
+    expect(screen.getByText('Nobody is in Studio yet.')).toBeTruthy();
+    expect(screen.queryByText('People show up here once they join your organization.')).toBeNull();
+    expect(screen.getByText('0 / 0')).toBeTruthy();
+  });
+
   it('steps through days with one joined control, and Today only shows on another day', () => {
     h.entries = [];
     render(<TeamAttendance />);

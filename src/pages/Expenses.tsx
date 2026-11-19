@@ -22,7 +22,9 @@ import {
   Plus, Loader2, Paperclip, FileText, Check, X, Trash2, Edit,
   ExternalLink, Filter,
 } from 'lucide-react';
+import { HrScopeLine } from '@/components/hr/HrScopeLine';
 import { useExpenses } from '@/hooks/useExpenses';
+import { useHrWorkspacePeople } from '@/hooks/useHrWorkspacePeople';
 import { useAuth } from '@/context/AuthContext';
 import { useOrgCurrency } from '@/hooks/useOrgCurrency';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
@@ -150,10 +152,22 @@ export const Expenses: React.FC<{
     return tasks.filter((t) => t.projectId === form.projectId);
   }, [tasks, form.projectId]);
 
+  // "All expenses" follows the workspace picked in the sidebar: only the
+  // people in it are listed and totalled. "My expenses" is the person's own
+  // and always shows.
+  const hrScope = useHrWorkspacePeople();
+  const { inScope } = hrScope;
+  const teamIsScoped = hrScope.scopedUserIds !== null;
+  // A workspace is selected but who is in it is not known yet.
+  const teamWaiting = tab === 'all' && hrScope.waiting;
+
   const visible = useMemo(() => {
+    if (teamWaiting) return [];
     let list = tab === 'me'
       ? expenses.filter((e) => e.userId === user?.userId)
-      : expenses;
+      : teamIsScoped
+        ? expenses.filter((e) => inScope(e.userId))
+        : expenses;
     if (statusFilter !== 'all') {
       list = list.filter(
         (e) => e.status === statusFilter || recentlyActed.has(e.expenseId),
@@ -161,7 +175,7 @@ export const Expenses: React.FC<{
     }
     list = list.filter((e) => inRange(e.incurredOn, dateRange));
     return list;
-  }, [expenses, tab, statusFilter, user?.userId, dateRange, recentlyActed]);
+  }, [expenses, tab, statusFilter, user?.userId, dateRange, recentlyActed, teamWaiting, teamIsScoped, inScope]);
 
   // Group totals by the *resolved display currency*, not the raw stored
   // currency. Expenses entered before the org's preferred currency was set
@@ -470,10 +484,12 @@ export const Expenses: React.FC<{
             </div>
           </div>
 
+          {tab === 'all' && <HrScopeLine scope={hrScope} />}
+
           {/* List */}
-          {loading ? (
+          {loading || teamWaiting ? (
             <div className="flex items-center justify-center py-10">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" aria-label="Loading expenses" />
             </div>
           ) : visible.length === 0 ? (
             <Card>

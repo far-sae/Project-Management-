@@ -17,7 +17,9 @@ import {
   PlayCircle, StopCircle, Loader2, Edit, Trash2, Lock, ShieldAlert,
   Timer,
 } from 'lucide-react';
+import { HrScopeLine } from '@/components/hr/HrScopeLine';
 import { useTimeTracking } from '@/hooks/useTimeTracking';
+import { useHrWorkspacePeople } from '@/hooks/useHrWorkspacePeople';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { TimeEntry, formatDurationSeconds, type UpdateTimeEntryInput } from '@/services/supabase/timeEntries';
@@ -67,9 +69,19 @@ export const TimeTracking: React.FC<{
     () => ownEntries.filter((e) => inRange(e.clockedInAt, dateRange)),
     [ownEntries, dateRange],
   );
+  // The team view follows the workspace picked in the sidebar: only the
+  // people in it are listed and totalled. "My hours" is the person's own time
+  // and always shows.
+  const hrScope = useHrWorkspacePeople();
+  const { inScope } = hrScope;
+  const teamIsScoped = hrScope.scopedUserIds !== null;
+  const teamEntries = useMemo(
+    () => (teamIsScoped ? entries.filter((e) => inScope(e.userId)) : entries),
+    [entries, teamIsScoped, inScope],
+  );
   const filteredEntries = useMemo(
-    () => entries.filter((e) => inRange(e.clockedInAt, dateRange)),
-    [entries, dateRange],
+    () => teamEntries.filter((e) => inRange(e.clockedInAt, dateRange)),
+    [teamEntries, dateRange],
   );
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [editForm, setEditForm] = useState({
@@ -372,6 +384,13 @@ export const TimeTracking: React.FC<{
 
             {canViewAll && (
               <TabsContent value="team" className="mt-4 space-y-4">
+                <HrScopeLine scope={hrScope} />
+                {hrScope.waiting ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading team hours" />
+                  </div>
+                ) : (
+                <>
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">Totals by member</CardTitle>
@@ -401,7 +420,7 @@ export const TimeTracking: React.FC<{
                                 </p>
                               )}
                             </div>
-                            <span className="text-sm font-mono">
+                            <span className="text-sm font-mono tabular-nums">
                               {formatDurationSeconds(m.total)}
                             </span>
                           </li>
@@ -424,7 +443,7 @@ export const TimeTracking: React.FC<{
                   <CardContent className="p-0">
                     {filteredEntries.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-6">
-                        {entries.length === 0
+                        {teamEntries.length === 0
                           ? 'No entries yet.'
                           : 'No entries in this date range.'}
                       </p>
@@ -446,6 +465,8 @@ export const TimeTracking: React.FC<{
                     )}
                   </CardContent>
                 </Card>
+                </>
+                )}
               </TabsContent>
             )}
           </Tabs>

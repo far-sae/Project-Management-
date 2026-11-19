@@ -19,14 +19,19 @@ export interface HrOverviewTabProps {
   docs: UseEmployeeDocuments;
   /** Jump to another HR tab (e.g. "Review" on pending leave). */
   onOpenTab: (tab: HrTab) => void;
+  /**
+   * Set when a workspace is selected: `people`, `leave` and `docs` are already
+   * limited to it, and this limits the clock-in figures the same way.
+   */
+  inScope?: (userId: string) => boolean;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** HR at a glance: figures on top, then boxes for what needs attention. */
-export const HrOverviewTab: React.FC<HrOverviewTabProps> = ({ people, leave, docs, onOpenTab }) => {
+export const HrOverviewTab: React.FC<HrOverviewTabProps> = ({ people, leave, docs, onOpenTab, inScope }) => {
   const today = todayYmd();
-  const onClock = useOnClock(people);
+  const onClock = useOnClock(people, inScope);
   const peopleById = useMemo(() => new Map(people.map((p) => [p.userId, p])), [people]);
 
   // Until the database update has been run there is no leave or document

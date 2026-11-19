@@ -15,11 +15,13 @@ import { AppHeader } from '@/components/layout/AppHeader';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatStrip } from '@/components/common/StatStrip';
 import { StatusPill } from '@/components/common/StatusPill';
+import { HrScopeLine } from '@/components/hr/HrScopeLine';
 import { usePayrollRuns, usePayrollRunDetail } from '@/hooks/usePayroll';
 import { useEmployees } from '@/hooks/useEmployees';
 import { useFormatMoney } from '@/hooks/useFormatMoney';
+import { useHrWorkspacePeople } from '@/hooks/useHrWorkspacePeople';
 import {
-  PayrollItem, PayrollRun, PayrollStatus,
+  PayrollItem, PayrollRun, PayrollStatus, computeRunTotals, getPayrollRun,
 } from '@/services/supabase/payroll';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -41,6 +43,8 @@ const NewRunDialog: React.FC<{
 }> = ({ open, onOpenChange, onCreated }) => {
   const { create } = usePayrollRuns();
   const { profiles } = useEmployees();
+  // A run is one record for the whole company, whichever workspace is showing.
+  const showingPartOfCompany = useHrWorkspacePeople().scopedUserIds !== null;
   const [periodStart, setPeriodStart] = useState(daysAgoIso(13));
   const [periodEnd, setPeriodEnd] = useState(todayIso());
   const [payDate, setPayDate] = useState('');
@@ -85,6 +89,8 @@ const NewRunDialog: React.FC<{
           <DialogDescription>
             We'll pull clocked time and approved expense reimbursements from
             this date range to build a draft payslip per employee.
+            {showingPartOfCompany &&
+              ' A run covers the whole company, not only the people showing.'}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
@@ -173,7 +179,18 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
   // renders (React #310 fired when this lived after the loading guard).
   const [confirmUnmark, setConfirmUnmark] = useState(false);
 
-  if (loading || !run) {
+  // A run is one record for the whole company. With a workspace selected only
+  // its people's payslips show, and the totals are worked out from those.
+  const hrScope = useHrWorkspacePeople();
+  const { inScope } = hrScope;
+  const scoped = hrScope.scopedUserIds !== null;
+  const shownItems = useMemo(
+    () => (scoped ? items.filter((i) => inScope(i.userId)) : items),
+    [scoped, items, inScope],
+  );
+  const shownTotals = useMemo(() => (scoped ? computeRunTotals(shownItems) : null), [scoped, shownItems]);
+
+  if (loading || !run || hrScope.waiting) {
     return (
       <div className="flex items-center justify-center py-10">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading payroll run" />
@@ -182,6 +199,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
   }
 
   const totalsCurrency = run.currency || 'USD';
+  const totals = shownTotals ?? run;
 
   const openEdit = (item: PayrollItem) => {
     setEditing(item);
@@ -325,14 +343,21 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
       </div>
 
       {/* Totals */}
-      <StatStrip
-        items={[
-          { label: 'Gross', value: fmt(run.totalGross, totalsCurrency) },
-          { label: 'Reimbursements', value: fmt(run.totalReimbursement, totalsCurrency) },
-          { label: 'Deductions', value: fmt(run.totalDeduction, totalsCurrency) },
-          { label: 'Net pay', value: fmt(run.totalNet, totalsCurrency) },
-        ]}
-      />
+      <div className="flex flex-col gap-2">
+        <StatStrip
+          items={[
+            { label: 'Gross', value: fmt(totals.totalGross, totalsCurrency) },
+            { label: 'Reimbursements', value: fmt(totals.totalReimbursement, totalsCurrency) },
+            { label: 'Deductions', value: fmt(totals.totalDeduction, totalsCurrency) },
+            { label: 'Net pay', value: fmt(totals.totalNet, totalsCurrency) },
+          ]}
+        />
+        {scoped && hrScope.figureNote && (
+          <p className="text-xs text-muted-foreground">
+            {hrScope.figureNote}. Finalizing, marking as paid or deleting applies to the whole run.
+          </p>
+        )}
+      </div>
 
       {/* Items table */}
       <div className="overflow-hidden rounded-lg border border-border">
@@ -341,6 +366,14 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
             <Wallet className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
             <p className="text-sm font-medium">No payslips on this run.</p>
             <p className="text-xs text-muted-foreground">Add employees in HR and recreate.</p>
+          </div>
+        ) : shownItems.length === 0 ? (
+          <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
+            <Wallet className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+            <p className="text-sm font-medium">Nobody here is on this run.</p>
+            <p className="text-xs text-muted-foreground">
+              Its payslips are for people in other workspaces. Switch to All workspaces to see them.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -360,7 +393,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
                 </tr>
               </thead>
               <tbody>
-                {items.map((i) => (
+                {shownItems.map((i) => (
                   <tr
                     key={i.itemId}
                     className="h-12 border-b border-border/60 transition-colors last:border-0 hover:bg-surface-2"
@@ -600,10 +633,37 @@ export const Payroll: React.FC<{
   /** Rendered inside another page (the HR tabs): no page header bar of its own. */
   embedded?: boolean;
 }> = ({ embedded = false }) => {
-  const { runs, loading, canView, canCreate } = usePayrollRuns();
+  const { organizationId, runs, loading, canView, canCreate } = usePayrollRuns();
   const fmt = useFormatMoney();
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+
+  // With a workspace selected, a run's net pay in the list is the net pay of
+  // that workspace's people. The saved total on a run is for the whole
+  // company, so the payslips are read to work it out.
+  const hrScope = useHrWorkspacePeople();
+  const { inScope } = hrScope;
+  const scoped = hrScope.scopedUserIds !== null;
+  const [itemsByRun, setItemsByRun] = useState<Map<string, PayrollItem[]>>(() => new Map());
+  useEffect(() => {
+    if (!scoped || !canView || !organizationId) return;
+    let cancelled = false;
+    void Promise.all(
+      runs.map(async (r) => [r.runId, (await getPayrollRun(organizationId, r.runId)).items] as const),
+    ).then((pairs) => {
+      if (!cancelled) setItemsByRun(new Map(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [scoped, canView, organizationId, runs]);
+
+  /** Net pay to show for a run; `null` while the workspace's share is being worked out. */
+  const netFor = (r: PayrollRun): number | null => {
+    if (!scoped) return r.totalNet;
+    const items = itemsByRun.get(r.runId);
+    return items ? computeRunTotals(items.filter((i) => inScope(i.userId))).totalNet : null;
+  };
 
   // Allow ?run= deep-link
   useEffect(() => {
@@ -620,7 +680,9 @@ export const Payroll: React.FC<{
     [runs],
   );
 
-  const renderRunRow = (r: PayrollRun) => (
+  const renderRunRow = (r: PayrollRun) => {
+    const net = netFor(r);
+    return (
     <li key={r.runId} className="border-b border-border/60 last:border-0">
       <button
         type="button"
@@ -643,12 +705,13 @@ export const Payroll: React.FC<{
         <div className="shrink-0 text-right">
           <div className="text-xs font-medium text-muted-foreground">Net</div>
           <div className="font-semibold tabular-nums">
-            {fmt(r.totalNet, r.currency)}
+            {net === null ? <span className="text-muted-foreground">—</span> : fmt(net, r.currency)}
           </div>
         </div>
       </button>
     </li>
-  );
+    );
+  };
 
   const body = (
     <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
@@ -675,8 +738,19 @@ export const Payroll: React.FC<{
             }
           />
 
+          {(hrScope.label || hrScope.error) && (
+            <div className="-mt-3 flex flex-col gap-0.5">
+              <HrScopeLine scope={hrScope} />
+              {scoped && (
+                <p className="text-xs text-muted-foreground">
+                  Each run covers the whole company. Net pay here is for the people showing.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="overflow-hidden rounded-lg border border-border">
-            {loading ? (
+            {loading || hrScope.waiting ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading payroll runs" />
               </div>

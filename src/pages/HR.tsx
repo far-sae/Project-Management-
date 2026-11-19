@@ -26,9 +26,14 @@ import { TeamAttendance } from '@/components/hr/TeamAttendance';
 import { HrOverviewTab } from '@/components/hr/HrOverviewTab';
 import { HrLeaveTab } from '@/components/hr/HrLeaveTab';
 import { HrDocumentsTab } from '@/components/hr/HrDocumentsTab';
+import { errorText } from '@/components/hr/overview/errorText';
+import { HrScopeLine } from '@/components/hr/HrScopeLine';
+import { HrUnassignedNotice } from '@/components/hr/HrUnassignedNotice';
 import { HR_TABS, isHrTab, type HrPerson, type HrTab } from '@/components/hr/types';
-import { useLeave } from '@/hooks/useLeave';
-import { useEmployeeDocuments } from '@/hooks/useEmployeeDocuments';
+import { useLeave, type UseLeave } from '@/hooks/useLeave';
+import { useEmployeeDocuments, type UseEmployeeDocuments } from '@/hooks/useEmployeeDocuments';
+import { HrWorkspacePeopleContext, useHrWorkspacePeople } from '@/hooks/useHrWorkspacePeople';
+import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { Payroll } from '@/pages/Payroll';
 import { Expenses } from '@/pages/Expenses';
 import {
@@ -133,6 +138,9 @@ const fromProfile = (p: EmployeeProfile): FormState => ({
 const TAB_BODY = 'flex w-full flex-col gap-6 px-4 py-6 lg:px-6';
 const TAB_PANEL = 'mt-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden';
 
+/** Value of "No workspace" in the Workspace select (a Select item cannot be empty). */
+const NO_WORKSPACE = 'none';
+
 export const HR: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
@@ -142,6 +150,11 @@ export const HR: React.FC = () => {
   const fmt = useFormatMoney();
   const leave = useLeave();
   const docs = useEmployeeDocuments();
+  // HR follows the workspace picked in the sidebar: every list below is
+  // filtered to the people in it. Before migration 185 nothing is filtered.
+  const { selectedId, selected: selectedWorkspace, workspaces } = useSelectedWorkspace();
+  const hrScope = useHrWorkspacePeople();
+  const { inScope } = hrScope;
 
   // The open tab lives in the address (?tab=leave) so it can be linked to.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -212,14 +225,98 @@ export const HR: React.FC = () => {
     return list;
   }, [organization?.members, profilesByUserId, canView, user?.userId]);
 
+  // Someone who is not an owner or admin only ever sees their own record, so
+  // for them there is nothing to split by workspace.
+  const scoped = canView && hrScope.scopedUserIds !== null;
+  // A workspace is selected but who is in it is not known yet.
+  const waiting = canView && hrScope.waiting;
+
+  // The people in the selected workspace: what every tab lists and counts.
+  const scopedDirectory = useMemo(
+    () => (scoped ? directory.filter((entry) => inScope(entry.userId)) : directory),
+    [scoped, directory, inScope],
+  );
+
+  // People with no workspace yet show only under "Unassigned" and "All
+  // workspaces", so with a workspace selected HR points them out.
+  const unassignedIds = useMemo(
+    () => new Set(hrScope.unassigned.map((m) => m.userId)),
+    [hrScope.unassigned],
+  );
+  const showUnassignedNotice =
+    canView && hrScope.available && !!selectedWorkspace && unassignedIds.size > 0;
+  // "Review" lists just those people on the People tab. It is remembered per
+  // workspace, and ends by itself once everyone has one.
+  const [reviewFor, setReviewFor] = useState<string | null>(null);
+  const reviewing = showUnassignedNotice && reviewFor === selectedId;
+  const [addingAll, setAddingAll] = useState(false);
+
+  const listedDirectory = useMemo(
+    () => (reviewing ? directory.filter((entry) => unassignedIds.has(entry.userId)) : scopedDirectory),
+    [reviewing, directory, unassignedIds, scopedDirectory],
+  );
+
   const visibleDirectory = useMemo(() => {
-    if (dateRange.preset === 'all') return directory;
-    return directory.filter((entry) =>
+    if (dateRange.preset === 'all') return listedDirectory;
+    return listedDirectory.filter((entry) =>
       entry.profile?.hireDate
         ? inRange(entry.profile.hireDate, dateRange)
         : false,
     );
-  }, [directory, dateRange]);
+  }, [listedDirectory, dateRange]);
+
+  // Leave and documents of the people in the selected workspace. Public
+  // holidays belong to the whole company and stay as they are.
+  const scopedRequests = useMemo(
+    () => (scoped ? leave.requests.filter((r) => inScope(r.userId)) : leave.requests),
+    [scoped, leave.requests, inScope],
+  );
+  const scopedAllowances = useMemo(
+    () => (scoped ? leave.allowances.filter((a) => inScope(a.userId)) : leave.allowances),
+    [scoped, leave.allowances, inScope],
+  );
+  const scopedDocuments = useMemo(
+    () => (scoped ? docs.documents.filter((d) => inScope(d.userId)) : docs.documents),
+    [scoped, docs.documents, inScope],
+  );
+  const scopedLeave: UseLeave = { ...leave, requests: scopedRequests, allowances: scopedAllowances };
+  const scopedDocs: UseEmployeeDocuments = { ...docs, documents: scopedDocuments };
+
+  /** What an empty list says when the selected workspace has nobody in it. */
+  const nobodyHere = selectedWorkspace
+    ? `Nobody is in ${selectedWorkspace.name} yet.`
+    : 'Everyone is in a workspace.';
+
+  const workspaceName = (workspaceId: string | null) =>
+    workspaces.find((w) => w.workspaceId === workspaceId)?.name ?? null;
+
+  const addAllToSelected = async () => {
+    if (!selectedWorkspace) return;
+    setAddingAll(true);
+    try {
+      const added = await hrScope.assignAllUnassignedToSelected();
+      if (added > 0) {
+        toast.success(`${added} ${added === 1 ? 'person' : 'people'} added to ${selectedWorkspace.name}`);
+      }
+    } catch (e) {
+      toast.error(errorText(e, 'Could not add them. Try again.'));
+    } finally {
+      setAddingAll(false);
+    }
+  };
+
+  const changeWorkspace = async (entry: { userId: string; displayName: string }, value: string) => {
+    const workspaceId = value === NO_WORKSPACE ? null : value;
+    try {
+      await hrScope.assign(entry.userId, workspaceId);
+      const name = workspaceName(workspaceId);
+      toast.success(
+        name ? `${entry.displayName} moved to ${name}` : `${entry.displayName} is no longer in a workspace`,
+      );
+    } catch (e) {
+      toast.error(errorText(e, 'Could not change the workspace. Try again.'));
+    }
+  };
 
   const openEdit = (entry: typeof directory[number]) => {
     if (!canManage) {
@@ -277,13 +374,46 @@ export const HR: React.FC = () => {
     }
   };
 
-  // Everyone in the organization, for the tabs that list people.
-  const people: HrPerson[] = directory;
+  // The people in the selected workspace, for the tabs that list people.
+  const people: HrPerson[] = scopedDirectory;
+
+  // Showing the whole company's figures under a workspace's name would be
+  // wrong, so every tab waits until it is known who is in the workspace.
+  const tabBody = (content: React.ReactNode) =>
+    waiting ? (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading HR" />
+      </div>
+    ) : (
+      content
+    );
 
   return (
-    <>
+    <HrWorkspacePeopleContext.Provider value={hrScope}>
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        <AppHeader left={<span className="text-sm font-semibold">HR</span>} />
+        <AppHeader
+          left={
+            <div className="flex min-w-0 flex-col">
+              <span className="text-sm font-semibold">HR</span>
+              {canView && <HrScopeLine scope={hrScope} />}
+            </div>
+          }
+        />
+        {showUnassignedNotice && selectedWorkspace && (
+          <div className="shrink-0 px-4 pt-4 lg:px-6">
+            <HrUnassignedNotice
+              count={unassignedIds.size}
+              workspaceName={selectedWorkspace.name}
+              canAssign={hrScope.canAssign}
+              busy={addingAll}
+              onAddAll={() => void addAllToSelected()}
+              onReview={() => {
+                setReviewFor(selectedId);
+                openTab('people');
+              }}
+            />
+          </div>
+        )}
         <Tabs value={activeTab} onValueChange={openTab} className="flex min-h-0 flex-1 flex-col">
           <div className="shrink-0 overflow-x-auto border-b border-border px-4 lg:px-6">
             <TabsList className="border-b-0">
@@ -297,26 +427,36 @@ export const HR: React.FC = () => {
 
           <TabsContent value="overview" className={TAB_PANEL}>
             <div className={TAB_BODY}>
-              <HrOverviewTab people={people} leave={leave} docs={docs} onOpenTab={openTab} />
+              {tabBody(
+                <HrOverviewTab
+                  people={people}
+                  leave={scopedLeave}
+                  docs={scopedDocs}
+                  onOpenTab={openTab}
+                  inScope={scoped ? inScope : undefined}
+                />,
+              )}
             </div>
           </TabsContent>
 
           <TabsContent value="attendance" className={TAB_PANEL}>
             <div className={TAB_BODY}>
-              <TeamAttendance leaveRequests={leave.requests} />
+              {tabBody(
+                <TeamAttendance
+                  leaveRequests={scopedRequests}
+                  inScope={scoped ? inScope : undefined}
+                  emptyTitle={scoped ? nobodyHere : undefined}
+                />,
+              )}
             </div>
           </TabsContent>
 
           <TabsContent value="leave" className={TAB_PANEL}>
-            <div className={TAB_BODY}>
-              <HrLeaveTab people={people} leave={leave} />
-            </div>
+            <div className={TAB_BODY}>{tabBody(<HrLeaveTab people={people} leave={scopedLeave} />)}</div>
           </TabsContent>
 
           <TabsContent value="documents" className={TAB_PANEL}>
-            <div className={TAB_BODY}>
-              <HrDocumentsTab people={people} docs={docs} />
-            </div>
+            <div className={TAB_BODY}>{tabBody(<HrDocumentsTab people={people} docs={scopedDocs} />)}</div>
           </TabsContent>
 
           <TabsContent value="people" className={TAB_PANEL}>
@@ -336,8 +476,20 @@ export const HR: React.FC = () => {
                 actions={<DateRangeFilter value={dateRange} onChange={setDateRange} />}
               />
 
+              {reviewing && selectedWorkspace && (
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    These people are not in a workspace yet.
+                    {hrScope.canAssign && ' Pick one for each of them.'}
+                  </p>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setReviewFor(null)}>
+                    Back to {selectedWorkspace.name}
+                  </Button>
+                </div>
+              )}
+
               <div className="overflow-hidden rounded-lg border border-border">
-                {loading ? (
+                {loading || waiting ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading directory" />
                   </div>
@@ -347,15 +499,30 @@ export const HR: React.FC = () => {
                     <p className="text-sm font-medium">
                       {directory.length === 0
                         ? 'No team members yet.'
-                        : 'No employees with a hire date in this range.'}
+                        : listedDirectory.length === 0
+                          ? nobodyHere
+                          : 'No employees with a hire date in this range.'}
                     </p>
+                    {directory.length > 0 && listedDirectory.length === 0 && selectedWorkspace && (
+                      <p className="text-xs text-muted-foreground">
+                        Switch to All workspaces to see everyone and pick a workspace for each person.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-left text-sm">
+                    <table
+                      className={cn(
+                        'w-full text-left text-sm',
+                        hrScope.available ? 'min-w-[920px]' : 'min-w-[760px]',
+                      )}
+                    >
                       <thead>
                         <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
                           <th scope="col" className="px-4 font-medium">Member</th>
+                          {hrScope.available && (
+                            <th scope="col" className="px-4 font-medium">Workspace</th>
+                          )}
                           <th scope="col" className="px-4 font-medium">Status</th>
                           <th scope="col" className="px-4 font-medium">Pay</th>
                           <th scope="col" className="px-4 font-medium">Hire date</th>
@@ -400,6 +567,40 @@ export const HR: React.FC = () => {
                                   </div>
                                 </div>
                               </td>
+                              {hrScope.available && (
+                                <td className="px-4 py-2">
+                                  {hrScope.canAssign ? (
+                                    <Select
+                                      value={hrScope.workspaceOf(entry.userId) ?? NO_WORKSPACE}
+                                      onValueChange={(value) => void changeWorkspace(entry, value)}
+                                    >
+                                      <SelectTrigger
+                                        aria-label={`Workspace for ${entry.displayName}`}
+                                        className="w-44"
+                                      >
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {workspaces.map((w) => (
+                                          <SelectItem key={w.workspaceId} value={w.workspaceId}>
+                                            {w.name}
+                                          </SelectItem>
+                                        ))}
+                                        <SelectItem value={NO_WORKSPACE}>No workspace</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <span
+                                      className={cn(
+                                        'block max-w-[11rem] truncate',
+                                        !hrScope.workspaceOf(entry.userId) && 'text-muted-foreground',
+                                      )}
+                                    >
+                                      {workspaceName(hrScope.workspaceOf(entry.userId)) ?? 'No workspace'}
+                                    </span>
+                                  )}
+                                </td>
+                              )}
                               <td className="px-4 py-2">
                                 {p ? (
                                   <div className="flex flex-wrap items-center gap-1.5">
@@ -467,15 +668,15 @@ export const HR: React.FC = () => {
           </TabsContent>
 
           <TabsContent value="time-tracking" className={TAB_PANEL}>
-            <TimeTracking embedded />
+            {tabBody(<TimeTracking embedded />)}
           </TabsContent>
 
           <TabsContent value="payroll" className={TAB_PANEL}>
-            <Payroll embedded />
+            {tabBody(<Payroll embedded />)}
           </TabsContent>
 
           <TabsContent value="expenses" className={TAB_PANEL}>
-            <Expenses embedded />
+            {tabBody(<Expenses embedded />)}
           </TabsContent>
         </Tabs>
       </main>
@@ -732,7 +933,7 @@ export const HR: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </HrWorkspacePeopleContext.Provider>
   );
 };
 

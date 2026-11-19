@@ -144,12 +144,26 @@ const makeDocs = (over: Partial<UseEmployeeDocuments> = {}): UseEmployeeDocument
 });
 
 const renderTab = (
-  props: { people?: HrPerson[]; leave?: UseLeave; docs?: UseEmployeeDocuments; onOpenTab?: (tab: HrTab) => void } = {},
+  props: {
+    people?: HrPerson[];
+    leave?: UseLeave;
+    docs?: UseEmployeeDocuments;
+    onOpenTab?: (tab: HrTab) => void;
+    inScope?: (userId: string) => boolean;
+  } = {},
 ) => {
   const leave = props.leave ?? makeLeave();
   const docs = props.docs ?? makeDocs();
   const onOpenTab = props.onOpenTab ?? vi.fn();
-  render(<HrOverviewTab people={props.people ?? PEOPLE} leave={leave} docs={docs} onOpenTab={onOpenTab} />);
+  render(
+    <HrOverviewTab
+      people={props.people ?? PEOPLE}
+      leave={leave}
+      docs={docs}
+      onOpenTab={onOpenTab}
+      inScope={props.inScope}
+    />,
+  );
   return { leave, docs, onOpenTab };
 };
 
@@ -192,6 +206,22 @@ describe('HR overview tab', () => {
     expect(figure('Pending leave requests').textContent).toBe('2');
     expect(figure('Documents expiring soon').textContent).toBe('2');
     expect(figure('Documents expiring soon').getAttribute('data-tone')).toBe('danger');
+  });
+
+  it('with a workspace selected, counts only its people as on the clock', () => {
+    const start = new Date(NOW.getTime() - 2 * 3600_000);
+    const clockedIn = (entryId: string, userId: string) => ({
+      entryId, organizationId: 'o1', userId, userName: userId,
+      clockedInAt: start, clockedOutAt: null, durationSeconds: null,
+      createdAt: start, updatedAt: start,
+    });
+    // Ana is in the workspace; Bob and someone who has left are not.
+    h.entries = [clockedIn('e1', 'ana'), clockedIn('e2', 'bob'), clockedIn('e3', 'gone')];
+    const inScope = (userId: string) => userId === 'ana' || userId === 'cy';
+    renderTab({ people: PEOPLE.filter((p) => inScope(p.userId)), inScope });
+    expect(figure('Headcount').textContent).toBe('2');
+    expect(figure('On the clock now').textContent).toBe('1');
+    expect(figure('On the clock now').nextElementSibling?.textContent).toBe('1 clocked in today');
   });
 
   it('keeps the documents figure calm when nothing is expiring', () => {

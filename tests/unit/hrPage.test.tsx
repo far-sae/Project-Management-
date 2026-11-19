@@ -24,6 +24,26 @@ vi.mock('@/context/OrganizationContext', () => ({
     },
   }),
 }));
+// HR follows the workspace picked in the sidebar (see hrPageWorkspace.test.tsx).
+// Here "All workspaces" is selected and the assignments table is not set up
+// yet, so the page shows the whole company as it always did.
+vi.mock('@/hooks/useSelectedWorkspace', () => {
+  const scope = {
+    selectedId: '__ALL_WORKSPACES__', selected: null, isAll: true, isUnassigned: false, workspaces: [],
+  };
+  return { useSelectedWorkspace: () => scope };
+});
+vi.mock('@/services/supabase/hrWorkspaces', () => ({
+  subscribeToPersonWorkspaces: (
+    _org: string,
+    cb: (r: { available: boolean; assignments: unknown[] }) => void,
+  ) => {
+    cb({ available: false, assignments: [] });
+    return () => {};
+  },
+  setPersonWorkspace: vi.fn(),
+  assignPeopleToWorkspace: vi.fn(),
+}));
 vi.mock('@/hooks/useEmployees', () => ({
   useEmployees: () => ({
     profilesByUserId: new Map(),

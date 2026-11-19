@@ -56,6 +56,34 @@ vi.mock('@/hooks/usePayroll', () => ({
   }),
 }));
 vi.mock('@/hooks/useEmployees', () => ({ useEmployees: () => ({ profiles: [] }) }));
+// Payroll follows the workspace picked in the sidebar (see
+// hrPagesWorkspace.test.tsx). Here "All workspaces" is selected, so every
+// payslip and the run's own totals show. Both objects are made once: a mock
+// that returns a new object on every call makes effects re-run forever.
+vi.mock('@/hooks/useSelectedWorkspace', () => {
+  const scope = {
+    selectedId: '__ALL_WORKSPACES__', selected: null, isAll: true, isUnassigned: false, workspaces: [],
+  };
+  return { useSelectedWorkspace: () => scope };
+});
+vi.mock('@/hooks/useHrWorkspacePeople', () => {
+  const everyone = {
+    inScope: () => true,
+    scopedUserIds: null,
+    unassigned: [],
+    assign: async () => {},
+    assignAllUnassignedToSelected: async () => 0,
+    available: false,
+    loading: false,
+    waiting: false,
+    workspaceOf: () => null,
+    canAssign: true,
+    label: null,
+    figureNote: null,
+    error: null,
+  };
+  return { useHrWorkspacePeople: () => everyone };
+});
 vi.mock('@/hooks/useFormatMoney', () => ({
   useFormatMoney: () => (amount: number) => `$${amount.toFixed(2)}`,
 }));

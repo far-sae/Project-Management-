@@ -34,7 +34,14 @@ const time = (d: Date | null) => (d ? format(d, 'HH:mm') : '—');
 export const TeamAttendance: React.FC<{
   /** Leave requests; someone on approved leave that day shows as "On leave". */
   leaveRequests?: LeaveLike[];
-}> = ({ leaveRequests }) => {
+  /**
+   * Limits the team to the people in the selected workspace. Left out, the
+   * whole organization is listed.
+   */
+  inScope?: (userId: string) => boolean;
+  /** What to say when `inScope` leaves nobody to list. */
+  emptyTitle?: string;
+}> = ({ leaveRequests, inScope, emptyTitle }) => {
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? '';
   const [entries, setEntries] = useState<TimeEntry[] | null>(null);
@@ -56,18 +63,25 @@ export const TeamAttendance: React.FC<{
   const people = useMemo(
     () =>
       (organization?.members ?? [])
-        .filter((m) => m.status !== 'removed')
+        .filter((m) => m.status !== 'removed' && (!inScope || inScope(m.userId)))
         .map((m) => ({
           userId: m.userId,
           name: m.displayName?.trim() || m.email || 'Member',
           photoURL: m.photoURL,
         })),
-    [organization?.members],
+    [organization?.members, inScope],
+  );
+
+  // Anyone with time this week gets a row even if they are not in the member
+  // list, so the entries have to be limited to the workspace as well.
+  const scopedEntries = useMemo(
+    () => (entries && inScope ? entries.filter((e) => inScope(e.userId)) : entries),
+    [entries, inScope],
   );
 
   const rows = useMemo(
-    () => (entries ? buildAttendance(entries, people, day, now) : []),
-    [entries, people, day, now],
+    () => (scopedEntries ? buildAttendance(scopedEntries, people, day, now) : []),
+    [scopedEntries, people, day, now],
   );
   const summary = useMemo(() => summarizeAttendance(rows), [rows]);
 
@@ -144,10 +158,12 @@ export const TeamAttendance: React.FC<{
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-4 py-12 text-center">
             <Users className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-            <p className="text-sm font-medium">No team members yet.</p>
-            <p className="text-xs text-muted-foreground">
-              People show up here once they join your organization.
-            </p>
+            <p className="text-sm font-medium">{emptyTitle ?? 'No team members yet.'}</p>
+            {!emptyTitle && (
+              <p className="text-xs text-muted-foreground">
+                People show up here once they join your organization.
+              </p>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
