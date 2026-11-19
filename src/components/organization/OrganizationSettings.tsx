@@ -15,7 +15,8 @@ import {
 import { useOrganization } from '@/context/OrganizationContext';
 import { updateOrganization } from '@/services/supabase/organizations';
 import { toast } from 'sonner';
-import { COUNTRIES, COMMON_CURRENCIES, currencyForCountry } from '@/lib/countries';
+import { COUNTRIES, currencyForCountry } from '@/lib/countries';
+import { CurrencySelect } from '@/components/ui/currency-select';
 
 export const OrganizationSettings: React.FC = () => {
   const { organization, loading, refreshOrganization, canManageSettings } = useOrganization();
@@ -204,25 +205,18 @@ export const OrganizationSettings: React.FC = () => {
                 </div>
 
                 <div>
-                  <Label htmlFor="currency">Currency</Label>
-                  <Select
+                  <Label htmlFor="currency">Company currency</Label>
+                  <CurrencySelect
+                    id="currency"
                     value={formData.currency}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({ ...prev, currency: value }))
-                    }
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, currency: value }))}
                     disabled={!isEditing}
-                  >
-                    <SelectTrigger id="currency">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {COMMON_CURRENCIES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    showLabels
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    One currency for the whole company: CRM, HR, payroll, expenses and contracts
+                    all show money in it.
+                  </p>
                 </div>
 
                 <div>

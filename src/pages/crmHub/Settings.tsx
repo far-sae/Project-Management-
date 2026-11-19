@@ -4,7 +4,7 @@ import { Loader2, Plus, Trash2, Save, ChevronUp, ChevronDown } from 'lucide-reac
 import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
-import { CURRENCIES, type CurrencyCode } from '@/lib/crmCurrency';
+import { CurrencySelect } from '@/components/ui/currency-select';
 import { useCrmDealStages } from '@/hooks/useCrmHub';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
@@ -83,11 +83,11 @@ const GeneralSettings: React.FC = () => {
   const { code, loading, setCurrency, format } = useCrmCurrency();
   const [busy, setBusy] = useState(false);
 
-  const handleChange = async (next: CurrencyCode) => {
+  const handleChange = async (next: string) => {
     setBusy(true);
     try {
       await setCurrency(next);
-      toast.success('Currency updated');
+      toast.success(`Currency changed to ${next} everywhere`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not save');
     } finally {
@@ -99,20 +99,17 @@ const GeneralSettings: React.FC = () => {
     <SettingsSection title="General">
       <div className="p-4">
         <div className="grid max-w-md gap-1.5">
-          <Label htmlFor="crm-currency">Currency</Label>
-          <Select value={code} onValueChange={(v) => void handleChange(v as CurrencyCode)} disabled={loading || busy}>
-            <SelectTrigger id="crm-currency"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {CURRENCIES.map((c) => (
-                <SelectItem key={c.code} value={c.code}>
-                  {c.symbol} · {c.code} · {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="crm-currency">Company currency</Label>
+          <CurrencySelect
+            id="crm-currency"
+            value={code}
+            onValueChange={(v) => void handleChange(v)}
+            disabled={loading || busy}
+            showLabels
+          />
           <p className="text-xs text-muted-foreground">
-            Used for every money amount in the CRM (deals, dashboards, reports, company revenue).
-            Preview: <span className="tabular-nums">{format(1234567)}</span>
+            One currency for the whole company. Changing it here also changes it in HR, payroll,
+            expenses and contracts. Preview: <span className="tabular-nums">{format(1234567)}</span>
           </p>
         </div>
       </div>

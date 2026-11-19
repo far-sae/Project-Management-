@@ -1,4 +1,4 @@
-// Supported CRM currencies + a formatter factory.
+// The currencies the app knows by name, and how money is written in any currency.
 
 export type CurrencyCode =
   | 'USD' | 'GBP' | 'EUR' | 'INR' | 'AUD' | 'CAD' | 'JPY' | 'AED'
@@ -6,7 +6,8 @@ export type CurrencyCode =
   | 'NOK' | 'DKK' | 'HKD' | 'PLN';
 
 export interface CurrencyDef {
-  code: CurrencyCode;
+  /** ISO code. One of the listed currencies, or any other code the company chose. */
+  code: string;
   symbol: string;
   label: string;
   locale?: string;
@@ -41,12 +42,34 @@ export const CURRENCY_BY_CODE: Record<string, CurrencyDef> = Object.fromEntries(
 
 export const DEFAULT_CURRENCY: CurrencyCode = 'USD';
 
-export function formatCurrency(amount: number, code: CurrencyCode = DEFAULT_CURRENCY, opts: { maximumFractionDigits?: number } = {}): string {
-  const def = CURRENCY_BY_CODE[code] ?? CURRENCY_BY_CODE[DEFAULT_CURRENCY];
+/**
+ * What is known about a currency. Listed currencies come with their name and
+ * locale; any other ISO code still gets its own symbol, so the company's
+ * currency is never swapped for a default one.
+ */
+export function currencyDef(code: string | null | undefined): CurrencyDef {
+  const wanted = (code ?? '').trim().toUpperCase();
+  const known = CURRENCY_BY_CODE[wanted];
+  if (known) return known;
+  if (!wanted) return CURRENCY_BY_CODE[DEFAULT_CURRENCY]!;
+  try {
+    const parts = new Intl.NumberFormat(undefined, {
+      style: 'currency', currency: wanted, currencyDisplay: 'narrowSymbol',
+    }).formatToParts(0);
+    return { code: wanted, symbol: parts.find((p) => p.type === 'currency')?.value ?? wanted, label: wanted };
+  } catch {
+    // Not a currency code at all.
+    return CURRENCY_BY_CODE[DEFAULT_CURRENCY]!;
+  }
+}
+
+export function formatCurrency(amount: number, code: string = DEFAULT_CURRENCY, opts: { maximumFractionDigits?: number } = {}): string {
+  const def = currencyDef(code);
   try {
     return new Intl.NumberFormat(def.locale, {
       style: 'currency',
       currency: def.code,
+      currencyDisplay: 'narrowSymbol',
       maximumFractionDigits: opts.maximumFractionDigits ?? 0,
     }).format(amount);
   } catch {

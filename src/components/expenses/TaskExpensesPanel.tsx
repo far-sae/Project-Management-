@@ -3,11 +3,8 @@ import { Receipt, ExternalLink, Loader2, Check, X, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTaskExpenses, useExpenses } from '@/hooks/useExpenses';
-import {
-  Expense,
-  ExpenseStatus,
-  formatExpenseAmount,
-} from '@/services/supabase/expenses';
+import { Expense, ExpenseStatus } from '@/services/supabase/expenses';
+import { useFormatMoney } from '@/hooks/useFormatMoney';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { AddExpenseDialog } from './AddExpenseDialog';
@@ -52,6 +49,8 @@ export const TaskExpensesPanel: React.FC<Props> = ({
 }) => {
   const { expenses, loading, reload, canManage } = useTaskExpenses(taskId);
   const { update } = useExpenses();
+  // Shown in the company currency; an expense entered in another one is converted.
+  const fmt = useFormatMoney();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -126,7 +125,7 @@ export const TaskExpensesPanel: React.FC<Props> = ({
                   </div>
                 </div>
                 <span className="font-semibold text-foreground shrink-0">
-                  {formatExpenseAmount(e.amount, e.currency)}
+                  {fmt(e.amount, e.currency)}
                 </span>
               </div>
               <div className="flex items-center gap-2 flex-wrap">

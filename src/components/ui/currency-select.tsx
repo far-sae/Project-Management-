@@ -9,6 +9,8 @@ interface CurrencySelectProps {
   onValueChange: (v: string) => void;
   disabled?: boolean;
   className?: string;
+  /** Id for the trigger, so a <Label htmlFor> can point at it. */
+  id?: string;
   placeholder?: string;
   /** When true, includes a label-prefix (e.g. "USD — US Dollar") in the
    *  dropdown options. Useful in onboarding-style flows where the rep
@@ -48,10 +50,10 @@ const CURRENCY_LABELS: Record<string, string> = {
  */
 export const CurrencySelect: React.FC<CurrencySelectProps> = ({
   value, onValueChange, disabled, className, placeholder = 'Pick a currency',
-  showLabels = false,
+  showLabels = false, id,
 }) => (
   <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-    <SelectTrigger className={className}>
+    <SelectTrigger id={id} className={className}>
       <SelectValue placeholder={placeholder} />
     </SelectTrigger>
     <SelectContent>
