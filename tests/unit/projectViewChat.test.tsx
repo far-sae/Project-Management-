@@ -1,5 +1,5 @@
-// The project page: the chat is opened from a Chat button in the header and
-// sits beside the board as its own column. No round button floats on the board.
+// The project page: the chat lives at the bottom only. A small Chat bar on the
+// bottom edge opens the chat window; the header has no chat button.
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -123,28 +123,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('project page chat', () => {
-  it('starts with the whole page for the board and a Chat button that counts unread messages', async () => {
+  it('has the Chat bar at the bottom and no chat button in the header', async () => {
     await renderPage();
     expect(screen.getByTestId('board')).toBeTruthy();
     expect(screen.queryByRole('complementary', { name: 'Project chat' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Open project chat, 2 unread' })).toBeTruthy();
+    // The count arrives with the messages, a moment after the page itself.
+    const bar = await screen.findByRole('button', { name: 'Open project chat, 2 unread' });
+    expect(bar.parentElement?.className).toContain('bottom-0');
+    expect(within(screen.getByRole('banner')).queryByRole('button', { name: /chat/i })).toBeNull();
   });
 
-  it('opens the chat as a column next to the board, and closes it again', async () => {
+  it('opens the chat window from the bar and minimises it again', async () => {
     await renderPage();
     fireEvent.click(screen.getByRole('button', { name: /Open project chat/ }));
-
     const panel = screen.getByRole('complementary', { name: 'Project chat' });
     expect(within(panel).getByText('Staging is updated')).toBeTruthy();
-    // The panel and the column holding the board are side by side in one row.
-    const board = screen.getByTestId('board');
-    const row = panel.parentElement as HTMLElement;
-    expect(row.className).toContain('flex');
-    expect(row.contains(board)).toBe(true);
-    expect(panel.contains(board)).toBe(false);
-    expect(panel.previousElementSibling?.contains(board)).toBe(true);
 
-    fireEvent.click(within(panel).getByRole('button', { name: 'Close project chat' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Minimize project chat' }));
     expect(screen.queryByRole('complementary', { name: 'Project chat' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Open project chat' })).toBeTruthy();
   });

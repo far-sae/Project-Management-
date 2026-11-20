@@ -1,5 +1,5 @@
-// The project chat is a panel docked beside the board, opened from a Chat
-// button in the header. Nothing floats over the board.
+// The project chat: a small Chat bar on the bottom edge of the project page
+// (not a round floating button) that opens the chat window above it.
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -54,7 +54,6 @@ vi.mock('@/services/supabase/database', () => ({
 }));
 
 import { ProjectRightRail } from '@/components/project/ProjectRightRail';
-import { ProjectChatToggle } from '@/components/project/ProjectChatToggle';
 
 const project = {
   projectId: 'p1',
@@ -85,61 +84,47 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('project chat panel', () => {
-  it('puts nothing over the board while it is closed, and counts what is unread', () => {
-    const onUnread = vi.fn();
-    const { container } = render(
-      <ProjectRightRail project={project} open={false} onOpenChange={() => {}} onUnreadChange={onUnread} />,
-    );
-    expect(container.innerHTML).toBe('');
-    expect(screen.queryByRole('button', { name: /open project messages/i })).toBeNull();
-    expect(onUnread).toHaveBeenLastCalledWith(2);
-  });
-
-  it('opens as a panel that sits in the page beside the board', () => {
-    const onUnread = vi.fn();
-    render(<ProjectRightRail project={project} open onOpenChange={() => {}} onUnreadChange={onUnread} />);
-    const panel = screen.getByRole('complementary', { name: 'Project chat' });
-    // From desktop width up the panel is part of the page layout, not laid over it.
-    expect(panel.className).toContain('lg:static');
-    expect(screen.getByText('Homepage copy is in the doc')).toBeTruthy();
-    expect(screen.getByText('Staging is updated')).toBeTruthy();
-    expect(onUnread).toHaveBeenLastCalledWith(0);
-  });
-
-  it('closes from its own close button', () => {
+describe('project chat', () => {
+  it('is a small Chat bar on the bottom edge while closed, with the unread count', () => {
     const onOpenChange = vi.fn();
-    render(<ProjectRightRail project={project} open onOpenChange={onOpenChange} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Close project chat' }));
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    render(<ProjectRightRail project={project} open={false} onOpenChange={onOpenChange} />);
+    const bar = screen.getByRole('button', { name: 'Open project chat, 2 unread' });
+    expect(bar.textContent).toBe('Chat2');
+    // Flush with the bottom of the page, and a bar rather than a circle.
+    expect(bar.parentElement?.className).toContain('bottom-0');
+    expect(bar.className).not.toContain('rounded-full');
+    fireEvent.click(bar);
+    expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 
-  it('keeps one-to-one chats clear of the panel only while it is open', () => {
-    const { rerender } = render(<ProjectRightRail project={project} open onOpenChange={() => {}} />);
-    expect(h.insets[h.insets.length - 1]).toBe(23.5);
-    rerender(<ProjectRightRail project={project} open={false} onOpenChange={() => {}} />);
-    expect(h.insets[h.insets.length - 1]).toBeNull();
-  });
-});
-
-describe('Chat button in the project header', () => {
-  it('shows how many messages are unread and opens the chat', () => {
-    const onToggle = vi.fn();
-    render(<ProjectChatToggle open={false} unread={3} onToggle={onToggle} />);
-    const button = screen.getByRole('button', { name: 'Open project chat, 3 unread' });
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    expect(button.textContent).toContain('3');
-    fireEvent.click(button);
-    expect(onToggle).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows no count when everything is read', () => {
-    render(<ProjectChatToggle open={false} unread={0} onToggle={() => {}} />);
+  it('shows no count on the bar when everything is read', () => {
+    h.messages = [message('m2', 'me', 'Sam', 'Thanks, reading it now', 25)];
+    render(<ProjectRightRail project={project} open={false} onOpenChange={() => {}} />);
     expect(screen.getByRole('button', { name: 'Open project chat' }).textContent).toBe('Chat');
   });
 
-  it('says it closes the chat while the chat is open', () => {
-    render(<ProjectChatToggle open unread={0} onToggle={() => {}} />);
-    expect(screen.getByRole('button', { name: 'Close project chat' }).getAttribute('aria-expanded')).toBe('true');
+  it('opens as the same compact window as before, not a full-height panel', () => {
+    render(<ProjectRightRail project={project} open onOpenChange={() => {}} />);
+    const panel = screen.getByRole('complementary', { name: 'Project chat' });
+    const win = panel.querySelector('aside') as HTMLElement;
+    expect(win.className).toContain('sm:w-[min(23.5rem,calc(100vw-2.5rem))]');
+    expect(win.className).toContain('h-[min(36rem,calc(100svh-2rem))]');
+    expect(screen.getByText('Homepage copy is in the doc')).toBeTruthy();
+    expect(screen.getByText('Staging is updated')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Open project chat/ })).toBeNull();
+  });
+
+  it('goes back down to the bar from its minimise button', () => {
+    const onOpenChange = vi.fn();
+    render(<ProjectRightRail project={project} open onOpenChange={onOpenChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Minimize project chat' }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps one-to-one chats clear of the window and of the bar', () => {
+    const { rerender } = render(<ProjectRightRail project={project} open onOpenChange={() => {}} />);
+    expect(h.insets[h.insets.length - 1]).toBe(25.5);
+    rerender(<ProjectRightRail project={project} open={false} onOpenChange={() => {}} />);
+    expect(h.insets[h.insets.length - 1]).toBe(8.5);
   });
 });

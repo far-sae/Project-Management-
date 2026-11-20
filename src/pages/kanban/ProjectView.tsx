@@ -19,7 +19,6 @@ import { TrialBanner } from '@/components/subscription/TrialBanner';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { AIProjectHealth } from '@/components/ai/AIProjectHealth';
 import { ProjectRightRail } from '@/components/project/ProjectRightRail';
-import { ProjectChatToggle } from '@/components/project/ProjectChatToggle';
 import { ClockButton } from '@/components/time/ClockButton';
 import { useOrganization } from '@/context/OrganizationContext';
 import { PresenceAvatars } from '@/components/presence/PresenceAvatars';
@@ -261,8 +260,8 @@ export const ProjectView: React.FC = () => {
     }
   }, [sortOption]);
   const [showTrialBanner, setShowTrialBanner] = useState(true);
-  // The project chat panel beside the board. Closed until someone opens it,
-  // so the board has the whole page by default.
+  // The project chat window. Minimised to its bar at the bottom until someone
+  // opens it, so the board has the whole page by default.
   const [rightRailOpen, setRightRailOpen] = useState<boolean>(() => {
     try {
       return window.localStorage.getItem('project_right_rail_open') === '1';
@@ -270,7 +269,6 @@ export const ProjectView: React.FC = () => {
       return false;
     }
   });
-  const [chatUnread, setChatUnread] = useState(0);
 
   useEffect(() => {
     try {
@@ -788,19 +786,9 @@ export const ProjectView: React.FC = () => {
               {peerAvatarsOthers.length > 0 ? (
                 <PresenceAvatars peers={peerAvatarsOthers} className="mr-0" />
               ) : null}
-              <ProjectChatToggle
-                open={rightRailOpen}
-                unread={chatUnread}
-                onToggle={() => setRightRailOpen((v) => !v)}
-              />
             </div>
           }
         />
-
-        {/* The page below the header: the project on the left, the chat panel
-            (when open) as its own column on the right. */}
-        <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
 
         {dueDayParam && (
           <div className="flex items-center justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2 text-sm lg:px-6">
@@ -1015,7 +1003,7 @@ export const ProjectView: React.FC = () => {
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden relative min-w-0">
-          <div className={`flex-1 min-w-0 px-4 pt-4 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden pb-2' : 'overflow-auto pb-6'}`}>
+          <div className={`flex-1 min-w-0 px-4 pt-4 lg:px-6 ${viewMode === 'kanban' ? 'overflow-hidden pb-2' : 'overflow-auto pb-16'}`}>
             {viewMode === 'kanban' ? (
               <div ref={boardScrollRef} className="kanban-scroll flex h-full flex-col overflow-x-auto overflow-y-auto">
                 {/* Columns fill the height; the sideways scrollbar sits at the very bottom. */}
@@ -1127,16 +1115,12 @@ export const ProjectView: React.FC = () => {
           </div>
         </div>
 
-        </div>
-
         <ProjectRightRail
           project={project}
           open={rightRailOpen}
           onOpenChange={setRightRailOpen}
           presenceByUserId={presenceByUserId}
-          onUnreadChange={setChatUnread}
         />
-        </div>
       </main>
 
       <LimitReachedModal

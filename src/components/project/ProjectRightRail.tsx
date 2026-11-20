@@ -8,7 +8,7 @@ import {
   UserPlus,
   Send,
   Loader2,
-  PanelRightClose,
+  Minus,
   Phone,
   Video,
   CalendarPlus,
@@ -72,12 +72,11 @@ interface ProjectRightRailProps {
   onInviteClick?: () => void;
   /** Realtime project presence by userId (from the same channel as the header). */
   presenceByUserId?: Map<string, PresencePeer>;
-  /** Unread messages while the panel is closed, for the Chat button's count. */
-  onUnreadChange?: (count: number) => void;
 }
 
-/** Width of the panel in rem. The one-to-one chat dock stays clear of it. */
-const PANEL_WIDTH_REM = 22.5;
+/** How far (rem) one-to-one chats stay from the right edge: past the open window, or past the Chat bar. */
+const DOCK_INSET_OPEN = 25.5;
+const DOCK_INSET_BAR = 8.5;
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Owner',
@@ -234,7 +233,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   onOpenChange,
   onInviteClick,
   presenceByUserId,
-  onUnreadChange,
 }) => {
   const { user } = useAuth();
   const { actions: callActions, state: callState } = useCall();
@@ -434,8 +432,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
    *  (Teams style): it minimises to a bar instead of vanishing and stays
    *  open across pages. */
   const { openChat } = useChatDock();
-  // One-to-one chats sit to the left of the open panel, never on top of it.
-  useChatDockInset(open ? PANEL_WIDTH_REM + 1 : null);
+  // One-to-one chats sit to the left of the open window, or of the Chat bar.
+  useChatDockInset(open ? DOCK_INSET_OPEN : DOCK_INSET_BAR);
 
   const openDirectMessage = useCallback(
     (m: { userId?: string; displayName?: string; email?: string; photoURL?: string }) => {
@@ -466,7 +464,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     latestMessageId: string | null;
   }>({ initialized: false, latestMessageId: null });
 
-  /** Persist a per-project "last seen" timestamp so the Chat button can show an unread count. */
+  /** Persist a per-project "last seen" timestamp so the Chat bar can show an unread count. */
   const lastSeenStorageKey = `project_chat_last_seen:${project.projectId}`;
   const [lastSeenAt, setLastSeenAt] = useState<number>(() => {
     if (typeof window === 'undefined') return 0;
@@ -495,10 +493,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       return new Date(m.createdAt).getTime() > lastSeenAt ? acc + 1 : acc;
     }, 0);
   }, [chatMessages, lastSeenAt, open, user]);
-
-  useEffect(() => {
-    onUnreadChange?.(unreadCount);
-  }, [unreadCount, onUnreadChange]);
 
   const chatRows = useMemo(
     () =>
@@ -549,7 +543,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     };
   }, [project.projectId]);
 
-  /** When the panel opens — or new messages arrive while open — bump the last-seen marker
+  /** When the chat opens — or new messages arrive while open — bump the last-seen marker
    *  and clear any unread `project_chat_message` notifications for this project so the
    *  bell doesn't keep showing chats the user has already read. */
   useEffect(() => {
@@ -915,23 +909,62 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       ? 'Rings everyone in this project — to call one person, open their chat from the Team tab'
       : 'No other members to call — invite someone to this project first.';
 
-  // Closed: nothing is drawn. The component stays mounted so the unread count
-  // and the new-message sound keep working; the Chat button in the project
-  // header opens it.
-  if (!open) return null;
+  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(23.5rem,calc(100vw-2.5rem))]';
+
+  // Closed: a small bar on the bottom edge of the page, the same shape as a
+  // minimised one-to-one chat. It replaces the round button that used to
+  // float over the board.
+  if (!open) {
+    const barLabel = unreadCount > 0
+      ? `Open project chat, ${unreadCount} unread`
+      : 'Open project chat';
+    return (
+      <div
+        // z-40 sits above the page but below dialogs and popovers (z-50).
+        className="pointer-events-none fixed bottom-0 right-3 z-40 sm:right-4"
+      >
+        <button
+          type="button"
+          onClick={() => onOpenChange(true)}
+          aria-label={barLabel}
+          title={`${project.name} · ${dedupedMembers.length} members`}
+          className={cn(
+            'pointer-events-auto inline-flex h-10 items-center gap-2 rounded-t-lg border border-b-0 border-border bg-card px-3',
+            'text-sm font-medium text-foreground transition-colors hover:bg-secondary',
+            'shadow-[0_-4px_16px_rgba(0,0,0,0.08)]',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+          )}
+        >
+          <MessageSquare className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <span>Chat</span>
+          {unreadCount > 0 && (
+            <span
+              aria-hidden
+              className="min-w-[18px] rounded-full bg-destructive px-[5px] text-center text-xs font-semibold leading-[18px] text-destructive-foreground tabular-nums"
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <aside
+    <div
+      className="fixed inset-x-3 bottom-4 z-40 flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-5"
+      role="complementary"
       aria-label="Project chat"
-      className={cn(
-        'flex flex-col overflow-hidden border-l border-border bg-background',
-        // Phones and tablets have no room beside the board: a sheet over the page.
-        // z-40 keeps it below dialogs and popovers (z-50).
-        'fixed inset-y-0 right-0 z-40 w-full sm:w-[22.5rem]',
-        // Desktop: a column of the page itself, so the board is never covered.
-        'lg:static lg:z-auto lg:h-full lg:shrink-0',
-      )}
     >
+      <aside
+        className={cn(
+          'pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-border bg-card',
+          'shadow-[0_12px_32px_rgba(0,0,0,0.10)]',
+          'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
+          railWidth,
+          'h-[min(36rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
+        )}
+      >
         <div className="flex min-h-14 shrink-0 items-center gap-2.5 border-b border-border pl-3 pr-2">
           <div
             aria-hidden
@@ -1049,10 +1082,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               size="icon"
               className="text-muted-foreground"
               onClick={() => onOpenChange(false)}
-              aria-label="Close project chat"
-              title="Close chat"
+              aria-label="Minimize project chat"
+              title="Minimize"
             >
-              <PanelRightClose />
+              <Minus />
             </Button>
           </div>
         </div>
@@ -1265,6 +1298,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         </TabsContent>
       </Tabs>
     </aside>
+    </div>
   );
 };
 
