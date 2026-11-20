@@ -6,11 +6,13 @@
   ],
   "functions": {
     "api/signroom.ts": { "maxDuration": 300, "includeFiles": "api/_signroom/fonts/**" },
-    "api/automation.ts": { "maxDuration": 300 }
+    "api/automation.ts": { "maxDuration": 300 },
+    "api/voice.ts": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/signroom/:path*", "destination": "/api/signroom?path=:path*" },
     { "source": "/api/automation/:path*", "destination": "/api/automation?path=:path*" },
+    { "source": "/api/voice/:path*", "destination": "/api/voice?path=:path*" },
     {
       "source": "/((?!api/|google[a-z0-9]+\\.html$).*)",
       "destination": "/index.html"

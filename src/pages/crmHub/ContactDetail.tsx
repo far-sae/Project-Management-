@@ -53,6 +53,9 @@ import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
+import { CallDialog } from '@/components/crmHub/CallDialog';
+import { CallRecording, recordedCallId } from '@/components/crmHub/CallRecording';
+import { useCalling } from '@/hooks/useCalling';
 import {
   customFieldLabel, customFieldRows, readCustomFieldRows, type CustomFieldRow,
 } from '@/lib/customFields';
@@ -273,6 +276,9 @@ export const CrmContactDetailPage: React.FC = () => {
   const [showDelete, setShowDelete] = useState(false);
   const [showConvert, setShowConvert] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  // Ringing the lead from the browser: owners and admins, once a phone provider is set up.
+  const calling = useCalling();
+  const [showCall, setShowCall] = useState(false);
   const [showNewFollowUp, setShowNewFollowUp] = useState(false);
   /** A step picked for a lead that already has a deal: asked about first. */
   const [stepBack, setStepBack] = useState<ManualStep>('contacted');
@@ -806,8 +812,9 @@ export const CrmContactDetailPage: React.FC = () => {
                               <span className="text-xs tabular-nums text-muted-foreground">{formatDateTime(a.createdAt)}</span>
                             </div>
                             {a.description && (
-                              <p className="mt-0.5 break-words text-sm text-muted-foreground">{a.description}</p>
+                              <p className="mt-0.5 whitespace-pre-line break-words text-sm text-muted-foreground">{a.description}</p>
                             )}
+                            {calling.mayListen && recordedCallId(a) && <CallRecording callId={recordedCallId(a) as string} />}
                           </div>
                         </div>
                       );
@@ -846,7 +853,8 @@ export const CrmContactDetailPage: React.FC = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    if (contact.phone) window.location.href = `tel:${contact.phone}`;
+                    if (contact.phone && calling.inApp) setShowCall(true);
+                    else if (contact.phone) window.location.href = `tel:${contact.phone}`;
                     else openLog('call');
                   }}
                 >
@@ -943,6 +951,18 @@ export const CrmContactDetailPage: React.FC = () => {
         onOpenChange={setShowNewFollowUp}
         onCreated={refresh}
       />
+
+      {contact.phone && (
+        <CallDialog
+          open={showCall}
+          onOpenChange={setShowCall}
+          name={fullName}
+          phone={contact.phone}
+          target={{ contactId: contact.id }}
+          setup={calling.setup}
+          onLogged={() => void refresh()}
+        />
+      )}
 
       <Dialog open={showLog} onOpenChange={setShowLog}>
         <DialogContent className="sm:max-w-md">

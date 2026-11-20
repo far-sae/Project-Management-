@@ -31,6 +31,9 @@ import { StatStrip } from '@/components/common/StatStrip';
 import { StatusPill } from '@/components/common/StatusPill';
 import { CompanyFormDialog } from '@/components/crmHub/CompanyFormDialog';
 import { Button } from '@/components/ui/button';
+import { CallDialog } from '@/components/crmHub/CallDialog';
+import { CallRecording, recordedCallId } from '@/components/crmHub/CallRecording';
+import { useCalling } from '@/hooks/useCalling';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -116,6 +119,9 @@ export const CrmCompanyDetailPage: React.FC = () => {
   const [notFound, setNotFound] = useState(false);
   const [tab, setTab] = useState('overview');
   const [showEdit, setShowEdit] = useState(false);
+  // Ringing the company from the browser: owners and admins, once a phone provider is set up.
+  const calling = useCalling();
+  const [showCall, setShowCall] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [noteBody, setNoteBody] = useState('');
   const [followUpTitle, setFollowUpTitle] = useState('');
@@ -277,7 +283,8 @@ export const CrmCompanyDetailPage: React.FC = () => {
           {dateTime(a.createdAt)}
         </time>
       </div>
-      {a.description && <p className="mt-0.5 break-words text-sm text-muted-foreground">{a.description}</p>}
+      {a.description && <p className="mt-0.5 whitespace-pre-line break-words text-sm text-muted-foreground">{a.description}</p>}
+      {calling.mayListen && recordedCallId(a) && <CallRecording callId={recordedCallId(a) as string} />}
     </div>
   ));
 
@@ -322,11 +329,13 @@ export const CrmCompanyDetailPage: React.FC = () => {
                   <a href={`mailto:${company.email}`}><Mail aria-hidden />Email</a>
                 </Button>
               )}
-              {company.phone && (
+              {company.phone && (calling.inApp ? (
+                <Button variant="outline" onClick={() => setShowCall(true)}><Phone aria-hidden />Call</Button>
+              ) : (
                 <Button variant="outline" asChild>
                   <a href={`tel:${company.phone}`}><Phone aria-hidden />Call</a>
                 </Button>
-              )}
+              ))}
               <Button onClick={() => setShowEdit(true)}><Pencil aria-hidden />Edit</Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -634,6 +643,18 @@ export const CrmCompanyDetailPage: React.FC = () => {
       </div>
 
       <CompanyFormDialog open={showEdit} onOpenChange={setShowEdit} company={company} onSaved={refresh} />
+
+      {company.phone && (
+        <CallDialog
+          open={showCall}
+          onOpenChange={setShowCall}
+          name={company.name}
+          phone={company.phone}
+          target={{ companyId: company.id }}
+          setup={calling.setup}
+          onLogged={() => void refresh()}
+        />
+      )}
 
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>

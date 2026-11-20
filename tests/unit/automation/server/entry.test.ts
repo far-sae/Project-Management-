@@ -292,7 +292,8 @@ describe("vercel.json", () => {
     expect(v.rewrites[at].destination).toBe("/api/automation?path=:path*");
     expect(spa).toBeGreaterThan(at);
     expect(v.rewrites).toContainEqual({ source: "/api/signroom/:path*", destination: "/api/signroom?path=:path*" });
-    expect(v.rewrites).toHaveLength(3);
+    // The calling server's rewrite sits beside them (tests/unit/voice/server.test.ts).
+    expect(v.rewrites).toHaveLength(4);
   });
 
   it("gives the function 300 seconds and leaves the documents function as it was", () => {
