@@ -52,6 +52,7 @@ import {
 import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
+import { LeadAutomationCard } from '@/components/automation/LeadAutomationCard';
 import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { useDealMoney } from '@/hooks/useDealMoney';
 import { useProjects } from '@/hooks/useProjects';
@@ -907,6 +908,9 @@ export const CrmContactDetailPage: React.FC = () => {
                 <ContactTagPicker contactId={contact.id} />
               </div>
             </Section>
+
+            {/* Where this lead is in the automation; shows nothing when no agent is working on it. */}
+            <LeadAutomationCard contactId={contact.id} />
           </aside>
         </div>
       </div>

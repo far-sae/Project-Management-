@@ -56,6 +56,13 @@ const TemplatesPage = React.lazy(() => import('@/pages/signroom/Templates').then
 const InvoicesPage = React.lazy(() => import('@/pages/signroom/Invoices').then((m) => ({ default: m.InvoicesPage })));
 const AccountsOverviewPage = React.lazy(() => import('@/pages/signroom/AccountsOverview').then((m) => ({ default: m.AccountsOverviewPage })));
 const InvoiceDetailPage = React.lazy(() => import('@/pages/signroom/InvoiceDetail').then((m) => ({ default: m.InvoiceDetailPage })));
+// AI automation: agents that carry a lead to a project, per workspace.
+const AutomationOverviewPage = React.lazy(() => import('@/pages/automation/Overview').then((m) => ({ default: m.AutomationOverviewPage })));
+const AutomationAssistantPage = React.lazy(() => import('@/pages/automation/Assistant').then((m) => ({ default: m.AutomationAssistantPage })));
+const AutomationAgentsPage = React.lazy(() => import('@/pages/automation/Agents').then((m) => ({ default: m.AutomationAgentsPage })));
+const AutomationRunsPage = React.lazy(() => import('@/pages/automation/Runs').then((m) => ({ default: m.AutomationRunsPage })));
+const AutomationRunPage = React.lazy(() => import('@/pages/automation/RunDetail').then((m) => ({ default: m.AutomationRunPage })));
+const AutomationRulesPage = React.lazy(() => import('@/pages/automation/Rules').then((m) => ({ default: m.AutomationRulesPage })));
 const DocumentSettingsPage = React.lazy(() => import('@/pages/signroom/DocumentSettings').then((m) => ({ default: m.DocumentSettingsPage })));
 // Public pages a customer opens from an emailed link: no sign-in, no sidebar.
 const GuestSignPage = React.lazy(() => import('@/pages/signroom/GuestSign').then((m) => ({ default: m.GuestSignPage })));
@@ -357,6 +364,12 @@ const router = createBrowserRouter(
                 { path: 'invoices/:id',        element: lazyAppRoute(<InvoiceDetailPage />) },
                 { path: 'accounts-overview',   element: lazyAppRoute(<AccountsOverviewPage />) },
                 { path: 'document-settings',   element: lazyAppRoute(<DocumentSettingsPage />) },
+                { path: 'automation',           element: lazyAppRoute(<AutomationOverviewPage />) },
+                { path: 'automation/assistant', element: lazyAppRoute(<AutomationAssistantPage />) },
+                { path: 'automation/agents',    element: lazyAppRoute(<AutomationAgentsPage />) },
+                { path: 'automation/runs',      element: lazyAppRoute(<AutomationRunsPage />) },
+                { path: 'automation/runs/:id',  element: lazyAppRoute(<AutomationRunPage />) },
+                { path: 'automation/rules',     element: lazyAppRoute(<AutomationRulesPage />) },
                 { path: 'tasks',        element: lazyAppRoute(<CrmTasksPage />) },
                 { path: 'activity',     element: lazyAppRoute(<CrmActivityPage />) },
                 { path: 'tags',         element: lazyAppRoute(<CrmTagsPage />) },
