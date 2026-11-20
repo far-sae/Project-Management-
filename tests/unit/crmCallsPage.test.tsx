@@ -8,8 +8,9 @@ import type { CallList, CallListItem } from '../../api/_voice/shared/types';
 const state = vi.hoisted(() => {
   const off = { setup: { configured: false, ready: false, problem: null as string | null, numbers: { US: false, GB: false } }, inApp: false, mayListen: false };
   const on = { setup: { configured: true, ready: true, problem: null as string | null, numbers: { US: true, GB: true } }, inApp: true, mayListen: true };
-  const admin = { isAdmin: true };
-  const member = { isAdmin: false };
+  const owner = { isAdmin: true, isOwner: true };
+  const admin = { isAdmin: true, isOwner: false };
+  const member = { isAdmin: false, isOwner: false };
   const leads = {
     items: [
       { id: 'lead-1', firstName: 'Elena', lastName: 'Rossi', email: 'elena@harbour.test', phone: '020 7946 0958' },
@@ -21,20 +22,23 @@ const state = vi.hoisted(() => {
     refresh: vi.fn(),
   };
   return {
-    off, on, admin, member, leads,
+    off, on, owner, admin, member, leads,
+    deleteCall: vi.fn(),
     calling: on,
     workspaceId: 'ws-1' as string | null,
-    organization: admin as { isAdmin: boolean },
+    organization: admin as { isAdmin: boolean; isOwner: boolean },
     listCalls: vi.fn(),
     fetchRecording: vi.fn(async () => new Blob(['audio'], { type: 'audio/mpeg' })),
   };
 });
 
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => state.organization }));
 vi.mock('@/hooks/useCrmHub', () => ({ useCrmContacts: () => state.leads, useWorkspaceForCreate: () => state.workspaceId }));
 vi.mock('@/hooks/useCalling', () => ({ useCalling: () => state.calling }));
 vi.mock('@/services/voice/client', () => ({
   listCalls: state.listCalls,
+  deleteCall: state.deleteCall,
   fetchRecording: state.fetchRecording,
   errorSentence: (e: unknown) => (e instanceof Error && e.message ? e.message : 'The request could not be completed. Please try again.'),
 }));
@@ -79,6 +83,7 @@ beforeEach(() => {
   state.workspaceId = 'ws-1';
   state.listCalls.mockReset().mockResolvedValue(LIST);
   state.fetchRecording.mockClear();
+  state.deleteCall.mockReset().mockResolvedValue(undefined);
   URL.createObjectURL = vi.fn(() => 'blob:recording');
   URL.revokeObjectURL = vi.fn();
 });
@@ -198,6 +203,51 @@ describe('CRM calls page', () => {
     expect(screen.getByRole('status').textContent).toContain('Calling is not set up yet.');
     expect(screen.queryByRole('button', { name: 'Call a lead' })).toBeNull();
     expect(screen.queryByRole('button', { name: /again/ })).toBeNull();
+  });
+
+  it('lets the owner delete a call after confirming, and takes it off the list', async () => {
+    state.organization = state.owner;
+    // Once deleted, the server no longer lists it.
+    state.listCalls.mockResolvedValueOnce(LIST).mockResolvedValue({ ...LIST, calls: LIST.calls.slice(1), summary: { days: 30, total: 2, answered: 1, seconds: 45 } });
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the call to Elena Rossi' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete this call?' });
+    expect(dialog.textContent).toContain('together with its recording');
+    expect(state.deleteCall).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete call' }));
+    await waitFor(() => expect(state.deleteCall).toHaveBeenCalledWith('c1'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(screen.queryByText('Send the quote on Friday')).toBeNull();
+    // The totals are fetched again.
+    await waitFor(() => expect(state.listCalls).toHaveBeenCalledTimes(2));
+    expect((await screen.findByLabelText('Last 30 days')).textContent).toContain('Calls · last 30 days2');
+    expect(rows()).toHaveLength(2);
+  });
+
+  it('keeps the call when the owner cancels, or when it cannot be deleted', async () => {
+    state.organization = state.owner;
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the call to Harbour Dental' }));
+    expect(screen.getByRole('alertdialog').textContent).not.toContain('recording');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(state.deleteCall).not.toHaveBeenCalled();
+
+    state.deleteCall.mockRejectedValue(new Error('The recording could not be deleted at the phone provider, so the call was kept. Please try again.'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the call to Elena Rossi' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete call' }));
+    await waitFor(() => expect(state.deleteCall).toHaveBeenCalled());
+    // Still there, and the list was not fetched again.
+    expect(screen.getByText('Send the quote on Friday')).toBeTruthy();
+    expect(state.listCalls).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no delete button to an admin who is not the owner', async () => {
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+    expect(screen.queryByRole('button', { name: /Delete the call/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Call Elena Rossi again' })).toBeTruthy();
   });
 
   it('asks for a workspace when none is chosen in the sidebar', async () => {

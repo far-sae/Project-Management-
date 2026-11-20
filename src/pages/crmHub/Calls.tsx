@@ -1,15 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Phone, PhoneCall, Search } from 'lucide-react';
+import { Loader2, Phone, PhoneCall, Search, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmContacts, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { useCalling } from '@/hooks/useCalling';
 import { leadName } from '@/lib/crmFlow';
-import { errorSentence, listCalls } from '@/services/voice/client';
+import { deleteCall, errorSentence, listCalls } from '@/services/voice/client';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { CallDialog } from '@/components/crmHub/CallDialog';
 import { CallRecording } from '@/components/crmHub/CallRecording';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -77,7 +82,8 @@ type Dialing = { name: string; phone: string; target: { contactId: string } | { 
 const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 
 export const CrmCallsPage: React.FC = () => {
-  const { isAdmin } = useOrganization();
+  // Deleting a call (with its recording) is for the organisation's owner alone.
+  const { isAdmin, isOwner } = useOrganization();
   const workspaceId = useWorkspaceForCreate();
   const calling = useCalling();
   const { items: leads } = useCrmContacts();
@@ -93,6 +99,8 @@ export const CrmCallsPage: React.FC = () => {
   const [picking, setPicking] = useState(false);
   const [pickQuery, setPickQuery] = useState('');
   const [dialing, setDialing] = useState<Dialing | null>(null);
+  const [deleting, setDeleting] = useState<CallListItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!isAdmin || !workspaceId) return;
@@ -124,6 +132,23 @@ export const CrmCallsPage: React.FC = () => {
       setProblem(errorSentence(err));
     } finally {
       setLoadingMore(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      await deleteCall(deleting.id);
+      setCalls((list) => list.filter((c) => c.id !== deleting.id));
+      setDeleting(null);
+      toast.success('Call deleted.');
+      // The totals above the list count this call too.
+      void load();
+    } catch (err) {
+      toast.error(errorSentence(err));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -315,6 +340,18 @@ export const CrmCallsPage: React.FC = () => {
                           <Phone aria-hidden />Call again
                         </Button>
                       )}
+                      {isOwner && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-8 px-0 text-muted-foreground hover:text-destructive"
+                          aria-label={`Delete the call to ${call.contact?.name || call.company?.name || call.display}`}
+                          title="Delete call"
+                          onClick={() => setDeleting(call)}
+                        >
+                          <Trash2 aria-hidden />
+                        </Button>
+                      )}
                     </div>
                     <p className="text-xs tabular-nums text-muted-foreground">
                       {call.display}{call.contact ? ' · Lead' : call.company ? ' · Company' : ''}
@@ -375,6 +412,33 @@ export const CrmCallsPage: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleting !== null} onOpenChange={(open) => { if (!open && !deleteBusy) setDeleting(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this call?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleting && (
+                <>
+                  The call to {deleting.contact?.name || deleting.company?.name || deleting.display} on {whenOf(deleting.at)} is
+                  removed for good{deleting.recorded ? ', together with its recording' : ''} and its entry on the timeline.
+                  This cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteBusy}
+              onClick={(e) => { e.preventDefault(); void confirmDelete(); }}
+            >
+              {deleteBusy && <Loader2 className="animate-spin" aria-hidden />}Delete call
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {dialing && (
         <CallDialog

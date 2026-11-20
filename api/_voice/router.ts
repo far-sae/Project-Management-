@@ -16,6 +16,7 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
  *   POST calls                 start a call to a lead or a company
  *   POST calls/<id>/end        how the call went, in the caller's words
  *   GET  calls/<id>/recording  the recording, as audio
+ *   DELETE calls/<id>          remove a call, its recording and its timeline entry (the owner only)
  * From the phone provider (checked by its signature in api/voice.ts):
  *   twiml      what to ring for a call a browser just placed
  *   notice     what the person called hears first
@@ -35,6 +36,9 @@ export const TABLES_MISSING_MESSAGE = "Calling is not set up yet: run supabase/m
 export const TOO_MANY_MESSAGE = "Too many calls in one minute. Wait a moment, then try again.";
 export const NO_RECORDING_MESSAGE = "This call has no recording.";
 export const RECORDING_UNAVAILABLE_MESSAGE = "The recording could not be loaded. Please try again.";
+export const DELETE_OWNER_ONLY_MESSAGE = "Only the owner can delete a call.";
+export const CALL_IN_PROGRESS_MESSAGE = "This call is still in progress. Delete it once it has ended.";
+export const RECORDING_NOT_DELETED_MESSAGE = "The recording could not be deleted at the phone provider, so the call was kept. Please try again.";
 export const noNumberMessage = (country: CallCountry): string =>
   `There is no ${COUNTRY_NAME[country]} number to call from yet: add ${country === "GB" ? "TWILIO_NUMBER_UK" : "TWILIO_NUMBER_US"} in Vercel's environment variables.`;
 
@@ -257,12 +261,48 @@ async function recording(d: VoiceDeps, r: RouteRequest, id: string): Promise<Rou
   return { status: 200, media: { type: "audio/mpeg", length: reply.headers.get("content-length"), body: reply.body as ReadableStream<Uint8Array> } };
 }
 
+/** How long a call may stay "ringing" before it counts as over (the longest call, and a little more). */
+const STALE_MS = 3 * 60 * 60_000;
+
+/**
+ * Removes a call for good: its recording at the phone provider first, then the
+ * call and the entry it left on the timeline. The organisation's owner only.
+ * When the recording cannot be removed nothing is deleted, so no recording is
+ * ever left behind without the call it belongs to.
+ */
+async function remove(d: VoiceDeps, r: RouteRequest, id: string): Promise<RouteResult> {
+  const call = isUuid(id) ? await d.store.getCall(id) : null;
+  const role = call ? await d.store.orgRole(call.organizationId, r.user.id) : null;
+  // Someone outside the organisation gets the same answer as for a call that does not exist.
+  if (!call || !role) throw new AppError(CALL_NOT_FOUND_MESSAGE, 404);
+  if (role !== "owner") throw new AppError(DELETE_OWNER_ONLY_MESSAGE, 403);
+  const age = nowOf(d).getTime() - new Date(call.createdAt).getTime();
+  if (!call.endedAt && (call.status === "starting" || call.status === "ringing") && age < STALE_MS) throw new AppError(CALL_IN_PROGRESS_MESSAGE, 409);
+
+  if (call.recordingSid && /^RE[0-9a-fA-F]{32}$/.test(call.recordingSid)) {
+    const config = readyConfig(d);
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Recordings/${call.recordingSid}.json`;
+    let status = 0;
+    try {
+      const reply = await d.fetch(url, { method: "DELETE", headers: { Authorization: "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64") } });
+      status = reply.status;
+    } catch {
+      status = 0;
+    }
+    // 404: the provider no longer has it, which is what was wanted.
+    if (!(status >= 200 && status < 300) && status !== 404) throw new AppError(RECORDING_NOT_DELETED_MESSAGE, 502);
+  }
+  await d.store.deleteCall(call.id);
+  return { status: 200, json: { ok: true } };
+}
+
 export async function route(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
   try {
     const [a, b, c] = r.path;
     if (r.path.length === 1 && a === "setup" && r.method === "GET") return await setup(d);
     if (r.path.length === 1 && a === "calls" && r.method === "GET") return await list(d, r);
     if (r.path.length === 1 && a === "calls" && r.method === "POST") return await start(d, r);
+    if (r.path.length === 2 && a === "calls" && r.method === "DELETE") return await remove(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "end" && r.method === "POST") return await end(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "recording" && r.method === "GET") return await recording(d, r, b);
     return { status: 404, json: { error: "not found" } };

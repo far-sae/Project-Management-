@@ -7,12 +7,16 @@ import { readConfig, type VoiceConfig } from "../../../api/_voice/config";
 import {
   CALLS_OWNER_ONLY_MESSAGE,
   CALLS_PER_MINUTE,
+  CALL_IN_PROGRESS_MESSAGE,
+  CALL_NOT_FOUND_MESSAGE,
   CHOOSE_WORKSPACE_MESSAGE,
+  DELETE_OWNER_ONLY_MESSAGE,
   describeCall,
   NO_WORKSPACE_MESSAGE,
   NOT_FOUND_MESSAGE,
   OWNER_ONLY_MESSAGE,
   PAGE_SIZE,
+  RECORDING_NOT_DELETED_MESSAGE,
   route,
   TABLES_MISSING_MESSAGE,
   TOO_MANY_MESSAGE,
@@ -104,6 +108,10 @@ function fakeStore() {
       calls.set(id, next);
       return next;
     },
+    deleteCall: async (id) => {
+      calls.delete(id);
+      activities.delete(id);
+    },
     saveActivity: async (call, description, metadata) => {
       activities.set(call.id, { id: call.id, description, metadata, contactId: call.contactId, companyId: call.companyId, workspaceId: call.workspaceId });
     },
@@ -118,6 +126,7 @@ function world() {
   const as = (user: string) => ({
     get: (path: string, query: Record<string, string> = {}) => route(deps, { method: "GET", path: path.split("/"), body: {}, query, user: { id: user } }),
     post: (path: string, body: Record<string, unknown> = {}) => route(deps, { method: "POST", path: path.split("/"), body, user: { id: user } }),
+    del: (path: string) => route(deps, { method: "DELETE", path: path.split("/"), body: {}, user: { id: user } }),
   });
   const hook = (what: "twiml" | "notice" | "done" | "recording", params: Record<string, string>, query: Record<string, string> = {}) =>
     webhook(deps, { what, base: "https://app.example.com", query, params: { AccountSid: CONFIG.accountSid, ...params } });
@@ -463,6 +472,71 @@ describe("calling: recordings", () => {
     const id = await w.startCall();
     await w.hook("recording", { RecordingStatus: "completed", RecordingSid: "../../Calls", RecordingDuration: "5" }, { call: id });
     expect(w.calls.get(id)?.recordingSid).toBeNull();
+  });
+});
+
+describe("calling: deleting a call", () => {
+  const finished = async (w: ReturnType<typeof world>, recorded: boolean) => {
+    const id = await w.startCall(ADMIN);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "60" }, { call: id });
+    if (recorded) await w.hook("recording", { RecordingStatus: "completed", RecordingSid: REC_SID, RecordingDuration: "58" }, { call: id });
+    return id;
+  };
+
+  it("lets the owner remove a call with its recording and its timeline entry", async () => {
+    const w = world();
+    const id = await finished(w, true);
+    expect(w.activities.has(id)).toBe(true);
+    w.fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    expect(await w.as(OWNER).del(`calls/${id}`)).toEqual({ status: 200, json: { ok: true } });
+    const [url, init] = w.fetchMock.mock.calls[0] as unknown as [string, { method: string; headers: Record<string, string> }];
+    expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${CONFIG.accountSid}/Recordings/${REC_SID}.json`);
+    expect(init.method).toBe("DELETE");
+    expect(init.headers.Authorization).toBe("Basic " + Buffer.from(`${CONFIG.accountSid}:${CONFIG.authToken}`).toString("base64"));
+    expect(w.calls.has(id)).toBe(false);
+    expect(w.activities.has(id)).toBe(false);
+    expect(((await w.as(OWNER).get("calls", { workspaceId: WS })).json as CallList).calls).toEqual([]);
+  });
+
+  it("is for the owner only, not an admin, a member or an outsider", async () => {
+    const w = world();
+    const id = await finished(w, false);
+    // Even the admin who placed the call cannot delete it.
+    expect(await w.as(ADMIN).del(`calls/${id}`)).toEqual({ status: 403, json: { error: DELETE_OWNER_ONLY_MESSAGE } });
+    expect(await w.as(MEMBER).del(`calls/${id}`)).toEqual({ status: 403, json: { error: DELETE_OWNER_ONLY_MESSAGE } });
+    expect(await w.as("0c000000-0000-4000-8000-000000000099").del(`calls/${id}`)).toEqual({ status: 404, json: { error: CALL_NOT_FOUND_MESSAGE } });
+    expect(await w.as(OWNER).del("calls/not-an-id")).toEqual({ status: 404, json: { error: CALL_NOT_FOUND_MESSAGE } });
+    expect(w.calls.has(id)).toBe(true);
+    expect(w.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the call when its recording cannot be deleted, so no recording is left behind", async () => {
+    const w = world();
+    const id = await finished(w, true);
+    w.fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(await w.as(OWNER).del(`calls/${id}`)).toEqual({ status: 502, json: { error: RECORDING_NOT_DELETED_MESSAGE } });
+    w.fetchMock.mockRejectedValueOnce(new Error("network down"));
+    expect((await w.as(OWNER).del(`calls/${id}`)).status).toBe(502);
+    expect(w.calls.has(id)).toBe(true);
+    expect(w.activities.has(id)).toBe(true);
+    // The provider no longer having it is fine: the call goes.
+    w.fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect((await w.as(OWNER).del(`calls/${id}`)).status).toBe(200);
+    expect(w.calls.has(id)).toBe(false);
+  });
+
+  it("deletes a call without a recording without asking the provider, and leaves a running call alone", async () => {
+    const w = world();
+    const id = await finished(w, false);
+    expect((await w.as(OWNER).del(`calls/${id}`)).status).toBe(200);
+    expect(w.fetchMock).not.toHaveBeenCalled();
+
+    const live = await w.startCall(OWNER);
+    await w.hook("twiml", { callId: live, From: "client:" + identityOf(OWNER), CallSid: CALL_SID });
+    expect(await w.as(OWNER).del(`calls/${live}`)).toEqual({ status: 409, json: { error: CALL_IN_PROGRESS_MESSAGE } });
+    // One whose end was never reported can be cleared away later.
+    w.state.now = new Date(w.state.now.getTime() + 4 * 60 * 60_000);
+    expect((await w.as(OWNER).del(`calls/${live}`)).status).toBe(200);
   });
 });
 

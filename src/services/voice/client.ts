@@ -24,7 +24,7 @@ export class VoiceError extends Error {
 export const errorSentence = (err: unknown): string =>
   err instanceof VoiceError && err.message ? err.message : REQUEST_FAILED_MESSAGE;
 
-async function send(path: string, body?: unknown): Promise<Response> {
+async function send(path: string, body?: unknown, method?: 'DELETE'): Promise<Response> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new VoiceError(SIGNED_OUT_MESSAGE, 401);
@@ -33,7 +33,7 @@ async function send(path: string, body?: unknown): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(BASE + path, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: method ?? (body === undefined ? 'GET' : 'POST'),
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: 'same-origin',
@@ -91,6 +91,9 @@ export const endCall = (id: string, input: EndCallInput): Promise<void> => json<
 /** The calls of a workspace, newest first; `before` (the time of the last one shown) asks for the older ones. */
 export const listCalls = (workspaceId: string, before?: string): Promise<CallList> =>
   json<CallList>(`calls?workspaceId=${encodeURIComponent(workspaceId)}${before ? `&before=${encodeURIComponent(before)}` : ''}`);
+
+/** Removes a call for good, with its recording and its timeline entry. The owner only. */
+export const deleteCall = (id: string): Promise<void> => send(`calls/${id}`, undefined, 'DELETE').then(() => undefined);
 
 /** The recording of a call, as audio the page can play. */
 export async function fetchRecording(id: string): Promise<Blob> {

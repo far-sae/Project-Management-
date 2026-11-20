@@ -67,6 +67,8 @@ export interface VoiceStore {
   patchCall(id: string, patch: CallPatch): Promise<Call | null>;
   /** Writes (or rewrites) the call's one timeline entry. */
   saveActivity(call: Call, description: string, metadata: CallActivityMeta): Promise<void>;
+  /** Removes the call and the timeline entry it left. */
+  deleteCall(id: string): Promise<void>;
 }
 
 type Row = Record<string, any>;
@@ -203,6 +205,12 @@ export function supabaseStore(sb: SupabaseClient): VoiceStore {
       for (const [k, v] of Object.entries(patch)) if (v !== undefined) row[COLUMN[k as keyof CallPatch]] = v;
       const data = must(await sb.from("crm_calls").update(row).eq("id", id).select().maybeSingle()) as Row | null;
       return data ? callFrom(data) : null;
+    },
+
+    async deleteCall(id) {
+      // The timeline entry has the call's own id; only a "call" entry is ever removed this way.
+      must(await sb.from("crm_activities").delete().eq("id", id).eq("type", "call"));
+      must(await sb.from("crm_calls").delete().eq("id", id));
     },
 
     async saveActivity(call, description, metadata) {
