@@ -8,7 +8,7 @@ import {
   UserPlus,
   Send,
   Loader2,
-  Minus,
+  PanelRightClose,
   Phone,
   Video,
   CalendarPlus,
@@ -72,7 +72,12 @@ interface ProjectRightRailProps {
   onInviteClick?: () => void;
   /** Realtime project presence by userId (from the same channel as the header). */
   presenceByUserId?: Map<string, PresencePeer>;
+  /** Unread messages while the panel is closed, for the Chat button's count. */
+  onUnreadChange?: (count: number) => void;
 }
+
+/** Width of the panel in rem. The one-to-one chat dock stays clear of it. */
+const PANEL_WIDTH_REM = 22.5;
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Owner',
@@ -229,6 +234,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
   onOpenChange,
   onInviteClick,
   presenceByUserId,
+  onUnreadChange,
 }) => {
   const { user } = useAuth();
   const { actions: callActions, state: callState } = useCall();
@@ -428,8 +434,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
    *  (Teams style): it minimises to a bar instead of vanishing and stays
    *  open across pages. */
   const { openChat } = useChatDock();
-  // Keep the dock clear of this panel: next to the open panel, or the launcher.
-  useChatDockInset(open ? 25.5 : 5.5);
+  // One-to-one chats sit to the left of the open panel, never on top of it.
+  useChatDockInset(open ? PANEL_WIDTH_REM + 1 : null);
 
   const openDirectMessage = useCallback(
     (m: { userId?: string; displayName?: string; email?: string; photoURL?: string }) => {
@@ -460,7 +466,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     latestMessageId: string | null;
   }>({ initialized: false, latestMessageId: null });
 
-  /** Persist a per-project "last seen" timestamp so the dock can show an unread badge. */
+  /** Persist a per-project "last seen" timestamp so the Chat button can show an unread count. */
   const lastSeenStorageKey = `project_chat_last_seen:${project.projectId}`;
   const [lastSeenAt, setLastSeenAt] = useState<number>(() => {
     if (typeof window === 'undefined') return 0;
@@ -489,6 +495,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       return new Date(m.createdAt).getTime() > lastSeenAt ? acc + 1 : acc;
     }, 0);
   }, [chatMessages, lastSeenAt, open, user]);
+
+  useEffect(() => {
+    onUnreadChange?.(unreadCount);
+  }, [unreadCount, onUnreadChange]);
 
   const chatRows = useMemo(
     () =>
@@ -539,7 +549,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     };
   }, [project.projectId]);
 
-  /** When the dock opens — or new messages arrive while open — bump the last-seen marker
+  /** When the panel opens — or new messages arrive while open — bump the last-seen marker
    *  and clear any unread `project_chat_message` notifications for this project so the
    *  bell doesn't keep showing chats the user has already read. */
   useEffect(() => {
@@ -898,9 +908,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
     </section>
   );
 
-  const railWidth = 'w-[calc(100vw-1.5rem)] sm:w-[min(23.5rem,calc(100vw-2.5rem))]';
-  /** The one soft shadow the floating project chat uses. */
-  const floatingShadow = 'shadow-[0_12px_32px_rgba(0,0,0,0.10)]';
   const viewOnlyTitle = 'View-only — calls are disabled for your role.';
   const projectCallTitle = isViewerOrg
     ? viewOnlyTitle
@@ -908,65 +915,23 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       ? 'Rings everyone in this project — to call one person, open their chat from the Team tab'
       : 'No other members to call — invite someone to this project first.';
 
-  if (!open) {
-    return (
-      <div
-        // Mobile: anchor to the bottom-right corner only — full-width pill
-        // would obscure the underlying kanban / task cards. Desktop keeps
-        // the wider card.
-        // z-40 sits ABOVE normal page content but BELOW any modal layer
-        // (Dialog / AlertDialog / Popover / Select all use z-50). That way
-        // opening a task or settings dialog cleanly covers the dock without
-        // needing to bump the dialog z-index — which in turn would hide
-        // popovers (Status / Priority / Assign / Date) inside the dialog.
-        className="fixed bottom-4 right-3 z-40 flex flex-col items-end pointer-events-none sm:right-5"
-        role="complementary"
-        aria-label="Project messaging"
-      >
-        <button
-          type="button"
-          onClick={() => onOpenChange(true)}
-          aria-label={`Open project messages — ${project.name}`}
-          title={`${project.name} · ${dedupedMembers.length} members${chatMessages.length > 0 ? '' : ' · Start the conversation'}`}
-          className={cn(
-            'pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center',
-            'rounded-full bg-primary text-primary-foreground transition-colors',
-            floatingShadow,
-            'hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-          )}
-        >
-          <MessageSquare className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span
-              className={cn(
-                'absolute -right-1.5 -top-1.5 min-w-[18px] rounded-full px-[5px]',
-                'bg-destructive text-center text-xs font-semibold leading-[18px] text-destructive-foreground tabular-nums',
-                'ring-2 ring-background',
-              )}
-            >
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          )}
-        </button>
-      </div>
-    );
-  }
+  // Closed: nothing is drawn. The component stays mounted so the unread count
+  // and the new-message sound keep working; the Chat button in the project
+  // header opens it.
+  if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-x-3 bottom-4 z-40 flex flex-col items-end pointer-events-none sm:inset-x-auto sm:right-5"
-      role="complementary"
-      aria-label="Project messages"
+    <aside
+      aria-label="Project chat"
+      className={cn(
+        'flex flex-col overflow-hidden border-l border-border bg-background',
+        // Phones and tablets have no room beside the board: a sheet over the page.
+        // z-40 keeps it below dialogs and popovers (z-50).
+        'fixed inset-y-0 right-0 z-40 w-full sm:w-[22.5rem]',
+        // Desktop: a column of the page itself, so the board is never covered.
+        'lg:static lg:z-auto lg:h-full lg:shrink-0',
+      )}
     >
-      <aside
-        className={cn(
-          'pointer-events-auto flex flex-col overflow-hidden rounded-xl border border-border bg-card',
-          floatingShadow,
-          'animate-in fade-in slide-in-from-bottom-3 duration-200 motion-reduce:animate-none',
-          railWidth,
-          'h-[min(36rem,calc(100svh-2rem))] max-h-[calc(100vh-2rem)]',
-        )}
-      >
         <div className="flex min-h-14 shrink-0 items-center gap-2.5 border-b border-border pl-3 pr-2">
           <div
             aria-hidden
@@ -1084,9 +1049,10 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
               size="icon"
               className="text-muted-foreground"
               onClick={() => onOpenChange(false)}
-              aria-label="Minimize project messages"
+              aria-label="Close project chat"
+              title="Close chat"
             >
-              <Minus />
+              <PanelRightClose />
             </Button>
           </div>
         </div>
@@ -1252,7 +1218,8 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
                   onChange={setChatInput}
                   members={mentionMembers}
                   excludeUserId={user?.userId}
-                  placeholder="Message the team… (@ to mention)"
+                  placeholder="Message the team…"
+                  title="Type @ to mention someone"
                   rows={1}
                   className="max-h-32 min-h-8 resize-none rounded-md border-0 bg-transparent px-1.5 py-1.5 leading-5 shadow-none [field-sizing:content] focus-visible:ring-0 focus-visible:ring-offset-0"
                   disabled={!user || chatSending}
@@ -1298,7 +1265,6 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
         </TabsContent>
       </Tabs>
     </aside>
-    </div>
   );
 };
 

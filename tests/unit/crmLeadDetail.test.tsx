@@ -231,6 +231,28 @@ describe('lead page', () => {
     });
   });
 
+  it('shows the lead’s custom fields and lets them be edited', async () => {
+    state.lead = { ...makeLead('lead', 'connected'), customFields: { budget_range: '£5k', industry: 'Dental' } };
+    await renderPage();
+    expect(screen.getByText('Budget Range')).toBeTruthy();
+    expect(screen.getByText('£5k')).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Edit/ })[0]);
+    const form = await screen.findByRole('dialog');
+    expect((within(form).getByLabelText('Custom field 1 name') as HTMLInputElement).value).toBe('Budget Range');
+    fireEvent.change(within(form).getByLabelText('Custom field 1 value'), { target: { value: '£8k' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Remove custom field Industry' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Add custom field' }));
+    fireEvent.change(within(form).getByLabelText('Custom field 2 name'), { target: { value: 'Team size' } });
+    fireEvent.change(within(form).getByLabelText('Custom field 2 value'), { target: { value: '12' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(state.updateContact).toHaveBeenCalled());
+    expect(state.updateContact.mock.calls[0]).toMatchObject([
+      'lead-1', { customFields: { budget_range: '£8k', team_size: '12' } },
+    ]);
+  });
+
   it('shows the single step pill instead of the two raw fields', async () => {
     await renderPage();
     expect(screen.queryByText('Lead status')).toBeNull();

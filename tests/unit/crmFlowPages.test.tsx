@@ -178,6 +178,68 @@ describe('New lead', () => {
   });
 });
 
+describe('New lead: custom fields', () => {
+  const openForm = () => {
+    svc.createContact.mockReset().mockResolvedValue({});
+    svc.ensureCompaniesByName.mockReset();
+    render(<MemoryRouter><CrmContactsPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'New lead' }));
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Noor' } });
+  };
+
+  it('saves the fields typed into the form with the lead', async () => {
+    openForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add custom field' }));
+    fireEvent.change(screen.getByLabelText('Custom field 1 name'), { target: { value: 'Budget range' } });
+    fireEvent.change(screen.getByLabelText('Custom field 1 value'), { target: { value: '£5k' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ customFields: { budget_range: '£5k' } });
+  });
+
+  it('adds a lead with no custom fields when none are typed', async () => {
+    openForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ customFields: {} });
+  });
+
+  it('takes a field away again', () => {
+    openForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add custom field' }));
+    fireEvent.change(screen.getByLabelText('Custom field 1 name'), { target: { value: 'Budget' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove custom field Budget' }));
+    expect(screen.queryByLabelText('Custom field 1 name')).toBeNull();
+  });
+
+  it('does not add the lead while a value has no name', async () => {
+    openForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Add custom field' }));
+    fireEvent.change(screen.getByLabelText('Custom field 1 value'), { target: { value: '£5k' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/name/i);
+    expect(svc.createContact).not.toHaveBeenCalled();
+  });
+
+  it('offers the field names already used on other leads', async () => {
+    const first = data.contacts[0] as { customFields: Record<string, string> };
+    first.customFields = { industry: 'Dental' };
+    try {
+      openForm();
+      fireEvent.click(screen.getByRole('button', { name: 'Add field Industry' }));
+      expect((screen.getByLabelText('Custom field 1 name') as HTMLInputElement).value).toBe('Industry');
+      fireEvent.change(screen.getByLabelText('Custom field 1 value'), { target: { value: 'Logistics' } });
+      // A name that is on the form is not offered a second time.
+      expect(screen.queryByRole('button', { name: 'Add field Industry' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+      await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+      expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ customFields: { industry: 'Logistics' } });
+    } finally {
+      first.customFields = {};
+    }
+  });
+});
+
 describe('Deals board', () => {
   it('forecasts with each stage’s chance of winning', () => {
     render(<MemoryRouter><CrmDealsPage /></MemoryRouter>);

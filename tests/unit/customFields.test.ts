@@ -4,6 +4,11 @@ import {
   setCustomField,
   removeCustomField,
   renameCustomField,
+  customFieldLabel,
+  customFieldRows,
+  newCustomFieldRow,
+  readCustomFieldRows,
+  knownCustomFieldKeys,
 } from "@/lib/customFields";
 
 describe("setCustomField", () => {
@@ -94,5 +99,55 @@ describe("renameCustomField", () => {
     const original = { a: 1, b: 2 };
     renameCustomField(original, "a", "c");
     expect(original).toEqual({ a: 1, b: 2 });
+  });
+});
+
+// The rows a person types into the "Custom fields" part of a lead form.
+describe("custom field rows", () => {
+  it("names a stored key the way people read it", () => {
+    expect(customFieldLabel("budget_range")).toBe("Budget Range");
+  });
+
+  it("turns what is stored into one row per field", () => {
+    const rows = customFieldRows({ budget_range: "£5k", industry: "Dental" });
+    expect(rows.map((r) => [r.key, r.name, r.value])).toEqual([
+      ["budget_range", "Budget Range", "£5k"],
+      ["industry", "Industry", "Dental"],
+    ]);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2);
+  });
+
+  it("stores a typed name as a lowercase key and trims the value", () => {
+    const rows = [{ ...newCustomFieldRow("Budget range"), value: "  £5k " }];
+    expect(readCustomFieldRows(rows)).toEqual({ fields: { budget_range: "£5k" }, error: null });
+  });
+
+  it("leaves out rows with no value and rows left empty", () => {
+    const rows = [newCustomFieldRow("Industry"), newCustomFieldRow(), { ...newCustomFieldRow("Size"), value: "12" }];
+    expect(readCustomFieldRows(rows)).toEqual({ fields: { size: "12" }, error: null });
+  });
+
+  it("keeps the stored key of a field whose name was not changed", () => {
+    const [row] = customFieldRows({ "Budget Range": "£5k" });
+    expect(readCustomFieldRows([{ ...row!, value: "£8k" }]).fields).toEqual({ "Budget Range": "£8k" });
+  });
+
+  it("asks for a name when a value has none", () => {
+    const result = readCustomFieldRows([{ ...newCustomFieldRow(), value: "£5k" }]);
+    expect(result.error).toMatch(/name/i);
+  });
+
+  it("refuses two fields with the same name", () => {
+    const result = readCustomFieldRows([
+      { ...newCustomFieldRow("Budget"), value: "1" },
+      { ...newCustomFieldRow("budget "), value: "2" },
+    ]);
+    expect(result.error).toMatch(/same name/i);
+  });
+
+  it("lists the field names already used, most used first", () => {
+    expect(
+      knownCustomFieldKeys([{ industry: "a", budget: "b" }, { budget: "c" }, null, undefined, {}]),
+    ).toEqual(["budget", "industry"]);
   });
 });

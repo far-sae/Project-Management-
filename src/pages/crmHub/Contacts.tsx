@@ -16,12 +16,16 @@ import {
   type LeadOwnerView, type LeadStep,
 } from '@/lib/crmFlow';
 import { companyKey } from '@/lib/crmImport';
+import {
+  customFieldLabel, knownCustomFieldKeys, readCustomFieldRows, type CustomFieldRow,
+} from '@/lib/customFields';
 import type { CrmContact } from '@/types/crmHub';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill } from '@/components/common/StatusPill';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
+import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -73,6 +77,8 @@ export const CrmContactsPage: React.FC = () => {
   const [companyName, setCompanyName] = useState('');
   const [source, setSource] = useState('');
   const [category, setCategory] = useState('');
+  const [customRows, setCustomRows] = useState<CustomFieldRow[]>([]);
+  const [customError, setCustomError] = useState<string | null>(null);
   const [existingCategories, setExistingCategories] = useState<string[]>([]);
 
   // Merge server-known categories with values already on loaded leads so
@@ -82,6 +88,9 @@ export const CrmContactsPage: React.FC = () => {
     for (const c of contacts) if (c.category?.trim()) set.add(c.category.trim());
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [existingCategories, contacts]);
+
+  /** Custom field names already on leads, so the form can offer them again. */
+  const customKeys = useMemo(() => knownCustomFieldKeys(contacts.map((c) => c.customFields)), [contacts]);
 
   const organizationId = organization?.organizationId ?? null;
   useEffect(() => {
@@ -122,7 +131,8 @@ export const CrmContactsPage: React.FC = () => {
         (c.email?.toLowerCase().includes(q) ?? false) ||
         (c.phone?.includes(q) ?? false) ||
         (c.jobTitle?.toLowerCase().includes(q) ?? false) ||
-        (companyById.get(c.companyId ?? '')?.name.toLowerCase().includes(q) ?? false)
+        (companyById.get(c.companyId ?? '')?.name.toLowerCase().includes(q) ?? false) ||
+        Object.values(c.customFields ?? {}).some((v) => String(v).toLowerCase().includes(q))
       );
     });
   }, [contacts, search, categoryFilter, view, user, companyById]);
@@ -140,6 +150,8 @@ export const CrmContactsPage: React.FC = () => {
 
   const handleExportCsv = () => {
     if (!filtered.length) { toast.error('Nothing to export'); return; }
+    // Every custom field in use becomes a column, so no lead loses one in the file.
+    const customColumns = knownCustomFieldKeys(filtered.map((c) => c.customFields)).sort();
     const csv = toCSV(filtered.map((c) => ({
       first_name: c.firstName,
       last_name: c.lastName ?? '',
@@ -152,6 +164,7 @@ export const CrmContactsPage: React.FC = () => {
       lifecycle_stage: c.lifecycleStage,
       lead_status: c.leadStatus,
       category: c.category ?? '',
+      ...Object.fromEntries(customColumns.map((key) => [customFieldLabel(key), c.customFields?.[key] ?? ''])),
     })));
     downloadCSV('leads.csv', csv);
     toast.success(`Exported ${filtered.length} lead${filtered.length === 1 ? '' : 's'}`);
@@ -160,11 +173,15 @@ export const CrmContactsPage: React.FC = () => {
   const openCreate = () => {
     setFirstName(''); setLastName(''); setEmail(''); setPhone('');
     setJobTitle(''); setCompanyName(''); setSource(''); setCategory('');
+    setCustomRows([]); setCustomError(null);
     setShowCreate(true);
   };
 
   const handleCreate = async () => {
     if (!organization || !firstName.trim()) return;
+    const custom = readCustomFieldRows(customRows);
+    setCustomError(custom.error);
+    if (custom.error) return;
     setBusy(true);
     try {
       // A typed company is linked when it exists and added when it does not.
@@ -189,6 +206,7 @@ export const CrmContactsPage: React.FC = () => {
           leadStatus: 'new',
           source: source.trim() || null,
           category: category.trim() || null,
+          customFields: custom.fields,
         },
         user?.userId ?? null,
       );
@@ -499,6 +517,15 @@ export const CrmContactsPage: React.FC = () => {
                   {allCategories.map((c) => <option key={c} value={c} />)}
                 </datalist>
               </div>
+            </div>
+            <div className="border-t border-border pt-4">
+              <CustomFieldsEditor
+                rows={customRows}
+                onChange={(rows) => { setCustomRows(rows); setCustomError(null); }}
+                suggestions={customKeys}
+                error={customError}
+                disabled={busy}
+              />
             </div>
           </div>
           <DialogFooter>

@@ -52,6 +52,10 @@ import {
 import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
+import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
+import {
+  customFieldLabel, customFieldRows, readCustomFieldRows, type CustomFieldRow,
+} from '@/lib/customFields';
 import { LeadAutomationCard } from '@/components/automation/LeadAutomationCard';
 import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { useDealMoney } from '@/hooks/useDealMoney';
@@ -889,13 +893,10 @@ export const CrmContactDetailPage: React.FC = () => {
               </dl>
               {customFields.length > 0 && (
                 <div className="flex flex-col gap-2 border-t border-border px-4 py-3">
-                  <div>
-                    <p className="text-xs font-medium text-foreground">Custom fields</p>
-                    <p className="text-xs text-muted-foreground">Captured from CSV import.</p>
-                  </div>
+                  <p className="text-xs font-medium text-foreground">Custom fields</p>
                   {customFields.map(([k, v]) => (
                     <div key={k} className="flex items-start justify-between gap-3 text-sm">
-                      <span className="text-muted-foreground">{humanize(k)}</span>
+                      <span className="text-muted-foreground">{customFieldLabel(k)}</span>
                       <span className="min-w-0 break-words text-right font-medium">{v}</span>
                     </div>
                   ))}
@@ -1201,10 +1202,14 @@ const EditLeadDialog: React.FC<{
   const [category, setCategory] = useState(contact.category ?? '');
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>(contact.lifecycleStage);
   const [leadStatus, setLeadStatus] = useState<LeadStatus>(contact.leadStatus);
+  const [customRows, setCustomRows] = useState<CustomFieldRow[]>(() => customFieldRows(contact.customFields));
+  const [customError, setCustomError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
+      setCustomRows(customFieldRows(contact.customFields));
+      setCustomError(null);
       setFirstName(contact.firstName);
       setLastName(contact.lastName ?? '');
       setEmail(contact.email ?? '');
@@ -1219,6 +1224,9 @@ const EditLeadDialog: React.FC<{
   }, [open, contact]);
 
   const handleSave = async () => {
+    const custom = readCustomFieldRows(customRows);
+    setCustomError(custom.error);
+    if (custom.error) return;
     setBusy(true);
     try {
       await updateContact(contact.id, {
@@ -1230,6 +1238,7 @@ const EditLeadDialog: React.FC<{
         companyId: companyId || null,
         source: source.trim() || null,
         category: category.trim() || null,
+        customFields: custom.fields,
         // Sent only when changed here, so a save never undoes the step bar.
         ...(lifecycleStage !== contact.lifecycleStage ? { lifecycleStage } : {}),
         ...(leadStatus !== contact.leadStatus ? { leadStatus } : {}),
@@ -1298,6 +1307,14 @@ const EditLeadDialog: React.FC<{
               <Label htmlFor={`${fieldId}-category`}>Category</Label>
               <Input id={`${fieldId}-category`} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Optional" maxLength={64} disabled={busy} />
             </div>
+          </div>
+          <div className="border-t border-border pt-4">
+            <CustomFieldsEditor
+              rows={customRows}
+              onChange={(rows) => { setCustomRows(rows); setCustomError(null); }}
+              error={customError}
+              disabled={busy}
+            />
           </div>
           <details className="rounded-md border border-border">
             <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-foreground">
