@@ -68,6 +68,8 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
   const line = useRef<Line | null>(null);
   const callId = useRef<string | null>(null);
   const answeredAt = useRef<number | null>(null);
+  /** True once the other phone has rung: from then on it is a real call, and it is logged. */
+  const rang = useRef(false);
   /** True once this call's "how it went" has been sent, so closing does not send it twice. */
   const reported = useRef(false);
   /** True when "Hang up" was pressed before the line was open: the line is closed as soon as it exists. */
@@ -92,6 +94,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
     line.current = null;
     callId.current = null;
     answeredAt.current = null;
+    rang.current = false;
     reported.current = false;
     abandoned.current = false;
   }, [open, phone]);
@@ -130,8 +133,10 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
     if (!checked.ok || blocked) return;
     setProblem(null);
     setPhase('connecting');
+    let accepted = false;
     try {
       const started = await startCall({ ...target, to: checked.e164, country: checked.country });
+      accepted = true;
       callId.current = started.id;
       setDisplay(started.display);
       if (abandoned.current) {
@@ -139,8 +144,12 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
         return;
       }
       const opened = await openLine(started.token, started.id, (event, why) => {
-        if (event === 'ringing') setPhase((p) => (p === 'connecting' ? 'ringing' : p));
+        if (event === 'ringing') {
+          rang.current = true;
+          setPhase((p) => (p === 'connecting' ? 'ringing' : p));
+        }
         if (event === 'answered') {
+          rang.current = true;
           answeredAt.current = Date.now();
           setOutcome('connected');
           setPhase('live');
@@ -149,6 +158,12 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
           line.current = null;
           if (answeredAt.current) setSeconds(Math.round((Date.now() - answeredAt.current) / 1000));
           if (why) setProblem(why);
+          // A line that failed before the other phone rang was never a call: back to the start, nothing logged.
+          if (why && !rang.current) {
+            callId.current = null;
+            setPhase('ready');
+            return;
+          }
           setPhase('ended');
         }
       });
@@ -156,7 +171,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
       else line.current = opened;
     } catch (err) {
       // The line itself reports its own failure through "ended"; this is the server refusing to start.
-      if (!callId.current) {
+      if (!accepted) {
         setProblem(errorSentence(err));
         setPhase('ready');
       }

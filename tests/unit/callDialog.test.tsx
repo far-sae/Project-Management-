@@ -171,11 +171,41 @@ describe('call window', () => {
     expect(callButton()).toBeTruthy();
   });
 
-  it('shows why the line dropped', async () => {
-    show();
+  it('goes back to the start, and logs nothing, when the line fails before the other phone rings', async () => {
+    const { onOpenChange } = show();
     fireEvent.click(callButton());
     await waitFor(() => expect(h.openLine).toHaveBeenCalled());
     act(() => h.tell?.('ended', 'Allow the microphone for this site in your browser, then call again.'));
     expect(screen.getByRole('alert').textContent).toBe('Allow the microphone for this site in your browser, then call again.');
+    // It can be tried again straight away, and closing it leaves nothing on the timeline.
+    expect(callButton().hasAttribute('disabled')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(h.endCall).not.toHaveBeenCalled();
+  });
+
+  it('keeps the reason the line gave when the provider refuses the site', async () => {
+    const reason = 'The phone provider did not accept this site. Check TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET in Vercel, redeploy, then reload this page.';
+    h.openLine.mockImplementation(async (_token: string, _id: string, on: NonNullable<typeof h.tell>) => {
+      on('ended', reason);
+      throw new Error('AccessTokenInvalid');
+    });
+    show();
+    fireEvent.click(callButton());
+    expect((await screen.findByRole('alert')).textContent).toBe(reason);
+    expect(callButton()).toBeTruthy();
+    expect(h.endCall).not.toHaveBeenCalled();
+  });
+
+  it('shows why a call that had started dropped, and still logs it', async () => {
+    show();
+    fireEvent.click(callButton());
+    await waitFor(() => expect(h.openLine).toHaveBeenCalled());
+    act(() => h.tell?.('ringing'));
+    act(() => h.tell?.('ended', 'The call could not be connected. Please try again.'));
+    expect(screen.getByRole('alert').textContent).toBe('The call could not be connected. Please try again.');
+    expect(screen.getByRole('status').textContent).toBe('The call was not answered.');
+    fireEvent.click(screen.getByRole('button', { name: 'Save to timeline' }));
+    await waitFor(() => expect(h.endCall).toHaveBeenCalledWith('call-1', expect.objectContaining({ answered: false })));
   });
 });

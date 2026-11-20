@@ -137,6 +137,21 @@ describe("calling: settings", () => {
     w.deps.config = () => readConfig({});
     expect((await w.as(OWNER).get("setup")).json).toEqual({ configured: false, ready: false, problem: null, numbers: { US: false, GB: false } });
   });
+
+  it("is not ready while the provider refuses a setting, and says which", async () => {
+    const w = world();
+    const check = vi.fn(async () => "Twilio did not accept the API key." as string | null);
+    w.deps.check = check;
+    expect((await w.as(OWNER).get("setup")).json).toEqual({ configured: true, ready: false, problem: "Twilio did not accept the API key.", numbers: { US: true, GB: true } });
+    expect(check).toHaveBeenCalledWith(CONFIG);
+    check.mockResolvedValue(null);
+    expect((await w.as(OWNER).get("setup")).json).toMatchObject({ ready: true, problem: null });
+    // The provider is not asked while something nearer is still missing.
+    check.mockClear();
+    w.state.ready = false;
+    await w.as(OWNER).get("setup");
+    expect(check).not.toHaveBeenCalled();
+  });
 });
 
 describe("calling: the pass a browser calls with", () => {

@@ -47,6 +47,8 @@ export type VoiceDeps = {
   /** The short-lived pass for one browser call. */
   token: (config: VoiceConfig, userId: string) => string;
   fetch: typeof fetch;
+  /** Asks the provider whether the settings really work; a sentence naming what is wrong, or null. Nothing is asked when omitted. */
+  check?: (config: VoiceConfig) => Promise<string | null>;
   now?: () => Date;
 };
 
@@ -117,8 +119,12 @@ async function setup(d: VoiceDeps): Promise<RouteResult> {
   const out: VoiceSetup = { configured: state.configured, ready: false, problem: state.problem, numbers: { US: false, GB: false } };
   if (state.config) {
     out.numbers = { US: Boolean(state.config.numbers.US), GB: Boolean(state.config.numbers.GB) };
-    if (await d.store.tablesReady()) out.ready = true;
-    else out.problem = TABLES_MISSING_MESSAGE;
+    if (!(await d.store.tablesReady())) out.problem = TABLES_MISSING_MESSAGE;
+    else {
+      // Settings of the right shape can still be refused by the provider: say which one, before anyone calls.
+      out.problem = d.check ? await d.check(state.config) : null;
+      out.ready = !out.problem;
+    }
   }
   return { status: 200, json: out };
 }

@@ -5,6 +5,7 @@ import { adminClient, siteOrigin } from "./_signroom/host/admin.js";
 import { refuseSignedOut } from "./_signroom/host/auth.js";
 import { refuseOversize } from "./_signroom/host/bodySize.js";
 import { refuseForeign } from "./_signroom/host/origin.js";
+import { accountChecker } from "./_voice/check.js";
 import { readConfig } from "./_voice/config.js";
 import { route as realRoute, webhook as realWebhook, WEBHOOKS, type RouteRequest, type RouteResult, type VoiceDeps, type Webhook, type WebhookRequest } from "./_voice/router.js";
 import { supabaseStore } from "./_voice/store.js";
@@ -172,9 +173,12 @@ async function realSignedIn(req: VercelRequest, res: VercelResponse): Promise<{ 
   return who ? { id: who.userId } : null;
 }
 
+/** Kept for the life of the warm function, so the provider is asked about the settings only now and then. */
+const check = accountChecker(fetch, siteOrigin);
+
 function buildDeps(): VoiceDeps | null {
   const sb = adminClient();
-  return sb ? { store: supabaseStore(sb), config: () => readConfig(), token: callToken, fetch } : null;
+  return sb ? { store: supabaseStore(sb), config: () => readConfig(), token: callToken, fetch, check } : null;
 }
 
 export default voiceHandler({
