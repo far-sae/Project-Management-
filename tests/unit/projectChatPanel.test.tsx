@@ -93,6 +93,8 @@ describe('project chat', () => {
     // Flush with the bottom of the page, and a bar rather than a circle.
     expect(bar.parentElement?.className).toContain('bottom-0');
     expect(bar.className).not.toContain('rounded-full');
+    // In the brand colour: blue in light mode, orange in dark mode.
+    expect(bar.className).toContain('bg-primary ');
     fireEvent.click(bar);
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });

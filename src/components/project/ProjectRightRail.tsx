@@ -929,18 +929,19 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
           aria-label={barLabel}
           title={`${project.name} · ${dedupedMembers.length} members`}
           className={cn(
-            'pointer-events-auto inline-flex h-10 items-center gap-2 rounded-t-lg border border-b-0 border-border bg-card px-3',
-            'text-sm font-medium text-foreground transition-colors hover:bg-secondary',
+            // The brand colour: blue in light mode, orange in dark mode.
+            'pointer-events-auto inline-flex h-10 items-center gap-2 rounded-t-lg bg-primary px-3.5',
+            'text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90',
             'shadow-[0_-4px_16px_rgba(0,0,0,0.08)]',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           )}
         >
-          <MessageSquare className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <MessageSquare className="h-4 w-4" aria-hidden />
           <span>Chat</span>
           {unreadCount > 0 && (
             <span
               aria-hidden
-              className="min-w-[18px] rounded-full bg-destructive px-[5px] text-center text-xs font-semibold leading-[18px] text-destructive-foreground tabular-nums"
+              className="min-w-[18px] rounded-full bg-primary-foreground px-[5px] text-center text-xs font-semibold leading-[18px] text-primary tabular-nums"
             >
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
