@@ -14,6 +14,7 @@ import { queryableOrgId } from '@/lib/email/orgId';
 import { listAccounts, listMailboxStatus } from '@/services/supabase/email';
 import { SetupChecklist } from '@/components/email/SetupChecklist';
 import { PageHeader } from '@/components/common/PageHeader';
+import { WarmupServiceCard } from '@/components/email/WarmupServiceCard';
 import { useProjects } from '@/hooks/useProjects';
 
 /**
@@ -202,6 +203,7 @@ export const Email: React.FC = () => {
 
         <TabsContent value="settings">
           <SettingsTab orgId={orgId} isAdmin={isAdmin} orgTimezone={organization?.settings?.timezone ?? 'UTC'} />
+          <WarmupServiceCard orgId={orgId} isAdmin={isAdmin} />
         </TabsContent>
       </Tabs>
       </>

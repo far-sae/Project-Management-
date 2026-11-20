@@ -21,6 +21,11 @@ import {
 import { MailboxCard } from './MailboxCard';
 import { SignatureDialog } from './SignatureDialog';
 import { DomainAuthPanel } from './DomainAuthPanel';
+import { WarmupPanel } from './WarmupPanel';
+import {
+  errorSentence as warmupErrorSentence, pauseWarmup, startWarmup, warmupStatus,
+} from '@/services/email/warmup';
+import type { WarmupMailbox, WarmupStatus } from '../../../api/_warmup/shared/types';
 
 interface AccountsTabProps {
   orgId: string;
@@ -62,6 +67,13 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     Record<string, { sent30d: number; bounced30d: number; percent: number | null }>
   >({});
   const [loading, setLoading] = useState(true);
+  /**
+   * What the warm-up service says about these mailboxes. Null until it has
+   * answered, and when it cannot be read: the warm-up section is then simply
+   * not drawn.
+   */
+  const [warmup, setWarmup] = useState<WarmupStatus | null>(null);
+  const [warmupBusyId, setWarmupBusyId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
   const [creating, setCreating] = useState(false);
@@ -89,6 +101,30 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       })
       .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailboxes'));
   };
+
+  // Beside the mailboxes, never in their way: a warm-up service that is slow
+  // or down must not keep the mailbox list from showing.
+  const refreshWarmup = () => {
+    if (!orgId) { setWarmup(null); return; }
+    void warmupStatus(orgId, workspaceId).then(setWarmup).catch(() => setWarmup(null));
+  };
+
+  const changeWarmup = async (mailboxId: string, work: () => Promise<WarmupMailbox>, done: string) => {
+    setWarmupBusyId(mailboxId);
+    try {
+      const next = await work();
+      setWarmup((current) => (current ? { ...current, mailboxes: { ...current.mailboxes, [mailboxId]: next } } : current));
+      toast.success(done);
+    } catch (err) {
+      toast.error(warmupErrorSentence(err));
+    } finally {
+      setWarmupBusyId(null);
+    }
+  };
+
+  useEffect(() => {
+    refreshWarmup();
+  }, [orgId, workspaceId]);
 
   useEffect(() => {
     setLoading(true);
@@ -414,6 +450,20 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
                   onDelete={() => setDeleteTarget(mailbox)}
                   onResume={() => handleResume(mailbox)}
                   onReconfigure={() => openEdit(mailbox)}
+                  warmup={
+                    <WarmupPanel
+                      status={warmup}
+                      mailbox={warmup?.mailboxes[mailbox.id]}
+                      isAdmin={isAdmin}
+                      busy={warmupBusyId === mailbox.id}
+                      onStart={() => void changeWarmup(mailbox.id, () => startWarmup(mailbox.id), 'Warm-up started.')}
+                      onPause={(paused) => void changeWarmup(
+                        mailbox.id,
+                        () => pauseWarmup(mailbox.id, paused),
+                        paused ? 'Warm-up paused.' : 'Warm-up resumed.',
+                      )}
+                    />
+                  }
                 />
               ))}
             </div>

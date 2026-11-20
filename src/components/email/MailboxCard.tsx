@@ -35,6 +35,8 @@ interface MailboxCardProps {
   onDelete: () => void;
   onResume: () => void;
   onReconfigure: () => void;
+  /** The warm-up section for this mailbox (AccountsTab builds it), shown under its delivery record. */
+  warmup?: React.ReactNode;
 }
 
 /**
@@ -146,7 +148,7 @@ const warmupLabel = (mailbox: MailboxHealth): string => {
 /** One mailbox: status, today's usage, warmup state and admin controls. */
 export const MailboxCard: React.FC<MailboxCardProps> = ({
   mailbox, account, isAdmin, bounce, onEditSignature, testing, resuming, onSendTest, onDelete,
-  onResume, onReconfigure,
+  onResume, onReconfigure, warmup,
 }) => {
   const sendable = isSendable(mailbox);
   const pct = mailbox.effectiveLimit > 0
@@ -258,6 +260,8 @@ export const MailboxCard: React.FC<MailboxCardProps> = ({
           // column's default where the database has not run it yet.
           threshold={account?.bouncePausePercent ?? 5}
         />
+
+        {warmup}
 
         {mailbox.pausedReason && (
           <div className="mt-3 flex items-center justify-between gap-3 p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-md">

@@ -13,6 +13,7 @@ import type { LaunchEstimate } from '@/lib/email/launchEstimate';
 import type { EmailAccount } from '@/lib/email/types';
 import type { Recipient } from '@/services/supabase/email';
 
+import { WarmupLaunchWarning } from './WarmupLaunchWarning';
 interface LaunchReviewProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -134,6 +135,11 @@ export const LaunchReview: React.FC<LaunchReviewProps> = ({
                 </p>
               </div>
             )}
+            <WarmupLaunchWarning
+              open={open}
+              organizationId={signingAccount?.organizationId ?? null}
+              mailboxes={account ? [account] : poolAccounts}
+            />
           </section>
 
           {/* ── what it says, to a real person ─────────────────────── */}
