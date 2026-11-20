@@ -2,7 +2,7 @@ import { AppError } from "../_signroom/errors.js";
 import { isUuid } from "../_signroom/validate.js";
 import type { ConfigState, VoiceConfig } from "./config.js";
 import { dialable, formatNumber, COUNTRY_NAME, type CallCountry } from "./shared/numbers.js";
-import { OUTCOME_LABEL, OUTCOMES, type CallActivityMeta, type CallOutcome, type CallStatus, type StartedCall, type VoiceSetup } from "./shared/types.js";
+import { OUTCOME_LABEL, OUTCOMES, type CallActivityMeta, type CallList, type CallListItem, type CallOutcome, type CallStatus, type StartedCall, type VoiceSetup } from "./shared/types.js";
 import type { Call, CallPatch, VoiceStore } from "./store.js";
 import { isIdentity } from "./token.js";
 import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
@@ -12,6 +12,7 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
  *
  * From the page (signed in):
  *   GET  setup                 can calls be placed, and if not, what is missing
+ *   GET  calls                 the calls of a workspace, newest first, with how the month went
  *   POST calls                 start a call to a lead or a company
  *   POST calls/<id>/end        how the call went, in the caller's words
  *   GET  calls/<id>/recording  the recording, as audio
@@ -27,6 +28,8 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
 export const OWNER_ONLY_MESSAGE = "Only the owner and admins can place calls.";
 export const NOT_FOUND_MESSAGE = "This lead or company is not in your CRM.";
 export const CALL_NOT_FOUND_MESSAGE = "This call was not found.";
+export const CHOOSE_WORKSPACE_MESSAGE = "Choose a workspace.";
+export const CALLS_OWNER_ONLY_MESSAGE = "Only the owner and admins can see calls.";
 export const NO_WORKSPACE_MESSAGE = "This record is not in a workspace, so its call could not be logged. Add it to a workspace first.";
 export const TABLES_MISSING_MESSAGE = "Calling is not set up yet: run supabase/migrations/188_crm_calls.sql in the Supabase SQL editor.";
 export const TOO_MANY_MESSAGE = "Too many calls in one minute. Wait a moment, then try again.";
@@ -38,6 +41,9 @@ export const noNumberMessage = (country: CallCountry): string =>
 /** Calls one person may start in a minute, and the longest note kept with a call. */
 export const CALLS_PER_MINUTE = 6;
 export const NOTE_MAX = 2000;
+/** Calls on one page of the list, and the days the summary above it covers. */
+export const PAGE_SIZE = 50;
+export const SUMMARY_DAYS = 30;
 /** How long after "Call" was pressed the browser may still connect it. */
 export const START_WINDOW_MS = 5 * 60_000;
 
@@ -52,7 +58,7 @@ export type VoiceDeps = {
   now?: () => Date;
 };
 
-export type RouteRequest = { method: string; path: string[]; body: Record<string, unknown>; user: { id: string } };
+export type RouteRequest = { method: string; path: string[]; body: Record<string, unknown>; query?: Record<string, string>; user: { id: string } };
 export type MediaStream = { type: string; length: string | null; body: ReadableStream<Uint8Array> };
 export type RouteResult = { status: number; json?: unknown; media?: MediaStream };
 
@@ -126,6 +132,53 @@ async function setup(d: VoiceDeps): Promise<RouteResult> {
       out.ready = !out.problem;
     }
   }
+  return { status: 200, json: out };
+}
+
+/** The calls of a workspace, for its organisation's owner and admins. */
+async function list(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
+  const workspaceId = r.query?.workspaceId;
+  const organizationId = isUuid(workspaceId) ? await d.store.workspaceOrg(workspaceId as string) : null;
+  const role = organizationId ? await d.store.orgRole(organizationId, r.user.id) : null;
+  // An outsider learns nothing about whether the workspace exists.
+  if (!organizationId || !role) throw new AppError(CHOOSE_WORKSPACE_MESSAGE, 403);
+  if (role !== "owner" && role !== "admin") throw new AppError(CALLS_OWNER_ONLY_MESSAGE, 403);
+  if (!(await d.store.tablesReady())) throw new AppError(TABLES_MISSING_MESSAGE, 503);
+
+  const before = typeof r.query?.before === "string" && !Number.isNaN(Date.parse(r.query.before)) ? new Date(r.query.before).toISOString() : undefined;
+  const since = new Date(nowOf(d).getTime() - SUMMARY_DAYS * 24 * 3600_000).toISOString();
+  const [rows, results] = await Promise.all([
+    d.store.listCalls(workspaceId as string, { before, limit: PAGE_SIZE + 1 }),
+    d.store.callResults(workspaceId as string, since),
+  ]);
+  const page = rows.slice(0, PAGE_SIZE);
+  const unique = (ids: Array<string | null>) => [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  const names = await d.store.names({
+    contacts: unique(page.map((c) => c.contactId)),
+    companies: unique(page.map((c) => c.companyId)),
+    users: unique(page.map((c) => c.userId)),
+  });
+  const calls: CallListItem[] = page.map((c) => ({
+    id: c.id,
+    at: c.createdAt,
+    status: c.status,
+    seconds: c.seconds,
+    outcome: c.outcome,
+    note: c.note,
+    to: c.toNumber,
+    display: formatNumber(c.toNumber),
+    country: c.country,
+    recorded: Boolean(c.recordingSid),
+    contact: c.contactId && c.contactId in names.contacts ? { id: c.contactId, name: names.contacts[c.contactId] } : null,
+    company: c.companyId && c.companyId in names.companies ? { id: c.companyId, name: names.companies[c.companyId] } : null,
+    caller: { id: c.userId, name: names.users[c.userId] ?? "" },
+  }));
+  const answered = results.filter((x) => x.status === "completed" && x.seconds > 0);
+  const out: CallList = {
+    calls,
+    more: rows.length > PAGE_SIZE,
+    summary: { days: SUMMARY_DAYS, total: results.length, answered: answered.length, seconds: answered.reduce((sum, x) => sum + x.seconds, 0) },
+  };
   return { status: 200, json: out };
 }
 
@@ -208,6 +261,7 @@ export async function route(d: VoiceDeps, r: RouteRequest): Promise<RouteResult>
   try {
     const [a, b, c] = r.path;
     if (r.path.length === 1 && a === "setup" && r.method === "GET") return await setup(d);
+    if (r.path.length === 1 && a === "calls" && r.method === "GET") return await list(d, r);
     if (r.path.length === 1 && a === "calls" && r.method === "POST") return await start(d, r);
     if (r.path.length === 3 && a === "calls" && c === "end" && r.method === "POST") return await end(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "recording" && r.method === "GET") return await recording(d, r, b);

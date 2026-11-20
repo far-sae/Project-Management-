@@ -40,6 +40,7 @@ const CrmContactsPage = React.lazy(() => import('@/pages/crmHub/Contacts').then(
 const CrmCompaniesPage = React.lazy(() => import('@/pages/crmHub/Companies').then((m) => ({ default: m.CrmCompaniesPage })));
 const CrmDealsPage = React.lazy(() => import('@/pages/crmHub/Deals').then((m) => ({ default: m.CrmDealsPage })));
 const CrmTasksPage = React.lazy(() => import('@/pages/crmHub/Tasks').then((m) => ({ default: m.CrmTasksPage })));
+const CrmCallsPage = React.lazy(() => import('@/pages/crmHub/Calls').then((m) => ({ default: m.CrmCallsPage })));
 const CrmActivityPage = React.lazy(() => import('@/pages/crmHub/Activity').then((m) => ({ default: m.CrmActivityPage })));
 const CrmTagsPage = React.lazy(() => import('@/pages/crmHub/Tags').then((m) => ({ default: m.CrmTagsPage })));
 const CrmLayout = React.lazy(() => import('@/pages/crmHub/CrmLayout').then((m) => ({ default: m.CrmLayout })));
@@ -376,6 +377,15 @@ const router = createBrowserRouter(
                 { path: 'calendar',     element: <Navigate to="/calendar" replace /> },
                 { path: 'settings',     element: lazyAppRoute(<CrmSettingsPage />) },
               ],
+            },
+            {
+              // Calls placed from the CRM: its own page in the sidebar, under the CRM's permission.
+              path: '/calls',
+              element: (
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
+                  {lazyAppRoute(<CrmCallsPage />)}
+                </ProtectedRoute>
+              ),
             },
             {
               path: '/email',

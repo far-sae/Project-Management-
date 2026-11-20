@@ -46,3 +46,27 @@ export type CallActivityMeta = {
   outcome: CallOutcome | null;
   recorded: boolean;
 };
+
+/** GET /api/voice/calls?workspaceId=<id>[&before=<time>]: the calls of a workspace, newest first. */
+export type CallListItem = {
+  id: string;
+  /** When the call was placed. */
+  at: string;
+  status: CallStatus;
+  seconds: number;
+  outcome: CallOutcome | null;
+  note: string;
+  /** The number rung, in international form and as it is read. */
+  to: string;
+  display: string;
+  country: CallCountry;
+  recorded: boolean;
+  /** The lead or the company the call was for; null when it has since been deleted. */
+  contact: { id: string; name: string } | null;
+  company: { id: string; name: string } | null;
+  caller: { id: string; name: string };
+};
+
+export type CallSummary = { days: number; total: number; answered: number; seconds: number };
+
+export type CallList = { calls: CallListItem[]; more: boolean; summary: CallSummary };

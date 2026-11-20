@@ -149,7 +149,9 @@ export function voiceHandler(d: VoiceHandlerDeps) {
         res.status(503).json({ error: UNAVAILABLE_MESSAGE });
         return;
       }
-      out = await d.route(deps, { method: String(req.method), path, body: bodyOf(req.body), user: { id: who.id } });
+      const query: Record<string, string> = {};
+      for (const [k, v] of Object.entries(req.query ?? {})) if (k !== "path") query[k] = first(v);
+      out = await d.route(deps, { method: String(req.method), path, body: bodyOf(req.body), query, user: { id: who.id } });
     } catch (e) {
       console.error("[voice] failed", e instanceof Error ? e.name : "unknown");
       res.status(500).json({ error: FAILED_MESSAGE });

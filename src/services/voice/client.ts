@@ -6,7 +6,7 @@
  * that the person is an owner or admin, on every request.
  */
 import { supabase } from '@/services/supabase/config';
-import type { EndCallInput, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
+import type { CallList, EndCallInput, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
 
 const BASE = '/api/voice/';
 
@@ -87,6 +87,10 @@ export function forgetVoiceSetup(): void {
 export const startCall = (input: StartCallInput): Promise<StartedCall> => json<StartedCall>('calls', input);
 
 export const endCall = (id: string, input: EndCallInput): Promise<void> => json<{ ok: true }>(`calls/${id}/end`, input).then(() => undefined);
+
+/** The calls of a workspace, newest first; `before` (the time of the last one shown) asks for the older ones. */
+export const listCalls = (workspaceId: string, before?: string): Promise<CallList> =>
+  json<CallList>(`calls?workspaceId=${encodeURIComponent(workspaceId)}${before ? `&before=${encodeURIComponent(before)}` : ''}`);
 
 /** The recording of a call, as audio the page can play. */
 export async function fetchRecording(id: string): Promise<Blob> {

@@ -13,6 +13,7 @@ import { readiness, type Readiness } from '@/lib/email/readiness';
 import { queryableOrgId } from '@/lib/email/orgId';
 import { listAccounts, listMailboxStatus } from '@/services/supabase/email';
 import { SetupChecklist } from '@/components/email/SetupChecklist';
+import { PageHeader } from '@/components/common/PageHeader';
 import { useProjects } from '@/hooks/useProjects';
 
 /**
@@ -103,13 +104,12 @@ export const Email: React.FC = () => {
   useEffect(() => { void loadReadiness(); }, [loadReadiness]);
 
   return (
-    <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-8">
-      <div className="mb-6 md:mb-8">
-        <h1 className="text-3xl font-bold text-foreground">Email Marketing</h1>
-        <p className="text-muted-foreground">
-          Build lists, sequences and campaigns for {selected?.name ?? 'this workspace'}.
-        </p>
-      </div>
+    <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-background px-4 py-6 lg:px-6">
+      <PageHeader
+        className="mb-6"
+        title="Email"
+        description={`Send one email to many leads, or a sequence of follow-ups that stops when they reply, for ${selected?.name ?? 'this workspace'}.`}
+      />
 
       {/*
         Nothing is queried, and nothing claims to be empty, until there is a

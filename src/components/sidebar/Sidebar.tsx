@@ -24,6 +24,8 @@ import {
   TrendingUp,
   FolderKanban,
   Handshake,
+  Phone,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -61,6 +63,10 @@ const QUICK_ITEMS_FULL = [
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
   { icon: Inbox, label: 'Inbox', href: '/inbox', page: 'inbox' as PageKey },
   { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
+  // Calling and bulk email work on the CRM's leads; each has its own page here. Both go with
+  // the CRM in a workspace's menu setting: where the CRM is shown, they are shown.
+  { icon: Phone, label: 'Calls', href: '/calls', feature: 'crm' as const, page: 'crm' as PageKey },
+  { icon: Mail, label: 'Email', href: '/email', feature: 'email_campaigns' as const, page: 'crm' as PageKey },
   { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
@@ -141,6 +147,8 @@ export const Sidebar: React.FC = () => {
           (i) =>
             (i.href !== '/team' || hasFeature('team_collaboration')) &&
             (i.href !== '/crm' || hasFeature('crm')) &&
+            (i.href !== '/calls' || hasFeature('crm')) &&
+            (i.href !== '/email' || hasFeature('email_campaigns')) &&
             (i.href !== '/hr' || canSeeHr),
         )
       : isViewer

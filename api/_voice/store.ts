@@ -43,9 +43,19 @@ export type Call = {
 export type NewCall = Pick<Call, "organizationId" | "workspaceId" | "userId" | "contactId" | "companyId" | "toNumber" | "fromNumber" | "country">;
 export type CallPatch = Partial<Pick<Call, "status" | "callSid" | "seconds" | "recordingSid" | "recordingSeconds" | "outcome" | "note" | "endedAt">>;
 
+/** The names behind the ids on a list of calls. An id that is missing was deleted since. */
+export type Names = { contacts: Record<string, string>; companies: Record<string, string>; users: Record<string, string> };
+
 export interface VoiceStore {
   /** False until migration 188 has been run. */
   tablesReady(): Promise<boolean>;
+  /** The organisation a workspace belongs to, or null when there is no such workspace. */
+  workspaceOrg(workspaceId: string): Promise<string | null>;
+  /** The calls of a workspace that reached the provider, newest first, older than `before` when given. */
+  listCalls(workspaceId: string, opts: { before?: string; limit: number }): Promise<Call[]>;
+  /** How the calls of a workspace since `since` went: status and length of each. */
+  callResults(workspaceId: string, since: string): Promise<Array<Pick<Call, "status" | "seconds">>>;
+  names(ids: { contacts: string[]; companies: string[]; users: string[] }): Promise<Names>;
   /** The person's role in an organisation, or null when they are not an active member. */
   orgRole(organizationId: string, userId: string): Promise<OrgRole | null>;
   contact(id: string): Promise<Target | null>;
@@ -109,6 +119,43 @@ export function supabaseStore(sb: SupabaseClient): VoiceStore {
     async tablesReady() {
       const { error } = await sb.from("crm_calls").select("id").limit(1);
       return !error;
+    },
+
+    async workspaceOrg(workspaceId) {
+      const w = must(await sb.from("workspaces").select("organization_id").eq("workspace_id", workspaceId).maybeSingle()) as Row | null;
+      return w && typeof w.organization_id === "string" ? w.organization_id : null;
+    },
+
+    async listCalls(workspaceId, opts) {
+      // A call still "starting" never reached the provider (the line failed first): it is not a call anyone made.
+      let q = sb.from("crm_calls").select("*").eq("workspace_id", workspaceId).neq("status", "starting").order("created_at", { ascending: false }).limit(opts.limit);
+      if (opts.before) q = q.lt("created_at", opts.before);
+      return ((must(await q) as Row[] | null) ?? []).map(callFrom);
+    },
+
+    async callResults(workspaceId, since) {
+      const data = must(
+        await sb.from("crm_calls").select("status, duration_seconds").eq("workspace_id", workspaceId).neq("status", "starting").gte("created_at", since).limit(5000),
+      ) as Row[] | null;
+      return (data ?? []).map((r) => ({ status: r.status, seconds: Number(r.duration_seconds) || 0 }));
+    },
+
+    async names(ids) {
+      const out: Names = { contacts: {}, companies: {}, users: {} };
+      if (ids.contacts.length) {
+        const rows = must(await sb.from("crm_contacts").select("id, first_name, last_name").in("id", ids.contacts)) as Row[] | null;
+        for (const r of rows ?? []) out.contacts[r.id] = `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim();
+      }
+      if (ids.companies.length) {
+        const rows = must(await sb.from("crm_companies").select("id, name").in("id", ids.companies)) as Row[] | null;
+        for (const r of rows ?? []) out.companies[r.id] = String(r.name ?? "");
+      }
+      if (ids.users.length) {
+        // Names as people keep them themselves; a missing profile is simply left out.
+        const got = await sb.from("user_profiles").select("id, display_name, email").in("id", ids.users);
+        if (!got.error) for (const r of (got.data ?? []) as Row[]) out.users[r.id] = String(r.display_name || r.email || "");
+      }
+      return out;
     },
 
     async orgRole(organizationId, userId) {

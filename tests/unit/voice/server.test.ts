@@ -5,17 +5,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getExpectedTwilioSignature } from "twilio/lib/webhooks/webhooks";
 import { readConfig, type VoiceConfig } from "../../../api/_voice/config";
 import {
+  CALLS_OWNER_ONLY_MESSAGE,
   CALLS_PER_MINUTE,
+  CHOOSE_WORKSPACE_MESSAGE,
   describeCall,
   NO_WORKSPACE_MESSAGE,
   NOT_FOUND_MESSAGE,
   OWNER_ONLY_MESSAGE,
+  PAGE_SIZE,
   route,
   TABLES_MISSING_MESSAGE,
   TOO_MANY_MESSAGE,
   webhook,
   type VoiceDeps,
 } from "../../../api/_voice/router";
+import type { CallList } from "../../../api/_voice/shared/types";
 import type { Call, CallPatch, Target, VoiceStore } from "../../../api/_voice/store";
 import { callToken, identityOf, TOKEN_SECONDS } from "../../../api/_voice/token";
 import { dialTwiml, noticeTwiml, RECORDING_NOTICE } from "../../../api/_voice/twiml";
@@ -29,6 +33,7 @@ import { signedOrigin, voiceHandler, type VoiceHandlerDeps } from "../../../api/
 
 const ORG = "0b000000-0000-4000-8000-000000000001";
 const WS = "0a000000-0000-4000-8000-000000000001";
+const WS2 = "0a000000-0000-4000-8000-000000000002";
 const OWNER = "0c000000-0000-4000-8000-000000000001";
 const ADMIN = "0c000000-0000-4000-8000-000000000002";
 const MEMBER = "0c000000-0000-4000-8000-000000000003";
@@ -64,8 +69,22 @@ function fakeStore() {
   let n = 0;
   let tick = 0;
   const state = { ready: true, now: new Date("2026-11-20T10:00:00Z") };
+  const newestFirst = (a: Call, b: Call) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : b.id.localeCompare(a.id));
   const store: VoiceStore = {
     tablesReady: async () => state.ready,
+    workspaceOrg: async (id) => (id === WS || id === WS2 ? ORG : null),
+    listCalls: async (workspaceId, opts) =>
+      [...calls.values()]
+        .filter((c) => c.workspaceId === workspaceId && c.status !== "starting" && (!opts.before || c.createdAt < opts.before))
+        .sort(newestFirst)
+        .slice(0, opts.limit),
+    callResults: async (workspaceId, since) =>
+      [...calls.values()].filter((c) => c.workspaceId === workspaceId && c.status !== "starting" && c.createdAt >= since).map((c) => ({ status: c.status, seconds: c.seconds })),
+    names: async (ids) => ({
+      contacts: Object.fromEntries(ids.contacts.filter((id) => id === LEAD).map((id) => [id, "Elena Rossi"])),
+      companies: Object.fromEntries(ids.companies.filter((id) => id === COMPANY).map((id) => [id, "Harbour Dental"])),
+      users: Object.fromEntries(ids.users.filter((id) => id === OWNER).map((id) => [id, "Sam"])),
+    }),
     orgRole: async (org, user) => (org === ORG ? roles[user] ?? null : null),
     contact: async (id) => (targets[id]?.kind === "contact" ? targets[id] : null),
     company: async (id) => (targets[id]?.kind === "company" ? targets[id] : null),
@@ -97,7 +116,7 @@ function world() {
   const fetchMock = vi.fn(async () => new Response("mp3-bytes", { status: 200, headers: { "content-length": "9", "content-type": "audio/mpeg" } }));
   const deps: VoiceDeps = { store: fake.store, config: () => readConfig(ENV), token: () => "token-for-tests", fetch: fetchMock as never, now: () => fake.state.now };
   const as = (user: string) => ({
-    get: (path: string) => route(deps, { method: "GET", path: path.split("/"), body: {}, user: { id: user } }),
+    get: (path: string, query: Record<string, string> = {}) => route(deps, { method: "GET", path: path.split("/"), body: {}, query, user: { id: user } }),
     post: (path: string, body: Record<string, unknown> = {}) => route(deps, { method: "POST", path: path.split("/"), body, user: { id: user } }),
   });
   const hook = (what: "twiml" | "notice" | "done" | "recording", params: Record<string, string>, query: Record<string, string> = {}) =>
@@ -348,6 +367,80 @@ describe("calling: after the call", () => {
   });
 });
 
+describe("calling: the list of calls", () => {
+  it("lists a workspace's calls newest first, with who was rung, by whom, and how the month went", async () => {
+    const w = world();
+    const first = await w.startCall(OWNER);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "192" }, { call: first });
+    await w.hook("recording", { RecordingStatus: "completed", RecordingSid: REC_SID, RecordingDuration: "190" }, { call: first });
+    await w.as(OWNER).post(`calls/${first}/end`, { outcome: "connected", note: "Send the quote on Friday" });
+    w.state.now = new Date(w.state.now.getTime() + 60_000);
+    const second = await w.startCall(ADMIN, { companyId: COMPANY, to: "+1 415 555 0132" });
+    await w.hook("done", { DialCallStatus: "no-answer" }, { call: second });
+    // Pressed Call, but the line failed before the provider was reached: not a call.
+    await w.startCall(OWNER);
+
+    const out = await w.as(ADMIN).get("calls", { workspaceId: WS });
+    expect(out.status).toBe(200);
+    const body = out.json as CallList;
+    expect(body.calls.map((c) => c.id)).toEqual([second, first]);
+    expect(body.calls[1]).toEqual({
+      id: first,
+      at: "2026-11-20T10:00:00.000Z",
+      status: "completed",
+      seconds: 192,
+      outcome: "connected",
+      note: "Send the quote on Friday",
+      to: "+447700900123",
+      display: "+44 7700 900123",
+      country: "GB",
+      recorded: true,
+      contact: { id: LEAD, name: "Elena Rossi" },
+      company: null,
+      caller: { id: OWNER, name: "Sam" },
+    });
+    expect(body.calls[0]).toMatchObject({ status: "no_answer", recorded: false, contact: null, company: { id: COMPANY, name: "Harbour Dental" }, caller: { id: ADMIN, name: "" } });
+    expect(body.more).toBe(false);
+    expect(body.summary).toEqual({ days: 30, total: 2, answered: 1, seconds: 192 });
+  });
+
+  it("is for the owner and admins of that workspace's organisation only", async () => {
+    const w = world();
+    expect(await w.as(MEMBER).get("calls", { workspaceId: WS })).toEqual({ status: 403, json: { error: CALLS_OWNER_ONLY_MESSAGE } });
+    expect(await w.as("0c000000-0000-4000-8000-000000000099").get("calls", { workspaceId: WS })).toEqual({ status: 403, json: { error: CHOOSE_WORKSPACE_MESSAGE } });
+    expect(await w.as(OWNER).get("calls", { workspaceId: "0a000000-0000-4000-8000-000000000009" })).toEqual({ status: 403, json: { error: CHOOSE_WORKSPACE_MESSAGE } });
+    expect((await w.as(OWNER).get("calls", {})).status).toBe(403);
+    w.state.ready = false;
+    expect(await w.as(OWNER).get("calls", { workspaceId: WS })).toEqual({ status: 503, json: { error: TABLES_MISSING_MESSAGE } });
+  });
+
+  it("keeps each workspace's calls to itself", async () => {
+    const w = world();
+    const id = await w.startCall(OWNER);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "30" }, { call: id });
+    expect(((await w.as(OWNER).get("calls", { workspaceId: WS2 })).json as CallList).calls).toEqual([]);
+    expect(((await w.as(OWNER).get("calls", { workspaceId: WS2 })).json as CallList).summary.total).toBe(0);
+  });
+
+  it("hands out older calls a page at a time", async () => {
+    const w = world();
+    for (let i = 0; i < PAGE_SIZE + 3; i += 1) {
+      w.state.now = new Date(w.state.now.getTime() + 61_000);
+      const id = await w.startCall(OWNER);
+      await w.hook("done", { DialCallStatus: "busy" }, { call: id });
+    }
+    const page = (await w.as(OWNER).get("calls", { workspaceId: WS })).json as CallList;
+    expect(page.calls).toHaveLength(PAGE_SIZE);
+    expect(page.more).toBe(true);
+    const older = (await w.as(OWNER).get("calls", { workspaceId: WS, before: page.calls[PAGE_SIZE - 1].at })).json as CallList;
+    expect(older.calls).toHaveLength(3);
+    expect(older.more).toBe(false);
+    expect(new Set([...page.calls, ...older.calls].map((c) => c.id)).size).toBe(PAGE_SIZE + 3);
+    // A `before` that is not a time is ignored rather than trusted.
+    expect(((await w.as(OWNER).get("calls", { workspaceId: WS, before: "'; drop" })).json as CallList).calls).toHaveLength(PAGE_SIZE);
+  });
+});
+
 describe("calling: recordings", () => {
   it("fetches the recording for an owner or admin, with the account's own key", async () => {
     const w = world();
@@ -464,7 +557,7 @@ describe("calling: the way in", () => {
     const ok = res();
     await voiceHandler(d)(pageReq(), ok as never);
     expect(ok.body).toEqual({ ok: true });
-    expect(d.route).toHaveBeenCalledWith(expect.anything(), { method: "GET", path: ["setup"], body: {}, user: { id: OWNER } });
+    expect(d.route).toHaveBeenCalledWith(expect.anything(), { method: "GET", path: ["setup"], body: {}, query: {}, user: { id: OWNER } });
 
     const foreign = res();
     await voiceHandler(handlerDeps())(pageReq({ headers: { origin: "https://evil.example" } }), foreign as never);
