@@ -968,9 +968,11 @@ export function supabaseStore(sb: SupabaseClient): AutoStore {
       return ((r.data ?? []) as Row[]).map((t) => ({ id: t.id as string, title: str(t.title), dueDate: t.due_date as string, assignedTo: t.assigned_to as string }));
     },
 
-    async remindedFollowUps(links) {
+    async remindedFollowUps(links, before) {
       if (links.length === 0) return [];
-      const r = await sb.from("notifications").select("link").eq("type", "task_reminder").in("link", links);
+      let q = sb.from("notifications").select("link").eq("type", "task_reminder").in("link", links);
+      if (before) q = q.lt("created_at", before);
+      const r = await q;
       if (r.error) throw new StoreError(r.error.message);
       return ((r.data ?? []) as Row[]).map((n) => str(n.link));
     },

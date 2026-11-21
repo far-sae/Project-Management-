@@ -115,6 +115,8 @@ export function fakeStore(): FakeAutoStore {
   const projects: NewProject[] = [];
   const projectTasks: NewProjectTask[] = [];
   const notifications: NewNotification[] = [];
+  /** When each linked notification was written, for "sent before" questions. */
+  const notifiedAt = new Map<string, string>();
   /** CRM follow-ups a person added (the reminders read these); not the ones an agent creates. */
   const crmFollowUps: SeededFollowUp[] = [];
   const failing = new Map<string, string>();
@@ -719,6 +721,7 @@ export function fakeStore(): FakeAutoStore {
     async notify(rows) {
       fail("notify");
       notifications.push(...rows.map(clone));
+      for (const row of rows) if (row.link) notifiedAt.set(row.link, clock ?? new Date().toISOString());
     },
 
     async dueFollowUps(until, limit) {
@@ -728,8 +731,11 @@ export function fakeStore(): FakeAutoStore {
         .slice(0, limit)
         .map((f) => ({ id: f.id, title: f.title, dueDate: f.dueDate as string, assignedTo: f.assignedTo as string }));
     },
-    async remindedFollowUps(links) {
-      return notifications.filter((n) => n.type === "task_reminder" && n.link !== null && links.includes(n.link)).map((n) => n.link as string);
+    async remindedFollowUps(links, before) {
+      return notifications
+        .filter((n) => n.type === "task_reminder" && n.link !== null && links.includes(n.link))
+        .filter((n) => !before || (notifiedAt.get(n.link as string) ?? "") < before)
+        .map((n) => n.link as string);
     },
   };
   return store;

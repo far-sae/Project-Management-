@@ -43,3 +43,54 @@ export async function remindDueFollowUps(store: AutoStore, now: Date): Promise<n
   );
   return owed.length;
 }
+
+/**
+ * The morning line about overdue follow-ups. The reminder above goes out once,
+ * on the day a follow-up is due; after that nothing said it was still open.
+ * So once a day, from seven in the morning (UTC), every person with an open
+ * follow-up due before today gets one notification that counts them and names
+ * the oldest. It comes back each morning until they are done.
+ *
+ * It only counts follow-ups the person was already reminded of on an earlier
+ * day. One that is first seen when it is already late gets its own reminder
+ * today and joins the morning line tomorrow: never two notices at once.
+ */
+
+/** The hour (UTC) from which the morning line may go out. */
+export const MORNING_HOUR = 7;
+
+/** The link on the morning line. It also marks that this person was told today. */
+export const overdueLink = (day: string, userId: string): string => `${FOLLOW_UPS_PAGE}?overdue=${day}&u=${userId}`;
+
+/** One sentence about a person's overdue follow-ups, oldest first. */
+export function overdueMessage(overdue: Array<Pick<DueFollowUp, "title" | "dueDate">>): string {
+  const oldest = overdue[0];
+  const title = oldest.title.trim().slice(0, 140);
+  return overdue.length === 1
+    ? `“${title}” has been open since ${dayOf(oldest.dueDate)}.`
+    : `${overdue.length} follow-ups are overdue. The oldest is “${title}”, due ${dayOf(oldest.dueDate)}.`;
+}
+
+/** Sends the morning lines that are owed. Returns how many went out. */
+export async function remindOverdueDaily(store: AutoStore, now: Date): Promise<number> {
+  if (now.getUTCHours() < MORNING_HOUR) return 0;
+  const day = now.toISOString().slice(0, 10);
+  // Everything due before today began (UTC), oldest first.
+  const before = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 1).toISOString();
+  const late = await store.dueFollowUps(before, REMINDER_LIMIT);
+  if (late.length === 0) return 0;
+  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+  const toldEarlier = new Set(await store.remindedFollowUps(late.map((f) => followUpLink(f.id)), startOfToday));
+  const overdue = late.filter((f) => toldEarlier.has(followUpLink(f.id)));
+  if (overdue.length === 0) return 0;
+
+  const byPerson = new Map<string, DueFollowUp[]>();
+  for (const f of overdue) byPerson.set(f.assignedTo, [...(byPerson.get(f.assignedTo) ?? []), f]);
+  const told = new Set(await store.remindedFollowUps([...byPerson.keys()].map((userId) => overdueLink(day, userId))));
+  const owed = [...byPerson.entries()].filter(([userId]) => !told.has(overdueLink(day, userId)));
+  if (owed.length === 0) return 0;
+  await store.notify(
+    owed.map(([userId, list]) => ({ userId, type: "task_reminder", title: "Overdue follow-ups", message: overdueMessage(list), link: overdueLink(day, userId) })),
+  );
+  return owed.length;
+}

@@ -1,4 +1,4 @@
-import { remindDueFollowUps } from "./followUps.js";
+import { remindDueFollowUps, remindOverdueDaily } from "./followUps.js";
 import { nowOf } from "./deps.js";
 import { AppError, StoreError } from "../_signroom/errors.js";
 import { SIGN_IN_MESSAGE } from "../_signroom/host/auth.js";
@@ -110,6 +110,8 @@ export async function route(deps: AutoDeps, r: RouteRequest): Promise<RouteResul
       if (r.cron === true && r.method === "POST" && r.path.length === 2 && r.path[1] === "run") {
         // Reminders for due follow-ups go out whether or not any workspace uses automation, and never stop the run.
         await remindDueFollowUps(deps.store, nowOf(deps)).catch((e) => console.error("[automation] follow-up reminders not sent", e instanceof Error ? e.name : "unknown"));
+        // After the reminders above, so a follow-up first seen today gets its own reminder and not two lines at once.
+        await remindOverdueDaily(deps.store, nowOf(deps)).catch((e) => console.error("[automation] overdue summary not sent", e instanceof Error ? e.name : "unknown"));
         return ok(await runDue(deps));
       }
       return notFound();

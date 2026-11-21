@@ -435,5 +435,6 @@ export interface AutoStore {
   /** CRM follow-ups with no project that are due by `until`, still open, and have somebody to do them. */
   dueFollowUps(until: string, limit: number): Promise<DueFollowUp[]>;
   /** Which of these reminder links have already been sent. */
-  remindedFollowUps(links: string[]): Promise<string[]>;
+  /** Of these reminder links, the ones already sent. With `before`, only those sent before that moment. */
+  remindedFollowUps(links: string[], before?: string): Promise<string[]>;
 }
