@@ -69,10 +69,15 @@ const humanTimestamp = (d: Date) => {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
+/** Events loaded at first, and added by each "Show older activity". */
+const ACTIVITY_PAGE = 200;
+
 export const CrmActivityPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
-  const { items: activities, loading, refresh } = useCrmActivities(200);
+  /** How many of the latest events are loaded. "Show older activity" raises it. */
+  const [limit, setLimit] = useState(ACTIVITY_PAGE);
+  const { items: activities, loading, refresh } = useCrmActivities(limit);
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const { items: deals } = useCrmDeals();
@@ -241,6 +246,15 @@ export const CrmActivityPage: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {/* A full list means there may be more: the page never ends silently at 200. */}
+          {activities.length >= limit && (
+            <div className="mt-4 flex justify-center">
+              <Button variant="outline" size="sm" onClick={() => setLimit((n) => n + ACTIVITY_PAGE)} disabled={loading}>
+                {loading && <Loader2 className="animate-spin" aria-hidden />}
+                Show older activity
+              </Button>
             </div>
           )}
         </section>
