@@ -295,3 +295,29 @@ describe('openTracking, in both copies', () => {
     expect(bytes[bytes.length - 1]).toBe(0x3b);
   });
 });
+
+describe('unsubscribe link for a lead', () => {
+  const SECRET = 'unsubscribe-secret-for-tests-0123456789';
+  const LEAD = '0d000000-0000-4000-8000-000000000001';
+
+  it('is signed the same way by both copies, and opens the unsubscribe route with the lead', async () => {
+    const src = await import('@/lib/email/unsubscribe');
+    const api = await import('../../api/_lib/unsubscribe');
+    const url = await api.contactUnsubscribeUrl('https://app.example.com/', LEAD, SECRET);
+    expect(url).toBe(await src.contactUnsubscribeUrl('https://app.example.com', LEAD, SECRET));
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe('/api/email/unsubscribe');
+    expect(parsed.searchParams.get('c')).toBe(LEAD);
+    expect(await api.verifyContactUnsubscribeToken(LEAD, parsed.searchParams.get('t') ?? '', SECRET)).toBe(true);
+  });
+
+  it('cannot be forged, moved to another lead, or swapped with a message link', async () => {
+    const api = await import('../../api/_lib/unsubscribe');
+    const token = await api.signContactUnsubscribeToken(LEAD, SECRET);
+    expect(await api.verifyContactUnsubscribeToken('0d000000-0000-4000-8000-000000000002', token, SECRET)).toBe(false);
+    expect(await api.verifyContactUnsubscribeToken(LEAD, token, 'another-secret-0123456789')).toBe(false);
+    // A lead's token is not a message's token for the same id, and the other way round.
+    expect(await api.verifyUnsubscribeToken(LEAD, token, SECRET)).toBe(false);
+    expect(await api.verifyContactUnsubscribeToken(LEAD, await api.signUnsubscribeToken(LEAD, SECRET), SECRET)).toBe(false);
+  });
+});

@@ -21,6 +21,14 @@ import type { AgentAction, StoredRun } from "./store.js";
  */
 
 export const EMAIL_PURPOSE = "automation";
+
+/**
+ * The last lines of every email an agent sends: how to stop them. With a link
+ * when one can be made, otherwise by replying. Commercial email must always
+ * say how to opt out (CAN-SPAM in the US, PECR in the UK).
+ */
+export const optOutFooter = (url: string | null): string =>
+  url ? `\n\n--\nIf you would rather not get emails from us, unsubscribe here: ${url}` : "\n\n--\nIf you would rather not get emails from us, reply to this email and say so.";
 export const EMAIL_OFF_MESSAGE = "email is not set up on this server";
 
 export type SendOutcome =
@@ -53,6 +61,8 @@ export async function sendLeadEmail(env: Env, run: StoredRun, agentName: string,
   if (lead.leadStatus === "unqualified") return { kind: "refused", why: "the lead is marked unqualified" };
   const to = leadAddress(lead);
   if (!to) return { kind: "refused", why: "the lead has no email address on file" };
+  // Someone who unsubscribed from the organisation's email is never written to again, by a person's campaign or by an agent.
+  if (await store.emailSuppressed(env.workspace.organizationId, to)) return { kind: "refused", why: "the lead has unsubscribed from email" };
   if ((await store.countEmails(ws, lead.id)) > env.rules.emailsPerLead) return { kind: "refused", why: `the limit of ${env.rules.emailsPerLead} emails for one lead is reached` };
   if (!env.rules.enabled) return { kind: "later", why: "automation is switched off in this workspace" };
   if (!windowOpen(env.rules.sendWindow, env.now)) return { kind: "queued", dueAt: nextOpening(env.rules.sendWindow, env.now).toISOString() };
@@ -62,7 +72,9 @@ export async function sendLeadEmail(env: Env, run: StoredRun, agentName: string,
   try {
     // The documents server's own row for this workspace (same id): its sender name, reply-to and mailbox.
     const sender = await mail.store.ensureWorkspace(ws, env.workspace.name, lead.ownerId ?? "");
-    await sendMail(mail, sender, { to, subject: action.subject.replace(/[\r\n]+/g, " "), text: action.body, purpose: EMAIL_PURPOSE }, { sending: async () => void (began = true) });
+    // A link that cannot be made must never stop the email: the footer then asks for a reply instead.
+    const stopUrl = env.deps.unsubscribeUrl ? await env.deps.unsubscribeUrl(lead.id).catch(() => null) : null;
+    await sendMail(mail, sender, { to, subject: action.subject.replace(/[\r\n]+/g, " "), text: action.body + optOutFooter(stopUrl), purpose: EMAIL_PURPOSE }, { sending: async () => void (began = true) });
   } catch (e) {
     // The status or the name only: the text of a mail failure can carry the address.
     console.error("[automation] email not sent", e instanceof AppError ? e.status : e instanceof Error ? e.name : "unknown");

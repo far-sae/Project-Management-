@@ -55,3 +55,22 @@ export function ensureUnsubscribeLink(html: string, url: string): string {
     `<a href="${url}" style="color:#6b7280">Unsubscribe</a></p>`
   );
 }
+
+// A lead (crm_contacts row) can unsubscribe as well as a sent message can: the
+// emails the CRM's agents write have no email_messages row to sign. The token
+// is over "contact:<id>", so it can never be swapped for a message's token.
+const contactSubject = (contactId: string): string => `contact:${contactId}`;
+
+export async function signContactUnsubscribeToken(contactId: string, secret: string): Promise<string> {
+  return hmac(contactSubject(contactId), secret);
+}
+
+export async function verifyContactUnsubscribeToken(contactId: string, token: string, secret: string): Promise<boolean> {
+  return verifyUnsubscribeToken(contactSubject(contactId), token, secret);
+}
+
+export async function contactUnsubscribeUrl(baseUrl: string, contactId: string, secret: string): Promise<string> {
+  const base = baseUrl.replace(/\/+$/, '');
+  const token = await signContactUnsubscribeToken(contactId, secret);
+  return `${base}/api/email/unsubscribe?c=${encodeURIComponent(contactId)}&t=${encodeURIComponent(token)}`;
+}

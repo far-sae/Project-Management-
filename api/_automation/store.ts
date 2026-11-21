@@ -370,6 +370,8 @@ export interface AutoStore {
   listQueuedDue(now: string, limit: number, workspaceId?: string): Promise<StoredApproval[]>;
   /** Emails to this lead that were sent, are being sent, or still wait (pending or queued). */
   countEmails(workspaceId: string, contactId: string): Promise<number>;
+  /** True when this address has unsubscribed from the organisation's email (or bounced, or complained). */
+  emailSuppressed(organizationId: string, address: string): Promise<boolean>;
 
   // ── events ──
   /** Unprocessed events that are not the server's own and that nobody holds, oldest first. */

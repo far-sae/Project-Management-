@@ -91,7 +91,10 @@ describe("approve", () => {
     const body = "Hi Elena,\n\nA shorter note from me: would Thursday at ten suit you for a call?\n\nSam";
     await w.ok<Approval>(OWNER, "POST", `approvals/${approval.id}/approve`, { subject: "  A quick call?  ", body, to: "attacker@evil.example", recipient: "attacker@evil.example", contactId: "x", email: "attacker@evil.example" });
     expect(w.resend.calls).toHaveLength(1);
-    expect(w.resend.calls[0].body).toMatchObject({ to: ["elena@northwind.example"], subject: "A quick call?", text: body });
+    expect(w.resend.calls[0].body).toMatchObject({ to: ["elena@northwind.example"], subject: "A quick call?" });
+    // The edited words go out as written; only the lines that say how to stop the emails are added after them.
+    expect(String(w.resend.calls[0].body.text).startsWith(body)).toBe(true);
+    expect(String(w.resend.calls[0].body.text).slice(body.length)).toContain("unsubscribe here: https://app.example.com/api/email/unsubscribe?c=");
     expect(JSON.stringify(w.resend.calls)).not.toContain("attacker");
     const [row] = w.store.approvals();
     expect(row.action).toEqual({ type: "send_email", subject: "A quick call?", body });

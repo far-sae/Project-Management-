@@ -1,9 +1,10 @@
 // @vitest-environment node
 import Anthropic from "@anthropic-ai/sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { optOutFooter } from "../../../../api/_automation/email";
 import { BUDGET_WAIT, MAX_ATTEMPTS } from "../../../../api/_automation/runner";
 import type { Approval, Automation, Overview, Run, WorkspaceRules } from "../../../../api/_automation/shared/types";
-import { answer, DAY, EMAIL, HOUR, leadArrives, MEMBER, OWNER, ready, runOf, WS, world, type World } from "./helpers";
+import { answer, DAY, EMAIL, HOUR, leadArrives, MEMBER, ORG, OWNER, ready, runOf, WS, world, type World } from "./helpers";
 
 /**
  * The background runner, from a lead arriving to the project: how a run
@@ -120,7 +121,9 @@ describe("a lead carried from arrival to project", () => {
     const approved = await approveFirst(w);
     expect(approved).toMatchObject({ status: "approved", canDecide: false });
     expect(w.resend.calls).toHaveLength(1);
-    expect(w.resend.calls[0].body).toMatchObject({ to: ["elena@northwind.example"], subject: "Your website redesign", text: EMAIL.body });
+    // The agent's own words, then the lines that say how to stop the emails.
+    expect(w.resend.calls[0].body).toMatchObject({ to: ["elena@northwind.example"], subject: "Your website redesign" });
+    expect(String(w.resend.calls[0].body.text).startsWith(`${EMAIL.body}${optOutFooter(null).slice(0, 5)}`)).toBe(true);
     const [delivery] = await w.mailStore.listDeliveries(WS, 10);
     expect(delivery).toMatchObject({ recipient: "elena@northwind.example", purpose: "automation", status: "sent", route: "securovix" });
     view = await w.ok<Run>(OWNER, "GET", `runs/${run.id}`);
@@ -179,6 +182,43 @@ describe("a lead carried from arrival to project", () => {
       ["deal_updated", undefined],
     ]);
     expect(logged).not.toHaveBeenCalled();
+  });
+
+  it("every email an agent sends says how to stop them, with a link when one can be made", async () => {
+    const w = world();
+    await ready(w);
+    script(w);
+    const { lead } = await leadArrives(w);
+    await approveFirst(w);
+    await w.cron();
+    expect(w.resend.calls).toHaveLength(1);
+    const text = String(w.resend.calls[0].body.text);
+    expect(text.startsWith(EMAIL.body)).toBe(true);
+    expect(text).toContain(`unsubscribe here: https://app.example.com/api/email/unsubscribe?c=${lead.id}&t=signed`);
+
+    // With no way to make a link, it asks for a reply instead of sending nothing.
+    const plain = world();
+    delete plain.deps.unsubscribeUrl;
+    await ready(plain);
+    script(plain);
+    await leadArrives(plain);
+    await approveFirst(plain);
+    await plain.cron();
+    expect(String(plain.resend.calls[0].body.text)).toContain("reply to this email and say so");
+  });
+
+  it("an agent never writes to a lead who has unsubscribed", async () => {
+    const w = world();
+    await ready(w);
+    script(w);
+    const { lead } = await leadArrives(w);
+    w.store.leadUnsubscribes(ORG, " Elena@Northwind.example ");
+    await approveFirst(w);
+    await w.cron();
+    expect(w.resend.calls).toHaveLength(0);
+    expect(w.store.activities().filter((a) => a.type === "email" && a.contactId === lead.id)).toHaveLength(0);
+    // The reason is kept with the email that was not sent.
+    expect(JSON.stringify(w.store.approvals())).toContain("the lead has unsubscribed from email");
   });
 
   it("a call nobody answered is not a reply, a call that was a conversation is", async () => {

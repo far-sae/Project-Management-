@@ -660,6 +660,12 @@ export function supabaseStore(sb: SupabaseClient): AutoStore {
       );
     },
 
+    async emailSuppressed(organizationId, address) {
+      // The suppression list belongs to the Email area. Where its table does not exist, nobody can have unsubscribed.
+      const got = await sb.from("email_suppressions").select("email").eq("organization_id", organizationId).eq("email", address.trim().toLowerCase()).limit(1);
+      return !got.error && Array.isArray(got.data) && got.data.length > 0;
+    },
+
     // ── events ──
     async listOpenEvents(now, limit, workspaceId) {
       let q = sb.from("auto_events").select("*").is("processed_at", null).eq("own", false).lt("locked_until", now);

@@ -39,9 +39,10 @@ export function buildMessage(input: BuildMessageInput): BuiltMessage {
   let html = substitutePlaceholders(input.bodyHtml, input.mergeData);
   const headers: Record<string, string> = {};
 
-  // Gmail and Yahoo require one-click unsubscribe from bulk senders. Single
-  // sends are transactional and must not carry it.
-  if (input.kind === 'bulk' && input.unsubscribeUrl) {
+  // Gmail and Yahoo require one-click unsubscribe from bulk senders, and a
+  // sequence step is bulk mail as much as a campaign is. Single sends are
+  // transactional and must not carry it.
+  if (input.kind !== 'single' && input.unsubscribeUrl) {
     html = ensureUnsubscribeLink(html, input.unsubscribeUrl);
     headers['List-Unsubscribe'] = `<${input.unsubscribeUrl}>`;
     headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';

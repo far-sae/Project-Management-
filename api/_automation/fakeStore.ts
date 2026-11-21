@@ -52,6 +52,8 @@ export type FakeAutoStore = AutoStore & {
   /** A lead put in with no event, as if it had been there before automation was switched on. */
   seedLead(l: Partial<Lead> & { workspaceId: string }): Lead;
   /** A person (the app, an import) adds a lead: the contact trigger fires. */
+  /** The address unsubscribes from the organisation's email. */
+  leadUnsubscribes(organizationId: string, address: string): void;
   personAddsLead(l: Partial<Lead> & { workspaceId: string }): Lead;
   personSetsLeadStatus(workspaceId: string, contactId: string, status: Lead["leadStatus"]): void;
   /** A person deletes a lead (or changes a field of it, with `patch`). */
@@ -95,6 +97,8 @@ export function fakeStore(): FakeAutoStore {
   const runs = new Map<string, StoredRun>();
   const steps = new Map<string, StoredStep>();
   const approvals = new Map<string, StoredApproval>();
+  /** "organisation|address" of everyone who unsubscribed. */
+  const suppressed = new Set<string>();
   const events: EventRow[] = [];
   const usage: Array<NewUsage & { created: string }> = [];
   const leads = new Map<string, Lead>();
@@ -200,6 +204,9 @@ export function fakeStore(): FakeAutoStore {
       return company;
     },
     seedLead: (l) => clone(makeLead(l)),
+    leadUnsubscribes(organizationId, address) {
+      suppressed.add(`${organizationId}|${address.trim().toLowerCase()}`);
+    },
     personAddsLead(l) {
       const lead = makeLead(l);
       emit(lead.workspaceId, "lead_created", lead.id, null, { source: lead.source || null, lifecycle_stage: lead.lifecycleStage, lead_status: lead.leadStatus });
@@ -559,6 +566,10 @@ export function fakeStore(): FakeAutoStore {
       return [...approvals.values()].filter(
         (a) => a.workspaceId === workspaceId && a.contactId === contactId && a.actionType === "send_email" && ["pending", "queued", "working", "done"].includes(a.state),
       ).length;
+    },
+
+    async emailSuppressed(organizationId, address) {
+      return suppressed.has(`${organizationId}|${address.trim().toLowerCase()}`);
     },
 
     // ── events ──

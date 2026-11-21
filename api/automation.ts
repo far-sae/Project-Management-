@@ -13,6 +13,7 @@ import { readKey } from "./_signroom/mailbox/crypto.js";
 import { systemLookup } from "./_signroom/mailbox/ssrf.js";
 import { nodemailerTransport } from "./_signroom/mailbox/transport.js";
 import { supabaseStore as documentsStore } from "./_signroom/store.js";
+import { contactUnsubscribeUrl } from "./_lib/unsubscribe";
 import { claudeClient } from "./_automation/ai.js";
 import type { AutoDeps } from "./_automation/deps.js";
 import { BODY_TOO_LARGE_MESSAGE, DATABASE_KEY_MESSAGE, DATABASE_URL_MESSAGE, FAILED_MESSAGE } from "./_automation/messages.js";
@@ -150,7 +151,11 @@ function buildDeps(keepAlive?: (work: Promise<unknown>) => void): AutoDeps | nul
     jobKey: readJobKey(process.env.SIGNROOM_JOB_KEY),
     evidenceKey: readEvidenceKey(process.env),
   };
-  return { store: supabaseStore(sb), mail, claude: claudeClient(process.env.ANTHROPIC_API_KEY || undefined), ...(keepAlive ? { keepAlive } : {}) };
+  // The same secret the Email area signs its unsubscribe links with, so one route serves both.
+  const secret = (process.env.EMAIL_UNSUBSCRIBE_SECRET ?? "").trim();
+  const site = siteOrigin();
+  const unsubscribeUrl = async (contactId: string): Promise<string | null> => (secret && site ? contactUnsubscribeUrl(site, contactId, secret) : null);
+  return { store: supabaseStore(sb), mail, claude: claudeClient(process.env.ANTHROPIC_API_KEY || undefined), unsubscribeUrl, ...(keepAlive ? { keepAlive } : {}) };
 }
 
 /** refuseSignedOut already read the account with its token: its id and email go straight to the router. */

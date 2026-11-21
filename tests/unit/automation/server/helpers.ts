@@ -154,6 +154,8 @@ export function world(opts: { key?: boolean; mail?: boolean } = {}) {
     store,
     mail: opts.mail === false ? null : mail,
     claude: opts.key === false ? null : ai.claude,
+    // The link a lead opens to stop all email, as the real server signs it (the signature is not the point here).
+    unsubscribeUrl: async (contactId) => `https://app.example.com/api/email/unsubscribe?c=${contactId}&t=signed`,
     now: () => now,
     keepAlive: (work) => void kept.push(work),
   };

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env, serviceClient } from '../_lib/context';
 import { escapeHtml } from '../_lib/substitute';
-import { verifyUnsubscribeToken } from '../_lib/unsubscribe';
+import { verifyContactUnsubscribeToken, verifyUnsubscribeToken } from '../_lib/unsubscribe';
 
 function page(title: string, body: string): string {
   return (
@@ -25,18 +25,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const messageId = String(req.query.m ?? '');
+  // An email written by the CRM's agents has no message row: its link names the lead instead.
+  const contactId = String(req.query.c ?? '');
   const token = String(req.query.t ?? '');
-  if (!messageId || !token) return res.status(400).json({ error: 'Invalid link' });
+  if ((!messageId && !contactId) || !token) return res.status(400).json({ error: 'Invalid link' });
 
-  const ok = await verifyUnsubscribeToken(messageId, token, env('EMAIL_UNSUBSCRIBE_SECRET'));
+  const secret = env('EMAIL_UNSUBSCRIBE_SECRET');
+  const ok = messageId
+    ? await verifyUnsubscribeToken(messageId, token, secret)
+    : await verifyContactUnsubscribeToken(contactId, token, secret);
   if (!ok) return res.status(403).json({ error: 'Invalid link' });
 
   const db = serviceClient();
-  const { data: message } = await db
-    .from('email_messages')
-    .select('id, organization_id, to_email, campaign_id')
-    .eq('id', messageId)
-    .single();
+  let message: { organization_id: string; to_email: string; campaign_id: string | null } | null = null;
+  if (messageId) {
+    const { data } = await db
+      .from('email_messages')
+      .select('id, organization_id, to_email, campaign_id')
+      .eq('id', messageId)
+      .single();
+    message = data ?? null;
+  } else {
+    const { data } = await db.from('crm_contacts').select('organization_id, email').eq('id', contactId).maybeSingle();
+    message = data && data.email ? { organization_id: data.organization_id, to_email: String(data.email), campaign_id: null } : null;
+  }
   if (!message) return res.status(404).json({ error: 'Not found' });
 
   const address = escapeHtml(String(message.to_email));
@@ -46,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // the submission as coming from this form; a mail provider's one-click
     // POST never sends it and is handled exactly as before.
     const action =
-      `/api/email/unsubscribe?m=${encodeURIComponent(messageId)}` +
+      `/api/email/unsubscribe?${messageId ? `m=${encodeURIComponent(messageId)}` : `c=${encodeURIComponent(contactId)}`}` +
       `&t=${encodeURIComponent(token)}`;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');

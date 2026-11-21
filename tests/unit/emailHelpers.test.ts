@@ -143,3 +143,28 @@ describe("buildMessage", () => {
     expect(m.html).not.toContain("unsubscribe");
   });
 });
+
+describe('unsubscribe on every kind of bulk mail', () => {
+  const url = 'https://app.example.com/api/email/unsubscribe?m=abc&t=tok';
+  const base = { subject: 'Hello', bodyHtml: '<p>Hi {{first_name}}</p>', mergeData: { first_name: 'Elena' }, unsubscribeUrl: url };
+
+  it('gives a sequence step the link in the body and the one-click headers, exactly like a campaign', async () => {
+    const { buildMessage } = await import('@/lib/email/message');
+    const { buildMessage: apiBuildMessage } = await import('../../api/_lib/message');
+    for (const kind of ['bulk', 'sequence'] as const) {
+      const built = buildMessage({ ...base, kind });
+      expect(built.html, kind).toContain(`href="${url}"`);
+      expect(built.text, kind).toContain(`Unsubscribe: ${url}`);
+      expect(built.headers, kind).toEqual({ 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' });
+      // The copy the server routes use agrees.
+      expect(apiBuildMessage({ ...base, kind })).toEqual(built);
+    }
+  });
+
+  it('leaves a single, person-to-person email without one', async () => {
+    const { buildMessage } = await import('@/lib/email/message');
+    const built = buildMessage({ ...base, kind: 'single' });
+    expect(built.html).not.toContain('Unsubscribe');
+    expect(built.headers).toEqual({});
+  });
+});
