@@ -217,6 +217,29 @@ describe('Leads page: list tools', () => {
     expect(h.refresh).toHaveBeenCalled();
   });
 
+  it('saves the filters and the sorting under a name, and brings them back with one choice', async () => {
+    window.localStorage.clear();
+    show();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Filter by step' })).getByRole('button', { name: /^Contacted 1$/ }));
+    expect(names()).toEqual(['Tom Okafor']);
+    fireEvent.click(screen.getByRole('button', { name: 'Save view' }));
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Contacted ones' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('View “Contacted ones” saved'));
+    expect(JSON.parse(window.localStorage.getItem('crm.leadViews.u1.w') ?? '[]')[0]).toMatchObject({ name: 'Contacted ones', state: { step: 'contacted' } });
+
+    // Back to everything: the view is no longer the one on the page.
+    fireEvent.click(within(screen.getByRole('group', { name: 'Filter by step' })).getByRole('button', { name: /^All 5$/ }));
+    expect(names()).toHaveLength(5);
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Saved view' }), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Contacted ones' }), { key: 'Enter' });
+    expect(names()).toEqual(['Tom Okafor']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the view Contacted ones' }));
+    expect(window.localStorage.getItem('crm.leadViews.u1.w')).toBe('[]');
+    expect(screen.queryByRole('combobox', { name: 'Saved view' })).toBeNull();
+  });
+
   it('ticks every lead in the list at once, and never touches a lead the filter hides', async () => {
     show();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Tick every lead in the list' }));

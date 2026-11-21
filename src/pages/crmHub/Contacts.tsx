@@ -28,6 +28,8 @@ import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill } from '@/components/common/StatusPill';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
+import { LeadViews } from '@/components/crmHub/LeadViews';
+import { viewsKey, type LeadViewState } from '@/lib/crmSavedViews';
 import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
 import { Button } from '@/components/ui/button';
@@ -186,6 +188,12 @@ export const CrmContactsPage: React.FC = () => {
     );
     return order.map((id) => byId.get(id)).filter((c): c is CrmContact => !!c);
   }, [filtered, sort, companyById, memberById]);
+
+  /** What a saved view keeps: the search, the filters and the sorting. */
+  const viewState = useMemo<LeadViewState>(
+    () => ({ search, step: stepFilter, category: categoryFilter, owner: view, sort }),
+    [search, stepFilter, categoryFilter, view, sort],
+  );
 
   // Only leads still in view stay ticked: a hidden lead must never be changed by a bulk action.
   const selectedInView = useMemo(() => rows.filter((c) => selected.has(c.id)).map((c) => c.id), [rows, selected]);
@@ -434,6 +442,19 @@ export const CrmContactsPage: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {user && workspaceId && (
+              <LeadViews
+                storageKey={viewsKey(user.userId, workspaceId)}
+                current={viewState}
+                onApply={(state) => {
+                  setSearch(state.search);
+                  setStepFilter(state.step);
+                  setCategoryFilter(state.category);
+                  setView(state.owner);
+                  setSort(state.sort);
+                }}
+              />
             )}
           </div>
         </div>
