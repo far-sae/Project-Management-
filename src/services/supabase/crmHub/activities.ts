@@ -62,6 +62,30 @@ export const listActivities = async (
   return (data ?? []).map(mapActivity);
 };
 
+/** Timeline entries read to find the latest one per deal. Newest first, so the latest of every deal comes early. */
+const LAST_ACTIVITY_ROWS = 2000;
+
+/**
+ * When something was last logged on each of these deals (a note, a call, a
+ * move, a signed agreement…), by deal id. A deal with nothing logged is simply
+ * absent. Used for the "no activity for N days" warning.
+ */
+export const lastActivityByDeal = async (dealIds: string[]): Promise<Map<string, Date>> => {
+  const out = new Map<string, Date>();
+  if (dealIds.length === 0) return out;
+  const { data, error } = await supabase
+    .from('crm_activities')
+    .select('deal_id, created_at')
+    .in('deal_id', dealIds)
+    .order('created_at', { ascending: false })
+    .limit(LAST_ACTIVITY_ROWS);
+  if (error) throw error;
+  for (const row of (data ?? []) as Array<{ deal_id: string | null; created_at: string }>) {
+    if (row.deal_id && !out.has(row.deal_id)) out.set(row.deal_id, new Date(row.created_at));
+  }
+  return out;
+};
+
 /** Log an activity. Failures are surfaced — the caller decides whether to
  *  suppress (e.g. when it's fire-and-forget after a successful entity write). */
 export const logActivity = async (

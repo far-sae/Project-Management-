@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Loader2, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,6 +15,8 @@ import { useDealMoney, type DealMoneyTools } from '@/hooks/useDealMoney';
 import { currencyNotSaved } from '@/lib/crmDealMoney';
 import { createDeal } from '@/services/supabase/crmHub/deals';
 import { dealBadge, dealNeedsHandoff, leadName, weightedDealValue } from '@/lib/crmFlow';
+import { dealHealth, type DealHealth } from '@/lib/crmDealHealth';
+import { lastActivityByDeal } from '@/services/supabase/crmHub/activities';
 import type { CrmDeal, CrmDealStage } from '@/types/crmHub';
 import { COMMON_CURRENCIES } from '@/lib/countries';
 import { cn } from '@/lib/utils';
@@ -42,7 +44,9 @@ const DealCard: React.FC<{
   companyName: string | null;
   money: DealMoneyTools;
   onHandoff: (deal: CrmDeal) => void;
-}> = ({ deal, contactName, companyName, money, onHandoff }) => {
+  /** Why this deal needs attention, when it does. */
+  health?: DealHealth;
+}> = ({ deal, contactName, companyName, money, onHandoff, health }) => {
   const converted = money.formatDealConverted(deal);
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style: React.CSSProperties = transform
@@ -54,9 +58,10 @@ const DealCard: React.FC<{
       ref={setNodeRef}
       style={style}
       data-handoff={needsHandoff || undefined}
+      data-attention={health?.attention || undefined}
       className={cn(
         'rounded-lg border bg-card p-2.5 transition-colors',
-        needsHandoff ? 'border-warning/50' : 'border-border hover:border-foreground/25',
+        needsHandoff || health?.attention ? 'border-warning/50' : 'border-border hover:border-foreground/25',
         isDragging && 'opacity-60',
       )}
     >
@@ -83,6 +88,12 @@ const DealCard: React.FC<{
           {(companyName || contactName) && (
             <div className="mt-1 truncate text-xs text-muted-foreground">
               {[companyName, contactName].filter(Boolean).join(' · ')}
+            </div>
+          )}
+          {health?.label && (
+            <div className="mt-1 flex items-center gap-1 text-xs font-medium text-warning-soft-foreground">
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+              <span className="truncate" title={health.label}>{health.label}</span>
             </div>
           )}
           {deal.status === 'lost' && deal.lostReason && (
@@ -116,7 +127,8 @@ const StageColumn: React.FC<{
   companyById: Map<string, string>;
   money: DealMoneyTools;
   onHandoff: (deal: CrmDeal) => void;
-}> = ({ stage, deals, contactById, companyById, money, onHandoff }) => {
+  healthById: Map<string, DealHealth>;
+}> = ({ stage, deals, contactById, companyById, money, onHandoff, healthById }) => {
   const { format: fmtCurrency } = useCrmCurrency();
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   // Deals can be in different currencies; the column adds up in the company currency.
@@ -159,6 +171,7 @@ const StageColumn: React.FC<{
             companyName={d.companyId ? companyById.get(d.companyId) ?? null : null}
             money={money}
             onHandoff={onHandoff}
+            health={healthById.get(d.id)}
           />
         ))}
         {deals.length === 0 && (
@@ -187,7 +200,9 @@ export const CrmDealsPage: React.FC = () => {
 
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'won' | 'lost'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'won' | 'lost' | 'attention'>('all');
+  /** When something was last logged on each open deal; empty until it has loaded (the deal's own last change is used meanwhile). */
+  const [lastActivity, setLastActivity] = useState<Map<string, Date>>(new Map());
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [currency, setCurrency] = useState(companyCurrency);
@@ -201,9 +216,29 @@ export const CrmDealsPage: React.FC = () => {
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c.name])), [companies]);
   const stageById = useMemo(() => new Map(stages.map((s) => [s.id, s])), [stages]);
 
+  // Open deals only: a finished deal is never flagged, so there is nothing to look up for it.
+  const openIds = useMemo(() => deals.filter((d) => d.status === 'open').map((d) => d.id).sort().join(','), [deals]);
+  useEffect(() => {
+    if (!openIds) { setLastActivity(new Map()); return; }
+    let live = true;
+    lastActivityByDeal(openIds.split(','))
+      .then((found) => { if (live) setLastActivity(found); })
+      // The warning then rests on each deal's own last change, which is still true as far as it goes.
+      .catch(() => { if (live) setLastActivity(new Map()); });
+    return () => { live = false; };
+  }, [openIds]);
+
+  const healthById = useMemo(() => {
+    const now = new Date();
+    return new Map(deals.map((d) => [d.id, dealHealth(d, lastActivity.get(d.id), now)]));
+  }, [deals, lastActivity]);
+  const attentionCount = useMemo(() => [...healthById.values()].filter((h) => h.attention).length, [healthById]);
+
   const filteredDeals = useMemo(
-    () => deals.filter((d) => statusFilter === 'all' || d.status === statusFilter),
-    [deals, statusFilter],
+    () => deals.filter((d) =>
+      statusFilter === 'all'
+      || (statusFilter === 'attention' ? healthById.get(d.id)?.attention === true : d.status === statusFilter)),
+    [deals, statusFilter, healthById],
   );
 
   const dealsByStage = useMemo(() => {
@@ -300,6 +335,14 @@ export const CrmDealsPage: React.FC = () => {
               note: stats.needHandoff === 0 ? 'Every won deal has a project' : 'Won, but no project yet',
               tone: stats.needHandoff > 0 ? 'danger' : 'muted',
             },
+            ...(attentionCount > 0
+              ? [{
+                label: 'Need attention',
+                value: attentionCount,
+                note: 'Quiet for two weeks, or past the close date',
+                tone: 'danger' as const,
+              }]
+              : []),
           ]}
         />
       </div>
@@ -323,12 +366,13 @@ export const CrmDealsPage: React.FC = () => {
               <TabsTrigger value="list">List</TabsTrigger>
             </TabsList>
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-              <SelectTrigger className="mb-1.5 w-36" aria-label="Filter by status"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="mb-1.5 w-40" aria-label="Filter by status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All deals</SelectItem>
                 <SelectItem value="open">Open</SelectItem>
                 <SelectItem value="won">Won</SelectItem>
                 <SelectItem value="lost">Lost</SelectItem>
+                <SelectItem value="attention">Need attention</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -346,6 +390,7 @@ export const CrmDealsPage: React.FC = () => {
                       companyById={companyById}
                       money={money}
                       onHandoff={openHandoff}
+                      healthById={healthById}
                     />
                   ))}
                 </div>
@@ -402,6 +447,9 @@ export const CrmDealsPage: React.FC = () => {
                             </td>
                             <td className="px-3 py-2">
                               <StatusPill tone={badge.tone}>{badge.label}</StatusPill>
+                              {healthById.get(d.id)?.label && (
+                                <span className="mt-1 block text-xs font-medium text-warning-soft-foreground">{healthById.get(d.id)?.label}</span>
+                              )}
                             </td>
                           </tr>
                         );

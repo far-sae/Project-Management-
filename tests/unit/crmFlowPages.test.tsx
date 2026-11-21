@@ -56,7 +56,11 @@ const data = vi.hoisted(() => {
   };
 });
 
-const svc = vi.hoisted(() => ({ createContact: vi.fn(), ensureCompaniesByName: vi.fn() }));
+const svc = vi.hoisted(() => ({
+  createContact: vi.fn(),
+  ensureCompaniesByName: vi.fn(),
+  lastActivityByDeal: vi.fn(async (_ids: string[]) => new Map<string, Date>()),
+}));
 
 const list = <T,>(items: T[]) => ({ items, loading: false, error: null, refresh: async () => {} });
 
@@ -98,6 +102,12 @@ vi.mock('@/services/supabase/crmHub/flow', () => ({
   convertLeadToDeal: vi.fn(), handoffDealToNewProject: vi.fn(), HandoffLinkError: class extends Error {},
 }));
 vi.mock('@/components/crmHub/CsvImportWizard', () => ({ CsvImportWizard: () => null }));
+vi.mock('@/services/supabase/crmHub/activities', () => ({
+  lastActivityByDeal: svc.lastActivityByDeal,
+  tryLogActivity: vi.fn(),
+  logActivity: vi.fn(),
+  listActivities: async () => [],
+}));
 
 import { CrmContactsPage } from '@/pages/crmHub/Contacts';
 import { CrmDealsPage } from '@/pages/crmHub/Deals';
@@ -286,6 +296,40 @@ describe('Deals board', () => {
   it('shows why a deal was lost', () => {
     render(<MemoryRouter><CrmDealsPage /></MemoryRouter>);
     expect(within(screen.getByRole('region', { name: 'Lost' })).getByText('Lost: Went with a competitor')).toBeTruthy();
+  });
+
+  it('warns about an open deal nothing has happened on, and one whose close date has passed', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const [quiet, late, moved, won] = [data.deals[0], data.deals[1], data.deals[2], data.deals[3]];
+    const before = [quiet, late, moved, won].map((d) => ({ updatedAt: d.updatedAt, expectedCloseDate: d.expectedCloseDate }));
+    quiet.updatedAt = new Date(Date.now() - 30 * day);
+    late.expectedCloseDate = '2026-01-10';
+    moved.updatedAt = new Date(Date.now() - 30 * day);
+    won.updatedAt = new Date(Date.now() - 300 * day);
+    // Something was logged on the third deal two days ago, so it is not quiet.
+    svc.lastActivityByDeal.mockResolvedValue(new Map([[moved.id, new Date(Date.now() - 2 * day)]]));
+    try {
+      render(<MemoryRouter><CrmDealsPage /></MemoryRouter>);
+      expect(await screen.findByText('No activity for 30 days')).toBeTruthy();
+      expect(screen.getByText('Close date passed')).toBeTruthy();
+      // Only open deals are asked about.
+      expect(svc.lastActivityByDeal).toHaveBeenCalledWith(['d1', 'd2', 'd3']);
+      await waitFor(() => expect(screen.getAllByText(/^No activity for [0-9]+ days$/)).toHaveLength(1));
+      // The total at the top counts them, and a won deal is never among them.
+      expect(screen.getByText('Need attention')).toBeTruthy();
+      expect(screen.getByText('Quiet for two weeks, or past the close date')).toBeTruthy();
+      expect(document.querySelectorAll('[data-attention="true"]')).toHaveLength(2);
+    } finally {
+      [quiet, late, moved, won].forEach((d, i) => Object.assign(d, before[i]));
+      svc.lastActivityByDeal.mockResolvedValue(new Map());
+    }
+  });
+
+  it('says nothing when every open deal is moving', async () => {
+    render(<MemoryRouter><CrmDealsPage /></MemoryRouter>);
+    await waitFor(() => expect(svc.lastActivityByDeal).toHaveBeenCalled());
+    expect(screen.queryByText('Need attention')).toBeNull();
+    expect(document.querySelectorAll('[data-attention="true"]')).toHaveLength(0);
   });
 });
 
