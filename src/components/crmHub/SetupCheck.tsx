@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganization } from '@/context/OrganizationContext';
-import { PLATFORM_ORGS, PLATFORM_ORG_SETTING } from '@/lib/platform';
+import { APP_OWNERS, APP_OWNER_SETTING } from '@/lib/platform';
+import { useAuth } from '@/context/AuthContext';
 import { StatusPill } from '@/components/common/StatusPill';
 import type { StatusTone } from '@/components/common/StatusPill';
 import { SETUP_PARTS } from '@/lib/crmSetup';
@@ -26,6 +27,7 @@ const File: React.FC<{ name: string }> = ({ name }) => (
 
 export const SetupCheck: React.FC = () => {
   const { organization, isOwner } = useOrganization();
+  const { user } = useAuth();
   const [states, setStates] = useState<Record<string, SetupState> | null>(null);
   const [calling, setCalling] = useState<VoiceSetup | null>(null);
   const [checking, setChecking] = useState(true);
@@ -74,12 +76,12 @@ export const SetupCheck: React.FC = () => {
         </p>
       )}
 
-      {/* While no organisation is named as the one that runs the site, every organisation's owner sees this page. */}
-      {isOwner && PLATFORM_ORGS.length === 0 && organization?.organizationId && (
+      {/* While nobody is named as the one who runs the site, every organisation's owner sees this page. */}
+      {APP_OWNERS.length === 0 && user?.userId && (
         <p className="border-b border-border bg-warning-soft px-4 py-2 text-pretty text-xs text-warning-soft-foreground">
-          The owner of every organisation on the site can see this page and set-up messages. To keep them to your
-          organisation, add the setting <code className="rounded bg-background px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">{PLATFORM_ORG_SETTING}</code> in
-          Vercel with this value, then deploy again: <code className="break-all rounded bg-background px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">{organization.organizationId}</code>
+          The owner of every organisation on the site can see this page and set-up messages. To keep them to
+          yourself, add the setting <code className="rounded bg-background px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">{APP_OWNER_SETTING}</code> in
+          Vercel with this value, then deploy again: <code className="break-all rounded bg-background px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">{user.userId}</code>
         </p>
       )}
 

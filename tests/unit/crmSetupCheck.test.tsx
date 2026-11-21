@@ -30,6 +30,10 @@ vi.mock('@/services/supabase/config', () => {
   };
 });
 vi.mock('@/services/voice/client', () => ({ voiceSetup: h.voiceSetup, forgetVoiceSetup: vi.fn() }));
+vi.mock('@/context/AuthContext', () => {
+  const value = { user: { userId: '0c000000-0000-4000-8000-000000000001' } };
+  return { useAuth: () => value };
+});
 vi.mock('@/context/OrganizationContext', () => {
   const value = { isOwner: true, organization: { organizationId: '0b000000-0000-4000-8000-000000000001' } };
   return { useOrganization: () => value };
@@ -157,6 +161,13 @@ describe('Set-up check', () => {
     await within(row('Phone provider settings')).findByText('Ready');
     expect(row('Phone provider settings').textContent).toContain('TWILIO_ALLOWED_ORGS');
     expect(row('Phone provider settings').textContent).toContain('0b000000-0000-4000-8000-000000000001');
+  });
+
+  it('tells the owner how to keep this page and the set-up messages to themselves', async () => {
+    render(<SetupCheck />);
+    const note = await screen.findByText(/The owner of every organisation on the site can see this page/);
+    expect(note.textContent).toContain('VITE_APP_OWNER_USER_IDS');
+    expect(note.textContent).toContain('0c000000-0000-4000-8000-000000000001');
   });
 
   it('says when no phone provider is set at all', async () => {

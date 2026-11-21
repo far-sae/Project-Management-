@@ -6,7 +6,7 @@ import {
   GENERIC_MESSAGE, NETWORK_MESSAGE, NOT_ON_YET_MESSAGE, PERMISSION_MESSAGE, SIGN_IN_MESSAGE,
   isInternal, isTechnical, publicMessage, publicText, setInternalsVisible,
 } from '@/lib/publicError';
-import { canSeeInternals, platformOrgIds } from '@/lib/platform';
+import { appOwnerIds, canSeeInternals } from '@/lib/platform';
 
 beforeEach(() => setInternalsVisible(false));
 afterEach(() => setInternalsVisible(true));
@@ -130,29 +130,28 @@ describe('reading an error of any shape', () => {
 });
 
 describe('who runs the site', () => {
-  const ORG = '0b000000-0000-4000-8000-000000000001';
-  const OTHER = '0b000000-0000-4000-8000-0000000000ff';
+  const ME = '0c000000-0000-4000-8000-000000000001';
+  const OTHER = '0c000000-0000-4000-8000-0000000000ff';
 
-  it('reads the organisations from the setting, ignoring anything that is not an id', () => {
-    expect(platformOrgIds(` ${ORG.toUpperCase()} , my company,, ${OTHER}`)).toEqual([ORG, OTHER]);
-    expect(platformOrgIds(undefined)).toEqual([]);
-    expect(platformOrgIds('')).toEqual([]);
+  it('reads the app owners from the setting', () => {
+    expect(appOwnerIds(` ${ME} ,, ${OTHER}`)).toEqual([ME, OTHER]);
+    expect(appOwnerIds(undefined)).toEqual([]);
+    expect(appOwnerIds('')).toEqual([]);
   });
 
-  it('is the owner and admins of a listed organisation, and nobody of any other', () => {
-    expect(canSeeInternals([ORG], ORG, { isOwner: true, isAdmin: true })).toBe(true);
-    expect(canSeeInternals([ORG], ORG, { isOwner: false, isAdmin: true })).toBe(true);
-    expect(canSeeInternals([ORG], ORG, { isOwner: false, isAdmin: false })).toBe(false);
-    expect(canSeeInternals([ORG], OTHER, { isOwner: true, isAdmin: true })).toBe(false);
+  it('is the app owners, and nobody else, once they are named', () => {
+    expect(canSeeInternals([ME], ME, { isOwner: false })).toBe(true);
+    // The owner of another organisation is not the owner of the site.
+    expect(canSeeInternals([ME], OTHER, { isOwner: true })).toBe(false);
   });
 
-  it('while no organisation is listed yet, is the owner of each organisation only, so the site can still be set up', () => {
-    expect(canSeeInternals([], OTHER, { isOwner: true, isAdmin: true })).toBe(true);
-    expect(canSeeInternals([], OTHER, { isOwner: false, isAdmin: true })).toBe(false);
+  it('while nobody is named yet, is the owner of each organisation, so the site can still be set up', () => {
+    expect(canSeeInternals([], OTHER, { isOwner: true })).toBe(true);
+    expect(canSeeInternals([], OTHER, { isOwner: false })).toBe(false);
   });
 
-  it('is nobody when there is no organisation: public pages never show internals', () => {
-    expect(canSeeInternals([], null, { isOwner: false, isAdmin: false })).toBe(false);
-    expect(canSeeInternals([ORG], undefined, { isOwner: true, isAdmin: true })).toBe(false);
+  it('is nobody when nobody is signed in: public pages never show internals', () => {
+    expect(canSeeInternals([], null, { isOwner: false })).toBe(false);
+    expect(canSeeInternals([ME], undefined, { isOwner: true })).toBe(false);
   });
 });

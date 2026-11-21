@@ -1,44 +1,42 @@
 /**
- * Who runs this site. Many organisations use it; one of them owns it. Only
- * that one is shown how the site is set up: which database file to run, which
- * setting is missing on the server. Everybody else is told a feature "is not
- * switched on yet" and nothing more.
+ * Who runs this site. Many organisations use it; the people who built it run
+ * it. Only they are shown how the site is set up: which database file to run,
+ * which setting is missing on the server. Everybody else is told a feature "is
+ * not switched on yet" and nothing more.
  *
- * The owning organisation is named by the build setting VITE_PLATFORM_ORG_ID
- * (one id, or several with commas between them). An organisation id is not a
- * secret. This only decides what is SHOWN; what a person may DO is decided by
- * the server and the database, never here.
+ * They are the app owners: the user ids in the build setting
+ * VITE_APP_OWNER_USER_IDS (see lib/app-owner.ts and docs/ORGANIZATION_OWNER.md).
+ * This only decides what is SHOWN; what a person may DO is decided by the
+ * server and the database, never here.
  */
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const APP_OWNER_SETTING = 'VITE_APP_OWNER_USER_IDS';
 
-/** The organisation ids in the setting. Anything that is not an id is ignored. */
-export function platformOrgIds(setting: string | undefined | null): string[] {
+/** The user ids in the setting, with commas between them. */
+export function appOwnerIds(setting: string | undefined | null): string[] {
   return (setting ?? '')
     .split(',')
-    .map((id) => id.trim().toLowerCase())
-    .filter((id) => UUID.test(id));
+    .map((id) => id.trim())
+    .filter(Boolean);
 }
 
-export const PLATFORM_ORG_SETTING = 'VITE_PLATFORM_ORG_ID';
-
-/** The organisations that run this site, as built into this copy of the app. */
-export const PLATFORM_ORGS: string[] = platformOrgIds(import.meta.env?.VITE_PLATFORM_ORG_ID as string | undefined);
+/** The app owners, as built into this copy of the app. */
+export const APP_OWNERS: string[] = appOwnerIds(import.meta.env?.VITE_APP_OWNER_USER_IDS as string | undefined);
 
 /**
  * Whether this person is shown how the site is set up.
  *
- * With organisations listed: the owner and admins of a listed organisation.
- * With none listed yet (the site is still being set up, and nobody could be
- * told apart): the owner of each organisation, so the set-up can be finished.
- * Somebody who is in no organisation is never shown it.
+ * With app owners named: they, and nobody else.
+ * With none named yet (the site is still being set up, and nobody can be told
+ * apart): the owner of each organisation, so the set-up can be finished.
+ * Somebody who is not signed in is never shown it.
  */
 export function canSeeInternals(
-  platformOrgs: string[],
-  organizationId: string | null | undefined,
-  role: { isOwner: boolean; isAdmin: boolean },
+  appOwners: string[],
+  userId: string | null | undefined,
+  role: { isOwner: boolean },
 ): boolean {
-  if (!organizationId) return false;
-  if (platformOrgs.length === 0) return role.isOwner;
-  return platformOrgs.includes(organizationId.toLowerCase()) && (role.isOwner || role.isAdmin);
+  if (!userId) return false;
+  if (appOwners.length === 0) return role.isOwner;
+  return appOwners.includes(userId);
 }
