@@ -35,6 +35,7 @@ export const SETUP_PARTS: SetupPart[] = [
   { id: 'followUps', name: 'Follow-up types and repeats', gives: 'A follow-up can be a call, an email or a meeting, and can repeat.', file: '194_crm_follow_up_kinds.sql', probe: { kind: 'column', table: 'crm_tasks', column: 'kind' } },
   { id: 'erase', name: 'Erasing a person', gives: 'Removes everything about one person when they ask for it.', file: '195_crm_erase_person.sql', probe: { kind: 'function', name: 'crm_erase_person', args: { p_contact: null } } },
   { id: 'formSharing', name: 'Sharing web-form leads', gives: 'A form gives its leads to several people in turn.', file: '196_crm_lead_form_sharing.sql', probe: { kind: 'column', table: 'crm_lead_forms', column: 'share_with' } },
+  { id: 'history', name: 'Recycle bin and change log', gives: 'Deleted leads, companies and deals can be put back for 30 days, and every change says who made it.', file: '197_crm_recycle_bin_and_changes.sql', probe: { kind: 'table', table: 'crm_trash' } },
 ];
 
 /** The database's codes for "there is no such table / column / function". */

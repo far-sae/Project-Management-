@@ -58,6 +58,9 @@ begin
 
   v_email := nullif(lower(btrim(coalesce(c.email, ''))), '');
 
+  -- Nothing of this person goes to the recycle bin (migration 197): erased means no copy is kept.
+  perform set_config('crm.skip_trash', 'on', true);
+
   -- Calls. Tables from later migrations are touched only where they exist.
   if to_regclass('public.crm_calls') is not null then
     execute 'select count(*) from public.crm_calls where contact_id = $1 and recording_sid is not null' into n using p_contact;
@@ -93,6 +96,14 @@ begin
   if v_email is not null and to_regclass('public.email_suppressions') is not null then
     execute 'insert into public.email_suppressions (organization_id, email, reason) values ($1, $2, ''manual'') on conflict (organization_id, email) do nothing'
       using c.organization_id, v_email;
+  end if;
+
+  -- The change log and the recycle bin (migration 197) hold this person's details too.
+  if to_regclass('public.crm_changes') is not null then
+    execute 'delete from public.crm_changes where record_id = $1' using p_contact;
+  end if;
+  if to_regclass('public.crm_trash') is not null then
+    execute 'delete from public.crm_trash where record_id = $1' using p_contact;
   end if;
 
   -- Last: the lead. Its notes, timeline, tags and automation history go with it.
