@@ -13,6 +13,7 @@ import {
 import type { CrmDealStage, DealStatus } from '@/types/crmHub';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SetupCheck } from '@/components/crmHub/SetupCheck';
+import { CrmRulesSettings } from '@/components/crmHub/CrmRulesSettings';
 import { FieldDefsSettings } from '@/components/crmHub/FieldDefsSettings';
 import { OwnOnlySetting } from '@/components/crmHub/OwnOnlySetting';
 import { ChangeLog, RecycleBin } from '@/components/crmHub/CrmHistory';
@@ -67,6 +68,7 @@ export const CrmSettingsPage: React.FC = () => {
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="pipeline">Pipeline stages</TabsTrigger>
               <TabsTrigger value="workspace">Workspace</TabsTrigger>
+              <TabsTrigger value="rules">Rules</TabsTrigger>
               <TabsTrigger value="fields">Custom fields</TabsTrigger>
               <TabsTrigger value="bin">Recycle bin</TabsTrigger>
               <TabsTrigger value="changes">Change log</TabsTrigger>
@@ -81,6 +83,7 @@ export const CrmSettingsPage: React.FC = () => {
           </TabsContent>
           <TabsContent value="pipeline"><PipelineSettings /></TabsContent>
           <TabsContent value="workspace"><WorkspaceSettings /></TabsContent>
+          <TabsContent value="rules"><CrmRulesSettings /></TabsContent>
           <TabsContent value="fields"><FieldDefsSettings /></TabsContent>
           <TabsContent value="bin"><RecycleBin /></TabsContent>
           <TabsContent value="changes"><ChangeLog /></TabsContent>

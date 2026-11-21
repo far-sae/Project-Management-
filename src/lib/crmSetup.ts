@@ -39,6 +39,7 @@ export const SETUP_PARTS: SetupPart[] = [
   { id: 'ownOnly', name: 'Own leads and deals only', gives: 'A workspace can show each person only their own leads and deals.', file: '198_crm_own_records_only.sql', probe: { kind: 'table', table: 'crm_visibility' } },
   { id: 'quote', name: 'Quotes on deals', gives: 'A deal holds the lines of a quote, with a total and a page to print.', file: '199_crm_deal_quote.sql', probe: { kind: 'column', table: 'crm_deals', column: 'line_items' } },
   { id: 'fieldTypes', name: 'Typed custom fields', gives: 'A custom field on a lead can be a number, a date or one of a list.', file: '200_crm_custom_field_types.sql', probe: { kind: 'table', table: 'crm_field_defs' } },
+  { id: 'rules', name: 'Rules', gives: 'When something happens to a lead or a deal, one thing is done by itself.', file: '201_crm_rules.sql', probe: { kind: 'table', table: 'crm_rules' } },
 ];
 
 /** The database's codes for "there is no such table / column / function". */
