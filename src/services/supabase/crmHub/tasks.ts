@@ -11,6 +11,15 @@ import {
   deleteTask as deleteProjectTask,
 } from '../database';
 import type { TaskAssignee } from '@/types/task';
+import { isFollowUpKind, isFollowUpRepeat, nextDueDate } from '@/lib/crmFollowUpKinds';
+
+/** Shown when a follow-up needs the type or repeat columns and the database does not have them yet. */
+export const FOLLOW_UP_EXTRAS_NOT_SET_UP_MESSAGE =
+  'Follow-up types and repeats are not set up yet: run supabase/migrations/194_crm_follow_up_kinds.sql in the Supabase SQL editor.';
+
+/** The database said it has no such column: migration 194 has not been run. */
+const columnsMissing = (error: { code?: string; message?: string }): boolean =>
+  (error.code === 'PGRST204' || error.code === '42703') && /kind|repeat_every/.test(error.message ?? '');
 
 interface TaskRow {
   id: string;
@@ -31,6 +40,9 @@ interface TaskRow {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  // From migration 194. Absent until it is run.
+  kind?: string | null;
+  repeat_every?: string | null;
 }
 
 const mapTask = (r: TaskRow): CrmTask => ({
@@ -52,6 +64,8 @@ const mapTask = (r: TaskRow): CrmTask => ({
   completedAt: r.completed_at ? new Date(r.completed_at) : null,
   createdAt: new Date(r.created_at),
   updatedAt: new Date(r.updated_at),
+  kind: isFollowUpKind(r.kind) ? r.kind : 'todo',
+  repeatEvery: isFollowUpRepeat(r.repeat_every) ? r.repeat_every : null,
 });
 
 interface ListTasksOptions {
@@ -127,12 +141,16 @@ export const createTask = async (
       due_date: input.dueDate ?? null,
       priority: input.priority ?? 'medium',
       status: input.status ?? 'pending',
+      // Sent only when they say something, so a plain follow-up saves before migration 194 is run.
+      ...(input.kind && input.kind !== 'todo' ? { kind: input.kind } : {}),
+      // A follow-up on a project board does not repeat: its copy on the board would not.
+      ...(input.repeatEvery && !input.projectId ? { repeat_every: input.repeatEvery } : {}),
     })
     .select()
     .single();
   if (error) {
     if (sharedTask) await deleteProjectTask(sharedTask.taskId, input.organizationId).catch(() => undefined);
-    throw error;
+    throw columnsMissing(error) ? new Error(FOLLOW_UP_EXTRAS_NOT_SET_UP_MESSAGE) : error;
   }
   const task = mapTask(data);
   // A follow-up on a project tells its assignee through the project's own task. One that lives
@@ -160,7 +178,7 @@ export const updateTask = async (
   id: string,
   input: UpdateTaskInput,
   options?: Pick<LinkedTaskOptions, 'assignee' | 'sharedStatus'>,
-): Promise<CrmTask> => {
+): Promise<CrmTask & { nextFollowUp?: CrmTask }> => {
   const patch: Record<string, unknown> = {};
   if (input.title !== undefined) patch.title = input.title;
   if (input.description !== undefined) patch.description = input.description;
@@ -174,6 +192,8 @@ export const updateTask = async (
   if (input.contactId !== undefined) patch.contact_id = input.contactId;
   if (input.companyId !== undefined) patch.company_id = input.companyId;
   if (input.dealId !== undefined) patch.deal_id = input.dealId;
+  if (input.kind !== undefined) patch.kind = input.kind;
+  if (input.repeatEvery !== undefined) patch.repeat_every = input.repeatEvery;
 
   const { data, error } = await supabase
     .from('crm_tasks')
@@ -181,8 +201,8 @@ export const updateTask = async (
     .eq('id', id)
     .select()
     .single();
-  if (error) throw error;
-  const task = mapTask(data);
+  if (error) throw columnsMissing(error) ? new Error(FOLLOW_UP_EXTRAS_NOT_SET_UP_MESSAGE) : error;
+  const task: CrmTask & { nextFollowUp?: CrmTask } = mapTask(data);
   if (task.sharedTaskId) {
     await updateProjectTask(task.sharedTaskId, {
       title: input.title,
@@ -208,9 +228,55 @@ export const updateTask = async (
       },
       task.ownerId,
     );
+    const next = await makeNextFollowUp(task);
+    if (next) {
+      task.nextFollowUp = next;
+      task.repeatEvery = null;
+    }
   }
   return task;
 };
+
+/**
+ * A repeating follow-up was completed: the next one is made, the same in
+ * everything but its date, and the repeat moves to it. The completed one stops
+ * repeating, so un-ticking and ticking it again cannot make a second copy.
+ * Never fails the completion it is part of.
+ */
+async function makeNextFollowUp(done: CrmTask): Promise<CrmTask | null> {
+  if (!done.repeatEvery || done.sharedTaskId || done.projectId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('crm_tasks')
+      .insert({
+        organization_id: done.organizationId,
+        workspace_id: done.workspaceId,
+        project_id: null,
+        shared_task_id: null,
+        owner_id: done.ownerId,
+        assigned_to: done.assignedTo,
+        contact_id: done.contactId,
+        company_id: done.companyId,
+        deal_id: done.dealId,
+        title: done.title,
+        description: done.description,
+        due_date: nextDueDate(done.dueDate, done.repeatEvery, new Date()).toISOString(),
+        priority: done.priority,
+        status: 'pending',
+        kind: done.kind,
+        repeat_every: done.repeatEvery,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    const stopped = await supabase.from('crm_tasks').update({ repeat_every: null }).eq('id', done.id);
+    if (stopped.error) console.warn('[crm] the completed follow-up still says it repeats', stopped.error);
+    return mapTask(data);
+  } catch (err) {
+    console.warn('[crm] could not make the next follow-up', err);
+    return null;
+  }
+}
 
 export const deleteTask = async (id: string): Promise<void> => {
   const { data: row } = await supabase

@@ -1,4 +1,5 @@
 // CRM Hub types — mirror the SQL schema in migration 144.
+import type { FollowUpKind, FollowUpRepeat } from '@/lib/crmFollowUpKinds';
 
 export type LifecycleStage =
   | 'subscriber'
@@ -265,9 +266,15 @@ export interface CrmTask {
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** What the follow-up is: a to-do, a call, an email or a meeting. */
+  kind: FollowUpKind;
+  /** How often it comes back once it is done. Null = it does not repeat. */
+  repeatEvery: FollowUpRepeat | null;
 }
 
 export interface CreateTaskInput {
+  kind?: FollowUpKind;
+  repeatEvery?: FollowUpRepeat | null;
   organizationId: string;
   workspaceId: string;
   /**

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import {
-  Plus, Trash2, Loader2, Check, Circle, CircleDashed, Pencil, ListChecks,
+  Plus, Trash2, Loader2, Check, Circle, CircleDashed, Pencil, ListChecks, Repeat,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -20,6 +20,10 @@ import {
   FOLLOW_UP_BUCKETS, FOLLOW_UP_BUCKET_LABEL, followUpCounts, groupFollowUps, localYmd,
 } from '@/lib/crmFollowUps';
 import type { FollowUpBucket } from '@/lib/crmFollowUps';
+import {
+  FOLLOW_UP_KINDS, FOLLOW_UP_KIND_LABEL, FOLLOW_UP_REPEATS, FOLLOW_UP_REPEAT_LABEL, isMine,
+} from '@/lib/crmFollowUpKinds';
+import type { FollowUpKind, FollowUpRepeat } from '@/lib/crmFollowUpKinds';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatStrip } from '@/components/common/StatStrip';
@@ -163,6 +167,8 @@ export const CrmTasksPage: React.FC = () => {
   const [bucketFilter, setBucketFilter] = useState<FollowUpBucket | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | 'all'>('all');
+  const [kindFilter, setKindFilter] = useState<FollowUpKind | 'all'>('all');
+  const [whose, setWhose] = useState<'all' | 'mine'>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<CrmTask | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -181,12 +187,15 @@ export const CrmTasksPage: React.FC = () => {
   // Empty = a sales follow-up that lives in the CRM only.
   const [projectId, setProjectId] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
+  const [kind, setKind] = useState<FollowUpKind>('todo');
+  const [repeatEvery, setRepeatEvery] = useState<FollowUpRepeat | null>(null);
 
   const resetForm = () => {
     setTitle(''); setDescription(''); setDueDate('');
     setPriority('medium'); setStatus('pending');
     setContactId(''); setCompanyId(''); setDealId('');
     setProjectId(''); setAssignedTo(user?.userId ?? '');
+    setKind('todo'); setRepeatEvery(null);
   };
 
   // When the edit dialog opens, prefill the shared form state from the task.
@@ -202,6 +211,8 @@ export const CrmTasksPage: React.FC = () => {
     setDealId(editing.dealId ?? '');
     setProjectId(editing.projectId ?? '');
     setAssignedTo(editing.assignedTo ?? '');
+    setKind(editing.kind);
+    setRepeatEvery(editing.repeatEvery);
   }, [editing]);
 
   const today = localYmd(new Date());
@@ -210,19 +221,22 @@ export const CrmTasksPage: React.FC = () => {
     return tasks.filter((t) => {
       if (statusFilter !== 'all' && t.status !== statusFilter) return false;
       if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
+      if (kindFilter !== 'all' && t.kind !== kindFilter) return false;
+      if (whose === 'mine' && !(user && isMine(t, user.userId))) return false;
       return true;
     });
-  }, [tasks, statusFilter, priorityFilter]);
+  }, [tasks, statusFilter, priorityFilter, kindFilter, whose, user]);
 
   const counts = useMemo(() => followUpCounts(tasks, today), [tasks, today]);
   const groups = useMemo(() => groupFollowUps(filtered, today), [filtered, today]);
   const shownBuckets = (bucketFilter === 'all' ? FOLLOW_UP_BUCKETS : [bucketFilter])
     .filter((bucket) => groups[bucket].length > 0);
   const shownCount = shownBuckets.reduce((n, bucket) => n + groups[bucket].length, 0);
-  const filtering = bucketFilter !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all';
+  const filtering = bucketFilter !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all' || kindFilter !== 'all' || whose !== 'all';
 
   const clearFilters = () => {
     setBucketFilter('all'); setStatusFilter('all'); setPriorityFilter('all');
+    setKindFilter('all'); setWhose('all');
   };
 
   const projectNameById = useMemo(
@@ -270,6 +284,8 @@ export const CrmTasksPage: React.FC = () => {
           companyId: companyId || null,
           dealId: dealId || null,
           assignedTo: assignedTo || null,
+          kind,
+          repeatEvery: project ? null : repeatEvery,
         },
         user.userId,
         {
@@ -307,6 +323,9 @@ export const CrmTasksPage: React.FC = () => {
         companyId: companyId || null,
         dealId: dealId || null,
         assignedTo: assignedTo || null,
+        // Only when changed, so editing a follow-up works before migration 194 is run.
+        kind: kind !== editing.kind ? kind : undefined,
+        repeatEvery: repeatEvery !== editing.repeatEvery ? repeatEvery : undefined,
       }, { assignee, sharedStatus: sharedTaskStatusFor(project?.columns, status) });
       toast.success('Follow-up updated');
       setEditing(null);
@@ -324,7 +343,8 @@ export const CrmTasksPage: React.FC = () => {
     try {
       const next = nextStatus(task.status);
       const project = projects.find((item) => item.projectId === task.projectId);
-      await updateTask(task.id, { status: next }, { sharedStatus: sharedTaskStatusFor(project?.columns, next) });
+      const saved = await updateTask(task.id, { status: next }, { sharedStatus: sharedTaskStatusFor(project?.columns, next) });
+      if (saved.nextFollowUp?.dueDate) toast.success(`Done. The next one is due ${formatDue(saved.nextFollowUp.dueDate)}.`);
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not update follow-up');
@@ -401,6 +421,26 @@ export const CrmTasksPage: React.FC = () => {
                   <SelectItem value="all">All follow-ups</SelectItem>
                   {FOLLOW_UP_BUCKETS.map((bucket) => (
                     <SelectItem key={bucket} value={bucket}>{FOLLOW_UP_BUCKET_LABEL[bucket]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={whose} onValueChange={(v) => setWhose(v as 'all' | 'mine')}>
+                <SelectTrigger className="w-36" aria-label="Whose follow-ups">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Everyone's</SelectItem>
+                  <SelectItem value="mine">Mine</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as FollowUpKind | 'all')}>
+                <SelectTrigger className="w-36" aria-label="Filter by type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  {FOLLOW_UP_KINDS.map((k) => (
+                    <SelectItem key={k} value={k}>{FOLLOW_UP_KIND_LABEL[k]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -529,8 +569,15 @@ export const CrmTasksPage: React.FC = () => {
                               >
                                 {t.title}
                               </button>
-                              {links.length > 0 && (
-                                <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                              {(links.length > 0 || t.kind !== 'todo' || t.repeatEvery) && (
+                                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                                  {t.kind !== 'todo' && <span className="font-medium text-foreground/80">{FOLLOW_UP_KIND_LABEL[t.kind]}</span>}
+                                  {t.repeatEvery && (
+                                    <span className="inline-flex items-center gap-1">
+                                      <Repeat className="h-3 w-3" aria-hidden />
+                                      {FOLLOW_UP_REPEAT_LABEL[t.repeatEvery]}
+                                    </span>
+                                  )}
                                   {links.map((link) => (
                                     <Link
                                       key={link.key}
@@ -631,6 +678,8 @@ export const CrmTasksPage: React.FC = () => {
             dealId={dealId} setDealId={setDealId}
             projectId={projectId} setProjectId={setProjectId}
             assignedTo={assignedTo} setAssignedTo={setAssignedTo}
+            kind={kind} setKind={setKind}
+            repeatEvery={repeatEvery} setRepeatEvery={setRepeatEvery}
             contacts={contacts} companies={companies} deals={deals}
             projects={projects} assignees={assignees}
             projectDisabled={false}
@@ -661,6 +710,8 @@ export const CrmTasksPage: React.FC = () => {
             dealId={dealId} setDealId={setDealId}
             projectId={projectId} setProjectId={setProjectId}
             assignedTo={assignedTo} setAssignedTo={setAssignedTo}
+            kind={kind} setKind={setKind}
+            repeatEvery={repeatEvery} setRepeatEvery={setRepeatEvery}
             contacts={contacts} companies={companies} deals={deals}
             projects={editProjects} assignees={assignees}
             projectDisabled
@@ -711,6 +762,8 @@ interface FieldsProps {
   dealId: string; setDealId: (v: string) => void;
   projectId: string; setProjectId: (v: string) => void;
   assignedTo: string; setAssignedTo: (v: string) => void;
+  kind: FollowUpKind; setKind: (v: FollowUpKind) => void;
+  repeatEvery: FollowUpRepeat | null; setRepeatEvery: (v: FollowUpRepeat | null) => void;
   contacts: { id: string; firstName: string; lastName: string | null }[];
   companies: { id: string; name: string }[];
   deals: { id: string; name: string }[];
@@ -724,7 +777,7 @@ const TaskFormFields: React.FC<FieldsProps> = ({
   title, setTitle, description, setDescription, dueDate, setDueDate,
   priority, setPriority, status, setStatus,
   contactId, setContactId, companyId, setCompanyId, dealId, setDealId,
-  projectId, setProjectId, assignedTo, setAssignedTo,
+  projectId, setProjectId, assignedTo, setAssignedTo, kind, setKind, repeatEvery, setRepeatEvery,
   contacts, companies, deals, projects, assignees, projectDisabled, busy,
 }) => (
   <div className="space-y-3">
@@ -763,6 +816,40 @@ const TaskFormFields: React.FC<FieldsProps> = ({
             ))}
           </SelectContent>
         </Select>
+      </div>
+    </div>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-1.5">
+        <Label htmlFor="tkind">Type</Label>
+        <Select value={kind} onValueChange={(v) => setKind(v as FollowUpKind)} disabled={busy}>
+          <SelectTrigger id="tkind"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {FOLLOW_UP_KINDS.map((k) => (
+              <SelectItem key={k} value={k}>{FOLLOW_UP_KIND_LABEL[k]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="trepeat">Repeat</Label>
+        <Select
+          value={projectId ? NONE : repeatEvery ?? NONE}
+          onValueChange={(v) => setRepeatEvery(v === NONE ? null : (v as FollowUpRepeat))}
+          disabled={busy || !!projectId}
+        >
+          <SelectTrigger id="trepeat"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>Does not repeat</SelectItem>
+            {FOLLOW_UP_REPEATS.map((r) => (
+              <SelectItem key={r} value={r}>{FOLLOW_UP_REPEAT_LABEL[r]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {projectId
+            ? 'A follow-up on a project board does not repeat'
+            : repeatEvery ? 'When done, the next one is made' : 'Done once'}
+        </p>
       </div>
     </div>
     <div className="space-y-1.5">
