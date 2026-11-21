@@ -148,6 +148,31 @@ export const deleteContact = async (id: string): Promise<void> => {
  * to populate suggestion dropdowns in the create dialog and the CSV import
  * wizard's category step.
  */
+/** How many rows one request may return; the list is read in pages of this size. */
+const EMAIL_PAGE = 1000;
+
+/**
+ * Every email address the leads of a workspace already have, for the
+ * duplicate check of an import. Read page by page, so a long list is not cut
+ * off at the first thousand.
+ */
+export const listLeadEmails = async (organizationId: string, workspaceId?: string | null): Promise<string[]> => {
+  const out: string[] = [];
+  for (let from = 0; ; from += EMAIL_PAGE) {
+    let q = supabase
+      .from('crm_contacts')
+      .select('email')
+      .eq('organization_id', organizationId)
+      .not('email', 'is', null);
+    if (workspaceId) q = q.eq('workspace_id', workspaceId);
+    const { data, error } = await q.order('id', { ascending: true }).range(from, from + EMAIL_PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Array<{ email: string | null }>;
+    for (const row of rows) if (row.email) out.push(row.email);
+    if (rows.length < EMAIL_PAGE) return out;
+  }
+};
+
 export const listLeadCategories = async (
   organizationId: string,
   workspaceId?: string | null,

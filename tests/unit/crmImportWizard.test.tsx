@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   inserted: [] as Array<{ table: string; rows: Array<Record<string, unknown>> }>,
   ensure: vi.fn(),
   onImported: vi.fn(),
+  listLeadEmails: vi.fn(),
 }));
 
 vi.mock('@/services/supabase/config', () => ({
@@ -20,7 +21,7 @@ vi.mock('@/services/supabase/config', () => ({
   },
 }));
 vi.mock('@/services/supabase/crmHub/companies', () => ({ ensureCompaniesByName: h.ensure }));
-vi.mock('@/services/supabase/crmHub/contacts', () => ({ listLeadCategories: async () => [] }));
+vi.mock('@/services/supabase/crmHub/contacts', () => ({ listLeadCategories: async () => [], listLeadEmails: h.listLeadEmails }));
 vi.mock('@/hooks/useCrmHub', () => ({
   useWorkspaceForCreate: () => 'w',
   useCrmCompanies: () => ({
@@ -62,6 +63,7 @@ beforeEach(() => {
   h.ensure.mockReset();
   h.ensure.mockResolvedValue(new Map([['northwind studio', 'c1'], ['harbour dental', 'c-new']]));
   h.onImported.mockReset();
+  h.listLeadEmails.mockReset().mockResolvedValue([]);
 });
 afterEach(cleanup);
 
@@ -99,6 +101,52 @@ describe('Lead import', () => {
       { first_name: 'Elena', last_name: 'Rossi', company_id: 'c1', owner_id: 'u1', workspace_id: 'w' },
       { first_name: 'Tom', last_name: 'Okafor', company_id: 'c-new', owner_id: 'u1', workspace_id: 'w' },
     ]);
+  });
+
+  it('leaves out a lead that is already in the CRM, matched by email, unless told to add it again', async () => {
+    h.listLeadEmails.mockResolvedValue(['  ELENA@Northwind.example ']);
+    render(<CsvImportWizard open onOpenChange={() => {}} resource="contacts" onImported={h.onImported} />);
+    upload(FILE);
+    await screen.findByText('leads.csv');
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    const box = (await screen.findByRole('checkbox', { name: /Leave out 1 lead that is already in the CRM/ })) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(h.listLeadEmails).toHaveBeenCalledWith('o', 'w');
+    expect(screen.getByText('1 lead will be added')).toBeTruthy();
+
+    // Unticked, the lead is added again.
+    fireEvent.click(box);
+    expect(screen.getByRole('button', { name: /import 2 leads/i })).toBeTruthy();
+    fireEvent.click(box);
+
+    fireEvent.click(screen.getByRole('button', { name: /import 1 lead$/i }));
+    await waitFor(() => expect(h.onImported).toHaveBeenCalled());
+    expect(h.inserted[0]!.rows).toMatchObject([{ first_name: 'Tom', last_name: 'Okafor' }]);
+    // Only the company of the lead that is added is looked up.
+    expect(h.ensure).toHaveBeenCalledWith('o', 'w', [{ name: 'Harbour Dental' }], 'u1');
+  });
+
+  it('adds a lead once when the file lists it twice', async () => {
+    render(<CsvImportWizard open onOpenChange={() => {}} resource="contacts" onImported={h.onImported} />);
+    upload(['Name,Company,Email', 'Elena Rossi,Northwind,elena@northwind.example', 'E. Rossi,Northwind,Elena@Northwind.example', 'No Email,Northwind,', 'No Email,Northwind,'].join('\n'));
+    await screen.findByText('leads.csv');
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(await screen.findByRole('checkbox', { name: /Leave out 1 lead that is already in the CRM or repeated in this file/ })).toBeTruthy();
+    // Leads with no email cannot be compared, so both are kept.
+    expect(screen.getByRole('button', { name: /import 3 leads/i })).toBeTruthy();
+  });
+
+  it('says so when the leads already in the CRM could not be read', async () => {
+    h.listLeadEmails.mockRejectedValue(new Error('down'));
+    render(<CsvImportWizard open onOpenChange={() => {}} resource="contacts" onImported={h.onImported} />);
+    upload(FILE);
+    await screen.findByText('leads.csv');
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    expect(await screen.findByText(/duplicates are not checked this time/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /import 2 leads/i })).toBeTruthy();
   });
 
   it('lines up a file from the old Clients export and imports each company with its lead', async () => {

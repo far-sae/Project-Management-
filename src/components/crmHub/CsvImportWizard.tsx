@@ -9,7 +9,8 @@ import {
   realignShiftedColumns, toCustomKey,
   type ImportField, type ImportOwnerMode,
 } from '@/lib/crmImport';
-import { listLeadCategories } from '@/services/supabase/crmHub/contacts';
+import { splitDuplicateLeads } from '@/lib/crmDuplicates';
+import { listLeadCategories, listLeadEmails } from '@/services/supabase/crmHub/contacts';
 import { ensureCompaniesByName, insertCompanyRows } from '@/services/supabase/crmHub/companies';
 import {
   ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, Upload, Loader2,
@@ -149,6 +150,21 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
       .catch(() => setExistingCategories([]));
   }, [open, isLeads, orgId, workspaceId]);
 
+  // The email addresses already in the CRM, so the same lead is not added twice.
+  // Null while they are loading or could not be read: the review step then says so.
+  const [existingEmails, setExistingEmails] = useState<string[] | null>(null);
+  const [skipExisting, setSkipExisting] = useState(true);
+  useEffect(() => {
+    if (!open || !isLeads || !orgId) return;
+    setExistingEmails(null);
+    setSkipExisting(true);
+    let live = true;
+    listLeadEmails(orgId, workspaceId)
+      .then((found) => { if (live) setExistingEmails(found); })
+      .catch(() => { if (live) setExistingEmails(null); });
+    return () => { live = false; };
+  }, [open, isLeads, orgId, workspaceId]);
+
   /** People who can be given leads. */
   const team = useMemo(
     () => (organization?.members ?? []).filter((m) => m.status === 'active' && m.role !== 'viewer'),
@@ -231,7 +247,18 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
     });
   }, [isLeads, orgId, rows, mapping, customNames, workspaceId, user]);
 
-  const readyCount = leadImport?.leads.length ?? companyImport?.records.length ?? 0;
+  /** The file's leads without the ones already in the CRM (same email), and without rows that repeat an earlier row. */
+  const deduped = useMemo(
+    () => (leadImport ? splitDuplicateLeads(leadImport.leads, existingEmails ?? []) : null),
+    [leadImport, existingEmails],
+  );
+  const duplicateCount = deduped?.duplicates.length ?? 0;
+  /** The leads that will actually be added. */
+  const leadsToAdd = useMemo(
+    () => (leadImport ? (skipExisting && deduped ? deduped.fresh : leadImport.leads) : []),
+    [leadImport, deduped, skipExisting],
+  );
+  const readyCount = leadImport ? leadsToAdd.length : companyImport?.records.length ?? 0;
   const skippedCount = leadImport?.skipped ?? companyImport?.skipped ?? 0;
 
   /** How many leads get a company, and how many of those companies are new. */
@@ -239,13 +266,13 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
     const known = new Set(companies.map((c) => companyKey(c.name)));
     const wanted = new Set<string>();
     let linked = 0;
-    for (const lead of leadImport?.leads ?? []) {
+    for (const lead of leadsToAdd) {
       if (!lead.companyName) continue;
       linked += 1;
       wanted.add(companyKey(lead.companyName));
     }
     return { linked, total: wanted.size, created: [...wanted].filter((k) => !known.has(k)).length };
-  }, [leadImport, companies]);
+  }, [leadsToAdd, companies]);
 
   const ownerSummary = (() => {
     if (ownerMode === 'me') return 'you';
@@ -266,8 +293,9 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
     setBusy(true);
     try {
       if (leadImport) {
-        const { leads } = leadImport;
-        if (!leads.length) throw new Error('No rows have a name, email or company to call the lead by');
+        if (!leadImport.leads.length) throw new Error('No rows have a name, email or company to call the lead by');
+        const leads = leadsToAdd;
+        if (!leads.length) throw new Error('Every lead in this file is already in the CRM');
         const wanted = leads.flatMap((l) => (l.companyName ? [{ name: l.companyName, ...l.companyDetails }] : []));
         const ids = wanted.length
           ? await ensureCompaniesByName(orgId, workspaceId, wanted, user?.userId ?? null)
@@ -580,9 +608,33 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
                 })}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Duplicates are not checked: a {label.singular} that is already in the CRM is added again.
-            </p>
+            {isLeads ? (
+              existingEmails === null ? (
+                <p className="text-xs text-muted-foreground">
+                  The leads already in the CRM could not be read, so duplicates are not checked this time.
+                </p>
+              ) : duplicateCount > 0 ? (
+                <label className="flex items-start gap-2 rounded-lg border border-border px-3 py-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 accent-primary"
+                    checked={skipExisting}
+                    onChange={(e) => setSkipExisting(e.target.checked)}
+                    disabled={busy}
+                  />
+                  <span>
+                    Leave out {plural(duplicateCount, 'lead that is', 'leads that are')} already in the CRM or repeated in this file
+                    <span className="block text-xs text-muted-foreground">Matched by email address. Untick to add them again anyway.</span>
+                  </span>
+                </label>
+              ) : (
+                <p className="text-xs text-muted-foreground">No lead in this file is already in the CRM (checked by email address).</p>
+              )
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Duplicates are not checked: a {label.singular} that is already in the CRM is added again.
+              </p>
+            )}
           </div>
         )}
 

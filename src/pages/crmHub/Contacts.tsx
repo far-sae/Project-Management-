@@ -1,3 +1,4 @@
+import { findLeadByEmail } from '@/lib/crmDuplicates';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Loader2, Download, Upload, MoreHorizontal } from 'lucide-react';
@@ -72,6 +73,8 @@ export const CrmContactsPage: React.FC = () => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  /** True once the person has seen that this email is already in the CRM and chosen to add the lead anyway. */
+  const [addAnyway, setAddAnyway] = useState(false);
   const [phone, setPhone] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -171,14 +174,19 @@ export const CrmContactsPage: React.FC = () => {
   };
 
   const openCreate = () => {
-    setFirstName(''); setLastName(''); setEmail(''); setPhone('');
+    setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setAddAnyway(false);
     setJobTitle(''); setCompanyName(''); setSource(''); setCategory('');
     setCustomRows([]); setCustomError(null);
     setShowCreate(true);
   };
 
+  // The lead already in this workspace with the email being typed, if any.
+  const duplicate = findLeadByEmail(contacts, email);
+
   const handleCreate = async () => {
     if (!organization || !firstName.trim()) return;
+    // The form shows who the email belongs to; the button then reads "Add anyway".
+    if (duplicate && !addAnyway) { setAddAnyway(true); return; }
     const custom = readCustomFieldRows(customRows);
     setCustomError(custom.error);
     if (custom.error) return;
@@ -461,7 +469,7 @@ export const CrmContactsPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="em">Email</Label>
-                <Input id="em" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
+                <Input id="em" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setAddAnyway(false); }} disabled={busy} />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="ph">Phone</Label>
@@ -528,10 +536,22 @@ export const CrmContactsPage: React.FC = () => {
               />
             </div>
           </div>
+          {duplicate && (
+            <div role="alert" className="rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-sm text-warning-soft-foreground">
+              <p>
+                A lead with this email is already in the CRM:{' '}
+                <Link className="font-medium underline underline-offset-4" to={`/crm/contacts/${duplicate.id}`}>
+                  {leadName(duplicate)}
+                </Link>
+                .
+              </p>
+              <p className="mt-0.5 text-xs">Open that lead, or add this one anyway if it really is someone else.</p>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleCreate} disabled={busy || !firstName.trim()}>
-              {busy && <Loader2 className="animate-spin" />} Add lead
+              {busy && <Loader2 className="animate-spin" />} {duplicate && addAnyway ? 'Add anyway' : 'Add lead'}
             </Button>
           </DialogFooter>
         </DialogContent>

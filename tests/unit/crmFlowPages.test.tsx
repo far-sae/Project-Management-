@@ -197,6 +197,33 @@ describe('New lead: custom fields', () => {
     expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ customFields: { budget_range: '£5k' } });
   });
 
+  it('warns when the email already belongs to a lead, and adds it only when told to', async () => {
+    openForm();
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: '  Elena@Example.com ' } });
+    const warning = screen.getByRole('alert');
+    expect(warning.textContent).toContain('A lead with this email is already in the CRM');
+    expect(within(warning).getByRole('link', { name: 'Elena Rossi' }).getAttribute('href')).toBe('/crm/contacts/l3');
+
+    // The first press only confirms the warning was seen.
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    expect(svc.createContact).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add anyway' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalledTimes(1));
+  });
+
+  it('adds a lead straight away when the email is new, and re-checks when it is changed', async () => {
+    openForm();
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'elena@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    expect(screen.getByRole('button', { name: 'Add anyway' })).toBeTruthy();
+    // A different address is no longer a duplicate, and the button is the plain one again.
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'noor@example.com' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalledTimes(1));
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ email: 'noor@example.com' });
+  });
+
   it('adds a lead with no custom fields when none are typed', async () => {
     openForm();
     fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
