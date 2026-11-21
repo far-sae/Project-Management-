@@ -1,3 +1,4 @@
+import { tidyLines, type DealLine } from '@/lib/crmQuote';
 import { leadPatchAfterDeals } from '@/lib/crmFlow';
 import { supabase } from '../config';
 import type { CrmDeal, CreateDealInput, UpdateDealInput, DealStatus } from '@/types/crmHub';
@@ -26,6 +27,8 @@ interface DealRow {
   project_id: string | null;
   closed_at?: string | null;
   lost_reason?: string | null;
+  /** From migration 199. Absent until it is run. */
+  line_items?: unknown;
   created_at: string;
   updated_at: string;
 }
@@ -66,6 +69,7 @@ const mapDeal = (r: DealRow): CrmDeal => ({
   name: r.name,
   value: Number(r.value),
   currency: storedCurrency(r.currency),
+  lineItems: tidyLines(r.line_items),
   probability: r.probability,
   status: r.status,
   expectedCloseDate: r.expected_close_date,
@@ -177,6 +181,25 @@ export const updateDeal = async (id: string, input: UpdateDealInput): Promise<Cr
       : await supabase.from('crm_deals').select('*').eq('id', id).single());
   }
   if (error) throw error;
+  return mapDeal(data);
+};
+
+/** Shown when a quote is saved and the database has no place for it yet. */
+export const QUOTE_NOT_SET_UP_MESSAGE =
+  'Quotes are not set up yet: run supabase/migrations/199_crm_deal_quote.sql in the Supabase SQL editor.';
+
+/**
+ * Saves the lines of a deal's quote. With `value`, the deal value is set to it
+ * in the same step, so the quote and the deal never disagree.
+ */
+export const saveDealQuote = async (id: string, lines: DealLine[], value?: number): Promise<CrmDeal> => {
+  const patch: Record<string, unknown> = { line_items: lines };
+  if (value !== undefined) patch.value = value;
+  const { data, error } = await supabase.from('crm_deals').update(patch).eq('id', id).select().single();
+  if (error) {
+    const missing = (error.code === 'PGRST204' || error.code === '42703') && /line_items/.test(error.message ?? '');
+    throw new Error(missing ? QUOTE_NOT_SET_UP_MESSAGE : error.message || 'The quote could not be saved.');
+  }
   return mapDeal(data);
 };
 

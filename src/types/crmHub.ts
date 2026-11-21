@@ -1,5 +1,6 @@
 // CRM Hub types — mirror the SQL schema in migration 144.
 import type { FollowUpKind, FollowUpRepeat } from '@/lib/crmFollowUpKinds';
+import type { DealLine } from '@/lib/crmQuote';
 
 export type LifecycleStage =
   | 'subscriber'
@@ -151,6 +152,8 @@ export interface CrmDeal {
   value: number;
   /** ISO code the value is in (migration 182). Null means the company currency. */
   currency: string | null;
+  /** The lines of the deal's quote (migration 199). Empty means no quote. */
+  lineItems: DealLine[];
   probability: number;
   status: DealStatus;
   expectedCloseDate: string | null;

@@ -42,6 +42,7 @@ import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
 import { AgreementsPanel } from '@/components/signroom/agreements/AgreementsPanel';
 import { InvoicesPanel } from '@/components/signroom/billing/InvoicesPanel';
 import { DealMoneySummary } from '@/components/crmHub/DealMoneySummary';
+import { DealQuote } from '@/components/crmHub/DealQuote';
 
 const when = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -278,6 +279,14 @@ export const CrmDealDetailPage: React.FC = () => {
           <div className="flex min-w-0 flex-col gap-6">
             {/* Sold, invoiced, paid and still owed, in one place. */}
             <DealMoneySummary deal={deal} valueText={formatDeal(deal)} currency={dealCurrency(deal, companyCode)} />
+            {/* What is offered: the lines of the quote, to print or save as a PDF. */}
+            <DealQuote
+              deal={deal}
+              format={(amount) => formatDeal({ value: amount, currency: deal.currency })}
+              from={organization?.name || 'Your company'}
+              customer={company?.name || (contact ? `${contact.firstName} ${contact.lastName ?? ''}`.trim() : '') || deal.name}
+              onSaved={refresh}
+            />
             {/* What has been agreed and billed for this deal. */}
             <AgreementsPanel companyId={deal.companyId ?? undefined} dealId={deal.id} />
             <InvoicesPanel companyId={deal.companyId ?? undefined} dealId={deal.id} />
