@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   DndContext,
@@ -626,7 +627,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         }
       } catch (err) {
         toast.error(
-          err instanceof Error ? err.message : 'Failed to reorder tasks',
+          publicMessage(err, 'Failed to reorder tasks'),
         );
       }
     },
@@ -809,7 +810,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         }
       } catch (err) {
         toast.error(
-          err instanceof Error ? err.message : 'Failed to create task',
+          publicMessage(err, 'Failed to create task'),
         );
       }
     },
@@ -935,9 +936,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             } catch (e) {
               logger.warn('Notification after create failed:', e);
               toast.error(
-                e instanceof Error
-                  ? e.message
-                  : 'Could not save notification. Apply Supabase migrations (notifications table + RLS).',
+                publicMessage(e, 'The task was created, but the notification could not be saved.'),
                 { id: 'task-create-notification' },
               );
             }
@@ -1065,7 +1064,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         toast.success(successMessage);
         await onTasksRefresh?.();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Bulk update failed');
+        toast.error(publicMessage(err, 'Bulk update failed'));
       }
     },
     [orgId, ids, onTasksRefresh, lockedSelection, lockedSelectionToast, isViewer],
@@ -1087,7 +1086,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       clearSelection();
       await onTasksRefresh?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Bulk delete failed');
+      toast.error(publicMessage(err, 'Bulk delete failed'));
     }
   }, [orgId, ids, clearSelection, onTasksRefresh, lockedSelection, lockedSelectionToast, isViewer]);
 

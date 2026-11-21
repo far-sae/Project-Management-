@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -115,7 +116,7 @@ export const CrmCompaniesPage: React.FC = () => {
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete the company');
+      toast.error(publicMessage(err, 'Could not delete the company'));
     } finally {
       setBusy(false);
     }

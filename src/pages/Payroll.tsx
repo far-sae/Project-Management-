@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,7 +76,7 @@ const NewRunDialog: React.FC<{
       onOpenChange(false);
       onCreated(run.runId);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create run');
+      toast.error(publicMessage(err, 'Failed to create run'));
     } finally {
       setBusy(false);
     }
@@ -238,7 +239,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
       toast.success('Payslip updated');
       setEditing(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save');
+      toast.error(publicMessage(e, 'Failed to save'));
     } finally {
       setSaving(false);
     }
@@ -258,7 +259,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
       );
       reload();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update');
+      toast.error(publicMessage(e, 'Failed to update'));
     } finally {
       setBusy(null);
     }
@@ -270,7 +271,7 @@ const RunDetail: React.FC<{ runId: string; onBack: () => void }> = ({
       toast.success('Payroll run deleted');
       onBack();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete');
+      toast.error(publicMessage(e, 'Failed to delete'));
     }
   };
 

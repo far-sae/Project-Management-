@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect } from 'react';
 import { useRouteError, isRouteErrorResponse, useNavigate, useRevalidator } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -16,20 +17,16 @@ export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ fallbackPath = '/'
   // Show toast for unexpected (non-route) errors only
   useEffect(() => {
     if (!isRouteErrorResponse(error)) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'An unexpected error occurred';
-      toast.error(errorMessage);
+      // What broke is for the console, where a developer reads it. The person reads a plain sentence.
+      console.error(error);
+      toast.error(publicMessage(error, 'Something went wrong. Please reload the page.'));
     }
   }, [error]);
 
   // Resolve human-readable message
   const message = isRouteErrorResponse(error)
-    ? error.statusText ||
-    (typeof error.data === 'string' ? error.data : error.data?.message) ||
-    'Something went wrong'
-    : error instanceof Error
-      ? error.message
-      : 'An unexpected error occurred';
+    ? publicMessage(error.statusText || (typeof error.data === 'string' ? error.data : error.data?.message) || '', 'Something went wrong')
+    : publicMessage(error, 'Something went wrong on this page. Please reload it, or go back.');
 
   const status = isRouteErrorResponse(error) ? error.status : null;
 

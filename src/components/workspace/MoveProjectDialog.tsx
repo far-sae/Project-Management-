@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -60,7 +61,7 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
       toast.success(`Moved "${project.name}" to ${target?.label ?? 'the new workspace'}`);
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not move the project');
+      toast.error(publicMessage(err, 'Could not move the project'));
     } finally {
       setMoving(false);
     }

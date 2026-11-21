@@ -3,6 +3,7 @@
  * Allows organization owners and admins to manage organization settings
  */
 
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -102,7 +103,7 @@ export const OrganizationSettings: React.FC = () => {
     } catch (error) {
       console.error('Error updating organization:', error);
       const message =
-        error instanceof Error ? error.message : 'Failed to update organization settings';
+        publicMessage(error, 'Failed to update organization settings');
       // The updateOrganization service throws a specifically-worded error when
       // migration 051 hasn't been applied yet — surface it verbatim so the
       // operator knows exactly what to do, and refresh anyway because the

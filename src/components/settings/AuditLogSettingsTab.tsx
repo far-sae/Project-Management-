@@ -1,3 +1,5 @@
+import { publicText } from '@/lib/publicError';
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, ShieldCheck, RefreshCw, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
@@ -72,7 +74,7 @@ export const AuditLogSettingsTab: React.FC = () => {
       } else {
         setLoadError({
           reason: 'unknown',
-          message: err instanceof Error ? err.message : 'Could not load audit events.',
+          message: publicMessage(err, 'Could not load audit events.'),
         });
       }
     } finally {
@@ -140,14 +142,14 @@ export const AuditLogSettingsTab: React.FC = () => {
             <div className="flex-1 min-w-0">
               <p className="font-semibold">
                 {loadError.reason === 'table_missing'
-                  ? 'Audit log table missing'
+                  ? 'The audit log is not switched on yet'
                   : loadError.reason === 'permission_denied'
-                    ? 'Permission denied'
+                    ? 'You do not have permission to read the audit log'
                     : loadError.reason === 'local_org'
-                      ? 'Audit log is Supabase-only'
+                      ? 'The audit log is not available for this organisation'
                       : "Couldn't load audit events"}
               </p>
-              <p className="text-xs mt-0.5 break-words">{loadError.message}</p>
+              <p className="text-xs mt-0.5 break-words">{publicText(loadError.message ?? '', 'Please try again.')}</p>
             </div>
           </div>
         ) : grouped.length === 0 ? (

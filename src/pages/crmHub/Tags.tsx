@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState } from 'react';
 import { Plus, Trash2, Loader2, Tag as TagIcon, Pencil, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -80,7 +81,7 @@ export const CrmTagsPage: React.FC = () => {
       setShowCreate(false);
       await refresh();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Could not create tag';
+      const msg = publicMessage(err, 'Could not create tag');
       // Unique constraint (organization_id, name)
       toast.error(msg.includes('duplicate') ? 'A tag with that name already exists' : msg);
     } finally {
@@ -104,7 +105,7 @@ export const CrmTagsPage: React.FC = () => {
       setEditing(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update tag');
+      toast.error(publicMessage(err, 'Could not update tag'));
     } finally {
       setBusy(false);
     }
@@ -118,7 +119,7 @@ export const CrmTagsPage: React.FC = () => {
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete tag');
+      toast.error(publicMessage(err, 'Could not delete tag'));
     } finally {
       setBusy(false);
     }

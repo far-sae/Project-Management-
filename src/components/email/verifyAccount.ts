@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { supabase } from "@/services/supabase/config";
 import type { TestDraft } from "@/lib/email/testDraft";
 
@@ -38,6 +39,6 @@ export const verifyAccount = async (accountId: string, draft?: TestDraft | null)
     }
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+    return { ok: false, error: publicMessage(err, "Network error") };
   }
 };

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, CalendarDays, Check, Clock, Library, Loader2, Plus, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -62,7 +63,7 @@ export const SocialMedia: React.FC = () => {
     if (!workspaceId || !orgId) { setLoading(false); return; }
     setLoading(true);
     try { const [data, contactRows, companyRows] = await Promise.all([listSocialData(workspaceId), listContacts(orgId, { workspaceId }), listCompanies(orgId, { workspaceId })]); setAccounts(data.accounts); setCampaigns(data.campaigns); setContent(data.content); setMetrics(data.metrics); setContacts(contactRows); setCompanies(companyRows); }
-    catch (error) { toast.error(error instanceof Error ? error.message : 'Could not load social marketing'); }
+    catch (error) { toast.error(publicMessage(error, 'Could not load social marketing')); }
     finally { setLoading(false); }
   }, [orgId, workspaceId]);
   useEffect(() => { void load(); }, [load]);
@@ -79,13 +80,13 @@ export const SocialMedia: React.FC = () => {
       if (createKind === 'campaign') await createSocialCampaign({ organizationId: orgId, workspaceId, name: name.trim(), objective: description.trim(), projectId, taskId, crmContactId, crmCompanyId, userId: user?.userId });
       if (createKind === 'content') await createSocialContent({ organizationId: orgId, workspaceId, title: name.trim(), body: description, mediaUrls: mediaUrl.trim() ? [mediaUrl.trim()] : [], campaignId, accountId, projectId, taskId, crmContactId, crmCompanyId, scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined, userId: user?.userId });
       toast.success(createKind === 'content' && scheduledAt ? 'Draft sent for approval' : 'Saved'); reset(); await load();
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not save'); }
+    } catch (error) { toast.error(publicMessage(error, 'Could not save')); }
     finally { setBusy(false); }
   };
 
   const setStatus = async (item: SocialContent, status: SocialContent['status']) => {
     try { await updateSocialContentStatus(item.id, status, user?.userId, status === 'scheduled' ? item.scheduledAt : undefined); toast.success(status === 'approved' ? 'Content approved' : 'Status updated'); await load(); }
-    catch (error) { toast.error(error instanceof Error ? error.message : 'Could not update content'); }
+    catch (error) { toast.error(publicMessage(error, 'Could not update content')); }
   };
   const totals = metrics.reduce((sum, row) => ({ impressions: sum.impressions + row.impressions, clicks: sum.clicks + row.clicks, reactions: sum.reactions + row.reactions }), { impressions: 0, clicks: 0, reactions: 0 });
   const metricsByContent = useMemo(() => new Map(metrics.map((item) => [item.contentId, item])), [metrics]);

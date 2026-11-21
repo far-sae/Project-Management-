@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
@@ -286,7 +287,7 @@ export const Expenses: React.FC<{
       }
       closeCreateOrEdit();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save expense');
+      toast.error(publicMessage(err, 'Failed to save expense'));
     } finally {
       setSubmitting(false);
     }
@@ -312,7 +313,7 @@ export const Expenses: React.FC<{
       setRejecting(null);
       setRejectReason('');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update status');
+      toast.error(publicMessage(err, 'Failed to update status'));
     }
   };
 
@@ -324,7 +325,7 @@ export const Expenses: React.FC<{
       toast.success('Expense deleted');
       setDeleting(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+      toast.error(publicMessage(err, 'Failed to delete'));
     } finally {
       setDeleteBusy(false);
     }

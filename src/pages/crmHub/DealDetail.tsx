@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Pencil, Trash2, Loader2 } from 'lucide-react';
@@ -110,7 +111,7 @@ export const CrmDealDetailPage: React.FC = () => {
       setCompany(d.companyId ? await getCompany(d.companyId) : null);
       setContact(d.contactId ? await getContact(d.contactId) : null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load deal');
+      toast.error(publicMessage(err, 'Could not load deal'));
     } finally {
       setLoading(false);
     }
@@ -140,7 +141,7 @@ export const CrmDealDetailPage: React.FC = () => {
       setNoteBody('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save note');
+      toast.error(publicMessage(err, 'Could not save note'));
     } finally {
       setBusy(false);
     }
@@ -153,7 +154,7 @@ export const CrmDealDetailPage: React.FC = () => {
       toast.success('Deal deleted');
       navigate('/crm/deals');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete');
+      toast.error(publicMessage(err, 'Could not delete'));
       setBusy(false);
     }
   };
@@ -471,7 +472,7 @@ const EditDealDialog: React.FC<{
       await onSaved();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Save failed');
+      toast.error(publicMessage(err, 'Save failed'));
     } finally {
       setBusy(false);
     }

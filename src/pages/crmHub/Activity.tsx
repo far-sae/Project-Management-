@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useMemo, useState } from 'react';
 import {
   Loader2, StickyNote, Phone, Mail, CalendarClock, CheckCircle2,
@@ -132,7 +133,7 @@ export const CrmActivityPage: React.FC = () => {
       setShowLog(false);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not log activity');
+      toast.error(publicMessage(err, 'Could not log activity'));
     } finally {
       setBusy(false);
     }

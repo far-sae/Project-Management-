@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
@@ -14,7 +15,7 @@ export const GoogleCallback: React.FC = () => {
     started.current = true;
     completeGoogleSignIn(window.location.hash)
       .then((next) => navigate(next, { replace: true }))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Google sign-in failed.'));
+      .catch((err: unknown) => setError(publicMessage(err, 'Google sign-in failed.')));
   }, [navigate]);
 
   return (

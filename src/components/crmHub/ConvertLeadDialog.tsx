@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
@@ -104,7 +105,7 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
       onOpenChange(false);
       navigate(`/crm/deals/${deal.id}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not convert the lead');
+      toast.error(publicMessage(error, 'Could not convert the lead'));
     } finally {
       setBusy(false);
     }

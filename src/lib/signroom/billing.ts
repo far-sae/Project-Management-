@@ -3,6 +3,7 @@
  * and tax is basis points. Every sum comes from the server's own maths in
  * api/_signroom/shared, so the screen, the server and the PDF always agree.
  */
+import { publicMessage } from '@/lib/publicError';
 import { balance, CURRENCIES, totals } from '../../../api/_signroom/shared/invoiceMath';
 import { londonToday } from '../../../api/_signroom/shared/accounts';
 import type { Invoice, Payment } from '../../../api/_signroom/shared/types';
@@ -47,7 +48,7 @@ export const billingToday = (): string => londonToday(new Date());
 
 /** The sentence to show for a failed call: the server's own when it sent one. */
 export const errorSentence = (error: unknown, fallback = 'Something went wrong. Please try again.'): string =>
-  error instanceof Error && error.message ? error.message : fallback;
+  publicMessage(error instanceof Error ? error : null, fallback);
 
 /** The HTTP status of a failed call to the server, when it has one. */
 export const errorStatus = (error: unknown): number | null => {

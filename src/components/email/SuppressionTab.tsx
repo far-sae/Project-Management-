@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,7 +42,7 @@ export const SuppressionTab: React.FC<SuppressionTabProps> = ({ orgId, isAdmin }
     if (!orgId) { setSuppressions([]); setLoading(false); return; }
     setLoading(true);
     refresh()
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppressions'))
+      .catch((err) => toast.error(publicMessage(err, 'Failed to load suppressions')))
       .finally(() => setLoading(false));
   }, [orgId]);
 
@@ -56,7 +57,7 @@ export const SuppressionTab: React.FC<SuppressionTabProps> = ({ orgId, isAdmin }
       setNewEmail('');
       toast.success('Address added to suppression list');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add address');
+      toast.error(publicMessage(err, 'Failed to add address'));
     } finally {
       setAdding(false);
     }
@@ -71,7 +72,7 @@ export const SuppressionTab: React.FC<SuppressionTabProps> = ({ orgId, isAdmin }
       setSuppressions((prev) => prev.filter((s) => s.id !== suppression.id));
       toast.success('Removed from suppression list');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove address');
+      toast.error(publicMessage(err, 'Failed to remove address'));
     } finally {
       setRemovingId(null);
     }

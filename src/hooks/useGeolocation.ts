@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useState, useEffect, useCallback } from 'react';
 import { detectUserCountry, GeoLocation, clearLocationCache } from '@/services/geolocation';
 import { getPricingForCountry } from '@/services/geolocation/pricing-data';
@@ -32,7 +33,7 @@ export function useGeolocation(): UseGeolocationResult {
       const countryPricing = getPricingForCountry(detectedLocation.countryCode);
       setPricing(countryPricing);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to detect location';
+      const errorMessage = publicMessage(err, 'Failed to detect location');
       setError(errorMessage);
       console.error('Geolocation error:', err);
       

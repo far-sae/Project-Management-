@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
@@ -300,7 +301,7 @@ export const CrmTasksPage: React.FC = () => {
       setShowCreate(false);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create follow-up');
+      toast.error(publicMessage(err, 'Could not create follow-up'));
     } finally {
       setBusy(false);
     }
@@ -332,7 +333,7 @@ export const CrmTasksPage: React.FC = () => {
       resetForm();
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update follow-up');
+      toast.error(publicMessage(err, 'Could not update follow-up'));
     } finally {
       setBusy(false);
     }
@@ -347,7 +348,7 @@ export const CrmTasksPage: React.FC = () => {
       if (saved.nextFollowUp?.dueDate) toast.success(`Done. The next one is due ${formatDue(saved.nextFollowUp.dueDate)}.`);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update follow-up');
+      toast.error(publicMessage(err, 'Could not update follow-up'));
     } finally {
       setStatusBusyId(null);
     }
@@ -361,7 +362,7 @@ export const CrmTasksPage: React.FC = () => {
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete follow-up');
+      toast.error(publicMessage(err, 'Could not delete follow-up'));
     } finally {
       setBusy(false);
     }

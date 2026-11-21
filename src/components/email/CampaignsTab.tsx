@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -148,7 +149,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
       const list = await listCampaigns(orgId, workspaceId);
       setCampaigns(list);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load campaigns');
+      toast.error(publicMessage(err, 'Failed to load campaigns'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -195,7 +196,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
       await work();
       await load(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'That did not work. Try again.');
+      toast.error(publicMessage(err, 'That did not work. Try again.'));
     } finally {
       setChangingId(null);
     }
@@ -227,7 +228,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
       const messages = await listMessages(campaign.id);
       setMessagesByCampaign((m) => ({ ...m, [campaign.id]: messages }));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load recipients');
+      toast.error(publicMessage(err, 'Failed to load recipients'));
     } finally {
       setMessagesLoading((m) => ({ ...m, [campaign.id]: false }));
     }

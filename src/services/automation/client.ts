@@ -5,6 +5,7 @@
  * Every call carries the person's sign-in token and the workspace they are
  * working in; the server checks both on every request.
  */
+import { publicMessage } from '@/lib/publicError';
 import { supabase } from '@/services/supabase/config';
 
 const BASE = '/api/automation/';
@@ -23,7 +24,7 @@ export class AutomationError extends Error {
 
 /** The sentence to show for any failure. */
 export const errorSentence = (err: unknown): string =>
-  err instanceof AutomationError && err.message ? err.message : REQUEST_FAILED_MESSAGE;
+  publicMessage(err instanceof AutomationError ? err : null, REQUEST_FAILED_MESSAGE);
 
 /** The HTTP status of a failed call, or 0 when it never reached the server. */
 export const errorStatus = (err: unknown): number => (err instanceof AutomationError ? err.status : 0);

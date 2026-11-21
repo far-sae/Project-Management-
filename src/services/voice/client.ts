@@ -5,6 +5,7 @@
  * Every call carries the person's sign-in token; the server checks it, and
  * that the person is an owner or admin, on every request.
  */
+import { publicMessage } from '@/lib/publicError';
 import { supabase } from '@/services/supabase/config';
 import type { CallList, EndCallInput, PersonCalls, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
 
@@ -22,7 +23,7 @@ export class VoiceError extends Error {
 }
 
 export const errorSentence = (err: unknown): string =>
-  err instanceof VoiceError && err.message ? err.message : REQUEST_FAILED_MESSAGE;
+  publicMessage(err instanceof VoiceError ? err : null, REQUEST_FAILED_MESSAGE);
 
 async function send(path: string, body?: unknown, method?: 'DELETE'): Promise<Response> {
   const { data } = await supabase.auth.getSession();

@@ -26,8 +26,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { encrypted = await encryptSecret(accessToken, env('INTEGRATION_TOKEN_KEY')); }
   catch { return res.status(500).json({ error: 'Server is not configured to store integration secrets' }); }
   const { error } = await db.from('social_account_secrets').upsert({ account_id: accountId, secret_encrypted: encrypted, updated_at: new Date().toISOString() }, { onConflict: 'account_id' });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error('[social] the account key could not be stored', error.code ?? 'unknown');
+    return res.status(500).json({ error: 'The account could not be connected. Please try again.' });
+  }
   const { error: statusError } = await db.from('social_accounts').update({ status: 'connected', credential_ref: `social_account_secrets:${accountId}`, last_error: null }).eq('id', accountId);
-  if (statusError) return res.status(500).json({ error: statusError.message });
+  if (statusError) {
+    console.error('[social] the account could not be marked connected', statusError.code ?? 'unknown');
+    return res.status(500).json({ error: 'The account could not be connected. Please try again.' });
+  }
   return res.status(200).json({ ok: true });
 }

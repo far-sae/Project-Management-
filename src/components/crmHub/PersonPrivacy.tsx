@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState } from 'react';
 import { Download, Loader2, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -53,7 +54,7 @@ export const PersonPrivacy: React.FC<Props> = ({ contact, companyName, isOwner, 
       saveFile(exportFileName(name, new Date()), JSON.stringify(data, null, 2));
       toast.success(`A copy of ${name}’s data was saved to your downloads`);
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : 'The copy could not be made. Try again.');
+      toast.error(publicMessage(err, 'The copy could not be made. Try again.'));
     } finally {
       setBusy(null);
     }
@@ -68,7 +69,7 @@ export const PersonPrivacy: React.FC<Props> = ({ contact, companyName, isOwner, 
       setConfirming(false);
       onErased();
     } catch (err) {
-      setProblem(err instanceof Error && err.message ? err.message : 'This person could not be erased. Try again.');
+      setProblem(publicMessage(err, 'This person could not be erased. Try again.'));
     } finally {
       setBusy(null);
     }

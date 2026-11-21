@@ -1,3 +1,5 @@
+import { SetupHint } from '@/components/common/SetupHint';
+import { publicText } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Sparkles, Loader2, ShieldAlert, Trophy, RefreshCw, AlertCircle, Sunrise, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -190,7 +192,7 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
       }
     } catch (err) {
       const aiErr = err as AIError;
-      setError(aiErr.message || 'Could not generate your brief.');
+      setError(publicText(aiErr.message ?? '', 'Could not generate your brief.'));
     } finally {
       setLoading(false);
     }
@@ -268,8 +270,10 @@ export const AIDailyBrief: React.FC<AIDailyBriefProps> = ({
         <div className="mt-3 flex items-start gap-2 text-xs rounded-md border border-warning/30 bg-warning-soft text-warning-soft-foreground px-3 py-2">
           <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>
-            AI isn&apos;t configured yet. Deploy the <code>ai-chat</code> Supabase function and
-            set <code>OPENAI_API_KEY</code> to enable this brief.
+            <SetupHint other="The AI brief is not switched on yet.">
+              AI isn&apos;t configured yet. Deploy the <code>ai-chat</code> Supabase function and
+              set <code>OPENAI_API_KEY</code> to enable this brief.
+            </SetupHint>
           </span>
         </div>
       )}

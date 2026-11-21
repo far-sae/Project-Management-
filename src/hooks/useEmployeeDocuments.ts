@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -42,7 +43,7 @@ export function useEmployeeDocuments() {
         setSetupMissing(true);
         setError(null);
       } else {
-        setError(e instanceof Error ? e.message : 'Could not load documents.');
+        setError(publicMessage(e, 'Could not load documents.'));
       }
     } finally {
       setLoading(false);

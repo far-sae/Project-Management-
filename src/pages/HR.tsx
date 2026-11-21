@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -197,7 +198,7 @@ export const HR: React.FC = () => {
       toast.success(`${deletingMember.displayName} removed from HR`);
       setDeletingMember(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete');
+      toast.error(publicMessage(e, 'Failed to delete'));
     } finally {
       setDeleting(false);
     }
@@ -368,7 +369,7 @@ export const HR: React.FC = () => {
       toast.success('Profile saved');
       setEditingMember(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save profile');
+      toast.error(publicMessage(e, 'Failed to save profile'));
     } finally {
       setSaving(false);
     }

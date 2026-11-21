@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, PlayCircle, StopCircle, Timer } from 'lucide-react';
@@ -51,7 +52,7 @@ export const ClockButton: React.FC<Props> = ({
         toast.success('Clocked in');
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not update clock');
+      toast.error(publicMessage(e, 'Could not update clock'));
     } finally {
       setBusy(false);
     }

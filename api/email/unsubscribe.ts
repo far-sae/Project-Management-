@@ -86,7 +86,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     },
     { onConflict: 'organization_id,email' },
   );
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error('[email] an unsubscribe could not be saved', error.code ?? 'unknown');
+    return res.status(500).json({ error: 'We could not take you off the list just now. Please try the link again.' });
+  }
 
   // ...and it ends any sequence this organization is running at that address.
   //

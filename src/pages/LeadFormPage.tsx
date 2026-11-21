@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useId, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, Loader2 } from 'lucide-react';
@@ -60,7 +61,7 @@ export const LeadFormPage: React.FC = () => {
     setGone(null);
     ask<PublicForm>(endpoint(formId))
       .then((found) => { if (live) setForm(found); })
-      .catch((err) => { if (live) setGone(err instanceof Error ? err.message : FORM_GONE_MESSAGE); });
+      .catch((err) => { if (live) setGone(publicMessage(err, FORM_GONE_MESSAGE)); });
     return () => { live = false; };
   }, [formId]);
 
@@ -76,7 +77,7 @@ export const LeadFormPage: React.FC = () => {
       });
       setThanks(reply.thankYou);
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : FORM_FAILED_MESSAGE);
+      setProblem(publicMessage(err, FORM_FAILED_MESSAGE));
     } finally {
       setBusy(false);
     }

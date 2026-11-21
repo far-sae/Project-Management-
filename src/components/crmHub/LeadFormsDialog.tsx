@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useId, useState } from 'react';
 import { ArrowLeft, Copy, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -66,7 +67,7 @@ export const LeadFormsDialog: React.FC<Props> = ({ open, onOpenChange, organizat
     try {
       setForms(await listLeadForms(workspaceId));
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The forms could not be loaded.');
+      setProblem(publicMessage(err, 'The forms could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -100,7 +101,7 @@ export const LeadFormsDialog: React.FC<Props> = ({ open, onOpenChange, organizat
       // Stay on the form, so the link and the code are right there after creating it.
       edit(saved);
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The form could not be saved.');
+      setProblem(publicMessage(err, 'The form could not be saved.'));
     } finally {
       setBusy(false);
     }
@@ -115,7 +116,7 @@ export const LeadFormsDialog: React.FC<Props> = ({ open, onOpenChange, organizat
       setEditing(null);
       await load();
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The form could not be deleted.');
+      setProblem(publicMessage(err, 'The form could not be deleted.'));
     } finally {
       setBusy(false);
     }

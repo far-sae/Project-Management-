@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { CreditCard, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -63,7 +64,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
       setAccounts(contactRows);
       setPayments(paymentRows);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not load accounts');
+      toast.error(publicMessage(error, 'Could not load accounts'));
     } finally {
       setLoading(false);
     }
@@ -92,7 +93,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
       toast.success('Account added');
       await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not add account');
+      toast.error(publicMessage(error, 'Could not add account'));
     } finally { setBusy(false); }
   };
 
@@ -106,7 +107,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
       toast.success('Payment recorded');
       await load();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not record payment');
+      toast.error(publicMessage(error, 'Could not record payment'));
     } finally { setBusy(false); }
   };
 

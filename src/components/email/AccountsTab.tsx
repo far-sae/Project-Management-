@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -99,7 +100,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         // measured" rather than as a clean record.
         setBounceRates(rates);
       })
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailboxes'));
+      .catch((err) => toast.error(publicMessage(err, 'Failed to load mailboxes')));
   };
 
   // Beside the mailboxes, never in their way: a warm-up service that is slow
@@ -254,7 +255,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       // itself succeeded (see above), so this failure — whether it's
       // applyPoolSettings, refresh, or something else — still resumes via
       // Retry rather than reinserting the account.
-      setCreateError(err instanceof Error ? err.message : 'Failed to create mailbox');
+      setCreateError(publicMessage(err, 'Failed to create mailbox'));
       void refresh();
     } finally {
       setCreating(false);
@@ -294,7 +295,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       // The pool update (or refresh) failed again — keep the dialog open
       // with the message rather than closing on a success that didn't
       // happen; canRetry stays true so the next click retries the same way.
-      setCreateError(err instanceof Error ? err.message : 'Failed to update sending limits');
+      setCreateError(publicMessage(err, 'Failed to update sending limits'));
     } finally {
       setCreating(false);
     }
@@ -321,7 +322,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       toast.success('Mailbox deleted');
       setDeleteTarget(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete mailbox');
+      toast.error(publicMessage(err, 'Failed to delete mailbox'));
     } finally {
       setDeleting(false);
     }
@@ -337,7 +338,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         : m)));
       toast.success('Mailbox resumed');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to resume mailbox');
+      toast.error(publicMessage(err, 'Failed to resume mailbox'));
     } finally {
       setResumingId(null);
     }
@@ -391,7 +392,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       setEditTarget(null);
       await refresh();
     } catch (err) {
-      setEditError(err instanceof Error ? err.message : 'Failed to update mailbox settings');
+      setEditError(publicMessage(err, 'Failed to update mailbox settings'));
     } finally {
       setSavingEdit(false);
     }

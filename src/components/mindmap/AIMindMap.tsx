@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, {
   memo,
   useCallback,
@@ -591,7 +592,7 @@ const AIMindMapInner: React.FC<AIMindMapInnerProps> = ({ onSendToProjectMap, hea
     } catch (err) {
       const msg =
         (err as AIError)?.message ||
-        (err instanceof Error ? err.message : 'Failed to generate mind map');
+        (publicMessage(err, 'Failed to generate mind map'));
       setError(msg);
       toast.error(msg);
     } finally {

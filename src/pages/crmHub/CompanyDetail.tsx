@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -150,7 +151,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
       setTasks(taskRows);
       setNotes(noteRows);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load the company');
+      toast.error(publicMessage(err, 'Could not load the company'));
     } finally {
       setLoading(false);
     }
@@ -193,7 +194,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
       setNoteBody('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save the note');
+      toast.error(publicMessage(err, 'Could not save the note'));
     } finally {
       setBusy(false);
     }
@@ -221,7 +222,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
       setFollowUpDue('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not add the follow-up');
+      toast.error(publicMessage(err, 'Could not add the follow-up'));
     } finally {
       setBusy(false);
     }
@@ -234,7 +235,7 @@ export const CrmCompanyDetailPage: React.FC = () => {
       toast.success('Company deleted');
       navigate('/crm/companies');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete the company');
+      toast.error(publicMessage(err, 'Could not delete the company'));
       setBusy(false);
     }
   };

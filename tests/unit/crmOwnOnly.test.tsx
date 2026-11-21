@@ -88,7 +88,9 @@ describe('the switch', () => {
     render(<OwnOnlySetting />);
     await waitFor(() => expect(toggle().disabled).toBe(false));
     fireEvent.click(toggle());
-    expect((await screen.findByRole('alert')).textContent).toContain('row-level security');
+    const alert = (await screen.findByRole('alert')).textContent ?? '';
+    expect(alert).toBe('You do not have permission to do this.');
+    expect(alert).not.toContain('row-level security');
     expect(toggle().getAttribute('aria-checked')).toBe('false');
   });
 });

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -25,7 +26,7 @@ export const OwnOnlySetting: React.FC = () => {
     setProblem('');
     getOwnOnly(workspaceId)
       .then((value) => { if (alive) { setOn(value); setState('ready'); } })
-      .catch((err: unknown) => { if (alive) { setProblem(err instanceof Error ? err.message : 'The setting could not be read.'); setState('ready'); } });
+      .catch((err: unknown) => { if (alive) { setProblem(publicMessage(err, 'The setting could not be read.')); setState('ready'); } });
     return () => { alive = false; };
   }, [workspaceId]);
 
@@ -38,7 +39,7 @@ export const OwnOnlySetting: React.FC = () => {
       setOn(next);
       toast.success(next ? 'Each person now sees only their own leads and deals' : 'Everybody in the workspace sees every lead and deal again');
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The setting could not be saved.');
+      setProblem(publicMessage(err, 'The setting could not be saved.'));
     } finally {
       setState('ready');
     }

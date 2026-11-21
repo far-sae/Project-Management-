@@ -34,7 +34,12 @@ function readMediapipeTasksVisionVersion(): string {
 
 const mediapipeTasksVisionVersion = readMediapipeTasksVisionVersion()
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // The live site writes no debug lines to the browser's console. console.error stays:
+  // it is how a real failure is found, and it never holds more than the error itself.
+  esbuild: mode === 'production'
+    ? { pure: ['console.log', 'console.debug', 'console.info', 'console.trace', 'console.table', 'console.warn'], drop: ['debugger'] }
+    : {},
   define: {
     // Keep WASM URL in BackgroundProcessor.ts aligned with package.json at build time.
     __MEDIAPIPE_TASKS_VISION_VERSION__: JSON.stringify(mediapipeTasksVisionVersion),
@@ -63,4 +68,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

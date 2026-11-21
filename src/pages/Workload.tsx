@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -149,7 +150,7 @@ export const Workload: React.FC = () => {
       .catch((err: unknown) => {
         logger.warn('Workload: fetchUserCapacities failed:', err);
         const msg =
-          err instanceof Error ? err.message : 'Could not load capacity settings';
+          publicMessage(err, 'Could not load capacity settings');
         if (!cancelled) {
           setCapacityError(msg);
           toast.error(msg);

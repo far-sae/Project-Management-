@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -39,7 +40,7 @@ export const FieldDefsSettings: React.FC = () => {
     try {
       setDefs(await listFieldDefs(workspaceId));
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The custom fields could not be loaded.');
+      setProblem(publicMessage(err, 'The custom fields could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -61,7 +62,7 @@ export const FieldDefsSettings: React.FC = () => {
       setKind('text');
       toast.success(`Field “${made.name}” added`);
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The field could not be added.');
+      setProblem(publicMessage(err, 'The field could not be added.'));
     } finally {
       setBusy(false);
     }
@@ -75,7 +76,7 @@ export const FieldDefsSettings: React.FC = () => {
       setDefs((list) => list.filter((d) => d.id !== def.id));
       toast.success(`“${def.name}” is plain text again. What is written on leads stays.`);
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The field could not be removed.');
+      setProblem(publicMessage(err, 'The field could not be removed.'));
     } finally {
       setBusy(false);
     }

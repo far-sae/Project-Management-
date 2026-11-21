@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -400,7 +401,7 @@ export const Dashboard: React.FC = () => {
         toast.error(msg, { id: toastId });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create project.';
+      const msg = publicMessage(err, 'Failed to create project.');
       setCreateError(msg);
       toast.error(msg, { id: toastId });
     } finally {
@@ -460,7 +461,8 @@ export const Dashboard: React.FC = () => {
       }
     } catch (err) {
       setLockDialogError(true);
-      const detail = err instanceof Error ? err.message : '';
+      // Our own sentence when there is one; nothing when the error is the database's or the network's.
+      const detail = publicMessage(err, '');
       toast.error(
         detail
           ? `Could not verify your PIN. ${detail}`
@@ -523,7 +525,7 @@ export const Dashboard: React.FC = () => {
       }
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to update project',
+        publicMessage(err, 'Failed to update project'),
         { id: toastId }
       );
     }
@@ -545,7 +547,7 @@ export const Dashboard: React.FC = () => {
         toast.error('Failed to create workspace', { id: toastId });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create workspace';
+      const msg = publicMessage(err, 'Failed to create workspace');
       if (msg.includes('limit') || msg.includes('reached')) {
         setLimitModal({ open: true, message: msg });
         toast.dismiss(toastId);
@@ -585,7 +587,7 @@ export const Dashboard: React.FC = () => {
       setEditingWorkspaceName('');
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to update workspace',
+        publicMessage(err, 'Failed to update workspace'),
         { id: toastId }
       );
     }
@@ -623,7 +625,7 @@ export const Dashboard: React.FC = () => {
         toast.success('Workspace deleted', { id: toastId });
       } catch (err) {
         toast.error(
-          err instanceof Error ? err.message : 'Failed to delete workspace',
+          publicMessage(err, 'Failed to delete workspace'),
           { id: toastId }
         );
       }
@@ -634,7 +636,7 @@ export const Dashboard: React.FC = () => {
         toast.success('Project deleted', { id: toastId });
       } catch (err) {
         toast.error(
-          err instanceof Error ? err.message : 'Failed to delete project',
+          publicMessage(err, 'Failed to delete project'),
           { id: toastId }
         );
       }

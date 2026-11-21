@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -235,7 +236,7 @@ export const Inbox: React.FC = () => {
         toast.success('Removed');
         refresh();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove');
+        toast.error(publicMessage(err, 'Failed to remove'));
       }
     },
     [user, refresh, removeLocal],
@@ -251,7 +252,7 @@ export const Inbox: React.FC = () => {
       toast.success('All marked as read');
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to mark all');
+      toast.error(publicMessage(err, 'Failed to mark all'));
     }
   }, [user, refresh, markAllAsReadLocally]);
 

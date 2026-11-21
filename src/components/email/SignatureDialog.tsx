@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,7 +74,7 @@ export const SignatureDialog: React.FC<SignatureDialogProps> = ({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save the signature');
+      setError(publicMessage(err, 'Failed to save the signature'));
     } finally {
       setSaving(false);
     }

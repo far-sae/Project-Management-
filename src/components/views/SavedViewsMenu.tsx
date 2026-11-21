@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   DropdownMenu,
@@ -91,7 +92,7 @@ export const SavedViewsMenu: React.FC<SavedViewsMenuProps> = ({
     } catch (err) {
       console.error('SavedViewsMenu refresh failed:', err);
       toast.error(
-        err instanceof Error ? err.message : 'Could not load saved views',
+        publicMessage(err, 'Could not load saved views'),
       );
     } finally {
       setLoading(false);
@@ -121,7 +122,7 @@ export const SavedViewsMenu: React.FC<SavedViewsMenuProps> = ({
       setShowSaveDialog(false);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save view');
+      toast.error(publicMessage(err, 'Failed to save view'));
     } finally {
       setSaving(false);
     }

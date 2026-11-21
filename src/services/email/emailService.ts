@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { supabase } from "@/services/supabase/config";
 import { logger } from "@/lib/logger";
 
@@ -54,7 +55,7 @@ async function sendViaFunction(
     logger.log(`${label} email sent to:`, body.toEmail);
     return { ok: true };
   } catch (err) {
-    const text = err instanceof Error ? err.message : "unknown error";
+    const text = publicMessage(err, "unknown error");
     console.error(`[Email] ${label} send failed: ${text}`);
     return { ok: false, text };
   }

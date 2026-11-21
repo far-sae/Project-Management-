@@ -4,6 +4,7 @@
  * Every call carries the person's sign-in token; the server checks it and that
  * the person is an owner or admin of the organisation.
  */
+import { publicMessage } from '@/lib/publicError';
 import { supabase } from '@/services/supabase/config';
 import type { WarmupMailbox, WarmupStatus } from '../../../api/_warmup/shared/types';
 
@@ -20,7 +21,7 @@ export class WarmupError extends Error {
 }
 
 export const errorSentence = (err: unknown): string =>
-  err instanceof WarmupError && err.message ? err.message : REQUEST_FAILED_MESSAGE;
+  publicMessage(err instanceof WarmupError ? err : null, REQUEST_FAILED_MESSAGE);
 
 async function call<T>(action: string, method: 'GET' | 'POST' | 'DELETE', params: Record<string, string> = {}, body?: unknown): Promise<T> {
   const { data } = await supabase.auth.getSession();

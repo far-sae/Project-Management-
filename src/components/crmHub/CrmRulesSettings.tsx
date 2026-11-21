@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -54,7 +55,7 @@ export const CrmRulesSettings: React.FC = () => {
     try {
       setRules(await listRules(workspaceId));
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The rules could not be loaded.');
+      setProblem(publicMessage(err, 'The rules could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -83,7 +84,7 @@ export const CrmRulesSettings: React.FC = () => {
       setDraft(NEW_RULE);
       toast.success('Rule added. It runs from now on.');
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The rule could not be saved.');
+      setProblem(publicMessage(err, 'The rule could not be saved.'));
     } finally {
       setBusy(false);
     }
@@ -95,7 +96,7 @@ export const CrmRulesSettings: React.FC = () => {
       await setRuleEnabled(rule.id, enabled);
     } catch (err) {
       setRules((list) => list.map((r) => (r.id === rule.id ? { ...r, enabled: !enabled } : r)));
-      toast.error(err instanceof Error ? err.message : 'The rule could not be changed.');
+      toast.error(publicMessage(err, 'The rule could not be changed.'));
     }
   };
 
@@ -106,7 +107,7 @@ export const CrmRulesSettings: React.FC = () => {
       setRules((list) => list.filter((r) => r.id !== rule.id));
       toast.success('Rule removed');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'The rule could not be removed.');
+      toast.error(publicMessage(err, 'The rule could not be removed.'));
     } finally {
       setBusy(false);
     }

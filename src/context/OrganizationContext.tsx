@@ -1,3 +1,5 @@
+import { setInternalsVisible } from '@/lib/publicError';
+import { PLATFORM_ORGS, canSeeInternals } from '@/lib/platform';
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { Organization, OrganizationMember } from '@/types/organization';
@@ -226,6 +228,14 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const canInviteMembers = isAdmin;
   const canManageBilling = isOwner;
   const canManageSettings = isAdmin;
+
+  // Set-up details (which database file to run, which server setting is missing) are for the
+  // people who run the site. Everybody else reads "not switched on yet". See lib/platform.ts.
+  const organizationIdForPlatform = organization?.organizationId ?? null;
+  useEffect(() => {
+    setInternalsVisible(canSeeInternals(PLATFORM_ORGS, organizationIdForPlatform, { isOwner, isAdmin }));
+    return () => setInternalsVisible(false);
+  }, [organizationIdForPlatform, isOwner, isAdmin]);
 
   // ============================================
   // Effects

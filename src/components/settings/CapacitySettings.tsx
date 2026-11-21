@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
@@ -56,7 +57,7 @@ export const CapacitySettings: React.FC = () => {
       toast.success('Capacity updated');
       setDirty(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save');
+      toast.error(publicMessage(err, 'Failed to save'));
     } finally {
       setSaving(false);
     }

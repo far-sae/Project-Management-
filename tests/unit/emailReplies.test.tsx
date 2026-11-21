@@ -157,6 +157,9 @@ describe('Replies tab', () => {
   it('says so when the replies cannot be read', async () => {
     h.errors = { email_inbox_events: { message: 'permission denied for table email_inbox_events' } };
     show();
-    expect((await screen.findByRole('alert')).textContent).toContain('permission denied');
+    // Never the database's own words: a plain sentence about what the person can do.
+    const alert = (await screen.findByRole('alert')).textContent ?? '';
+    expect(alert).toBe('You do not have permission to do this.');
+    expect(alert).not.toContain('email_inbox_events');
   });
 });

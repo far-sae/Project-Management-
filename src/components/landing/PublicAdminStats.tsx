@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
@@ -40,7 +41,7 @@ const PublicAdminStats = () => {
         if (data?.error) throw new Error(data.error);
         setStats(data as PublicStats);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load stats");
+        setError(publicMessage(e, "Failed to load stats"));
       } finally {
         setLoading(false);
       }

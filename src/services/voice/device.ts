@@ -46,7 +46,8 @@ export async function openLine(
   on: (event: LineEvent, problem?: string) => void,
 ): Promise<Line> {
   const { Device } = await import('@twilio/voice-sdk');
-  const device = new Device(token, { closeProtection: true });
+  // The library's own console lines are for building the app, not for the live site.
+  const device = new Device(token, { closeProtection: true, logLevel: import.meta.env.PROD ? 'silent' : 'error' });
   let over = false;
   const finish = (problem?: string) => {
     if (over) return;

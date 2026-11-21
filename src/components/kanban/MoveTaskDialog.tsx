@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
@@ -84,7 +85,7 @@ export const MoveTaskDialog: React.FC<MoveTaskDialogProps> = ({
       onOpenChange(false);
       onMoved?.(choice);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not move the task');
+      toast.error(publicMessage(err, 'Could not move the task'));
     } finally {
       setMoving(false);
     }

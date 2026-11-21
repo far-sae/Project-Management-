@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -416,7 +417,7 @@ export const CallOverlay: React.FC = () => {
           }
         } catch (err) {
           toast.warning(
-            `${err instanceof Error ? err.message : 'Transcription failed'}${
+            `${publicMessage(err, 'Transcription failed')}${
               rec.transcript ? ' — showing live captions instead.' : ''
             }`,
           );
@@ -563,7 +564,7 @@ export const CallOverlay: React.FC = () => {
       }
       await request;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not open the floating window');
+      toast.error(publicMessage(err, 'Could not open the floating window'));
     }
   }, [floating, shownPeers]);
 

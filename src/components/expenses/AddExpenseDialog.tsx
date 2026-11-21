@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Paperclip } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -102,7 +103,7 @@ export const AddExpenseDialog: React.FC<Props> = ({
         } catch (uploadErr) {
           toast.warning(
             'Invoice upload failed — submitting expense without it. ' +
-              (uploadErr instanceof Error ? uploadErr.message : ''),
+              publicMessage(uploadErr, ''),
           );
         }
       }
@@ -133,7 +134,7 @@ export const AddExpenseDialog: React.FC<Props> = ({
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to submit expense');
+      toast.error(publicMessage(err, 'Failed to submit expense'));
     } finally {
       setSubmitting(false);
     }

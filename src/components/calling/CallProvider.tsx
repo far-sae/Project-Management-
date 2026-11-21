@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, {
   createContext,
   useCallback,
@@ -147,7 +148,7 @@ function guestErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof GuestApiError && err.code === 'FORBIDDEN') {
     return "You don't have permission to manage guests for this call.";
   }
-  return err instanceof Error && err.message ? err.message : fallback;
+  return publicMessage(err, fallback);
 }
 
 // ── Provider ─────────────────────────────────────────────────
@@ -958,7 +959,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (err) {
       setState((prev) => ({ ...prev, isApplyingEffect: false }));
       toast.error(
-        err instanceof Error ? err.message : 'Could not change background blur',
+        publicMessage(err, 'Could not change background blur'),
       );
     }
   }, []);

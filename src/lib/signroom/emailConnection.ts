@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 /**
  * The rules behind "send from your own mailbox": the provider presets, the
  * checks a save must pass (word for word the server's sentences), the request
@@ -484,7 +485,7 @@ export function safeSignInUrl(url: unknown): string | null {
 
 /** The server's own sentence for a failed call, or a plain one when it sent none. */
 export const sentenceOf = (error: unknown, fallback = 'Something went wrong. Please try again.'): string =>
-  (error instanceof Error && error.message ? error.message : fallback);
+  publicMessage(error instanceof Error ? error : null, fallback);
 
 /** The HTTP status a failed call carries, or null. */
 export function statusOf(error: unknown): number | null {

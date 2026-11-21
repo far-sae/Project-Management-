@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
@@ -147,7 +148,7 @@ export const DealHandoffDialog: React.FC<Props> = ({ deal, open, onOpenChange, o
         setMadeProjectId(error.projectId);
         toast.error('The project was created but could not be linked to the deal. Press "Try again".');
       } else {
-        toast.error(error instanceof Error ? error.message : 'Hand-off failed');
+        toast.error(publicMessage(error, 'Hand-off failed'));
       }
     } finally {
       setBusy(false);
@@ -163,7 +164,7 @@ export const DealHandoffDialog: React.FC<Props> = ({ deal, open, onOpenChange, o
       await linkDealHandoff(deal.id, { workspaceId, projectId: project.projectId });
       await finish(project.projectId, `Linked to ${project.name}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not link the project');
+      toast.error(publicMessage(error, 'Could not link the project'));
     } finally {
       setBusy(false);
     }

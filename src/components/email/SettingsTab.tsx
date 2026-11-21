@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -72,7 +73,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
     setLoadError(null);
     getEmailSettings(orgId, orgTimezone)
       .then(setSettings)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Failed to load email settings'))
+      .catch((err) => setLoadError(publicMessage(err, 'Failed to load email settings')))
       .finally(() => setLoading(false));
   };
 
@@ -166,7 +167,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ orgId, isAdmin, orgTim
     } catch (err) {
       // saveEmailSettings throws a readable message for an out-of-order
       // window or jitter range — surfaced as-is rather than a generic failure.
-      setSaveError(err instanceof Error ? err.message : 'Failed to save email settings');
+      setSaveError(publicMessage(err, 'Failed to save email settings'));
     } finally {
       setSaving(false);
     }

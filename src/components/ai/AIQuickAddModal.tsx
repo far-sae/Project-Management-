@@ -1,3 +1,6 @@
+import { SetupHint } from '@/components/common/SetupHint';
+import { publicText } from '@/lib/publicError';
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
@@ -109,7 +112,7 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
       setDraft(result);
     } catch (err) {
       const aiErr = err as AIError;
-      setError(aiErr.message || 'Could not understand that. Try again.');
+      setError(publicText(aiErr.message ?? '', 'Could not understand that. Try again.'));
     } finally {
       setParsing(false);
     }
@@ -158,7 +161,7 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
       await onCreate(input);
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create task');
+      setError(publicMessage(err, 'Failed to create task'));
     } finally {
       setCreating(false);
     }
@@ -219,8 +222,10 @@ export const AIQuickAddModal: React.FC<AIQuickAddModalProps> = ({
             <div className="flex items-start gap-2 text-xs rounded-md border border-warning/30 bg-warning-soft text-warning-soft-foreground px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
-                AI is not configured. Deploy the <code>ai-chat</code> Supabase function to use
-                quick add.
+                <SetupHint other="AI quick add is not switched on yet.">
+                  AI is not configured. Deploy the <code>ai-chat</code> Supabase function to use
+                  quick add.
+                </SetupHint>
               </span>
             </div>
           )}

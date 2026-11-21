@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { logger } from '@/lib/logger';
@@ -578,7 +579,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
       const newUser = await signUpWithEmail(email, password, displayName);
       setUser(newUser);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign up');
+      setError(publicMessage(err, 'Failed to sign up'));
       throw err;
     } finally {
       setAuthActionLoading(false);
@@ -592,7 +593,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
       const loggedInUser = await signInWithEmail(email, password);
       setUser(loggedInUser);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in');
+      setError(publicMessage(err, 'Failed to sign in'));
       throw err;
     } finally {
       setAuthActionLoading(false);
@@ -604,7 +605,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
     try {
       await signInWithGoogle();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in with Google');
+      setError(publicMessage(err, 'Failed to sign in with Google'));
       throw err;
     }
   }, []);
@@ -645,7 +646,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
       await supabaseSignOut();
       setUser(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign out');
+      setError(publicMessage(err, 'Failed to sign out'));
       throw err;
     }
   }, [user]);

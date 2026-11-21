@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganization } from '@/context/OrganizationContext';
+import { PLATFORM_ORGS, PLATFORM_ORG_SETTING } from '@/lib/platform';
 import { StatusPill } from '@/components/common/StatusPill';
 import type { StatusTone } from '@/components/common/StatusPill';
 import { SETUP_PARTS } from '@/lib/crmSetup';
@@ -70,6 +71,15 @@ export const SetupCheck: React.FC = () => {
           {missing === 0
             ? 'Everything that can be checked is set up.'
             : `${missing} part${missing === 1 ? ' is' : 's are'} not set up yet.`}
+        </p>
+      )}
+
+      {/* While no organisation is named as the one that runs the site, every organisation's owner sees this page. */}
+      {isOwner && PLATFORM_ORGS.length === 0 && organization?.organizationId && (
+        <p className="border-b border-border bg-warning-soft px-4 py-2 text-pretty text-xs text-warning-soft-foreground">
+          The owner of every organisation on the site can see this page and set-up messages. To keep them to your
+          organisation, add the setting <code className="rounded bg-background px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">{PLATFORM_ORG_SETTING}</code> in
+          Vercel with this value, then deploy again: <code className="break-all rounded bg-background px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">{organization.organizationId}</code>
         </p>
       )}
 

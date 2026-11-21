@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -355,7 +356,7 @@ export const CrmContactDetailPage: React.FC = () => {
         setCompany(null);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load the lead');
+      toast.error(publicMessage(err, 'Could not load the lead'));
     } finally {
       setLoading(false);
     }
@@ -403,7 +404,7 @@ export const CrmContactDetailPage: React.FC = () => {
       setNoteBody('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save note');
+      toast.error(publicMessage(err, 'Could not save note'));
     } finally {
       setBusy(false);
     }
@@ -442,7 +443,7 @@ export const CrmContactDetailPage: React.FC = () => {
       setLogBody('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not log');
+      toast.error(publicMessage(err, 'Could not log'));
     } finally {
       setBusy(false);
     }
@@ -455,7 +456,7 @@ export const CrmContactDetailPage: React.FC = () => {
       toast.success('Lead deleted');
       navigate('/crm/contacts');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete the lead');
+      toast.error(publicMessage(err, 'Could not delete the lead'));
       setBusy(false);
     }
   };
@@ -494,7 +495,7 @@ export const CrmContactDetailPage: React.FC = () => {
       toast.success(done ?? `${leadName(contact)} marked ${LEAD_STEPS[next].label.toLowerCase()}`);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update the lead');
+      toast.error(publicMessage(err, 'Could not update the lead'));
     } finally {
       setStepBusy(false);
     }
@@ -1221,7 +1222,7 @@ const NewFollowUpDialog: React.FC<{
       onOpenChange(false);
       await onCreated();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create follow-up');
+      toast.error(publicMessage(err, 'Could not create follow-up'));
     } finally {
       setBusy(false);
     }
@@ -1377,7 +1378,7 @@ const EditLeadDialog: React.FC<{
       await onSaved();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Save failed');
+      toast.error(publicMessage(err, 'Save failed'));
     } finally {
       setBusy(false);
     }

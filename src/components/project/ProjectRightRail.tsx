@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useMemo, useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import {
   MessageSquare,
@@ -759,7 +760,7 @@ export const ProjectRightRail: React.FC<ProjectRightRailProps> = ({
       setChatPendingFiles([]);
       if (chatFileInputRef.current) chatFileInputRef.current.value = '';
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not send message');
+      toast.error(publicMessage(e, 'Could not send message'));
     } finally {
       setChatSending(false);
     }

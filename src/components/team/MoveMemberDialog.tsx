@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
@@ -92,7 +93,7 @@ export const MoveMemberDialog: React.FC<MoveMemberDialogProps> = ({
       onOpenChange(false);
       onMoved?.();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not move this person');
+      toast.error(publicMessage(err, 'Could not move this person'));
       // They may have been added to the new project before the error.
       onMoved?.();
     } finally {

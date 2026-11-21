@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState } from 'react';
 import {
   Dialog, DialogContent, DialogHeader,
@@ -35,7 +36,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
       setDescription('');
       onClose();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create workspace';
+      const msg = publicMessage(err, 'Failed to create workspace');
       // Close modal and bubble limit errors up to Dashboard's LimitReachedModal
       if (msg.includes('limit') || msg.includes('reached')) {
         onClose(); // close this modal first

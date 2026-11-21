@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
@@ -130,7 +131,7 @@ export const Calendar: React.FC = () => {
         });
       } catch (err) {
         setTasks([]);
-        const errorMsg = err instanceof Error ? err.message : 'Failed to load calendar tasks';
+        const errorMsg = publicMessage(err, 'Failed to load calendar tasks');
         setError(errorMsg);
         toast.error('Failed to load tasks', {
           description: errorMsg,

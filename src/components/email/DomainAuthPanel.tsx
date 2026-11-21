@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -62,7 +63,7 @@ export const DomainAuthPanel: React.FC<DomainAuthPanelProps> = ({ mailboxes }) =
         ...prev,
         [domain]: {
           status: 'error',
-          error: err instanceof Error ? err.message : 'Failed to check domain authentication',
+          error: publicMessage(err, 'Failed to check domain authentication'),
         },
       }));
     }

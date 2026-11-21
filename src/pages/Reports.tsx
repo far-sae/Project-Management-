@@ -1,3 +1,6 @@
+import { SetupHint } from '@/components/common/SetupHint';
+import { publicText } from '@/lib/publicError';
+import { publicMessage } from '@/lib/publicError';
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -157,7 +160,7 @@ export const Reports: React.FC = () => {
       setBusinessContracts(contracts);
       toast.success(`Loaded ${contracts.length} contracts`, { id: toastId });
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to fetch contracts';
+      const errorMsg = publicMessage(error, 'Failed to fetch contracts');
       setBusinessError(errorMsg);
       toast.error('Failed to load business data', {
         description: errorMsg,
@@ -397,7 +400,7 @@ export const Reports: React.FC = () => {
       setAiInsights(insights);
     } catch (err) {
       const aiErr = err as AIError;
-      setAiInsightsError(aiErr.message || 'Failed to generate insights.');
+      setAiInsightsError(publicText(aiErr.message ?? '', 'Failed to generate insights.'));
     } finally {
       setAiInsightsLoading(false);
     }
@@ -413,7 +416,7 @@ export const Reports: React.FC = () => {
       setAiAnswer(answer);
     } catch (err) {
       const aiErr = err as AIError;
-      setAiAskError(aiErr.message || 'Could not answer that.');
+      setAiAskError(publicText(aiErr.message ?? '', 'Could not answer that.'));
     } finally {
       setAiAskLoading(false);
     }
@@ -678,11 +681,13 @@ export const Reports: React.FC = () => {
                     {!aiAvailable && (
                       <Alert>
                         <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>AI not configured</AlertTitle>
+                        <AlertTitle>AI insights are not switched on yet</AlertTitle>
                         <AlertDescription>
-                          Deploy the <code className="text-xs">ai-chat</code> Supabase Edge
-                          Function and set <code className="text-xs">OPENAI_API_KEY</code> to
-                          unlock AI insights.
+                          <SetupHint other="Please contact support to switch them on.">
+                            Deploy the <code className="text-xs">ai-chat</code> Supabase Edge
+                            Function and set <code className="text-xs">OPENAI_API_KEY</code> to
+                            unlock AI insights.
+                          </SetupHint>
                         </AlertDescription>
                       </Alert>
                     )}
@@ -1363,7 +1368,7 @@ export const Reports: React.FC = () => {
                   toast.success(`${memberToRemove.displayName} has been removed from the organization`);
                   setMemberToRemove(null);
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Failed to remove member');
+                  toast.error(publicMessage(err, 'Failed to remove member'));
                 } finally {
                   setRemoveMemberLoading(false);
                 }

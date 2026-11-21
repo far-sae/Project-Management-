@@ -1,3 +1,6 @@
+import { publicMessage } from '@/lib/publicError';
+import { SetupHint } from '@/components/common/SetupHint';
+import { publicText } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import {
   Dialog,
@@ -117,7 +120,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
       setSelected(sel);
     } catch (err) {
       const aiErr = err as AIError;
-      setError(aiErr.message || 'Could not extract tasks from those notes.');
+      setError(publicText(aiErr.message ?? '', 'Could not extract tasks from those notes.'));
     } finally {
       setParsing(false);
     }
@@ -170,9 +173,7 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
           // Continue creating the rest, but record the first failure to show the user.
           if (!error) {
             setError(
-              err instanceof Error
-                ? err.message
-                : 'Some tasks could not be created.',
+              publicMessage(err, 'Some tasks could not be created.'),
             );
           }
         }
@@ -221,8 +222,10 @@ export const AIMeetingNotesModal: React.FC<AIMeetingNotesModalProps> = ({
             <div className="flex items-start gap-2 text-xs rounded-md border border-warning/30 bg-warning-soft text-warning-soft-foreground px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
-                AI is not configured. Deploy the <code>ai-chat</code> Supabase function to use
-                this feature.
+                <SetupHint other="This AI feature is not switched on yet.">
+                  AI is not configured. Deploy the <code>ai-chat</code> Supabase function to use
+                  this feature.
+                </SetupHint>
               </span>
             </div>
           )}

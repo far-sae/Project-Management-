@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, Printer, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -53,7 +54,7 @@ export const DealQuote: React.FC<Props> = ({ deal, format, from, customer, onSav
       toast.success(read.lines.length === 0 ? 'Quote cleared' : setValue ? 'Quote saved, and the deal value set to its total' : 'Quote saved');
       await onSaved();
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : 'The quote could not be saved.');
+      toast.error(publicMessage(err, 'The quote could not be saved.'));
     } finally {
       setBusy(false);
     }

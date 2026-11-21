@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -64,7 +65,7 @@ export const LoginForm: React.FC = () => {
       navigate(getPostAuthRedirect());
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Sign in failed',
+        publicMessage(err, 'Sign in failed'),
         { id: toastId }
       );
     }
@@ -77,7 +78,7 @@ export const LoginForm: React.FC = () => {
       // toast.success('Signed in with Google!', { id: toastId });
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Google sign-in failed',
+        publicMessage(err, 'Google sign-in failed'),
         { id: toastId }
       );
     }

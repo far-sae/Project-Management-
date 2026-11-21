@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -182,7 +183,7 @@ export const Contracts: React.FC = () => {
       setShowCreateModal(false);
       toast.success('Contract created successfully');
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create contract');
+      setCreateError(publicMessage(err, 'Failed to create contract'));
     } finally {
       setCreating(false);
     }
@@ -210,7 +211,7 @@ export const Contracts: React.FC = () => {
       setShowEditModal(false);
       toast.success('Contract updated successfully');
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to update contract');
+      setCreateError(publicMessage(err, 'Failed to update contract'));
     } finally {
       setUpdating(false);
     }
@@ -226,7 +227,7 @@ export const Contracts: React.FC = () => {
       setContracts((prev) => prev.filter((c) => c.contractId !== contractId));
       toast.success('Contract deleted');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to delete contract';
+      const msg = publicMessage(err, 'Failed to delete contract');
       toast.error(msg);
     }
   };

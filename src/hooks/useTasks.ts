@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -80,7 +81,7 @@ export const useTasks = (
         return newTask;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to create task";
+          publicMessage(err, "Failed to create task");
 
         // ✅ Show limit modal instead of inline error
         if (message.includes("limit") || message.includes("reached")) {
@@ -116,7 +117,7 @@ export const useTasks = (
         return true;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to update task";
+          publicMessage(err, "Failed to update task");
         setError(message);
         // Revert optimistic update on error
         if (projectId) {
@@ -144,7 +145,7 @@ export const useTasks = (
         return true;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to delete task";
+          publicMessage(err, "Failed to delete task");
         setError(message);
         return false;
       }
@@ -165,7 +166,7 @@ export const useTasks = (
         return true;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to move task";
+          publicMessage(err, "Failed to move task");
         setError(message);
         return false;
       }
@@ -182,7 +183,7 @@ export const useTasks = (
       setTasks(fetchedTasks);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to fetch tasks";
+        publicMessage(err, "Failed to fetch tasks");
       setError(message);
     } finally {
       setLoading(false);

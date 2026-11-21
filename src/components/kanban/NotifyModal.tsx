@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useMemo } from 'react';
 import {
   Dialog,
@@ -126,7 +127,7 @@ export const NotifyModal: React.FC<NotifyModalProps> = ({
         setSelectedIds(new Set());
       } else if (rls > 0) {
         toast.error(
-          'Notifications could not be saved. Check that the notifications table exists and RLS allows inserts (Supabase migrations).',
+          'The notifications could not be saved. Please try again.',
         );
       } else if (filtered === n) {
         toast.info(
@@ -136,7 +137,7 @@ export const NotifyModal: React.FC<NotifyModalProps> = ({
         toast.error('Notifications could not be saved.');
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to send notifications');
+      toast.error(publicMessage(err, 'Failed to send notifications'));
     } finally {
       setLoading(false);
     }

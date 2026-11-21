@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -450,7 +451,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
     // person is excluded, and the reason only exists on the row.
     listSuppressions(orgId)
       .then(setSuppressions)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
+      .catch((err) => toast.error(publicMessage(err, 'Failed to load suppression list')));
   }, [orgId, workspaceId]);
 
   const loadEnrollments = useCallback(async () => {
@@ -458,7 +459,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
     try {
       setEnrollments(await listEnrollments(sequenceId));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load enrollments');
+      toast.error(publicMessage(err, 'Failed to load enrollments'));
     } finally {
       setEnrollmentsLoading(false);
     }
@@ -467,7 +468,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
   useEffect(() => {
     setLoading(true);
     loadSequence()
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load sequence'))
+      .catch((err) => toast.error(publicMessage(err, 'Failed to load sequence')))
       .finally(() => setLoading(false));
   }, [loadSequence]);
 
@@ -511,7 +512,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
       setSequence({ ...sequence, name: name.trim() });
       toast.success('Sequence renamed');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to rename sequence');
+      toast.error(publicMessage(err, 'Failed to rename sequence'));
     } finally {
       setSavingName(false);
     }
@@ -530,7 +531,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
       await loadSequence();
       toast.success(`Step ${form.stepIndex + 1} saved`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save step');
+      toast.error(publicMessage(err, 'Failed to save step'));
     } finally {
       setSavingStepIndex(null);
     }
@@ -595,7 +596,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
       await loadSequence();
       toast.success('Step removed');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove step');
+      toast.error(publicMessage(err, 'Failed to remove step'));
     } finally {
       setRemoving(false);
     }
@@ -742,7 +743,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
       setSequence({ ...sequence, status });
       toast.success(status === 'active' ? 'Sequence activated' : 'Sequence paused');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update sequence');
+      toast.error(publicMessage(err, 'Failed to update sequence'));
     } finally {
       setChangingStatus(false);
     }
@@ -764,7 +765,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
       setAudienceKey((k) => k + 1);
       await loadEnrollments();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to enroll recipients');
+      toast.error(publicMessage(err, 'Failed to enroll recipients'));
     } finally {
       setEnrolling(false);
     }
@@ -778,7 +779,7 @@ export const SequenceEditor: React.FC<SequenceEditorProps> = ({
       await loadEnrollments();
       toast.success('Enrollment stopped');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to stop enrollment');
+      toast.error(publicMessage(err, 'Failed to stop enrollment'));
     } finally {
       setStoppingId(null);
     }

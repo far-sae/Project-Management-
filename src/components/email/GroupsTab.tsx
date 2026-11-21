@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -125,7 +126,7 @@ export const GroupsTab: React.FC<GroupsTabProps> = ({ orgId, workspaceId }) => {
       await load(true);
       toast.success(editingId ? 'Group saved' : 'Group created');
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save group');
+      setSaveError(publicMessage(err, 'Failed to save group'));
     } finally {
       setSaving(false);
     }
@@ -146,7 +147,7 @@ export const GroupsTab: React.FC<GroupsTabProps> = ({ orgId, workspaceId }) => {
       setGroups((prev) => prev.filter((g) => g.id !== group.id));
       toast.success('Group deleted');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete group');
+      toast.error(publicMessage(err, 'Failed to delete group'));
     } finally {
       setDeletingId(null);
     }

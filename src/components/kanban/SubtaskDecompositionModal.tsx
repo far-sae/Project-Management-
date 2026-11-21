@@ -1,3 +1,5 @@
+import { SetupHint } from '@/components/common/SetupHint';
+import { publicText } from '@/lib/publicError';
 import React, { useState } from 'react';
 import {
   Dialog,
@@ -61,7 +63,7 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
       setSelectedSubtasks(new Set(result.subtasks.map((_, i) => i)));
     } catch (err) {
       const aiErr = err as AIError;
-      setError(aiErr.message);
+      setError(publicText(aiErr.message ?? '', 'Could not break this task down. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -143,7 +145,9 @@ export const SubtaskDecompositionModal: React.FC<SubtaskDecompositionModalProps>
 
               {!aiEnabled && (
                 <p className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-soft-foreground">
-                  AI is not configured. Deploy the ai-chat Edge Function and set OPENAI_API_KEY in Supabase.
+                  <SetupHint other="This AI feature is not switched on yet.">
+                    AI is not configured. Deploy the ai-chat Edge Function and set OPENAI_API_KEY in Supabase.
+                  </SetupHint>
                 </p>
               )}
 

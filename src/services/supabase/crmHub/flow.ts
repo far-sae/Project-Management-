@@ -2,6 +2,7 @@
  * The two big steps of the CRM flow that touch more than one record:
  * turning a lead into a deal, and turning a won deal into a project.
  */
+import { publicMessage } from '@/lib/publicError';
 import type { CrmContact, CrmDeal, CrmDealStage } from '@/types/crmHub';
 import { DEFAULT_COLUMNS, type KanbanColumn, type TaskAssignee } from '@/types/task';
 import type { HandoffTaskDraft } from '@/lib/crmFlow';
@@ -176,7 +177,7 @@ export async function handoffDealToNewProject(
   try {
     await linkDealHandoff(input.deal.id, { workspaceId: input.workspaceId, projectId });
   } catch (e) {
-    throw new HandoffLinkError(e instanceof Error ? e.message : 'Could not link the deal to the project.', projectId);
+    throw new HandoffLinkError(publicMessage(e, 'Could not link the deal to the project.'), projectId);
   }
 
   // The lead behind the deal is now a customer.

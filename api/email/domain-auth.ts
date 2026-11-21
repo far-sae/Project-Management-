@@ -49,7 +49,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const report = interpretDomainAuth(raw);
     return res.status(200).json(report);
   } catch (err: any) {
-    const message = String(err?.message ?? err).slice(0, 500);
-    return res.status(500).json({ error: message });
+    // The lookup's own error (a resolver's words) stays in the server log.
+    console.error('[email] the domain records could not be read', String(err?.code ?? err?.name ?? 'unknown'));
+    return res.status(500).json({ error: "The domain's records could not be read. Check the domain name and try again." });
   }
 }

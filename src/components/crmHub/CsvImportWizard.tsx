@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -207,7 +208,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
       setRepair({ dropped: aligned.dropped, emptyColumns: named.length - hs.length });
       setStep(2);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not read the file');
+      toast.error(publicMessage(err, 'Could not read the file'));
     }
   };
 
@@ -325,7 +326,7 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
       onOpenChange(false);
       reset();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Import failed');
+      toast.error(publicMessage(err, 'Import failed'));
     } finally {
       setBusy(false);
     }

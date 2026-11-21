@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState } from 'react';
 import { Receipt, ExternalLink, Loader2, Check, X, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -67,7 +68,7 @@ export const TaskExpensesPanel: React.FC<Props> = ({
       );
       reload();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update');
+      toast.error(publicMessage(e, 'Failed to update'));
     } finally {
       setBusyId(null);
     }

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useSubscription } from '@/context/SubscriptionContext';
@@ -155,7 +156,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({
       window.location.href = data.url;
 
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Checkout failed';
+      const message = publicMessage(err, 'Checkout failed');
       setError(message);
       toast.error(message, { id: toastId });
     } finally {

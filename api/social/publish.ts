@@ -51,7 +51,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!expected || provided !== expected) return res.status(401).json({ error: 'Unauthorized' });
   const db = serviceClient();
   const { data: claimed, error: claimError } = await db.rpc('claim_social_posts', { p_limit: 25 });
-  if (claimError) return res.status(500).json({ error: claimError.message });
+  if (claimError) {
+    console.error('[social] the posts to publish could not be claimed', claimError.code ?? 'unknown');
+    return res.status(500).json({ error: 'The posts could not be read.' });
+  }
   const results: Array<{ id: string; status: string; error?: string }> = [];
   for (const content of (claimed ?? []) as Content[]) {
     try {

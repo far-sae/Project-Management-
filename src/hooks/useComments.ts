@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useState, useEffect, useCallback } from "react";
 import { useOrganization } from "@/context/OrganizationContext";
 import { GlobalComment } from "@/types/task";
@@ -18,7 +19,7 @@ export const useUserComments = (userId: string | null) => {
         setError(null);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load comments");
+        setError(publicMessage(err, "Failed to load comments"));
         setLoading(false);
       });
   }, [userId, organization?.organizationId]);

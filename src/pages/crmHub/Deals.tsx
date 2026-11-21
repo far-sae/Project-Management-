@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Loader2, GripVertical } from 'lucide-react';
@@ -304,7 +305,7 @@ export const CrmDealsPage: React.FC = () => {
       await refreshDeals();
       if (dealNeedsHandoff(deal)) openHandoff(deal);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not create the deal');
+      toast.error(publicMessage(err, 'Could not create the deal'));
     } finally {
       setBusy(false);
     }

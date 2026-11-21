@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Loader2, ShieldCheck, ShieldOff, Copy, Check } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -46,7 +47,7 @@ export const MfaSettingsTab: React.FC = () => {
       const d = await startEnrolment(user.email);
       setDraft(d);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to start enrolment');
+      toast.error(publicMessage(err, 'Failed to start enrolment'));
     } finally {
       setBusy(false);
     }
@@ -67,7 +68,7 @@ export const MfaSettingsTab: React.FC = () => {
       setCode('');
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to confirm code');
+      toast.error(publicMessage(err, 'Failed to confirm code'));
     } finally {
       setBusy(false);
     }
@@ -87,7 +88,7 @@ export const MfaSettingsTab: React.FC = () => {
       toast.success('Two-factor disabled.');
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to disable');
+      toast.error(publicMessage(err, 'Failed to disable'));
     } finally {
       setBusy(false);
     }

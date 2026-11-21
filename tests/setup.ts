@@ -18,3 +18,11 @@
 if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
   Element.prototype.scrollIntoView = () => undefined;
 }
+
+// Set-up messages (which database file to run, which setting is missing) are
+// shown only to the people who run the site. Most tests check exactly those
+// messages, so they look at the app as that person. A test about what
+// everybody else reads calls setInternalsVisible(false) itself.
+import { setInternalsVisible } from '../src/lib/publicError';
+
+setInternalsVisible(true);

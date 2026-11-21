@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useOrganization } from "@/context/OrganizationContext";
@@ -110,7 +111,7 @@ export const useProjects = () => {
         return newProject;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to create project";
+          publicMessage(err, "Failed to create project");
 
         // ✅ Check if it's a limit error — show modal instead of inline error
         if (message.includes("limit") || message.includes("reached")) {
@@ -137,7 +138,7 @@ export const useProjects = () => {
         return true;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to update project";
+          publicMessage(err, "Failed to update project");
         setError(message);
         return false;
       }
@@ -160,7 +161,7 @@ export const useProjects = () => {
         return true;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to delete project";
+          publicMessage(err, "Failed to delete project");
         setError(message);
         return false;
       }
@@ -184,7 +185,7 @@ export const useProjects = () => {
       setProjects(fetchedProjects);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to fetch projects";
+        publicMessage(err, "Failed to fetch projects");
       setError(message);
     } finally {
       if (!silent) {

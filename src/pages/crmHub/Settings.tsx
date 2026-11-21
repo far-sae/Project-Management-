@@ -1,3 +1,5 @@
+import { useInternalsVisible } from '@/hooks/useInternalsVisible';
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, Plus, Trash2, Save, ChevronUp, ChevronDown } from 'lucide-react';
@@ -48,6 +50,7 @@ const SettingsSection: React.FC<{
 
 export const CrmSettingsPage: React.FC = () => {
   const { selected } = useSelectedWorkspace();
+  const showSetup = useInternalsVisible();
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto bg-background">
@@ -72,7 +75,8 @@ export const CrmSettingsPage: React.FC = () => {
               <TabsTrigger value="fields">Custom fields</TabsTrigger>
               <TabsTrigger value="bin">Recycle bin</TabsTrigger>
               <TabsTrigger value="changes">Change log</TabsTrigger>
-              <TabsTrigger value="setup">Set-up check</TabsTrigger>
+              {/* How the site is set up: only for the people who run it. */}
+              {showSetup && <TabsTrigger value="setup">Set-up check</TabsTrigger>}
             </TabsList>
           </div>
           <TabsContent value="general">
@@ -87,7 +91,7 @@ export const CrmSettingsPage: React.FC = () => {
           <TabsContent value="fields"><FieldDefsSettings /></TabsContent>
           <TabsContent value="bin"><RecycleBin /></TabsContent>
           <TabsContent value="changes"><ChangeLog /></TabsContent>
-          <TabsContent value="setup"><SetupCheck /></TabsContent>
+          {showSetup && <TabsContent value="setup"><SetupCheck /></TabsContent>}
         </Tabs>
       </div>
     </main>
@@ -109,7 +113,7 @@ const GeneralSettings: React.FC = () => {
       await setCurrency(next);
       toast.success(`Currency changed to ${next} everywhere`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save');
+      toast.error(publicMessage(err, 'Could not save'));
     } finally {
       setBusy(false);
     }
@@ -174,7 +178,7 @@ const PipelineSettings: React.FC = () => {
       setNewName('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not add stage');
+      toast.error(publicMessage(err, 'Could not add stage'));
     } finally {
       setBusy(false);
     }
@@ -190,7 +194,7 @@ const PipelineSettings: React.FC = () => {
       toast.success('Stage updated');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save stage');
+      toast.error(publicMessage(err, 'Could not save stage'));
     } finally {
       setBusy(false);
     }
@@ -204,7 +208,7 @@ const PipelineSettings: React.FC = () => {
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete stage');
+      toast.error(publicMessage(err, 'Could not delete stage'));
     } finally {
       setBusy(false);
     }
@@ -223,7 +227,7 @@ const PipelineSettings: React.FC = () => {
       ]);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not reorder');
+      toast.error(publicMessage(err, 'Could not reorder'));
     } finally {
       setBusy(false);
     }

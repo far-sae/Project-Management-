@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,7 @@ export const InlineAddCard: React.FC<InlineAddCardProps> = ({
       // keep editor open so users can chain-add tasks
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not add task');
+      toast.error(publicMessage(err, 'Could not add task'));
     } finally {
       setSubmitting(false);
     }

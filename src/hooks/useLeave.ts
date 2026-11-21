@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -64,7 +65,7 @@ export function useLeave() {
         setSetupMissing(true);
         setError(null);
       } else {
-        setError(e instanceof Error ? e.message : 'Could not load leave.');
+        setError(publicMessage(e, 'Could not load leave.'));
       }
     } finally {
       setLoading(false);

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { supabase } from '../config';
 import { SETUP_PARTS, probeState } from '@/lib/crmSetup';
 import type { Probe, SetupState } from '@/lib/crmSetup';
@@ -12,7 +13,7 @@ async function ask(probe: Probe): Promise<Answer> {
     if (probe.kind === 'function') return await supabase.rpc(probe.name, probe.args);
     return { error: null };
   } catch (err) {
-    return { error: { message: err instanceof Error ? err.message : 'The request failed.' } };
+    return { error: { message: publicMessage(err, 'The request failed.') } };
   }
 }
 

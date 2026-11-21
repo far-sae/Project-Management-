@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -82,7 +83,7 @@ export const AdminDashboard: React.FC = () => {
         });
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : 'Failed to load admin stats'
+          publicMessage(error, 'Failed to load admin stats')
         );
       } finally {
         setLoading(false);

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DisconnectReason } from 'livekit-client';
@@ -187,7 +188,7 @@ export const GuestJoin: React.FC = () => {
       await svc.setBackgroundBlur(next === 'blur');
       if (mountedRef.current) setVideoEffect(next);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not change background blur');
+      toast.error(publicMessage(err, 'Could not change background blur'));
     } finally {
       if (mountedRef.current) setIsApplyingEffect(false);
     }
@@ -247,7 +248,7 @@ export const GuestJoin: React.FC = () => {
       if (err instanceof GuestApiError && err.code === 'INVITE_EXPIRED') {
         finish('expired');
       } else {
-        finish('error', err instanceof Error ? err.message : 'Something went wrong.');
+        finish('error', publicMessage(err, 'Something went wrong.'));
       }
     } finally {
       if (mountedRef.current) setSubmitting(false);

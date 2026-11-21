@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -150,7 +151,7 @@ export const TemplatesTab: React.FC<TemplatesTabProps> = ({ orgId, workspaceId, 
       await load(true);
       toast.success(editingId ? 'Template saved' : 'Template created');
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save template');
+      setSaveError(publicMessage(err, 'Failed to save template'));
     } finally {
       setSaving(false);
     }
@@ -174,7 +175,7 @@ export const TemplatesTab: React.FC<TemplatesTabProps> = ({ orgId, workspaceId, 
       setTemplates((prev) => prev.filter((t) => t.id !== template.id));
       toast.success('Template deleted');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete template');
+      toast.error(publicMessage(err, 'Failed to delete template'));
     } finally {
       setDeletingId(null);
     }

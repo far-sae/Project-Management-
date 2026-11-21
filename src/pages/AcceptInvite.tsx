@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -218,7 +219,7 @@ export const AcceptInvite: React.FC = () => {
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Signup failed";
+      const msg = publicMessage(err, "Signup failed");
       const is429 = typeof msg === "string" && (msg.includes("429") || msg.includes("rate") || msg.includes("limit"));
       setError(is429 ? "Too many attempts. Please wait a few minutes and try again." : msg);
       toast.error(is429 ? "Too many attempts. Please wait a few minutes." : msg);
@@ -360,7 +361,7 @@ export const AcceptInvite: React.FC = () => {
     } catch (err) {
       hasAcceptedRef.current = false;
       setError(
-        err instanceof Error ? err.message : "Failed to accept invitation",
+        publicMessage(err, "Failed to accept invitation"),
       );
     } finally {
       setProcessing(false);

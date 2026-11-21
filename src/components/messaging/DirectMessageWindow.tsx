@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquare, Minus, Paperclip, Phone, Send, Video, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -133,7 +134,7 @@ export const DirectMessageWindow: React.FC<DirectMessageWindowProps> = ({
         await toggleDirectMessageReaction({ messageId, userId: user.userId, emoji });
         reloadReactionsRef.current();
       } catch (e) {
-        toast.error(e instanceof Error && e.message ? e.message : 'Could not update the reaction');
+        toast.error(publicMessage(e, 'Could not update the reaction'));
       }
     },
     [user?.userId],

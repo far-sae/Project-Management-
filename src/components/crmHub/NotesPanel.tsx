@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, StickyNote, Trash2, Save, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -63,7 +64,7 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
     try {
       setNotes(await listNotes(orgId, scopeOpts));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load notes');
+      toast.error(publicMessage(err, 'Could not load notes'));
     } finally {
       setLoading(false);
     }
@@ -96,7 +97,7 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
       setBody('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save note');
+      toast.error(publicMessage(err, 'Could not save note'));
     } finally {
       setBusy(false);
     }
@@ -111,7 +112,7 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
       setEditingBody('');
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update note');
+      toast.error(publicMessage(err, 'Could not update note'));
     } finally {
       setBusy(false);
     }
@@ -123,7 +124,7 @@ export const NotesPanel: React.FC<Props> = ({ scopedTo, title = 'Notes' }) => {
       await deleteNote(id);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete note');
+      toast.error(publicMessage(err, 'Could not delete note'));
     } finally {
       setBusy(false);
     }

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -55,7 +56,7 @@ export const DuplicateLeadsDialog: React.FC<Props> = ({ open, onOpenChange, lead
       toast.success(`Merged ${group.length} leads into one.`);
       await onMerged();
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : 'The leads could not be merged.');
+      setProblem(publicMessage(err, 'The leads could not be merged.'));
       // Some of the group may already be merged.
       await onMerged();
     } finally {

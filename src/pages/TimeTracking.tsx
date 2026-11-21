@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -99,7 +100,7 @@ export const TimeTracking: React.FC<{
       await clockIn({ notes: notes.trim() || null });
       toast.success('Clocked in');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to clock in');
+      toast.error(publicMessage(e, 'Failed to clock in'));
     } finally {
       setBusy(false);
     }
@@ -112,7 +113,7 @@ export const TimeTracking: React.FC<{
       toast.success('Clocked out');
       setNotes('');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to clock out');
+      toast.error(publicMessage(e, 'Failed to clock out'));
     } finally {
       setBusy(false);
     }
@@ -148,7 +149,7 @@ export const TimeTracking: React.FC<{
       toast.success('Time entry updated');
       setEditing(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update entry');
+      toast.error(publicMessage(e, 'Failed to update entry'));
     } finally {
       setEditBusy(false);
     }
@@ -162,7 +163,7 @@ export const TimeTracking: React.FC<{
       toast.success('Time entry deleted');
       setDeleting(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete');
+      toast.error(publicMessage(e, 'Failed to delete'));
     } finally {
       setDeleteBusy(false);
     }

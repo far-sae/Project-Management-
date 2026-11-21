@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useCallback, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -57,7 +58,7 @@ export function useDealMove({ stages, onChanged }: Options) {
         }
         return true;
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Could not move the deal');
+        toast.error(publicMessage(err, 'Could not move the deal'));
         return false;
       } finally {
         setBusy(false);

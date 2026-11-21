@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -113,7 +114,7 @@ export const SignupForm: React.FC = () => {
       }
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Sign up failed',
+        publicMessage(err, 'Sign up failed'),
         { id: toastId }
       );
     }
@@ -138,7 +139,7 @@ export const SignupForm: React.FC = () => {
       navigate(getPostAuthRedirect());
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Google sign-up failed',
+        publicMessage(err, 'Google sign-up failed'),
         { id: toastId }
       );
     }

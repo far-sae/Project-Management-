@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
@@ -226,7 +227,7 @@ export const Settings: React.FC = () => {
       toast.success("Profile updated successfully", { id: toastId });
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to update profile",
+        publicMessage(err, "Failed to update profile"),
         { id: toastId },
       );
     } finally {
@@ -250,7 +251,7 @@ export const Settings: React.FC = () => {
       toast.success("Photo updated", { id: toastId });
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to update photo",
+        publicMessage(err, "Failed to update photo"),
         { id: toastId },
       );
     } finally {
@@ -298,7 +299,7 @@ export const Settings: React.FC = () => {
         .eq("id", user.userId);
       if (error) {
         toast.error(
-          "Could not sync preferences to your account. " + error.message,
+          publicMessage(error, "Could not sync preferences to your account. Please try again."),
         );
         setNotifSaveState('idle');
         return;
@@ -345,7 +346,7 @@ export const Settings: React.FC = () => {
         })
         .eq("id", user.userId);
       if (error) {
-        toast.error("Could not sync preferences. " + error.message);
+        toast.error(publicMessage(error, "Could not sync preferences. Please try again."));
         setNotifSaveState('idle');
         return;
       }
@@ -384,7 +385,7 @@ export const Settings: React.FC = () => {
       toast.success("Password updated successfully", { id: toastId });
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to update password",
+        publicMessage(err, "Failed to update password"),
         { id: toastId },
       );
     } finally {
@@ -449,13 +450,13 @@ export const Settings: React.FC = () => {
       });
       if (error) {
         const msg = error.message || "Edge function error";
-        throw new Error(msg.includes("401") || msg.includes("Unauthorized") ? "Session expired. Please sign in again." : msg);
+        throw new Error(msg.includes("401") || msg.includes("Unauthorized") ? "Session expired. Please sign in again." : publicMessage(msg, "The subscription could not be changed. Please try again."));
       }
       if (data?.error) throw new Error(data.error);
       await refreshSubscription();
       toast.success("Subscription cancelled. You’re now on Starter.", { id: toastId });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to cancel", { id: toastId });
+      toast.error(publicMessage(err, "Failed to cancel"), { id: toastId });
     } finally {
       setCancelNowLoading(false);
     }

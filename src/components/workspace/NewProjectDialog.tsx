@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -186,7 +187,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
         toast.error(msg, { id: toastId });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to create project.';
+      const msg = publicMessage(err, 'Failed to create project.');
       setCreateError(msg);
       toast.error(msg, { id: toastId });
     } finally {

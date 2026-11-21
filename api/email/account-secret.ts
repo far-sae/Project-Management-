@@ -66,7 +66,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { error } = await db
     .from('email_account_secrets')
     .upsert({ account_id: accountId, secret_encrypted: secretEncrypted }, { onConflict: 'account_id' });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error('[email] the mailbox password could not be stored', error.code ?? 'unknown');
+    return res.status(500).json({ error: 'The password could not be saved. Please try again.' });
+  }
 
   return res.status(200).json({ ok: true });
 }

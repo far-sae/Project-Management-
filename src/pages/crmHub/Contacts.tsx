@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { LeadFormsDialog } from '@/components/crmHub/LeadFormsDialog';
 import { duplicateGroups, findLeadByEmail } from '@/lib/crmDuplicates';
 import { forEachLead, nextSort, sortLeadIds, type LeadSort, type LeadSortKey } from '@/lib/crmListTools';
@@ -330,7 +331,7 @@ export const CrmContactsPage: React.FC = () => {
       setShowCreate(false);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not add the lead');
+      toast.error(publicMessage(err, 'Could not add the lead'));
     } finally {
       setBusy(false);
     }
@@ -342,7 +343,7 @@ export const CrmContactsPage: React.FC = () => {
       toast.success(`${leadName(lead)} marked ${LEAD_STEPS[step].label.toLowerCase()}`);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update the lead');
+      toast.error(publicMessage(err, 'Could not update the lead'));
     }
   };
 
@@ -354,7 +355,7 @@ export const CrmContactsPage: React.FC = () => {
       setConfirmDelete(null);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete the lead');
+      toast.error(publicMessage(err, 'Could not delete the lead'));
     } finally {
       setBusy(false);
     }

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -123,15 +124,15 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     if (!orgId) return;
     listAccounts(orgId, workspaceId)
       .then(setAccounts)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load sending accounts'));
+      .catch((err) => toast.error(publicMessage(err, 'Failed to load sending accounts')));
     listMailboxStatus(orgId, workspaceId)
       .then(setMailboxes)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load mailbox health'));
+      .catch((err) => toast.error(publicMessage(err, 'Failed to load mailbox health')));
     // Whole rows, not just addresses: the picker has to say WHY each excluded
     // person is excluded, and the reason only exists on the row.
     listSuppressions(orgId)
       .then(setSuppressions)
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load suppression list'));
+      .catch((err) => toast.error(publicMessage(err, 'Failed to load suppression list')));
     // Both only annotate the review, so a failure is swallowed rather than
     // shown: an estimate nobody can read is not worth an error somebody
     // cannot act on.
@@ -338,7 +339,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
       resetForm();
       onSent();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create campaign');
+      toast.error(publicMessage(err, 'Failed to create campaign'));
     } finally {
       setSending(false);
     }

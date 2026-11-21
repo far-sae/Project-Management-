@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
@@ -21,7 +22,7 @@ import { listChanges, listTrash, restoreFromTrash } from '@/services/supabase/cr
  */
 
 const when = (date: Date): string => format(date, 'd MMM yyyy, HH:mm');
-const reason = (err: unknown, fallback: string): string => (err instanceof Error && err.message ? err.message : fallback);
+const reason = (err: unknown, fallback: string): string => publicMessage(err, fallback);
 
 /** The names behind the ids: team, stages, companies and leads of the workspace on screen. */
 function useHistoryNames(): HistoryNames {

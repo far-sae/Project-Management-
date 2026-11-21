@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
@@ -166,7 +167,7 @@ export const MeetingNotesReviewModal: React.FC<MeetingNotesReviewModalProps> = (
     } catch (err) {
       const msg =
         (err as AIError)?.message ||
-        (err instanceof Error ? err.message : 'Failed to generate notes');
+        (publicMessage(err, 'Failed to generate notes'));
       setError(msg);
       toast.error(msg);
     } finally {

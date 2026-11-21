@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useCallback, useEffect, useState } from 'react';
 import { useOrganization } from '@/context/OrganizationContext';
 import { supabase } from '@/services/supabase/config';
@@ -67,7 +68,7 @@ export const useCrmCompanies = (): UseListResult<CrmCompany> => {
     try {
       setItems(await listCompanies(orgId, { workspaceId }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load companies');
+      setError(publicMessage(e, 'Failed to load companies'));
     } finally {
       setLoading(false);
     }
@@ -102,7 +103,7 @@ export const useCrmContacts = (): UseListResult<CrmContact> => {
     try {
       setItems(await listContacts(orgId, { workspaceId }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load contacts');
+      setError(publicMessage(e, 'Failed to load contacts'));
     } finally {
       setLoading(false);
     }
@@ -143,7 +144,7 @@ export const useCrmDealStages = (): UseListResult<CrmDealStage> => {
       }
       setItems(stages);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load deal stages');
+      setError(publicMessage(e, 'Failed to load deal stages'));
     } finally {
       setLoading(false);
     }
@@ -169,7 +170,7 @@ export const useCrmDeals = (): UseListResult<CrmDeal> => {
     try {
       setItems(await listDeals(orgId, { workspaceId }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load deals');
+      setError(publicMessage(e, 'Failed to load deals'));
     } finally {
       setLoading(false);
     }
@@ -204,7 +205,7 @@ export const useCrmTags = (): UseListResult<CrmTag> => {
     try {
       setItems(await listTags(orgId, workspaceId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load tags');
+      setError(publicMessage(e, 'Failed to load tags'));
     } finally {
       setLoading(false);
     }
@@ -272,7 +273,7 @@ export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
     try {
       setItems(await listActivities(orgId, { limit, workspaceId }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load activity');
+      setError(publicMessage(e, 'Failed to load activity'));
     } finally {
       setLoading(false);
     }
@@ -307,7 +308,7 @@ export const useCrmTasks = (): UseListResult<CrmTask> => {
     try {
       setItems(await listTasks(orgId, { workspaceId }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load tasks');
+      setError(publicMessage(e, 'Failed to load tasks'));
     } finally {
       setLoading(false);
     }

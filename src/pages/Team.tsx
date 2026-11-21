@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -106,7 +107,7 @@ const MemberRoleSelect: React.FC<{
       await updateOrganization(organization.organizationId, { members: next });
       await onChanged();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update access');
+      toast.error(publicMessage(err, 'Could not update access'));
     } finally {
       setBusy(false);
     }
@@ -461,7 +462,7 @@ export const Team: React.FC = () => {
       await loadTeamData();
       toast.success('Member added to project');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add member');
+      toast.error(publicMessage(err, 'Failed to add member'));
     } finally {
       setAddBusy(false);
     }
@@ -474,7 +475,7 @@ export const Team: React.FC = () => {
       await upsertProjectMember(selectedProject, organization.organizationId, userId, role);
       await loadTeamData();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to change project role');
+      toast.error(publicMessage(err, 'Failed to change project role'));
     } finally {
       setRoleBusyUserId(null);
     }
@@ -560,7 +561,7 @@ export const Team: React.FC = () => {
       await refreshOrganization();
       await loadTeamData();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove member');
+      toast.error(publicMessage(err, 'Failed to remove member'));
     }
   };
 
@@ -661,7 +662,7 @@ export const Team: React.FC = () => {
         } catch (perEmailErr) {
           failed.push({
             email,
-            reason: perEmailErr instanceof Error ? perEmailErr.message : 'unknown error',
+            reason: publicMessage(perEmailErr, 'unknown error'),
           });
         }
       }
@@ -1246,11 +1247,11 @@ export const Team: React.FC = () => {
                       },
                       headers: token ? { Authorization: `Bearer ${token}` } : {},
                     });
-                    if (error || !data?.url) throw new Error(error?.message || 'Checkout failed');
+                    if (error || !data?.url) throw new Error(publicMessage(error, 'Checkout failed'));
                     toast.dismiss(toastId);
                     window.location.href = data.url;
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : 'Failed to start checkout', { id: toastId });
+                    toast.error(publicMessage(e, 'Failed to start checkout'), { id: toastId });
                     window.location.href = `mailto:${SUPPORT_EMAIL}?subject=Add extra team seat (Advanced)&body=Hi, I'd like to add an extra team seat to my Advanced plan.`;
                   } finally {
                     setAddSeatLoading(false);

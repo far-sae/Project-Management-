@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, Plus, X, Settings, Check } from 'lucide-react';
@@ -31,7 +32,7 @@ export const ContactTagPicker: React.FC<Props> = ({ contactId, variant = 'panel'
       const ids = await listContactTagIds(contactId);
       setAttached(new Set(ids));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load tags');
+      toast.error(publicMessage(err, 'Could not load tags'));
     } finally {
       setLoading(false);
     }
@@ -64,7 +65,7 @@ export const ContactTagPicker: React.FC<Props> = ({ contactId, variant = 'panel'
       }
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update tag');
+      toast.error(publicMessage(err, 'Could not update tag'));
     } finally {
       setBusy(false);
     }

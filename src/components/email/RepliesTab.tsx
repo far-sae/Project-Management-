@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
@@ -30,9 +31,7 @@ export const RepliesTab: React.FC<Props> = ({ orgId, workspaceId }) => {
     try {
       setRows(await listReplies(orgId, workspaceId));
     } catch (err) {
-      // The database's own errors are plain objects with a message, not Error instances.
-      const reason = (err as { message?: unknown } | null)?.message;
-      setProblem(typeof reason === 'string' && reason ? `The replies could not be loaded: ${reason}` : 'The replies could not be loaded.');
+      setProblem(publicMessage(err, 'The replies could not be loaded.'));
     } finally {
       setLoading(false);
     }

@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useEffect, useId, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -132,7 +133,7 @@ export const CompanyFormDialog: React.FC<Props> = ({ open, onOpenChange, company
       onOpenChange(false);
       await onSaved(saved);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save the company');
+      toast.error(publicMessage(err, 'Could not save the company'));
     } finally {
       setBusy(false);
     }

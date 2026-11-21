@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Browser SpeechRecognition is webkit-prefixed on Chrome/Edge; types live on
@@ -204,7 +205,7 @@ export function useMeetingRecorder(
     } catch (err) {
       cleanup();
       const msg =
-        err instanceof Error ? err.message : 'Failed to start recorder';
+        publicMessage(err, 'Failed to start recorder');
       setError(msg);
       return { outcome: 'failed', error: msg };
     }

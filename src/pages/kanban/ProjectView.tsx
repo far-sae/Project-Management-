@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Filter, LayoutGrid, List, Loader2, Settings, GanttChartSquare, ArrowUpDown, Check, CheckCircle2, Download, KeyRound, Lock, Network, Plus } from 'lucide-react';
@@ -322,7 +323,8 @@ export const ProjectView: React.FC = () => {
       }
     } catch (err) {
       setProjectPinError(true);
-      const detail = err instanceof Error ? err.message : '';
+      // Our own sentence when there is one; nothing when the error is the database's or the network's.
+      const detail = publicMessage(err, '');
       toast.error(
         detail
           ? `Could not verify your PIN. ${detail}`
@@ -479,7 +481,7 @@ export const ProjectView: React.FC = () => {
         await updateProject(project.projectId, { columns: next }, project.organizationId);
         setProject((prev) => (prev ? { ...prev, columns: next } : null));
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Failed to update columns');
+        toast.error(publicMessage(e, 'Failed to update columns'));
       }
     },
     [project]
@@ -585,7 +587,7 @@ export const ProjectView: React.FC = () => {
           console.warn('ProjectView: silent refetch failed:', err);
           return;
         }
-        const message = err instanceof Error ? err.message : 'Failed to load project';
+        const message = publicMessage(err, 'Failed to load project');
         setError(message);
         toast.error(message);
         setTimeout(() => navigate('/dashboard'), 2000);

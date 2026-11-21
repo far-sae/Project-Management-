@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import { explainMediaError, type MediaKind } from '@/lib/callTroubleshoot';
 import {
   ConnectionState,
@@ -265,7 +266,7 @@ export class LiveKitCallService {
       this.emitParticipants();
     } catch (err) {
       this.events.onError(
-        err instanceof Error ? err.message : 'Could not update recording status',
+        publicMessage(err, 'Could not update recording status'),
       );
     }
   }
@@ -282,7 +283,7 @@ export class LiveKitCallService {
       this.emitParticipants();
     } catch (err) {
       this.events.onError(
-        err instanceof Error ? err.message : 'Could not toggle microphone',
+        publicMessage(err, 'Could not toggle microphone'),
       );
     }
   }
@@ -295,7 +296,7 @@ export class LiveKitCallService {
       this.emitParticipants();
     } catch (err) {
       this.events.onError(
-        err instanceof Error ? err.message : 'Could not toggle camera',
+        publicMessage(err, 'Could not toggle camera'),
       );
     }
   }

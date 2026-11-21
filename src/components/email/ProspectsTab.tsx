@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -229,7 +230,7 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
       await load(true);
       toast.success(editingId ? 'Prospect saved' : 'Prospect added');
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save prospect');
+      setSaveError(publicMessage(err, 'Failed to save prospect'));
     } finally {
       setSaving(false);
     }
@@ -254,7 +255,7 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
           : `${ids.length} prospect${ids.length === 1 ? '' : 's'} removed from their group`,
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to assign prospects');
+      toast.error(publicMessage(err, 'Failed to assign prospects'));
     } finally {
       setAssigning(false);
     }
@@ -297,7 +298,7 @@ export const ProspectsTab: React.FC<ProspectsTabProps> = ({ orgId, workspaceId }
       });
       toast.success('Prospect deleted');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete prospect');
+      toast.error(publicMessage(err, 'Failed to delete prospect'));
     } finally {
       setDeletingId(null);
     }

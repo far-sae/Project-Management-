@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/services/supabase/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -114,7 +115,7 @@ export const TrialTracking: React.FC = () => {
         setData({ trialUsers, funnelData, conversionByDay });
       } catch (error) {
         toast.error(
-          error instanceof Error ? error.message : 'Failed to load trial data'
+          publicMessage(error, 'Failed to load trial data')
         );
       } finally {
         setLoading(false);

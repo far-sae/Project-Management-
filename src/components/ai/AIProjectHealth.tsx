@@ -1,3 +1,5 @@
+import { SetupHint } from '@/components/common/SetupHint';
+import { publicText } from '@/lib/publicError';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -206,7 +208,7 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
       }
     } catch (err) {
       const aiErr = err as AIError;
-      setError(aiErr.message || 'Could not assess project health.');
+      setError(publicText(aiErr.message ?? '', 'Could not assess project health.'));
     } finally {
       setLoading(false);
     }
@@ -296,7 +298,9 @@ export const AIProjectHealth: React.FC<AIProjectHealthProps> = ({
 
           {!aiAvailable && (
             <p className="text-xs text-muted-foreground mt-1">
-              Configure the <code>ai-chat</code> Supabase function to enable AI health checks.
+              <SetupHint other="AI health checks are not switched on yet.">
+                Configure the <code>ai-chat</code> Supabase function to enable AI health checks.
+              </SetupHint>
             </p>
           )}
           {!aiAvailable === false && !health && !loading && !error && (

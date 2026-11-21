@@ -1,3 +1,4 @@
+import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -82,7 +83,7 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
       setDelivery(deliveries);
       setWaiting(blocked);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load sequences');
+      toast.error(publicMessage(err, 'Failed to load sequences'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -112,7 +113,7 @@ export const SequencesTab: React.FC<SequencesTabProps> = ({ orgId, workspaceId }
       // there is nothing to look at on the list until it is written.
       setOpenId(sequence.id);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create sequence');
+      setCreateError(publicMessage(err, 'Failed to create sequence'));
     } finally {
       setCreating(false);
     }

@@ -1,3 +1,5 @@
+import { publicText } from '@/lib/publicError';
+import { publicMessage } from '@/lib/publicError';
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useId } from 'react';
 import {
   Task, TaskPriority, KanbanColumn, DEFAULT_COLUMNS, PRIORITY_COLORS,
@@ -879,7 +881,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setCommentSummary(result);
     } catch (err) {
       const aiErr = err as AIError;
-      setCommentSummaryError(aiErr.message || 'Could not summarize the thread.');
+      setCommentSummaryError(publicText(aiErr.message ?? '', 'Could not summarize the thread.'));
     } finally {
       setCommentSummaryLoading(false);
     }
@@ -960,7 +962,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       void deleteCommentDraft(task.taskId, user.userId, orgId);
       toast.success('Comment posted', { id: toastId });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to add comment', { id: toastId });
+      toast.error(publicMessage(error, 'Failed to add comment'), { id: toastId });
     } finally {
       setCommentLoading(false);
     }
@@ -983,7 +985,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         } catch {
           /* keep optimistic list if refetch fails */
         }
-        toast.error(error instanceof Error ? error.message : 'Failed to delete comment', {
+        toast.error(publicMessage(error, 'Failed to delete comment'), {
           id: toastId,
         });
       } finally {
@@ -1117,7 +1119,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       }
       onClose();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save task';
+      const message = publicMessage(error, 'Failed to save task');
       setSaveError(message);
       toast.error(message);
     } finally {
@@ -1134,7 +1136,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       toast.success('Task deleted', { id: toastId });
       onClose();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to delete task', { id: toastId });
+      toast.error(publicMessage(error, 'Failed to delete task'), { id: toastId });
     } finally {
       setLoading(false);
     }
