@@ -193,3 +193,20 @@ export const listLeadCategories = async (
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 };
+
+export const MERGE_NOT_SET_UP_MESSAGE = 'Merging is not set up yet: run supabase/migrations/193_crm_merge_leads.sql in the Supabase SQL editor.';
+
+/**
+ * Makes one lead out of two: everything of `dropId` (deals, follow-ups, notes,
+ * timeline, calls, emails, tags) moves to `keepId`, whose empty fields are
+ * filled from the other, and `dropId` is deleted. Done by one database
+ * function, so it happens completely or not at all.
+ */
+export const mergeContacts = async (keepId: string, dropId: string): Promise<void> => {
+  const { error } = await supabase.rpc('crm_merge_contacts', { p_keep: keepId, p_drop: dropId });
+  if (!error) return;
+  // The function is not there until migration 193 has been run.
+  const missing = error.code === 'PGRST202' || error.code === '42883' || /crm_merge_contacts/.test(error.message ?? '') && /not find|does not exist|schema cache/i.test(error.message ?? '');
+  throw new Error(missing ? MERGE_NOT_SET_UP_MESSAGE : error.message || 'The leads could not be merged.');
+};
+

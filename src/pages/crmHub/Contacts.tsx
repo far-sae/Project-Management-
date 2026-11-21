@@ -1,5 +1,6 @@
 import { LeadFormsDialog } from '@/components/crmHub/LeadFormsDialog';
-import { findLeadByEmail } from '@/lib/crmDuplicates';
+import { duplicateGroups, findLeadByEmail } from '@/lib/crmDuplicates';
+import { DuplicateLeadsDialog } from '@/components/crmHub/DuplicateLeadsDialog';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Loader2, Download, Upload, MoreHorizontal, FileInput } from 'lucide-react';
@@ -68,6 +69,7 @@ export const CrmContactsPage: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showForms, setShowForms] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [converting, setConverting] = useState<CrmContact | null>(null);
   const [busy, setBusy] = useState(false);
@@ -109,6 +111,13 @@ export const CrmContactsPage: React.FC = () => {
   const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);
   const memberById = useMemo(
     () => new Map((organization?.members ?? []).map((m) => [m.userId, m])),
+    [organization],
+  );
+  // Leads already in the list that share an email address. The button only shows when there are some.
+  const duplicateCount = useMemo(() => duplicateGroups(contacts).length, [contacts]);
+  const companyNames = useMemo(() => new Map(companies.map((c) => [c.id, c.name])), [companies]);
+  const ownerNames = useMemo(
+    () => new Map((organization?.members ?? []).map((m) => [m.userId, m.displayName || m.email || 'Teammate'])),
     [organization],
   );
   /** The company typed in the New lead form, and whether it is already in the CRM. */
@@ -270,6 +279,11 @@ export const CrmContactsPage: React.FC = () => {
           description="People you might do business with. Qualify a lead, then convert it to a deal."
           actions={
             <>
+              {duplicateCount > 0 && (
+                <Button variant="outline" onClick={() => setShowDuplicates(true)}>
+                  {duplicateCount} duplicate{duplicateCount === 1 ? '' : 's'}
+                </Button>
+              )}
               {/* A form on your website, so leads come in by themselves. */}
               <Button variant="outline" onClick={() => setShowForms(true)} disabled={!organizationId || !workspaceId}>
                 <FileInput /> Web form
@@ -577,6 +591,15 @@ export const CrmContactsPage: React.FC = () => {
         onOpenChange={setShowImport}
         resource="contacts"
         onImported={refresh}
+      />
+
+      <DuplicateLeadsDialog
+        open={showDuplicates}
+        onOpenChange={setShowDuplicates}
+        leads={contacts}
+        companyNames={companyNames}
+        ownerNames={ownerNames}
+        onMerged={refresh}
       />
 
       {organizationId && workspaceId && (

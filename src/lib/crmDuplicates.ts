@@ -44,3 +44,24 @@ export function splitDuplicateLeads<T extends { record: Record<string, unknown> 
   }
   return { fresh, duplicates };
 }
+
+/**
+ * The leads that share an email address, as groups of two or more. Each group
+ * lists its leads oldest first, because the oldest is usually the one with the
+ * history and so the one to keep. Groups with more leads come first.
+ */
+export function duplicateGroups<T extends { id: string; email: string | null; createdAt: Date }>(leads: T[]): T[][] {
+  const byEmail = new Map<string, T[]>();
+  for (const lead of leads) {
+    const key = emailKey(lead.email);
+    if (!key) continue;
+    const group = byEmail.get(key);
+    if (group) group.push(lead);
+    else byEmail.set(key, [lead]);
+  }
+  return [...byEmail.values()]
+    .filter((group) => group.length > 1)
+    .map((group) => [...group].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)))
+    .sort((a, b) => b.length - a.length || emailKey(a[0].email).localeCompare(emailKey(b[0].email)));
+}
+

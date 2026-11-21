@@ -91,7 +91,10 @@ export function supabaseStore(sb: SupabaseClient): LeadFormStore {
 
   return {
     async form(id) {
-      const r = must(await sb.from("crm_lead_forms").select("*").eq("id", id).maybeSingle()) as Row | null;
+      const got = await sb.from("crm_lead_forms").select("*").eq("id", id).maybeSingle();
+      // Until migration 192 is run there is no such table, and so no such form: a visitor is told the form is not available.
+      if (got.error && (got.error.code === "42P01" || got.error.code === "PGRST205")) return null;
+      const r = must(got) as Row | null;
       return r ? formFrom(r) : null;
     },
 
