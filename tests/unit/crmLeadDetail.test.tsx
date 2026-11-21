@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   tasks: [] as Record<string, unknown>[],
   projects: [] as Record<string, unknown>[],
   updateContact: vi.fn(async () => ({})),
+  logActivity: vi.fn(async () => ({})),
   createTask: vi.fn(async () => ({})),
 }));
 
@@ -53,7 +54,7 @@ vi.mock('@/services/supabase/crmHub/contacts', () => ({
   updateContact: state.updateContact,
   deleteContact: vi.fn(),
 }));
-vi.mock('@/services/supabase/crmHub/activities', () => ({ listActivities: async () => [], logActivity: vi.fn() }));
+vi.mock('@/services/supabase/crmHub/activities', () => ({ listActivities: async () => [], logActivity: state.logActivity }));
 vi.mock('@/services/supabase/crmHub/notes', () => ({ listNotes: async () => [], createNote: vi.fn() }));
 vi.mock('@/services/supabase/crmHub/tasks', () => ({
   listTasks: async () => state.tasks,
@@ -122,6 +123,7 @@ beforeEach(() => {
   state.tasks = [];
   state.projects = [];
   state.updateContact.mockClear();
+  state.logActivity.mockClear();
   state.createTask.mockClear();
 });
 afterEach(cleanup);
@@ -155,7 +157,19 @@ describe('lead page', () => {
   it('marks a lead unqualified and can re-open it', async () => {
     await renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Mark unqualified' }));
+    // It asks why first, and will not go on without a reason.
+    const ask = await screen.findByRole('dialog', { name: 'Mark Priya Shah unqualified' });
+    expect(state.updateContact).not.toHaveBeenCalled();
+    expect(within(ask).getByRole('button', { name: 'Mark unqualified' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(within(ask).getByRole('button', { name: 'No budget' }));
+    fireEvent.click(within(ask).getByRole('button', { name: 'Mark unqualified' }));
     await waitFor(() => expect(state.updateContact).toHaveBeenCalledWith('lead-1', leadStepPatch('unqualified')));
+    // The reason is written on the lead's timeline.
+    await waitFor(() => expect(state.logActivity).toHaveBeenCalledTimes(1));
+    expect(state.logActivity.mock.calls[0]).toMatchObject([
+      { type: 'note', contactId: 'lead-1', description: 'Marked unqualified: No budget', metadata: { unqualifiedReason: 'No budget' } },
+      'u1',
+    ]);
 
     cleanup();
     state.updateContact.mockClear();

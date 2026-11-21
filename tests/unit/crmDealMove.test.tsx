@@ -72,6 +72,8 @@ describe('moving a deal', () => {
     fireEvent.click(screen.getByText('to Lost'));
     expect(h.moveDealToStage).not.toHaveBeenCalled();
     expect(screen.getByText('Mark “Website rebuild” as lost')).toBeTruthy();
+    // A reason is required.
+    expect(screen.getByRole('button', { name: 'Mark as lost' }).hasAttribute('disabled')).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Price' }));
     fireEvent.click(screen.getByRole('button', { name: 'Mark as lost' }));

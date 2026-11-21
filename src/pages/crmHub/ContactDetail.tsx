@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   CalendarPlus, Check, ChevronLeft, Copy, Handshake, History, Loader2, Mail,
@@ -54,6 +54,7 @@ import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
 import { OwnerField } from '@/components/crmHub/OwnerField';
+import { UnqualifiedDialog, unqualifiedNote } from '@/components/crmHub/UnqualifiedDialog';
 import { CallDialog } from '@/components/crmHub/CallDialog';
 import { CallRecording, recordedCallId } from '@/components/crmHub/CallRecording';
 import { useCalling } from '@/hooks/useCalling';
@@ -284,6 +285,9 @@ export const CrmContactDetailPage: React.FC = () => {
   /** A step picked for a lead that already has a deal: asked about first. */
   const [stepBack, setStepBack] = useState<ManualStep>('contacted');
   const [confirmStepBack, setConfirmStepBack] = useState(false);
+  /** Asking why before a lead is marked unqualified; the reason waits here until the step is saved. */
+  const [askUnqualified, setAskUnqualified] = useState(false);
+  const unqualifiedReason = useRef('');
   const [logType, setLogType] = useState<ActivityType>('call');
   const [logBody, setLogBody] = useState('');
   const logFieldId = useId();
@@ -444,6 +448,26 @@ export const CrmContactDetailPage: React.FC = () => {
     setStepBusy(true);
     try {
       await updateContact(contact.id, leadStepPatch(next));
+      const reason = next === 'unqualified' ? unqualifiedReason.current.trim() : '';
+      unqualifiedReason.current = '';
+      if (reason) {
+        // The reason goes on the timeline. The lead is already marked, so a failure here is not worth an error.
+        try {
+          await logActivity(
+            {
+              organizationId: contact.organizationId,
+              workspaceId: contact.workspaceId,
+              type: 'note',
+              description: unqualifiedNote(reason),
+              contactId: contact.id,
+              metadata: { unqualifiedReason: reason },
+            },
+            user?.userId ?? null,
+          );
+        } catch (err) {
+          console.warn('[crm] could not log why the lead was marked unqualified', err);
+        }
+      }
       toast.success(done ?? `${leadName(contact)} marked ${LEAD_STEPS[next].label.toLowerCase()}`);
       await refresh();
     } catch (err) {
@@ -576,7 +600,7 @@ export const CrmContactDetailPage: React.FC = () => {
               className="text-muted-foreground"
               title={LEAD_STEPS.unqualified.hint}
               disabled={stepBusy}
-              onClick={() => pickStep('unqualified')}
+              onClick={() => setAskUnqualified(true)}
             >
               Mark unqualified
             </Button>
@@ -1003,6 +1027,18 @@ export const CrmContactDetailPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <UnqualifiedDialog
+        open={askUnqualified}
+        onOpenChange={setAskUnqualified}
+        leadName={fullName}
+        busy={stepBusy}
+        onConfirm={(reason) => {
+          unqualifiedReason.current = reason;
+          setAskUnqualified(false);
+          pickStep('unqualified');
+        }}
+      />
 
       <AlertDialog open={confirmStepBack} onOpenChange={setConfirmStepBack}>
         <AlertDialogContent>

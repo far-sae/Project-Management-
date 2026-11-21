@@ -83,7 +83,8 @@ export function useDealMove({ stages, onChanged }: Options) {
 
   const confirmLost = async () => {
     if (!losing) return;
-    const ok = await move(losing.deal, losing.stage, reason);
+    if (!reason.trim()) return;
+    const ok = await move(losing.deal, losing.stage, reason.trim());
     if (ok) setLosing(null);
   };
 
@@ -127,7 +128,8 @@ export function useDealMove({ stages, onChanged }: Options) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLosing(null)} disabled={busy}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmLost} disabled={busy}>
+            {/* Required: a deal lost with no reason leaves the "Why deals are lost" panel empty. */}
+            <Button variant="destructive" onClick={confirmLost} disabled={busy || !reason.trim()}>
               {busy && <Loader2 className="animate-spin" />}
               Mark as lost
             </Button>
