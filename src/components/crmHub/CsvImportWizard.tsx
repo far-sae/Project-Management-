@@ -4,6 +4,7 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmCompanies, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { supabase } from '@/services/supabase/config';
 import { parseCSVTable, tableToRecords } from '@/lib/csv';
+import { isXlsxFile, readXlsxTable } from '@/lib/xlsx';
 import {
   CUSTOM, SKIP, autoMapColumns, buildCompanyImport, buildLeadImport, companyKey, importOwners,
   realignShiftedColumns, toCustomKey,
@@ -172,12 +173,16 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
   );
 
   const handleFile = async (file: File) => {
-    if (/\.(xlsx?|numbers|ods)$/i.test(file.name)) {
-      toast.error('Save the sheet as CSV first (File → Save as → CSV), then choose that file.');
+    // The old Excel format and other sheet programs are not read: only .xlsx and CSV.
+    if (/\.(xls|numbers|ods)$/i.test(file.name)) {
+      toast.error('Save the sheet as Excel workbook (.xlsx) or as CSV first, then choose that file.');
       return;
     }
     try {
-      const table = parseCSVTable(await file.text());
+      // An Excel workbook gives the same table a CSV does: the first sheet, first row as headings.
+      const table = isXlsxFile(file.name)
+        ? readXlsxTable(new Uint8Array(await file.arrayBuffer()))
+        : parseCSVTable(await file.text());
       if (!table.rows.length) { toast.error('This file has no rows'); return; }
       // Some exports have a heading with no values under it, which pushes
       // every later value under the wrong heading. Line them up first.
@@ -377,15 +382,16 @@ export const CsvImportWizard: React.FC<Props> = ({ open, onOpenChange, resource,
               className="flex w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-input bg-surface-2 px-4 py-10 text-center transition-colors hover:bg-secondary"
             >
               <Upload className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-              <p className="text-sm font-medium">Choose a CSV file</p>
+              <p className="text-sm font-medium">Choose a CSV or Excel file</p>
               <p className="text-xs text-muted-foreground">
                 The columns can be in any order and have any headings. They are matched to {label.singular} fields for you.
+                From an Excel workbook the first sheet is read.
               </p>
             </button>
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.tsv,.txt,text/csv"
+              accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.currentTarget.value = ''; }}
             />

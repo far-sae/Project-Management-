@@ -188,3 +188,38 @@ describe('Lead import', () => {
     expect((screen.getByRole('button', { name: /next/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe('an Excel workbook', () => {
+  // A workbook with one sheet: Name and Email, one row. Built like Excel builds it.
+  const workbook = async (): Promise<Uint8Array> => {
+    const { strToU8, zipSync } = await import('fflate');
+    const u8 = (text: string) => new Uint8Array(strToU8(text));
+    const ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+    const cell = (ref: string, text: string) => `<c r="${ref}" t="inlineStr"><is><t>${text}</t></is></c>`;
+    return zipSync({
+      'xl/worksheets/sheet1.xml': u8(`<worksheet ${ns}><sheetData><row r="1">${cell('A1', 'Name')}${cell('B1', 'Email')}</row><row r="2">${cell('A2', 'Elena Rossi')}${cell('B2', 'elena@northwind.example')}</row></sheetData></worksheet>`),
+    });
+  };
+  const give = (file: File) => {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+  };
+
+  it('is read like a CSV: its headings are matched and its rows counted', async () => {
+    const bytes = await workbook();
+    const file = new File([bytes], 'Leads.xlsx');
+    // jsdom's File has no arrayBuffer(); the browser's has.
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) });
+    render(<CsvImportWizard open onOpenChange={() => undefined} resource="contacts" onImported={h.onImported} />);
+    give(file);
+    expect(await screen.findByText(/Leads\.xlsx/)).toBeTruthy();
+    expect(screen.getByText(/1 row/)).toBeTruthy();
+  });
+
+  it('asks for .xlsx or CSV when given the old Excel format', async () => {
+    render(<CsvImportWizard open onOpenChange={() => undefined} resource="contacts" onImported={h.onImported} />);
+    give(new File(['x'], 'old.xls'));
+    const { toast } = await import('sonner');
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Save the sheet as Excel workbook (.xlsx) or as CSV first, then choose that file.'));
+  });
+});
