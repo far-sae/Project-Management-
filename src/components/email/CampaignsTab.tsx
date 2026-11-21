@@ -4,13 +4,19 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Loader2, RefreshCw, Mail, ChevronDown, ChevronRight, Send, Clock, CheckCircle2,
-  AlertCircle, PauseCircle, FileEdit, Reply, MailWarning, Plus,
+  AlertCircle, PauseCircle, FileEdit, Reply, MailWarning, Plus, Pause, Play, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ChartCard } from '@/components/dashboards/ChartCard';
 import { StackedBar, type StackedDatum } from '@/components/dashboards/StackedBar';
-import { listCampaigns, listMessages } from '@/services/supabase/email';
+import {
+  deleteCampaign, listCampaigns, listMessages, pauseCampaign, resumeCampaign,
+} from '@/services/supabase/email';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import type { EmailCampaign, EmailMessage, CampaignStatus, MessageStatus } from '@/lib/email/types';
 
 interface CampaignsTabProps {
@@ -109,6 +115,16 @@ const inboxBadge = (message: EmailMessage) => {
   return null;
 };
 
+/** One line under each campaign saying what its buttons will do. */
+const CONTROL_HINT: Record<CampaignStatus, string> = {
+  draft: 'Not started.',
+  scheduled: 'Waiting for its start time. Pause keeps it from starting.',
+  sending: 'Going out now. Pause stops the emails that are not sent yet.',
+  paused: 'Paused. Nothing more goes out until you resume it.',
+  sent: 'Finished.',
+  failed: 'Stopped with errors.',
+};
+
 export const CampaignsTab: React.FC<CampaignsTabProps> = ({
   orgId, workspaceId, onNewCampaign,
 }) => {
@@ -118,6 +134,9 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [messagesByCampaign, setMessagesByCampaign] = useState<Record<string, EmailMessage[]>>({});
   const [messagesLoading, setMessagesLoading] = useState<Record<string, boolean>>({});
+  /** The campaign being paused, resumed or deleted, so its buttons wait. */
+  const [changingId, setChangingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<EmailCampaign | null>(null);
 
   const load = useCallback(async (silent = false) => {
     if (!orgId) { setCampaigns([]); setLoading(false); return; }
@@ -169,6 +188,35 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     const interval = setInterval(() => { void load(true); }, POLL_MS);
     return () => clearInterval(interval);
   }, [campaigns, load]);
+
+  const change = async (campaign: EmailCampaign, work: () => Promise<void>) => {
+    setChangingId(campaign.id);
+    try {
+      await work();
+      await load(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'That did not work. Try again.');
+    } finally {
+      setChangingId(null);
+    }
+  };
+
+  const handlePause = (campaign: EmailCampaign) => change(campaign, async () => {
+    if (await pauseCampaign(campaign.id)) toast.success('Paused. Emails already on their way may still go out.');
+    else toast.error('This campaign is no longer going out, so there is nothing to pause.');
+  });
+
+  const handleResume = (campaign: EmailCampaign) => change(campaign, async () => {
+    if (await resumeCampaign(campaign)) toast.success('Resumed. The emails not sent yet go out again.');
+    else toast.error('This campaign is not paused any more.');
+  });
+
+  const handleDelete = (campaign: EmailCampaign) => change(campaign, async () => {
+    await deleteCampaign(campaign.id);
+    toast.success('Campaign deleted');
+    setConfirmDelete(null);
+    if (expandedId === campaign.id) setExpandedId(null);
+  });
 
   const toggleExpand = async (campaign: EmailCampaign) => {
     if (expandedId === campaign.id) { setExpandedId(null); return; }
@@ -234,7 +282,7 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
                 const expanded = expandedId === campaign.id;
                 const messages = messagesByCampaign[campaign.id] ?? [];
                 return (
-                  <div key={campaign.id} className="border border-border rounded-lg overflow-hidden">
+                  <div key={campaign.id} data-campaign={campaign.id} className="border border-border rounded-lg overflow-hidden">
                     <div
                       role="button"
                       tabIndex={0}
@@ -301,6 +349,36 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
                         <span className="text-amber-600 dark:text-amber-400" title="Bounced">B {campaign.bouncedCount}</span>
                       </div>
                     </div>
+                    {/* Outside the row above, which opens the campaign when pressed. */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2">
+                      <p className="text-xs text-muted-foreground">{CONTROL_HINT[campaign.status]}</p>
+                      <div className="flex items-center gap-2">
+                        {(campaign.status === 'sending' || campaign.status === 'scheduled') && (
+                          <Button size="sm" variant="outline" disabled={changingId === campaign.id} onClick={() => void handlePause(campaign)}>
+                            {changingId === campaign.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Pause className="w-4 h-4 mr-2" />}
+                            Pause
+                          </Button>
+                        )}
+                        {campaign.status === 'paused' && (
+                          <Button size="sm" variant="outline" disabled={changingId === campaign.id} onClick={() => void handleResume(campaign)}>
+                            {changingId === campaign.id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                            Resume
+                          </Button>
+                        )}
+                        {campaign.status !== 'sending' && campaign.status !== 'scheduled' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            disabled={changingId === campaign.id}
+                            onClick={() => setConfirmDelete(campaign)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                     {expanded && (
                       <div className="border-t border-border">
                         {messagesLoading[campaign.id] ? (
@@ -362,6 +440,28 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open && !changingId) setConfirmDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{confirmDelete?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The campaign and the record of its emails are removed, with their opens and replies. Emails already
+              sent stay sent, and people who unsubscribed stay unsubscribed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!changingId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!!changingId}
+              onClick={(e) => { e.preventDefault(); if (confirmDelete) void handleDelete(confirmDelete); }}
+            >
+              Delete campaign
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

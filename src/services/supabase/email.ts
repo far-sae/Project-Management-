@@ -945,6 +945,60 @@ export const setCampaignStatus = async (campaignId: string, status: CampaignStat
   }
 };
 
+/**
+ * Pauses a campaign that is going out. The sender only takes emails of
+ * campaigns that are 'sending' or 'scheduled' (claim_email_batch), so the
+ * emails not sent yet stay where they are until it is resumed. An email the
+ * sender has already picked up may still go out.
+ *
+ * Returns false when the campaign was no longer going out: nothing changed.
+ */
+export const pauseCampaign = async (campaignId: string): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from("email_campaigns")
+    .update({ status: "paused" })
+    .eq("id", campaignId)
+    .in("status", ["sending", "scheduled"])
+    .select("id");
+  if (error) {
+    logger.error("Failed to pause campaign:", error);
+    throw error;
+  }
+  return (data ?? []).length > 0;
+};
+
+/**
+ * Lets a paused campaign go out again. One whose start time is still ahead
+ * goes back to waiting for it. Returns false when it was not paused.
+ */
+export const resumeCampaign = async (campaign: Pick<EmailCampaign, "id" | "scheduledAt">): Promise<boolean> => {
+  const waiting = campaign.scheduledAt !== null && campaign.scheduledAt.getTime() > Date.now();
+  const { data, error } = await supabase
+    .from("email_campaigns")
+    .update({ status: waiting ? "scheduled" : "sending" })
+    .eq("id", campaign.id)
+    .eq("status", "paused")
+    .select("id");
+  if (error) {
+    logger.error("Failed to resume campaign:", error);
+    throw error;
+  }
+  return (data ?? []).length > 0;
+};
+
+/**
+ * Deletes a campaign and the record of its emails. Emails that were sent stay
+ * sent, and the suppression list keeps everyone who unsubscribed (their rows
+ * only lose the link to this campaign).
+ */
+export const deleteCampaign = async (campaignId: string): Promise<void> => {
+  const { error } = await supabase.from("email_campaigns").delete().eq("id", campaignId);
+  if (error) {
+    logger.error("Failed to delete campaign:", error);
+    throw error;
+  }
+};
+
 const QUEUE_CHUNK_SIZE = 500;
 
 /**

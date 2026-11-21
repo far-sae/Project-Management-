@@ -48,6 +48,21 @@ function byLeastRecentlyUsed(a: MailboxHealth, b: MailboxHealth): number {
 }
 
 /**
+ * The one mailbox a campaign sent from "any mailbox" is given when it starts.
+ *
+ * The database chooses it (migration 168, email_pin_workspace_mailbox): of the
+ * workspace's mailboxes that are active, the one used least recently, and one
+ * that has never sent before any that has. From then on the whole campaign
+ * goes from that mailbox. This is the screen's reading of the same rule, so it
+ * can name the mailbox instead of promising a rotation that does not happen.
+ * It is a forecast: another campaign may start in between.
+ */
+export function likelyPooledMailbox(pool: MailboxHealth[]): MailboxHealth | null {
+  const active = pool.filter((m) => m.status === 'active' && m.isActive);
+  return active.length > 0 ? [...active].sort(byLeastRecentlyUsed)[0] : null;
+}
+
+/**
  * Spreads a send budget across the sendable mailboxes, least-recently-used
  * first, capping each at its own remaining allowance and at
  * `PER_MAILBOX_SLICE`, and stopping once the budget is exhausted. A mailbox

@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { env, serviceClient } from '../_lib/context';
 import { decryptSecret } from '../_lib/crypto';
+import { buildTestEmail, readTestDraft } from '../_lib/testEmail';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -74,8 +75,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // would otherwise inject a second address into the header.
       from: { name: String(account.from_name ?? ''), address: String(account.from_email) },
       to: { name: '', address: to },
-      subject: 'TaskCalendar test email',
-      text: 'This is a test message. Your sending account works.',
+      // The email being written when the compose form sent one, else the plain line.
+      ...buildTestEmail(readTestDraft(req.body)),
     });
 
     // A send that actually worked settles every automatic doubt about this

@@ -118,8 +118,9 @@ export const LaunchReview: React.FC<LaunchReviewProps> = ({
             ) : (
               <div className="space-y-1 text-sm">
                 <p>
-                  The whole pool — {poolAccounts.length} mailbox
-                  {poolAccounts.length === 1 ? '' : 'es'}, rotating.
+                  {poolAccounts.length === 1
+                    ? 'Your one mailbox.'
+                    : `One of these ${poolAccounts.length} mailboxes: the one used least recently when the campaign starts.`}
                 </p>
                 <ul className="text-xs text-muted-foreground">
                   {poolAccounts.map((a) => (

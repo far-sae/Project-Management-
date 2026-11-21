@@ -32,8 +32,9 @@ const DEFAULT_WINDOW_FOR_ESTIMATE: SendWindow = {
   days: [1, 2, 3, 4, 5],
   timezone: 'UTC',
 };
-import { isUsable } from '@/lib/email/mailboxPool';
+import { isUsable, likelyPooledMailbox } from '@/lib/email/mailboxPool';
 import { verifyAccount } from './verifyAccount';
+import { testDraftFor } from '@/lib/email/testDraft';
 import { AudiencePicker, type AudienceSelection } from './AudiencePicker';
 import { RichTextEditor } from './RichTextEditor';
 import { LaunchReview } from './LaunchReview';
@@ -198,6 +199,9 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     [mailboxes],
   );
 
+  // "Any mailbox" does not rotate: the database gives the campaign one mailbox when it starts.
+  const likelyMailbox = useMemo(() => likelyPooledMailbox(mailboxes.filter(isUsable)), [mailboxes]);
+
   const canSendFrom = usesPool
     ? usableIds.size > 0
     : !!selectedAccount && usableIds.has(selectedAccount.id);
@@ -209,13 +213,17 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
 
   const sendsFrom = usesPool
     ? (usableIds.size > 0
-      ? `Sends from the whole pool — ${usableIds.size} mailbox${usableIds.size === 1 ? '' : 'es'} in rotation, least recently used first.`
+      ? (likelyMailbox
+        ? `The whole campaign goes from one mailbox: the one used least recently when it starts. Right now that is ${likelyMailbox.label} (${likelyMailbox.fromEmail}).`
+        : 'The whole campaign goes from one mailbox: the one used least recently when it starts.')
       : noneUsable)
     : (!selectedAccount
       ? 'That mailbox is no longer available — choose another.'
       : usableIds.has(selectedAccount.id)
         ? `Sends from ${selectedAccount.label} (${selectedAccount.fromEmail}) only.`
         : `${selectedAccount.label} is paused or needs re-verifying, so nothing would go out from it.`);
+
+  const sendingMailboxId = usesPool ? (likelyMailbox?.id ?? null) : (selectedAccount?.id ?? null);
 
   /**
    * What this campaign will actually cost in time.
@@ -231,11 +239,12 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
       // will actually be mailed, which is the only one an estimate of "how
       // long will this take" can honestly be built on.
       recipients: audience.sendableCount,
-      mailboxes: poolHealth,
+      // One mailbox sends the whole campaign: the chosen one, or the one "any mailbox" will be given.
+      mailboxes: sendingMailboxId ? poolHealth.filter((m) => m.id === sendingMailboxId) : poolHealth,
       window,
       windowOpenNow: isWithinSendWindow(window, new Date()),
     });
-  }, [audience.sendableCount, poolHealth, settings]);
+  }, [audience.sendableCount, poolHealth, settings, sendingMailboxId]);
 
   const scheduledDate = scheduleMode === 'schedule' && scheduledAt ? new Date(scheduledAt) : null;
   const scheduleInPast = scheduleMode === 'schedule' && !!scheduledDate && scheduledDate.getTime() <= Date.now();
@@ -258,8 +267,19 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
   const handleTestSend = async () => {
     if (!isAdmin || !selectedAccount) return;
     setTestSending(true);
-    const result = await verifyAccount(selectedAccount.id);
-    if (result.ok) toast.success(`Test email sent to ${user?.email ?? 'your inbox'}`);
+    // The email as it stands, read the way the first person on the list will read it.
+    const draft = testDraftFor(
+      form,
+      selectedAccount.signatureHtml ?? '',
+      audience.recipients[0]?.mergeData ?? null,
+      { name: user?.displayName ?? '', email: user?.email ?? '' },
+    );
+    const result = await verifyAccount(selectedAccount.id, draft);
+    if (result.ok) {
+      toast.success(draft
+        ? `Your email was sent to ${user?.email ?? 'your inbox'} as a test`
+        : `Test email sent to ${user?.email ?? 'your inbox'}. Write a subject or a body to test your own email.`);
+    }
     else toast.error(result.error ?? 'Test send failed');
     setTestSending(false);
   };
@@ -340,7 +360,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
               <Select value={form.accountId} onValueChange={(v) => setForm((f) => ({ ...f, accountId: v }))}>
                 <SelectTrigger><SelectValue placeholder="Choose an active account" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={WHOLE_POOL}>Whole pool (rotate across every mailbox)</SelectItem>
+                  <SelectItem value={WHOLE_POOL}>Any mailbox (the one used least recently)</SelectItem>
                   {activeAccounts.length === 0
                     ? <div className="px-3 py-2 text-sm text-muted-foreground">No active accounts — verify one first</div>
                     : activeAccounts.map((a) => (
@@ -424,7 +444,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
                 </Button>
                 {usesPool && (
                   <p className="text-xs text-muted-foreground">
-                    A test send goes from one named mailbox, so pick one above instead of the whole pool.
+                    A test goes from one named mailbox. Choose one above to send a test.
                   </p>
                 )}
               </div>
