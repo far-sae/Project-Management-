@@ -15,7 +15,6 @@ import { listAccounts, listMailboxStatus } from '@/services/supabase/email';
 import { SetupChecklist } from '@/components/email/SetupChecklist';
 import { PageHeader } from '@/components/common/PageHeader';
 import { WarmupServiceCard } from '@/components/email/WarmupServiceCard';
-import { useProjects } from '@/hooks/useProjects';
 
 /**
  * Prospects and Groups lead, in that order: they are the audience, and every
@@ -31,7 +30,6 @@ export const Email: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin, loading: orgLoading } = useOrganization();
   const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading } = useSelectedWorkspace();
-  const { projects, loading: projectsLoading } = useProjects();
   const [activeTab, setActiveTab] = useState<EmailTabValue>('campaigns');
   /**
    * A template on its way into the composer. Held here rather than in
@@ -73,7 +71,6 @@ export const Email: React.FC = () => {
     if (workspaces[0]) select(workspaces[0].workspaceId);
   }, [isAll, isUnassigned, select, workspaceLoading, workspaces]);
   const workspaceId = selected?.workspaceId ?? null;
-  const hasWorkspaceProject = Boolean(workspaceId && projects.some((project) => project.workspaceId === workspaceId));
 
   /**
    * Where setup has got to, read once here and shown above the tabs.
@@ -120,17 +117,16 @@ export const Email: React.FC = () => {
         same lie as an error rendered as an empty list, arriving a different
         way.
       */}
-      {!orgId || !workspaceId || projectsLoading || !hasWorkspaceProject ? (
+      {!orgId || !workspaceId ? (
         <div className="py-16 text-center text-muted-foreground">
-          {orgLoading || workspaceLoading || projectsLoading ? (
+          {orgLoading || workspaceLoading ? (
             <>
               <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-muted-foreground/60" />
               <p>Loading your workspace…</p>
             </>
           ) : (
-            <p>
-              {workspaceId ? 'Create a project in this workspace to unlock email marketing.' : 'Select or create a workspace to use email marketing.'}
-            </p>
+            // A workspace is all this page needs. Leads are emailed long before a deal is won and a project exists.
+            <p>Select or create a workspace to use email marketing.</p>
           )}
         </div>
       ) : (
