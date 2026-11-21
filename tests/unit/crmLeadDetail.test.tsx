@@ -181,6 +181,40 @@ describe('lead page', () => {
     await waitFor(() => expect(state.updateContact).toHaveBeenCalledWith('lead-1', leadStepPatch('contacted')));
   });
 
+  it('logs a call with how it went, even with nothing written, and can put it on a deal', async () => {
+    state.deals = [{ id: 'd1', name: 'Booking site', value: 4000, currency: 'GBP', status: 'open', stageId: 's1', projectId: null, probability: 20 }];
+    await renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Log activity' })[0]);
+    const form = await screen.findByRole('dialog');
+    // A call needs no words; the outcome is enough.
+    expect(within(form).getByRole('button', { name: 'Log' }).hasAttribute('disabled')).toBe(false);
+    fireEvent.keyDown(within(form).getByRole('combobox', { name: 'How did it go?' }), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'No answer' }), { key: 'Enter' });
+    fireEvent.keyDown(within(form).getByRole('combobox', { name: 'About which deal' }), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Booking site' }), { key: 'Enter' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Log' }));
+
+    await waitFor(() => expect(state.logActivity).toHaveBeenCalledTimes(1));
+    const [saved, by] = state.logActivity.mock.calls[0] as unknown as [Record<string, unknown>, string];
+    expect(saved).toMatchObject({ type: 'call', description: 'No answer.', contactId: 'lead-1', dealId: 'd1', metadata: { outcome: 'no_answer' } });
+    // Logged as "now": no date is sent, so the database's own clock is used.
+    expect(saved).not.toHaveProperty('occurredAt');
+    expect(by).toBe('u1');
+  });
+
+  it('logs something that happened earlier with the time it happened', async () => {
+    await renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Log activity' })[0]);
+    const form = await screen.findByRole('dialog');
+    fireEvent.change(within(form).getByLabelText('When'), { target: { value: '2026-11-10T15:45' } });
+    fireEvent.change(within(form).getByLabelText('What happened'), { target: { value: 'Met at the trade show' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Log' }));
+    await waitFor(() => expect(state.logActivity).toHaveBeenCalledTimes(1));
+    const [saved] = state.logActivity.mock.calls[0] as unknown as [{ occurredAt: Date; description: string }];
+    expect(saved.description).toBe('Spoke to them. Met at the trade show');
+    expect(saved.occurredAt.getTime()).toBe(new Date(2026, 10, 10, 15, 45).getTime());
+  });
+
   it('lists the lead’s deals with their status and project', async () => {
     state.lead = makeLead('customer', 'open_deal');
     state.deals = [

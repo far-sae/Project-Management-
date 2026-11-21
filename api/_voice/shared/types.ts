@@ -29,16 +29,21 @@ export const STATUS_SENTENCE: Partial<Record<CallStatus, string>> = {
 const NOT_SPOKEN_TO: CallOutcome[] = ["no_answer", "voicemail", "busy", "wrong_number"];
 
 /**
- * True for the timeline entry of a call placed from the CRM in which the lead
- * was not spoken to (nobody answered, busy, voicemail, wrong number). Such an
- * entry is a record that someone tried; it is not the lead getting in touch.
- * Anything a person typed themselves is never judged here.
+ * True for the timeline entry of a call in which the lead was not spoken to
+ * (nobody answered, busy, voicemail, wrong number). Such an entry is a record
+ * that someone tried; it is not the lead getting in touch.
+ *
+ * Two kinds of entry are recognised: one the dialler wrote ("Called +44…. No
+ * answer."), and one a person logged by hand with an outcome picked, which
+ * begins with that outcome ("No answer. …"). Free text a person typed is
+ * never judged.
  */
 export function isUnansweredCallEntry(description: string): boolean {
   const summary = String(description ?? "").split("\n")[0];
+  const outcomes = NOT_SPOKEN_TO.map((o) => `${OUTCOME_LABEL[o]}.`);
+  if (outcomes.some((sentence) => summary === sentence || summary.startsWith(`${sentence} `))) return true;
   if (!/^Called \+\d/.test(summary)) return false;
-  const sentences = [...Object.values(STATUS_SENTENCE), ...NOT_SPOKEN_TO.map((o) => `${OUTCOME_LABEL[o]}.`)];
-  return sentences.some((sentence) => summary.includes(` ${sentence}`));
+  return [...Object.values(STATUS_SENTENCE), ...outcomes].some((sentence) => summary.includes(` ${sentence}`));
 }
 
 /** GET /api/voice/setup */

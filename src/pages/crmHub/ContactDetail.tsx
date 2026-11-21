@@ -55,6 +55,8 @@ import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
 import { OwnerField } from '@/components/crmHub/OwnerField';
 import { UnqualifiedDialog, unqualifiedNote } from '@/components/crmHub/UnqualifiedDialog';
+import { localInputValue, loggedDescription, occurredAtFrom } from '@/lib/crmLoggedActivity';
+import { OUTCOME_LABEL, OUTCOMES, type CallOutcome } from '../../../api/_voice/shared/types';
 import { CallDialog } from '@/components/crmHub/CallDialog';
 import { CallRecording, recordedCallId } from '@/components/crmHub/CallRecording';
 import { useCalling } from '@/hooks/useCalling';
@@ -80,6 +82,9 @@ const NONE = '__none__';
 const SHORT_LIST = 5;
 
 type ManualStep = 'new' | 'contacted' | 'qualified' | 'unqualified';
+
+/** Select value standing in for "no deal" (Radix has no empty value). */
+const NO_DEAL = '__none__';
 
 /** The steps drawn in the bar, in order. "Unqualified" sits beside the bar. */
 const BAR_STEPS: LeadStep[] = ['new', 'contacted', 'qualified', 'deal', 'customer'];
@@ -290,6 +295,10 @@ export const CrmContactDetailPage: React.FC = () => {
   const unqualifiedReason = useRef('');
   const [logType, setLogType] = useState<ActivityType>('call');
   const [logBody, setLogBody] = useState('');
+  /** When it happened (it is often logged afterwards), how a call went, and the deal it was about. */
+  const [logWhen, setLogWhen] = useState('');
+  const [logOutcome, setLogOutcome] = useState<CallOutcome>('connected');
+  const [logDealId, setLogDealId] = useState('');
   const logFieldId = useId();
 
   // The lead's own workspace decides which pipeline and projects apply; an
@@ -400,19 +409,30 @@ export const CrmContactDetailPage: React.FC = () => {
   const openLog = (type: ActivityType) => {
     setLogType(type);
     setLogBody('');
+    setLogWhen(localInputValue(new Date()));
+    setLogOutcome('connected');
+    setLogDealId('');
     setShowLog(true);
   };
 
   const handleLog = async () => {
-    if (!orgId || !logBody.trim()) return;
+    const outcome = logType === 'call' ? logOutcome : null;
+    const description = loggedDescription(logType, outcome, logBody);
+    if (!orgId || !description) return;
     setBusy(true);
     try {
+      const now = new Date();
+      const occurredAt = occurredAtFrom(logWhen, now);
       await logActivity({
         organizationId: orgId,
         workspaceId: contact?.workspaceId ?? null,
         type: logType,
-        description: logBody.trim(),
+        description,
         contactId: id,
+        dealId: logDealId || null,
+        ...(outcome ? { metadata: { outcome } } : {}),
+        // Sent only when it was moved back in time, so "just now" stays the database's own clock.
+        ...(now.getTime() - occurredAt.getTime() > 60_000 ? { occurredAt } : {}),
       }, user?.userId ?? null);
       toast.success('Activity logged');
       setShowLog(false);
@@ -1008,6 +1028,42 @@ export const CrmContactDetailPage: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+            <div className={FIELD_ROW}>
+              <div className={FIELD}>
+                <Label htmlFor={`${logFieldId}-when`}>When</Label>
+                <Input
+                  id={`${logFieldId}-when`}
+                  type="datetime-local"
+                  value={logWhen}
+                  max={localInputValue(new Date())}
+                  onChange={(e) => setLogWhen(e.target.value)}
+                  disabled={busy}
+                />
+              </div>
+              {logType === 'call' && (
+                <div className={FIELD}>
+                  <Label htmlFor={`${logFieldId}-outcome`}>How did it go?</Label>
+                  <Select value={logOutcome} onValueChange={(v) => setLogOutcome(v as CallOutcome)}>
+                    <SelectTrigger id={`${logFieldId}-outcome`}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {OUTCOMES.map((o) => <SelectItem key={o} value={o}>{OUTCOME_LABEL[o]}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            {deals.length > 0 && (
+              <div className={FIELD}>
+                <Label htmlFor={`${logFieldId}-deal`}>About which deal</Label>
+                <Select value={logDealId || NO_DEAL} onValueChange={(v) => setLogDealId(v === NO_DEAL ? '' : v)}>
+                  <SelectTrigger id={`${logFieldId}-deal`}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_DEAL}>No deal, just the lead</SelectItem>
+                    {deals.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className={FIELD}>
               <Label htmlFor={`${logFieldId}-body`}>What happened</Label>
               <Textarea
@@ -1015,13 +1071,15 @@ export const CrmContactDetailPage: React.FC = () => {
                 rows={3}
                 value={logBody}
                 onChange={(e) => setLogBody(e.target.value)}
+                placeholder={logType === 'call' ? 'Optional for a call: the outcome is already noted' : undefined}
                 disabled={busy}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowLog(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={handleLog} disabled={busy || !logBody.trim()}>
+            {/* A call needs no words: "No answer" says it all. Anything else needs something written. */}
+            <Button onClick={handleLog} disabled={busy || (logType !== 'call' && !logBody.trim())}>
               {busy && <Loader2 className="animate-spin" aria-hidden />}Log
             </Button>
           </DialogFooter>

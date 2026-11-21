@@ -329,6 +329,8 @@ export interface CreateActivityInput {
   dealId?: string | null;
   taskId?: string | null;
   metadata?: Record<string, unknown>;
+  /** When it happened, for something logged afterwards. Now when omitted. */
+  occurredAt?: Date | null;
 }
 
 export interface CrmNote {

@@ -81,6 +81,8 @@ export const logActivity = async (
       deal_id: input.dealId ?? null,
       task_id: input.taskId ?? null,
       metadata: input.metadata ?? {},
+      // Only when it was logged afterwards; otherwise the database stamps "now".
+      ...(input.occurredAt ? { created_at: input.occurredAt.toISOString() } : {}),
     })
     .select()
     .single();
