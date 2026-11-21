@@ -22,7 +22,7 @@ const NOW = new Date("2026-11-21T10:00:00Z");
 
 const form = (over: Partial<StoredForm> = {}): StoredForm => ({
   id: FORM, organizationId: ORG, workspaceId: WS, name: "Contact us", enabled: true, askPhone: true, askCompany: true, askMessage: true,
-  heading: "Talk to us", intro: "We answer within a day.", buttonLabel: "Send", thankYou: "Thank you. We will be in touch soon.", source: "Website form", ownerId: SALES, ...over,
+  heading: "Talk to us", intro: "We answer within a day.", buttonLabel: "Send", thankYou: "Thank you. We will be in touch soon.", source: "Website form", ownerId: SALES, shareWith: [], shareNext: 0, ...over,
 });
 
 function world(over: Partial<StoredForm> = {}) {
@@ -35,6 +35,8 @@ function world(over: Partial<StoredForm> = {}) {
     submissions: [] as Array<{ sender: string; result: string; contactId: string | null; at: string }>,
     notices: [] as Array<{ to: string[]; title: string; message: string; link: string }>,
     existing: new Map<string, { id: string; ownerId: string | null }>(),
+    active: [OWNER, ADMIN, SALES] as string[],
+    turnFails: false,
   };
   const store: LeadFormStore = {
     form: async (id) => (state.form && id === state.form.id ? state.form : null),
@@ -56,6 +58,11 @@ function world(over: Partial<StoredForm> = {}) {
     },
     note: async (lead, kind, description) => void state.notes.push({ leadId: lead.id, kind, description }),
     admins: async () => [OWNER, ADMIN],
+    activeMembers: async () => state.active,
+    takeTurn: async (_id, from) => {
+      if (state.turnFails) throw new Error("database down");
+      if (state.form && state.form.shareNext === from) state.form = { ...state.form, shareNext: from + 1 };
+    },
     notify: async (to, title, message, link) => void state.notices.push({ to, title, message, link }),
   };
   const deps: LeadFormDeps = { store, now: () => state.now };
@@ -133,6 +140,53 @@ describe("web form: a submission becomes a lead", () => {
   it("splits a name into first and last", () => {
     expect(splitName("Elena Maria Rossi")).toEqual({ firstName: "Elena", lastName: "Maria Rossi" });
     expect(splitName("Cher")).toEqual({ firstName: "Cher", lastName: null });
+  });
+});
+
+describe("web form: sharing the leads between people", () => {
+  const person = (n: number) => ({ name: `Visitor ${n}`, email: `visitor${n}@example.com` });
+  const owners = async (w: ReturnType<typeof world>, count: number) => {
+    for (let n = 1; n <= count; n += 1) await w.send(person(n), `sender-${n}`);
+    return w.state.leads.map((l) => l.ownerId);
+  };
+
+  it("gives the leads to the people in turn, and tells each one about their own", async () => {
+    const w = world({ shareWith: [SALES, ADMIN], ownerId: OWNER });
+    expect(await owners(w, 5)).toEqual([SALES, ADMIN, SALES, ADMIN, SALES]);
+    expect(w.state.notices.map((n) => n.to)).toEqual([[SALES], [ADMIN], [SALES], [ADMIN], [SALES]]);
+  });
+
+  it("passes over somebody who has left, and falls back to the form's owner when everybody has", async () => {
+    const w = world({ shareWith: [SALES, "0c000000-0000-4000-8000-0000000000aa", ADMIN], ownerId: OWNER });
+    expect(await owners(w, 4)).toEqual([SALES, ADMIN, SALES, ADMIN]);
+
+    const gone = world({ shareWith: [SALES], ownerId: OWNER });
+    gone.state.active = [OWNER, ADMIN];
+    expect(await owners(gone, 2)).toEqual([OWNER, OWNER]);
+  });
+
+  it("keeps a form that is not shared exactly as it was", async () => {
+    const w = world();
+    expect(await owners(w, 2)).toEqual([SALES, SALES]);
+    expect(w.state.form?.shareNext).toBe(0);
+  });
+
+  it("still takes the lead when the turn cannot be counted", async () => {
+    const w = world({ shareWith: [SALES, ADMIN] });
+    w.state.turnFails = true;
+    expect((await w.send(person(1))).status).toBe(200);
+    expect(w.state.leads).toHaveLength(1);
+    expect(w.state.leads[0].ownerId).toBe(SALES);
+  });
+});
+
+describe("migration 196", () => {
+  const flat = readFileSync(resolve(process.cwd(), "supabase/migrations/196_crm_lead_form_sharing.sql"), "utf8").split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").replace(/\s+/g, " ");
+
+  it("adds two columns that leave every existing form as it was, and can be run twice", () => {
+    expect(flat).toContain("alter table public.crm_lead_forms add column if not exists share_with uuid[] not null default '{}'");
+    expect(flat).toContain("alter table public.crm_lead_forms add column if not exists share_next integer not null default 0");
+    expect(flat).not.toMatch(/drop |create table/i);
   });
 });
 

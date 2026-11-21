@@ -114,14 +114,36 @@ async function submit(d: LeadFormDeps, r: FormRequest): Promise<FormResult> {
     return { status: 200, json: reply };
   }
 
-  const companyId = company ? await d.store.companyByName(form.organizationId, form.workspaceId, company, form.ownerId) : null;
-  const leadId = await d.store.insertLead({ ...scope, ownerId: form.ownerId, ...splitName(name), email, phone: phone || null, companyId, source: form.source });
+  const ownerId = await ownerFor(d, form);
+  const companyId = company ? await d.store.companyByName(form.organizationId, form.workspaceId, company, ownerId) : null;
+  const leadId = await d.store.insertLead({ ...scope, ownerId, ...splitName(name), email, phone: phone || null, companyId, source: form.source });
   // The lead exists from here on; nothing after this may make the visitor think it failed.
   await d.store.recordSubmission(form.id, r.senderHash, "lead", leadId).catch(() => undefined);
   await d.store.note({ id: leadId, ...scope }, "contact_created", `Came in through the form “${form.name}”.`, form.id).catch(() => undefined);
   if (message) await d.store.note({ id: leadId, ...scope }, "note", `Wrote in the form:\n${message}`, form.id).catch(() => undefined);
-  await tell(d, form, form.ownerId, "New lead from your form", `${name} (${email}) filled in “${form.name}”.`, leadId);
+  await tell(d, form, ownerId, "New lead from your form", `${name} (${email}) filled in “${form.name}”.`, leadId);
   return { status: 200, json: reply };
+}
+
+/**
+ * Who gets this lead. A form shared between people gives its leads to them in
+ * turn, passing over anyone who is no longer an active member. A form that is
+ * not shared, or whose people have all left, gives the lead to its one owner
+ * (or to nobody). Never fails the form: when the turn cannot be worked out the
+ * lead still comes in, to the form's owner.
+ */
+export async function ownerFor(d: LeadFormDeps, form: StoredForm): Promise<string | null> {
+  if (form.shareWith.length === 0) return form.ownerId;
+  try {
+    const active = new Set(await d.store.activeMembers(form.organizationId));
+    const people = form.shareWith.filter((id) => active.has(id));
+    if (people.length === 0) return form.ownerId;
+    const owner = people[form.shareNext % people.length];
+    await d.store.takeTurn(form.id, form.shareNext).catch(() => undefined);
+    return owner;
+  } catch {
+    return form.ownerId;
+  }
 }
 
 /** The bell: the person the lead belongs to, or the owner and admins when it belongs to nobody. Never fails the form. */

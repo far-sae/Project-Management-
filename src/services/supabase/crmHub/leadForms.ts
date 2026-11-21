@@ -20,12 +20,14 @@ export interface LeadForm {
   thankYou: string;
   source: string;
   ownerId: string | null;
+  /** The people who take the leads in turn. Empty: every lead goes to `ownerId`. */
+  shareWith: string[];
   createdAt: Date;
 }
 
 export type LeadFormInput = Pick<
   LeadForm,
-  'name' | 'enabled' | 'askPhone' | 'askCompany' | 'askMessage' | 'heading' | 'intro' | 'buttonLabel' | 'thankYou' | 'source' | 'ownerId'
+  'name' | 'enabled' | 'askPhone' | 'askCompany' | 'askMessage' | 'heading' | 'intro' | 'buttonLabel' | 'thankYou' | 'source' | 'ownerId' | 'shareWith'
 >;
 
 export const NEW_LEAD_FORM: LeadFormInput = {
@@ -40,8 +42,10 @@ export const NEW_LEAD_FORM: LeadFormInput = {
   thankYou: 'Thank you. We will be in touch soon.',
   source: 'Website form',
   ownerId: null,
+  shareWith: [],
 };
 
+export const SHARING_NOT_SET_UP_MESSAGE = 'Sharing leads between people is not set up yet: run supabase/migrations/196_crm_lead_form_sharing.sql in the Supabase SQL editor.';
 export const FORMS_NOT_SET_UP_MESSAGE = 'Web forms are not set up yet: run supabase/migrations/192_crm_lead_forms.sql in the Supabase SQL editor.';
 
 type Row = Record<string, unknown>;
@@ -61,10 +65,17 @@ const formFrom = (r: Row): LeadForm => ({
   thankYou: String(r.thank_you ?? ''),
   source: String(r.source ?? 'Website form'),
   ownerId: typeof r.owner_id === 'string' ? r.owner_id : null,
+  shareWith: Array.isArray(r.share_with) ? r.share_with.filter((id): id is string => typeof id === 'string') : [],
   createdAt: new Date(String(r.created_at)),
 });
 
-const rowOf = (input: LeadFormInput): Row => ({
+/**
+ * `hadSharing`: the form was shared before this save. The sharing column is
+ * written only when there is something to say (people chosen now, or people to
+ * take away), so a form without sharing saves before migration 196 is run.
+ */
+const rowOf = (input: LeadFormInput, hadSharing = false): Row => ({
+  ...(input.shareWith.length > 0 || hadSharing ? { share_with: [...new Set(input.shareWith)] } : {}),
   name: input.name.trim(),
   enabled: input.enabled,
   ask_phone: input.askPhone,
@@ -80,6 +91,7 @@ const rowOf = (input: LeadFormInput): Row => ({
 
 /** The database's own words for "that table is not there" become the sentence that says what to run. */
 const friendly = (error: { code?: string; message?: string }): Error => {
+  if ((error.code === 'PGRST204' || error.code === '42703') && /share_with/.test(error.message ?? '')) return new Error(SHARING_NOT_SET_UP_MESSAGE);
   const missing = error.code === '42P01' || error.code === 'PGRST205' || /crm_lead_forms/.test(error.message ?? '') && /does not exist|schema cache/.test(error.message ?? '');
   return new Error(missing ? FORMS_NOT_SET_UP_MESSAGE : error.message || 'The form could not be saved.');
 };
@@ -100,8 +112,8 @@ export const createLeadForm = async (organizationId: string, workspaceId: string
   return formFrom(data as Row);
 };
 
-export const updateLeadForm = async (id: string, input: LeadFormInput): Promise<LeadForm> => {
-  const { data, error } = await supabase.from('crm_lead_forms').update({ ...rowOf(input), updated_at: new Date().toISOString() }).eq('id', id).select().single();
+export const updateLeadForm = async (id: string, input: LeadFormInput, hadSharing = false): Promise<LeadForm> => {
+  const { data, error } = await supabase.from('crm_lead_forms').update({ ...rowOf(input, hadSharing), updated_at: new Date().toISOString() }).eq('id', id).select().single();
   if (error) throw friendly(error);
   return formFrom(data as Row);
 };

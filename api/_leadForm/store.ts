@@ -21,6 +21,10 @@ export type StoredForm = {
   thankYou: string;
   source: string;
   ownerId: string | null;
+  /** The people who take the leads in turn. Empty: every lead goes to `ownerId`. */
+  shareWith: string[];
+  /** How many leads have been shared out so far, which says whose turn it is. */
+  shareNext: number;
 };
 
 export type NewLead = {
@@ -54,6 +58,10 @@ export interface LeadFormStore {
   /** The organisation's owner and admins, for the "new lead" notice when the form gives its leads to nobody. */
   admins(organizationId: string): Promise<string[]>;
   notify(userIds: string[], title: string, message: string, link: string): Promise<void>;
+  /** The organisation's active members who can own a lead (not viewers). */
+  activeMembers(organizationId: string): Promise<string[]>;
+  /** Moves the turn on by one. Does nothing when somebody else moved it first. */
+  takeTurn(formId: string, from: number): Promise<void>;
 }
 
 type Row = Record<string, any>;
@@ -73,6 +81,9 @@ const formFrom = (r: Row): StoredForm => ({
   thankYou: String(r.thank_you ?? ""),
   source: String(r.source ?? "Website form"),
   ownerId: r.owner_id ?? null,
+  // From migration 196. Absent until it is run: the form then has its one owner, as before.
+  shareWith: Array.isArray(r.share_with) ? r.share_with.filter((id: unknown): id is string => typeof id === "string") : [],
+  shareNext: Number.isInteger(r.share_next) && r.share_next >= 0 ? r.share_next : 0,
 });
 
 /** `%` and `_` mean "anything" to ilike; an address or a name must be matched as written. */
@@ -167,6 +178,23 @@ export function supabaseStore(sb: SupabaseClient): LeadFormStore {
         if (m && typeof m.userId === "string" && active && (m.role === "owner" || m.role === "admin")) ids.add(m.userId);
       }
       return [...ids];
+    },
+
+    async activeMembers(organizationId) {
+      const o = must(await sb.from("organizations").select("owner_id, members").eq("organization_id", organizationId).maybeSingle()) as Row | null;
+      if (!o) return [];
+      const ids = new Set<string>();
+      if (typeof o.owner_id === "string") ids.add(o.owner_id);
+      for (const m of Array.isArray(o.members) ? (o.members as Row[]) : []) {
+        const active = m?.status === undefined || m?.status === null || m?.status === "active";
+        if (m && typeof m.userId === "string" && active && m.role !== "viewer") ids.add(m.userId);
+      }
+      return [...ids];
+    },
+
+    async takeTurn(formId, from) {
+      // Only when nobody moved it in between: two leads at the same moment then share one turn, which does no harm.
+      must(await sb.from("crm_lead_forms").update({ share_next: from + 1 }).eq("id", formId).eq("share_next", from));
     },
 
     async notify(userIds, title, message, link) {

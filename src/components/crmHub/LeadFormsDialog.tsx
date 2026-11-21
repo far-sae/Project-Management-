@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useState } from 'react';
 import { ArrowLeft, Copy, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
+import { useOrganization } from '@/context/OrganizationContext';
 import { StatusPill } from '@/components/common/StatusPill';
 import { OwnerField } from '@/components/crmHub/OwnerField';
 import { Button } from '@/components/ui/button';
@@ -32,7 +33,7 @@ interface Props {
 
 const inputOf = (form: LeadForm): LeadFormInput => ({
   name: form.name, enabled: form.enabled, askPhone: form.askPhone, askCompany: form.askCompany, askMessage: form.askMessage,
-  heading: form.heading, intro: form.intro, buttonLabel: form.buttonLabel, thankYou: form.thankYou, source: form.source, ownerId: form.ownerId,
+  heading: form.heading, intro: form.intro, buttonLabel: form.buttonLabel, thankYou: form.thankYou, source: form.source, ownerId: form.ownerId, shareWith: form.shareWith,
 });
 
 const copy = async (text: string, done: string) => {
@@ -47,6 +48,9 @@ const copy = async (text: string, done: string) => {
 export const LeadFormsDialog: React.FC<Props> = ({ open, onOpenChange, organizationId, workspaceId }) => {
   const fieldId = useId();
   const { user } = useAuth();
+  const { organization } = useOrganization();
+  /** People a lead can be given to: active members who are not viewers. */
+  const team = (organization?.members ?? []).filter((m) => (!m.status || m.status === 'active') && m.role !== 'viewer');
   const [forms, setForms] = useState<LeadForm[]>([]);
   const [loading, setLoading] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -90,7 +94,7 @@ export const LeadFormsDialog: React.FC<Props> = ({ open, onOpenChange, organizat
     try {
       const saved = editing === 'new'
         ? await createLeadForm(organizationId, workspaceId, draft, user?.userId ?? null)
-        : await updateLeadForm(editing.id, draft);
+        : await updateLeadForm(editing.id, draft, editing.shareWith.length > 0);
       toast.success(editing === 'new' ? 'Form created. Copy its link below.' : 'Form saved.');
       await load();
       // Stay on the form, so the link and the code are right there after creating it.
@@ -234,9 +238,38 @@ export const LeadFormsDialog: React.FC<Props> = ({ open, onOpenChange, organizat
               <Input id={`${fieldId}-thanks`} maxLength={400} value={draft.thankYou} onChange={(e) => set('thankYou', e.target.value)} disabled={busy} />
             </div>
             <div>
-              <OwnerField id={`${fieldId}-owner`} value={draft.ownerId ?? ''} onChange={(v) => set('ownerId', v || null)} disabled={busy} />
-              <p className="mt-1 text-xs text-muted-foreground">Who gets the leads from this form. With nobody chosen, the owner and admins are told about each one.</p>
+              <OwnerField id={`${fieldId}-owner`} value={draft.ownerId ?? ''} onChange={(v) => set('ownerId', v || null)} disabled={busy || draft.shareWith.length > 0} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {draft.shareWith.length > 0
+                  ? 'Not used while the leads are shared between the people ticked below.'
+                  : 'Who gets the leads from this form. With nobody chosen, the owner and admins are told about each one.'}
+              </p>
             </div>
+            {team.length > 1 && (
+              <fieldset className="flex flex-col gap-1.5" disabled={busy}>
+                <legend className="text-sm font-medium text-foreground">Or share the leads between</legend>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {team.map((member) => (
+                    <label key={member.userId} className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary"
+                        checked={draft.shareWith.includes(member.userId)}
+                        onChange={(e) => set('shareWith', e.target.checked ? [...draft.shareWith, member.userId] : draft.shareWith.filter((id) => id !== member.userId))}
+                      />
+                      {member.displayName || member.email}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {draft.shareWith.length > 1
+                    ? 'Each new lead goes to the next of these people, in turn.'
+                    : draft.shareWith.length === 1
+                      ? 'Tick one more person to share the leads in turn.'
+                      : 'Tick two or more people and each new lead goes to the next of them, in turn.'}
+                </p>
+              </fieldset>
+            )}
 
             {problem && <p role="alert" className="text-sm text-destructive">{problem}</p>}
 

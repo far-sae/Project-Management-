@@ -13,10 +13,21 @@ const h = vi.hoisted(() => ({
   deleteLeadForm: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   auth: { user: { userId: 'u1' } },
+  org: {
+    organization: {
+      organizationId: 'org-1',
+      members: [
+        { userId: 'u1', displayName: 'Sam', email: 'sam@example.com', role: 'owner', status: 'active' },
+        { userId: 'u2', displayName: 'Dana', email: 'dana@example.com', role: 'member', status: 'active' },
+        { userId: 'u3', displayName: 'Viewer Vic', email: 'vic@example.com', role: 'viewer', status: 'active' },
+      ],
+    },
+  },
 }));
 
 vi.mock('sonner', () => ({ toast: h.toast }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => h.auth }));
+vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => h.org }));
 vi.mock('@/components/crmHub/OwnerField', () => ({
   OwnerField: ({ value }: { value: string }) => <div data-testid="owner">{value || 'nobody'}</div>,
 }));
@@ -111,7 +122,7 @@ describe('web form page', () => {
 describe('web forms in the CRM', () => {
   const stored = (over: Partial<LeadForm> = {}): LeadForm => ({
     id: FORM_ID, organizationId: 'org-1', workspaceId: 'ws-1', name: 'Contact form', enabled: true, askPhone: true, askCompany: true, askMessage: true,
-    heading: 'Get in touch', intro: '', buttonLabel: 'Send', thankYou: 'Thank you. We will be in touch soon.', source: 'Website form', ownerId: null,
+    heading: 'Get in touch', intro: '', buttonLabel: 'Send', thankYou: 'Thank you. We will be in touch soon.', source: 'Website form', ownerId: null, shareWith: [],
     createdAt: new Date('2026-11-21T10:00:00Z'), ...over,
   });
   const show = () => render(<LeadFormsDialog open onOpenChange={() => undefined} organizationId="org-1" workspaceId="ws-1" />);
@@ -141,6 +152,32 @@ describe('web forms in the CRM', () => {
     expect((screen.getByLabelText('Code for your website') as HTMLTextAreaElement).value).toContain(`<iframe src="${window.location.origin}/f/${FORM_ID}"`);
   });
 
+  it('shares the leads between the people who are ticked, and never offers a viewer', async () => {
+    h.createLeadForm.mockResolvedValue(stored({ shareWith: ['u1', 'u2'] }));
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'New form' }));
+    expect(screen.queryByLabelText('Viewer Vic')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Sam'));
+    expect(screen.getByText('Tick one more person to share the leads in turn.')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Dana'));
+    expect(screen.getByText('Each new lead goes to the next of these people, in turn.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Create form' }));
+    await waitFor(() => expect(h.createLeadForm).toHaveBeenCalled());
+    expect(h.createLeadForm.mock.calls[0][2]).toMatchObject({ shareWith: ['u1', 'u2'] });
+  });
+
+  it('tells the save when a shared form stops being shared, so the people are taken away', async () => {
+    h.listLeadForms.mockResolvedValue([stored({ shareWith: ['u1', 'u2'] })]);
+    h.updateLeadForm.mockImplementation(async (_id: string, input: Partial<LeadForm>) => stored({ ...input }));
+    show();
+    fireEvent.click(within((await screen.findAllByRole('listitem'))[0]).getByRole('button'));
+    fireEvent.click(screen.getByLabelText('Sam'));
+    fireEvent.click(screen.getByLabelText('Dana'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.updateLeadForm).toHaveBeenCalled());
+    expect(h.updateLeadForm.mock.calls[0]).toMatchObject([FORM_ID, { shareWith: [] }, true]);
+  });
+
   it('lists the forms with whether they are on, and saves a change', async () => {
     h.listLeadForms.mockResolvedValue([stored(), stored({ id: 'f2', name: 'Old campaign', enabled: false })]);
     h.updateLeadForm.mockImplementation(async (_id: string, input: Partial<LeadForm>) => stored({ ...input }));
@@ -152,7 +189,7 @@ describe('web forms in the CRM', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Form is switched on' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(h.updateLeadForm).toHaveBeenCalled());
-    expect(h.updateLeadForm.mock.calls[0]).toMatchObject([FORM_ID, { heading: 'Ask us anything', enabled: false }]);
+    expect(h.updateLeadForm.mock.calls[0]).toMatchObject([FORM_ID, { heading: 'Ask us anything', enabled: false }, false]);
   });
 
   it('deletes a form only after a second press', async () => {
