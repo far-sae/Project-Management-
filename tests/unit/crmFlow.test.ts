@@ -7,6 +7,8 @@ import {
   handoffDescription,
   handoffProjectName,
   leadName,
+  leadPatchAfterDeals,
+  leadStep,
   probabilityAfterMove,
   weightedDealValue,
 } from '@/lib/crmFlow';
@@ -129,5 +131,40 @@ describe('handing a won deal to project management', () => {
     expect(tasks[0].title).toBe('Kick-off call with Ana Silva');
     expect(tasks.every((t) => t.dueInDays >= 0 && ['low', 'medium', 'high'].includes(t.priority))).toBe(true);
     expect(defaultHandoffTasks(null)[0].title).toBe('Kick-off call with the customer');
+  });
+});
+
+describe('a lead follows its deals', () => {
+  const lead = (lifecycleStage: string, leadStatus: string) => ({ lifecycleStage, leadStatus });
+
+  it('becomes a Customer as soon as one deal is won, with or without a project', () => {
+    expect(leadPatchAfterDeals(lead('opportunity', 'open_deal'), ['won'])).toEqual({ lifecycleStage: 'customer', leadStatus: 'connected' });
+    expect(leadPatchAfterDeals(lead('opportunity', 'open_deal'), ['lost', 'open', 'won'])).toEqual({ lifecycleStage: 'customer', leadStatus: 'connected' });
+    expect(leadStep({ lifecycleStage: 'customer', leadStatus: 'connected' })).toBe('customer');
+    // Already there: nothing to save.
+    expect(leadPatchAfterDeals(lead('customer', 'connected'), ['won'])).toBeNull();
+  });
+
+  it('goes back to Qualified when its only deal is lost, so it no longer looks active', () => {
+    const patch = leadPatchAfterDeals(lead('opportunity', 'open_deal'), ['lost']);
+    expect(patch).toEqual({ lifecycleStage: 'sales_qualified_lead', leadStatus: 'connected' });
+    expect(leadStep(patch!)).toBe('qualified');
+    expect(leadPatchAfterDeals(lead('opportunity', 'open_deal'), ['lost', 'lost'])).toEqual(patch);
+  });
+
+  it('keeps "Deal open" while another deal is still open', () => {
+    expect(leadPatchAfterDeals(lead('opportunity', 'open_deal'), ['lost', 'open'])).toBeNull();
+  });
+
+  it('follows a deal that is re-opened or un-won', () => {
+    expect(leadPatchAfterDeals(lead('customer', 'connected'), ['open'])).toEqual({ lifecycleStage: 'opportunity', leadStatus: 'open_deal' });
+    expect(leadPatchAfterDeals(lead('sales_qualified_lead', 'connected'), ['open'])).toEqual({ lifecycleStage: 'opportunity', leadStatus: 'open_deal' });
+    expect(leadPatchAfterDeals(lead('customer', 'connected'), ['lost'])).toEqual({ lifecycleStage: 'sales_qualified_lead', leadStatus: 'connected' });
+  });
+
+  it('leaves alone a lead that has no deal to follow', () => {
+    expect(leadPatchAfterDeals(lead('lead', 'new'), [])).toBeNull();
+    expect(leadPatchAfterDeals(lead('lead', 'unqualified'), ['lost'])).toBeNull();
+    expect(leadPatchAfterDeals(lead('sales_qualified_lead', 'connected'), ['lost'])).toBeNull();
   });
 });

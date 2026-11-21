@@ -1,3 +1,4 @@
+import { leadPatchAfterDeals } from '@/lib/crmFlow';
 import { supabase } from '../config';
 import type { CrmDeal, CreateDealInput, UpdateDealInput, DealStatus } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
@@ -186,8 +187,37 @@ export interface MoveDealExtras {
 }
 
 /**
+ * Puts the lead on the step its deals now say: Customer once one is won, Deal
+ * open while one is open, back to Qualified when every one is lost. Called
+ * after a deal changes status. It never throws: the deal has already moved,
+ * and a lead left one step behind is better than a move that looks failed.
+ */
+export const syncLeadStepWithDeals = async (contactId: string | null): Promise<void> => {
+  if (!contactId) return;
+  try {
+    const [lead, deals] = await Promise.all([
+      supabase.from('crm_contacts').select('lifecycle_stage, lead_status').eq('id', contactId).maybeSingle(),
+      supabase.from('crm_deals').select('status').eq('contact_id', contactId),
+    ]);
+    if (lead.error || deals.error || !lead.data) return;
+    const patch = leadPatchAfterDeals(
+      { lifecycleStage: String(lead.data.lifecycle_stage ?? ''), leadStatus: String(lead.data.lead_status ?? '') },
+      ((deals.data ?? []) as Array<{ status: DealStatus }>).map((d) => d.status),
+    );
+    if (!patch) return;
+    await supabase
+      .from('crm_contacts')
+      .update({ lifecycle_stage: patch.lifecycleStage, lead_status: patch.leadStatus })
+      .eq('id', contactId);
+  } catch (err) {
+    console.warn('[crm] could not update the lead after its deal moved', err);
+  }
+};
+
+/**
  * Move a deal to a new stage. The status follows the stage (open / won /
  * lost); closing a deal stamps the close date and, when lost, the reason.
+ * The lead behind the deal then follows: see syncLeadStepWithDeals.
  */
 export const moveDealToStage = async (
   id: string,
@@ -235,6 +265,7 @@ export const moveDealToStage = async (
     },
     extras.actorId ?? deal.ownerId,
   );
+  await syncLeadStepWithDeals(deal.contactId);
   return deal;
 };
 

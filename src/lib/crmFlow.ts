@@ -136,7 +136,7 @@ export type FlowTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | '
 export const LEAD_STEPS: Record<LeadStep, { label: string; tone: FlowTone; hint: string }> = {
   new: { label: 'New', tone: 'neutral', hint: 'Nobody has been in touch yet.' },
   contacted: { label: 'Contacted', tone: 'warning', hint: 'In conversation; not yet qualified.' },
-  qualified: { label: 'Qualified', tone: 'info', hint: 'A real opportunity. Convert it to a deal.' },
+  qualified: { label: 'Qualified', tone: 'info', hint: 'A real opportunity with no open deal. Convert it to a deal.' },
   deal: { label: 'Deal open', tone: 'info', hint: 'Has a deal in the pipeline.' },
   customer: { label: 'Customer', tone: 'success', hint: 'A deal was won.' },
   unqualified: { label: 'Unqualified', tone: 'muted', hint: 'Not a fit, or not now.' },
@@ -153,6 +153,36 @@ export function leadStep(lead: { lifecycleStage: string; leadStatus: string }): 
     return 'qualified';
   }
   return lead.leadStatus === 'new' ? 'new' : 'contacted';
+}
+
+/**
+ * What to save on a lead after one of its deals was won, lost or re-opened,
+ * given the status of every deal the lead has now. Null means the lead is
+ * already where it should be, or is not ours to move.
+ *
+ *   a won deal            the lead is a Customer
+ *   no won, an open deal  the lead has a Deal open
+ *   only lost deals       a lead that was on "Deal open" or "Customer" goes
+ *                         back to Qualified, so it can be worked and converted
+ *                         again; it is not marked unqualified, because losing
+ *                         one deal does not make the person a bad fit
+ *
+ * A lead someone marked Unqualified by hand is left alone unless it has a won
+ * or an open deal, which says more than the mark does.
+ */
+export function leadPatchAfterDeals(
+  lead: { lifecycleStage: string; leadStatus: string },
+  dealStatuses: FlowDealStatus[],
+): { lifecycleStage: 'customer' | 'opportunity' | 'sales_qualified_lead'; leadStatus: 'open_deal' | 'connected' } | null {
+  const step = leadStep(lead);
+  if (dealStatuses.includes('won')) {
+    return step === 'customer' ? null : { lifecycleStage: 'customer', leadStatus: 'connected' };
+  }
+  if (dealStatuses.includes('open')) {
+    return step === 'deal' ? null : { lifecycleStage: 'opportunity', leadStatus: 'open_deal' };
+  }
+  if (step === 'deal' || step === 'customer') return { lifecycleStage: 'sales_qualified_lead', leadStatus: 'connected' };
+  return null;
 }
 
 /** What to save on the lead when someone picks a step by hand. */
