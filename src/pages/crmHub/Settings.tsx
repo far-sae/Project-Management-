@@ -12,6 +12,7 @@ import {
 } from '@/services/supabase/crmHub/dealStages';
 import type { CrmDealStage, DealStatus } from '@/types/crmHub';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SetupCheck } from '@/components/crmHub/SetupCheck';
 import { StatusPill } from '@/components/common/StatusPill';
 import type { StatusTone } from '@/components/common/StatusPill';
 import { Button } from '@/components/ui/button';
@@ -63,11 +64,13 @@ export const CrmSettingsPage: React.FC = () => {
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="pipeline">Pipeline stages</TabsTrigger>
               <TabsTrigger value="workspace">Workspace</TabsTrigger>
+              <TabsTrigger value="setup">Set-up check</TabsTrigger>
             </TabsList>
           </div>
           <TabsContent value="general"><GeneralSettings /></TabsContent>
           <TabsContent value="pipeline"><PipelineSettings /></TabsContent>
           <TabsContent value="workspace"><WorkspaceSettings /></TabsContent>
+          <TabsContent value="setup"><SetupCheck /></TabsContent>
         </Tabs>
       </div>
     </main>
