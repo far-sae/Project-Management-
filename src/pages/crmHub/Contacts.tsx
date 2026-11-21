@@ -1,7 +1,8 @@
+import { LeadFormsDialog } from '@/components/crmHub/LeadFormsDialog';
 import { findLeadByEmail } from '@/lib/crmDuplicates';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Loader2, Download, Upload, MoreHorizontal } from 'lucide-react';
+import { Plus, Search, Loader2, Download, Upload, MoreHorizontal, FileInput } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -66,6 +67,7 @@ export const CrmContactsPage: React.FC = () => {
   const [view, setView] = useState<LeadOwnerView>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showForms, setShowForms] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [converting, setConverting] = useState<CrmContact | null>(null);
   const [busy, setBusy] = useState(false);
@@ -268,6 +270,10 @@ export const CrmContactsPage: React.FC = () => {
           description="People you might do business with. Qualify a lead, then convert it to a deal."
           actions={
             <>
+              {/* A form on your website, so leads come in by themselves. */}
+              <Button variant="outline" onClick={() => setShowForms(true)} disabled={!organizationId || !workspaceId}>
+                <FileInput /> Web form
+              </Button>
               <Button variant="outline" onClick={() => setShowImport(true)}>
                 <Upload /> Import
               </Button>
@@ -572,6 +578,10 @@ export const CrmContactsPage: React.FC = () => {
         resource="contacts"
         onImported={refresh}
       />
+
+      {organizationId && workspaceId && (
+        <LeadFormsDialog open={showForms} onOpenChange={setShowForms} organizationId={organizationId} workspaceId={workspaceId} />
+      )}
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>

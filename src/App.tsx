@@ -66,6 +66,7 @@ const AutomationRunPage = React.lazy(() => import('@/pages/automation/RunDetail'
 const AutomationRulesPage = React.lazy(() => import('@/pages/automation/Rules').then((m) => ({ default: m.AutomationRulesPage })));
 const DocumentSettingsPage = React.lazy(() => import('@/pages/signroom/DocumentSettings').then((m) => ({ default: m.DocumentSettingsPage })));
 // Public pages a customer opens from an emailed link: no sign-in, no sidebar.
+const LeadFormPage = React.lazy(() => import('@/pages/LeadFormPage').then((m) => ({ default: m.LeadFormPage })));
 const GuestSignPage = React.lazy(() => import('@/pages/signroom/GuestSign').then((m) => ({ default: m.GuestSignPage })));
 const InvoiceGuestPage = React.lazy(() => import('@/pages/signroom/InvoiceGuest').then((m) => ({ default: m.InvoiceGuestPage })));
 const EmailPage = React.lazy(() => import('@/pages/Email').then((m) => ({ default: m.Email })));
@@ -187,6 +188,8 @@ const router = createBrowserRouter(
         { path: '/accept-invite/:token', element: lazyRoute(<AcceptInvite />) },
         { path: '/join/:token', element: lazyRoute(<GuestJoin />) },
         { path: '/sign', element: lazyRoute(<GuestSignPage />) },
+        // A web form's own page: public, for visitors who are not signed in.
+        { path: '/f/:formId', element: lazyRoute(<LeadFormPage />) },
         { path: '/invoice', element: lazyRoute(<InvoiceGuestPage />) },
         { path: '/auth/google', element: lazyRoute(<GoogleCallback />) },
         { path: '/', element: lazyRoute(<LandingPage />) },
