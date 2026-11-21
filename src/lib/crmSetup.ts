@@ -33,6 +33,7 @@ export const SETUP_PARTS: SetupPart[] = [
   { id: 'forms', name: 'Web forms', gives: 'A form for your website that makes a lead by itself.', file: '192_crm_lead_forms.sql', probe: { kind: 'table', table: 'crm_lead_forms' } },
   { id: 'merge', name: 'Merging duplicate leads', gives: 'Two leads with the same email become one.', file: '193_crm_merge_leads.sql', probe: { kind: 'function', name: 'crm_merge_contacts', args: { p_keep: null, p_drop: null } } },
   { id: 'followUps', name: 'Follow-up types and repeats', gives: 'A follow-up can be a call, an email or a meeting, and can repeat.', file: '194_crm_follow_up_kinds.sql', probe: { kind: 'column', table: 'crm_tasks', column: 'kind' } },
+  { id: 'erase', name: 'Erasing a person', gives: 'Removes everything about one person when they ask for it.', file: '195_crm_erase_person.sql', probe: { kind: 'function', name: 'crm_erase_person', args: { p_contact: null } } },
 ];
 
 /** The database's codes for "there is no such table / column / function". */

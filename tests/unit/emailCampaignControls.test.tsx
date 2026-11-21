@@ -36,6 +36,15 @@ vi.mock('@/services/supabase/config', () => {
   return { supabase: { from: () => ({ update: (patch: unknown) => chain('update', patch), delete: () => chain('delete') }) } };
 });
 
+// The list and its emails come from the test; pausing, resuming and deleting are the real functions.
+vi.mock('@/services/supabase/email', async (original) => ({
+  ...(await original<typeof import('@/services/supabase/email')>()),
+  listCampaigns: h.listCampaigns,
+  listMessages: h.listMessages,
+}));
+
+import { CampaignsTab } from '@/components/email/CampaignsTab';
+
 beforeEach(() => {
   h.calls.length = 0;
   h.changed = [{ id: 'c1' }];
@@ -99,15 +108,8 @@ describe('Campaigns list', () => {
   }) as unknown as EmailCampaign;
 
   const show = async (campaigns: EmailCampaign[]) => {
-    vi.resetModules();
-    vi.doMock('@/services/supabase/email', async (original) => ({
-      ...(await original<typeof import('@/services/supabase/email')>()),
-      listCampaigns: h.listCampaigns,
-      listMessages: h.listMessages,
-    }));
     h.listCampaigns.mockReset().mockResolvedValue(campaigns);
     h.listMessages.mockReset().mockResolvedValue([]);
-    const { CampaignsTab } = await import('@/components/email/CampaignsTab');
     render(<CampaignsTab orgId="o" workspaceId="w" onNewCampaign={() => undefined} />);
     await screen.findByText(campaigns[0].name);
   };

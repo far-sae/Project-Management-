@@ -69,9 +69,14 @@ export interface VoiceStore {
   saveActivity(call: Call, description: string, metadata: CallActivityMeta): Promise<void>;
   /** Removes the call and the timeline entry it left. */
   deleteCall(id: string): Promise<void>;
+  /** Every call made to one lead, newest first. */
+  callsOfContact(contactId: string): Promise<Call[]>;
 }
 
 type Row = Record<string, any>;
+
+/** Calls of one lead read at once. */
+export const PERSON_CALLS_LIMIT = 1000;
 
 const callFrom = (r: Row): Call => ({
   id: r.id,
@@ -205,6 +210,10 @@ export function supabaseStore(sb: SupabaseClient): VoiceStore {
       for (const [k, v] of Object.entries(patch)) if (v !== undefined) row[COLUMN[k as keyof CallPatch]] = v;
       const data = must(await sb.from("crm_calls").update(row).eq("id", id).select().maybeSingle()) as Row | null;
       return data ? callFrom(data) : null;
+    },
+
+    async callsOfContact(contactId) {
+      return ((must(await sb.from("crm_calls").select("*").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(PERSON_CALLS_LIMIT)) as Row[] | null) ?? []).map(callFrom);
     },
 
     async deleteCall(id) {

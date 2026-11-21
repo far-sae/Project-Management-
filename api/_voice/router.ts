@@ -17,6 +17,8 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
  *   POST calls/<id>/end        how the call went, in the caller's words
  *   GET  calls/<id>/recording  the recording, as audio
  *   DELETE calls/<id>          remove a call, its recording and its timeline entry (the owner only)
+ *   GET  contacts/<id>/calls   the calls made to one lead, for a copy of that person's data
+ *   DELETE contacts/<id>/calls remove every call made to one lead, with the recordings (the owner only)
  * From the phone provider (checked by its signature in api/voice.ts):
  *   twiml      what to ring for a call a browser just placed
  *   notice     what the person called hears first
@@ -29,6 +31,7 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
 export const OWNER_ONLY_MESSAGE = "Only the owner and admins can place calls.";
 export const NOT_FOUND_MESSAGE = "This lead or company is not in your CRM.";
 export const CALL_NOT_FOUND_MESSAGE = "This call was not found.";
+export const LEAD_NOT_FOUND_MESSAGE = "This lead was not found.";
 export const CHOOSE_WORKSPACE_MESSAGE = "Choose a workspace.";
 export const CALLS_OWNER_ONLY_MESSAGE = "Only the owner and admins can see calls.";
 export const NO_WORKSPACE_MESSAGE = "This record is not in a workspace, so its call could not be logged. Add it to a workspace first.";
@@ -272,6 +275,12 @@ async function remove(d: VoiceDeps, r: RouteRequest, id: string): Promise<RouteR
   const age = nowOf(d).getTime() - new Date(call.createdAt).getTime();
   if (!call.endedAt && (call.status === "starting" || call.status === "ringing") && age < STALE_MS) throw new AppError(CALL_IN_PROGRESS_MESSAGE, 409);
 
+  await removeCall(d, call);
+  return { status: 200, json: { ok: true } };
+}
+
+/** Removes a call: its recording at the provider first, then the call and its timeline entry. */
+async function removeCall(d: VoiceDeps, call: Call): Promise<void> {
   if (call.recordingSid && /^RE[0-9a-fA-F]{32}$/.test(call.recordingSid)) {
     const config = readyConfig(d);
     const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Recordings/${call.recordingSid}.json`;
@@ -286,7 +295,49 @@ async function remove(d: VoiceDeps, r: RouteRequest, id: string): Promise<RouteR
     if (!(status >= 200 && status < 300) && status !== 404) throw new AppError(RECORDING_NOT_DELETED_MESSAGE, 502);
   }
   await d.store.deleteCall(call.id);
-  return { status: 200, json: { ok: true } };
+}
+
+/** The lead and the asker's role in its organisation. An outsider gets the same answer as for a lead that does not exist. */
+async function leadFor(d: VoiceDeps, r: RouteRequest, contactId: string): Promise<{ role: "owner" | "admin" | "member" }> {
+  const lead = isUuid(contactId) ? await d.store.contact(contactId) : null;
+  const role = lead ? await d.store.orgRole(lead.organizationId, r.user.id) : null;
+  if (!lead || !role) throw new AppError(LEAD_NOT_FOUND_MESSAGE, 404);
+  return { role: role as "owner" | "admin" | "member" };
+}
+
+/**
+ * GET contacts/<id>/calls: the calls made to one lead, for a copy of that
+ * person's data. Owner and admins, like every other view of calls. An empty
+ * list while calling was never set up: there are no calls to tell of.
+ */
+async function personCalls(d: VoiceDeps, r: RouteRequest, contactId: string): Promise<RouteResult> {
+  const { role } = await leadFor(d, r, contactId);
+  if (role !== "owner" && role !== "admin") throw new AppError(CALLS_OWNER_ONLY_MESSAGE, 403);
+  if (!(await d.store.tablesReady())) return { status: 200, json: { calls: [] } };
+  const calls = (await d.store.callsOfContact(contactId)).filter((c) => c.status !== "starting");
+  return {
+    status: 200,
+    json: {
+      calls: calls.map((c) => ({ id: c.id, at: c.createdAt, to: c.toNumber, status: c.status, outcome: c.outcome, seconds: c.seconds, note: c.note, recorded: Boolean(c.recordingSid) })),
+    },
+  };
+}
+
+/**
+ * DELETE contacts/<id>/calls: every call made to one lead, with its recording,
+ * for when the person is erased. The organisation's owner only. It stops at the
+ * first recording the provider will not delete; what is left can be tried again.
+ */
+async function removePersonCalls(d: VoiceDeps, r: RouteRequest, contactId: string): Promise<RouteResult> {
+  const { role } = await leadFor(d, r, contactId);
+  if (role !== "owner") throw new AppError(DELETE_OWNER_ONLY_MESSAGE, 403);
+  if (!(await d.store.tablesReady())) return { status: 200, json: { deleted: 0 } };
+  let deleted = 0;
+  for (const call of await d.store.callsOfContact(contactId)) {
+    await removeCall(d, call);
+    deleted += 1;
+  }
+  return { status: 200, json: { deleted } };
 }
 
 export async function route(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
@@ -298,6 +349,8 @@ export async function route(d: VoiceDeps, r: RouteRequest): Promise<RouteResult>
     if (r.path.length === 2 && a === "calls" && r.method === "DELETE") return await remove(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "end" && r.method === "POST") return await end(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "recording" && r.method === "GET") return await recording(d, r, b);
+    if (r.path.length === 3 && a === "contacts" && c === "calls" && r.method === "GET") return await personCalls(d, r, b);
+    if (r.path.length === 3 && a === "contacts" && c === "calls" && r.method === "DELETE") return await removePersonCalls(d, r, b);
     return { status: 404, json: { error: "not found" } };
   } catch (e) {
     if (e instanceof AppError) return { status: e.status, json: { error: e.message } };

@@ -6,6 +6,7 @@ import { getExpectedTwilioSignature } from "twilio/lib/webhooks/webhooks";
 import { readConfig, type VoiceConfig } from "../../../api/_voice/config";
 import {
   CALLS_OWNER_ONLY_MESSAGE,
+  LEAD_NOT_FOUND_MESSAGE,
   CALLS_PER_MINUTE,
   CALL_IN_PROGRESS_MESSAGE,
   CALL_NOT_FOUND_MESSAGE,
@@ -23,7 +24,7 @@ import {
   webhook,
   type VoiceDeps,
 } from "../../../api/_voice/router";
-import { isUnansweredCallEntry, type CallList } from "../../../api/_voice/shared/types";
+import { isUnansweredCallEntry, type CallList, type PersonCalls } from "../../../api/_voice/shared/types";
 import type { Call, CallPatch, Target, VoiceStore } from "../../../api/_voice/store";
 import { callToken, identityOf, TOKEN_SECONDS } from "../../../api/_voice/token";
 import { dialTwiml, noticeTwiml, RECORDING_NOTICE } from "../../../api/_voice/twiml";
@@ -112,6 +113,7 @@ function fakeStore() {
       calls.delete(id);
       activities.delete(id);
     },
+    callsOfContact: async (contactId) => [...calls.values()].filter((c) => c.contactId === contactId).sort(newestFirst),
     saveActivity: async (call, description, metadata) => {
       activities.set(call.id, { id: call.id, description, metadata, contactId: call.contactId, companyId: call.companyId, workspaceId: call.workspaceId });
     },
@@ -548,6 +550,66 @@ describe("calling: deleting a call", () => {
     // One whose end was never reported can be cleared away later.
     w.state.now = new Date(w.state.now.getTime() + 4 * 60 * 60_000);
     expect((await w.as(OWNER).del(`calls/${live}`)).status).toBe(200);
+  });
+});
+
+describe("calling: one person's calls", () => {
+  const finished = async (w: ReturnType<typeof world>, recorded: boolean) => {
+    const id = await w.startCall(ADMIN);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "42" }, { call: id });
+    if (recorded) await w.hook("recording", { RecordingStatus: "completed", RecordingSid: REC_SID, RecordingDuration: "40" }, { call: id });
+    return id;
+  };
+
+  it("lists the calls made to a lead for the owner and admins, without the recording itself", async () => {
+    const w = world();
+    const id = await finished(w, true);
+    const out = await w.as(ADMIN).get(`contacts/${LEAD}/calls`);
+    expect(out.status).toBe(200);
+    expect((out.json as PersonCalls).calls).toEqual([
+      { id, at: w.state.now.toISOString(), to: "+447700900123", status: "completed", outcome: null, seconds: 42, note: "", recorded: true },
+    ]);
+    expect(JSON.stringify(out.json)).not.toContain(REC_SID);
+    expect(await w.as(MEMBER).get(`contacts/${LEAD}/calls`)).toEqual({ status: 403, json: { error: CALLS_OWNER_ONLY_MESSAGE } });
+    expect(await w.as("0c000000-0000-4000-8000-000000000099").get(`contacts/${LEAD}/calls`)).toEqual({ status: 404, json: { error: LEAD_NOT_FOUND_MESSAGE } });
+    expect(await w.as(OWNER).get("contacts/not-an-id/calls")).toEqual({ status: 404, json: { error: LEAD_NOT_FOUND_MESSAGE } });
+  });
+
+  it("removes every call of a lead with its recording, for the owner only", async () => {
+    const w = world();
+    const first = await finished(w, true);
+    const second = await finished(w, false);
+    // A call to somebody else stays.
+    const other = await w.startCall(OWNER, { companyId: COMPANY, to: "+44 7700 900999" });
+    w.fetchMock.mockClear();
+
+    expect(await w.as(ADMIN).del(`contacts/${LEAD}/calls`)).toEqual({ status: 403, json: { error: DELETE_OWNER_ONLY_MESSAGE } });
+    expect(w.calls.has(first)).toBe(true);
+
+    w.fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    expect(await w.as(OWNER).del(`contacts/${LEAD}/calls`)).toEqual({ status: 200, json: { deleted: 2 } });
+    expect(w.fetchMock).toHaveBeenCalledTimes(1);
+    expect((w.fetchMock.mock.calls[0] as unknown as [string])[0]).toContain(`/Recordings/${REC_SID}.json`);
+    expect(w.calls.has(first)).toBe(false);
+    expect(w.calls.has(second)).toBe(false);
+    expect(w.activities.has(first)).toBe(false);
+    expect(w.calls.has(other)).toBe(true);
+  });
+
+  it("stops when a recording cannot be deleted, so no recording is left without its call", async () => {
+    const w = world();
+    const id = await finished(w, true);
+    w.fetchMock.mockClear();
+    w.fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }));
+    expect(await w.as(OWNER).del(`contacts/${LEAD}/calls`)).toEqual({ status: 502, json: { error: RECORDING_NOT_DELETED_MESSAGE } });
+    expect(w.calls.has(id)).toBe(true);
+  });
+
+  it("has nothing to tell while calling was never set up", async () => {
+    const w = world();
+    w.state.ready = false;
+    expect(await w.as(OWNER).get(`contacts/${LEAD}/calls`)).toEqual({ status: 200, json: { calls: [] } });
+    expect(await w.as(OWNER).del(`contacts/${LEAD}/calls`)).toEqual({ status: 200, json: { deleted: 0 } });
   });
 });
 

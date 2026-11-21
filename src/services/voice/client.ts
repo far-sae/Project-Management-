@@ -6,7 +6,7 @@
  * that the person is an owner or admin, on every request.
  */
 import { supabase } from '@/services/supabase/config';
-import type { CallList, EndCallInput, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
+import type { CallList, EndCallInput, PersonCalls, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
 
 const BASE = '/api/voice/';
 
@@ -94,6 +94,15 @@ export const listCalls = (workspaceId: string, before?: string): Promise<CallLis
 
 /** Removes a call for good, with its recording and its timeline entry. The owner only. */
 export const deleteCall = (id: string): Promise<void> => send(`calls/${id}`, undefined, 'DELETE').then(() => undefined);
+
+/** The calls made to one lead, for a copy of that person's data. The owner and admins. */
+export const personCalls = (contactId: string): Promise<PersonCalls> => json<PersonCalls>(`contacts/${contactId}/calls`);
+
+/** Removes every call made to one lead, with the recordings. The owner only. Returns how many were removed. */
+export const deletePersonCalls = (contactId: string): Promise<number> =>
+  send(`contacts/${contactId}/calls`, undefined, 'DELETE')
+    .then((response) => response.json())
+    .then((reply: { deleted?: unknown }) => Number(reply?.deleted) || 0);
 
 /** The recording of a call, as audio the page can play. */
 export async function fetchRecording(id: string): Promise<Blob> {

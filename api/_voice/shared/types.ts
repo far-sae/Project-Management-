@@ -99,3 +99,17 @@ export type CallListItem = {
 export type CallSummary = { days: number; total: number; answered: number; seconds: number };
 
 export type CallList = { calls: CallListItem[]; more: boolean; summary: CallSummary };
+
+/** GET /api/voice/contacts/<id>/calls: the calls made to one lead, for a copy of that person's data. */
+export type PersonCall = {
+  id: string;
+  at: string;
+  to: string;
+  status: string;
+  outcome: string | null;
+  seconds: number;
+  note: string;
+  /** True when a recording is kept. The recording itself is not part of the copy. */
+  recorded: boolean;
+};
+export type PersonCalls = { calls: PersonCall[] };

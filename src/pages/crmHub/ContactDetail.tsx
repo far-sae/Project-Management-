@@ -32,6 +32,7 @@ import {
 import { followUpBucket, localYmd } from '@/lib/crmFollowUps';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
+import { PersonPrivacy } from '@/components/crmHub/PersonPrivacy';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { PriorityPill, UrgentBadge } from '@/components/common/TaskBadges';
 import { Button } from '@/components/ui/button';
@@ -255,7 +256,7 @@ export const CrmContactDetailPage: React.FC = () => {
   const [openRecord, setOpenRecord] = useState<{ id: string; workspaceId: string | null } | null>(null);
   useStayInWorkspace(openRecord?.id, openRecord?.workspaceId, '/crm/contacts');
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, isOwner } = useOrganization();
   const orgId = organization?.organizationId ?? null;
   const { projects: allProjects } = useProjects();
   const { items: companies } = useCrmCompanies();
@@ -587,6 +588,12 @@ export const CrmContactDetailPage: React.FC = () => {
                 <Button variant="outline" onClick={() => setShowEdit(true)}>
                   <Pencil aria-hidden />Edit
                 </Button>
+                <PersonPrivacy
+                  contact={contact}
+                  companyName={company?.name ?? null}
+                  isOwner={isOwner}
+                  onErased={() => navigate('/crm/contacts')}
+                />
                 <Button
                   variant="outline"
                   className="text-destructive hover:bg-destructive-soft hover:text-destructive"
