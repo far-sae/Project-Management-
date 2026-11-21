@@ -4,6 +4,7 @@ import type {
 } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
 import { applyWorkspaceFilter } from './workspaceFilter';
+import { allRows } from './allRows';
 import {
   createNotification,
   createTask as createProjectTask,
@@ -78,19 +79,20 @@ export const listTasks = async (
   organizationId: string,
   opts: ListTasksOptions & { workspaceId?: string | null } = {},
 ): Promise<CrmTask[]> => {
-  let q = supabase
-    .from('crm_tasks')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .order('due_date', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: false });
-  if (opts.contactId) q = q.eq('contact_id', opts.contactId);
-  if (opts.companyId) q = q.eq('company_id', opts.companyId);
-  if (opts.dealId) q = q.eq('deal_id', opts.dealId);
-  q = applyWorkspaceFilter(q, opts.workspaceId);
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []).map(mapTask);
+  const rows = await allRows<TaskRow>((from, to) => {
+    let q = supabase
+      .from('crm_tasks')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true });
+    if (opts.contactId) q = q.eq('contact_id', opts.contactId);
+    if (opts.companyId) q = q.eq('company_id', opts.companyId);
+    if (opts.dealId) q = q.eq('deal_id', opts.dealId);
+    return applyWorkspaceFilter(q, opts.workspaceId).range(from, to);
+  });
+  return rows.map(mapTask);
 };
 
 export interface LinkedTaskOptions {

@@ -8,6 +8,7 @@ import type {
 } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
 import { applyWorkspaceFilter } from './workspaceFilter';
+import { allRows } from './allRows';
 
 interface ContactRow {
   id: string;
@@ -57,16 +58,17 @@ export const listContacts = async (
   organizationId: string,
   opts: { companyId?: string; workspaceId?: string | null } = {},
 ): Promise<CrmContact[]> => {
-  let q = supabase
-    .from('crm_contacts')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .order('first_name', { ascending: true });
-  if (opts.companyId) q = q.eq('company_id', opts.companyId);
-  q = applyWorkspaceFilter(q, opts.workspaceId);
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []).map(mapContact);
+  const rows = await allRows<ContactRow>((from, to) => {
+    let q = supabase
+      .from('crm_contacts')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('first_name', { ascending: true })
+      .order('id', { ascending: true });
+    if (opts.companyId) q = q.eq('company_id', opts.companyId);
+    return applyWorkspaceFilter(q, opts.workspaceId).range(from, to);
+  });
+  return rows.map(mapContact);
 };
 
 export const getContact = async (id: string): Promise<CrmContact | null> => {

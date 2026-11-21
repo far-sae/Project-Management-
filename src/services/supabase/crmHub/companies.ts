@@ -2,6 +2,7 @@ import { supabase } from '../config';
 import type { CrmCompany, CreateCompanyInput, UpdateCompanyInput } from '@/types/crmHub';
 import { tryLogActivity } from './activities';
 import { applyWorkspaceFilter } from './workspaceFilter';
+import { allRows } from './allRows';
 import { companyKey } from '@/lib/crmImport';
 
 interface CompanyRow {
@@ -75,15 +76,16 @@ export const listCompanies = async (
   organizationId: string,
   opts: { workspaceId?: string | null } = {},
 ): Promise<CrmCompany[]> => {
-  let q = supabase
-    .from('crm_companies')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .order('name', { ascending: true });
-  q = applyWorkspaceFilter(q, opts.workspaceId);
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []).map(mapCompany);
+  const rows = await allRows<CompanyRow>((from, to) => {
+    const q = supabase
+      .from('crm_companies')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('name', { ascending: true })
+      .order('id', { ascending: true });
+    return applyWorkspaceFilter(q, opts.workspaceId).range(from, to);
+  });
+  return rows.map(mapCompany);
 };
 
 export const getCompany = async (id: string): Promise<CrmCompany | null> => {
