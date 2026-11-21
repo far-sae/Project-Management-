@@ -41,6 +41,7 @@ import { useDealMoney } from '@/hooks/useDealMoney';
 import { useStayInWorkspace } from '@/hooks/useStayInWorkspace';
 import { AgreementsPanel } from '@/components/signroom/agreements/AgreementsPanel';
 import { InvoicesPanel } from '@/components/signroom/billing/InvoicesPanel';
+import { DealMoneySummary } from '@/components/crmHub/DealMoneySummary';
 
 const when = (d: Date) => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -71,7 +72,7 @@ export const CrmDealDetailPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const orgId = organization?.organizationId ?? null;
-  const { format: fmtCurrency } = useCrmCurrency();
+  const { format: fmtCurrency, code: companyCode } = useCrmCurrency();
   const { formatDeal, formatDealConverted, allInCompany } = useDealMoney();
 
   const [deal, setDeal] = useState<CrmDeal | null>(null);
@@ -275,6 +276,8 @@ export const CrmDealDetailPage: React.FC = () => {
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="flex min-w-0 flex-col gap-6">
+            {/* Sold, invoiced, paid and still owed, in one place. */}
+            <DealMoneySummary deal={deal} valueText={formatDeal(deal)} currency={dealCurrency(deal, companyCode)} />
             {/* What has been agreed and billed for this deal. */}
             <AgreementsPanel companyId={deal.companyId ?? undefined} dealId={deal.id} />
             <InvoicesPanel companyId={deal.companyId ?? undefined} dealId={deal.id} />
