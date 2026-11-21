@@ -23,7 +23,7 @@ import {
   webhook,
   type VoiceDeps,
 } from "../../../api/_voice/router";
-import type { CallList } from "../../../api/_voice/shared/types";
+import { isUnansweredCallEntry, type CallList } from "../../../api/_voice/shared/types";
 import type { Call, CallPatch, Target, VoiceStore } from "../../../api/_voice/store";
 import { callToken, identityOf, TOKEN_SECONDS } from "../../../api/_voice/token";
 import { dialTwiml, noticeTwiml, RECORDING_NOTICE } from "../../../api/_voice/twiml";
@@ -365,6 +365,17 @@ describe("calling: after the call", () => {
     // An outcome that is not one of ours is ignored rather than stored.
     await w.as(OWNER).post(`calls/${id}/end`, { outcome: "<b>hi</b>" });
     expect(w.calls.get(id)?.outcome).toBeNull();
+  });
+
+  it("can tell its own entry of an unanswered call from a conversation", () => {
+    const base = { toNumber: "+14155550132", seconds: 0, status: "completed" as const, outcome: null, note: "" };
+    for (const status of ["no_answer", "busy", "failed", "canceled"] as const) expect(isUnansweredCallEntry(describeCall({ ...base, status })), status).toBe(true);
+    for (const outcome of ["no_answer", "voicemail", "busy", "wrong_number"] as const) expect(isUnansweredCallEntry(describeCall({ ...base, seconds: 20, outcome })), outcome).toBe(true);
+    expect(isUnansweredCallEntry(describeCall({ ...base, seconds: 192 }))).toBe(false);
+    expect(isUnansweredCallEntry(describeCall({ ...base, seconds: 192, outcome: "connected", note: "No answer. at first" }))).toBe(false);
+    // Only its own entries are judged, never what a person typed.
+    expect(isUnansweredCallEntry("Called her, no answer.")).toBe(false);
+    expect(isUnansweredCallEntry("")).toBe(false);
   });
 
   it("writes the entry in plain words", () => {

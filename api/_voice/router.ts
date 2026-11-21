@@ -2,7 +2,7 @@ import { AppError } from "../_signroom/errors.js";
 import { isUuid } from "../_signroom/validate.js";
 import type { ConfigState, VoiceConfig } from "./config.js";
 import { dialable, formatNumber, COUNTRY_NAME, type CallCountry } from "./shared/numbers.js";
-import { OUTCOME_LABEL, OUTCOMES, type CallActivityMeta, type CallList, type CallListItem, type CallOutcome, type CallStatus, type StartedCall, type VoiceSetup } from "./shared/types.js";
+import { OUTCOME_LABEL, OUTCOMES, STATUS_SENTENCE, type CallActivityMeta, type CallList, type CallListItem, type CallOutcome, type CallStatus, type StartedCall, type VoiceSetup } from "./shared/types.js";
 import type { Call, CallPatch, VoiceStore } from "./store.js";
 import { isIdentity } from "./token.js";
 import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
@@ -84,13 +84,6 @@ const DURATION = (seconds: number): string => {
   if (s < 60) return `${s} s`;
   const m = Math.floor(s / 60);
   return s % 60 ? `${m} min ${s % 60} s` : `${m} min`;
-};
-
-const STATUS_SENTENCE: Partial<Record<CallStatus, string>> = {
-  no_answer: "No answer.",
-  busy: "The line was busy.",
-  failed: "The call did not connect.",
-  canceled: "Hung up before it was answered.",
 };
 
 /** The timeline entry of a call: who was rung, how long, how it went, then the caller's own note. */

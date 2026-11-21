@@ -181,6 +181,47 @@ describe("a lead carried from arrival to project", () => {
     expect(logged).not.toHaveBeenCalled();
   });
 
+  it("a call nobody answered is not a reply, a call that was a conversation is", async () => {
+    const w = world();
+    await ready(w);
+    script(w);
+    const { lead, run } = await leadArrives(w);
+    await approveFirst(w);
+    await w.cron();
+    await w.cron();
+    expect(runOf(w, run.id)).toMatchObject({ repliedAt: null, status: "waiting", waitingOn: "time" });
+
+    // Written by the calling server for calls placed from the CRM.
+    for (const entry of [
+      "Called +44 7700 900123. No answer.",
+      "Called +44 7700 900123. The line was busy.",
+      "Called +44 7700 900123. Hung up before it was answered.",
+      "Called +44 7700 900123. 22 s. Left a voicemail.\nAsked her to ring back.",
+      "Called +1 (415) 555-0132. 8 s. Wrong number.",
+    ]) {
+      w.store.personLogsActivity(WS, lead.id, "call", entry);
+      await w.cron();
+      expect(runOf(w, run.id), entry).toMatchObject({ repliedAt: null, status: "waiting", waitingOn: "time" });
+    }
+
+    w.store.personLogsActivity(WS, lead.id, "call", "Called +44 7700 900123. 3 min 12 s. Spoke to them.\nWants a quote.");
+    await w.cron();
+    expect(runOf(w, run.id).repliedAt).not.toBeNull();
+  });
+
+  it("a call a person typed in by hand still counts, whatever it says", async () => {
+    const w = world();
+    await ready(w);
+    script(w);
+    const { lead, run } = await leadArrives(w);
+    await approveFirst(w);
+    await w.cron();
+    await w.cron();
+    w.store.personLogsActivity(WS, lead.id, "call", "No answer the first time, then she rang back and we talked.");
+    await w.cron();
+    expect(runOf(w, run.id).repliedAt).not.toBeNull();
+  });
+
   it("the server's own writes never read as a reply and never start another step", async () => {
     const w = world();
     await ready(w);

@@ -17,6 +17,30 @@ export const OUTCOME_LABEL: Record<CallOutcome, string> = {
 /** Where a call stands: the provider's own words for it, kept short. */
 export type CallStatus = "starting" | "ringing" | "completed" | "no_answer" | "busy" | "failed" | "canceled";
 
+/** How a call that was not a conversation is written on the timeline, by how the line ended. */
+export const STATUS_SENTENCE: Partial<Record<CallStatus, string>> = {
+  no_answer: "No answer.",
+  busy: "The line was busy.",
+  failed: "The call did not connect.",
+  canceled: "Hung up before it was answered.",
+};
+
+/** The outcomes a caller can pick that mean the lead was not spoken to. */
+const NOT_SPOKEN_TO: CallOutcome[] = ["no_answer", "voicemail", "busy", "wrong_number"];
+
+/**
+ * True for the timeline entry of a call placed from the CRM in which the lead
+ * was not spoken to (nobody answered, busy, voicemail, wrong number). Such an
+ * entry is a record that someone tried; it is not the lead getting in touch.
+ * Anything a person typed themselves is never judged here.
+ */
+export function isUnansweredCallEntry(description: string): boolean {
+  const summary = String(description ?? "").split("\n")[0];
+  if (!/^Called \+\d/.test(summary)) return false;
+  const sentences = [...Object.values(STATUS_SENTENCE), ...NOT_SPOKEN_TO.map((o) => `${OUTCOME_LABEL[o]}.`)];
+  return sentences.some((sentence) => summary.includes(` ${sentence}`));
+}
+
 /** GET /api/voice/setup */
 export type VoiceSetup = {
   /** False while no phone provider setting exists at all: the Call button then works as it always did. */

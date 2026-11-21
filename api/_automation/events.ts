@@ -1,3 +1,4 @@
+import { isUnansweredCallEntry } from "../_voice/shared/types.js";
 import { stopRun } from "./engine.js";
 import type { Env } from "./execute.js";
 import { subjectOf } from "./leadContext.js";
@@ -84,6 +85,8 @@ export async function handleEvent(env: Env, event: StoredEvent): Promise<void> {
       if (!event.contactId) return;
       const kind = text(event.payload.activity_type) || "conversation";
       const said = text(event.payload.description);
+      // A call nobody answered is someone trying, not the lead replying: the chaser must still go out.
+      if (kind === "call" && isUnansweredCallEntry(said)) return;
       await markReplied(store, ws, event.contactId, { positive: null, note: `A ${kind} was logged${said ? `: ${said}` : "."}`, at });
       return;
     }
