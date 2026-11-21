@@ -117,7 +117,7 @@ describe('running the check', () => {
     expect(result).toMatchObject({
       calls: 'ready', forms: 'missing', followUps: 'missing', merge: 'ready', automation: 'unknown', emailTimeline: 'unknown',
     });
-    expect(h.asked.sort()).toEqual(['auto_rules', 'crm_calls', 'crm_deals.line_items', 'crm_erase_person', 'crm_lead_forms', 'crm_lead_forms.share_with', 'crm_merge_contacts', 'crm_tasks.kind', 'crm_trash', 'crm_visibility', 'email_warmup_keys']);
+    expect(h.asked.sort()).toEqual(['auto_rules', 'crm_calls', 'crm_deals.line_items', 'crm_erase_person', 'crm_field_defs', 'crm_lead_forms', 'crm_lead_forms.share_with', 'crm_merge_contacts', 'crm_tasks.kind', 'crm_trash', 'crm_visibility', 'email_warmup_keys']);
   });
 });
 

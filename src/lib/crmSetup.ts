@@ -38,6 +38,7 @@ export const SETUP_PARTS: SetupPart[] = [
   { id: 'history', name: 'Recycle bin and change log', gives: 'Deleted leads, companies and deals can be put back for 30 days, and every change says who made it.', file: '197_crm_recycle_bin_and_changes.sql', probe: { kind: 'table', table: 'crm_trash' } },
   { id: 'ownOnly', name: 'Own leads and deals only', gives: 'A workspace can show each person only their own leads and deals.', file: '198_crm_own_records_only.sql', probe: { kind: 'table', table: 'crm_visibility' } },
   { id: 'quote', name: 'Quotes on deals', gives: 'A deal holds the lines of a quote, with a total and a page to print.', file: '199_crm_deal_quote.sql', probe: { kind: 'column', table: 'crm_deals', column: 'line_items' } },
+  { id: 'fieldTypes', name: 'Typed custom fields', gives: 'A custom field on a lead can be a number, a date or one of a list.', file: '200_crm_custom_field_types.sql', probe: { kind: 'table', table: 'crm_field_defs' } },
 ];
 
 /** The database's codes for "there is no such table / column / function". */

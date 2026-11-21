@@ -54,6 +54,8 @@ import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
+import { rowsProblem } from '@/lib/crmFieldTypes';
+import { useFieldDefs } from '@/services/supabase/crmHub/fieldDefs';
 import { OwnerField } from '@/components/crmHub/OwnerField';
 import { UnqualifiedDialog, unqualifiedNote } from '@/components/crmHub/UnqualifiedDialog';
 import { localInputValue, loggedDescription, occurredAtFrom } from '@/lib/crmLoggedActivity';
@@ -1326,6 +1328,7 @@ const EditLeadDialog: React.FC<{
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>(contact.lifecycleStage);
   const [leadStatus, setLeadStatus] = useState<LeadStatus>(contact.leadStatus);
   const [customRows, setCustomRows] = useState<CustomFieldRow[]>(() => customFieldRows(contact.customFields));
+  const { defs: fieldDefs } = useFieldDefs(contact.workspaceId);
   const [customError, setCustomError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -1349,8 +1352,9 @@ const EditLeadDialog: React.FC<{
 
   const handleSave = async () => {
     const custom = readCustomFieldRows(customRows);
-    setCustomError(custom.error);
-    if (custom.error) return;
+    const customProblem = custom.error ?? rowsProblem(fieldDefs, customRows);
+    setCustomError(customProblem);
+    if (customProblem) return;
     setBusy(true);
     try {
       await updateContact(contact.id, {
@@ -1439,6 +1443,7 @@ const EditLeadDialog: React.FC<{
             <CustomFieldsEditor
               rows={customRows}
               onChange={(rows) => { setCustomRows(rows); setCustomError(null); }}
+              defs={fieldDefs}
               error={customError}
               disabled={busy}
             />

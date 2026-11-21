@@ -32,6 +32,8 @@ import { LeadViews } from '@/components/crmHub/LeadViews';
 import { viewsKey, type LeadViewState } from '@/lib/crmSavedViews';
 import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
+import { rowsProblem } from '@/lib/crmFieldTypes';
+import { useFieldDefs } from '@/services/supabase/crmHub/fieldDefs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -66,6 +68,7 @@ export const CrmContactsPage: React.FC = () => {
   const { items: allTags } = useCrmTags();
   const { map: contactTagsMap } = useContactTagsMap();
   const workspaceId = useWorkspaceForCreate();
+  const { defs: fieldDefs } = useFieldDefs(workspaceId);
 
   const [search, setSearch] = useState('');
   const [stepFilter, setStepFilter] = useState<LeadStep | 'all'>('all');
@@ -291,8 +294,10 @@ export const CrmContactsPage: React.FC = () => {
     // The form shows who the email belongs to; the button then reads "Add anyway".
     if (duplicate && !addAnyway) { setAddAnyway(true); return; }
     const custom = readCustomFieldRows(customRows);
-    setCustomError(custom.error);
-    if (custom.error) return;
+    // A typed field must hold its own kind of value: a number, a date, one of its choices.
+    const customProblem = custom.error ?? rowsProblem(fieldDefs, customRows);
+    setCustomError(customProblem);
+    if (customProblem) return;
     setBusy(true);
     try {
       // A typed company is linked when it exists and added when it does not.
@@ -694,6 +699,7 @@ export const CrmContactsPage: React.FC = () => {
                 rows={customRows}
                 onChange={(rows) => { setCustomRows(rows); setCustomError(null); }}
                 suggestions={customKeys}
+                defs={fieldDefs}
                 error={customError}
                 disabled={busy}
               />

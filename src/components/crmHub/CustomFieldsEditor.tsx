@@ -6,6 +6,7 @@ import {
   CUSTOM_FIELD_LIMIT, CUSTOM_FIELD_NAME_MAX, CUSTOM_FIELD_VALUE_MAX,
   customFieldLabel, newCustomFieldRow, type CustomFieldRow,
 } from '@/lib/customFields';
+import { defFor, fieldKey, type FieldDef } from '@/lib/crmFieldTypes';
 
 /** How many already-used names are offered as one-click buttons. */
 const SUGGESTION_LIMIT = 6;
@@ -15,6 +16,8 @@ interface CustomFieldsEditorProps {
   onChange: (rows: CustomFieldRow[]) => void;
   /** Stored keys in use on other leads, offered so the same names get reused. */
   suggestions?: string[];
+  /** The workspace's typed fields: these get a number box, a date box or a list instead of a text box. */
+  defs?: FieldDef[];
   /** A sentence to show when the rows cannot be saved as they are. */
   error?: string | null;
   disabled?: boolean;
@@ -26,7 +29,7 @@ interface CustomFieldsEditorProps {
  * field is spelled the same on every lead.
  */
 export const CustomFieldsEditor: React.FC<CustomFieldsEditorProps> = ({
-  rows, onChange, suggestions = [], error, disabled,
+  rows, onChange, suggestions = [], defs = [], error, disabled,
 }) => {
   const inputs = useRef(new Map<string, HTMLInputElement>());
   const [focus, setFocus] = useState<string | null>(null);
@@ -38,10 +41,10 @@ export const CustomFieldsEditor: React.FC<CustomFieldsEditorProps> = ({
     setFocus(null);
   }, [focus]);
 
-  const taken = new Set(rows.map((r) => r.name.trim().toLowerCase()));
-  const offered = suggestions
-    .map((key) => customFieldLabel(key))
-    .filter((label) => !taken.has(label.toLowerCase()))
+  const taken = new Set(rows.map((r) => fieldKey(r.name)));
+  // The workspace's own typed fields first, then names used on other leads; each once.
+  const offered = [...defs.map((d) => d.name), ...suggestions.map((key) => customFieldLabel(key))]
+    .filter((label, i, all) => !taken.has(fieldKey(label)) && all.findIndex((other) => fieldKey(other) === fieldKey(label)) === i)
     .slice(0, SUGGESTION_LIMIT);
   const full = rows.length >= CUSTOM_FIELD_LIMIT;
 
@@ -78,16 +81,40 @@ export const CustomFieldsEditor: React.FC<CustomFieldsEditorProps> = ({
             autoComplete="off"
             disabled={disabled}
           />
-          <Input
-            ref={hold(`${row.id}:value`)}
-            value={row.value}
-            onChange={(e) => patch(row.id, { value: e.target.value })}
-            placeholder="Value"
-            aria-label={`Custom field ${i + 1} value`}
-            maxLength={CUSTOM_FIELD_VALUE_MAX}
-            autoComplete="off"
-            disabled={disabled}
-          />
+          {(() => {
+            const def = defFor(defs, row.name);
+            if (def?.kind === 'choice' && def.options.length > 0) {
+              // What is written stays offered even when it is no longer one of the choices, so it is never lost by opening the form.
+              const known = def.options.some((o) => o.toLowerCase() === row.value.trim().toLowerCase());
+              return (
+                <select
+                  value={row.value}
+                  onChange={(e) => patch(row.id, { value: e.target.value })}
+                  aria-label={`Custom field ${i + 1} value`}
+                  disabled={disabled}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                >
+                  <option value="">Choose…</option>
+                  {!known && row.value.trim() !== '' && <option value={row.value}>{row.value}</option>}
+                  {def.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              );
+            }
+            return (
+              <Input
+                ref={hold(`${row.id}:value`)}
+                type={def?.kind === 'date' ? 'date' : 'text'}
+                inputMode={def?.kind === 'number' ? 'decimal' : undefined}
+                value={row.value}
+                onChange={(e) => patch(row.id, { value: e.target.value })}
+                placeholder={def?.kind === 'number' ? 'A number' : 'Value'}
+                aria-label={`Custom field ${i + 1} value`}
+                maxLength={CUSTOM_FIELD_VALUE_MAX}
+                autoComplete="off"
+                disabled={disabled}
+              />
+            );
+          })()}
           <Button
             type="button"
             variant="ghost"
