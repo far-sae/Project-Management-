@@ -1,5 +1,6 @@
 import { LeadFormsDialog } from '@/components/crmHub/LeadFormsDialog';
 import { duplicateGroups, findLeadByEmail } from '@/lib/crmDuplicates';
+import { forEachLead, nextSort, sortLeadIds, type LeadSort, type LeadSortKey } from '@/lib/crmListTools';
 import { DuplicateLeadsDialog } from '@/components/crmHub/DuplicateLeadsDialog';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -48,6 +49,8 @@ import {
 import { toCSV, downloadCSV } from '@/lib/csv';
 
 const NONE = '__none__';
+/** Select value standing in for "nobody" in the bulk owner change. */
+const BULK_NOBODY = '__nobody__';
 const STEP_ORDER: LeadStep[] = ['new', 'contacted', 'qualified', 'deal', 'customer', 'unqualified'];
 /** Leads that can still be turned into their first deal. */
 const CONVERTIBLE: LeadStep[] = ['new', 'contacted', 'qualified'];
@@ -70,6 +73,11 @@ export const CrmContactsPage: React.FC = () => {
   const [showImport, setShowImport] = useState(false);
   const [showForms, setShowForms] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  /** How the list is sorted; null keeps the order it arrives in (newest first). */
+  const [sort, setSort] = useState<LeadSort | null>(null);
+  /** The leads ticked in the list, for doing one thing to many. */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [converting, setConverting] = useState<CrmContact | null>(null);
   const [busy, setBusy] = useState(false);
@@ -160,6 +168,82 @@ export const CrmContactsPage: React.FC = () => {
   const filtered = useMemo(
     () => (stepFilter === 'all' ? scoped : scoped.filter((c) => leadStep(c) === stepFilter)),
     [scoped, stepFilter],
+  );
+
+  const rows = useMemo(() => {
+    if (!sort) return filtered;
+    const byId = new Map(filtered.map((c) => [c.id, c]));
+    const order = sortLeadIds(
+      filtered.map((c) => ({
+        id: c.id,
+        name: leadName(c),
+        company: (c.companyId && companyById.get(c.companyId)?.name) || '',
+        stepOrder: STEP_ORDER.indexOf(leadStep(c)),
+        owner: memberById.get(c.ownerId ?? '')?.displayName ?? '',
+        createdAt: c.createdAt,
+      })),
+      sort,
+    );
+    return order.map((id) => byId.get(id)).filter((c): c is CrmContact => !!c);
+  }, [filtered, sort, companyById, memberById]);
+
+  // Only leads still in view stay ticked: a hidden lead must never be changed by a bulk action.
+  const selectedInView = useMemo(() => rows.filter((c) => selected.has(c.id)).map((c) => c.id), [rows, selected]);
+  const allTicked = rows.length > 0 && selectedInView.length === rows.length;
+  const toggleOne = (id: string) => setSelected((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected(allTicked ? new Set() : new Set(rows.map((c) => c.id)));
+
+  const bulkOwner = async (ownerId: string | null) => {
+    const ids = selectedInView;
+    if (ids.length === 0) return;
+    setBusy(true);
+    try {
+      const { done, failed } = await forEachLead(ids, (id) => updateContact(id, { ownerId }));
+      const who = ownerId ? memberById.get(ownerId)?.displayName || 'the new owner' : 'nobody';
+      if (failed > 0) toast.error(`${done} of ${ids.length} leads were given to ${who}. Try the rest again.`);
+      else toast.success(`${done} lead${done === 1 ? '' : 's'} given to ${who}`);
+      setSelected(new Set());
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const bulkDelete = async () => {
+    const ids = selectedInView;
+    setBusy(true);
+    try {
+      const { done, failed } = await forEachLead(ids, (id) => deleteContact(id));
+      if (failed > 0) toast.error(`${done} of ${ids.length} leads were deleted. Try the rest again.`);
+      else toast.success(`${done} lead${done === 1 ? '' : 's'} deleted`);
+      setSelected(new Set());
+      setConfirmBulkDelete(false);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** A column heading that sorts the list when pressed. */
+  const sortHeading = (key: LeadSortKey, label: string) => (
+    <th
+      className="px-3 py-2 text-left font-medium"
+      aria-sort={sort?.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => setSort((current) => nextSort(current, key))}
+      >
+        {label}
+        {sort?.key === key && <span aria-hidden>{sort.direction === 'asc' ? '↑' : '↓'}</span>}
+      </button>
+    </th>
   );
 
   const handleExportCsv = () => {
@@ -368,26 +452,63 @@ export const CrmContactsPage: React.FC = () => {
             )}
           </div>
         ) : (
+          <>
+          {selectedInView.length > 0 && (
+            <div role="toolbar" aria-label="Selected leads" className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-secondary px-3 py-2 text-sm">
+              <span className="font-medium tabular-nums">{selectedInView.length} selected</span>
+              <Select value="" onValueChange={(v) => void bulkOwner(v === BULK_NOBODY ? null : v)} disabled={busy}>
+                <SelectTrigger className="h-8 w-48" aria-label="Give the selected leads to"><SelectValue placeholder="Give to…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={BULK_NOBODY}>Nobody</SelectItem>
+                  {(organization?.members ?? []).filter((m) => !m.status || m.status === 'active').map((m) => (
+                    <SelectItem key={m.userId} value={m.userId}>{m.displayName || m.email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setConfirmBulkDelete(true)} disabled={busy}>
+                Delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} disabled={busy}>Clear</Button>
+            </div>
+          )}
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-xs text-muted-foreground">
-                  <th className="px-3 py-2 text-left font-medium">Name</th>
-                  <th className="px-3 py-2 text-left font-medium">Company</th>
+                  <th className="w-9 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={allTicked}
+                      onChange={toggleAll}
+                      aria-label={allTicked ? 'Untick every lead' : 'Tick every lead in the list'}
+                    />
+                  </th>
+                  {sortHeading('name', 'Name')}
+                  {sortHeading('company', 'Company')}
                   <th className="px-3 py-2 text-left font-medium">Email</th>
                   <th className="px-3 py-2 text-left font-medium">Phone</th>
-                  <th className="px-3 py-2 text-left font-medium">Step</th>
+                  {sortHeading('step', 'Step')}
                   <th className="px-3 py-2 text-left font-medium">Category</th>
-                  <th className="px-3 py-2 text-left font-medium">Owner</th>
+                  {sortHeading('owner', 'Owner')}
                   <th className="px-3 py-2 text-right font-medium"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => {
+                {rows.map((c) => {
                   const step = leadStep(c);
                   const tagIds = contactTagsMap.get(c.id) ?? [];
                   return (
-                    <tr key={c.id} className="border-b border-border last:border-b-0 hover:bg-muted/40">
+                    <tr key={c.id} className={cn('border-b border-border last:border-b-0 hover:bg-muted/40', selected.has(c.id) && 'bg-secondary/60')}>
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-primary"
+                          checked={selected.has(c.id)}
+                          onChange={() => toggleOne(c.id)}
+                          aria-label={`Tick ${leadName(c)}`}
+                        />
+                      </td>
                       <td className="px-3 py-2">
                         <Link to={`/crm/contacts/${c.id}`} className="font-medium text-foreground hover:underline">
                           {leadName(c)}
@@ -466,6 +587,7 @@ export const CrmContactsPage: React.FC = () => {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
@@ -605,6 +727,27 @@ export const CrmContactsPage: React.FC = () => {
       {organizationId && workspaceId && (
         <LeadFormsDialog open={showForms} onOpenChange={setShowForms} organizationId={organizationId} workspaceId={workspaceId} />
       )}
+
+      <AlertDialog open={confirmBulkDelete} onOpenChange={(o) => { if (!busy) setConfirmBulkDelete(o); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedInView.length} lead{selectedInView.length === 1 ? '' : 's'}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The leads, their notes and their timelines are removed for good. Their deals stay, without a lead. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={busy}
+              onClick={(e) => { e.preventDefault(); void bulkDelete(); }}
+            >
+              Delete {selectedInView.length} lead{selectedInView.length === 1 ? '' : 's'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
