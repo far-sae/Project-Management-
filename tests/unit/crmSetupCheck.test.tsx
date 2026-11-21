@@ -30,6 +30,10 @@ vi.mock('@/services/supabase/config', () => {
   };
 });
 vi.mock('@/services/voice/client', () => ({ voiceSetup: h.voiceSetup, forgetVoiceSetup: vi.fn() }));
+vi.mock('@/context/OrganizationContext', () => {
+  const value = { isOwner: true, organization: { organizationId: '0b000000-0000-4000-8000-000000000001' } };
+  return { useOrganization: () => value };
+});
 
 import { runSetupCheck } from '@/services/supabase/crmHub/setupCheck';
 import { SetupCheck } from '@/components/crmHub/SetupCheck';
@@ -146,6 +150,13 @@ describe('Set-up check', () => {
     render(<SetupCheck />);
     expect(await within(row('Phone provider settings')).findByText('Not ready')).toBeTruthy();
     expect(row('Phone provider settings').textContent).toContain('TWILIO_NUMBER_UK is not set.');
+  });
+
+  it('tells the owner how to keep calling to their own organisation', async () => {
+    render(<SetupCheck />);
+    await within(row('Phone provider settings')).findByText('Ready');
+    expect(row('Phone provider settings').textContent).toContain('TWILIO_ALLOWED_ORGS');
+    expect(row('Phone provider settings').textContent).toContain('0b000000-0000-4000-8000-000000000001');
   });
 
   it('says when no phone provider is set at all', async () => {

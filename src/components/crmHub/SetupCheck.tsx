@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useOrganization } from '@/context/OrganizationContext';
 import { StatusPill } from '@/components/common/StatusPill';
 import type { StatusTone } from '@/components/common/StatusPill';
 import { SETUP_PARTS } from '@/lib/crmSetup';
@@ -23,6 +24,7 @@ const File: React.FC<{ name: string }> = ({ name }) => (
 );
 
 export const SetupCheck: React.FC = () => {
+  const { organization, isOwner } = useOrganization();
   const [states, setStates] = useState<Record<string, SetupState> | null>(null);
   const [calling, setCalling] = useState<VoiceSetup | null>(null);
   const [checking, setChecking] = useState(true);
@@ -111,6 +113,13 @@ export const SetupCheck: React.FC = () => {
             {calling?.ready && (
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Numbers to call from: {[calling.numbers.US && 'United States', calling.numbers.GB && 'United Kingdom'].filter(Boolean).join(' and ') || 'none'}.
+              </p>
+            )}
+            {/* The phone account is one for the whole site. This is how the owner keeps it to their own organisation. */}
+            {isOwner && calling?.configured && organization?.organizationId && (
+              <p className="mt-1.5 text-pretty text-xs text-muted-foreground">
+                To let only your organisation place calls, add the setting <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">TWILIO_ALLOWED_ORGS</code> in
+                Vercel with this value, then deploy again: <code className="break-all rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">{organization.organizationId}</code>
               </p>
             )}
           </div>

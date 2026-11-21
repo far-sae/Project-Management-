@@ -1,6 +1,6 @@
 import { AppError } from "../_signroom/errors.js";
 import { isUuid } from "../_signroom/validate.js";
-import type { ConfigState, VoiceConfig } from "./config.js";
+import { orgMayCall, type ConfigState, type VoiceConfig } from "./config.js";
 import { dialable, formatNumber, COUNTRY_NAME, type CallCountry } from "./shared/numbers.js";
 import { OUTCOME_LABEL, OUTCOMES, STATUS_SENTENCE, type CallActivityMeta, type CallList, type CallListItem, type CallOutcome, type CallStatus, type StartedCall, type VoiceSetup } from "./shared/types.js";
 import type { Call, CallPatch, VoiceStore } from "./store.js";
@@ -31,6 +31,7 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
 export const OWNER_ONLY_MESSAGE = "Only the owner and admins can place calls.";
 export const NOT_FOUND_MESSAGE = "This lead or company is not in your CRM.";
 export const CALL_NOT_FOUND_MESSAGE = "This call was not found.";
+export const ORG_NOT_ALLOWED_MESSAGE = "Calling is not switched on for this organisation.";
 export const LEAD_NOT_FOUND_MESSAGE = "This lead was not found.";
 export const CHOOSE_WORKSPACE_MESSAGE = "Choose a workspace.";
 export const CALLS_OWNER_ONLY_MESSAGE = "Only the owner and admins can see calls.";
@@ -188,6 +189,8 @@ async function start(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
   const target = isUuid(contactId) ? await d.store.contact(contactId as string) : isUuid(companyId) ? await d.store.company(companyId as string) : null;
   if (!target) throw new AppError(NOT_FOUND_MESSAGE, 404);
   await refuseUnlessAdmin(d, target.organizationId, r.user.id);
+  // The phone account is one for the whole site: when a list of organisations is set, only they may spend it.
+  if (!orgMayCall(config, target.organizationId)) throw new AppError(ORG_NOT_ALLOWED_MESSAGE, 403);
   // The timeline entry a call leaves needs the record's workspace.
   if (!target.workspaceId) throw new AppError(NO_WORKSPACE_MESSAGE, 409);
 

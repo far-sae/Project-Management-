@@ -7,6 +7,7 @@ import { readConfig, type VoiceConfig } from "../../../api/_voice/config";
 import {
   CALLS_OWNER_ONLY_MESSAGE,
   LEAD_NOT_FOUND_MESSAGE,
+  ORG_NOT_ALLOWED_MESSAGE,
   CALLS_PER_MINUTE,
   CALL_IN_PROGRESS_MESSAGE,
   CALL_NOT_FOUND_MESSAGE,
@@ -550,6 +551,37 @@ describe("calling: deleting a call", () => {
     // One whose end was never reported can be cleared away later.
     w.state.now = new Date(w.state.now.getTime() + 4 * 60 * 60_000);
     expect((await w.as(OWNER).del(`calls/${live}`)).status).toBe(200);
+  });
+});
+
+describe("calling: only the organisations that are listed", () => {
+  it("lets every organisation call while no list is set, as before", async () => {
+    const w = world();
+    expect(readConfig(ENV).config?.allowedOrgs).toEqual([]);
+    expect((await w.as(OWNER).post("calls", { contactId: LEAD, to: "+44 7700 900123" })).status).toBe(200);
+  });
+
+  it("refuses an organisation that is not on the list, before anything is dialled", async () => {
+    const w = world();
+    const other = "0b000000-0000-4000-8000-0000000000ff";
+    w.deps.config = () => readConfig({ ...ENV, TWILIO_ALLOWED_ORGS: other });
+    expect(await w.as(OWNER).post("calls", { contactId: LEAD, to: "+44 7700 900123" })).toEqual({ status: 403, json: { error: ORG_NOT_ALLOWED_MESSAGE } });
+    expect(w.calls.size).toBe(0);
+  });
+
+  it("lets a listed organisation call, however the list is typed", async () => {
+    const w = world();
+    w.deps.config = () => readConfig({ ...ENV, TWILIO_ALLOWED_ORGS: ` 0b000000-0000-4000-8000-0000000000ff , ${ORG.toUpperCase()} ,not-an-id,` });
+    expect(readConfig({ ...ENV, TWILIO_ALLOWED_ORGS: `x, ${ORG.toUpperCase()}` }).config?.allowedOrgs).toEqual([ORG]);
+    expect((await w.as(OWNER).post("calls", { contactId: LEAD, to: "+44 7700 900123" })).status).toBe(200);
+  });
+
+  it("stops calling and says so when the list holds no proper id, instead of opening it to everybody", () => {
+    const state = readConfig({ ...ENV, TWILIO_ALLOWED_ORGS: "my company" });
+    expect(state.config).toBeNull();
+    expect(state.problem).toContain("TWILIO_ALLOWED_ORGS");
+    expect(state.problem).toContain("organisation ids");
+    expect(state.problem).not.toContain("my company");
   });
 });
 

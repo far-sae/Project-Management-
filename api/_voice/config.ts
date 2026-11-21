@@ -17,14 +17,27 @@ export type VoiceConfig = {
   appSid: string;
   /** The numbers calls come from, by the country they ring. */
   numbers: Partial<Record<CallCountry, string>>;
+  /**
+   * The organisations that may place calls (TWILIO_ALLOWED_ORGS, ids with commas between them).
+   * Empty: every organisation on the site may, as before. The phone account is one for the whole
+   * site, so without this list any organisation's owner or admin can spend it.
+   */
+  allowedOrgs: string[];
 };
+
+/** The optional setting that limits calling to the organisations it lists. */
+export const ALLOWED_ORGS_SETTING = "TWILIO_ALLOWED_ORGS";
+
+/** True when this organisation may place calls: no list is set, or it is on the list. */
+export const orgMayCall = (config: Pick<VoiceConfig, "allowedOrgs">, organizationId: string): boolean =>
+  config.allowedOrgs.length === 0 || config.allowedOrgs.includes(organizationId.toLowerCase());
 
 export type ConfigState =
   | { configured: false; config: null; problem: null }
   | { configured: true; config: null; problem: string }
   | { configured: true; config: VoiceConfig; problem: null };
 
-const REQUIRED: Array<[keyof Omit<VoiceConfig, "numbers">, string, RegExp]> = [
+const REQUIRED: Array<[keyof Omit<VoiceConfig, "numbers" | "allowedOrgs">, string, RegExp]> = [
   ["accountSid", "TWILIO_ACCOUNT_SID", /^AC[0-9a-fA-F]{32}$/],
   ["authToken", "TWILIO_AUTH_TOKEN", /^\S{16,}$/],
   ["apiKeySid", "TWILIO_API_KEY_SID", /^SK[0-9a-fA-F]{32}$/],
@@ -70,5 +83,14 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     numbers[country] = n.e164;
   }
   if (!numbers.US && !numbers.GB) return { configured: true, config: null, problem: missingSetting("TWILIO_NUMBER_US or TWILIO_NUMBER_UK") };
-  return { configured: true, config: { ...(out as Omit<VoiceConfig, "numbers">), numbers }, problem: null };
+  // Only proper ids count; anything else in the list is ignored, never matched by accident.
+  const allowedOrgs = value(ALLOWED_ORGS_SETTING)
+    .split(",")
+    .map((id) => id.trim().toLowerCase())
+    .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id));
+  // A list with nothing usable in it is a mistake, and must not quietly open calling to everybody.
+  if (value(ALLOWED_ORGS_SETTING) && allowedOrgs.length === 0) {
+    return { configured: true, config: null, problem: wrongSetting(ALLOWED_ORGS_SETTING, "one or more organisation ids, with a comma between them") };
+  }
+  return { configured: true, config: { ...(out as Omit<VoiceConfig, "numbers" | "allowedOrgs">), numbers, allowedOrgs }, problem: null };
 }
