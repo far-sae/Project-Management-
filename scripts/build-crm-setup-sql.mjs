@@ -1,4 +1,4 @@
-// Builds supabase/crm_setup_188_to_201.sql: every CRM database file from 188 on,
+// Builds supabase/crm_setup.sql: every CRM database file from 188 on,
 // one after the other, so they can be run in the Supabase SQL editor in one go.
 //
 // Run it after changing or adding one of those files:
@@ -13,7 +13,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dir = join(root, 'supabase', 'migrations');
 
 export const FIRST = 188;
-export const OUTPUT = 'supabase/crm_setup_188_to_201.sql';
+export const OUTPUT = 'supabase/crm_setup.sql';
 
 /** The files that go in, in the order they must run. */
 export function setupFiles() {

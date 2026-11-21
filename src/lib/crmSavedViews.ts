@@ -20,6 +20,8 @@ export interface SavedView {
   id: string;
   name: string;
   state: LeadViewState;
+  /** True for a view the whole team has; such a view is kept with the workspace, not in a browser. */
+  shared?: boolean;
 }
 
 /** The most views one person keeps for one workspace. */
@@ -31,7 +33,7 @@ export const viewsKey = (userId: string, workspaceId: string): string => `crm.le
 const text = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback);
 
 /** A stored state made safe to use: anything missing or of the wrong kind becomes the default. */
-function tidyState(raw: unknown): LeadViewState {
+export function tidyViewState(raw: unknown): LeadViewState {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const sort = r.sort && typeof r.sort === 'object' ? (r.sort as Record<string, unknown>) : null;
   const sortOk = sort
@@ -77,7 +79,7 @@ export function readViews(storage: Store | null | undefined, key: string): Saved
     return parsed
       .filter((v): v is Record<string, unknown> => !!v && typeof v === 'object' && typeof v.id === 'string' && typeof v.name === 'string' && v.name.trim() !== '')
       .slice(0, MAX_VIEWS)
-      .map((v) => ({ id: v.id as string, name: (v.name as string).slice(0, VIEW_NAME_LIMIT), state: tidyState(v.state) }));
+      .map((v) => ({ id: v.id as string, name: (v.name as string).slice(0, VIEW_NAME_LIMIT), state: tidyViewState(v.state) }));
   } catch {
     return [];
   }

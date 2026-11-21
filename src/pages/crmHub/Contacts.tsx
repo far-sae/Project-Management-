@@ -449,9 +449,11 @@ export const CrmContactsPage: React.FC = () => {
                 </SelectContent>
               </Select>
             )}
-            {user && workspaceId && (
+            {user && workspaceId && organizationId && (
               <LeadViews
                 storageKey={viewsKey(user.userId, workspaceId)}
+                organizationId={organizationId}
+                workspaceId={workspaceId}
                 current={viewState}
                 onApply={(state) => {
                   setSearch(state.search);

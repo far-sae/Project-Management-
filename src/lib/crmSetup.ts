@@ -40,6 +40,7 @@ export const SETUP_PARTS: SetupPart[] = [
   { id: 'quote', name: 'Quotes on deals', gives: 'A deal holds the lines of a quote, with a total and a page to print.', file: '199_crm_deal_quote.sql', probe: { kind: 'column', table: 'crm_deals', column: 'line_items' } },
   { id: 'fieldTypes', name: 'Typed custom fields', gives: 'A custom field on a lead can be a number, a date or one of a list.', file: '200_crm_custom_field_types.sql', probe: { kind: 'table', table: 'crm_field_defs' } },
   { id: 'rules', name: 'Rules', gives: 'When something happens to a lead or a deal, one thing is done by itself.', file: '201_crm_rules.sql', probe: { kind: 'table', table: 'crm_rules' } },
+  { id: 'sharedViews', name: 'Shared views', gives: 'A saved view of the Leads list can be shared with the team.', file: '202_crm_shared_views.sql', probe: { kind: 'table', table: 'crm_saved_views' } },
 ];
 
 /** The database's codes for "there is no such table / column / function". */

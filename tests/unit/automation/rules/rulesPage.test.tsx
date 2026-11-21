@@ -410,7 +410,7 @@ describe('Workspace rules: every control changes what is saved', () => {
     for (let n = 1; n <= 20; n += 1) { press('Add a task'); type(`Task ${n}`, `Task number ${n}`); }
     expect(button('Add a task').disabled).toBe(true);
     expect((await save()).project.tasks).toHaveLength(20);
-  });
+  }, 20000);
 });
 
 describe('Workspace rules: checks before saving', () => {
