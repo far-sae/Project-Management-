@@ -6,7 +6,7 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
   ProspectsTab, GroupsTab, TemplatesTab, AccountsTab, ComposeTab, CampaignsTab,
-  SequencesTab, SuppressionTab, SettingsTab,
+  SequencesTab, RepliesTab, SuppressionTab, SettingsTab,
 } from '@/components/email';
 import type { EmailTemplate } from '@/lib/email/types';
 import { readiness, type Readiness } from '@/lib/email/readiness';
@@ -23,7 +23,7 @@ import { WarmupServiceCard } from '@/components/email/WarmupServiceCard';
  * tab; it is what an admin opens the page to check.
  */
 type EmailTabValue =
-  | 'prospects' | 'groups' | 'templates' | 'campaigns' | 'sequences'
+  | 'prospects' | 'groups' | 'templates' | 'campaigns' | 'sequences' | 'replies'
   | 'accounts' | 'suppression' | 'settings';
 
 export const Email: React.FC = () => {
@@ -144,6 +144,7 @@ export const Email: React.FC = () => {
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
+          <TabsTrigger value="replies">Replies</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="suppression">Suppression</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -187,6 +188,10 @@ export const Email: React.FC = () => {
 
         <TabsContent value="sequences">
           <SequencesTab orgId={orgId} workspaceId={workspaceId} />
+        </TabsContent>
+
+        <TabsContent value="replies">
+          <RepliesTab orgId={orgId} workspaceId={workspaceId} />
         </TabsContent>
 
         <TabsContent value="accounts">

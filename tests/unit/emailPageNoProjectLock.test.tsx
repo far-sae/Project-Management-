@@ -29,7 +29,7 @@ vi.mock('@/components/email', () => {
   const tab = (name: string) => () => <div>{name} tab</div>;
   return {
     ProspectsTab: tab('Prospects'), GroupsTab: tab('Groups'), TemplatesTab: tab('Templates'), AccountsTab: tab('Accounts'),
-    ComposeTab: tab('Compose'), CampaignsTab: tab('Campaigns'), SequencesTab: tab('Sequences'), SuppressionTab: tab('Suppression'),
+    ComposeTab: tab('Compose'), CampaignsTab: tab('Campaigns'), SequencesTab: tab('Sequences'), RepliesTab: tab('Replies'), SuppressionTab: tab('Suppression'),
     SettingsTab: tab('Settings'),
   };
 });
