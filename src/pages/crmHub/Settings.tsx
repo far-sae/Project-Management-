@@ -13,6 +13,7 @@ import {
 import type { CrmDealStage, DealStatus } from '@/types/crmHub';
 import { PageHeader } from '@/components/common/PageHeader';
 import { SetupCheck } from '@/components/crmHub/SetupCheck';
+import { OwnOnlySetting } from '@/components/crmHub/OwnOnlySetting';
 import { ChangeLog, RecycleBin } from '@/components/crmHub/CrmHistory';
 import { StatusPill } from '@/components/common/StatusPill';
 import type { StatusTone } from '@/components/common/StatusPill';
@@ -70,7 +71,12 @@ export const CrmSettingsPage: React.FC = () => {
               <TabsTrigger value="setup">Set-up check</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="general"><GeneralSettings /></TabsContent>
+          <TabsContent value="general">
+            <div className="flex flex-col gap-6">
+              <GeneralSettings />
+              <OwnOnlySetting />
+            </div>
+          </TabsContent>
           <TabsContent value="pipeline"><PipelineSettings /></TabsContent>
           <TabsContent value="workspace"><WorkspaceSettings /></TabsContent>
           <TabsContent value="bin"><RecycleBin /></TabsContent>
