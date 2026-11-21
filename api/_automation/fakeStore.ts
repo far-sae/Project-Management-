@@ -41,6 +41,8 @@ type FakeNote = { workspaceId: string; contactId: string; body: string; userId: 
 type FakeActivity = NewActivity & { workspaceId: string; organizationId: string; userId: string | null; at: string };
 type FakeFollowUp = NewFollowUp & { workspaceId: string; organizationId: string };
 
+export type SeededFollowUp = { id: string; title: string; dueDate: string | null; assignedTo: string | null; projectId: string | null; open: boolean };
+
 export type FakeAutoStore = AutoStore & {
   /** Moves the fake's clock: every created/updated stamp it writes uses this. */
   setNow(iso: string): void;
@@ -49,6 +51,8 @@ export type FakeAutoStore = AutoStore & {
   setOrgMember(workspaceId: string, userId: string, role: OrgRole, opts?: { status?: string; name?: string; email?: string }): void;
   seedStages(workspaceId: string, stages?: Array<Omit<Stage, "id"> & { id?: string }>): Stage[];
   seedCompany(c: Partial<Company> & { workspaceId: string; name: string }): Company;
+  /** A CRM follow-up, as a person would add one. Returns it so a test can complete or change it. */
+  seedFollowUp(f: Partial<SeededFollowUp> & { title: string }): SeededFollowUp;
   /** A lead put in with no event, as if it had been there before automation was switched on. */
   seedLead(l: Partial<Lead> & { workspaceId: string }): Lead;
   /** A person (the app, an import) adds a lead: the contact trigger fires. */
@@ -111,6 +115,8 @@ export function fakeStore(): FakeAutoStore {
   const projects: NewProject[] = [];
   const projectTasks: NewProjectTask[] = [];
   const notifications: NewNotification[] = [];
+  /** CRM follow-ups a person added (the reminders read these); not the ones an agent creates. */
+  const crmFollowUps: SeededFollowUp[] = [];
   const failing = new Map<string, string>();
 
   const fail = (method: string) => {
@@ -196,6 +202,11 @@ export function fakeStore(): FakeAutoStore {
         const { workspaceId: _w, ...stage } = row;
         return stage;
       });
+    },
+    seedFollowUp(f) {
+      const row: SeededFollowUp = { id: f.id ?? randomUUID(), title: f.title, dueDate: f.dueDate ?? null, assignedTo: f.assignedTo ?? null, projectId: f.projectId ?? null, open: f.open ?? true };
+      crmFollowUps.push(row);
+      return row;
     },
     seedCompany(c) {
       const row = { id: c.id ?? randomUUID(), workspaceId: c.workspaceId, name: c.name, website: c.website ?? "", industry: c.industry ?? "", city: c.city ?? "", country: c.country ?? "", companySize: c.companySize ?? "", notes: c.notes ?? "" };
@@ -708,6 +719,17 @@ export function fakeStore(): FakeAutoStore {
     async notify(rows) {
       fail("notify");
       notifications.push(...rows.map(clone));
+    },
+
+    async dueFollowUps(until, limit) {
+      return crmFollowUps
+        .filter((f) => f.open && f.projectId === null && f.assignedTo !== null && f.dueDate !== null && f.dueDate <= until)
+        .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
+        .slice(0, limit)
+        .map((f) => ({ id: f.id, title: f.title, dueDate: f.dueDate as string, assignedTo: f.assignedTo as string }));
+    },
+    async remindedFollowUps(links) {
+      return notifications.filter((n) => n.type === "task_reminder" && n.link !== null && links.includes(n.link)).map((n) => n.link as string);
     },
   };
   return store;

@@ -938,7 +938,7 @@ export function supabaseStore(sb: SupabaseClient): AutoStore {
       const r = await sb.from("notifications").insert(
         rows.map((n) => ({
           user_id: n.userId,
-          type: "automation",
+          type: n.type ?? "automation",
           title: n.title,
           message: n.message,
           task_id: null,
@@ -951,6 +951,28 @@ export function supabaseStore(sb: SupabaseClient): AutoStore {
         })),
       );
       if (r.error) throw new StoreError(r.error.message);
+    },
+
+    async dueFollowUps(until, limit) {
+      const r = await sb
+        .from("crm_tasks")
+        .select("id, title, due_date, assigned_to")
+        .in("status", ["pending", "in_progress"])
+        .is("project_id", null)
+        .not("due_date", "is", null)
+        .not("assigned_to", "is", null)
+        .lte("due_date", until)
+        .order("due_date", { ascending: true })
+        .limit(limit);
+      if (r.error) throw new StoreError(r.error.message);
+      return ((r.data ?? []) as Row[]).map((t) => ({ id: t.id as string, title: str(t.title), dueDate: t.due_date as string, assignedTo: t.assigned_to as string }));
+    },
+
+    async remindedFollowUps(links) {
+      if (links.length === 0) return [];
+      const r = await sb.from("notifications").select("link").eq("type", "task_reminder").in("link", links);
+      if (r.error) throw new StoreError(r.error.message);
+      return ((r.data ?? []) as Row[]).map((n) => str(n.link));
     },
   };
 }

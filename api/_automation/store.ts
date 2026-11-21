@@ -1,3 +1,4 @@
+import type { DueFollowUp } from "./followUps.js";
 import type { OrgRole } from "../_signroom/context.js";
 import type { Agent, AgentKind, Automation, AutomationStep, LeadStatus, ProposedAction, Right, RunStatus, RunStepStatus, WorkspaceRules } from "./shared/types.js";
 
@@ -273,7 +274,16 @@ export type NewProjectTask = {
   contactId: string | null;
 };
 
-export type NewNotification = { userId: string; title: string; message: string; link: string | null; projectId?: string | null; actorName?: string | null };
+export type NewNotification = {
+  userId: string;
+  title: string;
+  message: string;
+  link: string | null;
+  projectId?: string | null;
+  actorName?: string | null;
+  /** The kind of notification, as the bell and people's own settings know it. "automation" when omitted. */
+  type?: string;
+};
 
 export type RunFilter = { status?: RunStatus; contactId?: string; dealId?: string; since?: string; limit: number };
 
@@ -420,4 +430,10 @@ export interface AutoStore {
   insertProjectTask(t: NewProjectTask): Promise<void>;
   /** In-app notifications (the bell). */
   notify(rows: NewNotification[]): Promise<void>;
+
+  // ── follow-up reminders (every workspace, with or without automation) ──
+  /** CRM follow-ups with no project that are due by `until`, still open, and have somebody to do them. */
+  dueFollowUps(until: string, limit: number): Promise<DueFollowUp[]>;
+  /** Which of these reminder links have already been sent. */
+  remindedFollowUps(links: string[]): Promise<string[]>;
 }

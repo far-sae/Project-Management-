@@ -5,6 +5,7 @@ import type {
 import { tryLogActivity } from './activities';
 import { applyWorkspaceFilter } from './workspaceFilter';
 import {
+  createNotification,
   createTask as createProjectTask,
   updateTask as updateProjectTask,
   deleteTask as deleteProjectTask,
@@ -133,7 +134,26 @@ export const createTask = async (
     if (sharedTask) await deleteProjectTask(sharedTask.taskId, input.organizationId).catch(() => undefined);
     throw error;
   }
-  return mapTask(data);
+  const task = mapTask(data);
+  // A follow-up on a project tells its assignee through the project's own task. One that lives
+  // in the CRM only had no way to: the person it was given to learned of it by chance.
+  if (!sharedTask && task.assignedTo && task.assignedTo !== options.actorId) {
+    try {
+      await createNotification({
+        userId: task.assignedTo,
+        type: 'task_assigned',
+        title: 'New follow-up for you',
+        body: task.dueDate
+          ? `“${task.title}”, due ${new Date(task.dueDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}. Find it under CRM, Follow-ups.`
+          : `“${task.title}”. Find it under CRM, Follow-ups.`,
+        actorUserId: options.actorId,
+      });
+    } catch (err) {
+      // The follow-up is saved; a notification that could not be written must not make that look failed.
+      console.warn('[crm] could not tell the assignee about the follow-up', err);
+    }
+  }
+  return task;
 };
 
 export const updateTask = async (

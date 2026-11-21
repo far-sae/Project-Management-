@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   updateContact: vi.fn(),
   createDeal: vi.fn(),
   linkDealHandoff: vi.fn(),
+  createNotification: vi.fn(),
 }));
 
 vi.mock('@/services/supabase/config', () => ({
@@ -33,6 +34,7 @@ vi.mock('@/services/supabase/config', () => ({
 }));
 vi.mock('@/services/supabase/database', () => ({
   createTask: h.createProjectTask,
+  createNotification: h.createNotification,
   updateTask: vi.fn(),
   deleteTask: vi.fn(),
   createProject: h.createProject,
@@ -88,8 +90,26 @@ describe('follow-ups', () => {
     expect(task.projectId).toBeNull();
   });
 
+  it('tells the person a CRM follow-up is given to, but not when you give it to yourself', async () => {
+    await createTask({ ...input, projectId: null }, 'u1', { actorId: 'u1' });
+    expect(h.createNotification).not.toHaveBeenCalled();
+
+    await createTask({ ...input, projectId: null, assignedTo: 'u2', dueDate: '2026-11-24T09:00:00Z' }, 'u1', { actorId: 'u1' });
+    expect(h.createNotification).toHaveBeenCalledTimes(1);
+    expect(h.createNotification.mock.calls[0][0]).toMatchObject({ userId: 'u2', type: 'task_assigned', title: 'New follow-up for you', actorUserId: 'u1' });
+    expect(h.createNotification.mock.calls[0][0].body).toContain('“Call Ana back”, due ');
+  });
+
+  it('still saves the follow-up when the person could not be told', async () => {
+    h.createNotification.mockRejectedValue(new Error('down'));
+    const task = await createTask({ ...input, projectId: null, assignedTo: 'u2' }, 'u1', { actorId: 'u1' });
+    expect(task.title).toBe('Call Ana back');
+  });
+
   it('also appears on the project board when a project is chosen', async () => {
     await createTask({ ...input, projectId: 'p1' }, 'u1', { actorId: 'u1' });
+    // On a project, the project's own task tells the assignee.
+    expect(h.createNotification).not.toHaveBeenCalled();
     expect(h.createProjectTask).toHaveBeenCalledTimes(1);
     expect(h.inserted[0].row).toMatchObject({ project_id: 'p1', shared_task_id: 'shared-1' });
   });

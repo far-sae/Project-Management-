@@ -1,3 +1,5 @@
+import { remindDueFollowUps } from "./followUps.js";
+import { nowOf } from "./deps.js";
 import { AppError, StoreError } from "../_signroom/errors.js";
 import { SIGN_IN_MESSAGE } from "../_signroom/host/auth.js";
 import { archiveAgent, createAgent, listAgents, patchAgent, setPaused } from "./agents.js";
@@ -105,7 +107,11 @@ export async function route(deps: AutoDeps, r: RouteRequest): Promise<RouteResul
   try {
     // The scheduled run: only the entry's checked cron call reaches it.
     if (r.path[0] === "ops") {
-      if (r.cron === true && r.method === "POST" && r.path.length === 2 && r.path[1] === "run") return ok(await runDue(deps));
+      if (r.cron === true && r.method === "POST" && r.path.length === 2 && r.path[1] === "run") {
+        // Reminders for due follow-ups go out whether or not any workspace uses automation, and never stop the run.
+        await remindDueFollowUps(deps.store, nowOf(deps)).catch((e) => console.error("[automation] follow-up reminders not sent", e instanceof Error ? e.name : "unknown"));
+        return ok(await runDue(deps));
+      }
       return notFound();
     }
     if (!r.user) return { status: 401, json: { error: SIGN_IN_MESSAGE } };
