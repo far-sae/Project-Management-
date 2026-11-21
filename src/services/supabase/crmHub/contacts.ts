@@ -126,6 +126,7 @@ export const updateContact = async (id: string, input: UpdateContactInput): Prom
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.category !== undefined) patch.category = input.category?.trim() || null;
   if (input.customFields !== undefined) patch.custom_fields = input.customFields ?? {};
+  if (input.ownerId !== undefined) patch.owner_id = input.ownerId || null;
 
   const { data, error } = await supabase
     .from('crm_contacts')

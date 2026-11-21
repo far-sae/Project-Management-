@@ -161,6 +161,7 @@ export const updateDeal = async (id: string, input: UpdateDealInput): Promise<Cr
   if (input.expectedCloseDate !== undefined) patch.expected_close_date = input.expectedCloseDate;
   if (input.source !== undefined) patch.source = input.source;
   if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.ownerId !== undefined) patch.owner_id = input.ownerId || null;
 
   const update = (values: Record<string, unknown>) =>
     supabase.from('crm_deals').update(values).eq('id', id).select().single();

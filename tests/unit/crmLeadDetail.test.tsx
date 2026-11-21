@@ -253,6 +253,24 @@ describe('lead page', () => {
     ]);
   });
 
+  it('lets the owner of the lead be changed, and does not touch it otherwise', async () => {
+    await renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: /^Edit/ })[0]);
+    const form = await screen.findByRole('dialog');
+    expect(within(form).getByRole('combobox', { name: 'Owner' }).textContent).toContain('Sam Carter');
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(state.updateContact).toHaveBeenCalledTimes(1));
+    expect(state.updateContact.mock.calls[0][1]).not.toHaveProperty('ownerId');
+
+    fireEvent.click(screen.getAllByRole('button', { name: /^Edit/ })[0]);
+    const again = await screen.findByRole('dialog');
+    fireEvent.keyDown(within(again).getByRole('combobox', { name: 'Owner' }), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Nobody' }), { key: 'Enter' });
+    fireEvent.click(within(again).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(state.updateContact).toHaveBeenCalledTimes(2));
+    expect(state.updateContact.mock.calls[1][1]).toMatchObject({ ownerId: null });
+  });
+
   it('shows the single step pill instead of the two raw fields', async () => {
     await renderPage();
     expect(screen.queryByText('Lead status')).toBeNull();

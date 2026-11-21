@@ -53,6 +53,7 @@ import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
+import { OwnerField } from '@/components/crmHub/OwnerField';
 import { CallDialog } from '@/components/crmHub/CallDialog';
 import { CallRecording, recordedCallId } from '@/components/crmHub/CallRecording';
 import { useCalling } from '@/hooks/useCalling';
@@ -1220,6 +1221,7 @@ const EditLeadDialog: React.FC<{
   const [companyId, setCompanyId] = useState(contact.companyId ?? '');
   const [source, setSource] = useState(contact.source ?? '');
   const [category, setCategory] = useState(contact.category ?? '');
+  const [ownerId, setOwnerId] = useState(contact.ownerId ?? '');
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>(contact.lifecycleStage);
   const [leadStatus, setLeadStatus] = useState<LeadStatus>(contact.leadStatus);
   const [customRows, setCustomRows] = useState<CustomFieldRow[]>(() => customFieldRows(contact.customFields));
@@ -1238,6 +1240,7 @@ const EditLeadDialog: React.FC<{
       setCompanyId(contact.companyId ?? '');
       setSource(contact.source ?? '');
       setCategory(contact.category ?? '');
+      setOwnerId(contact.ownerId ?? '');
       setLifecycleStage(contact.lifecycleStage);
       setLeadStatus(contact.leadStatus);
     }
@@ -1259,6 +1262,8 @@ const EditLeadDialog: React.FC<{
         source: source.trim() || null,
         category: category.trim() || null,
         customFields: custom.fields,
+        // Sent only when changed, so saving something else never moves the lead to another person.
+        ...(ownerId !== (contact.ownerId ?? '') ? { ownerId: ownerId || null } : {}),
         // Sent only when changed here, so a save never undoes the step bar.
         ...(lifecycleStage !== contact.lifecycleStage ? { lifecycleStage } : {}),
         ...(leadStatus !== contact.leadStatus ? { leadStatus } : {}),
@@ -1328,6 +1333,7 @@ const EditLeadDialog: React.FC<{
               <Input id={`${fieldId}-category`} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Optional" maxLength={64} disabled={busy} />
             </div>
           </div>
+          <OwnerField id={`${fieldId}-owner`} value={ownerId} onChange={setOwnerId} disabled={busy} />
           <div className="border-t border-border pt-4">
             <CustomFieldsEditor
               rows={customRows}

@@ -212,7 +212,10 @@ export interface CreateContactInput {
   customFields?: Record<string, string> | null;
 }
 
-export type UpdateContactInput = Partial<Omit<CreateContactInput, 'organizationId'>>;
+export type UpdateContactInput = Partial<Omit<CreateContactInput, 'organizationId'>> & {
+  /** Who looks after this lead. */
+  ownerId?: string | null;
+};
 
 export interface CreateDealInput {
   organizationId: string;
@@ -232,7 +235,10 @@ export interface CreateDealInput {
   status?: DealStatus;
 }
 
-export type UpdateDealInput = Partial<Omit<CreateDealInput, 'organizationId'>>;
+export type UpdateDealInput = Partial<Omit<CreateDealInput, 'organizationId'>> & {
+  /** Who looks after this deal. */
+  ownerId?: string | null;
+};
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 export const TASK_PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];

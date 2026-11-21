@@ -11,3 +11,10 @@
   // invoke the handler in unit tests.
   serve: (_handler: unknown): void => undefined,
 };
+
+// jsdom has no layout, so it does not implement scrollIntoView. Radix's
+// drop-downs call it when they open on an already-chosen value; without this
+// stand-in the open throws and the list never becomes usable in a test.
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => undefined;
+}

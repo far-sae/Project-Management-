@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
+import { OwnerField, ownerName } from '@/components/crmHub/OwnerField';
 import { useOrganization } from '@/context/OrganizationContext';
 import { supabase } from '@/services/supabase/config';
 import { getDeal, updateDeal, deleteDeal } from '@/services/supabase/crmHub/deals';
@@ -366,6 +367,7 @@ export const CrmDealDetailPage: React.FC = () => {
               <Field label="Lead">
                 {contact ? <Link to={`/crm/contacts/${contact.id}`} className="hover:underline">{leadName(contact)}</Link> : '—'}
               </Field>
+              <Field label="Owner">{ownerName(organization?.members ?? [], deal.ownerId) ?? 'Nobody'}</Field>
               <Field label="Source">{deal.source || '—'}</Field>
               <Field label="Project">
                 {deal.projectId
@@ -418,10 +420,12 @@ const EditDealDialog: React.FC<{
   const [expectedCloseDate, setExpectedCloseDate] = useState<string>(deal.expectedCloseDate ?? '');
   const [source, setSource] = useState(deal.source ?? '');
   const [notes, setNotes] = useState(deal.notes ?? '');
+  const [ownerId, setOwnerId] = useState(deal.ownerId ?? '');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
+      setOwnerId(deal.ownerId ?? '');
       setName(deal.name);
       setValue(deal.value.toString());
       setCurrency(savedCurrency);
@@ -444,6 +448,8 @@ const EditDealDialog: React.FC<{
         expectedCloseDate: expectedCloseDate || null,
         source: source.trim() || null,
         notes: notes.trim() || null,
+        // Sent only when changed, so saving something else never moves the deal to another person.
+        ...(ownerId !== (deal.ownerId ?? '') ? { ownerId: ownerId || null } : {}),
       });
       if (currency !== savedCurrency && currencyNotSaved(currency, saved, companyCurrency)) {
         toast.warning(`Saved, but in ${companyCurrency}. This database cannot keep a deal in another currency until migration 182 has been run.`);
@@ -501,6 +507,7 @@ const EditDealDialog: React.FC<{
             <Label>Source</Label>
             <Input value={source} onChange={(e) => setSource(e.target.value)} disabled={busy} />
           </div>
+          <OwnerField id="edit-deal-owner" value={ownerId} onChange={setOwnerId} disabled={busy} />
           <div className="flex flex-col gap-1.5">
             <Label>Notes</Label>
             <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={busy} />
