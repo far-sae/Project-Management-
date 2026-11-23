@@ -555,6 +555,19 @@ describe("calling: why a call ended", () => {
     expect(out.detail).toContain("trial account");
   });
 
+  it("explains a call the provider blocks: for a US or Canada number, the account's business profile is usually missing", async () => {
+    const w = world();
+    w.fetchMock.mockImplementation(async () => notes([{ error_code: "13225", message_text: "Phone number is blacklisted." }]));
+    const id = await placed(w);
+    await w.hook("done", { DialCallStatus: "failed" }, { call: id });
+    const out = (await w.as(OWNER).get(`calls/${id}/result`)).json as { detail: string };
+    expect(out.detail).toContain("Phone provider error 13225: Phone number is blacklisted. ");
+    // One full stop, also when the provider's own words end with one.
+    expect(out.detail).not.toContain("..");
+    expect(out.detail).toContain("Trust Hub");
+    expect(out.detail).toContain("Primary Customer Profile");
+  });
+
   it("still answers when the provider gives no reason, or cannot be asked", async () => {
     const w = world();
     const id = await placed(w);

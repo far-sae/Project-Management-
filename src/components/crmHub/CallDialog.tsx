@@ -403,7 +403,8 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
                 <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{why.detail}</p>
               </SetupHint>
             )}
-            {problem && <p role="alert" className="text-sm text-destructive">{problem}</p>}
+            {/* The line's own "try again" says less than the provider's reason, and trying again would not help. */}
+            {problem && !(why?.sentence && !answeredAt.current) && <p role="alert" className="text-sm text-destructive">{problem}</p>}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={`${fieldId}-outcome`}>How did it go?</Label>
               <Select value={outcome} onValueChange={(v) => setOutcome(v as CallOutcome)}>

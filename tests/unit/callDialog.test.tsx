@@ -262,6 +262,20 @@ describe('why a call was not answered', () => {
     expect(screen.getByText(GEO)).toBeTruthy();
   });
 
+  it("drops the line's own 'try again' once the real reason is known: trying again would not help", async () => {
+    h.callResult.mockResolvedValue({ final: true, status: 'failed', sentence: 'The phone company did not connect this call.', detail: GEO });
+    show();
+    fireEvent.click(callButton());
+    await waitFor(() => expect(h.openLine).toHaveBeenCalled());
+    vi.useFakeTimers();
+    act(() => h.tell?.('ringing'));
+    act(() => h.tell?.('ended', 'The call could not be connected. Please try again.'));
+    expect(screen.getByRole('alert').textContent).toBe('The call could not be connected. Please try again.');
+    await wait(RESULT_WAIT_MS + 10);
+    expect(screen.getByRole('status').textContent).toBe('The phone company did not connect this call.');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('tells everybody else only that it did not connect', async () => {
     setInternalsVisible(false);
     h.callResult.mockResolvedValue({ final: true, status: 'failed', sentence: 'The phone company did not connect this call.', detail: GEO });

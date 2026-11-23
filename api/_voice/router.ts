@@ -310,6 +310,14 @@ const RESULT_SENTENCE: Partial<Record<CallStatus, string>> = {
   canceled: "The call ended before it was answered.",
 };
 
+/**
+ * The provider blocks the call itself. For a United States or Canada number
+ * the usual reason is that the provider account has no approved business
+ * profile: without one it refuses every +1 number, while other countries work.
+ */
+const BLOCKED_HINT =
+  "The provider blocks this call. For a United States or Canada number this usually means the provider account has no approved business profile yet: in the provider's console open Trust Hub, Customer Profiles, and submit a Primary Customer Profile. If one is approved already, ask the provider's support to review this number.";
+
 /** What to do about the provider's most common refusals. Read by the people who run the site. */
 const REFUSAL_HINT: Record<string, string> = {
   "13227": "Calls to this country are switched off in the provider's account: open Voice, Settings, Geo permissions there and allow the country.",
@@ -319,14 +327,15 @@ const REFUSAL_HINT: Record<string, string> = {
   "13214": "The number we call from is not accepted as caller ID: check that it is a number of this provider account.",
   "13223": "The provider cannot call this number: it is not a valid phone number.",
   "13224": "The provider cannot call this number: it is not valid, or the provider does not reach it.",
-  "13225": "The provider does not allow calls to this number.",
+  "13225": BLOCKED_HINT,
+  "21216": BLOCKED_HINT,
 };
 
 /** The provider's own words, made short and plain: they can arrive as a form ("Msg=...&ErrorCode=..."). */
 function providerWords(raw: unknown): string {
   let words = typeof raw === "string" ? raw : "";
   if (/(^|&)Msg=/.test(words)) words = new URLSearchParams(words).get("Msg") ?? "";
-  return words.replace(/[^ -~]/g, " ").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+  return words.replace(/[^ -~]/g, " ").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 200).replace(/[.\s]+$/, "");
 }
 
 /** Why the provider refused a call, from its own log of that call. Null when it cannot be read. */
