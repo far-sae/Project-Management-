@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { OrganizationProvider } from '@/context/OrganizationContext';
 import { SubscriptionProvider } from '@/context/SubscriptionContext';
 import { WorkspaceProvider } from '@/context/WorkspaceContext';
+import { useAppVersion } from '@/hooks/useAppVersion';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { TeamAccessGate } from '@/components/auth/TeamAccessGate';
@@ -154,6 +155,8 @@ const RootRedirect: React.FC = () => {
 
 const RouterShell: React.FC = () => {
   const { user } = useAuth();
+  // An open tab takes a new version of the site by itself, instead of running the old one for days.
+  useAppVersion();
   return (
     <WorkspaceProvider>
       <Outlet />
